@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px;">
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">Review the invoice or billing-document status.</div>
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td align="center">
+    <table width="600" cellpadding="20" cellspacing="0" role="presentation" style="background: #ffffff; border-radius: 12px;">
+      <tr><td style="background: #DC2626; border-radius: 12px 12px 0 0; text-align: center; padding: 20px;">
+        {{#if logo_url}}<img src="{{logo_url}}" alt="{{company_name}}" style="max-height: 40px; margin-bottom: 8px;" /><br/>{{/if}}
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Subscription Past Due</h1>
+      </td></tr>
+      <tr><td style="font-size: 16px; color: #111827;">
+        <p>Dear {{customer_name}},</p>
+        <p>Your subscription payment is past due. Please review the details below and settle the outstanding balance to avoid interruption of service.</p>
+        <table width="100%" cellpadding="8" cellspacing="0" role="presentation" style="background: #fef2f2; border-radius: 8px; margin: 16px 0; font-size: 16px;">
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Subscription Number</td>
+            <td style="font-size: 16px; font-weight: bold; color: #111827;">{{subscription_number}}</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Plan</td>
+            <td style="font-size: 16px; color: #111827;">{{plan_name}}</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Days Past Due</td>
+            <td style="font-size: 16px; font-weight: bold; color: #DC2626;">{{days_overdue}} days</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Outstanding Amount</td>
+            <td style="font-size: 16px; font-weight: bold; color: #DC2626;">{{currency}} {{overdue_amount}}</td>
+          </tr>
+        </table>
+        <p style="color: #6b7280; font-size: 16px;">Please update your payment method or settle the outstanding balance to avoid service interruption. If payment has already been made, please disregard this notice.</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="{{login_url}}" style="display: inline-block; background: #DC2626; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold; line-height: 1; padding: 15px 32px; border-radius: 8px; min-height: 44px; box-sizing: border-box;">Pay or review invoice</a>
+        </p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        {{#if invoice_footer}}<p style="color: #6b7280; font-size: 16px;">{{invoice_footer}}</p>{{/if}}
+        <p style="color: #6b7280; font-size: 16px;">This is an automated billing message sent by {{company_name}}.{{#if support_email}} Questions? Contact <a href="mailto:{{support_email}}" style="color: #DC2626;">{{support_email}}</a>.{{/if}}</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body>
+</html>

@@ -1,0 +1,320 @@
+export const REGISTRATION_COUNTRIES = [
+  "India", "United States", "United Kingdom", "United Arab Emirates", "Australia",
+  "Bangladesh", "Bahrain", "Brazil", "Canada", "Switzerland", "China", "Denmark",
+  "Germany", "France", "Ireland", "Netherlands", "Italy", "Spain", "Belgium",
+  "Austria", "Finland", "Portugal", "Greece", "Ghana", "Hong Kong", "Japan",
+  "Kenya", "South Korea", "Kuwait", "Sri Lanka", "Mexico", "Malaysia", "Nigeria",
+  "Norway", "Nepal", "New Zealand", "Oman", "Pakistan", "Qatar", "Rwanda",
+  "Saudi Arabia", "Sweden", "Singapore", "Thailand", "Tanzania", "Uganda",
+  "South Africa",
+];
+
+const STATES_BY_COUNTRY = {
+  "India": [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+    "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand",
+    "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
+    "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan",
+    "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh",
+    "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh",
+    "Dadra and Nagar Haveli and Daman and Diu", "Jammu and Kashmir", "Ladakh",
+    "Lakshadweep", "Puducherry",
+  ],
+  "United States": [
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+    "Connecticut", "Delaware", "District of Columbia", "Florida", "Georgia",
+    "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky",
+    "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire",
+    "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota",
+    "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
+    "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont",
+    "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming",
+  ],
+  "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+  "United Arab Emirates": [
+    "Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al-Quwain",
+    "Ras Al Khaimah", "Fujairah",
+  ],
+  "Australia": [
+    "New South Wales", "Victoria", "Queensland", "Western Australia",
+    "South Australia", "Tasmania", "Australian Capital Territory",
+    "Northern Territory",
+  ],
+  "Bangladesh": [
+    "Barishal", "Chattogram", "Dhaka", "Khulna", "Mymensingh",
+    "Rajshahi", "Rangpur", "Sylhet",
+  ],
+  "Bahrain": ["Capital", "Muharraq", "Northern", "Southern"],
+  "Brazil": [
+    "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
+    "Distrito Federal", "Espírito Santo", "Goiás", "Maranhão",
+    "Mato Grosso", "Mato Grosso do Sul", "Minas Gerais", "Pará", "Paraíba",
+    "Paraná", "Pernambuco", "Piauí", "Rio de Janeiro", "Rio Grande do Norte",
+    "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina", "São Paulo",
+    "Sergipe", "Tocantins",
+  ],
+  "Canada": [
+    "Ontario", "Quebec", "British Columbia", "Alberta", "Manitoba",
+    "Saskatchewan", "Nova Scotia", "New Brunswick", "Newfoundland and Labrador",
+    "Prince Edward Island", "Northwest Territories", "Yukon", "Nunavut",
+  ],
+  "Switzerland": [
+    "Aargau", "Appenzell Ausserrhoden", "Appenzell Innerrhoden",
+    "Basel-Landschaft", "Basel-Stadt", "Bern", "Fribourg", "Geneva", "Glarus",
+    "Graubünden", "Jura", "Lucerne", "Neuchâtel", "Nidwalden", "Obwalden",
+    "Schaffhausen", "Schwyz", "Solothurn", "St. Gallen", "Thurgau", "Ticino",
+    "Uri", "Valais", "Vaud", "Zug", "Zürich",
+  ],
+  "China": [
+    "Anhui", "Beijing", "Chongqing", "Fujian", "Gansu", "Guangdong", "Guangxi",
+    "Guizhou", "Hainan", "Hebei", "Heilongjiang", "Henan", "Hubei", "Hunan",
+    "Inner Mongolia", "Jiangsu", "Jiangxi", "Jilin", "Liaoning", "Ningxia",
+    "Qinghai", "Shaanxi", "Shandong", "Shanghai", "Shanxi", "Sichuan", "Tianjin",
+    "Tibet", "Xinjiang", "Yunnan", "Zhejiang",
+  ],
+  "Denmark": [
+    "Capital Region of Denmark", "Central Denmark", "Northern Denmark",
+    "Region Zealand", "Southern Denmark",
+  ],
+  "Germany": [
+    "Baden-Württemberg", "Bavaria", "Berlin", "Brandenburg", "Bremen", "Hamburg",
+    "Hesse", "Lower Saxony", "Mecklenburg-Vorpommern", "North Rhine-Westphalia",
+    "Rhineland-Palatinate", "Saarland", "Saxony", "Saxony-Anhalt",
+    "Schleswig-Holstein", "Thuringia",
+  ],
+  "France": [
+    "Auvergne-Rhône-Alpes", "Bourgogne-Franche-Comté", "Bretagne",
+    "Centre-Val de Loire", "Corse", "Grand Est", "Hauts-de-France", "Île-de-France",
+    "Normandie", "Nouvelle-Aquitaine", "Occitanie", "Pays de la Loire",
+    "Provence-Alpes-Côte d'Azur", "Guadeloupe", "Martinique", "Guyane",
+    "La Réunion", "Mayotte",
+  ],
+  "Ireland": ["Connacht", "Leinster", "Munster", "Ulster"],
+  "Netherlands": [
+    "Drenthe", "Flevoland", "Friesland", "Gelderland", "Groningen", "Limburg",
+    "North Brabant", "North Holland", "Overijssel", "South Holland", "Utrecht",
+    "Zeeland",
+  ],
+  "Italy": [
+    "Abruzzo", "Apulia", "Basilicata", "Calabria", "Campania",
+    "Emilia-Romagna", "Friuli-Venezia Giulia", "Lazio", "Liguria", "Lombardy",
+    "Marche", "Molise", "Piedmont", "Sardinia", "Sicily", "Trentino-Alto Adige",
+    "Tuscany", "Umbria", "Valle d'Aosta", "Veneto",
+  ],
+  "Spain": [
+    "Andalusia", "Aragon", "Asturias", "Balearic Islands", "Basque Country",
+    "Canary Islands", "Cantabria", "Castile and León", "Castilla-La Mancha",
+    "Catalonia", "Community of Madrid", "Extremadura", "Galicia", "La Rioja",
+    "Murcia", "Navarre", "Valencian Community",
+  ],
+  "Belgium": [
+    "Antwerp", "Brussels", "East Flanders", "Flemish Brabant", "Hainaut",
+    "Liège", "Limburg", "Luxembourg", "Namur", "Walloon Brabant", "West Flanders",
+  ],
+  "Austria": [
+    "Burgenland", "Carinthia", "Lower Austria", "Salzburg", "Styria", "Tyrol",
+    "Upper Austria", "Vienna", "Vorarlberg",
+  ],
+  "Finland": [
+    "Åland", "Central Finland", "Central Ostrobothnia", "Kainuu", "Kanta-Häme",
+    "Kymenlaakso", "Lapland", "North Karelia", "North Ostrobothnia", "North Savo",
+    "Ostrobothnia", "Päijät-Häme", "Pirkanmaa", "Satakunta", "South Karelia",
+    "South Ostrobothnia", "South Savo", "Southwest Finland", "Uusimaa",
+  ],
+  "Portugal": ["Alentejo", "Algarve", "Azores", "Centro", "Lisboa", "Madeira", "Norte"],
+  "Greece": [
+    "Attica", "Central Greece", "Central Macedonia", "Crete",
+    "Eastern Macedonia and Thrace", "Epirus", "Ionian Islands", "North Aegean",
+    "Peloponnese", "South Aegean", "Thessaly", "Western Greece",
+    "Western Macedonia",
+  ],
+  "Ghana": [
+    "Ahafo", "Ashanti", "Bono", "Bono East", "Central", "Eastern",
+    "Greater Accra", "North East", "Northern", "Oti", "Savannah", "Upper East",
+    "Upper West", "Volta", "Western", "Western North",
+  ],
+  "Japan": [
+    "Hokkaido", "Aomori", "Iwate", "Miyagi", "Akita", "Yamagata", "Fukushima",
+    "Ibaraki", "Tochigi", "Gunma", "Saitama", "Chiba", "Tokyo", "Kanagawa",
+    "Niigata", "Toyama", "Ishikawa", "Fukui", "Yamanashi", "Nagano", "Gifu",
+    "Shizuoka", "Aichi", "Mie", "Shiga", "Kyoto", "Osaka", "Hyogo", "Nara",
+    "Wakayama", "Tottori", "Shimane", "Okayama", "Hiroshima", "Yamaguchi",
+    "Tokushima", "Kagawa", "Ehime", "Kochi", "Fukuoka", "Saga", "Nagasaki",
+    "Kumamoto", "Oita", "Miyazaki", "Kagoshima", "Okinawa",
+  ],
+  "Kenya": [
+    "Baringo", "Bomet", "Bungoma", "Busia", "Embu", "Garissa", "Homa Bay",
+    "Isiolo", "Kajiado", "Kakamega", "Kericho", "Kiambu", "Kilifi", "Kirinyaga",
+    "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", "Lamu", "Machakos",
+    "Makueni", "Mandera", "Marsabit", "Meru", "Migori", "Mombasa", "Murang'a",
+    "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", "Nyeri", "Samburu",
+    "Siaya", "Taita-Taveta", "Tana River", "Tharaka-Nithi", "Trans Nzoia",
+    "Turkana", "Uasin Gishu", "Vihiga", "Wajir", "West Pokot",
+  ],
+  "South Korea": [
+    "Busan", "Chungcheongbuk", "Chungcheongnam", "Daegu", "Daejeon", "Gangwon",
+    "Gwangju", "Gyeonggi", "Gyeongsangbuk", "Gyeongsangnam", "Incheon", "Jeju",
+    "Jeollabuk", "Jeollanam", "Sejong", "Seoul", "Ulsan",
+  ],
+  "Kuwait": [
+    "Al Asimah", "Ahmadi", "Farwaniya", "Hawalli", "Jahra", "Mubarak Al-Kabeer",
+  ],
+  "Sri Lanka": [
+    "Central", "Eastern", "North Central", "North Western", "Northern",
+    "Sabaragamuwa", "Southern", "Uva", "Western",
+  ],
+  "Mexico": [
+    "Aguascalientes", "Baja California", "Baja California Sur", "Campeche",
+    "Chiapas", "Chihuahua", "Coahuila", "Colima", "Durango", "Guanajuato",
+    "Guerrero", "Hidalgo", "Jalisco", "Mexico City", "Mexico State", "Michoacán",
+    "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro",
+    "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco",
+    "Tamaulipas", "Tlaxcala", "Veracruz", "Yucatán", "Zacatecas",
+  ],
+  "Malaysia": [
+    "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Melaka",
+    "Negeri Sembilan", "Pahang", "Penang", "Perak", "Perlis", "Putrajaya",
+    "Sabah", "Sarawak", "Selangor", "Terengganu",
+  ],
+  "Nigeria": [
+    "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
+    "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu",
+    "FCT Abuja", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi",
+    "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun",
+    "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara",
+  ],
+  "Norway": [
+    "Agder", "Innlandet", "Møre og Romsdal", "Nordland", "Oslo", "Rogaland",
+    "Troms og Finnmark", "Trøndelag", "Vestfold og Telemark", "Vestland", "Viken",
+  ],
+  "Nepal": [
+    "Bagmati", "Gandaki", "Karnali", "Koshi", "Lumbini", "Madhesh", "Sudurpashchim",
+  ],
+  "New Zealand": [
+    "Auckland", "Bay of Plenty", "Canterbury", "Gisborne", "Hawke's Bay",
+    "Manawatū-Whanganui", "Marlborough", "Nelson", "Northland", "Otago",
+    "Southland", "Taranaki", "Tasman", "Waikato", "Wellington", "West Coast",
+  ],
+  "Oman": [
+    "Ad Dakhiliyah", "Al Batinah North", "Al Batinah South", "Al Buraimi",
+    "Al Dhahirah", "Al Wusta", "Ash Sharqiyah North", "Ash Sharqiyah South",
+    "Dhofar", "Musandam", "Muscat",
+  ],
+  "Pakistan": [
+    "Azad Kashmir", "Balochistan", "Gilgit-Baltistan", "Islamabad Capital Territory",
+    "Khyber Pakhtunkhwa", "Punjab", "Sindh",
+  ],
+  "Qatar": [
+    "Al Daayen", "Al Khor", "Al Rayyan", "Al Shahaniya", "Al Wakrah",
+    "Al-Shamal", "Doha", "Umm Salal",
+  ],
+  "Rwanda": ["Kigali City", "Eastern Province", "Northern Province", "Southern Province", "Western Province"],
+  "Saudi Arabia": [
+    "Al-Baha", "Al-Jouf", "Asir", "Eastern Province", "Hail", "Jazan", "Madinah",
+    "Makkah", "Najran", "Northern Borders", "Qassim", "Riyadh", "Tabuk",
+  ],
+  "Sweden": [
+    "Blekinge", "Dalarna", "Gävleborg", "Gotland", "Halland", "Jämtland",
+    "Jönköping", "Kalmar", "Kronoberg", "Norrbotten", "Örebro", "Östergötland",
+    "Skåne", "Södermanland", "Stockholm", "Uppsala", "Värmland", "Västerbotten",
+    "Västernorrland", "Västmanland", "Västra Götaland",
+  ],
+  "Thailand": [
+    "Amnat Charoen", "Ang Thong", "Ayutthaya", "Bangkok", "Chachoengsao",
+    "Chaiyaphum", "Chanthaburi", "Chiang Mai", "Chiang Rai", "Chonburi",
+    "Chumphon", "Kalasin", "Kamphaeng Phet", "Kanchanaburi", "Khon Kaen",
+    "Krabi", "Lampang", "Lamphun", "Loei", "Lopburi", "Mae Hong Son",
+    "Maha Sarakham", "Mukdahan", "Nakhon Nayok", "Nakhon Pathom",
+    "Nakhon Phanom", "Nakhon Ratchasima", "Nakhon Sawan", "Nakhon Si Thammarat",
+    "Nan", "Narathiwat", "Nong Bua Lamphu", "Nong Khai", "Nonthaburi",
+    "Pathum Thani", "Pattani", "Phang Nga", "Phatthalung", "Phayao",
+    "Phetchabun", "Phetchaburi", "Phichit", "Phitsanulok", "Phrae", "Phuket",
+    "Prachinburi", "Prachuap Khiri Khan", "Ranong", "Ratchaburi", "Rayong",
+    "Roi Et", "Sa Kaeo", "Sakon Nakhon", "Samut Prakan", "Samut Sakhon",
+    "Samut Songkhram", "Saraburi", "Satun", "Sing Buri", "Sisaket", "Songkhla",
+    "Sukhothai", "Suphan Buri", "Surat Thani", "Surin", "Tak", "Trang", "Trat",
+    "Ubon Ratchathani", "Udon Thani", "Uthai Thani", "Uttaradit", "Yala", "Yasothon",
+  ],
+  "Tanzania": [
+    "Arusha", "Dar es Salaam", "Dodoma", "Geita", "Iringa", "Kagera", "Katavi",
+    "Kigoma", "Kilimanjaro", "Lindi", "Manyara", "Mara", "Mbeya", "Morogoro",
+    "Mtwara", "Mwanza", "Njombe", "Pemba North", "Pemba South", "Pwani",
+    "Rukwa", "Ruvuma", "Shinyanga", "Simiyu", "Singida", "Songwe", "Tabora",
+    "Tanga", "Zanzibar Central/South", "Zanzibar North", "Zanzibar Urban/West",
+  ],
+  "Uganda": [
+    "Arua", "Bushenyi", "Entebbe", "Fort Portal", "Gulu", "Iganga", "Jinja",
+    "Kabale", "Kampala", "Kasese", "Kira", "Lira", "Masaka", "Masindi", "Mbale",
+    "Mbarara", "Mityana", "Mukono", "Nansana", "Soroti", "Tororo", "Wakiso",
+  ],
+  "South Africa": [
+    "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo",
+    "Mpumalanga", "North West", "Northern Cape", "Western Cape",
+  ],
+};
+
+const TIMEZONES_BY_COUNTRY = {
+  "India": ["Asia/Kolkata"],
+  "United States": ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu"],
+  "United Kingdom": ["Europe/London"],
+  "United Arab Emirates": ["Asia/Dubai"],
+  "Australia": ["Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Adelaide", "Australia/Perth", "Australia/Darwin", "Australia/Hobart", "Australia/Canberra"],
+  "Bangladesh": ["Asia/Dhaka"],
+  "Bahrain": ["Asia/Bahrain"],
+  "Brazil": ["America/Sao_Paulo", "America/Manaus", "America/Cuiaba", "America/Rio_Branco", "America/Noronha"],
+  "Canada": ["America/Toronto", "America/Vancouver", "America/Edmonton", "America/Winnipeg", "America/Halifax", "America/St_Johns", "America/Regina", "America/Whitehorse", "America/Yellowknife", "America/Iqaluit"],
+  "Switzerland": ["Europe/Zurich"],
+  "China": ["Asia/Shanghai", "Asia/Chongqing", "Asia/Harbin", "Asia/Urumqi"],
+  "Denmark": ["Europe/Copenhagen"],
+  "Germany": ["Europe/Berlin"],
+  "France": ["Europe/Paris"],
+  "Ireland": ["Europe/Dublin"],
+  "Netherlands": ["Europe/Amsterdam"],
+  "Italy": ["Europe/Rome"],
+  "Spain": ["Europe/Madrid", "Atlantic/Canary"],
+  "Belgium": ["Europe/Brussels"],
+  "Austria": ["Europe/Vienna"],
+  "Finland": ["Europe/Helsinki"],
+  "Portugal": ["Europe/Lisbon", "Atlantic/Azores", "Atlantic/Madeira"],
+  "Greece": ["Europe/Athens"],
+  "Ghana": ["Africa/Accra"],
+  "Hong Kong": ["Asia/Hong_Kong"],
+  "Japan": ["Asia/Tokyo"],
+  "Kenya": ["Africa/Nairobi"],
+  "South Korea": ["Asia/Seoul"],
+  "Kuwait": ["Asia/Kuwait"],
+  "Sri Lanka": ["Asia/Colombo"],
+  "Mexico": ["America/Mexico_City", "America/Tijuana", "America/Chihuahua", "America/Merida", "America/Monterrey"],
+  "Malaysia": ["Asia/Kuala_Lumpur"],
+  "Nigeria": ["Africa/Lagos"],
+  "Norway": ["Europe/Oslo"],
+  "Nepal": ["Asia/Kathmandu"],
+  "New Zealand": ["Pacific/Auckland", "Pacific/Chatham"],
+  "Oman": ["Asia/Muscat"],
+  "Pakistan": ["Asia/Karachi"],
+  "Qatar": ["Asia/Qatar"],
+  "Rwanda": ["Africa/Kigali"],
+  "Saudi Arabia": ["Asia/Riyadh"],
+  "Sweden": ["Europe/Stockholm"],
+  "Singapore": ["Asia/Singapore"],
+  "Thailand": ["Asia/Bangkok"],
+  "Tanzania": ["Africa/Dar_es_Salaam"],
+  "Uganda": ["Africa/Kampala"],
+  "South Africa": ["Africa/Johannesburg"],
+};
+
+export function getStatesForCountryName(country) {
+  if (!country) return [];
+  return STATES_BY_COUNTRY[country] || [];
+}
+
+export function getTimezonesForCountryName(country) {
+  if (!country) return [];
+  return TIMEZONES_BY_COUNTRY[country] || [];
+}
+
+export function getDefaultTimezoneForCountry(country) {
+  const zones = getTimezonesForCountryName(country);
+  return zones.length ? zones[0] : "";
+}

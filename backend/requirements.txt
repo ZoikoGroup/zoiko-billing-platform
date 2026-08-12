@@ -1,0 +1,32 @@
+# Zoiko Billing Platform — backend dependencies
+# Standalone platform: no payroll/HR modules, no alembic (create_all bootstrap).
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+sqlalchemy>=2.0.31
+psycopg[binary]>=3.1.18
+
+python-dotenv==1.0.1
+pydantic[email]>=2.7.1
+pydantic-settings>=2.2.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.9
+pillow>=10.0.0
+
+# Invoice/quote/credit-note/refund/write-off PDF generation (pdf_service.py),
+# plus httpx for fetching an org's logo image to embed in those PDFs.
+reportlab>=4.0.0
+httpx>=0.27.0
+
+# Stripe Checkout/webhooks (services/stripe_service.py, routers/stripe_router.py,
+# routers/webhook_router.py). Inert until STRIPE_* env vars are set.
+stripe>=9.0.0
+
+slowapi
+cachetools
+openpyxl
+email-validator
+apscheduler>=3.10,<4
+certifi>=2024.2.2
+cryptography>=42.0.0

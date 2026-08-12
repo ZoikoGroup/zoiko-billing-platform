@@ -1,0 +1,254 @@
+import React, { Suspense, lazy } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+
+import ProtectedRoute from "./components/ProtectedRoute";
+import BillingShell from "./components/BillingShell";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import RegistrationSuccessPage from "./pages/RegistrationSuccessPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import OrgPortalPage from "./pages/OrgPortalPage";
+import DashboardPage from "./pages/DashboardPage";
+import UsersPage from "./pages/UsersPage";
+import OrganizationsPage from "./pages/OrganizationsPage";
+import SettingsPage from "./pages/SettingsPage";
+import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
+import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
+import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
+import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
+
+const BillingDashboard = lazy(() => import("./modules/billing/dashboard/dashboard"));
+const ReportsPage = lazy(() => import("./modules/billing/dashboard/reports"));
+const ForecastReport = lazy(() => import("./modules/billing/dashboard/forecast-report"));
+const BillingSettingsPage = lazy(() => import("./modules/billing/dashboard/settings"));
+const CustomerDashboardPage = lazy(() => import("./modules/billing/customers/customer-dashboard"));
+const CustomerListPage = lazy(() => import("./modules/billing/customers/customer-list"));
+const CustomerProfilePage = lazy(() => import("./modules/billing/customers/customer-profile"));
+const CustomerBillingHistoryPage = lazy(() => import("./modules/billing/customers/billing-history"));
+const CustomerReportsPage = lazy(() => import("./modules/billing/customers/reports"));
+const CustomerProfitabilityReport = lazy(() => import("./modules/billing/customers/profitability-report"));
+const CustomerSettingsPage = lazy(() => import("./modules/billing/customers/settings"));
+const ProductDashboardPage = lazy(() => import("./modules/billing/products/dashboard"));
+const ProductListPage = lazy(() => import("./modules/billing/products/product-list"));
+const ProductProfilePage = lazy(() => import("./modules/billing/products/product-profile"));
+const ProductCategoriesPage = lazy(() => import("./modules/billing/products/categories"));
+const UsageBillingPage = lazy(() => import("./modules/billing/products/usage-billing"));
+const ProductPricingPlansPage = lazy(() => import("./modules/billing/products/pricing-plans"));
+const ProductReportsPage = lazy(() => import("./modules/billing/products/reports"));
+const ProductSettingsPage = lazy(() => import("./modules/billing/products/settings"));
+const PricingDashboardPage = lazy(() => import("./modules/billing/pricing/dashboard"));
+const PricingPlansPage = lazy(() => import("./modules/billing/pricing/pricing-plans"));
+const TierManagementPage = lazy(() => import("./modules/billing/pricing/tier-management"));
+const PricingReportsPage = lazy(() => import("./modules/billing/pricing/reports"));
+const PricingSettingsPage = lazy(() => import("./modules/billing/pricing/settings"));
+const PriceListsPage = lazy(() => import("./modules/billing/pricing/price-lists"));
+const PricingRulesPage = lazy(() => import("./modules/billing/pricing/pricing-rules"));
+const DiscountEnginePage = lazy(() => import("./modules/billing/pricing/discount-engine"));
+const CurrencyPricingPage = lazy(() => import("./modules/billing/pricing/currency-pricing"));
+const TaxPricingPage = lazy(() => import("./modules/billing/pricing/tax-pricing"));
+const QuotationListPage = lazy(() => import("./modules/billing/quotations/quotation-list"));
+const QuotationDashboardPage = lazy(() => import("./modules/billing/quotations/dashboard"));
+const QuotationDetailPage = lazy(() => import("./modules/billing/quotations/quotation-detail"));
+const QuotationWizardPage = lazy(() => import("./modules/billing/quotations/quotation-create"));
+const QuotationReportsPage = lazy(() => import("./modules/billing/quotations/reports"));
+const QuotationSettingsPage = lazy(() => import("./modules/billing/quotations/settings"));
+const ContractListPage = lazy(() => import("./modules/billing/contracts/contract-list"));
+const ContractDashboardPage = lazy(() => import("./modules/billing/contracts/dashboard"));
+const ContractDetailPage = lazy(() => import("./modules/billing/contracts/contract-detail"));
+const ContractCreateWizardPage = lazy(() => import("./modules/billing/contracts/contract-create"));
+const ContractEditPage = lazy(() => import("./modules/billing/contracts/contract-edit"));
+const ContractReportsPage = lazy(() => import("./modules/billing/contracts/reports"));
+const ContractSettingsPage = lazy(() => import("./modules/billing/contracts/settings"));
+const RetainersPage = lazy(() => import("./modules/billing/contracts/retainers"));
+const SubscriptionsPage = lazy(() => import("./modules/billing/subscriptions/subscription-list"));
+const SubscriptionDashboardPage = lazy(() => import("./modules/billing/subscriptions/dashboard"));
+const SubscriptionDetailPage = lazy(() => import("./modules/billing/subscriptions/subscription-detail"));
+const CreateSubscriptionWizardPage = lazy(() => import("./modules/billing/subscriptions/subscription-create"));
+const SubscriptionReportsPage = lazy(() => import("./modules/billing/subscriptions/reports"));
+const SubscriptionSettingsPage = lazy(() => import("./modules/billing/subscriptions/settings"));
+const InvoiceSchedulesPage = lazy(() => import("./modules/billing/subscriptions/invoice-schedules"));
+const InvoicingPage = lazy(() => import("./modules/billing/invoicing/invoice-list"));
+const InvoiceDashboardPage = lazy(() => import("./modules/billing/invoicing/invoice-dashboard"));
+const CreateInvoiceWizardPage = lazy(() => import("./modules/billing/invoicing/create-invoice-wizard"));
+const InvoiceDetailPage = lazy(() => import("./modules/billing/invoicing/invoice-detail"));
+const CreditNotesPage = lazy(() => import("./modules/billing/invoicing/credit-notes"));
+const CreditNoteDashboardPage = lazy(() => import("./modules/billing/invoicing/credit-note-dashboard"));
+const CreditNoteDetailPage = lazy(() => import("./modules/billing/invoicing/credit-note-detail"));
+const InvoiceReportsPage = lazy(() => import("./modules/billing/invoicing/reports"));
+const InvoiceSettingsPage = lazy(() => import("./modules/billing/invoicing/settings"));
+const MoneyInPage = lazy(() => import("./modules/billing/payments/payment-list"));
+const PaymentDashboardPage = lazy(() => import("./modules/billing/payments/payment-dashboard"));
+const PaymentDetailPage = lazy(() => import("./modules/billing/payments/payment-detail"));
+const PaymentReportsPage = lazy(() => import("./modules/billing/payments/reports"));
+const PaymentSettingsPage = lazy(() => import("./modules/billing/payments/settings"));
+const CollectionsReceivablesPage = lazy(() => import("./modules/billing/payments/collections-receivables"));
+const CollectionsDashboardPage = lazy(() => import("./modules/billing/payments/collections-dashboard"));
+const CollectionsCaseDetailPage = lazy(() => import("./modules/billing/payments/collections-case-detail"));
+const DunningPage = lazy(() => import("./modules/billing/payments/dunning"));
+const DunningCaseDetailPage = lazy(() => import("./modules/billing/payments/dunning-case-detail"));
+const DunningLevelsPage = lazy(() => import("./modules/billing/payments/dunning-levels"));
+const PromiseToPayPage = lazy(() => import("./modules/billing/payments/promise-to-pay"));
+const CreditsPage = lazy(() => import("./modules/billing/payments/credits"));
+const RefundsPage = lazy(() => import("./modules/billing/payments/refunds"));
+const RefundDashboardPage = lazy(() => import("./modules/billing/payments/refund-dashboard"));
+const RefundDetailPage = lazy(() => import("./modules/billing/payments/refund-detail"));
+const WriteOffsPage = lazy(() => import("./modules/billing/payments/write-offs"));
+const WriteOffDashboardPage = lazy(() => import("./modules/billing/payments/write-off-dashboard"));
+const WriteOffDetailPage = lazy(() => import("./modules/billing/payments/write-off-detail"));
+const TaxPage = lazy(() => import("./modules/billing/tax/tax-rates"));
+const TaxDashboardPage = lazy(() => import("./modules/billing/tax/dashboard"));
+const TaxConfigurationPage = lazy(() => import("./modules/billing/tax/tax-configuration"));
+const TaxReportsPage = lazy(() => import("./modules/billing/tax/reports"));
+const TaxSettingsPage = lazy(() => import("./modules/billing/tax/settings"));
+
+const BILLING_ROUTES = [
+  { path: "/billing", element: <BillingDashboard /> },
+  { path: "/billing/reports", element: <ReportsPage /> },
+  { path: "/billing/reports/forecast", element: <ForecastReport /> },
+  { path: "/billing/settings", element: <BillingSettingsPage /> },
+  { path: "/billing/customers", element: <CustomerListPage /> },
+  { path: "/billing/customers/dashboard", element: <CustomerDashboardPage /> },
+  { path: "/billing/customers/:id", element: <CustomerProfilePage /> },
+  { path: "/billing/customers/billing-history", element: <CustomerBillingHistoryPage /> },
+  { path: "/billing/customers/reports", element: <CustomerReportsPage /> },
+  { path: "/billing/customers/profitability", element: <CustomerProfitabilityReport /> },
+  { path: "/billing/customers/settings", element: <CustomerSettingsPage /> },
+  { path: "/billing/products", element: <ProductListPage /> },
+  { path: "/billing/products/:id", element: <ProductProfilePage /> },
+  { path: "/billing/products/dashboard", element: <ProductDashboardPage /> },
+  { path: "/billing/products/categories", element: <ProductCategoriesPage /> },
+  { path: "/billing/products/pricing-plans", element: <ProductPricingPlansPage /> },
+  { path: "/billing/products/reports", element: <ProductReportsPage /> },
+  { path: "/billing/products/settings", element: <ProductSettingsPage /> },
+  { path: "/billing/usage-billing", element: <UsageBillingPage /> },
+  { path: "/billing/pricing", element: <PricingPlansPage /> },
+  { path: "/billing/pricing/dashboard", element: <PricingDashboardPage /> },
+  { path: "/billing/pricing/tier-management", element: <TierManagementPage /> },
+  { path: "/billing/pricing/reports", element: <PricingReportsPage /> },
+  { path: "/billing/pricing/settings", element: <PricingSettingsPage /> },
+  { path: "/billing/pricing/price-lists", element: <PriceListsPage /> },
+  { path: "/billing/pricing/pricing-rules", element: <PricingRulesPage /> },
+  { path: "/billing/pricing/discounts", element: <DiscountEnginePage /> },
+  { path: "/billing/pricing/currency-pricing", element: <CurrencyPricingPage /> },
+  { path: "/billing/pricing/tax-pricing", element: <TaxPricingPage /> },
+  { path: "/billing/quotations", element: <QuotationListPage /> },
+  { path: "/billing/quotations/dashboard", element: <QuotationDashboardPage /> },
+  { path: "/billing/quotations/create", element: <QuotationWizardPage /> },
+  { path: "/billing/quotations/:id", element: <QuotationDetailPage /> },
+  { path: "/billing/quotations/reports", element: <QuotationReportsPage /> },
+  { path: "/billing/quotations/settings", element: <QuotationSettingsPage /> },
+  { path: "/billing/contracts", element: <ContractListPage /> },
+  { path: "/billing/contracts/dashboard", element: <ContractDashboardPage /> },
+  { path: "/billing/contracts/create", element: <ContractCreateWizardPage /> },
+  { path: "/billing/contracts/:id", element: <ContractDetailPage /> },
+  { path: "/billing/contracts/:id/edit", element: <ContractEditPage /> },
+  { path: "/billing/contracts/reports", element: <ContractReportsPage /> },
+  { path: "/billing/contracts/settings", element: <ContractSettingsPage /> },
+  { path: "/billing/retainers", element: <RetainersPage /> },
+  { path: "/billing/subscriptions", element: <SubscriptionsPage /> },
+  { path: "/billing/subscriptions/dashboard", element: <SubscriptionDashboardPage /> },
+  { path: "/billing/subscriptions/create", element: <CreateSubscriptionWizardPage /> },
+  { path: "/billing/subscriptions/:id", element: <SubscriptionDetailPage /> },
+  { path: "/billing/subscriptions/reports", element: <SubscriptionReportsPage /> },
+  { path: "/billing/subscriptions/settings", element: <SubscriptionSettingsPage /> },
+  { path: "/billing/invoices", element: <InvoicingPage /> },
+  { path: "/billing/invoices/dashboard", element: <InvoiceDashboardPage /> },
+  { path: "/billing/invoices/create", element: <CreateInvoiceWizardPage /> },
+  { path: "/billing/invoices/:id", element: <InvoiceDetailPage /> },
+  { path: "/billing/invoices/settings", element: <InvoiceSettingsPage /> },
+  { path: "/billing/invoice-schedules", element: <InvoiceSchedulesPage /> },
+  { path: "/billing/invoicing/reports", element: <InvoiceReportsPage /> },
+  { path: "/billing/tax", element: <TaxPage /> },
+  { path: "/billing/tax/dashboard", element: <TaxDashboardPage /> },
+  { path: "/billing/tax/configuration", element: <TaxConfigurationPage /> },
+  { path: "/billing/tax/reports", element: <TaxReportsPage /> },
+  { path: "/billing/tax/settings", element: <TaxSettingsPage /> },
+  { path: "/billing/collections-receivables", element: <CollectionsReceivablesPage /> },
+  { path: "/billing/collections/dashboard", element: <CollectionsDashboardPage /> },
+  { path: "/billing/collections/:id", element: <CollectionsCaseDetailPage /> },
+  { path: "/billing/promise-to-pay", element: <PromiseToPayPage /> },
+  { path: "/billing/credit-notes", element: <CreditNotesPage /> },
+  { path: "/billing/credit-notes/dashboard", element: <CreditNoteDashboardPage /> },
+  { path: "/billing/credit-notes/:id", element: <CreditNoteDetailPage /> },
+  { path: "/billing/dunning", element: <DunningPage /> },
+  { path: "/billing/dunning/levels", element: <DunningLevelsPage /> },
+  { path: "/billing/dunning/:id", element: <DunningCaseDetailPage /> },
+  { path: "/billing/payments", element: <MoneyInPage /> },
+  { path: "/billing/payments/dashboard", element: <PaymentDashboardPage /> },
+  { path: "/billing/payments/:id", element: <PaymentDetailPage /> },
+  { path: "/billing/payments/reports", element: <PaymentReportsPage /> },
+  { path: "/billing/payments/settings", element: <PaymentSettingsPage /> },
+  { path: "/billing/credits", element: <CreditsPage /> },
+  { path: "/billing/refunds", element: <RefundsPage /> },
+  { path: "/billing/refunds/dashboard", element: <RefundDashboardPage /> },
+  { path: "/billing/refunds/:id", element: <RefundDetailPage /> },
+  { path: "/billing/write-offs", element: <WriteOffsPage /> },
+  { path: "/billing/write-offs/dashboard", element: <WriteOffDashboardPage /> },
+  { path: "/billing/write-offs/:id", element: <WriteOffDetailPage /> },
+];
+
+function ModuleSpinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#F8F7F4]">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#FF7A00] border-t-transparent" />
+    </div>
+  );
+}
+
+function LandingRedirect() {
+  const user = JSON.parse(localStorage.getItem("zoiko_billing_user") || "null");
+  if (user?.role && user.role !== "super_admin") {
+    const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/billing";
+    return <Navigate to={target} replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+}
+
+export default function App() {
+  return (
+    <Suspense fallback={<ModuleSpinner />}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register/success" element={<RegistrationSuccessPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/portal" element={<OrgPortalPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/organizations" element={<OrganizationsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          {BILLING_ROUTES.map(({ path, element }) => (
+            <Route key={path} path={path} element={<BillingShell>{element}</BillingShell>} />
+          ))}
+          <Route
+            path="/organization-admin/dashboard"
+            element={
+              <BillingShell>
+                <OrgAdminDashboardPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/organization-admin/organization"
+            element={
+              <BillingShell>
+                <OrgAdminOrganizationPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/organization-admin/users"
+            element={
+              <BillingShell>
+                <OrgAdminUserManagementPage />
+              </BillingShell>
+            }
+          />
+          <Route path="/" element={<LandingRedirect />} />
+        </Route>
+        <Route path="*" element={<LandingRedirect />} />
+      </Routes>
+    </Suspense>
+  );
+}

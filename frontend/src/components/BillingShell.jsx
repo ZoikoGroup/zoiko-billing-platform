@@ -1,0 +1,330 @@
+import { useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import {
+  X,
+  Menu,
+  LogOut,
+  ChevronDown,
+  LayoutDashboard,
+  FileText,
+  TrendingUp,
+  SlidersHorizontal,
+  Users,
+  History,
+  Package,
+  Tags,
+  CreditCard,
+  Layers,
+  ListFilter,
+  Percent,
+  DollarSign,
+  Landmark,
+  FileSignature,
+  CircleDollarSign,
+  UserCheck,
+  Plus,
+  Calendar,
+  ClipboardCheck,
+  Receipt,
+  WalletCards,
+  Undo2,
+  ScrollText,
+  ClipboardList,
+  HandCoins,
+  Settings,
+  Building2,
+  UserCog,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { ROLE_LABELS } from "../config/roles";
+
+// Billing product navigation tree for the standalone platform.
+const NAV_SECTIONS = [
+  {
+    label: "Organization",
+    icon: Building2,
+    orgAdminOnly: true,
+    children: [
+      { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard },
+      { label: "Organization", href: "/organization-admin/organization", icon: Building2 },
+      { label: "User Management", href: "/organization-admin/users", icon: UserCog },
+    ],
+  },
+  {
+    label: "Overview",
+    icon: LayoutDashboard,
+    children: [
+      { label: "Dashboard", href: "/billing", icon: LayoutDashboard },
+      { label: "Reports", href: "/billing/reports", icon: FileText },
+      { label: "Forecast", href: "/billing/reports/forecast", icon: TrendingUp },
+      { label: "Settings", href: "/billing/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Customers",
+    icon: Users,
+    children: [
+      { label: "Dashboard", href: "/billing/customers/dashboard", icon: LayoutDashboard },
+      { label: "Customer List", href: "/billing/customers", icon: Users },
+      { label: "Billing History", href: "/billing/customers/billing-history", icon: History },
+      { label: "Reports", href: "/billing/customers/reports", icon: FileText },
+      { label: "Profitability", href: "/billing/customers/profitability", icon: TrendingUp },
+      { label: "Settings", href: "/billing/customers/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Products",
+    icon: Package,
+    children: [
+      { label: "Dashboard", href: "/billing/products/dashboard", icon: LayoutDashboard },
+      { label: "Product List", href: "/billing/products", icon: Package },
+      { label: "Categories", href: "/billing/products/categories", icon: Tags },
+      { label: "Usage Billing", href: "/billing/usage-billing", icon: TrendingUp },
+      { label: "Pricing Plans", href: "/billing/products/pricing-plans", icon: CreditCard },
+      { label: "Reports", href: "/billing/products/reports", icon: FileText },
+      { label: "Settings", href: "/billing/products/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Pricing",
+    icon: Tags,
+    children: [
+      { label: "Dashboard", href: "/billing/pricing/dashboard", icon: LayoutDashboard },
+      { label: "Price Lists", href: "/billing/pricing/price-lists", icon: Tags },
+      { label: "Pricing Plans", href: "/billing/pricing", icon: CreditCard },
+      { label: "Tier Management", href: "/billing/pricing/tier-management", icon: Layers },
+      { label: "Pricing Rules", href: "/billing/pricing/pricing-rules", icon: ListFilter },
+      { label: "Discount Engine", href: "/billing/pricing/discounts", icon: Percent },
+      { label: "Currency Pricing", href: "/billing/pricing/currency-pricing", icon: DollarSign },
+      { label: "Tax Pricing", href: "/billing/pricing/tax-pricing", icon: Landmark },
+      { label: "Reports", href: "/billing/pricing/reports", icon: FileText },
+      { label: "Settings", href: "/billing/pricing/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Quotations",
+    icon: FileText,
+    children: [
+      { label: "Dashboard", href: "/billing/quotations/dashboard", icon: LayoutDashboard },
+      { label: "Quotation List", href: "/billing/quotations", icon: FileText },
+      { label: "Reports", href: "/billing/quotations/reports", icon: FileText },
+      { label: "Settings", href: "/billing/quotations/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Contracts",
+    icon: FileSignature,
+    children: [
+      { label: "Dashboard", href: "/billing/contracts/dashboard", icon: LayoutDashboard },
+      { label: "Contract List", href: "/billing/contracts", icon: FileSignature },
+      { label: "Retainers", href: "/billing/retainers", icon: CircleDollarSign },
+      { label: "Reports", href: "/billing/contracts/reports", icon: FileText },
+      { label: "Settings", href: "/billing/contracts/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Subscriptions",
+    icon: UserCheck,
+    children: [
+      { label: "Dashboard", href: "/billing/subscriptions/dashboard", icon: LayoutDashboard },
+      { label: "Subscription List", href: "/billing/subscriptions", icon: UserCheck },
+      { label: "Create Subscription", href: "/billing/subscriptions/create", icon: Plus },
+      { label: "Reports", href: "/billing/subscriptions/reports", icon: FileText },
+      { label: "Settings", href: "/billing/subscriptions/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Invoicing",
+    icon: CreditCard,
+    children: [
+      { label: "Invoice Dashboard", href: "/billing/invoices/dashboard", icon: LayoutDashboard },
+      { label: "Create Invoice", href: "/billing/invoices/create", icon: Plus },
+      { label: "Invoice List", href: "/billing/invoices", icon: CreditCard },
+      { label: "Invoice Schedule", href: "/billing/invoice-schedules", icon: Calendar },
+      { label: "Credit Notes", href: "/billing/credit-notes", icon: ClipboardCheck },
+      { label: "Credit Note Dashboard", href: "/billing/credit-notes/dashboard", icon: LayoutDashboard },
+      { label: "Reports", href: "/billing/invoicing/reports", icon: FileText },
+      { label: "Settings", href: "/billing/invoices/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Payments",
+    icon: Receipt,
+    children: [
+      { label: "Payment List", href: "/billing/payments", icon: Receipt },
+      { label: "Payment Dashboard", href: "/billing/payments/dashboard", icon: LayoutDashboard },
+      { label: "Receivables & Collections", href: "/billing/collections-receivables", icon: WalletCards },
+      { label: "Credits", href: "/billing/credits", icon: CircleDollarSign },
+      { label: "Refunds", href: "/billing/refunds", icon: Undo2 },
+      { label: "Refund Dashboard", href: "/billing/refunds/dashboard", icon: LayoutDashboard },
+      { label: "Write-offs", href: "/billing/write-offs", icon: ScrollText },
+      { label: "Write-off Dashboard", href: "/billing/write-offs/dashboard", icon: LayoutDashboard },
+      { label: "Dunning", href: "/billing/dunning", icon: ClipboardList },
+      { label: "Dunning Levels", href: "/billing/dunning/levels", icon: Layers },
+      { label: "Promise to Pay", href: "/billing/promise-to-pay", icon: HandCoins },
+      { label: "Collections Dashboard", href: "/billing/collections/dashboard", icon: LayoutDashboard },
+      { label: "Reports", href: "/billing/payments/reports", icon: FileText },
+      { label: "Settings", href: "/billing/payments/settings", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: "Tax",
+    icon: CircleDollarSign,
+    children: [
+      { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
+      { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
+      { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
+      { label: "Reports", href: "/billing/tax/reports", icon: FileText },
+      { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
+    ],
+  },
+];
+
+function isActive(href, pathname, search = "") {
+  if (!href) return false;
+  const cleanHref = href.split(/[?#]/)[0];
+  const hrefSearch = href.includes("?") ? `?${href.split("?")[1].split("#")[0]}` : "";
+  if (cleanHref === "/billing") return pathname === "/billing" && (!hrefSearch || search === hrefSearch);
+  if (hrefSearch) return pathname === cleanHref && search === hrefSearch;
+  return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
+}
+
+function MenuItem({ item, pathname, search, onNavigate }) {
+  const hasActiveChild = item.children
+    ? item.children.some((child) => isActive(child.href, pathname, search))
+    : false;
+  const [expanded, setExpanded] = useState(hasActiveChild);
+
+  const active = isActive(item.href, pathname, search) || hasActiveChild;
+
+  if (item.children) {
+    return (
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
+            active
+              ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
+              : "border-white/10 bg-white/5 text-[#D6D0EF] hover:border-white/20 hover:bg-white/10"
+          }`}
+        >
+          <span className="inline-flex items-center gap-3">
+            <item.icon className={`h-4 w-4 transition duration-200 ${active ? "text-white" : "text-[#B2ACC8]"}`} />
+            <span>{item.label}</span>
+          </span>
+          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180 text-white" : "text-[#9C95BF]"}`} />
+        </button>
+        {expanded ? (
+          <div className="space-y-2 pl-5">
+            {item.children.map((child) => (
+              <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <NavLink
+      to={item.href ?? "/billing"}
+      end
+      onClick={onNavigate}
+      className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm transition duration-200 ${
+        isActive(item.href, pathname, search)
+          ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
+          : "border-white/10 bg-white/5 text-[#B2ACC8] hover:border-white/20 hover:bg-white/10 hover:text-white"
+      }`}
+    >
+      <item.icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1 truncate">{item.label}</span>
+    </NavLink>
+  );
+}
+
+function SidebarContent({ onNavigate, role }) {
+  const { pathname, search } = useLocation();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="mb-8 flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <Link to="/billing" onClick={onNavigate} className="text-[22px] font-extrabold tracking-tight text-white">
+            <span>Zoiko</span>
+            <span className="text-[#FC7800]">Billing</span>
+          </Link>
+          {ROLE_LABELS[role] ? (
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#B2ACC8]">
+              {ROLE_LABELS[role]}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onNavigate}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white transition hover:border-white/20 hover:bg-white/10 lg:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="space-y-7 overflow-y-auto pb-8">
+        {NAV_SECTIONS.filter((section) => !section.orgAdminOnly || role !== "billing_admin").map((section) => (
+          <MenuItem key={section.label} item={section} pathname={pathname} search={search} onNavigate={onNavigate} />
+        ))}
+      </div>
+
+      <div className="mt-auto space-y-4">
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            navigate("/login", { replace: true });
+          }}
+          className="flex w-full items-center gap-3 rounded-[14px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-[#B2ACC8] transition duration-200 hover:border-[#FF6E86]/40 hover:bg-[#FF6E86]/10 hover:text-white"
+        >
+          <LogOut className="h-4 w-4" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function BillingShell({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { role } = useAuth();
+
+  return (
+    <div className="min-h-screen bg-[#F8F7F4]">
+      <div
+        className={`fixed inset-0 z-30 bg-slate-950/40 transition-opacity lg:hidden ${
+          sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 overflow-y-auto border-r border-white/10 bg-gradient-to-b from-[#1F0B63] to-[#160845] px-4 py-6 shadow-[0_24px_80px_rgba(8,6,37,0.42)] transition-transform lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
+      </aside>
+
+      <div className="lg:pl-72">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="fixed top-4 left-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E5E0D9] bg-white text-[#6B6560] shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <main className="w-full">{children}</main>
+      </div>
+    </div>
+  );
+}

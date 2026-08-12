@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: billing
+      POSTGRES_DB: zoiko_billing
+    ports:
+      - "5432:5432"
+    volumes:
+      - billing_db_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    # Host port matches the frontend's baked-in VITE_API_BASE_URL (frontend/.env).
+    # Vite reads that value at build time, so if you change this port, update
+    # frontend/.env and rebuild the frontend image to match.
+    ports:
+      - "8001:8000"
+    environment:
+      BILLING_DATABASE_URL: postgresql+psycopg://billing:billing@db:5432/zoiko_billing
+      BILLING_SECRET_KEY: change-me-to-a-long-random-string
+      FRONTEND_URL: http://localhost:5173
+      BILLING_CORS_ORIGINS: http://localhost:5173
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  billing_db_data:
