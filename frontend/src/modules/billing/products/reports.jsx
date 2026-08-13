@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Download, RefreshCw, DollarSign, TrendingUp, PieChart as PieChartIcon, BarChart3, Box } from "lucide-react";
+import { Download, RefreshCw, DollarSign, TrendingUp, PieChart as PieChartIcon, BarChart3, Box, UserMinus, UserPlus, CalendarClock } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -11,6 +11,12 @@ import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportM
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 
 const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
+
+const PRESETS = [
+  { id: "this_month", label: "This Month" },
+  { id: "this_quarter", label: "Last Quarter" },
+  { id: "custom", label: "Custom" },
+];
 
 const TABS = [
   { key: "revenue", label: "Revenue", icon: DollarSign },
@@ -144,6 +150,29 @@ export default function ProductReportsPage() {
     { name: "Expired", value: fSubscriptions.filter((s) => s.status === "expired").length, color: "#94a3b8" },
   ].filter((d) => d.value > 0);
 
+  const subChurn = useMemo(() => {
+    const total = fSubscriptions.length;
+    const cancelled = fSubscriptions.filter((s) => s.status === "cancelled" || s.status === "expired").length;
+    const active = fSubscriptions.filter((s) => s.status === "active").length;
+    const churnRate = total ? (cancelled / total) * 100 : 0;
+    const retentionRate = total ? ((total - cancelled) / total) * 100 : 0;
+    return { total, cancelled, active, churnRate, retentionRate };
+  }, [fSubscriptions]);
+
+  const subTrend = useMemo(() => {
+    const months = {};
+    const key = (d) => { const dt = new Date(d); return isNaN(dt) ? "" : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`; };
+    fSubscriptions.forEach((s) => { const k = key(s.created_at); if (k) { months[k] = months[k] || { month: k, added: 0, churned: 0 }; months[k].added += 1; } });
+    fSubscriptions.forEach((s) => {
+      if (s.status === "cancelled" || s.status === "expired") {
+        const k = key(s.cancelled_at || s.cancelled_date || s.end_date);
+        if (k) { months[k] = months[k] || { month: k, added: 0, churned: 0 }; months[k].churned += 1; }
+      }
+    });
+    const order = Object.keys(months).sort().slice(-12);
+    return order.map((k) => ({ month: k, added: months[k].added, churned: months[k].churned }));
+  }, [fSubscriptions]);
+
   const [exportLoading, setExportLoading] = useState(null);
   const handleExcelExport = async () => {
     setExportLoading('excel');
@@ -183,6 +212,20 @@ export default function ProductReportsPage() {
 
   return (
     <HRPage title="Product Reports" subtitle="Product analytics and reporting">
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1">
+          <CalendarClock size={14} /> Quick ranges
+        </span>
+        {PRESETS.map((preset) => (
+          <button key={preset.id} onClick={() => setRange(preset.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              range === preset.id ? "bg-brand-600 text-white border-brand-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:bg-brand-50 hover:text-brand-700"
+            }`}>
+            {preset.label}
+          </button>
+        ))}
+      </div>
 
       <div className="flex items-center justify-between mb-6">
         {renderTabNav()}
@@ -331,6 +374,50 @@ export default function ProductReportsPage() {
                       </Pie>
                       <Tooltip />
                     </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <UserPlus size={14} className="text-brand-600" /> Active Subs
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{subChurn.active}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <UserMinus size={14} className="text-red-500" /> Churned
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{subChurn.cancelled}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Churn Rate</p>
+                  <p className={`text-2xl font-bold mt-1 ${subChurn.churnRate > 10 ? "text-red-600" : "text-emerald-600"}`}>{subChurn.churnRate.toFixed(1)}%</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{subChurn.cancelled} of {subChurn.total} subscriptions</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Retention Rate</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{subChurn.retentionRate.toFixed(1)}%</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Expansion health</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Subscription Growth & Churn</h3>
+                <p className="text-xs text-gray-400 mb-4">Monthly additions vs churned subscriptions</p>
+                {subTrend.length === 0 ? (
+                  <EmptyState icon={TrendingUp} title="No subscription history" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={subTrend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey="added" stroke="#10b981" fill="#a7f3d0" strokeWidth={2} name="Added" />
+                      <Area type="monotone" dataKey="churned" stroke="#ef4444" fill="#fecaca" strokeWidth={2} name="Churned" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 )}
               </div>
