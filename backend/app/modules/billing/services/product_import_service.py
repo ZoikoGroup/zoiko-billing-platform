@@ -760,11 +760,14 @@ class ProductImportService:
 
         if ids:
             existing_ids = {p.id for p in self.repo.get_by_ids(ids, organization_id)}
-            products = [
-                product_svc.get_product(pid, organization_id)
-                for pid in ids
-                if pid in existing_ids
-            ]
+            # Preserve the caller's ordering but never emit the same product
+            # twice for a duplicated id in the selection.
+            seen = set()
+            products = []
+            for pid in ids:
+                if pid in existing_ids and pid not in seen:
+                    seen.add(pid)
+                    products.append(product_svc.get_product(pid, organization_id))
         else:
             result = product_svc.list_products(
                 organization_id=organization_id,

@@ -332,6 +332,18 @@ class CreditNoteService:
     def void_credit_note(self, cn_id: int, organization_id: int, reason: Optional[str] = None, updated_by: int = None) -> CreditNote:
         cn = self.repo.get_by_id(cn_id, organization_id)
         self._validate_status_transition(cn.status, CreditNoteStatus.VOIDED)
+        # An applied credit note has already reduced the target invoice's
+        # balance_due/paid_amount via record_payment. Voiding it here without
+        # reversing those applications would permanently leave the invoice
+        # balance reduced by credit that no longer exists (and, worse, the
+        # VOIDED note would then be eligible for hard deletion). Credit notes
+        # that have been applied must have their applications reversed first.
+        applied = Decimal(str(self.app_repo.get_total_applied(organization_id, cn_id)))
+        if applied > 0:
+            raise BadRequestException(
+                f"Cannot void credit note #{cn.id}: it has been applied to invoices "
+                f"(total applied {applied}). Reverse its applications before voiding."
+            )
         old_status = cn.status.value
         cn.status = CreditNoteStatus.VOIDED
         cn.voided_at = datetime.utcnow()
