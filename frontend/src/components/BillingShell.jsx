@@ -40,16 +40,6 @@ import TopBar from "./TopBar";
 // Billing product navigation tree for the standalone platform.
 const NAV_SECTIONS = [
   {
-    label: "Organization",
-    icon: Building2,
-    orgAdminOnly: true,
-    children: [
-      { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard },
-      { label: "Organization", href: "/organization-admin/organization", icon: Building2 },
-      { label: "User Management", href: "/organization-admin/users", icon: UserCog },
-    ],
-  },
-  {
     label: "Overview",
     icon: LayoutDashboard,
     children: [
@@ -166,17 +156,28 @@ const NAV_SECTIONS = [
       { label: "Settings", href: "/billing/payments/settings", icon: SlidersHorizontal },
     ],
   },
-  {
-    label: "Tax",
-    icon: CircleDollarSign,
-    children: [
-      { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
-      { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
-      { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
-      { label: "Reports", href: "/billing/tax/reports", icon: FileText },
-      { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
-    ],
-  },
+    {
+      label: "Tax",
+      icon: CircleDollarSign,
+      children: [
+        { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
+        { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
+        { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
+        { label: "Reports", href: "/billing/tax/reports", icon: FileText },
+        { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
+      ],
+    },
+];
+
+// Top-level org links pinned above the billing sections.
+const TOP_NAV_ITEMS = [
+  { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard, orgAdminOnly: true },
+  { label: "My Organization", href: "/organization-admin/organization", icon: Building2, orgAdminOnly: true },
+];
+
+// Pinned to the very bottom of the nav, separated from the billing sections.
+const FOOTER_NAV_ITEMS = [
+  { label: "User Management", href: "/organization-admin/users", icon: UserCog, orgAdminOnly: true },
 ];
 
 function isActive(href, pathname, search = "") {
@@ -188,7 +189,7 @@ function isActive(href, pathname, search = "") {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
-function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle }) {
+function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false }) {
   const hasActiveChild = item.children
     ? item.children.some((child) => isActive(child.href, pathname, search))
     : false;
@@ -230,10 +231,14 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle }) {
       to={item.href ?? "/billing"}
       end
       onClick={onNavigate}
-      className={`group flex items-center gap-3 rounded-[12px] border px-4 py-2 text-sm transition duration-200 ${
+      className={`group flex items-center gap-3 text-sm transition duration-200 ${
+        sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
+      } ${
         isActive(item.href, pathname, search)
           ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
-          : "border-transparent text-[#B2ACC8] hover:border-white/10 hover:bg-white/5 hover:text-white"
+          : sectionStyle
+            ? "border-white/10 bg-white/5 text-[#D6D0EF] hover:border-white/20 hover:bg-white/10"
+            : "border-transparent text-[#B2ACC8] hover:border-white/10 hover:bg-white/5 hover:text-white"
       }`}
     >
       <item.icon className="h-4 w-4 shrink-0" />
@@ -246,6 +251,8 @@ function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
   const visibleSections = NAV_SECTIONS.filter((section) => !section.orgAdminOnly || role !== "billing_admin");
+  const visibleTop = TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
+  const visibleFooter = FOOTER_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
   const [openSection, setOpenSection] = useState(null);
 
   return (
@@ -272,6 +279,21 @@ function SidebarContent({ onNavigate, role }) {
       </div>
 
       <div className="sidebar-nav flex-1 min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-6 pr-1">
+        {visibleTop.length > 0 ? (
+          <div className="mb-10 space-y-3 border-b border-white/10 pb-6">
+            {visibleTop.map((item) => (
+              <MenuItem
+                key={item.label}
+                item={item}
+                pathname={pathname}
+                search={search}
+                onNavigate={onNavigate}
+                sectionStyle
+              />
+            ))}
+          </div>
+        ) : null}
+
         {visibleSections.map((section) => (
           <MenuItem
             key={section.label}
@@ -283,6 +305,21 @@ function SidebarContent({ onNavigate, role }) {
             onToggle={() => setOpenSection(openSection === section.label ? null : section.label)}
           />
         ))}
+
+        {visibleFooter.length > 0 ? (
+          <div className="mt-10 border-t border-white/10 pt-6">
+            {visibleFooter.map((item) => (
+              <MenuItem
+                key={item.label}
+                item={item}
+                pathname={pathname}
+                search={search}
+                onNavigate={onNavigate}
+                sectionStyle
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

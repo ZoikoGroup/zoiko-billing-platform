@@ -7,7 +7,7 @@ import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers"
 import { useCurrency } from "../utils/CurrencyContext";
 import { Spinner, ErrorState, EmptyState, useConfirmationDialog } from "../../../components/billing-shared";
 
-function CategoryNode({ category, depth, selectedId, onSelect, onToggle, productCount, expandedMap }) {
+function CategoryNode({ category, depth, selectedId, onSelect, onToggle, productCount, expandedMap, getCount }) {
   const isSelected = selectedId === category.id;
   const hasChildren = (category.children_count ?? category.children?.length ?? 0) > 0;
   const expanded = !!expandedMap[category.id];
@@ -43,7 +43,7 @@ function CategoryNode({ category, depth, selectedId, onSelect, onToggle, product
         <div className="mt-0.5">
           {(category.children || []).map((child) => (
             <CategoryNode key={child.id} category={child} depth={depth + 1} selectedId={selectedId}
-              onSelect={onSelect} onToggle={onToggle} productCount={child.direct_count ?? 0} expandedMap={expandedMap} />
+              onSelect={onSelect} onToggle={onToggle} productCount={getCount(child)} expandedMap={expandedMap} getCount={getCount} />
           ))}
         </div>
       )}
@@ -127,6 +127,12 @@ export default function CategoriesPage() {
     const all = flatten(categories);
     return search ? all.filter((c) => c.name?.toLowerCase().includes(search.toLowerCase())) : all;
   }, [categories, search]);
+
+  // When not searching, render only root categories and let CategoryNode's own
+  // recursion draw the nested children based on expand/collapse state — mapping
+  // over the fully-flattened `filtered` list here would render every descendant
+  // twice (once as a flat row, again nested once its parent is expanded).
+  const treeList = search ? filtered : categories;
 
   useEffect(() => {
     if (!selected && filtered.length > 0 && !search) setSelected(filtered[0]);
@@ -251,16 +257,16 @@ export default function CategoriesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {filtered.length === 0 ? (
+            {treeList.length === 0 ? (
               <div className="px-4 py-10 text-center">
                 <Folder className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-sm text-slate-400">No categories found</p>
               </div>
             ) : (
-              filtered.map((c) => (
-                <CategoryNode key={c.id} category={c} depth={c.depth} selectedId={selected?.id}
+              treeList.map((c) => (
+                <CategoryNode key={c.id} category={c} depth={search ? c.depth : 0} selectedId={selected?.id}
                   onSelect={(cat) => { setSelected(cat); setSearch(""); }}
-                  onToggle={toggle} productCount={productCountFor(c)} expandedMap={expandedChildren} />
+                  onToggle={toggle} productCount={productCountFor(c)} expandedMap={expandedChildren} getCount={productCountFor} />
               ))
             )}
           </div>

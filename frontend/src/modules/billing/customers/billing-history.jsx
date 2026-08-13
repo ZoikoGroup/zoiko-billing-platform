@@ -110,11 +110,9 @@ export default function BillingHistoryPage() {
         per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,
         status: statusFilter || undefined,
+        date_from: dateStart || undefined,
+        date_to: dateEnd || undefined,
       };
-      if (activeTab === "invoices") {
-        params.date_from = dateStart || undefined;
-        params.date_to = dateEnd || undefined;
-      }
 
       const data = await api.list(params);
       const items = data.items || data.data || data || [];
@@ -164,15 +162,15 @@ export default function BillingHistoryPage() {
         return [
           `"${(r.invoice_number || r.id || "").replace(/"/g, '""')}"`,
           `"${(r.customer_name || r.customer?.display_name || "").replace(/"/g, '""')}"`,
-          r.amount ?? "",
+          r.total_amount ?? r.total ?? "",
           r.status || "",
           r.due_date || "",
-          r.paid_date || "",
+          r.paid_at || "",
         ].join(",");
       }
       return [
-        `"${(r.receipt_number || r.id || "").replace(/"/g, '""')}"`,
-        `"${(r.customer_name || r.customer?.display_name || "").replace(/"/g, '""')}"`,
+        `"${(r.payment_number || r.id || "").replace(/"/g, '""')}"`,
+        `"${(r.customer_name || r.customer?.display_name || `Customer #${r.customer_id ?? ""}`).replace(/"/g, '""')}"`,
         r.amount ?? "",
         r.payment_method || r.method || "",
         r.status || "",
@@ -354,7 +352,7 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <FileText size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No invoices found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "No invoices have been created yet"}</p>
+                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No invoices have been created yet"}</p>
                       </div>
                     </td>
                   </tr>
@@ -362,10 +360,10 @@ export default function BillingHistoryPage() {
                   <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{inv.invoice_number || inv.id || "—"}</td>
                     <td className="px-4 py-4 text-slate-600">{inv.customer_name || inv.customer?.display_name || "—"}</td>
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(inv.amount || inv.total)}</td>
+                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(inv.total_amount ?? inv.total)}</td>
                     <td className="px-4 py-4"><InvoiceStatusBadge status={inv.status} /></td>
                     <td className="px-4 py-4 text-slate-500">{formatDisplayDate(inv.due_date)}</td>
-                    <td className="px-4 py-4 text-slate-500">{formatDisplayDate(inv.paid_date)}</td>
+                    <td className="px-4 py-4 text-slate-500">{formatDisplayDate(inv.paid_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -389,14 +387,14 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <CreditCard size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No payments found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "No payments have been recorded yet"}</p>
+                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No payments have been recorded yet"}</p>
                       </div>
                     </td>
                   </tr>
                 ) : payments.map((pmt) => (
                   <tr key={pmt.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{pmt.receipt_number || pmt.id || "—"}</td>
-                    <td className="px-4 py-4 text-slate-600">{pmt.customer_name || pmt.customer?.display_name || "—"}</td>
+                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{pmt.payment_number || pmt.id || "—"}</td>
+                    <td className="px-4 py-4 text-slate-600">{pmt.customer_name || pmt.customer?.display_name || (pmt.customer_id ? `Customer #${pmt.customer_id}` : "—")}</td>
                     <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(pmt.amount)}</td>
                     <td className="px-4 py-4 text-slate-600 capitalize">{pmt.payment_method || pmt.method || "—"}</td>
                     <td className="px-4 py-4"><PaymentStatusBadge status={pmt.status} /></td>

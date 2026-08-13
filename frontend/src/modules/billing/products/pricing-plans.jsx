@@ -229,7 +229,7 @@ export default function ProductPricingPlansPage() {
   const planFeatures = (plan) => {
     const f = [];
     f.push({ icon: Zap, label: `${(plan.plan_type || "flat").replace("_", " ")} pricing` });
-    f.push({ icon: Clock, label: plan.billing_interval === "one_time" ? "One-time payment" : `Billed ${plan.billing_interval.replace("_", " ")}` });
+    f.push({ icon: Clock, label: plan.billing_interval === "one_time" ? "One-time payment" : `Billed ${(plan.billing_interval || "monthly").replace("_", " ")}` });
     if (plan.trial_days > 0) f.push({ icon: Gift, label: `${plan.trial_days}-day free trial` });
     else f.push({ icon: Check, label: "No trial period" });
     if (plan.setup_fee > 0) f.push({ icon: DollarSign, label: `${formatCurrency(plan.setup_fee, productCurrencyById.get(String(plan.product_id)) || baseCurrency)} setup fee` });
@@ -271,7 +271,7 @@ export default function ProductPricingPlansPage() {
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 p-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total plans</p>
-              <p className="text-2xl font-extrabold text-slate-800 mt-1">{plans.length}</p>
+              <p className="text-2xl font-extrabold text-slate-800 mt-1">{total}</p>
             </div>
           </div>
 

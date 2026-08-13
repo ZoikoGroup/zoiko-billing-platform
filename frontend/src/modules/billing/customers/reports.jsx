@@ -194,7 +194,7 @@ export default function CustomerReportsPage() {
     <HRPage title="Customer Reports" subtitle="Customer analytics and reporting">
 
       <div className="flex items-center justify-between mb-6">
-        <nav className="flex gap-0 border-b border-gray-200">
+        <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -378,7 +378,7 @@ export default function CustomerReportsPage() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard title="Total Customers" value={fCustomers.length} icon={Users} color="from-brand to-brand-hover" />
-                <StatCard title="Avg Revenue/ Customer" value={formatCurrency(fCustomers.length ? totalRevenue / fCustomers.length : 0, baseCurrency)} icon={DollarSign} color="from-blue-500 to-blue-600" />
+                <StatCard title="Avg Revenue/Customer" value={formatCurrency(fCustomers.length ? totalRevenue / fCustomers.length : 0, baseCurrency)} icon={DollarSign} color="from-blue-500 to-blue-600" />
                 <StatCard title="Growth Rate" value={customerGrowthData.length > 1 ? `${((customerGrowthData[customerGrowthData.length - 1].cumulative - customerGrowthData[0].cumulative) / Math.max(customerGrowthData[0].cumulative, 1) * 100).toFixed(1)}%` : "—"} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
               </div>
 

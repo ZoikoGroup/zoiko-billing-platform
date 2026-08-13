@@ -815,7 +815,7 @@ export default function ProductListPage() {
                         </button>
                       </>
                     )}
-                    {(statusFilter || typeFilter || categoryFilter) && (
+                    {(debouncedSearch || statusFilter || typeFilter || categoryFilter || currencyFilter) && (
                       <>
                         <div className="my-1 border-t border-slate-100" />
                         <p className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Current Filter</p>
@@ -957,7 +957,7 @@ export default function ProductListPage() {
             <tbody className="divide-y divide-slate-50">
               {products.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColumns.size + 2} className="px-4 py-0">
+                  <td colSpan={visibleColumns.size + 2 + (visibleColumns.has("product_type") ? 1 : 0)} className="px-4 py-0">
                     <div className="flex flex-col items-center justify-center py-20 gap-5">
                       <div className="relative">
                         <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-100 to-brand-100 flex items-center justify-center shadow-inner">
@@ -969,15 +969,15 @@ export default function ProductListPage() {
                       </div>
                       <div className="text-center">
                         <h3 className="text-lg font-bold text-slate-800 mb-1">
-                          {search || statusFilter || typeFilter ? "No products match your filters" : "No products or services yet"}
+                          {search || statusFilter || typeFilter || categoryFilter || currencyFilter ? "No products match your filters" : "No products or services yet"}
                         </h3>
                         <p className="text-sm text-slate-500 max-w-sm">
-                          {search || statusFilter || typeFilter
+                          {search || statusFilter || typeFilter || categoryFilter || currencyFilter
                             ? "Try adjusting your search or filter criteria."
                             : "Add your first product or service to start creating invoices, quotations, and subscriptions."}
                         </p>
                       </div>
-                      {!search && !statusFilter && !typeFilter && (
+                      {!search && !statusFilter && !typeFilter && !categoryFilter && !currencyFilter && (
                         <div className="flex gap-3">
                           <button
                             onClick={() => { fetchCategories(); setShowCreateModal(true); }}

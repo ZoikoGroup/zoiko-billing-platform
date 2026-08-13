@@ -316,7 +316,7 @@ export default function OrgAdminUserManagementPage() {
   };
 
   return (
-    <div className="org-dash -m-4 sm:-m-6 lg:-m-8">
+    <div className="org-dash">
       <style>{styles}</style>
       <div className="orb orb-1" />
       <div className="orb orb-2" />
