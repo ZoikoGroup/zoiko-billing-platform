@@ -250,15 +250,15 @@ export default function ProductProfilePage() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Default Price</p>
-          <p className="text-lg font-bold text-gray-900 mt-0.5 whitespace-nowrap" title={formatDisplayCurrency(product.default_price || 0, product.currency)}>{formatDisplayCurrency(product.default_price || 0, product.currency)}</p>
+          <p className="text-lg font-bold text-gray-900 mt-0.5 truncate" title={formatDisplayCurrency(product.default_price || 0, product.currency)}>{formatDisplayCurrency(product.default_price || 0, product.currency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Revenue (Paid)</p>
-          <p className="text-lg font-bold text-emerald-600 mt-0.5 whitespace-nowrap" title={formatDisplayCurrency(totalRevenue, product.currency)}>{formatDisplayCurrency(totalRevenue, product.currency)}</p>
+          <p className="text-lg font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalRevenue, product.currency)}>{formatDisplayCurrency(totalRevenue, product.currency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Total Invoiced</p>
-          <p className="text-lg font-bold text-gray-900 mt-0.5 whitespace-nowrap" title={formatDisplayCurrency(totalInvoiced, product.currency)}>{formatDisplayCurrency(totalInvoiced, product.currency)}</p>
+          <p className="text-lg font-bold text-gray-900 mt-0.5 truncate" title={formatDisplayCurrency(totalInvoiced, product.currency)}>{formatDisplayCurrency(totalInvoiced, product.currency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Active Subs</p>
@@ -363,7 +363,7 @@ export default function ProductProfilePage() {
               <div><p className="text-xs text-gray-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-gray-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
               <div><p className="text-xs text-gray-500 uppercase tracking-wider">Cost Price</p><p className="text-sm font-medium text-gray-900 mt-1">{formatDisplayCurrency(product.cost_price || 0, product.currency)}</p></div>
               <div><p className="text-xs text-gray-500 uppercase tracking-wider">Margin</p><p className="text-sm font-medium text-gray-900 mt-1">
-                {product.default_price && product.cost_price
+                {product.default_price && product.cost_price !== null && product.cost_price !== undefined && product.cost_price !== ''
                   ? `${((1 - Number(product.cost_price) / Number(product.default_price)) * 100).toFixed(1)}%`
                   : '—'}
               </p></div>

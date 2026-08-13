@@ -307,7 +307,7 @@ export default function CustomerProfilePage() {
         tax_category: data.tax_category || '',
         currency: data.currency || '',
         payment_terms: data.payment_terms || 'net_30',
-        credit_limit: data.credit_limit || '',
+        credit_limit: data.credit_limit != null ? data.credit_limit : '',
         credit_days: data.credit_days != null ? Number(data.credit_days) : 30,
         price_list: data.price_list || '',
         tags: data.tags || [],
@@ -927,23 +927,23 @@ export default function CustomerProfilePage() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Outstanding</p>
-          <p className="text-xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.outstanding_balance || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(customer?.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.outstanding_balance || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</p>
-          <p className="text-xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1 truncate" title={formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Limit</p>
-          <p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Balance</p>
-          <p className="text-xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-blue-600 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Lifetime Value</p>
-          <p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-brand-600 mt-1 truncate" title={formatDisplayCurrency(customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Invoices</p>
@@ -1163,19 +1163,19 @@ export default function CustomerProfilePage() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div className="bg-brand-50 rounded-lg p-4">
                   <p className="text-[10px] font-medium text-brand-600 uppercase">Lifetime Value</p>
-                  <p className="text-lg font-bold text-brand-700 mt-1 whitespace-nowrap">{formatDisplayCurrency(analytics?.total_revenue || customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
+                  <p className="text-lg font-bold text-brand-700 mt-1 truncate" title={formatDisplayCurrency(analytics?.total_revenue || customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(analytics?.total_revenue || customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-4">
                   <p className="text-[10px] font-medium text-emerald-600 uppercase">Total Paid</p>
-                  <p className="text-lg font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatDisplayCurrency(analytics?.total_paid || 0, baseCurrency)}</p>
+                  <p className="text-lg font-bold text-emerald-700 mt-1 truncate" title={formatDisplayCurrency(analytics?.total_paid || 0, baseCurrency)}>{formatDisplayCurrency(analytics?.total_paid || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-4">
                   <p className="text-[10px] font-medium text-amber-600 uppercase">Outstanding Balance</p>
-                  <p className="text-lg font-bold text-amber-700 mt-1 whitespace-nowrap">{formatDisplayCurrency(analytics?.outstanding_balance || customer?.outstanding_balance || 0, baseCurrency)}</p>
+                  <p className="text-lg font-bold text-amber-700 mt-1 truncate" title={formatDisplayCurrency(analytics?.outstanding_balance || customer?.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(analytics?.outstanding_balance || customer?.outstanding_balance || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-4">
                   <p className="text-[10px] font-medium text-blue-600 uppercase">Credit Balance</p>
-                  <p className="text-lg font-bold text-blue-700 mt-1 whitespace-nowrap">{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
+                  <p className="text-lg font-bold text-blue-700 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-[10px] font-medium text-gray-500 uppercase">Last Invoice Date</p>
@@ -1225,8 +1225,8 @@ export default function CustomerProfilePage() {
                       tax_category: customer?.tax_category || '',
                       currency: customer?.currency || '',
                       payment_terms: customer?.payment_terms || 'net_30',
-                      credit_limit: customer?.credit_limit || '',
-                      credit_days: customer?.credit_days || '',
+                      credit_limit: customer?.credit_limit != null ? customer.credit_limit : '',
+                      credit_days: customer?.credit_days != null ? customer.credit_days : 30,
                       price_list: customer?.price_list || '',
                       tags: customer?.tags || [],
                       notes: customer?.notes || '',
@@ -1357,8 +1357,8 @@ export default function CustomerProfilePage() {
                   <>
                     <InlineEditField label="Default Currency" value={customer?.currency || orgConfig?.base_currency || orgConfig?.default_currency || '—'} editing={false} />
                     <InlineEditField label="Payment Terms" value={customer?.payment_terms ? customer.payment_terms.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Net 30'} editing={false} />
-                    <InlineEditField label="Credit Limit" value={customer?.credit_limit ? formatDisplayCurrency(customer.credit_limit, baseCurrency) : '—'} editing={false} />
-                    <InlineEditField label="Credit Days" value={customer?.credit_days || '—'} editing={false} />
+                    <InlineEditField label="Credit Limit" value={customer?.credit_limit != null ? formatDisplayCurrency(customer.credit_limit, baseCurrency) : '—'} editing={false} />
+                    <InlineEditField label="Credit Days" value={customer?.credit_days != null ? String(customer.credit_days) : '—'} editing={false} />
                     <InlineEditField label="Price List" value={customer?.price_list || '—'} editing={false} />
                   </>
                 )}
@@ -1376,7 +1376,14 @@ export default function CustomerProfilePage() {
                       <textarea rows={3} value={editForm.billing_address}
                         onChange={(v) => setEditForm({ ...editForm, billing_address: v.target.value })}
                         className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                      <div className="mt-3"><label className="block text-sm font-medium text-slate-600 mb-1">Billing Country</label><select value={editForm.billing_country || ''} onChange={(e) => { const country = e.target.value; const curInfo = getCurrencyForCountry(country); setEditForm((p) => ({ ...p, billing_country: country, shipping_country: p.shipping_same_as_billing ? country : p.shipping_country, currency: p.currency || (curInfo ? curInfo.code : p.currency) })); }} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand/30 focus:outline-none"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+                      <div className="mt-3">
+                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Country</label>
+                        <select value={editForm.billing_country || ''} onChange={(e) => { const country = e.target.value; const curInfo = getCurrencyForCountry(country); setEditForm((p) => ({ ...p, billing_country: country, shipping_country: p.shipping_same_as_billing ? country : p.shipping_country, currency: p.currency || (curInfo ? curInfo.code : p.currency) })); }}
+                          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                          <option value="">Select Country</option>
+                          {getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}
+                        </select>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -1400,7 +1407,14 @@ export default function CustomerProfilePage() {
                           <textarea rows={3} value={editForm.shipping_address}
                             onChange={(v) => setEditForm({ ...editForm, shipping_address: v.target.value })}
                             className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                          <div className="mt-3"><label className="block text-sm font-medium text-slate-600 mb-1">Shipping Country</label><select value={editForm.shipping_country || ''} onChange={(e) => setEditForm((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand/30 focus:outline-none"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+                          <div className="mt-3">
+                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Shipping Country</label>
+                            <select value={editForm.shipping_country || ''} onChange={(e) => setEditForm((p) => ({ ...p, shipping_country: e.target.value }))}
+                              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                              <option value="">Select Country</option>
+                              {getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}
+                            </select>
+                          </div>
                         </>
                       )}
                     </>
@@ -1611,24 +1625,25 @@ export default function CustomerProfilePage() {
             <Spinner />
           ) : contacts.length === 0 ? (
             <EmptyState icon={Mail} title="No contacts" message="Add a contact to get started." />
-          ) : (
+          ) : (() => {
+            const filteredContacts = contactSearch
+              ? contacts.filter((c) =>
+                  `${c.first_name} ${c.last_name} ${c.email} ${c.phone || ''} ${c.job_title || ''} ${c.department || ''}`
+                    .toLowerCase().includes(contactSearch.toLowerCase())
+                )
+              : contacts;
+            if (filteredContacts.length === 0) {
+              return <EmptyState icon={Search} title="No matching contacts" message="Try adjusting your search." />;
+            }
+            return (
             <>
               {contactSearch && (
                 <p className="text-xs text-gray-400 mb-2">
-                  Showing {contacts.filter((c) =>
-                    `${c.first_name} ${c.last_name} ${c.email} ${c.phone || ''} ${c.job_title || ''} ${c.department || ''}`
-                      .toLowerCase().includes(contactSearch.toLowerCase())
-                  ).length} of {contacts.length} contacts
+                  Showing {filteredContacts.length} of {contacts.length} contacts
                 </p>
               )}
               <div className="space-y-3">
-              {(contactSearch
-                ? contacts.filter((c) =>
-                    `${c.first_name} ${c.last_name} ${c.email} ${c.phone || ''} ${c.job_title || ''} ${c.department || ''}`
-                      .toLowerCase().includes(contactSearch.toLowerCase())
-                  )
-                : contacts
-              ).map((contact) => (
+              {filteredContacts.map((contact) => (
                 <div key={contact.id || contact._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-brand-100 flex items-center justify-center">
@@ -1662,7 +1677,8 @@ export default function CustomerProfilePage() {
               ))}
             </div>
             </>
-          )}
+            );
+          })()}
         </div>
       )}
 
@@ -1782,7 +1798,7 @@ export default function CustomerProfilePage() {
       {activeTab === 'billing-overview' && (
         <div className="space-y-6">
           {/* Financial Summary */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Billing Summary</h4>
             {(() => {
               const totalOutstanding = invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent' || i.status === 'overdue').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
@@ -1801,15 +1817,15 @@ export default function CustomerProfilePage() {
               const availableCredit = customer?.credit_limit > 0 ? Math.max(0, Number(customer.credit_limit) - Number(customer.outstanding_balance || 0)) : '—';
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Outstanding</p><p className="text-sm font-bold text-amber-600 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(totalOutstanding, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-600 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Overdue</p><p className="text-sm font-bold text-red-600 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(totalOverdue, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Draft</p><p className="text-sm font-bold text-gray-600 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(totalDraft, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Cancelled</p><p className="text-sm font-bold text-gray-400 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Avg Payment Days</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{avgPaymentDays !== '—' ? `${avgPaymentDays} days` : '—'}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Limit</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Used</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{creditUsed !== '—' ? `${creditUsed}%` : '—'}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-5"><p className="text-[10px] font-medium text-gray-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-600 mt-0.5 whitespace-nowrap">{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Outstanding</p><p className="text-sm font-bold text-amber-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalPaid, baseCurrency)}>{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Overdue</p><p className="text-sm font-bold text-red-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOverdue, baseCurrency)}>{formatDisplayCurrency(totalOverdue, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Draft</p><p className="text-sm font-bold text-gray-600 mt-0.5 truncate" title={formatDisplayCurrency(totalDraft, baseCurrency)}>{formatDisplayCurrency(totalDraft, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Cancelled</p><p className="text-sm font-bold text-gray-400 mt-0.5 truncate" title={formatDisplayCurrency(totalCancelled, baseCurrency)}>{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Avg Payment Days</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{avgPaymentDays !== '—' ? `${avgPaymentDays} days` : '—'}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Limit</p><p className="text-sm font-bold text-gray-800 mt-0.5 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Used</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{creditUsed !== '—' ? `${creditUsed}%` : '—'}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}>{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
                 </div>
               );
             })()}
@@ -2247,24 +2263,25 @@ export default function CustomerProfilePage() {
             <Spinner />
           ) : documents.length === 0 ? (
             <EmptyState icon={Files} title="No documents" message="Upload a document to get started." />
-          ) : (
+          ) : (() => {
+            const filteredDocuments = docSearch
+              ? documents.filter((d) =>
+                  `${d.file_name} ${d.document_type || ''} ${d.mime_type || ''} ${d.notes || ''}`
+                    .toLowerCase().includes(docSearch.toLowerCase())
+                )
+              : documents;
+            if (filteredDocuments.length === 0) {
+              return <EmptyState icon={Search} title="No matching documents" message="Try adjusting your search." />;
+            }
+            return (
             <>
               {docSearch && (
                 <p className="text-xs text-gray-400 mb-2">
-                  Showing {documents.filter((d) =>
-                    `${d.file_name} ${d.document_type || ''} ${d.mime_type || ''} ${d.notes || ''}`
-                      .toLowerCase().includes(docSearch.toLowerCase())
-                  ).length} of {documents.length} documents
+                  Showing {filteredDocuments.length} of {documents.length} documents
                 </p>
               )}
               <div className="space-y-3">
-              {(docSearch
-                ? documents.filter((d) =>
-                    `${d.file_name} ${d.document_type || ''} ${d.mime_type || ''} ${d.notes || ''}`
-                      .toLowerCase().includes(docSearch.toLowerCase())
-                  )
-                : documents
-              ).map((doc) => (
+              {filteredDocuments.map((doc) => (
                 <div key={doc.id || doc._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-amber-100 flex items-center justify-center">
@@ -2291,7 +2308,8 @@ export default function CustomerProfilePage() {
               ))}
             </div>
             </>
-          )}
+            );
+          })()}
         </div>
       )}
 

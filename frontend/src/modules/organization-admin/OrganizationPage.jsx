@@ -299,7 +299,7 @@ export default function OrgAdminOrganizationPage() {
 
   if (loading) {
     return (
-      <div className="org-dash -mx-4 sm:-mx-6 lg:-mx-8 mt-4">
+      <div className="org-dash">
         <style>{styles}</style>
         <div className="orb orb-1" />
         <div className="orb orb-2" />
@@ -315,7 +315,7 @@ export default function OrgAdminOrganizationPage() {
 
   if (error) {
     return (
-      <div className="org-dash -mx-4 sm:-mx-6 lg:-mx-8 mt-4">
+      <div className="org-dash">
         <style>{styles}</style>
         <div className="orb orb-1" />
         <div className="orb orb-2" />
@@ -353,7 +353,7 @@ export default function OrgAdminOrganizationPage() {
   };
 
   return (
-    <div className="org-dash -m-4 sm:-m-6 lg:-m-8">
+    <div className="org-dash">
       <style>{styles}</style>
       <div className="orb orb-1" />
       <div className="orb orb-2" />

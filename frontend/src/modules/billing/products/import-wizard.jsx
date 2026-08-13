@@ -184,7 +184,11 @@ export default function ImportWizardModal({ onClose, onImported }) {
 
   // ── Step 2 → 4: Preview (validate + map) ──────────────────────────────────
 
-  const handlePreview = async () => {
+  // `advance` controls whether a successful call moves the wizard on to the
+  // results step (step 4). It's false for the initial call made right after
+  // upload — that call exists purely to read the file's columns for the
+  // Map Columns screen (step 2) and must not skip past it.
+  const handlePreview = async (advance = true) => {
     if (!file) return;
     setLoading(true);
     setError(null);
@@ -202,9 +206,13 @@ export default function ImportWizardModal({ onClose, onImported }) {
         if (row.status === "duplicate") actions[row.row_index] = duplicateStrategy === "review" ? "skip" : duplicateStrategy;
       });
       setPerRowActions(actions);
-      setStep(4);
+      if (advance) setStep(4);
     } catch (e) {
       setError(e.message || "Preview failed. Please check your file and try again.");
+      // If this was the validating step (advance === true) we were on the
+      // transient step-3 spinner, which has no enabled Back/Next controls —
+      // bounce back to Map Columns so the user can see the error and retry.
+      if (advance) setStep(2);
     } finally {
       setLoading(false);
     }
@@ -386,9 +394,15 @@ export default function ImportWizardModal({ onClose, onImported }) {
             Leave unmapped columns as-is — the system auto-detects common names.
           </p>
         </div>
-        {detectedCols.length === 0 ? (
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-500">
+            <RefreshCw size={22} className="animate-spin text-brand-500" />
+            <p className="text-sm">Reading columns from your file…</p>
+          </div>
+        ) : detectedCols.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-8">
-            Upload a file first to see column mapping options.
+            Couldn't detect columns from this file. You can still continue — unmapped columns
+            will be auto-detected during validation.
           </p>
         ) : (
           <div className="overflow-auto max-h-72 rounded-xl border border-slate-200">
@@ -648,7 +662,14 @@ export default function ImportWizardModal({ onClose, onImported }) {
 
   const handleNext = async () => {
     setError(null);
-    if (step === 1) { setStep(2); return; }
+    if (step === 1) {
+      setStep(2);
+      // Fetch the file's columns for mapping (advance: false — stay on step 2).
+      // Skipped if we already have them (e.g. user went Back then Next again
+      // without changing the file — acceptFile() clears `preview` on a new file).
+      if (!preview) await handlePreview(false);
+      return;
+    }
     if (step === 2) {
       setStep(3);
       await handlePreview();

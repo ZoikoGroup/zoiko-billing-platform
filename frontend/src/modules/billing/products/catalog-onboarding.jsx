@@ -76,7 +76,7 @@ export default function CatalogOnboarding({ onAddManually, onImported, onDismiss
           </div>
 
           {/* Option cards */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Option 1: Manual */}
             <button
               onClick={onAddManually}

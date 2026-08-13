@@ -470,7 +470,7 @@ export default function CustomerListPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Currency</label><select value={editCustomer.currency || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, currency: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select</option>{getCurrencySelectOptions().map((c) => (<option key={c.value} value={c.value}>{c.value}</option>))}</select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Payment Terms</label><select value={editCustomer.payment_terms || "net_30"} onChange={(e) => { const t = e.target.value; setEditCustomer((p) => ({ ...p, payment_terms: t, credit_days: PAYMENT_TERMS_CREDIT_DAYS[t] ?? 30 })); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="due_on_receipt">Due on Receipt</option><option value="net_15">Net 15</option><option value="net_30">Net 30</option><option value="net_45">Net 45</option><option value="net_60">Net 60</option><option value="net_90">Net 90</option></select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Limit</label><input type="number" min="0" step="0.01" value={editCustomer.credit_limit || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_limit: e.target.value }))} placeholder="0.00" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Limit</label><input type="number" min="0" step="0.01" value={editCustomer.credit_limit ?? ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_limit: e.target.value }))} placeholder="0.00" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Days</label><input type="number" min="0" step="1" value={editCustomer.credit_days ?? ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_days: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }))} placeholder="0" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -537,8 +537,8 @@ export default function CustomerListPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Active</p><p className="text-xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{kpiData.active_customers || 0}</p></div>
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Inactive</p><p className="text-xl font-bold text-slate-500 mt-1 whitespace-nowrap">{kpiData.inactive_customers || 0}</p></div>
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">New (30d)</p><p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{kpiData.new_customers_30d || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Collection</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.avg_collection_time_days || 0}d</p></div>
         </div>
       )}
@@ -734,7 +734,7 @@ export default function CustomerListPage() {
         </div>
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
-          {total} total {plural}(s)
+          {total} total {singular.toLowerCase()}(s)
         </Pagination>
       </div>
 
