@@ -261,9 +261,10 @@ class CustomerService:
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "CustomerContact", contact.id)
         return contact
 
-    def update_contact(self, contact_id: int, organization_id: int, updated_by: int, **data: Any) -> CustomerContact:
+    def update_contact(self, customer_id: int, contact_id: int, organization_id: int, updated_by: int, **data: Any) -> CustomerContact:
         data = filter_allowed(data, CONTACT_ALLOWED_FIELDS)
-        contact = self.contact_repo.get_by_id(contact_id, organization_id)
+        self.repo.get_by_id(customer_id, organization_id)
+        contact = self.contact_repo.get_by_id_and_customer(contact_id, organization_id, customer_id)
         for field, value in data.items():
             if hasattr(contact, field) and value is not None:
                 setattr(contact, field, value)
@@ -271,11 +272,15 @@ class CustomerService:
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "CustomerContact", contact_id)
         return contact
 
-    def remove_contact(self, contact_id: int, organization_id: int, updated_by: int) -> None:
+    def remove_contact(self, customer_id: int, contact_id: int, organization_id: int, updated_by: int) -> None:
+        self.repo.get_by_id(customer_id, organization_id)
+        self.contact_repo.get_by_id_and_customer(contact_id, organization_id, customer_id)
         self.contact_repo.soft_delete(contact_id, organization_id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "CustomerContact", contact_id)
 
-    def set_primary_contact(self, organization_id: int, contact_id: int, updated_by: int) -> CustomerContact:
+    def set_primary_contact(self, customer_id: int, contact_id: int, organization_id: int, updated_by: int) -> CustomerContact:
+        self.repo.get_by_id(customer_id, organization_id)
+        self.contact_repo.get_by_id_and_customer(contact_id, organization_id, customer_id)
         contact = self.contact_repo.set_primary(organization_id, contact_id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "CustomerContact", contact_id)
         return contact

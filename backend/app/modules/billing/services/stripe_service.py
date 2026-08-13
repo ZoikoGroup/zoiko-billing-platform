@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.exceptions import BadRequestException
 from app.modules.billing.models import (
     BillingAuditAction,
     BillingCustomer,
@@ -649,12 +649,23 @@ class StripeService:
             invoice_id = int(invoice_id)
         except (TypeError, ValueError):
             return {"action": "ignored", "reason": "invalid invoice_id in session metadata"}
+        if not organization_id:
+            # Invoice.id is a per-organization identifier, not globally
+            # unique — without a verified organization_id there is no safe
+            # way to know which tenant's invoice_id N refers to. Reject
+            # rather than fall back to an unscoped lookup that could match
+            # another organization's row with the same id.
+            logger.warning(
+                "[stripe] checkout.session.completed missing organization_id metadata; refusing to guess invoice %s",
+                invoice_id,
+            )
+            return {"action": "ignored", "reason": "no organization_id in session metadata"}
         invoice = self.db.query(Invoice).filter(
             Invoice.id == invoice_id,
-            Invoice.organization_id == int(organization_id) if organization_id else Invoice.id == invoice_id,
+            Invoice.organization_id == int(organization_id),
         ).first()
         if invoice is None:
-            raise NotFoundException("Invoice", invoice_id)
+            return {"action": "ignored", "reason": "invoice not found for the given organization_id"}
         payment_intent_id = data_object.get("payment_intent")
         charge_id = None
         if payment_intent_id:
@@ -670,7 +681,7 @@ class StripeService:
         if data_object.get("invoice"):
             invoice.stripe_invoice_id = data_object.get("invoice")
         payment = self._record_cleared_payment(
-            organization_id=int(organization_id) if organization_id else invoice.organization_id,
+            organization_id=invoice.organization_id,
             invoice=invoice,
             payment_intent_id=payment_intent_id,
             charge_id=charge_id,
@@ -695,12 +706,20 @@ class StripeService:
                 invoice_id = int(invoice_id)
             except (TypeError, ValueError):
                 invoice_id = None
-        if invoice_id:
+        if invoice_id and organization_id:
+            # Invoice.id is per-organization, not globally unique — only
+            # attempt this lookup when we have a verified organization_id to
+            # scope it by. A missing organization_id must never fall back to
+            # an unscoped id lookup.
             invoice = self.db.query(Invoice).filter(
                 Invoice.id == invoice_id,
-                Invoice.organization_id == int(organization_id) if organization_id else True,
+                Invoice.organization_id == int(organization_id),
             ).first()
         if invoice is None:
+            # Fallback: stripe_payment_intent_id is a Stripe-issued
+            # identifier we ourselves stored on exactly one of our own
+            # invoices — a trustworthy tenant-resolution path independent of
+            # the (possibly missing/wrong) event metadata organization_id.
             invoice = self.db.query(Invoice).filter(
                 Invoice.stripe_payment_intent_id == payment_intent_id,
             ).first()
@@ -726,7 +745,7 @@ class StripeService:
         pm_data = data_object.get("payment_method")
         pm_id = pm_data if isinstance(pm_data, str) else None
         payment = self._record_cleared_payment(
-            organization_id=int(organization_id) if organization_id else invoice.organization_id,
+            organization_id=invoice.organization_id,
             invoice=invoice,
             payment_intent_id=payment_intent_id,
             charge_id=charge_id,
@@ -773,10 +792,14 @@ class StripeService:
                 local_invoice_id = int(local_invoice_id)
             except (TypeError, ValueError):
                 local_invoice_id = None
-        if local_invoice_id:
+        if local_invoice_id and organization_id:
+            # Invoice.id is per-organization, not globally unique — only
+            # attempt this lookup when we have a verified organization_id to
+            # scope it by. A missing organization_id must never fall back to
+            # an unscoped id lookup.
             invoice = self.db.query(Invoice).filter(
                 Invoice.id == local_invoice_id,
-                Invoice.organization_id == int(organization_id) if organization_id else True,
+                Invoice.organization_id == int(organization_id),
             ).first()
         if invoice is None and data_object.get("id"):
             invoice = self.db.query(Invoice).filter(

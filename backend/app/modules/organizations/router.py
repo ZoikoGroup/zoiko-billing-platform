@@ -69,10 +69,24 @@ def update_my_organization(
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if org is None:
         raise NotFoundException("Organization", "id")
-    for field, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(org, field, value)
     db.commit()
     db.refresh(org)
+
+    if "currency" in updates and updates["currency"]:
+        # Best-effort starter tax catalogue seed (Phase 5.7) -- an org's
+        # billing currency is only ever set here or defaults to USD at
+        # registration, so this is the point where a currency with a real
+        # catalogue entry (e.g. GBP) is actually likely to be selected.
+        # Idempotent and never overwrites existing/custom tax rates.
+        try:
+            from app.modules.billing.services.tax_service import TaxService
+            TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=current_user.id)
+        except Exception as e:
+            logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
+
     return org
 
 

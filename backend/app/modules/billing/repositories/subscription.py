@@ -2,10 +2,12 @@ from typing import Any, Dict, List, Optional
 
 from datetime import date as _date, timedelta as _timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.modules.billing.models import (
     BillingPeriod,
+    CONTRACT_BLOCKED_STATUSES,
+    Contract,
     Subscription,
     SubscriptionEvent,
     SubscriptionPlan,
@@ -101,12 +103,29 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         return {s.value: rows.get(s.value, 0) for s in BillingSubscriptionStatus}
 
     def list_due_for_billing(self, organization_id: int, billing_date: str) -> List[Subscription]:
-        return self.db.query(Subscription).filter(
-            Subscription.organization_id == organization_id,
-            Subscription.is_active == True,
-            Subscription.status == "active",
-            Subscription.next_billing_at <= billing_date,
-        ).all()
+        # Eligibility guard: a subscription linked to a CANCELLED/TERMINATED
+        # contract must never be selected for billing, even if its own
+        # status is still ACTIVE (contract and subscription lifecycles are
+        # independent — see CONTRACT_BLOCKED_STATUSES). Standalone
+        # subscriptions (contract_id IS NULL) are unaffected: the outerjoin
+        # leaves Contract.status NULL for them, and NULL NOT IN (...) is
+        # NULL/false in SQL, so the explicit contract_id.is_(None) branch is
+        # required for them to still match.
+        return (
+            self.db.query(Subscription)
+            .outerjoin(Subscription.contract)
+            .filter(
+                Subscription.organization_id == organization_id,
+                Subscription.is_active == True,
+                Subscription.status == "active",
+                Subscription.next_billing_at <= billing_date,
+                or_(
+                    Subscription.contract_id.is_(None),
+                    Contract.status.notin_(CONTRACT_BLOCKED_STATUSES),
+                ),
+            )
+            .all()
+        )
 
     def cancel(self, id: int, organization_id: int, reason: Optional[str] = None) -> Subscription:
         sub = self.get_by_id(id, organization_id)

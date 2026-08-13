@@ -23,9 +23,13 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import or_
+
 from app.database import SessionLocal
 from app.modules.billing.models import (
     BillingSubscriptionStatus,
+    CONTRACT_BLOCKED_STATUSES,
+    Contract,
     Subscription,
 )
 from app.modules.billing.repositories.subscription import SubscriptionRepository
@@ -121,6 +125,16 @@ def _find_all_due_subscriptions(db) -> Dict[int, List[Subscription]]:
     each org's local date.
 
     Returns dict keyed by organization_id.
+
+    Eligibility guard: a subscription linked to a CANCELLED/TERMINATED
+    contract must never be selected here, even if its own status is still
+    ACTIVE — contract and subscription lifecycles are independent (see
+    CONTRACT_BLOCKED_STATUSES on the Subscription/Contract models).
+    Standalone subscriptions (contract_id IS NULL) are unaffected. This must
+    stay in agreement with SubscriptionRepository.list_due_for_billing, the
+    other "find due subscriptions" entry point (used by the manual
+    process-billing endpoint) — a subscription must never be selected by one
+    path and rejected by the other.
     """
     from app.modules.organizations.models import Organization
 
@@ -132,11 +146,16 @@ def _find_all_due_subscriptions(db) -> Dict[int, List[Subscription]]:
     upper_bound = date.today() + timedelta(days=1)
     rows = (
         db.query(Subscription)
+        .outerjoin(Subscription.contract)
         .filter(
             Subscription.is_active == True,
             Subscription.status == BillingSubscriptionStatus.ACTIVE,
             Subscription.next_billing_at.isnot(None),
             Subscription.next_billing_at <= upper_bound,
+            or_(
+                Subscription.contract_id.is_(None),
+                Contract.status.notin_(CONTRACT_BLOCKED_STATUSES),
+            ),
         )
         .all()
     )

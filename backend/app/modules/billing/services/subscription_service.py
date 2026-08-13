@@ -13,6 +13,7 @@ from app.core.exceptions import (
 from app.modules.billing.models import (
     BillingAuditAction,
     BillingPeriod,
+    CONTRACT_BLOCKED_STATUSES,
     Invoice,
     InvoiceItem,
     InvoiceStatus,
@@ -319,6 +320,23 @@ class SubscriptionService:
         end_of_week = today + timedelta(days=7)
         end_of_month = today + timedelta(days=30)
 
+        # Subscriptions linked to a CANCELLED/TERMINATED contract will never
+        # actually bill again (see CONTRACT_BLOCKED_STATUSES) — excluding
+        # them from the due/overdue/renewal counters keeps this summary in
+        # agreement with what the scheduler will actually select, instead of
+        # showing "due for billing" for something the scheduler will skip.
+        # `total` still counts every active subscription regardless.
+        from app.modules.billing.models import Contract
+        contract_ids = {s.contract_id for s in subs if s.contract_id}
+        blocked_contract_ids = set()
+        if contract_ids:
+            blocked_contract_ids = {
+                row.id for row in self.db.query(Contract.id).filter(
+                    Contract.id.in_(contract_ids),
+                    Contract.status.in_(CONTRACT_BLOCKED_STATUSES),
+                ).all()
+            }
+
         total = len(subs)
         dueToday = 0
         dueThisWeek = 0
@@ -327,6 +345,9 @@ class SubscriptionService:
         overdue = 0
 
         for s in subs:
+            if s.contract_id and s.contract_id in blocked_contract_ids:
+                continue
+
             st = (s.status.value if hasattr(s.status, "value") else str(s.status or "")).lower()
             next_b = s.next_billing_at
             term_end = s.current_term_end
@@ -481,6 +502,21 @@ class SubscriptionService:
 
         if sub.status != BillingSubscriptionStatus.ACTIVE:
             raise BadRequestException(f"Cannot generate invoice for {sub.status.value} subscription")
+
+        # Eligibility guard (defense-in-depth): the scheduler and
+        # SubscriptionRepository.list_due_for_billing already exclude
+        # contract-blocked subscriptions from selection, but this method is
+        # also reachable directly (manual single-subscription generation) —
+        # it must independently refuse a subscription whose linked contract
+        # has been cancelled/terminated, without mutating the subscription's
+        # own status or next_billing_at.
+        if sub.contract_id:
+            from app.modules.billing.repositories.sales import ContractRepository
+            contract = ContractRepository(self.db).get_by_id(sub.contract_id, organization_id)
+            if contract.status in CONTRACT_BLOCKED_STATUSES:
+                raise BadRequestException(
+                    f"Cannot generate invoice: linked contract is {contract.status.value}"
+                )
 
         # Resolve currency from subscription (persisted) → customer → org config
         currency = sub.currency

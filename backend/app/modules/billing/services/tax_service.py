@@ -6,11 +6,12 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AlreadyExistsException, BadRequestException, NotFoundException
-from app.modules.billing.models import BillingAuditAction, Tax, TaxRate
+from app.modules.billing.models import BillingAuditAction, Tax, TaxApplicability, TaxRate
 from app.modules.billing.repositories.tax import TaxRateRepository, TaxRepository
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit
 from app.modules.billing.utils.currency_utils import percentage_of
+from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
 
 logger = logging.getLogger("zoiko")
 
@@ -107,11 +108,67 @@ class TaxService:
         rates = self.rate_repo.list_all(organization_id, active_only=True)
         return [r for r in rates if r.applies_to.value == taxable_type or r.applies_to.value == "both"]
 
+    # ── Starter Catalogue Seeding ──────────────────────────────────────────
+
+    def seed_starter_tax_rates(
+        self, organization_id: int, currency_code: Optional[str], created_by: Optional[int] = None,
+    ) -> List[TaxRate]:
+        """Idempotently seed an organization's starter tax catalogue for its
+        billing currency, from STARTER_TAX_CATALOGUE (utils/tax_catalogue.py).
+
+        Safe to call repeatedly and safe for organizations that already have
+        custom tax rates: only catalogue entries the organization doesn't
+        already have (matched by TaxRate.code -- the same key already
+        enforced unique per organization via uq_tax_rates_org_code) are
+        inserted. Never updates, deletes, or reprioritizes any existing row,
+        and never touches an existing is_default rate for the same
+        currency. A currency with no catalogue entry (e.g. USD) is a
+        deliberate no-op -- no rate is ever fabricated.
+        """
+        if not currency_code:
+            return []
+        entries = get_catalogue_entries_for_currency(currency_code)
+        if not entries:
+            return []
+
+        has_default_for_currency = self.rate_repo.get_default_by_currency(organization_id, currency_code) is not None
+        created: List[TaxRate] = []
+        for entry in entries:
+            if self.rate_repo.exists(organization_id, code=entry.code):
+                continue
+            try:
+                rate = self.rate_repo.create(
+                    organization_id,
+                    name=entry.name,
+                    code=entry.code,
+                    jurisdiction=entry.jurisdiction,
+                    rate=entry.rate,
+                    tax_type=entry.tax_type,
+                    applies_to=TaxApplicability.BOTH,
+                    country_code=entry.country_code,
+                    currency_code=entry.currency_code,
+                    is_default=not has_default_for_currency,
+                    effective_from=date.today(),
+                    is_active=True,
+                )
+            except AlreadyExistsException:
+                # Lost a race to another concurrent seed call for the same
+                # organization+code -- the row now exists either way, so
+                # this entry is done; continue with the rest of the catalogue.
+                continue
+            has_default_for_currency = True  # at most one newly-seeded entry becomes the default
+            created.append(rate)
+            self.audit.log(
+                organization_id, created_by, BillingAuditAction.CREATE, "TaxRate", rate.id,
+                new_values={"code": entry.code, "rate": str(entry.rate), "source": "starter_catalogue"},
+            )
+        return created
+
     # ── Tax Calculation ────────────────────────────────────────────────────
 
     def calculate_taxes(
         self, organization_id: int, taxable_amount: Decimal, jurisdiction: Optional[str] = None,
-        tax_type_filter: Optional[str] = None,
+        tax_type_filter: Optional[str] = None, currency_code: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         # Compound taxes (is_compound=True) apply on top of every rate already
         # processed, so the processing order determines the result — sort by
@@ -126,6 +183,14 @@ class TaxService:
             if jurisdiction and rate.jurisdiction != jurisdiction:
                 continue
             if tax_type_filter and rate.tax_type.value != tax_type_filter:
+                continue
+            # A rate with no currency_code set predates any currency dimension
+            # ever being recorded for it (e.g. a single legacy custom rate
+            # meant to apply regardless of transaction currency) -- only
+            # exclude a rate when BOTH sides specify a currency and they
+            # disagree, so that existing single-rate organizations keep their
+            # current behavior unchanged.
+            if currency_code and rate.currency_code and rate.currency_code.upper() != currency_code.upper():
                 continue
             amount = percentage_of(taxable_amount, rate.rate)
             if rate.is_compound:

@@ -24,6 +24,7 @@ from app.modules.billing.models import (
     PriceSource,
     Product,
     SequenceReset,
+    TaxRate,
 )
 from app.modules.billing.services.price_resolver import PriceResolver
 from app.modules.billing.services.document_sequence import DocumentSequenceService
@@ -70,7 +71,7 @@ ITEM_ALLOWED_FIELDS = {
     "original_currency", "original_amount", "exchange_rate",
     "is_tax_inclusive",
     "pricing_plan_id", "price_source", "base_price", "resolved_price",
-    "resolved_price_type",
+    "resolved_price_type", "tax_rate_id",
 }
 
 
@@ -199,7 +200,8 @@ class InvoiceService:
             resolved_taxes = self.tax_service.calculate_taxes(
                 organization_id, taxable_amount,
                 jurisdiction=data.get("jurisdiction"),
-                tax_type_filter=data.get("tax_type_filter")
+                tax_type_filter=data.get("tax_type_filter"),
+                currency_code=data.get("currency"),
             )
 
             if resolved_taxes:
@@ -356,8 +358,21 @@ class InvoiceService:
 
     # ── Items ─────────────────────────────────────────────────────────────
 
+    def _validate_tax_rate_ownership(self, organization_id: int, tax_rate_id: Optional[int]) -> None:
+        """A client-supplied tax_rate_id must belong to this organization --
+        never trust it blindly (same org-scoped-or-reject principle as every
+        other cross-tenant guard in this codebase)."""
+        if tax_rate_id is None:
+            return
+        owned = self.db.query(TaxRate).filter(
+            TaxRate.id == tax_rate_id, TaxRate.organization_id == organization_id,
+        ).first()
+        if owned is None:
+            raise BadRequestException("Invalid tax rate.")
+
     def add_item(self, invoice_id: int, organization_id: int, **data: Any) -> InvoiceItem:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
+        self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         inv = self.repo.get_by_id(invoice_id, organization_id)
         if inv.status != InvoiceStatus.DRAFT:
             raise BadRequestException("Cannot add items to a finalized invoice. Create a credit note or adjustment instead.")
@@ -434,7 +449,8 @@ class InvoiceService:
         created_items = []
         for idx, it in enumerate(items):
             item_data = filter_allowed(it, ITEM_ALLOWED_FIELDS)
-            
+            self._validate_tax_rate_ownership(organization_id, item_data.get("tax_rate_id"))
+
             # Handle currency conversion if product currency differs from invoice currency
             if item_data.get("original_currency") and item_data.get("original_amount"):
                 item_data = self._apply_currency_conversion(item_data, invoice_currency, organization_id)
@@ -559,7 +575,16 @@ class InvoiceService:
         return self.finalize_invoice(invoice_id, organization_id, updated_by)
 
     def send_invoice_via_email(self, invoice_id: int, organization_id: int, sent_by: int) -> Dict[str, Any]:
-        """Validate customer email, send invoice email, and update status to SENT."""
+        """Validate customer email, generate the PDF, deliver the email, and
+        ONLY THEN update status to SENT.
+
+        PDF generation and email delivery must both succeed before the
+        invoice is marked sent — either failing leaves the invoice in its
+        prior status untouched (no status mutation, no sent_at, no commit).
+        Note: send_invoice_email/send_approval_email never raise on SMTP
+        failure — they return False — so both an exception and a False
+        return are treated as delivery failure here.
+        """
         from app.services.email_service import send_invoice_email
 
         inv = self.repo.get_by_id(invoice_id, organization_id)
@@ -580,13 +605,6 @@ class InvoiceService:
             inv = self.repo.get_by_id(invoice_id, organization_id)
 
         old_status = inv.status.value
-        inv.status = InvoiceStatus.SENT
-        inv.sent_at = datetime.utcnow()
-        # Commit the status transition now, before attempting the email send
-        # or communication logging below — those are best-effort side effects
-        # of "invoice sent" and must never roll back the status change itself.
-        self.db.commit()
-        self.db.refresh(inv)
 
         issue_date_str = _fmt_short_date(inv.issue_date or inv.created_at or datetime.utcnow())
         due_date_str = _fmt_short_date(inv.due_date or datetime.utcnow())
@@ -615,13 +633,19 @@ class InvoiceService:
             for item in items
         ]
 
-        pdf_bytes = None
+        # PDF generation must succeed before the invoice can be marked SENT —
+        # a failed PDF is no longer silently downgraded to "send without
+        # attachment". Nothing has been mutated on `inv` yet, so a plain
+        # rollback (defensive — covers any DB-level error inside PDF
+        # generation, not just Python-level ones) leaves the session clean.
         try:
             from app.modules.billing.services.pdf_service import generate_invoice_pdf
             org_config = self.config_service.get_configuration(organization_id)
             pdf_bytes = generate_invoice_pdf(inv, customer, items, org_config, db=self.db)
         except Exception as e:
-            logger.warning("Failed to generate PDF for invoice %d, sending without attachment: %s", invoice_id, e)
+            logger.warning("Failed to generate PDF for invoice %d, invoice was not sent: %s", invoice_id, e)
+            self.db.rollback()
+            raise BadRequestException("Failed to generate the invoice PDF. Invoice was not marked as sent.")
 
         try:
             email_sent = send_invoice_email(
@@ -650,10 +674,21 @@ class InvoiceService:
             logger.warning("Failed to send invoice email for invoice %d: %s", invoice_id, e)
             email_sent = False
 
+        if not email_sent:
+            self.db.rollback()
+            raise BadRequestException("Failed to send the invoice email. Invoice was not marked as sent.")
+
+        # Both PDF generation and email delivery succeeded — only now is the
+        # invoice actually transitioned to SENT and committed.
+        inv.status = InvoiceStatus.SENT
+        inv.sent_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(inv)
+
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT.value, sent_by, "Sent via email")
         self.audit.log(
             organization_id, sent_by, BillingAuditAction.SEND, "Invoice", invoice_id,
-            new_values={"email_sent_to": email, "email_delivered": email_sent},
+            new_values={"email_sent_to": email, "email_delivered": True},
         )
         # Snapshot everything the response needs now, before attempting the
         # communication log — a failure there rolls back and expires ORM
@@ -663,25 +698,23 @@ class InvoiceService:
             "invoice_number": inv.invoice_number,
             "status": inv.status.value,
             "email_sent_to": email,
-            "email_delivered": email_sent,
+            "email_delivered": True,
             "sent_at": inv.sent_at.isoformat() if inv.sent_at else None,
-            "message": f"Invoice emailed to {email}" if email_sent else f"Invoice marked sent (email logging only) for {email}",
+            "message": f"Invoice emailed to {email}",
         }
 
         # Logging the communication is a secondary side effect — its failure
         # (e.g. table unavailable) must never be reported to the caller as an
         # email delivery failure, since the email itself already went out.
-        comm_status = CommunicationEventStatus.DELIVERED if email_sent else CommunicationEventStatus.FAILED
-        event_type = CommunicationEventType.EMAIL_SENT if email_sent else CommunicationEventType.EMAIL_FAILED
         self.comms_repo.record_event_safe(
             organization_id=organization_id,
             invoice_id=invoice_id,
-            event_type=event_type,
-            status=comm_status,
+            event_type=CommunicationEventType.EMAIL_SENT,
+            status=CommunicationEventStatus.DELIVERED,
             recipient=email,
             subject=f"Invoice {response['invoice_number']}",
-            body_preview=f"Invoice {response['invoice_number']} sent to {email}" if email else None,
-            event_metadata={"email_delivered": email_sent, "attempt_via": "manual"},
+            body_preview=f"Invoice {response['invoice_number']} sent to {email}",
+            event_metadata={"email_delivered": True, "attempt_via": "manual"},
             created_by=sent_by,
         )
 
@@ -700,8 +733,16 @@ class InvoiceService:
                 f"Payment amount {amount} exceeds remaining balance {inv.balance_due}"
             )
         old_status = inv.status.value
+        # balance_due is decremented incrementally from its current
+        # (already-correct) value, not recomputed as total_amount -
+        # paid_amount, which would silently discard any write-off reduction
+        # already applied to balance_due independently of paid_amount (see
+        # record_write_off). This method is the credit-note settlement path
+        # (CreditNoteService.apply_to_invoice) as well as any other direct
+        # caller — a credit note is not cash, but it reduces the same
+        # collectible balance_due that cash payments draw down.
         inv.paid_amount = (inv.paid_amount or Decimal("0")) + amount
-        inv.balance_due = inv.total_amount - inv.paid_amount
+        inv.balance_due = (inv.balance_due or Decimal("0")) - amount
         if inv.balance_due <= 0:
             inv.status = InvoiceStatus.PAID
             inv.paid_at = datetime.utcnow()
@@ -729,8 +770,12 @@ class InvoiceService:
                 f"Refund amount {amount} exceeds the invoice's paid amount {inv.paid_amount}"
             )
         old_status = inv.status.value
+        # balance_due is reopened incrementally, not recomputed as
+        # total_amount - paid_amount, which would silently discard any
+        # write-off reduction already applied to balance_due independently
+        # of paid_amount (see record_write_off).
         inv.paid_amount = (inv.paid_amount or Decimal("0")) - amount
-        inv.balance_due = inv.total_amount - inv.paid_amount
+        inv.balance_due = (inv.balance_due or Decimal("0")) + amount
         if inv.paid_amount <= 0:
             inv.status = InvoiceStatus.REFUNDED
         elif inv.balance_due > 0:

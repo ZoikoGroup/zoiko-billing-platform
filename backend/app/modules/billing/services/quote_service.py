@@ -22,6 +22,7 @@ from app.modules.billing.models import (
     QuoteStatus,
     Quotation,
     QuotationItem,
+    TaxRate,
 )
 from app.modules.billing.repositories.sales import (
     QuotationItemRepository,
@@ -51,7 +52,7 @@ ITEM_ALLOWED_FIELDS = {
     "is_tax_inclusive",
     "pricing_plan_id", "price_source", "base_price", "resolved_price",
     "original_currency", "original_amount", "exchange_rate",
-    "quote_currency", "converted_amount",
+    "quote_currency", "converted_amount", "tax_rate_id",
 }
 
 
@@ -111,8 +112,21 @@ class QuoteService:
 
     # ── Items ─────────────────────────────────────────────────────────────
 
+    def _validate_tax_rate_ownership(self, organization_id: int, tax_rate_id: Optional[int]) -> None:
+        """A client-supplied tax_rate_id must belong to this organization --
+        never trust it blindly (same org-scoped-or-reject principle as every
+        other cross-tenant guard in this codebase)."""
+        if tax_rate_id is None:
+            return
+        owned = self.db.query(TaxRate).filter(
+            TaxRate.id == tax_rate_id, TaxRate.organization_id == organization_id,
+        ).first()
+        if owned is None:
+            raise BadRequestException("Invalid tax rate.")
+
     def add_item(self, quote_id: int, organization_id: int, **data: Any) -> QuotationItem:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
+        self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         quote = self.repo.get_by_id(quote_id, organization_id)
         price_semantics = "unit"
         product_id = data.get("product_id")
@@ -176,6 +190,7 @@ class QuoteService:
 
     def update_item(self, quote_id: int, item_id: int, organization_id: int, **data: Any) -> QuotationItem:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS - {"quotation_id", "total_amount", "discount_amount", "tax_amount"})
+        self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         quote = self.repo.get_by_id(quote_id, organization_id)
         if quote.status != QuoteStatus.DRAFT:
             raise BadRequestException("Only draft quotes can have items modified")
@@ -200,6 +215,8 @@ class QuoteService:
         self.repo.get_by_id(quote_id, organization_id)
         self.item_repo.delete_by_quotation(organization_id, quote_id)
         cleaned = [filter_allowed(item, ITEM_ALLOWED_FIELDS) for item in items]
+        for item_data in cleaned:
+            self._validate_tax_rate_ownership(organization_id, item_data.get("tax_rate_id"))
         result = self.item_repo.bulk_create_for_quotation(organization_id, quote_id, cleaned)
         self.recalculate_quote(quote_id, organization_id)
         return result
@@ -308,80 +325,109 @@ class QuoteService:
     # ── Status Transitions ─────────────────────────────────────────────────
 
     def send_quote(self, quote_id: int, organization_id: int, updated_by: int) -> Quotation:
+        """Validate customer email, generate the PDF, deliver the email, and
+        ONLY THEN update status to SENT.
+
+        PDF generation and email delivery must both succeed before the quote
+        is marked sent — either failing leaves the quote in its prior status
+        untouched (no status mutation, no commit). Note: send_quote_email/
+        send_approval_email never raise on SMTP failure — they return False —
+        so both an exception and a False return are treated as delivery
+        failure here.
+        """
         quote = self.repo.get_by_id(quote_id, organization_id)
         if quote.status != QuoteStatus.DRAFT:
             raise BadRequestException("Only draft quotes can be sent")
+
+        customer = self.customer_service.get_customer(quote.customer_id, organization_id)
+        email = (customer.email or "").strip() if customer else ""
+        if not email or "@" not in email:
+            raise BadRequestException(
+                f"Customer '{customer.company_name if customer else quote.customer_id}' does not have a valid email address. "
+                "Please update the customer profile before sending."
+            )
+
+        currency = quote.currency or "USD"
+        items = quote.items or []
+
+        def _fmt_money(amount) -> str:
+            return f"{round_money(amount or 0, currency):,.2f}"
+
+        def _fmt_date(d) -> str:
+            return d.strftime("%d %b %Y").lstrip("0") if d else "N/A"
+
+        def _fmt_qty(q) -> str:
+            if q is None:
+                return ""
+            if q == q.to_integral_value():
+                return str(int(q))
+            return f"{q:.2f}".rstrip("0").rstrip(".")
+
+        line_items = [
+            {
+                "description": item.description,
+                "quantity": _fmt_qty(item.quantity),
+                "unit_price": _fmt_money(item.unit_price),
+                "total_amount": _fmt_money(item.total_amount),
+            }
+            for item in items
+        ]
+
+        # PDF generation must succeed before the quote can be marked SENT —
+        # a failed PDF is no longer silently downgraded to "send without
+        # attachment". Nothing has been mutated on `quote` yet, so a plain
+        # rollback leaves the session clean.
+        try:
+            from app.modules.billing.services.pdf_service import generate_quote_pdf
+            org_config = self.config_service.get_configuration(organization_id)
+            pdf_bytes = generate_quote_pdf(quote, customer, items, org_config, db=self.db)
+        except Exception as e:
+            logger.warning("Failed to generate PDF for quote %d, quote was not sent: %s", quote_id, e)
+            self.db.rollback()
+            raise BadRequestException("Failed to generate the quote PDF. Quote was not marked as sent.")
+
+        # Displayed status reflects the target state (what the recipient is
+        # being told), independent of `quote.status`, which is deliberately
+        # not mutated until delivery is confirmed below.
+        status_label = QuoteStatus.SENT.value.replace("_", " ").title()
+        try:
+            email_sent = send_quote_email(
+                email=email,
+                customer_name=customer.display_name or customer.company_name,
+                recipient_first_name=customer.first_name or "",
+                quote_number=quote.quote_number,
+                issue_date=_fmt_date(quote.created_at.date()) if quote.created_at else _fmt_date(date.today()),
+                valid_until=_fmt_date(quote.valid_until),
+                total_amount=_fmt_money(quote.total_amount),
+                currency=currency,
+                status=status_label,
+                notes=quote.notes or "",
+                line_items=line_items,
+                subtotal=_fmt_money(quote.subtotal),
+                discount_amount=_fmt_money(quote.discount_amount) if quote.discount_amount else "",
+                tax_amount=_fmt_money(quote.tax_amount),
+                reference=quote.subject or "",
+                organization_id=organization_id,
+                db=self.db,
+                pdf_bytes=pdf_bytes,
+                pdf_filename=f"{quote.quote_number}.pdf",
+            )
+        except Exception as e:
+            logger.warning("Failed to send quote email for quote %d: %s", quote_id, e)
+            email_sent = False
+
+        if not email_sent:
+            self.db.rollback()
+            raise BadRequestException("Failed to send the quote email. Quote was not marked as sent.")
+
+        # Both PDF generation and email delivery succeeded — only now is the
+        # quote actually transitioned to SENT and committed.
         quote.status = QuoteStatus.SENT
         safe_commit_and_refresh(self.db, quote)
 
-        email_sent_to = None
-        email_delivered = False
-        try:
-            customer = self.customer_service.get_customer(quote.customer_id, organization_id)
-            if customer and customer.email:
-                email_sent_to = customer.email
-                currency = quote.currency or "USD"
-                items = quote.items or []
-
-                def _fmt_money(amount) -> str:
-                    return f"{round_money(amount or 0, currency):,.2f}"
-
-                def _fmt_date(d) -> str:
-                    return d.strftime("%d %b %Y").lstrip("0") if d else "N/A"
-
-                def _fmt_qty(q) -> str:
-                    if q is None:
-                        return ""
-                    if q == q.to_integral_value():
-                        return str(int(q))
-                    return f"{q:.2f}".rstrip("0").rstrip(".")
-
-                line_items = [
-                    {
-                        "description": item.description,
-                        "quantity": _fmt_qty(item.quantity),
-                        "unit_price": _fmt_money(item.unit_price),
-                        "total_amount": _fmt_money(item.total_amount),
-                    }
-                    for item in items
-                ]
-
-                pdf_bytes = None
-                try:
-                    from app.modules.billing.services.pdf_service import generate_quote_pdf
-                    org_config = self.config_service.get_configuration(organization_id)
-                    pdf_bytes = generate_quote_pdf(quote, customer, items, org_config, db=self.db)
-                except Exception as e:
-                    logger.warning("Failed to generate PDF for quote %d, sending without attachment: %s", quote_id, e)
-
-                status_label = quote.status.value if hasattr(quote.status, "value") else str(quote.status)
-                email_delivered = send_quote_email(
-                    email=customer.email,
-                    customer_name=customer.display_name or customer.company_name,
-                    recipient_first_name=customer.first_name or "",
-                    quote_number=quote.quote_number,
-                    issue_date=_fmt_date(quote.created_at.date()) if quote.created_at else _fmt_date(date.today()),
-                    valid_until=_fmt_date(quote.valid_until),
-                    total_amount=_fmt_money(quote.total_amount),
-                    currency=currency,
-                    status=status_label.replace("_", " ").title(),
-                    notes=quote.notes or "",
-                    line_items=line_items,
-                    subtotal=_fmt_money(quote.subtotal),
-                    discount_amount=_fmt_money(quote.discount_amount) if quote.discount_amount else "",
-                    tax_amount=_fmt_money(quote.tax_amount),
-                    reference=quote.subject or "",
-                    organization_id=organization_id,
-                    db=self.db,
-                    pdf_bytes=pdf_bytes,
-                    pdf_filename=f"{quote.quote_number}.pdf",
-                )
-        except Exception as e:
-            logger.warning("Failed to send quote email for quote %d: %s", quote_id, e)
-
         self.audit.log(
             organization_id, updated_by, BillingAuditAction.SEND, "Quotation", quote_id,
-            new_values={"email_sent_to": email_sent_to, "email_delivered": email_delivered},
+            new_values={"email_sent_to": email, "email_delivered": True},
         )
         return quote
 

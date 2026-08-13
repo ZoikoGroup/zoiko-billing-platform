@@ -231,6 +231,18 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     db.refresh(admin)
     db.refresh(org)
 
+    # Best-effort starter tax catalogue seed for the org's billing currency
+    # (Phase 5.7). Never blocks registration -- a fresh org's currency is
+    # "USD" (the model default) unless later changed via PUT /organizations/me,
+    # and USD has no catalogue entry, so this is a safe no-op in the common
+    # case today; it exists so registration participates in the same
+    # idempotent seed path organizations/router.py's currency-update flow uses.
+    try:
+        from app.modules.billing.services.tax_service import TaxService
+        TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id)
+    except Exception as e:
+        logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
+
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
 
     token_payload = {

@@ -85,11 +85,11 @@ def list_price_list_items(pk: int, db: Session = Depends(get_db), current_user=D
 @router.put("/{pk}/items/{item_id}", response_model=PriceListItemResponse, summary="Update price list item", dependencies=[Depends(get_current_billing_admin)])
 def update_price_list_item(pk: int, item_id: int, data: PriceListItemUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     svc = PriceListService(db)
-    return svc.update_item(item_id, organization_id=current_user.organization_id, updated_by=current_user.id, **data.model_dump(exclude_unset=True))
+    return svc.update_item(price_list_id=pk, item_id=item_id, organization_id=current_user.organization_id, updated_by=current_user.id, **data.model_dump(exclude_unset=True))
 
 
 @router.delete("/{pk}/items/{item_id}", response_model=SuccessResponse, summary="Remove price list item", dependencies=[Depends(get_current_billing_admin)])
 def remove_price_list_item(pk: int, item_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     svc = PriceListService(db)
-    svc.remove_item(item_id, organization_id=current_user.organization_id, updated_by=current_user.id)
+    svc.remove_item(price_list_id=pk, item_id=item_id, organization_id=current_user.organization_id, updated_by=current_user.id)
     return SuccessResponse(message="Price list item removed successfully")

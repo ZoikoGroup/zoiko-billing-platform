@@ -9,6 +9,7 @@ from app.modules.billing.models import (
     CreditNote,
     CreditNoteApplication,
     CreditNoteCommunication,
+    CreditNoteStatus,
     CreditNoteStatusHistory,
     Refund,
     RefundCommunication,
@@ -64,6 +65,33 @@ class CreditNoteRepository(BaseRepository[CreditNote]):
         active_only: bool = True,
     ) -> List[CreditNote]:
         return self.list_all(organization_id, active_only=active_only, status=status)
+
+    def bulk_delete(self, ids: List[int], organization_id: int) -> int:
+        """Hard-delete credit notes in one atomic operation. Only draft or
+        voided credit notes may be deleted — draft notes have no financial
+        impact and voided notes are already inert. Resolve the requested ids
+        within this organization first (silently excludes ids that don't
+        exist or belong to another org) and validate status BEFORE any
+        mutation; if any selected note is not deletable, the whole batch is
+        rejected so a bulk operation never deletes some notes while
+        discovering a protected one partway through."""
+        from app.core.exceptions import BadRequestException
+
+        notes = self.get_by_ids(ids, organization_id)
+        protected = [
+            cn for cn in notes
+            if cn.status not in (CreditNoteStatus.DRAFT, CreditNoteStatus.VOIDED)
+        ]
+        if protected:
+            raise BadRequestException("Only draft or voided credit notes can be deleted.")
+
+        query = self.db.query(CreditNote).filter(
+            CreditNote.id.in_(ids),
+            CreditNote.organization_id == organization_id,
+        )
+        deleted = query.delete(synchronize_session="fetch")
+        self.db.commit()
+        return deleted
 
     def get_outstanding_total(self, organization_id: int) -> float:
         result = self.db.query(
