@@ -417,6 +417,7 @@ def update_contact(
 ):
     svc = CustomerService(db)
     return svc.update_contact(
+        customer_id=customer_id,
         contact_id=contact_id,
         organization_id=current_user.organization_id,
         updated_by=current_user.id,
@@ -438,6 +439,7 @@ def remove_contact(
 ):
     svc = CustomerService(db)
     svc.remove_contact(
+        customer_id=customer_id,
         contact_id=contact_id,
         organization_id=current_user.organization_id,
         updated_by=current_user.id,
@@ -459,8 +461,9 @@ def set_primary_contact(
 ):
     svc = CustomerService(db)
     return svc.set_primary_contact(
-        organization_id=current_user.organization_id,
+        customer_id=customer_id,
         contact_id=contact_id,
+        organization_id=current_user.organization_id,
         updated_by=current_user.id,
     )
 

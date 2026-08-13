@@ -503,12 +503,20 @@ class ContractService:
         if resolve_tax and subtotal > 0:
             resolved_taxes = self.tax_service.calculate_taxes(
                 organization_id, subtotal,
-                jurisdiction=contract.jurisdiction if hasattr(contract, 'jurisdiction') else None
+                jurisdiction=contract.jurisdiction if hasattr(contract, 'jurisdiction') else None,
+                currency_code=contract.currency,
             )
             if resolved_taxes:
                 total_tax_pct = sum(Decimal(str(t.get("tax_percentage", 0))) for t in resolved_taxes)
+                # A single resolved rate has an unambiguous source. When
+                # calculate_taxes() legitimately combines more than one active
+                # rate into total_tax_pct, no single TaxRate id would honestly
+                # represent the combined line, so tax_rate_id is deliberately
+                # left unset rather than picking one of them arbitrarily.
+                resolved_tax_rate_id = resolved_taxes[0]["tax_rate_id"] if len(resolved_taxes) == 1 else None
                 for item_data in invoice_items_data:
                     item_data["tax_percentage"] = total_tax_pct
+                    item_data["tax_rate_id"] = resolved_tax_rate_id
 
         # Use the contract's invoice service to create invoice
         inv = self.invoice_service.create_invoice(
@@ -551,6 +559,7 @@ class ContractService:
                 discount_amount=calc["converted_discount"],
                 tax_percentage=tax_pct,
                 tax_amount=calc["converted_tax_amount"],
+                tax_rate_id=idata.get("tax_rate_id"),
                 total=total_line,
                 is_tax_inclusive=idata.get("is_tax_inclusive", False),
                 pricing_plan_id=idata.get("pricing_plan_id"),

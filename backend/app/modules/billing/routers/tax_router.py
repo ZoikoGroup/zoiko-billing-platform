@@ -192,6 +192,7 @@ def calculate_taxes(
     taxable_amount: float = Query(...),
     jurisdiction: Optional[str] = Query(None),
     tax_type_filter: Optional[str] = Query(None),
+    currency_code: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -203,4 +204,5 @@ def calculate_taxes(
         taxable_amount=Decimal(str(taxable_amount)),
         jurisdiction=jurisdiction,
         tax_type_filter=tax_type_filter,
+        currency_code=currency_code,
     )

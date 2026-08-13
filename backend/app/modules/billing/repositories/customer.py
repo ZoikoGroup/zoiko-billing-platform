@@ -192,6 +192,27 @@ class CustomerContactRepository(BaseRepository[CustomerContact]):
             customer_id=customer_id,
         )
 
+    def get_by_id_and_customer(
+        self,
+        contact_id: int,
+        organization_id: int,
+        customer_id: int,
+    ) -> CustomerContact:
+        """Phase 5.10: child-resource parent validation. Load a contact scoped
+        to BOTH its organization and its parent customer, so a contact
+        belonging to a different customer (or tenant) is indistinguishable
+        from a non-existent one."""
+        from app.core.exceptions import NotFoundException
+
+        contact = self.db.query(CustomerContact).filter(
+            CustomerContact.id == contact_id,
+            CustomerContact.organization_id == organization_id,
+            CustomerContact.customer_id == customer_id,
+        ).first()
+        if not contact:
+            raise NotFoundException("CustomerContact", contact_id)
+        return contact
+
     def set_primary(self, organization_id: int, contact_id: int) -> CustomerContact:
         contact = self.get_by_id(contact_id, organization_id)
         self.db.query(CustomerContact).filter(

@@ -45,6 +45,32 @@ VALID_PAYMENT_STATUS_TRANSITIONS: Dict[PaymentStatus, set[PaymentStatus]] = {
     PaymentStatus.CANCELLED: set(),
 }
 
+# Invoice statuses that can never receive a new payment allocation.
+# PAID is intentionally excluded here: a fully paid invoice already has
+# remaining_invoice == 0, so the existing remaining-balance check below
+# rejects it on amount grounds without needing a separate status rule.
+NON_ALLOCATABLE_INVOICE_STATUSES: Dict[InvoiceStatus, str] = {
+    InvoiceStatus.DRAFT: "draft",
+    InvoiceStatus.CANCELLED: "cancelled",
+    InvoiceStatus.REFUNDED: "refunded",
+    InvoiceStatus.WRITTEN_OFF: "written-off",
+}
+
+# Invoice statuses reached through their own guarded workflow (cancel,
+# refund, write-off) that must not be silently reopened. A PARTIALLY_PAID
+# invoice can be written off or refunded while its original PaymentAllocation
+# row is still on record (see InvoiceService.record_write_off /
+# record_refund, which only touch balance_due/paid_amount, not existing
+# allocations) — reversing that allocation afterward would recompute status
+# from balance math alone and resurrect the closed invoice back to
+# SENT/PARTIALLY_PAID/PAID. DRAFT is intentionally excluded: it is not a
+# closed disposition reachable from this class of bug.
+NON_REVERSIBLE_INVOICE_STATUSES: Dict[InvoiceStatus, str] = {
+    InvoiceStatus.CANCELLED: "cancelled",
+    InvoiceStatus.REFUNDED: "refunded",
+    InvoiceStatus.WRITTEN_OFF: "written-off",
+}
+
 METHOD_ALLOWED_FIELDS = {
     "payment_type", "gateway", "gateway_customer_id", "gateway_payment_method_id",
     "last_four", "card_brand", "card_expiry_month", "card_expiry_year",
@@ -298,6 +324,10 @@ class PaymentService:
         )
         if invoice is None:
             raise BadRequestException(f"Invoice {invoice_id} not found in organization {organization_id}")
+        if invoice.status in NON_ALLOCATABLE_INVOICE_STATUSES:
+            raise BadRequestException(
+                f"Payment cannot be allocated to a {NON_ALLOCATABLE_INVOICE_STATUSES[invoice.status]} invoice."
+            )
 
         if payment.status != PaymentStatus.CLEARED:
             raise BadRequestException("Payment must be cleared before allocation")
@@ -327,16 +357,14 @@ class PaymentService:
                 f"Allocation amount {amount} exceeds remaining payment balance {remaining_payment}"
             )
 
-        total_allocated_to_invoice = sum(
-            Decimal(str(a.amount))
-            for a in self.db.query(PaymentAllocation)
-            .filter(
-                PaymentAllocation.invoice_id == invoice_id,
-                PaymentAllocation.organization_id == organization_id,
-            )
-            .all()
-        )
-        remaining_invoice = Decimal(str(invoice.total_amount)) - total_allocated_to_invoice
+        # invoice.balance_due (not a fresh sum of PaymentAllocation rows) is
+        # the correct source of truth for the collectible remainder: it is
+        # already reduced by any applied credit notes and write-offs, which
+        # never create PaymentAllocation rows. Summing only PaymentAllocation
+        # rows against total_amount would ignore those reductions and permit
+        # cash allocations beyond what is actually still owed. invoice was
+        # fetched with_for_update() above, so this read is already race-safe.
+        remaining_invoice = Decimal(str(invoice.balance_due if invoice.balance_due is not None else invoice.total_amount))
         if amount > remaining_invoice:
             raise BadRequestException(
                 f"Allocation amount {amount} exceeds remaining invoice balance {remaining_invoice}"
@@ -378,10 +406,16 @@ class PaymentService:
     def _apply_payment_to_invoice(
         self, invoice, payment, amount: Decimal, organization_id: int, changed_by: int,
     ) -> None:
-        """Update invoice paid amounts/status within the caller's transaction."""
+        """Update invoice paid amounts/status within the caller's transaction.
+
+        balance_due is decremented incrementally from its current
+        (already-correct) value rather than recomputed as
+        total_amount - paid_amount, which would silently discard any
+        write-off reduction already applied to balance_due independently of
+        paid_amount (see InvoiceService.record_write_off)."""
         old_status = invoice.status
         invoice.paid_amount = Decimal(str(invoice.paid_amount or 0)) + amount
-        invoice.balance_due = Decimal(str(invoice.total_amount)) - invoice.paid_amount
+        invoice.balance_due = Decimal(str(invoice.balance_due or 0)) - amount
         if invoice.balance_due <= 0:
             invoice.balance_due = Decimal("0")
             invoice.status = InvoiceStatus.PAID
@@ -461,12 +495,24 @@ class PaymentService:
         )
         if payment is None or invoice is None:
             raise BadRequestException("Payment or invoice for allocation no longer exists")
+        if invoice.status in NON_REVERSIBLE_INVOICE_STATUSES:
+            raise BadRequestException(
+                f"Cannot reverse a payment allocation on a {NON_REVERSIBLE_INVOICE_STATUSES[invoice.status]} invoice."
+            )
         if payment.status != PaymentStatus.CLEARED:
             raise BadRequestException("Cannot reverse allocation on a non-cleared payment")
         old_status = invoice.status
+        # balance_due is reopened incrementally, not recomputed as
+        # total_amount - paid_amount, which would silently discard any
+        # write-off reduction already applied to balance_due independently
+        # of paid_amount. "Back to SENT" is likewise detected from
+        # paid_amount returning to zero, not from balance_due reaching
+        # total_amount, since a write-off can leave balance_due below
+        # total_amount even with no cash payment applied at all.
         invoice.paid_amount = Decimal(str(invoice.paid_amount or 0)) - amount
-        invoice.balance_due = Decimal(str(invoice.total_amount)) - invoice.paid_amount
-        if invoice.balance_due >= invoice.total_amount:
+        invoice.balance_due = Decimal(str(invoice.balance_due or 0)) + amount
+        if invoice.paid_amount <= 0:
+            invoice.paid_amount = Decimal("0")
             invoice.status = InvoiceStatus.SENT
         elif invoice.balance_due > 0:
             invoice.status = InvoiceStatus.PARTIALLY_PAID

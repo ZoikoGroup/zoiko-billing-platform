@@ -124,6 +124,16 @@ class ContractStatus(str, enum.Enum):
     CANCELLED  = "cancelled"
 
 
+# Contract statuses that make a linked subscription ineligible for further
+# recurring billing. Contract and subscription lifecycles are intentionally
+# independent in this domain model (cancelling/terminating a contract never
+# mutates subscription.status) — this constant backs an eligibility filter
+# applied at billing-selection time, not a cascade. Used by
+# SubscriptionRepository.list_due_for_billing, tasks/recurring_billing.py,
+# and SubscriptionService.generate_invoice / get_invoice_schedule_summary.
+CONTRACT_BLOCKED_STATUSES = {ContractStatus.CANCELLED, ContractStatus.TERMINATED}
+
+
 class PlanCategory(str, enum.Enum):
     SUBSCRIPTION = "subscription"
     USAGE        = "usage"
@@ -1360,9 +1370,12 @@ class QuotationItem(Base):
     original_amount     = Column(Numeric(14, 2), nullable=True)
     quote_currency      = Column(String(3), nullable=True)
     converted_amount    = Column(Numeric(14, 2), nullable=True)
+    # Traceability only -- NOT a live join. See InvoiceItem.tax_rate_id.
+    tax_rate_id         = Column(Integer, ForeignKey("tax_rates.id", ondelete="SET NULL"), nullable=True)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
 
     quotation           = relationship("Quotation", back_populates="items")
+    tax_rate            = relationship("TaxRate", foreign_keys=[tax_rate_id])
 
     __table_args__ = (
         UniqueConstraint("quotation_id", "line_number", name="uq_quotation_items_quote_line"),
@@ -1697,9 +1710,16 @@ class InvoiceItem(Base):
     base_price          = Column(Numeric(16, 4), nullable=True)
     resolved_price      = Column(Numeric(16, 4), nullable=True)
     resolved_price_type = Column(CaseInsensitiveEnum(ResolvedPriceType), nullable=True)
+    # Traceability only -- NOT a live join. tax_percentage/tax_amount above
+    # remain the historical snapshot; this points at the TaxRate catalogue
+    # entry that produced them, matching the existing Tax.tax_rate_id pattern
+    # (SET NULL, never CASCADE, so deleting/deactivating a TaxRate can never
+    # remove or corrupt historical invoice financials).
+    tax_rate_id         = Column(Integer, ForeignKey("tax_rates.id", ondelete="SET NULL"), nullable=True)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
 
     invoice             = relationship("Invoice", back_populates="items")
+    tax_rate            = relationship("TaxRate", foreign_keys=[tax_rate_id])
 
     __table_args__ = (
         UniqueConstraint("invoice_id", "line_number", name="uq_invoice_items_invoice_line"),

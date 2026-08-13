@@ -160,6 +160,7 @@ class PriceListService:
         self.db = db
         self.repo = PriceListRepository(db)
         self.item_repo = PriceListItemRepository(db)
+        self.product_repo = ProductRepository(db)
         self.audit = BillingAuditService(db)
 
     def create(self, organization_id: int, created_by: int, **data: Any) -> PriceList:
@@ -208,8 +209,13 @@ class PriceListService:
 
     # ── Items ────────────────────────────────────────────────────────────
 
+    def _validate_item_product_ownership(self, organization_id: int, product_id: Optional[int]) -> None:
+        if product_id is not None:
+            self.product_repo.get_by_id(product_id, organization_id)
+
     def add_item(self, organization_id: int, price_list_id: int, created_by: int, **data: Any) -> PriceListItem:
         self.repo.get_by_id(price_list_id, organization_id)
+        self._validate_item_product_ownership(organization_id, data.get("product_id"))
         item = self.item_repo.create(organization_id, price_list_id=price_list_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "PriceListItem", item.id)
         return item
@@ -218,17 +224,20 @@ class PriceListService:
         self.repo.get_by_id(price_list_id, organization_id)
         return self.item_repo.list_by_price_list(organization_id, price_list_id, active_only)
 
-    def update_item(self, pk: int, organization_id: int, updated_by: int, **data: Any) -> PriceListItem:
-        self.item_repo.get_by_id(pk, organization_id)
-        updated = self.item_repo.update(pk, organization_id, **data)
-        self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "PriceListItem", pk)
+    def update_item(self, price_list_id: int, item_id: int, organization_id: int, updated_by: int, **data: Any) -> PriceListItem:
+        self.repo.get_by_id(price_list_id, organization_id)
+        self._validate_item_product_ownership(organization_id, data.get("product_id"))
+        item = self.item_repo.get_by_id_and_price_list(item_id, organization_id, price_list_id)
+        updated = self.item_repo.update(item.id, organization_id, **data)
+        self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "PriceListItem", item_id)
         return updated
 
-    def remove_item(self, pk: int, organization_id: int, updated_by: int) -> None:
-        self.item_repo.get_by_id(pk, organization_id)
-        self.db.delete(self.item_repo.get_by_id(pk, organization_id))
+    def remove_item(self, price_list_id: int, item_id: int, organization_id: int, updated_by: int) -> None:
+        self.repo.get_by_id(price_list_id, organization_id)
+        item = self.item_repo.get_by_id_and_price_list(item_id, organization_id, price_list_id)
+        self.db.delete(item)
         safe_commit_and_refresh(self.db)
-        self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "PriceListItem", pk)
+        self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "PriceListItem", item_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -609,6 +618,9 @@ class TaxPricingService:
 
     def add_group_member(self, organization_id: int, tax_group_id: int, **data: Any) -> TaxGroupMember:
         self.group_repo.get_by_id(tax_group_id, organization_id)
+        tax_pricing_id = data.get("tax_pricing_id")
+        if tax_pricing_id is not None:
+            self.repo.get_by_id(tax_pricing_id, organization_id)
         member = self.member_repo.create(organization_id, tax_group_id=tax_group_id, **data)
         return member
 

@@ -789,6 +789,17 @@ class InvoiceRepository(BaseRepository[Invoice]):
         ]
 
     def bulk_delete(self, ids: List[int], organization_id: int) -> int:
+        # Resolve the requested ids within this organization first (silently
+        # excludes ids that don't exist or belong to another org, same as the
+        # delete query below always has) and validate status BEFORE any
+        # mutation. If any resolved invoice is not DRAFT, reject the whole
+        # batch — a bulk operation must never delete some invoices while
+        # discovering a protected one partway through.
+        invoices = self.get_by_ids(ids, organization_id)
+        non_draft = [inv for inv in invoices if inv.status != InvoiceStatus.DRAFT]
+        if non_draft:
+            raise BadRequestException("Only draft invoices can be deleted.")
+
         query = self.db.query(Invoice).filter(
             Invoice.id.in_(ids),
             Invoice.organization_id == organization_id,

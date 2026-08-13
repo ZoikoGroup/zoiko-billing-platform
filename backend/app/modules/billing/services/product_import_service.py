@@ -759,10 +759,11 @@ class ProductImportService:
         product_svc = ProductService(self.db)
 
         if ids:
+            existing_ids = {p.id for p in self.repo.get_by_ids(ids, organization_id)}
             products = [
                 product_svc.get_product(pid, organization_id)
                 for pid in ids
-                if self.repo.get_by_id_safe(pid, organization_id)
+                if pid in existing_ids
             ]
         else:
             result = product_svc.list_products(

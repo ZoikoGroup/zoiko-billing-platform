@@ -19,6 +19,7 @@ from app.modules.billing.models import (
     ProductCategory,
 )
 from app.modules.billing.repositories.base import BaseRepository
+from app.core.exceptions import NotFoundException
 
 
 class ProductCategoryRepository(BaseRepository[ProductCategory]):
@@ -376,6 +377,25 @@ class PriceListRepository(BaseRepository[PriceList]):
 class PriceListItemRepository(BaseRepository[PriceListItem]):
     def __init__(self, db):
         super().__init__(db, PriceListItem)
+
+    def get_by_id_and_price_list(
+        self,
+        item_id: int,
+        organization_id: int,
+        price_list_id: int,
+    ) -> PriceListItem:
+        """Phase 5.10: child-resource parent validation. Load a price list
+        item scoped to BOTH its organization and its parent price list, so an
+        item belonging to a different price list (or tenant) is
+        indistinguishable from a non-existent one."""
+        item = self.db.query(PriceListItem).filter(
+            PriceListItem.id == item_id,
+            PriceListItem.organization_id == organization_id,
+            PriceListItem.price_list_id == price_list_id,
+        ).first()
+        if not item:
+            raise NotFoundException("PriceListItem", item_id)
+        return item
 
     def list_by_price_list(
         self,

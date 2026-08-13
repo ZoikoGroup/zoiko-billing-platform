@@ -30,3 +30,7 @@ email-validator
 apscheduler>=3.10,<4
 certifi>=2024.2.2
 cryptography>=42.0.0
+
+# Test-only — runs against an isolated in-memory SQLite DB (see tests/conftest.py),
+# never against BILLING_DATABASE_URL.
+pytest>=8.0.0
