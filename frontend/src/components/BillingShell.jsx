@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   X,
-  Menu,
-  LogOut,
   ChevronDown,
   LayoutDashboard,
   FileText,
@@ -37,6 +35,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
+import TopBar from "./TopBar";
 
 // Billing product navigation tree for the standalone platform.
 const NAV_SECTIONS = [
@@ -189,20 +188,20 @@ function isActive(href, pathname, search = "") {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
-function MenuItem({ item, pathname, search, onNavigate }) {
+function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle }) {
   const hasActiveChild = item.children
     ? item.children.some((child) => isActive(child.href, pathname, search))
     : false;
-  const [expanded, setExpanded] = useState(hasActiveChild);
 
   const active = isActive(item.href, pathname, search) || hasActiveChild;
 
   if (item.children) {
     return (
-      <div className="space-y-2">
+      <div>
         <button
           type="button"
-          onClick={() => setExpanded(!expanded)}
+          onClick={onToggle}
+          aria-expanded={expanded}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
               ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
@@ -216,7 +215,7 @@ function MenuItem({ item, pathname, search, onNavigate }) {
           <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180 text-white" : "text-[#9C95BF]"}`} />
         </button>
         {expanded ? (
-          <div className="space-y-2 pl-5">
+          <div className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
             {item.children.map((child) => (
               <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate} />
             ))}
@@ -231,10 +230,10 @@ function MenuItem({ item, pathname, search, onNavigate }) {
       to={item.href ?? "/billing"}
       end
       onClick={onNavigate}
-      className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm transition duration-200 ${
+      className={`group flex items-center gap-3 rounded-[12px] border px-4 py-2 text-sm transition duration-200 ${
         isActive(item.href, pathname, search)
           ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
-          : "border-white/10 bg-white/5 text-[#B2ACC8] hover:border-white/20 hover:bg-white/10 hover:text-white"
+          : "border-transparent text-[#B2ACC8] hover:border-white/10 hover:bg-white/5 hover:text-white"
       }`}
     >
       <item.icon className="h-4 w-4 shrink-0" />
@@ -245,12 +244,13 @@ function MenuItem({ item, pathname, search, onNavigate }) {
 
 function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
-  const { logout } = useAuth();
-  const navigate = useNavigate();
+
+  const visibleSections = NAV_SECTIONS.filter((section) => !section.orgAdminOnly || role !== "billing_admin");
+  const [openSection, setOpenSection] = useState(null);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-8 flex items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Link to="/billing" onClick={onNavigate} className="text-[22px] font-extrabold tracking-tight text-white">
             <span>Zoiko</span>
@@ -271,24 +271,18 @@ function SidebarContent({ onNavigate, role }) {
         </button>
       </div>
 
-      <div className="space-y-7 overflow-y-auto pb-8">
-        {NAV_SECTIONS.filter((section) => !section.orgAdminOnly || role !== "billing_admin").map((section) => (
-          <MenuItem key={section.label} item={section} pathname={pathname} search={search} onNavigate={onNavigate} />
+      <div className="sidebar-nav flex-1 min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-6 pr-1">
+        {visibleSections.map((section) => (
+          <MenuItem
+            key={section.label}
+            item={section}
+            pathname={pathname}
+            search={search}
+            onNavigate={onNavigate}
+            expanded={openSection === section.label}
+            onToggle={() => setOpenSection(openSection === section.label ? null : section.label)}
+          />
         ))}
-      </div>
-
-      <div className="mt-auto space-y-4">
-        <button
-          type="button"
-          onClick={() => {
-            logout();
-            navigate("/login", { replace: true });
-          }}
-          className="flex w-full items-center gap-3 rounded-[14px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-[#B2ACC8] transition duration-200 hover:border-[#FF6E86]/40 hover:bg-[#FF6E86]/10 hover:text-white"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Sign out</span>
-        </button>
       </div>
     </div>
   );
@@ -308,22 +302,17 @@ export default function BillingShell({ children }) {
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 overflow-y-auto border-r border-white/10 bg-gradient-to-b from-[#1F0B63] to-[#160845] px-4 py-6 shadow-[0_24px_80px_rgba(8,6,37,0.42)] transition-transform lg:translate-x-0 ${
+        className={`fixed top-[65px] bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#1F0B63] to-[#160845] px-4 py-6 shadow-[0_24px_80px_rgba(8,6,37,0.42)] transition-transform lg:top-0 lg:bottom-0 lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
       </aside>
 
+      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+
       <div className="lg:pl-72">
-        <button
-          type="button"
-          onClick={() => setSidebarOpen(true)}
-          className="fixed top-4 left-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E5E0D9] bg-white text-[#6B6560] shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] lg:hidden"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <main className="w-full">{children}</main>
+        <main className="w-full pt-[65px]">{children}</main>
       </div>
     </div>
   );

@@ -1,217 +1,170 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, RefreshCw, Plus, Folder, Package, FolderTree, ChevronRight, ChevronDown, Pencil, Trash2, X, AlertCircle, CheckCircle, Archive, Layers } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { Folder, FolderOpen, Search, Plus, X, ChevronDown, ChevronRight, Package, AlertCircle, CheckCircle, Trash2, Pencil, Boxes } from "lucide-react";
+import HRPage from "../../../components/HRPage";
 import { productApi } from "../../../service/billingService";
-import { formatDisplayCurrency } from "../../../utils/billing-helpers";
-import { Spinner, ErrorState, useConfirmationDialog } from "../../../components/billing-shared";
+import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
+import { useCurrency } from "../utils/CurrencyContext";
+import { Spinner, ErrorState, EmptyState, useConfirmationDialog } from "../../../components/billing-shared";
 
-function CategoryRow({
-  category,
-  depth,
-  selected,
-  onToggleSelect,
-  expanded,
-  onToggleExpand,
-  childrenMap,
-  products,
-  getProducts,
-  productsLoading,
-  forceExpand,
-  onEdit,
-  onDelete,
-}) {
-  const children = childrenMap[category.id] || [];
-  const hasChildren = children.length > 0;
-  const isExpanded = forceExpand || expanded.has(category.id);
-  const count = category.product_count ?? category.products_count ?? 0;
-
+function CategoryNode({ category, depth, selectedId, onSelect, onToggle, productCount, expandedMap }) {
+  const isSelected = selectedId === category.id;
+  const hasChildren = (category.children_count ?? category.children?.length ?? 0) > 0;
+  const expanded = !!expandedMap[category.id];
   return (
-    <div style={{ marginLeft: depth * 24 }}>
-      <div className="group flex items-center gap-2.5 rounded-lg px-4 py-2.5 hover:bg-blue-50/60 transition-colors">
-        <input
-          type="checkbox"
-          aria-label={`Select ${category.name}`}
-          checked={selected.has(category.id)}
-          onChange={() => onToggleSelect(category.id)}
-          className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600 cursor-pointer"
-        />
-        <button
-          onClick={() => onToggleExpand(category.id)}
-          aria-label={isExpanded ? "Collapse" : "Expand"}
-          className="p-1 -ml-1 text-slate-400 hover:text-slate-600"
-        >
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-        <Folder size={17} className="text-blue-700 shrink-0" />
-        <span className="text-sm font-medium text-slate-900 flex-1 truncate">{category.name}</span>
-        <span className="text-xs font-medium bg-blue-50 text-blue-900 px-2.5 py-1 rounded-full whitespace-nowrap">
-          {count} {count === 1 ? "product" : "products"}
-        </span>
-        <button onClick={() => onEdit(category)} title="Edit" aria-label={`Edit ${category.name}`}
-          className="p-1 text-slate-300 hover:text-blue-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
-          <Pencil size={14} />
-        </button>
-        <button onClick={() => onDelete(category)} title="Delete" aria-label={`Delete ${category.name}`}
-          className="p-1 text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded">
-          <Trash2 size={14} />
-        </button>
-      </div>
-
-      {isExpanded && (
-        productsLoading.has(category.id) ? (
-          <div className="flex items-center gap-2 pl-6 pr-4 py-2 text-xs text-slate-400"
-            style={{ marginLeft: depth * 24 + 30 }}>
-            <Spinner /> Loading products...
-          </div>
-        ) : products.length > 0 && (
-          <div
-            className="border-l-[1.5px] border-blue-200"
-            style={{ marginLeft: depth * 24 + 30 }}
+    <div>
+      <div
+        onClick={() => onSelect(category)}
+        className={`group flex w-full items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-brand-600 text-white" : "hover:bg-brand-50 text-slate-700"}`}
+        style={{ paddingLeft: `${8 + depth * 20}px` }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(category.id); }}
+            aria-label={expanded ? "Collapse" : "Expand"}
+            className={`shrink-0 rounded p-0.5 ${isSelected ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-slate-600"}`}
           >
-            {products.map((product) => (
-              <div key={product.id} className="flex items-center gap-2.5 pl-6 pr-4 py-2">
-                <Package size={15} className="text-slate-400 shrink-0" />
-                <span className="text-[13px] text-slate-600 flex-1 truncate">{product.name}</span>
-                <span className="text-xs text-slate-400 font-mono whitespace-nowrap">{product.code}</span>
-                <span className="text-[13px] font-medium text-slate-900 min-w-[64px] text-right">
-                  {formatDisplayCurrency(product.default_price, product.currency)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        ) : <span className="w-[18px] shrink-0" />}
+        {expanded ? (
+          <FolderOpen size={16} className={`shrink-0 ${isSelected ? "text-white/90" : "text-brand-500"}`} />
+        ) : (
+          <Folder size={16} className={`shrink-0 ${isSelected ? "text-white/90" : "text-brand-500"}`} />
+        )}
+        <span className="flex-1 truncate text-sm font-medium">{category.name}</span>
+        {productCount > 0 && (
+          <span className={`shrink-0 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${isSelected ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+            {productCount}
+          </span>
+        )}
+      </div>
+      {hasChildren && expanded && (
+        <div className="mt-0.5">
+          {(category.children || []).map((child) => (
+            <CategoryNode key={child.id} category={child} depth={depth + 1} selectedId={selectedId}
+              onSelect={onSelect} onToggle={onToggle} productCount={child.direct_count ?? 0} expandedMap={expandedMap} />
+          ))}
+        </div>
       )}
-
-      {hasChildren &&
-        isExpanded &&
-        children.map((child) => (
-          <CategoryRow
-            key={child.id}
-            category={child}
-            depth={depth + 1}
-            selected={selected}
-            onToggleSelect={onToggleSelect}
-            expanded={expanded}
-            onToggleExpand={onToggleExpand}
-            childrenMap={childrenMap}
-            products={getProducts(child.id)}
-            getProducts={getProducts}
-            productsLoading={productsLoading}
-            forceExpand={forceExpand}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
-        ))}
     </div>
   );
 }
 
-export default function ProductCategoriesPage() {
+export default function CategoriesPage() {
+  const { formatCurrency, baseCurrency } = useCurrency();
+  const navigate = useNavigate();
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
   const [categories, setCategories] = useState([]);
-  const [childrenMap, setChildrenMap] = useState({});
-  const [productsMap, setProductsMap] = useState({});
-  const [productsLoading, setProductsLoading] = useState(new Set());
+  const [selected, setSelected] = useState(null);
+  const [selectedProducts, setSelectedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [error, setError] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(new Set());
-  const [expanded, setExpanded] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [expandedChildren, setExpandedChildren] = useState({});
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [successMessage, setSuccessMessage] = useState(null);
 
-  const [showForm, setShowForm] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [editCategory, setEditCategory] = useState(null);
-  const getDefaultFormData = () => ({ name: "", code: "", description: "", parent_id: "" });
-  const [formData, setFormData] = useState(getDefaultFormData());
+  const [form, setForm] = useState({ name: "", description: "", parent_id: "", is_active: true });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const [bulkLoading, setBulkLoading] = useState(false);
+  const showSuccess = (msg) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
 
-  const fetchCategories = useCallback(async (isInitial = false) => {
+  const fetchCategories = useCallback(async () => {
     try {
-      if (!isInitial) setError(null);
-      if (!isInitial) setRefreshing(true);
+      setLoading(true);
+      setError(null);
       const data = await productApi.listCategories({ root_only: false });
-      const items = Array.isArray(data) ? data : data?.items || data?.categories || data?.data || [];
-
-      const rootItems = items.filter(c => !c.parent_id);
-      setCategories(rootItems);
-
-      const nextChildrenMap = {};
-      for (const item of items) {
-        if (item.parent_id) {
-          if (!nextChildrenMap[item.parent_id]) nextChildrenMap[item.parent_id] = [];
-          nextChildrenMap[item.parent_id].push(item);
-        }
-      }
-      setChildrenMap(nextChildrenMap);
+      setCategories(extractArray(data));
     } catch (err) {
       setError(err.message || "Failed to load categories");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  const fetchChildren = useCallback(async (parentId) => {
-    try {
-      const data = await productApi.listChildCategories(parentId);
-      const items = Array.isArray(data) ? data : data?.items || data?.categories || data?.data || [];
-      setChildrenMap((prev) => ({ ...prev, [parentId]: items }));
-      return items;
-    } catch {
-      return [];
-    }
-  }, []);
+  useEffect(() => { fetchCategories(); }, [fetchCategories, refreshKey]);
 
-  const fetchProductsForCategory = useCallback(async (catId) => {
-    setProductsLoading((prev) => new Set(prev).add(catId));
+  const fetchProducts = useCallback(async (category) => {
+    if (!category) return;
+    setLoadingProducts(true);
     try {
-      const data = await productApi.list({ category_id: catId, per_page: 200, is_active: false, page: 1 });
-      const items = data?.items || data?.data || [];
-      setProductsMap((prev) => ({ ...prev, [catId]: Array.isArray(items) ? items : [] }));
+      const data = await productApi.list({ category_id: category.id, per_page: 200, page: 1 });
+      setSelectedProducts(extractArray(data));
     } catch {
-      setProductsMap((prev) => ({ ...prev, [catId]: [] }));
+      setSelectedProducts([]);
     } finally {
-      setProductsLoading((prev) => { const next = new Set(prev); next.delete(catId); return next; });
+      setLoadingProducts(false);
     }
   }, []);
-
-  useEffect(() => { fetchCategories(true); }, [fetchCategories]);
-
-  const toggleExpand = (id) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
 
   useEffect(() => {
-    for (const id of expanded) {
-      if (!childrenMap[id]) fetchChildren(id);
-      if (productsMap[id] === undefined) fetchProductsForCategory(id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+    if (selected) fetchProducts(selected);
+  }, [selected, fetchProducts]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const toggle = (id) => {
+    setExpandedChildren((p) => ({ ...p, [id]: !p[id] }));
+  };
+
+  const productCountFor = (category) => {
+    const direct = category.direct_count ?? category.products_count ?? 0;
+    const children = category.children || [];
+    const nested = children.reduce((s, c) => s + productCountFor(c), 0);
+    return direct + nested;
+  };
+
+  const flatten = (list, depth = 0) =>
+    list.flatMap((c) => [{ ...c, depth }, ...flatten(c.children || [], depth + 1)]);
+
+  const filtered = useMemo(() => {
+    const all = flatten(categories);
+    return search ? all.filter((c) => c.name?.toLowerCase().includes(search.toLowerCase())) : all;
+  }, [categories, search]);
+
+  useEffect(() => {
+    if (!selected && filtered.length > 0 && !search) setSelected(filtered[0]);
+  }, [filtered, selected, search]);
+
+  const activeCount = filtered.filter((c) => c.status === "active" || c.is_active !== false).length;
+  const totalProducts = filtered.reduce((s, c) => s + productCountFor(c), 0);
+
+  const openCreate = () => {
+    setEditCategory(null);
+    setForm({ name: "", description: "", parent_id: "", is_active: true });
+    setFormError(null);
+    setShowModal(true);
+  };
+
+  const openEdit = (category) => {
+    setEditCategory(category);
+    setForm({ name: category.name || "", description: category.description || "", parent_id: category.parent_id ? String(category.parent_id) : "", is_active: category.status === "active" || category.is_active !== false });
+    setFormError(null);
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setFormError("Category name is required."); return; }
     setFormLoading(true);
     setFormError(null);
     try {
-      const payload = { name: formData.name, code: formData.code, description: formData.description };
-      if (editCategory) payload.parent_id = formData.parent_id ? Number(formData.parent_id) : null;
-      else if (formData.parent_id) payload.parent_id = Number(formData.parent_id);
-      if (editCategory) {
-        await productApi.updateCategory(editCategory.id, payload);
-      } else {
-        await productApi.createCategory(payload);
-      }
-      setShowForm(false);
-      setEditCategory(null);
-      setFormData(getDefaultFormData());
-      fetchCategories();
+      const payload = {
+        name: form.name,
+        description: form.description || undefined,
+        parent_id: form.parent_id ? parseInt(form.parent_id) : null,
+        is_active: form.is_active,
+      };
+      if (editCategory) await productApi.updateCategory(editCategory.id, payload);
+      else await productApi.createCategory(payload);
+      setShowModal(false);
+      setRefreshKey((k) => k + 1);
+      showSuccess(editCategory ? "Category updated" : "Category created");
     } catch (err) {
       setFormError(err.message || "Failed to save category");
     } finally {
@@ -219,235 +172,281 @@ export default function ProductCategoriesPage() {
     }
   };
 
-  const handleDelete = async (cat) => {
-    const ok = await confirm({ title: "Delete category", message: `Delete category "${cat.name}"? This action cannot be undone.`, confirmLabel: "Delete" });
+  const handleDelete = async (category) => {
+    const ok = await confirm({
+      title: "Delete category",
+      message: `Delete "${category.name}"? Products in it are not deleted, but will be uncategorized.`,
+      confirmLabel: "Delete",
+    });
     if (!ok) return;
     try {
-      await productApi.deleteCategory(cat.id);
-      fetchCategories();
+      await productApi.deleteCategory(category.id);
+      if (selected?.id === category.id) setSelected(null);
+      setRefreshKey((k) => k + 1);
+      showSuccess("Category deleted");
     } catch (err) {
       setError(err.message || "Failed to delete category");
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (selected.size === 0) return;
-    const ok = await confirm({ title: "Delete selected categories", message: `Delete ${selected.size} selected categor${selected.size === 1 ? "y" : "ies"}? This cannot be undone.`, confirmLabel: "Delete" });
-    if (!ok) return;
-    setBulkLoading(true);
-    try {
-      const results = await Promise.allSettled(
-        Array.from(selected).map((id) => productApi.deleteCategory(id))
-      );
-      const failed = results.filter((r) => r.status === "rejected");
-      setSelected(new Set());
-      fetchCategories();
-      if (failed.length > 0) {
-        setError(`${failed.length} categor${failed.length === 1 ? "y" : "ies"} could not be deleted.`);
-      }
-    } catch (err) {
-      setError(err.message || "Bulk delete failed");
-    } finally {
-      setBulkLoading(false);
-    }
+  const totalChildren = (cat) => {
+    const direct = cat.children?.length ?? 0;
+    return direct + (cat.children || []).reduce((s, c) => s + totalChildren(c), 0);
   };
 
-  const handleEdit = (cat) => {
-    setEditCategory(cat);
-    setFormData({ name: cat.name || "", code: cat.code || "", description: cat.description || "", parent_id: cat.parent_id || "" });
-    setShowForm(true);
-  };
+  if (loading) {
+    return (
+      <HRPage title="Categories" subtitle="Organize products into browsable categories">
+        <div className="flex items-center justify-center py-16">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+        </div>
+      </HRPage>
+    );
+  }
 
-  const toggleSelect = (id) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const getDescendantIds = (id) => {
-    const descendants = new Set();
-    const walk = (parentId) => {
-      for (const child of childrenMap[parentId] || []) {
-        descendants.add(child.id);
-        walk(child.id);
-      }
-    };
-    walk(id);
-    return descendants;
-  };
-
-  const q = query.trim().toLowerCase();
-  const searchMode = !!q;
-  const filteredCategories = useMemo(() => {
-    if (!q) return categories;
-    const all = [...categories, ...Object.values(childrenMap).flat()];
-    return all.filter((c) => {
-      const nameMatch = (c.name || "").toLowerCase().includes(q);
-      const productMatch = (productsMap[c.id] || []).some((p) => (p.name || "").toLowerCase().includes(q));
-      return nameMatch || productMatch;
-    });
-  }, [q, categories, childrenMap, productsMap]);
-
-  const categoriesToRender = searchMode ? filteredCategories : categories;
-  const productsFor = (catId) => productsMap[catId] || [];
+  if (error && categories.length === 0) {
+    return (
+      <HRPage title="Categories" subtitle="Organize products into browsable categories">
+        <ErrorState message={error} onRetry={() => setRefreshKey((k) => k + 1)} />
+      </HRPage>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
-      {/* Header */}
-      <div className="px-7 pt-6 pb-5 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white flex items-center justify-center shadow-sm shrink-0">
-            <Layers size={20} />
+    <HRPage
+      title="Categories"
+      subtitle="Organize products into browsable categories"
+      actions={
+        <button onClick={openCreate}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold shadow-sm hover:shadow-lg hover:shadow-brand-200 transition-all">
+          <Plus size={18} /> Add New Category
+        </button>
+      }
+    >
+      {successMessage && (
+        <div className="mb-6 flex items-center justify-between p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+          <div className="flex items-center gap-2 text-sm text-emerald-800">
+            <CheckCircle size={16} className="text-emerald-600" /> {successMessage}
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Product categories</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Organize products into categories</p>
+          <button onClick={() => setSuccessMessage(null)} aria-label="Dismiss" className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        {/* ── Left: Category Tree ── */}
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col lg:h-[calc(100vh-240px)]">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Boxes className="h-4 w-4 text-brand" />
+              <h3 className="text-sm font-semibold text-slate-800">Categories</h3>
+            </div>
+            <span className="text-xs text-slate-400 font-medium">{activeCount} active · {totalProducts} products</span>
+          </div>
+          <div className="p-3 border-b border-slate-100">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input type="text" placeholder="Search categories..." value={search} onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search categories"
+                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+            {filtered.length === 0 ? (
+              <div className="px-4 py-10 text-center">
+                <Folder className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-400">No categories found</p>
+              </div>
+            ) : (
+              filtered.map((c) => (
+                <CategoryNode key={c.id} category={c} depth={c.depth} selectedId={selected?.id}
+                  onSelect={(cat) => { setSelected(cat); setSearch(""); }}
+                  onToggle={toggle} productCount={productCountFor(c)} expandedMap={expandedChildren} />
+              ))
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-7 py-4 bg-slate-50">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search categories..."
-            aria-label="Search categories"
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-          />
-          {query && (
-            <button onClick={() => setQuery("")} aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
-              <X size={14} />
-            </button>
+        {/* ── Right: Details Pane ── */}
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col lg:h-[calc(100vh-240px)]">
+          {!selected ? (
+            <div className="flex-1 flex items-center justify-center p-10">
+              <div className="text-center">
+                <FolderOpen className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm font-medium text-slate-500">Select a category</p>
+                <p className="text-xs text-slate-400 mt-1">Choose a category from the tree to see details and products.</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="px-6 py-5 border-b border-slate-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-brand to-brand-hover flex items-center justify-center shrink-0 shadow-sm">
+                        <Package className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-slate-800 truncate">{selected.name}</h2>
+                        <span className={`inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${selected.status === "active" || selected.is_active !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${selected.status === "active" || selected.is_active !== false ? "bg-emerald-500" : "bg-slate-400"}`} />
+                          {selected.status === "active" || selected.is_active !== false ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-3 max-w-prose">{selected.description || "No description provided."}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(selected)} aria-label="Edit category"
+                      className="p-2 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-700 transition-colors" title="Edit category">
+                      <Pencil size={16} />
+                    </button>
+                    <button onClick={() => handleDelete(selected)} aria-label="Delete category"
+                      className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="Delete category">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                  {[
+                    { label: "Direct products", value: selectedProducts.length },
+                    { label: "Nested categories", value: totalChildren(selected) },
+                    { label: "Total products", value: productCountFor(selected) },
+                    { label: "Created", value: selected.created_at ? formatDisplayDate(selected.created_at) : "—" },
+                  ].map((s) => (
+                    <div key={s.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <p className="text-lg font-bold text-slate-800 truncate">{s.value}</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">Products in {selected.name}</h3>
+                <button onClick={() => navigate("/billing/products")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors">
+                  <Package size={13} /> Browse all products
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {loadingProducts ? (
+                  <div className="flex items-center justify-center py-10"><Spinner /></div>
+                ) : selectedProducts.length === 0 ? (
+                  <div className="px-6 py-12">
+                    <EmptyState icon={Package} title="No products in this category"
+                      message="Products added to this category will appear here." />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50/60 border-b border-slate-100">
+                          <th className="px-6 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Product</th>
+                          <th className="px-6 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                          <th className="px-6 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Price</th>
+                          <th className="px-6 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {selectedProducts.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => navigate(`/billing/products/${p.id}`)}>
+                            <td className="px-6 py-3">
+                              <div className="flex items-center gap-3">
+                                {p.image_url ? (
+                                  <img src={p.image_url} alt="" className="h-8 w-8 rounded-lg object-cover" />
+                                ) : (
+                                  <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                                    <Package className="h-3.5 w-3.5 text-slate-400" />
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="font-medium text-slate-800">{p.name}</p>
+                                  {p.code && <p className="text-xs text-slate-400 font-mono">{p.code}</p>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-3 text-slate-500 capitalize">{p.product_type || "—"}</td>
+                            <td className="px-6 py-3 text-right font-semibold text-slate-800">{formatCurrency(p.default_price || 0, p.currency || baseCurrency)}</td>
+                            <td className="px-6 py-3 text-center">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${p.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                {p.status || "inactive"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
-        <button
-          onClick={() => { setRefreshing(true); fetchCategories(); }}
-          aria-label="Refresh categories"
-          className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          disabled={refreshing}
-        >
-          <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-        </button>
-        <button
-          onClick={() => { setShowForm(true); setEditCategory(null); setFormData(getDefaultFormData()); }}
-          className="h-9 flex items-center gap-1.5 px-4 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-        >
-          <Plus size={16} />
-          Add category
-        </button>
       </div>
 
-      {formError && (
-        <div className="mx-7 my-4 flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-          <AlertCircle size={16} /> {formError}
+      {/* ── Create / Edit Category Modal ── */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">{editCategory ? "Edit Category" : "Add New Category"}</h2>
+                <p className="text-sm text-slate-500 mt-0.5">{editCategory ? `Update "${editCategory.name}"` : "Create a category to organize products"}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} aria-label="Close" className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+            </div>
+            {formError && (
+              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                <AlertCircle size={16} /> {formError}
+              </div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Category Name *</label>
+                <input type="text" value={form.name} placeholder="e.g. Networking"
+                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Parent Category</label>
+                <select value={form.parent_id} onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  <option value="">None (root category)</option>
+                  {categories
+                    .filter((c) => !editCategory || c.id !== editCategory.id)
+                    .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <textarea rows={3} value={form.description} placeholder="Optional description"
+                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+              <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Active</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Inactive categories are hidden from new product forms</p>
+                </div>
+                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
+                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-3 mt-8">
+              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+              <button onClick={handleSave} disabled={formLoading || !form.name.trim()}
+                className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg disabled:opacity-50">
+                {formLoading ? "Saving..." : editCategory ? "Save Changes" : "Create Category"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="mx-7 my-4 p-6 bg-slate-50 rounded-2xl border border-slate-200">
-          <h3 className="text-base font-semibold text-slate-900 mb-4">{editCategory ? "Edit category" : "New category"}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
-              <input required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Code *</label>
-              <input required value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Parent category</label>
-              <select value={formData.parent_id} onChange={(e) => setFormData({ ...formData, parent_id: e.target.value })}
-                className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                <option value="">None (root category)</option>
-                {(function renderDropdownOptions(cats, depth = 0) {
-                  return cats.map(c => {
-                    if (editCategory && (c.id === editCategory.id || getDescendantIds(editCategory.id).has(c.id))) return null;
-                    const children = childrenMap[c.id] || [];
-                    return (
-                      <React.Fragment key={c.id}>
-                        <option value={c.id}>{"\u00A0\u00A0".repeat(depth)}{c.name}</option>
-                        {children.length > 0 && renderDropdownOptions(children, depth + 1)}
-                      </React.Fragment>
-                    );
-                  });
-                })(categories)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-              <textarea value={formData.description} rows={1} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-            </div>
-          </div>
-          <div className="flex gap-3 mt-5">
-            <button type="submit" disabled={formLoading || !formData.name}
-              className="h-9 flex items-center gap-1.5 px-4 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50">
-              {formLoading ? "Saving..." : editCategory ? "Update category" : "Create category"}
-            </button>
-            <button type="button" onClick={() => { setShowForm(false); setEditCategory(null); setFormError(null); setFormData(getDefaultFormData()); }}
-              className="h-9 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
-          </div>
-        </form>
-      )}
-
-      {selected.size > 0 && (
-        <div className="mx-7 mb-4 flex items-center gap-3 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-          <CheckCircle size={16} className="text-blue-700" />
-          <span className="text-sm font-medium text-blue-900">{selected.size} selected</span>
-          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-blue-700 hover:text-blue-900">Clear</button>
-          <button onClick={handleBulkDelete} disabled={bulkLoading}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50">
-            <Archive size={13} /> Delete
-          </button>
-        </div>
-      )}
-
-      {/* Tree */}
-      <div className="px-3 py-3 overflow-x-auto">
-        {loading ? (
-          <Spinner />
-        ) : error && categories.length === 0 ? (
-          <ErrorState message={error} onRetry={fetchCategories} />
-        ) : categoriesToRender.length === 0 ? (
-          <div className="flex flex-col items-center py-12 text-center">
-            <FolderTree size={40} className="text-slate-300 mb-3" />
-            <p className="text-sm text-slate-500 font-medium">{searchMode ? "No categories match your search." : "No categories yet. Add one to get started."}</p>
-          </div>
-        ) : (
-          categoriesToRender.map((category) => (
-            <CategoryRow
-              key={category.id}
-              category={category}
-              depth={0}
-              selected={selected}
-              onToggleSelect={toggleSelect}
-              expanded={expanded}
-              onToggleExpand={toggleExpand}
-              childrenMap={childrenMap}
-              products={productsFor(category.id)}
-              getProducts={productsFor}
-              productsLoading={productsLoading}
-              forceExpand={searchMode}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-        {!loading && categories.length > 0 && (
-          <p className="px-4 pt-2 pb-1 text-xs text-slate-400">{categoriesToRender.length} categor{categoriesToRender.length === 1 ? "y" : "ies"}</p>
-        )}
-      </div>
       {ConfirmationDialog}
-    </div>
+    </HRPage>
   );
 }

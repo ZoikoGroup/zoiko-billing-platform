@@ -61,8 +61,12 @@ export default function ProductsDashboard() {
   const [categories, setCategories] = useState([]);
   const [errorCategories, setErrorCategories] = useState(null);
 
+  const [usageProducts, setUsageProducts] = useState([]);
+
   const [revenueData, setRevenueData] = useState([]);
   const [errorRevenue, setErrorRevenue] = useState(null);
+
+  const [revenueGranularity, setRevenueGranularity] = useState("monthly");
 
   const [productLineItems, setProductLineItems] = useState([]); // flattened invoice line items, recent paid-invoice sample
   const [errorLineItems, setErrorLineItems] = useState(null);
@@ -72,11 +76,12 @@ export default function ProductsDashboard() {
       setRefreshing(true);
       setErrorProducts(null); setErrorCategories(null); setErrorRevenue(null); setErrorLineItems(null);
 
-      const [productsData, categoriesData, revenueRes, recentPaidInvoices] = await Promise.allSettled([
+      const [productsData, categoriesData, revenueRes, recentPaidInvoices, usageRes] = await Promise.allSettled([
         productApi.list({ per_page: 200 }),
         productApi.listCategories({ per_page: 100 }),
         dashboardApi.getMonthlyRevenue(12),
         invoiceApi.list({ per_page: TOP_PRODUCTS_INVOICE_SAMPLE_SIZE, status: "paid" }),
+        productApi.listUsageBillable(),
       ]);
 
       let productItems = [];
@@ -92,6 +97,10 @@ export default function ProductsDashboard() {
         setCategories(extractArray(categoriesData.value));
       } else {
         setErrorCategories(categoriesData.reason?.message || "Failed to load categories");
+      }
+
+      if (usageRes.status === "fulfilled") {
+        setUsageProducts(extractArray(usageRes.value));
       }
 
       if (revenueRes.status === "fulfilled" && revenueRes.value) {
@@ -143,6 +152,41 @@ export default function ProductsDashboard() {
   const inventoryProducts = useMemo(() => filteredProducts.filter((p) => p.product_type === "good" && p.status === "active"), [filteredProducts]);
 
   const totalRevenue = useMemo(() => revenueData.reduce((sum, r) => sum + r.revenue, 0), [revenueData]);
+
+  const revenueTrend = useMemo(() => {
+    const series = revenueData.filter((r) => r.revenue > 0);
+    if (series.length < 2) return null;
+    const last = series[series.length - 1].revenue;
+    const prev = series[series.length - 2].revenue;
+    if (prev <= 0) return null;
+    const pct = ((last - prev) / prev) * 100;
+    return {
+      trend: pct >= 0 ? "up" : "down",
+      trendValue: `${Math.abs(pct).toFixed(1)}% MoM`,
+    };
+  }, [revenueData]);
+
+  // Revenue series re-bucketed by granularity — aggregates the trailing 12
+  // monthly points into coarser buckets (no synthetic sub-month data).
+  const revenueChartData = useMemo(() => {
+    if (!revenueData.length) return [];
+    const buckets = revenueGranularity === "monthly" ? 12 : revenueGranularity === "weekly" ? 6 : 4;
+    const size = Math.max(1, Math.ceil(revenueData.length / buckets));
+    const out = [];
+    for (let i = 0; i < revenueData.length; i += size) {
+      const slice = revenueData.slice(i, i + size);
+      out.push({
+        label: slice.length === 1 ? slice[0].month : `${slice[0].month} – ${slice[slice.length - 1].month}`,
+        revenue: slice.reduce((s, r) => s + r.revenue, 0),
+      });
+    }
+    return out;
+  }, [revenueData, revenueGranularity]);
+
+  const activeMetersCount = useMemo(
+    () => usageProducts.filter((p) => p.status === "active").length,
+    [usageProducts]
+  );
 
   const categoryChartData = useMemo(() =>
     filteredCategories.map((cat, i) => ({
@@ -200,6 +244,8 @@ export default function ProductsDashboard() {
       .slice(0, 5);
     return { topProductsByRevenue: byRevenue, mostUsedProducts: byCount };
   }, [productLineItems, productNameById]);
+
+  const topPerformer = useMemo(() => topProductsByRevenue[0] || null, [topProductsByRevenue]);
 
   const inactiveProductsCount = useMemo(
     () => Math.max(filteredProducts.length - activeProducts.length, 0),
@@ -367,13 +413,101 @@ export default function ProductsDashboard() {
       </div>
 
       <StatGroup title="Performance">
-        <div className="h-full min-w-0"><DashboardStatCard title="Revenue" value={Number(totalRevenue)} currency={baseCurrency} subtitle="Trailing 12 months" icon={DollarSign} color="from-brand to-brand-hover" href="/billing/products/reports" sparkline={revenueData.map((r) => r.revenue)} /></div>
-        <div className="h-full min-w-0"><DashboardStatCard title="Inactive Products" value={inactiveProductsCount} subtitle="Not currently sellable" icon={PauseCircle} color="from-slate-500 to-slate-600" href="/billing/products" /></div>
-        <div className="h-full min-w-0"><DashboardStatCard title="No Recent Sales" value={noRecentSalesCount} subtitle="Active, no recent line items" icon={AlertCircle} color="from-amber-500 to-orange-500" href="/billing/products" /></div>
-        <div className="h-full min-w-0"><DashboardStatCard title="Largest Category" value={topCategory ? `${topCategory.share.toFixed(0)}%` : "—"} subtitle={topCategory ? topCategory.name : "Of categorized products"} icon={Award} color="from-indigo-500 to-blue-500" href="/billing/products/categories" /></div>
+        <div className="h-full min-w-0">
+          <DashboardStatCard
+            title="Revenue"
+            value={Number(totalRevenue)}
+            currency={baseCurrency}
+            trend={revenueTrend?.trend}
+            trendValue={revenueTrend?.trendValue}
+            subtitle="Trailing 12 months"
+            icon={DollarSign}
+            color="from-brand to-brand-hover"
+            href="/billing/products/reports"
+            sparkline={revenueData.map((r) => r.revenue)}
+          />
+        </div>
+        <div className="h-full min-w-0">
+          <DashboardStatCard
+            title="Active Meters"
+            value={activeMetersCount}
+            trend={activeMetersCount > 0 ? "up" : "flat"}
+            trendValue={activeMetersCount > 0 ? `${usageProducts.length} total meters` : "No meters yet"}
+            subtitle="Usage-based metered products"
+            icon={Gauge}
+            color="from-amber-500 to-orange-500"
+            href="/billing/usage-billing"
+          />
+        </div>
+        <div className="h-full min-w-0">
+          <DashboardStatCard
+            title="Top Performing Product"
+            value={topPerformer ? topPerformer.name : "—"}
+            subtitle={topPerformer ? `${formatDisplayCurrency(topPerformer.revenue, baseCurrency)} in recent paid invoices` : "No recent sales yet"}
+            icon={Award}
+            color="from-indigo-500 to-blue-500"
+            href="/billing/products"
+          />
+        </div>
+        <div className="h-full min-w-0">
+          <DashboardStatCard
+            title="Largest Category"
+            value={topCategory ? `${topCategory.share.toFixed(0)}%` : "—"}
+            subtitle={topCategory ? topCategory.name : "Of categorized products"}
+            icon={Layers}
+            color="from-emerald-500 to-green-500"
+            href="/billing/products/categories"
+          />
+        </div>
       </StatGroup>
 
       <QuickActions actions={productQuickActions} />
+
+      <div className={DASHBOARD_CHART_GRID}>
+        <div className="xl:col-span-2">
+          <DashboardChartCard
+            title="Revenue Trend"
+            action={
+              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                {[
+                  { id: "daily", label: "Daily" },
+                  { id: "weekly", label: "Weekly" },
+                  { id: "monthly", label: "Monthly" },
+                ].map((g) => (
+                  <button key={g.id} onClick={() => setRevenueGranularity(g.id)} aria-label={`${g.label} view`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${revenueGranularity === g.id ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            <DashboardChartErrorBoundary>
+              {errorRevenue && revenueData.length === 0 ? (
+                <DashboardEmptyPanel title={errorRevenue} message="Revenue data unavailable right now." icon={DollarSign} />
+              ) : revenueChartData.length === 0 ? (
+                <DashboardEmptyPanel title="No revenue data" message="Monthly revenue from invoices and dashboards will show up here." icon={DollarSign} />
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={revenueChartData}>
+                    <defs>
+                      <linearGradient id="revenueTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCompactCurrency(v)} />
+                    <Tooltip formatter={(v) => [formatDisplayCurrency(v, baseCurrency), "Revenue"]} />
+                    <Area type="monotone" dataKey="revenue" stroke="#FF7A00" strokeWidth={2} fill="url(#revenueTrendGrad)" name="Revenue" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </DashboardChartErrorBoundary>
+          </DashboardChartCard>
+        </div>
+      </div>
 
       <div className={DASHBOARD_CHART_GRID}>
         <DashboardChartCard title="Product Growth">
