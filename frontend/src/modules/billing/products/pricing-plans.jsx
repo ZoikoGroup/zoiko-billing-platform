@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown } from "lucide-react";
+import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
@@ -56,6 +56,8 @@ export default function ProductPricingPlansPage() {
   const [sortField, setSortField] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
+  const [view, setView] = useState("cards");
+  const [annual, setAnnual] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editPlan, setEditPlan] = useState(null);
@@ -213,6 +215,28 @@ export default function ProductPricingPlansPage() {
     return 0;
   });
 
+  const activePlans = sortedPlans.filter((p) => p.status === "active");
+  const featuredPlans = activePlans.slice(0, 3);
+  const activeTypes = [...new Set(activePlans.map((p) => p.plan_type || "flat"))];
+  const planPriceFor = (plan, currency) => {
+    if (annual && plan.billing_interval === "monthly") return formatCurrency(parseFloat(plan.price || 0) * 0.8, currency);
+    return formatCurrency(plan.price || 0, currency);
+  };
+  const planSuffixFor = (plan) => {
+    if (annual && plan.billing_interval === "monthly") return "/mo · billed annually";
+    return `/${(plan.billing_interval || "monthly").replace("_", " ")}`;
+  };
+  const planFeatures = (plan) => {
+    const f = [];
+    f.push({ icon: Zap, label: `${(plan.plan_type || "flat").replace("_", " ")} pricing` });
+    f.push({ icon: Clock, label: plan.billing_interval === "one_time" ? "One-time payment" : `Billed ${plan.billing_interval.replace("_", " ")}` });
+    if (plan.trial_days > 0) f.push({ icon: Gift, label: `${plan.trial_days}-day free trial` });
+    else f.push({ icon: Check, label: "No trial period" });
+    if (plan.setup_fee > 0) f.push({ icon: DollarSign, label: `${formatCurrency(plan.setup_fee, productCurrencyById.get(String(plan.product_id)) || baseCurrency)} setup fee` });
+    else f.push({ icon: Check, label: "No setup fee" });
+    return f;
+  };
+
   const productCurrencyById = new Map(products.map((p) => [String(p.id), p.currency || baseCurrency]));
   const getPlanCurrency = (plan) => productCurrencyById.get(String(plan?.product_id)) || baseCurrency;
 
@@ -232,6 +256,82 @@ export default function ProductPricingPlansPage() {
 
   return (
     <HRPage title="Pricing Plans" subtitle="Product pricing plans">
+
+      {view === "cards" && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active plans</p>
+              <p className="text-2xl font-extrabold text-slate-800 mt-1">{activePlans.length}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pricing models</p>
+              <p className="text-2xl font-extrabold text-slate-800 mt-1">{activeTypes.length}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{activeTypes.map((t) => t.replace("_", " ")).join(" · ")}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total plans</p>
+              <p className="text-2xl font-extrabold text-slate-800 mt-1">{plans.length}</p>
+            </div>
+          </div>
+
+          {featuredPlans.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center mb-6">
+              <Sparkles className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500 font-medium">No active pricing plans yet</p>
+              <p className="text-slate-400 text-sm mt-1 mb-4">Create an active plan to see it here</p>
+              <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
+                <Plus size={18} /> Add Plan
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {featuredPlans.map((plan, idx) => {
+                const currency = getPlanCurrency(plan);
+                const isFeatured = idx === 0 && featuredPlans.length >= 2;
+                return (
+                  <div key={plan.id} className={`relative flex flex-col rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all hover:-translate-y-1 hover:shadow-xl ${isFeatured ? "bg-gradient-to-br from-brand to-[#ff8c3a] text-white" : "bg-white border border-slate-200"}`}>
+                    {isFeatured && (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white text-brand-700 text-[11px] font-bold shadow-sm">
+                        <BadgeCheck size={12} /> MOST POPULAR
+                      </span>
+                    )}
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className={`text-lg font-bold ${isFeatured ? "text-white" : "text-slate-800"}`}>{plan.name || "Unnamed plan"}</h3>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize ${isFeatured ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}>
+                        {(plan.plan_type || "flat").replace("_", " ")}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className={`text-3xl font-extrabold ${isFeatured ? "text-white" : "text-slate-800"}`}>{planPriceFor(plan, currency)}</span>
+                      <span className={`text-sm ${isFeatured ? "text-white/80" : "text-slate-400"}`}>{planSuffixFor(plan)}</span>
+                    </div>
+                    {annual && plan.billing_interval === "monthly" && (
+                      <p className={`text-xs font-semibold mb-3 ${isFeatured ? "text-emerald-200" : "text-emerald-600"}`}>
+                        You save {formatCurrency(parseFloat(plan.price || 0) * 2.4, currency)} / yr
+                      </p>
+                    )}
+                    <ul className={`space-y-2.5 mt-3 mb-6 flex-1 ${isFeatured ? "text-white/90" : "text-slate-600"}`}>
+                      {planFeatures(plan).map((feat, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm">
+                          <feat.icon size={15} className={isFeatured ? "text-emerald-200" : "text-brand-600"} />
+                          {feat.label}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                      className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${isFeatured ? "bg-white text-brand-700 hover:bg-brand-50" : "bg-brand-50 text-brand-700 hover:bg-brand-100"}`}>
+                      Edit Plan
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
@@ -253,10 +353,35 @@ export default function ProductPricingPlansPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
-              <Plus size={18} /> Add Plan
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                <button onClick={() => setView("cards")} aria-label="Card view"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${view === "cards" ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  <LayoutGrid size={14} /> Cards
+                </button>
+                <button onClick={() => setView("table")} aria-label="Table view"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${view === "table" ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  <List size={14} /> Table
+                </button>
+              </div>
+              {view === "cards" && (
+                <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                  <button onClick={() => setAnnual(false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!annual ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                    Monthly
+                  </button>
+                  <button onClick={() => setAnnual(true)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${annual ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                    Annual
+                    <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">Save 20%</span>
+                  </button>
+                </div>
+              )}
+              <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
+                <Plus size={18} /> Add Plan
+              </button>
+            </div>
           </div>
 
           {showFilters && (

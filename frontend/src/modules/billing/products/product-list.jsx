@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Package, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Archive, Image, Eye, Copy, RotateCcw, CreditCard, Upload, Sparkles, Trash2, Loader2, Pencil,
@@ -74,6 +74,7 @@ export default function ProductListPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchInputRef = useRef(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -120,6 +121,21 @@ export default function ProductListPage() {
     }, 400);
     return () => clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+        searchInputRef.current.blur();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -389,6 +405,15 @@ export default function ProductListPage() {
   const isUsageType = (data) => data.product_type === "usage";
   const isPhysicalType = (data) => data.product_type === "good";
   const isServiceType = (data) => data.product_type === "service";
+
+  const pricingModelFor = (data) => {
+    const freq = data.billing_frequency || "";
+    if (data.product_type === "usage" || freq === "usage_based") return { label: "Usage Based", cls: "bg-amber-100 text-amber-700" };
+    if (freq === "one_time") return { label: "One-Time", cls: "bg-slate-100 text-slate-600" };
+    if (["monthly", "quarterly", "yearly", "semi_annual"].includes(freq)) return { label: "Subscription", cls: "bg-emerald-100 text-emerald-700" };
+    if (freq === "recurring") return { label: "Recurring", cls: "bg-violet-100 text-violet-700" };
+    return { label: "One-Time", cls: "bg-slate-100 text-slate-600" };
+  };
 
   const getFrequencyForType = (productType) => {
     const map = {
@@ -701,6 +726,14 @@ export default function ProductListPage() {
 
   return (
     <HRPage title="Products" subtitle="Manage your products">
+      <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400" aria-label="Breadcrumb">
+        <span className="font-medium text-slate-500">Products</span>
+        <span>/</span>
+        <span className="font-semibold text-brand-700">Product List</span>
+        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
+          <Package size={11} /> {total} catalog items
+        </span>
+      </nav>
       {successMessage && <SuccessMessage message={successMessage} onDismiss={() => setSuccessMessage(null)} />}
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
@@ -709,14 +742,16 @@ export default function ProductListPage() {
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input type="text" placeholder="Search by name, code..." value={search}
+                <input ref={searchInputRef} type="text" placeholder="Search by name, code..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {search && (
+                  className="w-full pl-9 pr-14 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                {search ? (
                   <button onClick={() => setSearch("")} aria-label="Clear search"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
                     <X size={16} />
                   </button>
+                ) : (
+                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-400 pointer-events-none">⌘K</kbd>
                 )}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
@@ -911,6 +946,9 @@ export default function ProductListPage() {
                 {visibleColumns.has("product_type") && (
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                 )}
+                {visibleColumns.has("product_type") && (
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Pricing Model</th>
+                )}
                 {visibleColumns.has("status") && <SortHeader field="status" label="Status" />}
                 {visibleColumns.has("created_at") && <SortHeader field="created_at" label="Created" />}
                 <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
@@ -1004,6 +1042,13 @@ export default function ProductListPage() {
                     <td className="px-4 py-4">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 capitalize">
                         {product.product_type ? product.product_type.replace("_", " ") : "—"}
+                      </span>
+                    </td>
+                  )}
+                  {visibleColumns.has("product_type") && (
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${pricingModelFor(product).cls}`}>
+                        {pricingModelFor(product).label}
                       </span>
                     </td>
                   )}
