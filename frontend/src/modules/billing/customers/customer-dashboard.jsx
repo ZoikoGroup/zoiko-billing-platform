@@ -264,7 +264,7 @@ export default function CustomerDashboard() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label={`Loading ${plural.toLowerCase()} dashboard`}>
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label={`Loading ${plural.toLowerCase()} dashboard`}>
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 5 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -283,7 +283,7 @@ export default function CustomerDashboard() {
 
   if (error && !kpiData) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={() => fetchData(true)} title="Something went wrong" />
       </div>
@@ -291,7 +291,7 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader {...headerProps} />
 
       {error && (
@@ -315,7 +315,7 @@ export default function CustomerDashboard() {
         <DashboardStatCard title={`New ${plural} (${periodLabel})`} value={d.period_new_customers || 0} subtitle="Joined in period" icon={UserPlus} color="from-cyan-500 to-cyan-600" href="/billing/customers" />
       </div>
 
-      <StatGroup title="More Metrics" gridClass="grid gap-5 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+      <StatGroup title="More Metrics">
         <DashboardStatCard title={`Total ${plural}`} value={d.total_customers || 0} subtitle="All registered (lifetime)" icon={Users} color="from-brand to-brand-hover" href="/billing/customers" />
         <DashboardStatCard title="Active" value={d.active_customers || 0} subtitle={`${d.total_customers ? Math.round((d.active_customers / d.total_customers) * 100) : 0}% of total`} icon={CheckCircle} color="from-green-500 to-emerald-500" href="/billing/customers?status=active" />
         <DashboardStatCard title="Inactive" value={d.inactive_customers || 0} subtitle={`${d.total_customers ? Math.round((d.inactive_customers / d.total_customers) * 100) : 0}% of total`} icon={Clock} color="from-gray-500 to-slate-600" href="/billing/customers?status=inactive" />
@@ -323,7 +323,7 @@ export default function CustomerDashboard() {
         <DashboardStatCard title="Avg Revenue/Customer" value={Number(d.avg_revenue_per_customer || 0)} currency={baseCurrency} subtitle="Average per customer (lifetime)" icon={DollarSign} color="from-emerald-500 to-emerald-600" />
       </StatGroup>
 
-      <StatGroup title="Revenue & Collections" gridClass="grid gap-5 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+      <StatGroup title="Revenue & Collections">
         <DashboardStatCard title="Total Revenue" value={Number(d.total_revenue || 0)} currency={baseCurrency} subtitle="All time" icon={TrendingUp} color="from-blue-500 to-blue-600" />
         <DashboardStatCard title="Outstanding Balance" value={Number(d.outstanding_balance || 0)} currency={baseCurrency} subtitle="Unpaid invoices" icon={CreditCard} color="from-orange-500 to-orange-600" href="/billing/invoices" />
         <DashboardStatCard title="Avg Collection Period" value={`${d.avg_collection_time_days || 0} days`} subtitle="Days to collect" icon={Clock} color="from-cyan-500 to-cyan-600" />
@@ -333,7 +333,7 @@ export default function CustomerDashboard() {
 
       <QuickActions actions={customerQuickActions} />
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 items-stretch">
+      <div className="grid gap-6 md:grid-cols-2 items-stretch">
         <DashboardChartCard title={`${singular} Status`}>
           <DashboardChartErrorBoundary>
             {statusData.length === 0 ? (

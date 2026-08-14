@@ -1929,6 +1929,14 @@ class QuotationItemCreate(BaseModel):
         return v
 
 
+class QuotationItemsBulkCreate(BaseModel):
+    items: List[QuotationItemCreate] = Field(default_factory=list, max_length=500)
+
+
+class PublicQuoteRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=1000)
+
+
 class QuotationItemUpdate(BaseModel):
     line_number: Optional[int] = None
     product_id: Optional[int] = None

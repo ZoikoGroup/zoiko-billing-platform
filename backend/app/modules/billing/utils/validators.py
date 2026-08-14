@@ -99,10 +99,6 @@ def validate_pan_format(v: Optional[str]) -> Optional[str]:
     pan = v.strip().upper()
     if not re.match(r"^[A-Z]{5}\d{4}[A-Z]{1}$", pan):
         raise ValueError("Invalid PAN format (expected: 5 letters + 4 digits + 1 letter)")
-    entity_char = pan[3]
-    valid_entities = {"A", "B", "C", "F", "G", "H", "L", "J", "P", "T"}
-    if entity_char not in valid_entities:
-        raise ValueError(f"Unusual PAN entity type: {entity_char}")
     return pan
 
 
