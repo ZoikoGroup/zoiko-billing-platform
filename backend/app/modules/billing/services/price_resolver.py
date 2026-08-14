@@ -214,11 +214,29 @@ class PriceResolver:
             .all()
         )
 
+        plan_flat_fee = Decimal(str(plan.flat_fee or 0))
+
         if not tiers:
-            resolved_price = Decimal(str(plan.unit_price or 0))
+            unit_price = Decimal(str(plan.unit_price or 0))
+            if quantity is not None and quantity > 0 and plan_flat_fee > 0:
+                resolved_price = unit_price * Decimal(str(quantity)) + plan_flat_fee
+                return PriceResolution(
+                    base_price=base_price,
+                    resolved_price=resolved_price,
+                    pricing_plan_id=pricing_plan_id,
+                    price_source=PriceSource.PRICING_PLAN.value,
+                    currency=currency,
+                    pricing_model=pricing_model,
+                    resolved_price_type=ResolvedPriceType.LUMP_SUM.value,
+                    tier_info={
+                        "model": pricing_model, "tier_count": 0,
+                        "message": "No tiers configured",
+                        "plan_flat_fee": float(plan_flat_fee),
+                    },
+                )
             return PriceResolution(
                 base_price=base_price,
-                resolved_price=resolved_price,
+                resolved_price=unit_price,
                 pricing_plan_id=pricing_plan_id,
                 price_source=PriceSource.PRICING_PLAN.value,
                 currency=currency,
@@ -259,6 +277,8 @@ class PriceResolver:
             matching_tier = self._find_tier(tiers, qty)
             in_range = self._is_quantity_in_range(tiers, qty)
             if matching_tier and matching_tier.unit_price is not None:
+                tier_flat_fee = Decimal(str(matching_tier.flat_fee or 0))
+                total_flat_fee = tier_flat_fee + plan_flat_fee
                 tier_info = {
                     "model": pricing_model,
                     "tier_count": len(tiers),
@@ -266,6 +286,7 @@ class PriceResolver:
                         "from": matching_tier.from_quantity,
                         "to": matching_tier.to_quantity,
                         "unit_price": float(matching_tier.unit_price),
+                        "flat_fee": float(tier_flat_fee),
                     },
                 }
                 if not in_range:
@@ -273,6 +294,21 @@ class PriceResolver:
                     tier_info["message"] = (
                         f"Quantity {qty} exceeds defined tier range. "
                         f"Using highest tier price."
+                    )
+                if total_flat_fee > 0:
+                    tier_info["plan_flat_fee"] = float(plan_flat_fee)
+                    resolved_price = Decimal(str(matching_tier.unit_price)) * Decimal(qty) + total_flat_fee
+                    return PriceResolution(
+                        base_price=base_price,
+                        resolved_price=resolved_price,
+                        pricing_plan_id=pricing_plan_id,
+                        price_source=PriceSource.PRICING_PLAN.value,
+                        currency=currency,
+                        pricing_model=pricing_model,
+                        # resolved_price already includes qty * unit_price + flat fees —
+                        # callers must NOT multiply by quantity again.
+                        resolved_price_type=ResolvedPriceType.LUMP_SUM.value,
+                        tier_info=tier_info,
                     )
                 return PriceResolution(
                     base_price=base_price,
@@ -298,14 +334,17 @@ class PriceResolver:
                 else:
                     tier_qty = min(remaining, tier_end - tier_start + 1)
                 if tier.unit_price is not None:
-                    total += tier_qty * Decimal(str(tier.unit_price))
+                    tier_flat_fee = Decimal(str(tier.flat_fee or 0))
+                    total += tier_qty * Decimal(str(tier.unit_price)) + tier_flat_fee
                     applied_tiers.append({
                         "from": tier.from_quantity,
                         "to": tier.to_quantity,
                         "unit_price": float(tier.unit_price),
                         "quantity_in_tier": tier_qty,
+                        "flat_fee": float(tier_flat_fee),
                     })
                 remaining -= tier_qty
+            total += plan_flat_fee
             return PriceResolution(
                 base_price=base_price,
                 resolved_price=total,
@@ -321,6 +360,7 @@ class PriceResolver:
                     "model": pricing_model,
                     "tier_count": len(tiers),
                     "applied_tiers": applied_tiers,
+                    "plan_flat_fee": float(plan_flat_fee),
                     "total_for_quantity": float(total),
                     "effective_per_unit": float(total / qty) if qty > 0 else 0,
                 },

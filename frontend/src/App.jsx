@@ -103,6 +103,14 @@ const TaxConfigurationPage = lazy(() => import("./modules/billing/tax/tax-config
 const TaxReportsPage = lazy(() => import("./modules/billing/tax/reports"));
 const TaxSettingsPage = lazy(() => import("./modules/billing/tax/settings"));
 
+const CommercialDashboardPage = lazy(() => import("./modules/super-admin/DashboardPage"));
+const CommercialOrganizationsPage = lazy(() => import("./modules/super-admin/OrganizationsPage"));
+const CommercialOrganizationDetailPage = lazy(() => import("./modules/super-admin/OrganizationDetailPage"));
+const CommercialPlansPage = lazy(() => import("./modules/super-admin/PlansPage"));
+const CommercialSubscriptionsPage = lazy(() => import("./modules/super-admin/SubscriptionsPage"));
+const CommercialEntitlementsPage = lazy(() => import("./modules/super-admin/EntitlementsPage"));
+const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
+
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
   { path: "/billing/reports", element: <ReportsPage /> },
@@ -189,6 +197,16 @@ const BILLING_ROUTES = [
   { path: "/billing/write-offs/:id", element: <WriteOffDetailPage /> },
 ];
 
+const SUPER_ADMIN_ROUTES = [
+  { path: "/super-admin/commercial/dashboard", element: <CommercialDashboardPage /> },
+  { path: "/super-admin/commercial/organizations", element: <CommercialOrganizationsPage /> },
+  { path: "/super-admin/commercial/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
+  { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
+  { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
+  { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
+  { path: "/super-admin/commercial/audit-logs", element: <CommercialAuditLogsPage /> },
+];
+
 function ModuleSpinner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F8F7F4]">
@@ -223,6 +241,9 @@ export default function App() {
           <Route path="/organizations" element={<OrganizationsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           {BILLING_ROUTES.map(({ path, element }) => (
+            <Route key={path} path={path} element={<BillingShell>{element}</BillingShell>} />
+          ))}
+          {SUPER_ADMIN_ROUTES.map(({ path, element }) => (
             <Route key={path} path={path} element={<BillingShell>{element}</BillingShell>} />
           ))}
           <Route

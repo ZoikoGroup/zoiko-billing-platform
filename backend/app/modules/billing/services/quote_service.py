@@ -55,6 +55,7 @@ ITEM_ALLOWED_FIELDS = {
     "total_amount", "discount_amount", "tax_amount", "product_id",
     "is_tax_inclusive",
     "pricing_plan_id", "price_source", "base_price", "resolved_price",
+    "resolved_price_type",
     "original_currency", "original_amount", "exchange_rate",
     "quote_currency", "converted_amount", "tax_rate_id",
 }
@@ -166,6 +167,7 @@ class QuoteService:
                 data["price_source"] = result.price_source
                 data["unit_price"] = result.resolved_price
                 price_semantics = result.resolved_price_type or "unit"
+                data["resolved_price_type"] = price_semantics
 
                 quote_currency = quote.currency or "USD"
                 product_currency = result.currency or "USD"
@@ -354,6 +356,7 @@ class QuoteService:
             else:
                 entry["unit_price"] = item.unit_price
                 entry["exchange_rate"] = Decimal("1")
+            entry["price_semantics"] = getattr(item, "resolved_price_type", None) or "unit"
             items_data.append(entry)
         totals = self.calculate_totals(items_data, quote.discount_percentage, currency=quote.currency)
         quote.subtotal = totals["subtotal"]

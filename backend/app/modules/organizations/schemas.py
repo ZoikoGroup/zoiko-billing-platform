@@ -2,36 +2,73 @@
 modules/organizations/schemas.py
 --------------------------------
 """
+import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.modules.commercial.enums import BillingClassification, BillingSource
 
 
 class OrganizationBase(BaseModel):
     organization_name: str = Field(..., min_length=1, max_length=200)
     display_name: Optional[str] = None
+    legal_name: Optional[str] = Field(None, max_length=255)
     industry: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    website: Optional[str] = Field(None, max_length=500)
     tax_no: Optional[str] = None
     registration_number: Optional[str] = None
     currency: str = "USD"
     timezone: str = "UTC"
+    fiscal_year_start: Optional[str] = "01-01"
+    fiscal_year_end: Optional[str] = "12-31"
 
 
 class OrganizationUpdate(BaseModel):
     organization_name: Optional[str] = Field(None, min_length=1, max_length=200)
     display_name: Optional[str] = None
+    legal_name: Optional[str] = Field(None, max_length=255)
     industry: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    website: Optional[str] = Field(None, max_length=500)
     tax_no: Optional[str] = None
     registration_number: Optional[str] = None
     currency: Optional[str] = None
     timezone: Optional[str] = None
+    fiscal_year_start: Optional[str] = None
+    fiscal_year_end: Optional[str] = None
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            v = v.strip().upper()
+            if not re.match(r"^[A-Z]{3}$", v):
+                raise ValueError("currency must be a 3-letter ISO-4217 code")
+        return v
+
+    @field_validator("fiscal_year_start", "fiscal_year_end")
+    @classmethod
+    def _validate_fiscal_year(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            v = v.strip()
+            if not re.match(r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$", v):
+                raise ValueError("fiscal year must be in MM-DD format")
+        return v
 
 
 class OrganizationResponse(BaseModel):
@@ -41,14 +78,24 @@ class OrganizationResponse(BaseModel):
     organization_name: str
     organization_code: str
     display_name: Optional[str] = None
+    legal_name: Optional[str] = None
     industry: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    website: Optional[str] = None
     tax_no: Optional[str] = None
     registration_number: Optional[str] = None
     currency: str
     timezone: str
+    fiscal_year_start: Optional[str] = None
+    fiscal_year_end: Optional[str] = None
+    billing_classification: BillingClassification
+    billing_source: BillingSource
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -85,10 +132,22 @@ class OrganizationDetail(BaseModel):
     status: str
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None
+    legal_name: Optional[str] = None
     industry: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
     currency: str = "USD"
     timezone: str = "UTC"
+    fiscal_year_start: Optional[str] = None
+    fiscal_year_end: Optional[str] = None
+    billing_classification: Optional[BillingClassification] = None
+    billing_source: Optional[BillingSource] = None
     total_customers: int = 0
     active_customers: int = 0
     billing_admins: int = 0

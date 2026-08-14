@@ -31,6 +31,7 @@ from app.core.security import (
 )
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
+from app.modules.commercial.enums import BillingClassification, BillingSource
 from app.modules.organizations.models import Organization
 
 logger = logging.getLogger("zoiko_billing.auth")
@@ -201,11 +202,26 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     org = Organization(
         organization_name=data.organization,
         organization_code=org_code,
+        legal_name=data.legal_name,
         industry=data.industry,
         address=data.address,
+        city=data.city,
+        state=data.state,
+        country=data.country,
+        postal_code=data.postal_code,
         email=data.email,
         phone=data.phone,
+        website=data.website,
+        tax_no=data.tax_no,
+        registration_number=data.registration_number,
+        currency=(data.currency or "USD").upper(),
         timezone=data.timezone or "UTC",
+        fiscal_year_start=data.fiscal_year_start or "01-01",
+        fiscal_year_end=data.fiscal_year_end or "12-31",
+        # Stamped server-side — never accepted from the client, so a tenant
+        # cannot self-attribute a Zoiko One source to skip a charge.
+        billing_classification=BillingClassification.COMMERCIAL_STANDALONE,
+        billing_source=BillingSource.REGISTERED_VIA_STANDALONE,
         is_active=True,
     )
     db.add(org)
@@ -227,6 +243,34 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         is_verified=True,
     )
     db.add(admin)
+
+    # CommercialAccount is created inside the same transaction (PHASE 6):
+    # organization + user + commercial account + billing configuration commit
+    # together, so any failure rolls back the whole registration instead of
+    # leaving a partially initialized tenant. ensure_commercial_account() is
+    # idempotent and flush-only (does not commit). billing_source and
+    # billing_classification come from the Organization's Phase 1 server-side
+    # stamps — the account does not accept them from the client.
+    from app.modules.commercial.service import (
+        CommercialAccountService,
+        CommercialSubscriptionService,
+    )
+    account = CommercialAccountService(db).ensure_commercial_account(org.id)
+
+    # CommercialSubscription (PHASE 7): provisioned ONLY when an approved
+    # default plan exists. Phase 7 seeds no plans, so this is a safe no-op that
+    # leaves the account without a subscription — a free/paid plan is never
+    # invented merely to satisfy the flow. Same transaction, flush-only.
+    CommercialSubscriptionService(db).provision_default_subscription(account.id)
+
+    # BillingConfiguration is initialized inside the same transaction (PHASE 4):
+    # organization + user + config commit together, so a failure rolls back the
+    # whole registration instead of leaving a partially initialized tenant.
+    # seed_billing_configuration() is idempotent and does not commit; the lazy
+    # GET /billing/settings/config backstop still covers any org without a config.
+    from app.modules.billing.services.settings_service import BillingConfigurationService
+    BillingConfigurationService(db).seed_billing_configuration(org.id)
+
     db.commit()
     db.refresh(admin)
     db.refresh(org)

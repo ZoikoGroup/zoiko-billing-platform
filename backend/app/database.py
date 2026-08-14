@@ -145,4 +145,5 @@ def check_connection() -> bool:
 import app.modules.auth.models  # noqa: F401,E402
 import app.modules.organizations.models  # noqa: F401,E402
 import app.modules.super_admin.models  # noqa: F401,E402
+import app.modules.commercial.models  # noqa: F401,E402
 import app.modules.billing.models  # noqa: F401,E402
