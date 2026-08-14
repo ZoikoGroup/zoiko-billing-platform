@@ -175,7 +175,7 @@ const [original, setOriginal] = useState({});
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           icon={Settings}
           title="Invoice Settings"
@@ -194,7 +194,7 @@ const [original, setOriginal] = useState({});
     .replace("{NUMBER}", "0001");
 
   return (
-    <>
+    <div className="px-4 py-6 sm:px-6">
       <PageHeader
         icon={Settings}
         title="Invoice Settings"
@@ -440,6 +440,6 @@ const [original, setOriginal] = useState({});
           {form.logo_url && <p className="mt-1 text-xs text-gray-400 truncate max-w-xs">{form.logo_url}</p>}
         </SettingsField>
       </div>
-    </>
+    </div>
   );
 }

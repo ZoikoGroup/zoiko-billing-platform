@@ -368,7 +368,7 @@ export default function CreditNotesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes" }]}
           title="Credit Notes"
@@ -382,7 +382,7 @@ export default function CreditNotesPage() {
 
   if (error && creditNotes.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes" }]}
           title="Credit Notes"
@@ -395,7 +395,7 @@ export default function CreditNotesPage() {
   }
 
   return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes" }]}
           title="Credit Notes"

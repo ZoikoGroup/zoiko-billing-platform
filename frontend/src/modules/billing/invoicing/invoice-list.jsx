@@ -186,7 +186,7 @@ export default function InvoicingPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"
@@ -200,7 +200,7 @@ export default function InvoicingPage() {
 
   if (error && invoices.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"
@@ -213,7 +213,7 @@ export default function InvoicingPage() {
   }
 
   return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"
