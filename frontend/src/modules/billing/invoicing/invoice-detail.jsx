@@ -212,7 +212,7 @@ export default function InvoiceDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Invoice Detail" }]}
           title="Invoice Detail"
@@ -228,7 +228,7 @@ export default function InvoiceDetailPage() {
 
   if (error && !invoice) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Invoice Detail" }]}
           title="Invoice Detail"
@@ -249,7 +249,7 @@ export default function InvoiceDetailPage() {
 
   if (!invoice) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Invoice Detail" }]}
           title="Invoice Detail"
@@ -363,7 +363,7 @@ export default function InvoiceDetailPage() {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[
             { label: "Billing", href: "/billing" },
@@ -513,6 +513,17 @@ export default function InvoiceDetailPage() {
                 <button onClick={() => setShowMarkPaidModal(true)} disabled={actionLoading === "mark-paid"} className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                   {actionLoading === "mark-paid" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Mark as Paid
                 </button>
+              )}
+              {!isDraft && (
+                <a
+                  href={`/invoice/${id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors"
+                  aria-label="View customer-facing invoice and payment options"
+                >
+                  <CreditCard className="h-3.5 w-3.5" /> View Invoice &amp; Payment Options
+                </a>
               )}
             </div>
           </div>
@@ -844,6 +855,25 @@ export default function InvoiceDetailPage() {
             <span className="text-gray-500">Amount:</span>
             <span className="font-medium text-gray-900">{formatDisplayCurrency(invoice.total_amount ?? invoice.amount, "\u2014", currency)}</span>
           </div>
+        </div>
+        {/* View Invoice & Payment Options preview */}
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 mb-2">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+            <CreditCard className="h-3.5 w-3.5" /> Customer Payment Page
+          </p>
+          <p className="text-xs text-blue-600 mb-3">
+            The email will include a <strong>"View Invoice &amp; Payment Options"</strong> button. Preview what the customer will see:
+          </p>
+          <a
+            href={`/invoice/${id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 w-full rounded-lg bg-brand px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-hover transition-colors shadow-sm"
+          >
+            <CreditCard className="h-4 w-4" />
+            View Invoice &amp; Payment Options
+          </a>
+          <p className="text-xs text-blue-400 mt-2 text-center">↑ Opens in a new tab · Share this link directly if needed</p>
         </div>
       </Modal>
 

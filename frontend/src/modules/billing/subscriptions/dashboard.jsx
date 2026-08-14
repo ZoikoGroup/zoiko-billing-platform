@@ -316,7 +316,7 @@ export default function SubscriptionDashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading subscription dashboard">
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading subscription dashboard">
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -337,7 +337,7 @@ export default function SubscriptionDashboardPage() {
 
   if (error && filteredSubscriptions.length === 0) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={fetchDashboardData} title="Couldn't load subscription data" />
       </div>
@@ -345,7 +345,7 @@ export default function SubscriptionDashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader {...headerProps} />
 
       {error && (

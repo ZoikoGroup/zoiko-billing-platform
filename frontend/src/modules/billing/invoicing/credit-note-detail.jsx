@@ -192,7 +192,7 @@ export default function CreditNoteDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes", href: "/billing/credit-notes" }, { label: "Credit Note" }]}
           title="Credit Note"
@@ -208,7 +208,7 @@ export default function CreditNoteDetailPage() {
 
   if (error && !cn) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes", href: "/billing/credit-notes" }, { label: "Credit Note" }]}
           title="Credit Note"
@@ -227,7 +227,7 @@ export default function CreditNoteDetailPage() {
 
   if (!cn) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes", href: "/billing/credit-notes" }, { label: "Credit Note" }]}
           title="Credit Note"
@@ -281,7 +281,7 @@ export default function CreditNoteDetailPage() {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-6 sm:px-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Credit Notes", href: "/billing/credit-notes" }, { label: cn.credit_note_number || `#${id}` }]}
           title={cn.credit_note_number || `#${id}`}

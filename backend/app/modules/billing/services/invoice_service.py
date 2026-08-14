@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -6,9 +9,11 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    NotFoundException,
 )
 from app.modules.billing.models import (
     BillingAuditAction,
@@ -606,6 +611,8 @@ class InvoiceService:
 
         old_status = inv.status.value
 
+        review_url = f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{self._public_invoice_token(invoice_id)}"
+
         issue_date_str = _fmt_short_date(inv.issue_date or inv.created_at or datetime.utcnow())
         due_date_str = _fmt_short_date(inv.due_date or datetime.utcnow())
         total_str = f"{round_money(inv.total_amount or 0, inv.currency):,.2f}"
@@ -669,6 +676,7 @@ class InvoiceService:
                 db=self.db,
                 pdf_bytes=pdf_bytes,
                 pdf_filename=f"{inv.invoice_number or f'invoice-{inv.id}'}.pdf",
+                review_url=review_url,
             )
         except Exception as e:
             logger.warning("Failed to send invoice email for invoice %d: %s", invoice_id, e)
@@ -719,6 +727,190 @@ class InvoiceService:
         )
 
         return response
+
+    # ── Public Invoice View / Payment (no auth — token in the emailed link) ──
+
+    def _public_invoice_token(self, invoice_id: int) -> str:
+        """Stateless, signed token for the public invoice/payment link. Nothing
+        is stored in the DB — the token is `base64url(invoice_id.hmac(secret))`
+        and recomputed on each request, so a leaked link cannot be forged and
+        no migration is needed."""
+        sig = hmac.new(
+            settings.BILLING_SECRET_KEY.encode(),
+            str(invoice_id).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return base64.urlsafe_b64encode(f"{invoice_id}.{sig}".encode()).decode().rstrip("=")
+
+    def _resolve_public_invoice(self, token: str) -> Invoice:
+        if not token:
+            raise NotFoundException("Invoice", 0)
+        try:
+            raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()
+            invoice_id_str, _, sig = raw.partition(".")
+            expected = hmac.new(
+                settings.BILLING_SECRET_KEY.encode(),
+                invoice_id_str.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if not invoice_id_str.isdigit() or not hmac.compare_digest(sig, expected):
+                raise ValueError("bad signature")
+            invoice_id = int(invoice_id_str)
+        except Exception:
+            raise NotFoundException("Invoice", 0)
+        inv = self.db.query(Invoice).options(
+            joinedload(Invoice.customer)
+        ).filter(Invoice.id == invoice_id).first()
+        if inv is None or inv.deleted_at is not None:
+            raise NotFoundException("Invoice", invoice_id)
+        return inv
+
+    def get_public_invoice(self, token: str) -> Dict[str, Any]:
+        """Public-safe snapshot of an invoice for the customer-facing view &
+        payment page. Only fields the recipient should see are exposed — no
+        internal pricing/tax-rate details, no org internals, no audit trail."""
+        from app.services.email_service import _get_org_branding
+        from app.modules.billing.services.stripe_service import StripeService
+
+        inv = self._resolve_public_invoice(token)
+        branding = _get_org_branding(inv.organization_id, db=self.db)
+        config = self.config_service.get_configuration(inv.organization_id)
+        customer = inv.customer
+        items = sorted(inv.items or [], key=lambda i: i.line_number or 0)
+
+        currency = inv.currency or "USD"
+
+        def _money(v) -> str:
+            return f"{round_money(v if v is not None else 0, currency):,.2f}"
+
+        def _fmt_date(d) -> Optional[str]:
+            return d.strftime("%d %b %Y") if d else None
+
+        balance = Decimal(str(inv.balance_due if inv.balance_due is not None else inv.total_amount or 0))
+        paid = Decimal(str(inv.paid_amount or 0))
+        payable = balance > 0 and inv.status not in (
+            InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED,
+        )
+        if inv.status == InvoiceStatus.PAID or (balance <= 0 and inv.status in (InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID)):
+            payment_status = "paid"
+        elif paid > 0 and balance > 0:
+            payment_status = "partially_paid"
+        elif inv.status in (InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF):
+            payment_status = "uncollectable"
+        else:
+            payment_status = "unpaid"
+
+        gateways = []
+        gateway_flags = {
+            "stripe": config.gateway_stripe_enabled,
+            "razorpay": config.gateway_razorpay_enabled,
+            "paypal": config.gateway_paypal_enabled,
+            "cash": config.gateway_cash_enabled,
+            "bank_transfer": config.gateway_bank_transfer_enabled,
+            "upi": config.gateway_upi_enabled,
+            "offline": config.gateway_offline_enabled,
+        }
+        for name, enabled in gateway_flags.items():
+            if enabled:
+                gateways.append(name)
+
+        return {
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "invoice_type": inv.invoice_type.value if inv.invoice_type else "standard",
+            "status": inv.status.value if inv.status else "draft",
+            "issue_date": _fmt_date(inv.issue_date),
+            "due_date": _fmt_date(inv.due_date),
+            "paid_at": inv.paid_at.strftime("%d %b %Y %H:%M") if inv.paid_at else None,
+            "currency": currency,
+            "subtotal": _money(inv.subtotal),
+            "discount_percentage": str(inv.discount_percentage or 0),
+            "discount_amount": _money(inv.discount_amount),
+            "tax_amount": _money(inv.tax_amount),
+            "shipping_amount": _money(inv.shipping_amount),
+            "round_off": _money(inv.round_off),
+            "total_amount": _money(inv.total_amount),
+            "paid_amount": _money(paid),
+            "balance_due": _money(balance),
+            "notes": inv.notes,
+            "po_number": inv.po_number,
+            "payment_terms": inv.payment_terms or (config.default_payment_terms.value if config.default_payment_terms else None),
+            "customer": {
+                "name": (customer.display_name or customer.company_name) if customer else "",
+                "email": (customer.email or "") if customer else "",
+                "phone": (customer.phone or "") if customer else "",
+                "mobile": (customer.mobile or "") if customer else "",
+                "billing_address": (customer.billing_address or "") if customer else "",
+                "shipping_address": (customer.shipping_address or "") if customer else "",
+                "gst_number": (customer.gst_number or "") if customer else "",
+                "vat_number": (customer.vat_number or "") if customer else "",
+                "pan": (customer.pan or "") if customer else "",
+            },
+            "items": [
+                {
+                    "line_number": item.line_number,
+                    "item_type": item.item_type.value if item.item_type else "product",
+                    "description": item.description,
+                    "quantity": str(item.quantity),
+                    "unit_price": _money(item.unit_price),
+                    "discount_percentage": str(item.discount_percentage or 0),
+                    "discount_amount": _money(item.discount_amount),
+                    "tax_percentage": str(item.tax_percentage or 0),
+                    "tax_amount": _money(item.tax_amount),
+                    "total_amount": _money(item.total),
+                }
+                for item in items
+            ],
+            "company": {
+                "name": branding.get("company_name", "Zoiko Billing"),
+                "logo_url": branding.get("logo_url", ""),
+                "support_email": branding.get("support_email", ""),
+                "website": branding.get("website", ""),
+                "billing_address": branding.get("billing_address", ""),
+            },
+            "payment": {
+                "payment_status": payment_status,
+                "amount_paid": _money(paid),
+                "balance_due": _money(balance),
+                "payable": bool(payable),
+                "due_date": _fmt_date(inv.due_date),
+                "payment_terms": inv.payment_terms or (config.default_payment_terms.value if config.default_payment_terms else None),
+                "gateways": gateways,
+                "stripe": {
+                    "configured": StripeService.is_configured(),
+                    "publishable_key": StripeService.publishable_key(),
+                },
+            },
+        }
+
+    def create_public_checkout_session(self, token: str, success_url: str, cancel_url: str) -> Dict[str, Any]:
+        """Create a Stripe Checkout session from the public invoice link.
+
+        This is the hook the frontend "Pay now" button calls. When Stripe is
+        not configured (STRIPE_SECRET_KEY unset) it returns a graceful
+        placeholder so the payment UI can advertise "online payments coming
+        soon" — the same contract the StripeService exposes once configured.
+        """
+        from app.modules.billing.services.stripe_service import StripeService
+
+        inv = self._resolve_public_invoice(token)
+        if not StripeService.is_configured():
+            return {
+                "configured": False,
+                "checkout_url": None,
+                "invoice_number": inv.invoice_number,
+                "message": "Online card payments are not enabled yet. Please contact the sender to complete payment.",
+            }
+        svc = StripeService(self.db)
+        result = svc.create_checkout_session(
+            organization_id=inv.organization_id,
+            invoice_id=inv.id,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            created_by=None,
+        )
+        result["configured"] = True
+        return result
 
     def record_payment(self, invoice_id: int, organization_id: int, amount: Decimal, updated_by: int) -> Invoice:
         inv = self.repo.get_by_id(invoice_id, organization_id)

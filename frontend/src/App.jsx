@@ -8,6 +8,7 @@ import RegisterPage from "./pages/RegisterPage";
 import RegistrationSuccessPage from "./pages/RegistrationSuccessPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
+import PublicInvoicePage from "./pages/PublicInvoicePage";
 import OrgPortalPage from "./pages/OrgPortalPage";
 import DashboardPage from "./pages/DashboardPage";
 import UsersPage from "./pages/UsersPage";
@@ -232,6 +233,7 @@ export default function App() {
         <Route path="/register/success" element={<RegistrationSuccessPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
+        <Route path="/invoice/:id" element={<PublicInvoicePage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/portal" element={<OrgPortalPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

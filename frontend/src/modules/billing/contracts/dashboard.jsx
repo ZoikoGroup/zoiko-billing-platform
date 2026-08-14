@@ -301,7 +301,7 @@ export default function ContractDashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading contracts dashboard">
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading contracts dashboard">
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -324,7 +324,7 @@ export default function ContractDashboardPage() {
 
   if (error && contracts.length === 0 && activeContracts.length === 0 && expiringContracts.length === 0) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={handleRefresh} title="Something went wrong" />
       </div>
@@ -334,7 +334,7 @@ export default function ContractDashboardPage() {
   const hasAnyData = contractsTotal > 0 || activeContracts.length > 0 || expiringContracts.length > 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader {...headerProps} />
 
       {hasAnyData && <BusinessInsights items={insightItems} />}
