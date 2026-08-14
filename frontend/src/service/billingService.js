@@ -141,6 +141,25 @@ export const customerApi = {
   deleteNote: (cid, noteId) => api.delete(ENDPOINTS.CUSTOMER_NOTE(cid, noteId)),
   getAnalytics: (id) => api.get(ENDPOINTS.CUSTOMER_ANALYTICS(id)),
   importFile: (formData) => api.post(ENDPOINTS.CUSTOMER_IMPORT_FILE, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  // ── Customer Import Wizard (preview → confirm → template) ─────────────────
+  importPreview: (formData) => api.post(ENDPOINTS.CUSTOMER_IMPORT_PREVIEW, formData),
+  importConfirm: (data) => api.post(ENDPOINTS.CUSTOMER_IMPORT_CONFIRM, data),
+  downloadTemplate: async (format = "csv") => {
+    const { apiRequest, getAccessToken, API_BASE_URL } = await import("./api");
+    const url = `${API_BASE_URL}${ENDPOINTS.CUSTOMER_IMPORT_TEMPLATE}?format=${format}`;
+    const token = getAccessToken();
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Template download failed");
+    const blob = await res.blob();
+    const ext = format === "xlsx" ? "xlsx" : "csv";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `customer_import_template.${ext}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
   getStatement: (id, params) => api.get(buildUrl(ENDPOINTS.CUSTOMER_STATEMENT(id), params)),
 };
 
@@ -328,6 +347,7 @@ export const quoteApi = {
   update: (id, data) => api.put(ENDPOINTS.QUOTATION(id), data),
   listItems: (id) => api.get(ENDPOINTS.QUOTATION_ITEMS(id)),
   addItem: (id, data) => api.post(ENDPOINTS.QUOTATION_ITEMS(id), data),
+  addItems: (id, items) => api.post(ENDPOINTS.QUOTATION_ITEMS_BULK(id), { items }),
   updateItem: (quoteId, itemId, data) => api.put(ENDPOINTS.QUOTATION_ITEM(quoteId, itemId), data),
   removeItem: (quoteId, itemId) => api.delete(ENDPOINTS.QUOTATION_ITEM(quoteId, itemId)),
   send: (id) => api.post(ENDPOINTS.QUOTATION_SEND(id)),
@@ -339,6 +359,15 @@ export const quoteApi = {
     api.post(buildUrl(ENDPOINTS.QUOTATION_CONVERT(id), params)),
   recalculate: (id) => api.post(ENDPOINTS.QUOTATION_RECALCULATE(id)),
   duplicate: (id) => api.post(ENDPOINTS.QUOTATION_DUPLICATE(id)),
+};
+
+export const publicQuoteApi = {
+  getByToken: (token) =>
+    api.get(ENDPOINTS.QUOTATION_PUBLIC_VIEW(token), { auth: false }),
+  accept: (token) =>
+    api.post(ENDPOINTS.QUOTATION_PUBLIC_ACCEPT(token), undefined, { auth: false }),
+  reject: (token, reason) =>
+    api.post(ENDPOINTS.QUOTATION_PUBLIC_REJECT(token), { reason }, { auth: false }),
 };
 
 export const subscriptionApi = {

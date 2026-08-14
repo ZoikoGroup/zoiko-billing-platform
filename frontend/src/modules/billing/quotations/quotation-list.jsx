@@ -419,21 +419,22 @@ export default function QuotationListPage() {
         terms: wizardData.terms || undefined,
       });
       const quoteId = quoteResp.id;
-      for (const item of wizardData.items) {
-        await quoteApi.addItem(quoteId, {
-          line_number: item.line_number,
-          product_id: item.product_id ? Number(item.product_id) : undefined,
-          description: item.description,
-          quantity: parseFloat(item.quantity || 1),
-          unit_price: parseFloat(item.unit_price || 0),
-          discount_percentage: parseFloat(item.discount_percentage || 0),
-          tax_percentage: parseFloat(item.tax_percentage || 0),
-          is_tax_inclusive: item.is_tax_inclusive || false,
-          pricing_plan_id: item.pricing_plan_id || undefined,
-          base_price: item.base_price != null ? parseFloat(item.base_price) : undefined,
-          resolved_price: item.resolved_price != null ? parseFloat(item.resolved_price) : undefined,
-          price_source: item.price_source || undefined,
-        });
+      const itemPayload = wizardData.items.map((item) => ({
+        line_number: item.line_number,
+        product_id: item.product_id ? Number(item.product_id) : undefined,
+        description: item.description,
+        quantity: parseFloat(item.quantity || 1),
+        unit_price: parseFloat(item.unit_price || 0),
+        discount_percentage: parseFloat(item.discount_percentage || 0),
+        tax_percentage: parseFloat(item.tax_percentage || 0),
+        is_tax_inclusive: item.is_tax_inclusive || false,
+        pricing_plan_id: item.pricing_plan_id || undefined,
+        base_price: item.base_price != null ? parseFloat(item.base_price) : undefined,
+        resolved_price: item.resolved_price != null ? parseFloat(item.resolved_price) : undefined,
+        price_source: item.price_source || undefined,
+      }));
+      if (itemPayload.length > 0) {
+        await quoteApi.addItems(quoteId, itemPayload);
       }
       await quoteApi.recalculate(quoteId);
       setShowWizard(false);

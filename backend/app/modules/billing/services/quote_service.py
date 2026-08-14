@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 import logging
 from datetime import date, datetime
 from decimal import Decimal
@@ -5,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
@@ -125,10 +129,12 @@ class QuoteService:
         if owned is None:
             raise BadRequestException("Invalid tax rate.")
 
-    def add_item(self, quote_id: int, organization_id: int, **data: Any) -> QuotationItem:
-        data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
-        self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
-        quote = self.repo.get_by_id(quote_id, organization_id)
+    def _resolve_item_fields(
+        self, quote: Quotation, organization_id: int, data: Dict[str, Any]
+    ) -> str:
+        """Apply product pricing resolution to one item payload and return the
+        effective price semantics. Shared by add_item and bulk_add_items so
+        single and batched adds stay byte-for-byte identical."""
         price_semantics = "unit"
         product_id = data.get("product_id")
         if product_id is not None:
@@ -179,7 +185,48 @@ class QuoteService:
         if not data.get("line_number"):
             existing_lines = [item.line_number for item in (quote.items or []) if item.line_number is not None]
             data["line_number"] = (max(existing_lines) + 1) if existing_lines else 1
+        return price_semantics
+
+    def _compute_item_amounts(
+        self, quote: Quotation, data: Dict[str, Any], price_semantics: str,
+    ) -> Dict[str, Any]:
         qty = Decimal(str(data.get("quantity", 1)))
+        price = Decimal(str(data.get("unit_price", 0)))
+        disc_pct = Decimal(str(data.get("discount_percentage", 0)))
+        tax_pct = Decimal(str(data.get("tax_percentage", 0)))
+        calc = CalculationService.calculate_line_item(qty, price, disc_pct, Decimal("0"), tax_pct, Decimal("1.0"), is_tax_inclusive=data.get("is_tax_inclusive", False), price_semantics=price_semantics)
+        quote_currency = quote.currency or "USD"
+        data["discount_amount"] = round_money(calc["original_discount"], quote_currency)
+        data["tax_amount"] = round_money(calc["original_tax_amount"], quote_currency)
+        data["total_amount"] = round_money(calc["original_line_total"], quote_currency)
+        return data
+
+    def add_item(self, quote_id: int, organization_id: int, **data: Any) -> QuotationItem:
+        data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
+        self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
+        quote = self.repo.get_by_id(quote_id, organization_id)
+        price_semantics = self._resolve_item_fields(quote, organization_id, data)
+        self._compute_item_amounts(quote, data, price_semantics)
+        return self.item_repo.create(organization_id, quotation_id=quote_id, **data)
+
+    def bulk_add_items(
+        self, quote_id: int, organization_id: int, items: List[Dict[str, Any]],
+    ) -> List[QuotationItem]:
+        quote = self.repo.get_by_id(quote_id, organization_id)
+        if quote.status != QuoteStatus.DRAFT:
+            raise BadRequestException("Only draft quotes can have items added")
+        if not items:
+            return []
+        prepared: List[Dict[str, Any]] = []
+        for item in items:
+            data = filter_allowed(item, ITEM_ALLOWED_FIELDS)
+            self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
+            price_semantics = self._resolve_item_fields(quote, organization_id, data)
+            self._compute_item_amounts(quote, data, price_semantics)
+            prepared.append(data)
+        result = self.item_repo.bulk_create_for_quotation(organization_id, quote_id, prepared)
+        self.recalculate_quote(quote_id, organization_id)
+        return result
         price = Decimal(str(data.get("unit_price", 0)))
         disc_pct = Decimal(str(data.get("discount_percentage", 0)))
         tax_pct = Decimal(str(data.get("tax_percentage", 0)))
@@ -393,6 +440,7 @@ class QuoteService:
         # being told), independent of `quote.status`, which is deliberately
         # not mutated until delivery is confirmed below.
         status_label = QuoteStatus.SENT.value.replace("_", " ").title()
+        review_url = f"{settings.FRONTEND_URL.rstrip('/')}/estimate/{self._public_quote_token(quote.id)}"
         try:
             email_sent = send_quote_email(
                 email=email,
@@ -410,6 +458,7 @@ class QuoteService:
                 discount_amount=_fmt_money(quote.discount_amount) if quote.discount_amount else "",
                 tax_amount=_fmt_money(quote.tax_amount),
                 reference=quote.subject or "",
+                review_url=review_url,
                 organization_id=organization_id,
                 db=self.db,
                 pdf_bytes=pdf_bytes,
@@ -472,6 +521,178 @@ class QuoteService:
             safe_commit_and_refresh(self.db, quote)
             return True
         return False
+
+    # ── Public Estimate Review (token-signed) ─────────────────────────────
+
+    def _public_quote_token(self, quote_id: int) -> str:
+        """Stateless, signed token for the public estimate link. Nothing is
+        stored in the DB — the token is `base64url(quote_id.hmac(secret))` and
+        recomputed on each request, so a leaked link cannot be forged and no
+        migration is needed."""
+        sig = hmac.new(
+            settings.BILLING_SECRET_KEY.encode(),
+            str(quote_id).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return base64.urlsafe_b64encode(f"{quote_id}.{sig}".encode()).decode().rstrip("=")
+
+    def _resolve_public_quote(self, token: str) -> Quotation:
+        if not token:
+            raise NotFoundException("Quotation", 0)
+        try:
+            raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()
+            quote_id_str, _, sig = raw.partition(".")
+            expected = hmac.new(
+                settings.BILLING_SECRET_KEY.encode(),
+                quote_id_str.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if not quote_id_str.isdigit() or not hmac.compare_digest(sig, expected):
+                raise ValueError("bad signature")
+            quote_id = int(quote_id_str)
+        except Exception:
+            raise NotFoundException("Quotation", 0)
+        quote = self.db.query(Quotation).filter(Quotation.id == quote_id).first()
+        if quote is None:
+            raise NotFoundException("Quotation", quote_id)
+        return quote
+
+    def get_public_quote(self, token: str) -> Dict[str, Any]:
+        """Public-safe snapshot of a quote for the customer-facing estimate
+        page. Only fields the recipient should see are exposed — no internal
+        pricing plan / tax-rate details, no org internals."""
+        quote = self._resolve_public_quote(token)
+        if quote.status == QuoteStatus.SENT:
+            self.check_expired(quote.id, quote.organization_id)
+            quote = self.repo.get_by_id(quote.id, quote.organization_id)
+
+        from app.services.email_service import _get_org_branding
+        branding = _get_org_branding(quote.organization_id, db=self.db)
+        customer = quote.customer
+        items = sorted(quote.items or [], key=lambda i: i.line_number or 0)
+
+        def _fmt_date(d) -> Optional[str]:
+            return d.strftime("%d %b %Y") if d else None
+
+        return {
+            "id": quote.id,
+            "quote_number": quote.quote_number,
+            "subject": quote.subject,
+            "status": quote.status.value if quote.status else "draft",
+            "issue_date": _fmt_date(quote.created_at.date()) if quote.created_at else None,
+            "valid_until": _fmt_date(quote.valid_until),
+            "currency": quote.currency or "USD",
+            "subtotal": str(quote.subtotal or 0),
+            "discount_percentage": str(quote.discount_percentage or 0),
+            "discount_amount": str(quote.discount_amount or 0),
+            "tax_amount": str(quote.tax_amount or 0),
+            "total_amount": str(quote.total_amount or 0),
+            "notes": quote.notes,
+            "terms": quote.terms,
+            "accepted_at": quote.accepted_at.strftime("%d %b %Y %H:%M") if quote.accepted_at else None,
+            "rejected_reason": quote.rejected_reason,
+            "customer": {
+                "name": (customer.display_name or customer.company_name) if customer else "",
+                "email": (customer.email or "") if customer else "",
+                "phone": (customer.phone or "") if customer else "",
+                "billing_address": (customer.billing_address or "") if customer else "",
+            },
+            "items": [
+                {
+                    "line_number": item.line_number,
+                    "description": item.description,
+                    "quantity": str(item.quantity),
+                    "unit_price": str(item.unit_price),
+                    "discount_percentage": str(item.discount_percentage or 0),
+                    "tax_percentage": str(item.tax_percentage or 0),
+                    "total_amount": str(item.total_amount),
+                }
+                for item in items
+            ],
+            "company": {
+                "name": branding.get("company_name", "Zoiko Billing"),
+                "logo_url": branding.get("logo_url", ""),
+                "support_email": branding.get("support_email", ""),
+                "website": branding.get("website", ""),
+                "billing_address": branding.get("billing_address", ""),
+            },
+        }
+
+    def _quote_response_admin_emails(self, organization_id: int) -> List[str]:
+        from app.modules.auth.models import User, UserRole
+        users = self.db.query(User).filter(
+            User.organization_id == organization_id,
+            User.role.in_([UserRole.ORG_ADMIN, UserRole.BILLING_ADMIN]),
+            User.is_active.is_(True),
+        ).all()
+        emails = []
+        for user in users:
+            email = (user.email or "").strip()
+            if email and "@" in email and email not in emails:
+                emails.append(email)
+        return emails
+
+    def _notify_admins_quote_response(self, quote: Quotation, action: str, reason: str = "") -> int:
+        from app.services.email_service import send_quote_response_notification_email
+        emails = self._quote_response_admin_emails(quote.organization_id)
+        if not emails:
+            return 0
+        customer = quote.customer
+        customer_name = (customer.display_name or customer.company_name) if customer else ""
+        currency = quote.currency or "USD"
+        total = f"{round_money(quote.total_amount or 0, currency):,.2f}"
+        sent = 0
+        for email in emails:
+            try:
+                if send_quote_response_notification_email(
+                    email,
+                    quote_number=quote.quote_number,
+                    action=action,
+                    reason=reason,
+                    customer_name=customer_name,
+                    total_amount=total,
+                    currency=currency,
+                    organization_id=quote.organization_id,
+                    db=self.db,
+                ):
+                    sent += 1
+            except Exception as exc:
+                logger.warning("Failed to notify admin %s about quote %s: %s", email, quote.quote_number, exc)
+        return sent
+
+    def accept_quote_public(self, token: str) -> Quotation:
+        """Accept a quote from the public estimate page. Sends the
+        org-admins the accepted notification email."""
+        quote = self._resolve_public_quote(token)
+        if quote.status != QuoteStatus.SENT:
+            raise BadRequestException("This estimate can no longer be accepted.")
+        self.check_expired(quote.id, quote.organization_id)
+        quote = self.repo.get_by_id(quote.id, quote.organization_id)
+        if quote.status != QuoteStatus.SENT:
+            raise BadRequestException("This estimate has expired and can no longer be accepted.")
+        quote.status = QuoteStatus.ACCEPTED
+        quote.accepted_at = datetime.utcnow()
+        safe_commit_and_refresh(self.db, quote)
+        self.audit.log(
+            quote.organization_id, quote.created_by or 1,
+            BillingAuditAction.APPROVE, "Quotation", quote.id,
+        )
+        self._notify_admins_quote_response(quote, "accepted")
+        return quote
+
+    def reject_quote_public(self, token: str, reason: str) -> Quotation:
+        quote = self._resolve_public_quote(token)
+        if quote.status not in (QuoteStatus.SENT, QuoteStatus.DRAFT):
+            raise BadRequestException("This estimate can no longer be rejected.")
+        quote.status = QuoteStatus.REJECTED
+        quote.rejected_reason = reason
+        safe_commit_and_refresh(self.db, quote)
+        self.audit.log(
+            quote.organization_id, quote.created_by or 1,
+            BillingAuditAction.REJECT, "Quotation", quote.id,
+        )
+        self._notify_admins_quote_response(quote, "rejected", reason)
+        return quote
 
     # ── Convert to Invoice ─────────────────────────────────────────────────
 
