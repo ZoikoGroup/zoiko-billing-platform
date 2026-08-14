@@ -5,7 +5,7 @@ modules/billing/routers/customer_router.py
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -34,7 +34,13 @@ from app.modules.billing.schemas import (
     CustomerStatementResponse,
     BillingAuditLogResponse,
     SuccessResponse,
+    ImportPreviewResult,
+    ImportConfirmRequest,
+    ImportSummaryResult,
 )
+from fastapi.responses import Response as HTTPResponse
+import json as _json
+from app.modules.billing.services.customer_import_service import CustomerImportService
 
 router = APIRouter(prefix="/customers", tags=["🧾 Customers"])
 
@@ -265,6 +271,146 @@ def import_customers_file(
         organization_id=current_user.organization_id,
         created_by=current_user.id,
         items=[file_like],
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IMPORT WIZARD (preview → confirm → template) — mirrors the product import flow
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/import/preview",
+    response_model=ImportPreviewResult,
+    summary="Upload + validate a customer import file (CSV or XLSX). Returns a session token for confirm step.",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+async def customer_import_preview(
+    file: UploadFile = File(..., description="CSV or XLSX file"),
+    column_map: str = Form(
+        "{}",
+        description="JSON object mapping file column names to customer fields. Leave empty for auto-detection.",
+    ),
+    duplicate_strategy: str = Form(
+        "skip",
+        description="How to handle duplicates: skip | overwrite | create_copy | review",
+    ),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Step 1 of the customer import wizard:
+    - Accepts a CSV or XLSX file.
+    - Parses, validates, and detects duplicates (customer_code / email).
+    - Returns a session_id (valid 30 min) + per-row preview.
+    - No records are written at this stage.
+    """
+    file_bytes = await file.read()
+    filename = file.filename or "import.csv"
+
+    try:
+        col_map = _json.loads(column_map) if column_map else {}
+    except Exception:
+        raise HTTPException(status_code=400, detail="column_map must be a valid JSON object.")
+
+    if duplicate_strategy not in {"skip", "overwrite", "create_copy", "review"}:
+        raise HTTPException(
+            status_code=400,
+            detail="duplicate_strategy must be one of: skip, overwrite, create_copy, review",
+        )
+
+    try:
+        svc = CustomerImportService(db)
+        result = svc.preview_import(
+            file_bytes=file_bytes,
+            filename=filename,
+            column_map=col_map,
+            organization_id=current_user.organization_id,
+            duplicate_strategy=duplicate_strategy,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Import preview failed: {exc}")
+
+    return result
+
+
+@router.post(
+    "/import/confirm",
+    response_model=ImportSummaryResult,
+    summary="Commit a previewed customer import using the session token returned by /import/preview.",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+def customer_import_confirm(
+    data: ImportConfirmRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Step 2 of the customer import wizard:
+    - Consumes the session from the preview step.
+    - Commits valid rows using existing CustomerService.create_customer().
+    - Partial-success model: failures are reported but do not abort the batch.
+    - For large imports, pass `batch_size` to process the cached rows in
+      slices across multiple calls (e.g. offset=0/batch_size=500, then
+      offset=500/batch_size=500, ...) — each response's `next_offset` and
+      `is_complete` tell the caller whether to keep going. The session is
+      only invalidated once `is_complete` is true.
+    - All operations are audit-logged.
+    """
+    try:
+        svc = CustomerImportService(db)
+        result = svc.confirm_import(
+            session_id=data.session_id,
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            duplicate_strategy=data.duplicate_strategy,
+            per_row_actions=data.per_row_actions,
+            offset=data.offset,
+            batch_size=data.batch_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=410, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Import confirmation failed: {exc}")
+
+    return result
+
+
+@router.get(
+    "/import/template",
+    summary="Download a CSV or XLSX customer import template with required/optional fields and accepted values.",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+def customer_import_template(
+    format: str = Query("csv", description="Template format: csv or xlsx"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Returns a downloadable template file.
+    The template includes:
+    - Required + optional columns
+    - Example rows
+    - Accepted values for enumerated fields (type, status, payment terms, etc.)
+    """
+    if format not in {"csv", "xlsx"}:
+        raise HTTPException(status_code=400, detail="format must be 'csv' or 'xlsx'")
+    try:
+        svc = CustomerImportService(db)
+        content, mimetype = svc.generate_template(fmt=format)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Template generation failed: {exc}")
+
+    ext = "xlsx" if format == "xlsx" else "csv"
+    return HTTPResponse(
+        content=content,
+        media_type=mimetype,
+        headers={
+            "Content-Disposition": f"attachment; filename=customer_import_template.{ext}",
+        },
     )
 
 

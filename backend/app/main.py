@@ -46,8 +46,18 @@ _ACCESS_LOG_REDACT_RE = re.compile(r"(?i)([?&](?:token|code)=)[^&\s\"']+")
 class _RedactSensitiveQueryFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            record.msg = _ACCESS_LOG_REDACT_RE.sub(r"\1[REDACTED]", record.getMessage())
-            record.args = ()
+            args = record.args
+            if isinstance(args, tuple) and len(args) == 5:
+                record.args = (
+                    args[0],
+                    args[1],
+                    _ACCESS_LOG_REDACT_RE.sub(r"\1[REDACTED]", str(args[2])),
+                    args[3],
+                    args[4],
+                )
+            else:
+                record.msg = _ACCESS_LOG_REDACT_RE.sub(r"\1[REDACTED]", record.getMessage())
+                record.args = ()
         except Exception:
             pass
         return True
@@ -107,6 +117,7 @@ from app.modules.auth.router import user_router as auth_user_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.super_admin.router import router as super_admin_router
 from app.modules.billing.router import billing_router
+from app.modules.billing.routers.quote_router import public_quote_router
 from app.modules.billing.routers.webhook_router import router as stripe_webhook_router
 
 app.include_router(auth_router, prefix="/api")
@@ -116,6 +127,9 @@ app.include_router(super_admin_router, prefix="/api")
 # Billing is mounted at /billing (root), exactly like the ZoikoOne main
 # platform — the billing frontend (modules/billing) calls /billing/* paths.
 app.include_router(billing_router)
+# Public estimate links live OUTSIDE billing_router (which is gated by
+# require_active_subscription) — the HMAC-signed token is the authentication.
+app.include_router(public_quote_router, prefix="/billing")
 app.include_router(stripe_webhook_router, prefix="/api")
 
 # ── Root health ──────────────────────────────────────────────────────────────

@@ -255,7 +255,7 @@ export default function PricingDashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading pricing dashboard">
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading pricing dashboard">
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -277,7 +277,7 @@ export default function PricingDashboardPage() {
 
   if (error && plans.length === 0) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={fetchData} />
       </div>
@@ -285,7 +285,7 @@ export default function PricingDashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader {...headerProps} />
 
       <BusinessInsights items={insightItems} />

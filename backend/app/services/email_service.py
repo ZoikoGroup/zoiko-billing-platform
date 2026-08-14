@@ -448,12 +448,15 @@ def send_quote_email(
     discount_amount: str = "",
     tax_amount: str = "",
     reference: str = "",
+    review_url: str = "",
     organization_id=None,
     db=None,
     pdf_bytes: bytes = None,
     pdf_filename: str = None,
 ) -> bool:
+    from app.config import settings as _settings
     attachments = [(pdf_filename or f"{quote_number}.pdf", pdf_bytes)] if pdf_bytes else None
+    cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
     return send_approval_email(email, "quote_sent.html", {
         "subject": f"Estimate {quote_number} from {{{{company_name}}}}",
         "customer_name": customer_name,
@@ -469,9 +472,40 @@ def send_quote_email(
         "status": status,
         "reference": reference,
         "notes": notes,
+        "review_url": review_url,
+        "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
     }, db=db, organization_id=organization_id, attachments=attachments)
+
+
+def send_quote_response_notification_email(
+    email: str,
+    quote_number: str,
+    action: str,
+    reason: str,
+    customer_name: str,
+    total_amount: str,
+    currency: str = "USD",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """Notify org admins when a customer accepts/rejects an estimate from the
+    public estimate page."""
+    from app.config import settings as _settings
+    action_label = "Accepted" if action == "accepted" else "Rejected"
+    return send_approval_email(email, "quote_response_notification.html", {
+        "subject": f"Estimate {quote_number} was {action_label} by customer",
+        "action": action,
+        "action_label": action_label,
+        "accent_color": "#16A34A" if action == "accepted" else "#DC2626",
+        "quote_number": quote_number,
+        "reason": reason or "",
+        "customer_name": customer_name,
+        "total_amount": total_amount,
+        "currency": currency,
+        "dashboard_url": f"{_settings.FRONTEND_URL.rstrip('/')}/billing/quotations",
+    }, db=db, organization_id=organization_id)
 
 
 def send_dunning_reminder_email(

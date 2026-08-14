@@ -18,8 +18,10 @@ from app.modules.billing.schemas import (
     QuotationResponse,
     QuotationListResponse,
     QuotationItemCreate,
+    QuotationItemsBulkCreate,
     QuotationItemUpdate,
     QuotationItemResponse,
+    PublicQuoteRejectRequest,
     InvoiceResponse,
     SuccessResponse,
 )
@@ -82,6 +84,52 @@ def list_quotes(
     )
 
 
+# ── Public Estimate Review (no auth — token in the emailed link) ─────────
+# Mounted OUTSIDE billing_router (see main.py) because billing_router has a
+# router-level subscription gate that would 401 the public link.
+
+public_quote_router = APIRouter(prefix="/quotations/public", tags=["🧾 Quotations (Public)"])
+
+
+@public_quote_router.get(
+    "/{token}",
+    summary="Publicly view a quotation estimate via signed link token",
+)
+def get_public_quote(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    svc = QuoteService(db)
+    return svc.get_public_quote(token)
+
+
+@public_quote_router.post(
+    "/{token}/accept",
+    response_model=QuotationResponse,
+    summary="Publicly accept a quotation estimate via signed link token",
+)
+def accept_public_quote(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    svc = QuoteService(db)
+    return svc.accept_quote_public(token)
+
+
+@public_quote_router.post(
+    "/{token}/reject",
+    response_model=QuotationResponse,
+    summary="Publicly reject a quotation estimate via signed link token",
+)
+def reject_public_quote(
+    token: str,
+    data: PublicQuoteRejectRequest,
+    db: Session = Depends(get_db),
+):
+    svc = QuoteService(db)
+    return svc.reject_quote_public(token, data.reason)
+
+
 @router.get(
     "/{quote_id}",
     response_model=QuotationResponse,
@@ -138,6 +186,27 @@ def add_item(
         quote_id=quote_id,
         organization_id=current_user.organization_id,
         **data.model_dump(exclude_none=True),
+    )
+
+
+@router.post(
+    "/{quote_id}/items/bulk",
+    response_model=list[QuotationItemResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Bulk add items to a quotation",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+def bulk_add_items(
+    quote_id: int,
+    data: QuotationItemsBulkCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = QuoteService(db)
+    return svc.bulk_add_items(
+        quote_id=quote_id,
+        organization_id=current_user.organization_id,
+        items=[item.model_dump(exclude_none=True) for item in data.items],
     )
 
 

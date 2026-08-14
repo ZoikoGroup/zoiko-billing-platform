@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Package, FileText, Calculator, Eye, Send,
   ChevronRight, ChevronLeft, Plus, Trash2, X, CheckCircle, Loader2, Search, AlertCircle, Percent } from "lucide-react"
@@ -82,6 +82,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [orgSettings, setOrgSettings] = useState({ quote_prefix: "QT-" });
+  const exchangeRateCache = useRef(new Map());
 
   useEffect(() => {
     loadOrgSettings();
@@ -162,10 +163,24 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     const pc = productCurrency.toUpperCase();
     const fc = form.currency.toUpperCase();
     if (pc === fc) return {};
+    const cacheKey = `${pc}:${fc}`;
+    const cached = exchangeRateCache.current.get(cacheKey);
+    if (cached) {
+      const converted = Math.round(rawPrice * cached * 100) / 100;
+      return {
+        original_currency: pc,
+        original_amount: rawPrice,
+        exchange_rate: cached,
+        quote_currency: fc,
+        converted_amount: converted,
+        unit_price: converted,
+      };
+    }
     try {
       const rateData = await settingsApi.getExchangeRatePair(pc, fc);
       const rate = rateData && Number(rateData.rate) > 0 ? Number(rateData.rate) : null;
       if (rate) {
+        exchangeRateCache.current.set(cacheKey, rate);
         const converted = Math.round(rawPrice * rate * 100) / 100;
         return {
           original_currency: pc,
@@ -302,27 +317,29 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     setAddingProducts(true);
     setProductAddWarning(null);
     const idBase = Date.now();
-    const newItems = [];
-    const failedProducts = [];
-    const failedNames = [];
-    for (let i = 0; i < selectedProducts.length; i++) {
-      const product = selectedProducts[i];
+    const results = await Promise.all(selectedProducts.map(async (product, i) => {
       try {
         const data = await resolveProductPricing(product);
-        newItems.push({ ...INITIAL_ITEM, ...data, id: idBase + i + 1 });
+        return { item: { ...INITIAL_ITEM, ...data, id: idBase + i + 1 } };
       } catch (err) {
-        failedProducts.push(product);
         const reason = err?.detail || err?.message || "Could not resolve pricing";
-        failedNames.push(`${product.name || `Product #${product.id}`} (${reason})`);
+        return { failed: product, reason };
       }
-    }
+    }));
+    const newItems = results.filter((r) => r.item).map((r) => r.item);
+    const failed = results.filter((r) => r.failed);
     if (newItems.length > 0) {
-      setItems((cur) => [...cur, ...newItems].map((item, idx) => ({ ...item, line_number: idx + 1 })));
+      setItems((cur) => {
+        // Drop untouched empty placeholder rows so the phantom "default line"
+        // never rides along with a bulk add.
+        const kept = cur.filter((i) => i.product_id || (i.description && i.description.trim()));
+        return [...kept, ...newItems].map((item, idx) => ({ ...item, line_number: idx + 1 }));
+      });
     }
     // Keep failed products selected so the user can retry without re-searching.
-    setSelectedProducts(failedProducts);
-    if (failedNames.length > 0) {
-      setProductAddWarning(`Could not add ${failedNames.length} product${failedNames.length > 1 ? "s" : ""}: ${failedNames.join(", ")}`);
+    setSelectedProducts(failed.map((f) => f.failed));
+    if (failed.length > 0) {
+      setProductAddWarning(`Could not add ${failed.length} product${failed.length > 1 ? "s" : ""}: ${failed.map((f) => `${f.failed.name || `Product #${f.failed.id}`} (${f.reason})`).join(", ")}`);
     }
     setAddingProducts(false);
   };
@@ -335,23 +352,25 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     setAddingProducts(true);
     setProductAddWarning(null);
     const idBase = Date.now();
-    const newItems = [];
-    const failedNames = [];
-    for (let i = 0; i < itemsWithQuantity.length; i++) {
-      const product = itemsWithQuantity[i];
+    const results = await Promise.all(itemsWithQuantity.map(async (product, i) => {
       try {
         const data = await resolveProductPricing(product, Number(product.quantity) || 1);
-        newItems.push({ ...INITIAL_ITEM, ...data, id: idBase + i + 1 });
+        return { item: { ...INITIAL_ITEM, ...data, id: idBase + i + 1 } };
       } catch (err) {
         const reason = err?.detail || err?.message || "Could not resolve pricing";
-        failedNames.push(`${product.name || `Product #${product.id}`} (${reason})`);
+        return { failed: product, reason };
       }
-    }
+    }));
+    const newItems = results.filter((r) => r.item).map((r) => r.item);
+    const failed = results.filter((r) => r.failed);
     if (newItems.length > 0) {
-      setItems((cur) => [...cur, ...newItems].map((item, idx) => ({ ...item, line_number: idx + 1 })));
+      setItems((cur) => {
+        const kept = cur.filter((i) => i.product_id || (i.description && i.description.trim()));
+        return [...kept, ...newItems].map((item, idx) => ({ ...item, line_number: idx + 1 }));
+      });
     }
-    if (failedNames.length > 0) {
-      setProductAddWarning(`Could not add ${failedNames.length} product${failedNames.length > 1 ? "s" : ""}: ${failedNames.join(", ")}`);
+    if (failed.length > 0) {
+      setProductAddWarning(`Could not add ${failed.length} product${failed.length > 1 ? "s" : ""}: ${failed.map((f) => `${f.failed.name || `Product #${f.failed.id}`} (${f.reason})`).join(", ")}`);
     }
     setAddingProducts(false);
   };
@@ -505,8 +524,9 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     setLoading(true); setError(null);
     try {
       const quote = await quoteApi.create(buildPayload());
-      for (const item of buildItemsPayload()) {
-        await quoteApi.addItem(quote.id, item);
+      const itemPayload = buildItemsPayload();
+      if (itemPayload.length > 0) {
+        await quoteApi.addItems(quote.id, itemPayload);
       }
       await quoteApi.recalculate(quote.id);
       if (sendAfter) {

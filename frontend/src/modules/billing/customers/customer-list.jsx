@@ -6,6 +6,7 @@ import { Users, Search, Filter, X, RefreshCw, Download,
   Columns, Upload, Trash2 } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { customerApi, settingsApi } from "../../../service/billingService";
+import CustomerImportWizard from "./customer-import-wizard";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions, getCountrySelectOptions, getCurrencyForCountry } from "../../../utils/currency";
 import { getCustomerTaxFields } from "../utils/countryIntelligence";
@@ -117,10 +118,6 @@ export default function CustomerListPage() {
     currency: "", payment_terms: "net_30", credit_limit: "", credit_days: 30, price_list: "",
     notes: "",
   });
-
-  const [importText, setImportText] = useState("");
-  const [importResult, setImportResult] = useState(null);
-  const [importLoading, setImportLoading] = useState(false);
 
   const fetchKPI = useCallback(() => {
     customerApi.getKPI().then(setKpiData).catch((err) => {
@@ -371,25 +368,11 @@ export default function CustomerListPage() {
     }
   };
 
-  const handleImport = async () => {
-    setImportLoading(true);
-    setImportResult(null);
-    try {
-      let items;
-      try { items = JSON.parse(importText); }
-      catch { items = importText.split("\n").filter(Boolean).map((line) => {
-        const parts = line.split(",");
-        return { company_name: parts[0], email: parts[1], customer_code: parts[2] || `IMP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
-      }); }
-      const result = await customerApi.importData(items);
-      setImportResult(result);
-      if (result.imported > 0) { setShowImportModal(false); setImportText(""); fetchCustomers(); fetchKPI(); }
-    } catch (err) {
-      setImportResult({ success: false, imported: 0, skipped: 0, errors: [err.message || "Import failed"] });
-    } finally {
-      setImportLoading(false);
-    }
-  };
+  const handleImportImported = useCallback(() => {
+    setShowImportModal(false);
+    fetchCustomers();
+    fetchKPI();
+  }, [fetchCustomers, fetchKPI]);
 
   const SortHeader = ({ field, label }) => (
     <th scope="col" className={`px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-700 ${!visibleColumns.includes(field) ? "hidden" : ""}`} onClick={() => handleSort(field)}>
@@ -495,31 +478,6 @@ export default function CustomerListPage() {
       </div>
     );
   };
-
-  const renderImportModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8" onClick={() => { setShowImportModal(false); setImportResult(null); setImportText(""); }}>
-      <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl my-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">Import {plural}</h2><button onClick={() => { setShowImportModal(false); setImportResult(null); setImportText(""); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button></div>
-        {importResult ? (
-          <div className={`p-4 rounded-xl ${importResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"} mb-4`}>
-            <p className="font-medium">{importResult.imported} imported, {importResult.skipped} skipped</p>
-            {importResult.errors?.length > 0 && <ul className="mt-2 text-xs space-y-1 max-h-40 overflow-y-auto">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-          </div>
-        ) : (
-          <>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Paste JSON array or CSV rows</label>
-              <textarea rows={8} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder='[{"company_name":"Acme","email":"acme@test.com","customer_code":"CUST-001"}]' className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 font-mono" />
-            </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button onClick={() => { setShowImportModal(false); setImportText(""); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleImport} disabled={importLoading || !importText.trim()} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{importLoading ? "Importing..." : "Import"}</button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
 
   if (loading) {
     return <HRPage title={plural} subtitle={`Manage your ${getLabel("pluralLower")}`}><PageSkeleton rows={6} /></HRPage>;
@@ -740,7 +698,12 @@ export default function CustomerListPage() {
 
       {showCreateModal && renderCreateModal()}
       {showEditModal && renderEditModal()}
-      {showImportModal && renderImportModal()}
+      {showImportModal && (
+        <CustomerImportWizard
+          onClose={() => setShowImportModal(false)}
+          onImported={handleImportImported}
+        />
+      )}
       {ConfirmationDialog}
     </HRPage>
   );
