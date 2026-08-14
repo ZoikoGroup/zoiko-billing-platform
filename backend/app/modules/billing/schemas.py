@@ -2005,6 +2005,7 @@ class QuotationItemResponse(BaseModel):
     price_source: Optional[str] = None
     base_price: Optional[Decimal] = None
     resolved_price: Optional[Decimal] = None
+    resolved_price_type: Optional[str] = None
     original_currency: Optional[str] = None
     original_amount: Optional[Decimal] = None
     exchange_rate: Optional[Decimal] = None

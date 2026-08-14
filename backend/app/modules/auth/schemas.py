@@ -2,10 +2,11 @@
 modules/auth/schemas.py
 -----------------------
 """
+import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.modules.auth.models import UserRole
 
@@ -19,16 +20,42 @@ class LoginRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     organization: str = Field(..., min_length=1, max_length=200)
+    legal_name: Optional[str] = Field(None, min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=200)
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     industry: Optional[str] = None
     address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    website: Optional[str] = Field(None, max_length=500)
     timezone: Optional[str] = "UTC"
     phone: Optional[str] = None
+    currency: Optional[str] = "USD"
+    tax_no: Optional[str] = Field(None, max_length=50)
+    registration_number: Optional[str] = Field(None, max_length=100)
+    fiscal_year_start: Optional[str] = "01-01"
+    fiscal_year_end: Optional[str] = "12-31"
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            v = v.strip().upper()
+            if not re.match(r"^[A-Z]{3}$", v):
+                raise ValueError("currency must be a 3-letter ISO-4217 code")
+        return v
+
+    @field_validator("fiscal_year_start", "fiscal_year_end")
+    @classmethod
+    def _validate_fiscal_year(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            v = v.strip()
+            if not re.match(r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$", v):
+                raise ValueError("fiscal year must be in MM-DD format")
+        return v
 
 
 class RefreshRequest(BaseModel):

@@ -66,3 +66,34 @@ class DashboardStats(BaseModel):
     total_customers: int
     total_invoices: int
     recent_organizations: list[dict]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 11 — Platform audit log feed (Super Admin, cross-organization)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class PlatformAuditLogResponse(BaseModel):
+    """One platform-plane audit entry, enriched with the actor email and
+    organization name for cross-org display. Built manually in the router
+    (a LEFT JOIN against users/organizations)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_id: Optional[int] = None
+    actor_email: Optional[str] = None
+    action: str
+    entity_type: str
+    entity_id: Optional[int] = None
+    organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
+    old_values: Optional[dict] = None
+    new_values: Optional[dict] = None
+    metadata: Optional[dict] = None
+    created_at: datetime
+
+
+class PlatformAuditLogListResponse(BaseModel):
+    logs: list[PlatformAuditLogResponse]
+    total: int

@@ -32,6 +32,8 @@ import {
   Settings,
   Building2,
   UserCog,
+  ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -167,6 +169,19 @@ const NAV_SECTIONS = [
         { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
       ],
     },
+  {
+    label: "Commercial Control",
+    icon: ShieldCheck,
+    superAdminOnly: true,
+    children: [
+      { label: "Dashboard", href: "/super-admin/commercial/dashboard", icon: LayoutDashboard },
+      { label: "Organizations", href: "/super-admin/commercial/organizations", icon: Building2 },
+      { label: "Commercial Plans", href: "/super-admin/commercial/plans", icon: Package },
+      { label: "Commercial Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
+      { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
+      { label: "Audit Logs", href: "/super-admin/commercial/audit-logs", icon: ScrollText },
+    ],
+  },
 ];
 
 // Top-level org links pinned above the billing sections.
@@ -250,7 +265,11 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
 function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
-  const visibleSections = NAV_SECTIONS.filter((section) => !section.orgAdminOnly || role !== "billing_admin");
+  const visibleSections = NAV_SECTIONS.filter(
+    (section) =>
+      (!section.orgAdminOnly || role !== "billing_admin") &&
+      (!section.superAdminOnly || role === "super_admin")
+  );
   const visibleTop = TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
   const visibleFooter = FOOTER_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
   const [openSection, setOpenSection] = useState(null);

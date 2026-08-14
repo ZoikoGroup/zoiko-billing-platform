@@ -48,6 +48,17 @@ def main() -> None:
         db.flush()
         print(f"Organization created: {args.org} ({code}) id={org.id}")
 
+        # Provision the platform-plane commercial account with the org
+        # (PHASE 6), same as registration and Super Admin org creation.
+        from app.modules.commercial.service import (
+            CommercialAccountService,
+            CommercialSubscriptionService,
+        )
+        account = CommercialAccountService(db).ensure_commercial_account(org.id)
+        # CommercialSubscription (PHASE 7): only when an approved default plan
+        # exists — Phase 7 seeds none, so this is a safe no-op.
+        CommercialSubscriptionService(db).provision_default_subscription(account.id)
+
         def _add_user(email, password, role, name):
             existing = db.query(User).filter(User.email == email).first()
             if existing:

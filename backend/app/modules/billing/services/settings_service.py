@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import BadRequestException
+from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.billing.models import (
     BillingAuditAction, BillingConfiguration, CurrencyCode,
     CurrencySymbolPosition, DateFormat, DraftBehaviour,
@@ -244,10 +244,90 @@ class BillingConfigurationService:
         logger.info("Getting billing configuration for organization_id=%s", organization_id)
         config = self.repo.get_by_organization(organization_id)
         if not config:
-            logger.info("No configuration found for organization_id=%s, creating defaults", organization_id)
-            config = self.repo.create(organization_id, **CONFIGURATION_DEFAULTS)
-            logger.info("Created default configuration for organization_id=%s, config_id=%s", organization_id, config.id)
+            logger.info("No configuration found for organization_id=%s, seeding from organization", organization_id)
+            config = self.seed_billing_configuration(organization_id)
+            # Persist now: the API layer's get_db() never commits on its own, so
+            # the lazily-created config must be committed here (same behavior as
+            # the previous repo.create() path, which also committed internally).
+            self.db.commit()
+            logger.info("Seeded configuration for organization_id=%s, config_id=%s", organization_id, config.id)
         return config
+
+    def seed_billing_configuration(self, organization_id: int) -> BillingConfiguration:
+        """Idempotently initialize a BillingConfiguration from the Organization's
+        identity fields (PHASE 4). Never overwrites an existing configuration —
+        existing tenants are returned untouched. Operational fields that the
+        Organization does not own come from CONFIGURATION_DEFAULTS.
+
+        Does NOT commit: the caller owns the transaction. During registration the
+        config is flushed inside the same transaction as org + user (all-or-
+        nothing); get_configuration() commits explicitly for the lazy backstop.
+        """
+        existing = self.repo.get_by_organization(organization_id)
+        if existing:
+            logger.info("BillingConfiguration already exists for organization_id=%s, leaving unchanged", organization_id)
+            return existing
+
+        from app.modules.organizations.models import Organization
+
+        org = self.db.query(Organization).filter(Organization.id == organization_id).first()
+        if org is None:
+            raise NotFoundException("Organization", "id")
+
+        data = dict(CONFIGURATION_DEFAULTS)
+        data["company_name"] = org.organization_name
+        data["billing_email"] = org.email
+        data["billing_phone"] = self._clamp(org.phone, 30, "billing_phone")
+        data["website"] = org.website
+        data["address_line1"] = self._clamp(org.address, 255, "address_line1")
+        data["city"] = org.city
+        data["state"] = org.state
+        data["country"] = org.country
+        data["postal_code"] = org.postal_code
+        data["timezone"] = org.timezone or "UTC"
+        data["fiscal_year_start"] = org.fiscal_year_start or "01-01"
+        data["fiscal_year_end"] = org.fiscal_year_end or "12-31"
+        # Generic tax number -> generic tax_number field. Organization.tax_no is
+        # a single field covering GST/PAN/VAT/TIN with no type semantics, so it
+        # must NOT be copied into gst_number/vat_number/pan_number/tin_number.
+        data["tax_number"] = org.tax_no
+        data["business_registration_number"] = org.registration_number
+
+        if org.currency:
+            currency_str = org.currency.strip().upper()
+            try:
+                currency = CurrencyCode(currency_str)
+            except ValueError:
+                currency = None
+                logger.warning(
+                    "Organization %s currency %r is not supported by CurrencyCode; "
+                    "keeping CONFIGURATION_DEFAULTS currency (USD)",
+                    organization_id, org.currency,
+                )
+            if currency is not None:
+                # get_default_currency() prefers base_currency over default_currency,
+                # so all three are kept in sync or the seeded currency would be ignored.
+                data["default_currency"] = currency
+                data["home_currency"] = currency
+                data["base_currency"] = currency
+
+        config = BillingConfiguration(organization_id=organization_id, **data)
+        self.db.add(config)
+        self.db.flush()
+        logger.info("Seeded billing configuration for organization_id=%s (config_id=%s)", organization_id, config.id)
+        return config
+
+    @staticmethod
+    def _clamp(value, limit: int, field_name: str):
+        """Defensive truncation to a column's max length so an over-long
+        Organization value cannot fail the seed (and with it registration)."""
+        if value is None or len(value) <= limit:
+            return value
+        logger.warning(
+            "Truncating Organization value for %s to %s characters during billing configuration seed",
+            field_name, limit,
+        )
+        return value[:limit]
 
     def _validate_config_data(self, data: Dict[str, Any]) -> List[str]:
         errors = []

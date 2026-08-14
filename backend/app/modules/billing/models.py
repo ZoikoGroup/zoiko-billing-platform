@@ -1370,6 +1370,11 @@ class QuotationItem(Base):
     original_amount     = Column(Numeric(14, 2), nullable=True)
     quote_currency      = Column(String(3), nullable=True)
     converted_amount    = Column(Numeric(14, 2), nullable=True)
+    # Semantics of resolved_price above -- see ResolvedPriceType. Needed so a
+    # later recalculation of this item's total (e.g. after another line item
+    # on the same quote is edited) knows not to re-multiply a lump-sum/
+    # graduated-total price by quantity a second time.
+    resolved_price_type = Column(CaseInsensitiveEnum(ResolvedPriceType), nullable=True)
     # Traceability only -- NOT a live join. See InvoiceItem.tax_rate_id.
     tax_rate_id         = Column(Integer, ForeignKey("tax_rates.id", ondelete="SET NULL"), nullable=True)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())

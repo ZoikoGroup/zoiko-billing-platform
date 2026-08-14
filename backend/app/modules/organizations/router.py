@@ -35,6 +35,10 @@ from app.modules.organizations.schemas import (
     OrganizationDetail,
     RecentCustomer,
 )
+from app.modules.commercial.schemas import (
+    CommercialAccountResponse,
+    CommercialSubscriptionResponse,
+)
 
 logger = logging.getLogger("zoiko_billing.organizations")
 
@@ -225,10 +229,22 @@ def get_my_organization_detail(
         status="active" if org.is_active else "deactivated",
         admin_name=f"{admin.first_name} {admin.last_name}".strip() if admin else None,
         admin_email=admin.email if admin else None,
+        legal_name=org.legal_name,
         industry=org.industry,
         address=org.address,
+        city=org.city,
+        state=org.state,
+        country=org.country,
+        postal_code=org.postal_code,
+        email=org.email,
+        phone=org.phone,
+        website=org.website,
         currency=org.currency,
         timezone=org.timezone,
+        fiscal_year_start=org.fiscal_year_start,
+        fiscal_year_end=org.fiscal_year_end,
+        billing_classification=org.billing_classification,
+        billing_source=org.billing_source,
         total_customers=total_customers,
         active_customers=active_customers,
         billing_admins=billing_admins,
@@ -236,8 +252,132 @@ def get_my_organization_detail(
     )
 
 
-# ── Super Admin only ────────────────────────────────────────────────────────
 
+@router.get("/me/commercial-account", response_model=CommercialAccountResponse)
+def get_my_commercial_account(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tenant-facing read of the org's own commercial account (PHASE 6).
+
+    organization_id ALWAYS comes from the authenticated user's token
+    (get_organization_id) — a client-supplied organization_id is never
+    trusted, so org A cannot read org B's account here. Read-only: tenants
+    cannot change status / billing_source / billing_classification.
+
+    Lazily ensures the account exists so pre-CommercialAccount tenants get a
+    record without a data migration.
+    """
+    from app.core.dependencies import get_organization_id
+    from app.modules.commercial.schemas import CommercialSubscriptionSummary
+    from app.modules.commercial.service import (
+        CommercialAccountService,
+        CommercialSubscriptionService,
+    )
+    from app.modules.organizations.models import Organization
+
+    org_id = get_organization_id(current_user)
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if org is None:
+        raise NotFoundException("Organization", "id")
+
+    account = CommercialAccountService(db).ensure_commercial_account(org_id)
+    db.commit()  # persist a lazily-created account (get_db never commits)
+
+    # PHASE 9: the tenant's own read-only view now also reports charging
+    # readiness (double-charge prevention) and its current open subscription.
+    can_charge = CommercialAccountService(db).can_charge(org)
+    current = CommercialSubscriptionService(db).get_active_subscription(account.id)
+    current_subscription = None
+    if current is not None:
+        current_subscription = CommercialSubscriptionSummary(
+            id=current.id,
+            status=current.status,
+            plan_code=current.plan.plan_code if current.plan else "",
+            plan_name=current.plan.plan_name if current.plan else "",
+            start_at=current.start_at,
+            end_at=current.end_at,
+        )
+
+    return CommercialAccountResponse(
+        id=account.id,
+        organization_id=org.id,
+        organization_code=org.organization_code,
+        organization_name=org.organization_name,
+        status=account.status,
+        billing_source=org.billing_source,
+        billing_classification=org.billing_classification,
+        is_active=org.is_active,
+        can_charge=can_charge,
+        current_subscription=current_subscription,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+    )
+
+
+@router.get("/me/commercial-subscription", response_model=CommercialSubscriptionResponse)
+def get_my_commercial_subscription(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tenant-facing read of the org's OWN commercial subscription (PHASE 7).
+
+    organization_id ALWAYS comes from the authenticated user's token
+    (get_organization_id) — org A can never read org B's subscription here.
+    Read-only: tenants cannot change subscription status or plan.
+
+    Returns the current open subscription when one exists, otherwise the most
+    recent historical one; 404 if the org has never had a subscription
+    (registration does not auto-assign one because no approved default plan
+    exists in Phase 7).
+    """
+    from app.core.dependencies import get_organization_id
+    from app.modules.commercial.models import (
+        CommercialAccount,
+        CommercialPlan,
+        CommercialSubscription,
+    )
+    from app.modules.commercial.service import CommercialSubscriptionService
+    from app.modules.organizations.models import Organization
+
+    org_id = get_organization_id(current_user)
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if org is None:
+        raise NotFoundException("Organization", "id")
+
+    account = db.query(CommercialAccount).filter(CommercialAccount.organization_id == org_id).first()
+    if account is None:
+        raise NotFoundException("Commercial Subscription", "organization_id")
+
+    svc = CommercialSubscriptionService(db)
+    subscription = svc.get_active_subscription(account.id)
+    if subscription is None:
+        subscription = svc.get_most_recent_subscription(account.id)
+    if subscription is None:
+        raise NotFoundException("Commercial Subscription", "organization_id")
+
+    plan = db.query(CommercialPlan).filter(CommercialPlan.id == subscription.commercial_plan_id).first()
+
+    return CommercialSubscriptionResponse(
+        id=subscription.id,
+        commercial_account_id=subscription.commercial_account_id,
+        organization_id=org.id,
+        organization_code=org.organization_code,
+        organization_name=org.organization_name,
+        commercial_plan_id=subscription.commercial_plan_id,
+        plan_code=plan.plan_code if plan else "",
+        plan_name=plan.plan_name if plan else "",
+        status=subscription.status,
+        start_at=subscription.start_at,
+        end_at=subscription.end_at,
+        current_period_start=subscription.current_period_start,
+        current_period_end=subscription.current_period_end,
+        created_at=subscription.created_at,
+        updated_at=subscription.updated_at,
+    )
+
+
+# ── Super Admin only ────────────────────────────────────────────────────────
 @router.get("/", response_model=OrganizationListResponse)
 def list_organizations(
     skip: int = Query(0, ge=0),
@@ -295,18 +435,39 @@ def create_organization(
         organization_name=data.organization_name,
         organization_code=code,
         display_name=data.display_name,
+        legal_name=data.legal_name,
         industry=data.industry,
         address=data.address,
+        city=data.city,
+        state=data.state,
+        country=data.country,
+        postal_code=data.postal_code,
         email=data.email,
         phone=data.phone,
+        website=data.website,
         tax_no=data.tax_no,
         registration_number=data.registration_number,
         currency=data.currency,
         timezone=data.timezone,
+        fiscal_year_start=data.fiscal_year_start or "01-01",
+        fiscal_year_end=data.fiscal_year_end or "12-31",
         is_active=True,
         created_by_user_id=current_user.id,
     )
     db.add(org)
+    # Provision the platform-plane commercial account in the same transaction
+    # (PHASE 6) — every provisioning path creates it. billing_source /
+    # billing_classification use the Organization's Phase 1 server-side
+    # defaults (COMMERCIAL_STANDALONE / REGISTERED_VIA_STANDALONE); they are
+    # never accepted from the client.
+    from app.modules.commercial.service import (
+        CommercialAccountService,
+        CommercialSubscriptionService,
+    )
+    account = CommercialAccountService(db).ensure_commercial_account(org.id)
+    # CommercialSubscription (PHASE 7): only when an approved default plan
+    # exists — Phase 7 seeds none, so this is a safe no-op (flush-only).
+    CommercialSubscriptionService(db).provision_default_subscription(account.id)
     db.commit()
     db.refresh(org)
     logger.info("Super Admin %s created organization %s (%s)", current_user.email, org.organization_name, code)
