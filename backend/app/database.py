@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import create_engine, exc, inspect, text  # type: ignore[import]
+from sqlalchemy.dialects import postgresql  # type: ignore[import]
 from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore[import]
 
 from app.config import settings
@@ -89,6 +90,43 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
+def _skip_existing_enum_types() -> None:
+    """Prevent 'CREATE TYPE already exists' errors from checkfirst=False.
+
+    Native Postgres ENUM columns register their CREATE TYPE DDL as a
+    `before_create` event on `Base.metadata` itself (so a type shared by
+    several tables is only ever created once). That means the event fires
+    for *every* enum type registered anywhere in the metadata whenever
+    create_all runs — not just for tables being created in this call — and
+    with checkfirst=False it always re-issues CREATE TYPE unconditionally.
+    If a leftover type exists from a prior partial run, that blows up with
+    DuplicateObject even though the table list itself was filtered down to
+    what's actually missing.
+
+    Setting `create_type = False` directly on a plain `sqlalchemy.Enum`
+    column has no effect: that DDL event is bound to the dialect-specific
+    impl resolved from `column.type.dialect_impl(dialect)`, which
+    SQLAlchemy resolves lazily and caches on the dialect keyed by the
+    *original* type instance (`dialect._type_memos`). So instead we force
+    that resolution now, across the whole metadata, and mutate the cached
+    impl in place before create_all runs.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.connect() as conn:
+        existing_type_names = {
+            row[0] for row in conn.execute(text("SELECT typname FROM pg_type WHERE typtype = 'e'"))
+        }
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            col_type = column.type
+            if not getattr(col_type, "native_enum", False) or getattr(col_type, "name", None) not in existing_type_names:
+                continue
+            impl = col_type.dialect_impl(engine.dialect)
+            if isinstance(impl, postgresql.ENUM):
+                impl.create_type = False
+
+
 def initialize_database() -> None:
     """Create any tables that don't exist yet (create_all).
 
@@ -109,6 +147,7 @@ def initialize_database() -> None:
             if table.name not in existing_tables
         ]
         if missing_tables:
+            _skip_existing_enum_types()
             Base.metadata.create_all(bind=engine, tables=missing_tables, checkfirst=False)
             logger.info("Database tables initialized successfully (%d created).", len(missing_tables))
         else:
