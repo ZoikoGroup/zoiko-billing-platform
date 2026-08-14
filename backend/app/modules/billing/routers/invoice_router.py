@@ -7,6 +7,7 @@ from typing import Optional
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -446,3 +447,44 @@ def get_invoice_timeline(
         organization_id=current_user.organization_id,
     )
     return InvoiceTimelineResponse(invoice_id=invoice_id, entries=[TimelineEntry(**e) for e in entries])
+
+
+# ── Public Invoice View / Payment (no auth — token in the emailed link) ────
+# Mounted OUTSIDE billing_router (see main.py) because billing_router has a
+# router-level subscription gate that would 401 the public link.
+
+public_invoice_router = APIRouter(prefix="/invoices/public", tags=["🧾 Invoices (Public)"])
+
+
+class PublicCheckoutCreate(BaseModel):
+    success_url: str
+    cancel_url: str
+
+
+@public_invoice_router.get(
+    "/{token}",
+    summary="Publicly view an invoice and its payment options via signed link token",
+)
+def get_public_invoice(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    svc = InvoiceService(db)
+    return svc.get_public_invoice(token)
+
+
+@public_invoice_router.post(
+    "/{token}/checkout",
+    summary="Create a checkout session for a public invoice via signed link token",
+)
+def create_public_checkout(
+    token: str,
+    body: PublicCheckoutCreate,
+    db: Session = Depends(get_db),
+):
+    svc = InvoiceService(db)
+    return svc.create_public_checkout_session(
+        token=token,
+        success_url=body.success_url,
+        cancel_url=body.cancel_url,
+    )

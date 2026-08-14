@@ -167,7 +167,7 @@ export default function CreditNoteDashboard() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading credit note dashboard">
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading credit note dashboard">
         <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={CREDIT_NOTE_CRUMBS} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -182,7 +182,7 @@ export default function CreditNoteDashboard() {
 
   if (error && !dashboard.stats) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={CREDIT_NOTE_CRUMBS} />
         <div className="flex flex-col items-center justify-center py-20">
           <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
@@ -271,7 +271,7 @@ export default function CreditNoteDashboard() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader
         title="Credit Note Dashboard"
         subtitle="Credit note issuance, application, and outstanding balances."

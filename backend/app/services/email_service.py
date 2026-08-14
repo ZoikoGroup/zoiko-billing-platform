@@ -410,9 +410,12 @@ def send_invoice_email(
     tax_amount: str = "",
     amount_paid: str = "",
     reference: str = "",
+    review_url: str = "",
 ) -> bool:
+    from app.config import settings as _settings
     attachments = [(pdf_filename or f"{invoice_number}.pdf", pdf_bytes)] if pdf_bytes else None
     balance_due = balance_due or total_amount
+    cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
     return send_approval_email(email, "invoice_sent.html", {
         "subject": f"Invoice {invoice_number} from {{{{company_name}}}} — {currency} {balance_due} due {due_date}",
         "customer_name": customer_name,
@@ -427,6 +430,8 @@ def send_invoice_email(
         "amount_paid": amount_paid,
         "reference": reference,
         "notes": notes,
+        "review_url": review_url,
+        "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_invoice_totals_html(subtotal, tax_amount, amount_paid, balance_due, currency),
     }, db=db, organization_id=organization_id, attachments=attachments)

@@ -241,7 +241,7 @@ export default function InvoiceDashboard() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading invoice dashboard">
+      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading invoice dashboard">
         <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -266,7 +266,7 @@ export default function InvoiceDashboard() {
 
   if (error && !d.stats) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6">
         <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
         <div className="flex flex-col items-center justify-center py-20">
           <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
@@ -291,7 +291,7 @@ export default function InvoiceDashboard() {
   ].filter((s) => s.value > 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6">
       <DashboardHeader
         title="Invoice Dashboard"
         subtitle="Track invoices, payments, and collections in real-time."
