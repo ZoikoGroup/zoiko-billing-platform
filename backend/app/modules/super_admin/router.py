@@ -72,8 +72,6 @@ router = APIRouter(prefix="/super-admin", tags=["Super Admin"])
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session = Depends(get_db)):
-    from app.modules.billing.models import BillingCustomer, Invoice
-
     total_orgs = db.query(Organization).count()
     active_orgs = db.query(Organization).filter(Organization.is_active == True).count()
     total_users = db.query(User).count()
@@ -85,14 +83,25 @@ def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session =
         .all()
     )
 
+    # Billing tables may not exist yet on a fresh database.  Return zeros
+    # instead of crashing the whole dashboard.
+    try:
+        from app.modules.billing.models import BillingCustomer, Invoice
+        total_customers = db.query(BillingCustomer).count()
+        total_invoices = db.query(Invoice).count()
+    except Exception:
+        logger.debug("Billing tables not available yet; returning zero counts.")
+        total_customers = 0
+        total_invoices = 0
+
     return DashboardStats(
         total_organizations=total_orgs,
         active_organizations=active_orgs,
         total_users=total_users,
         org_admins=db.query(User).filter(User.role == "org_admin").count(),
         billing_admins=db.query(User).filter(User.role == "billing_admin").count(),
-        total_customers=db.query(BillingCustomer).count(),
-        total_invoices=db.query(Invoice).count(),
+        total_customers=total_customers,
+        total_invoices=total_invoices,
         recent_organizations=[
             {
                 "id": o.id,
@@ -251,14 +260,24 @@ def admin_reset_mfa(
 # billing_source / billing_classification, and account-status changes are
 # deferred to the commercial-subscription phase.
 
-def _commercial_account_payload(account, org, db: Session):
-    from app.modules.commercial.service import (
-        CommercialAccountService,
-        CommercialSubscriptionService,
-    )
+_OPEN_SUBSCRIPTION_STATUSES = {
+    CommercialSubscriptionStatus.PENDING,
+    CommercialSubscriptionStatus.ACTIVE,
+    CommercialSubscriptionStatus.SUSPENDED,
+}
+
+
+def _commercial_account_payload(account, org, db: Session, active_subs_by_account=None):
+    from app.modules.commercial.service import CommercialAccountService
 
     can_charge = CommercialAccountService(db).can_charge(org)
-    current = CommercialSubscriptionService(db).get_active_subscription(account.id)
+    current = None
+    if active_subs_by_account is not None:
+        current = active_subs_by_account.get(account.id)
+    else:
+        from app.modules.commercial.service import CommercialSubscriptionService
+        current = CommercialSubscriptionService(db).get_active_subscription(account.id)
+
     current_subscription = None
     if current is not None:
         current_subscription = CommercialSubscriptionSummary(
@@ -292,30 +311,31 @@ def list_commercial_accounts(
     search: str = "",
     status: CommercialAccountStatus | None = None,
     billing_source: BillingSource | None = None,
+    backfill: bool = Query(False),
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    from app.modules.commercial.models import CommercialAccount
+    from app.modules.commercial.models import CommercialAccount, CommercialSubscription
     from app.modules.commercial.service import CommercialAccountService
 
-    # Lazy backfill (idempotent): organizations provisioned before Phase 6
-    # have no account row yet; creating one here keeps the platform list
-    # complete without a production data migration. Mirrors the reference
-    # Zoiko One startup backfill behavior.
-    existing_ids = {
-        org_id
-        for (org_id,) in db.query(CommercialAccount.organization_id).all()
-    }
-    missing_orgs = (
-        db.query(Organization)
-        .filter(Organization.id.notin_(existing_ids))
-        .all()
-    ) if existing_ids else db.query(Organization).all()
-    if missing_orgs:
-        service = CommercialAccountService(db)
-        for org in missing_orgs:
-            service.ensure_commercial_account(org.id)
-        db.commit()
+    # Optional lazy backfill (idempotent): organizations provisioned before
+    # Phase 6 may lack a CommercialAccount row.  The ?backfill=true flag
+    # triggers the one-time sweep; the default read path skips it to stay fast.
+    if backfill:
+        existing_ids = {
+            org_id
+            for (org_id,) in db.query(CommercialAccount.organization_id).all()
+        }
+        missing_orgs = (
+            db.query(Organization)
+            .filter(Organization.id.notin_(existing_ids))
+            .all()
+        ) if existing_ids else db.query(Organization).all()
+        if missing_orgs:
+            service = CommercialAccountService(db)
+            for org in missing_orgs:
+                service.ensure_commercial_account(org.id)
+            db.commit()
 
     query = (
         db.query(CommercialAccount, Organization)
@@ -338,8 +358,29 @@ def list_commercial_accounts(
         .limit(limit)
         .all()
     )
+
+    # Batch-fetch active subscriptions for the page of accounts to avoid N+1.
+    account_ids = [acc.id for acc, _ in rows]
+    active_subs = (
+        db.query(CommercialSubscription)
+        .filter(
+            CommercialSubscription.commercial_account_id.in_(account_ids),
+            CommercialSubscription.status.in_(list(_OPEN_SUBSCRIPTION_STATUSES)),
+        )
+        .order_by(CommercialSubscription.id.desc())
+        .all()
+    ) if account_ids else []
+    # Keep the first (most recent) subscription per account.
+    active_subs_by_account: dict = {}
+    for sub in active_subs:
+        if sub.commercial_account_id not in active_subs_by_account:
+            active_subs_by_account[sub.commercial_account_id] = sub
+
     return CommercialAccountListResponse(
-        accounts=[_commercial_account_payload(acc, org, db) for acc, org in rows],
+        accounts=[
+            _commercial_account_payload(acc, org, db, active_subs_by_account)
+            for acc, org in rows
+        ],
         total=total,
     )
 

@@ -52,9 +52,10 @@ function createApiError(message, status, extra = {}) {
 /**
  * Low level request helper. Talks to the FastAPI backend at VITE_API_BASE_URL.
  * Automatically attaches the bearer token (if present) and JSON headers,
- * and attempts a single silent refresh on a 401 response.
+ * attempts a single silent refresh on a 401 response, and enforces a
+ * per-request timeout so a hung backend never freezes the UI.
  */
-export async function apiRequest(path, { method = "GET", body, headers = {}, auth = true, retry = true, params } = {}) {
+export async function apiRequest(path, { method = "GET", body, headers = {}, auth = true, retry = true, params, timeout = 30000 } = {}) {
   let url = path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
   if (params) {
     const query = Object.entries(params)
@@ -73,16 +74,30 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
     if (token) finalHeaders["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    method,
-    headers: finalHeaders,
-    body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: finalHeaders,
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError") {
+      throw createApiError(`Request timed out after ${timeout / 1000}s. The server may be unreachable.`, 408);
+    }
+    throw createApiError(err.message || "Network error. Please check your connection.", 0);
+  }
+  clearTimeout(timer);
 
   if (res.status === 401 && auth && retry) {
     const refreshResult = await tryRefreshToken();
     if (refreshResult.ok) {
-      return apiRequest(path, { method, body, headers, auth, retry: false });
+      return apiRequest(path, { method, body, headers, auth, retry: false, timeout });
     }
     if (refreshResult.invalidSession) {
       clearSession();

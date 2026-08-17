@@ -241,6 +241,7 @@ export default function SubscriptionsPage() {
         {error && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
             {error}
+            <button type="button" onClick={() => load(page, search)} className="ml-3 font-semibold underline">Retry</button>
             <button type="button" onClick={() => setError(null)} className="ml-3 font-semibold underline">Dismiss</button>
           </div>
         )}

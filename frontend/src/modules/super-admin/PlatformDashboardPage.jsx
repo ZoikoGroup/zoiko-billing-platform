@@ -13,8 +13,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
-import { apiFetch } from "../../api/client";
 import {
+  getPlatformDashboardStats,
   listPlatformAuditLogs,
   listCommercialAccounts,
   listCommercialPlans,
@@ -49,7 +49,7 @@ function SectionHeading({ children }) {
  * A KPI card whose source failed to load — a real 0 and a failed request
  * must never look the same (Section 10 of the enterprise hardening pass).
  */
-function DegradedStatCard({ title, icon: Icon }) {
+function DegradedStatCard({ title, icon: Icon, onRetry }) {
   return (
     <div className="h-full rounded-3xl border border-amber-200 bg-amber-50/60 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
       <div className="flex items-start justify-between gap-4">
@@ -62,6 +62,15 @@ function DegradedStatCard({ title, icon: Icon }) {
           <AlertTriangle size={20} />
         </div>
       </div>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-200"
+        >
+          Retry
+        </button>
+      )}
     </div>
   );
 }
@@ -92,7 +101,7 @@ export default function PlatformDashboardPage() {
     setFatalError(null);
     const nextErrors = {};
 
-    const platformStatsPromise = apiFetch("/api/super-admin/dashboard/stats").catch((e) => {
+    const platformStatsPromise = getPlatformDashboardStats().catch((e) => {
       nextErrors.platform = e?.message || "Failed to load platform statistics.";
       return null;
     });
@@ -145,6 +154,60 @@ export default function PlatformDashboardPage() {
     });
   }, []);
 
+  /**
+   * Retry a single failed data source without re-fetching every source.
+   */
+  const retrySource = useCallback(async (sourceKey) => {
+    setSourceErrors((prev) => {
+      const next = { ...prev };
+      delete next[sourceKey];
+      return next;
+    });
+    try {
+      let result;
+      switch (sourceKey) {
+        case "platform":
+          result = await getPlatformDashboardStats();
+          setPlatformStats(result);
+          break;
+        case "accounts": {
+          result = await listCommercialAccounts({ limit: 200 });
+          setCommercial((prev) => prev ? { ...prev, accounts: result } : { accounts: result, plans: null, subscriptions: null });
+          break;
+        }
+        case "plans": {
+          result = await listCommercialPlans({ limit: 200 });
+          setCommercial((prev) => prev ? { ...prev, plans: result } : { accounts: null, plans: result, subscriptions: null });
+          break;
+        }
+        case "subscriptions": {
+          result = await listCommercialSubscriptions({ limit: 200 });
+          setCommercial((prev) => prev ? { ...prev, subscriptions: result } : { accounts: null, plans: null, subscriptions: result });
+          break;
+        }
+        case "approvals":
+          result = await listApprovalRequests({ status: "pending", limit: 1 });
+          setPendingApprovals(result ? result.total : null);
+          break;
+        case "readiness":
+          result = await getProductionAcceptanceReport();
+          setReadiness(result);
+          break;
+        case "activity":
+          result = await listPlatformAuditLogs({ limit: 5 });
+          setActivity(result ? result.logs || [] : null);
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      setSourceErrors((prev) => ({
+        ...prev,
+        [sourceKey]: e?.message || `Failed to load ${sourceKey}.`,
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -165,6 +228,7 @@ export default function PlatformDashboardPage() {
         href: "/super-admin/commercial/plans",
         subtitle: `${activePlans.length} active`,
         failed: Boolean(sourceErrors.plans),
+        retrySource: "plans",
       },
       {
         title: "Commercial Subscriptions",
@@ -173,6 +237,7 @@ export default function PlatformDashboardPage() {
         href: "/super-admin/commercial/subscriptions",
         subtitle: `${activeSubs.length} active`,
         failed: Boolean(sourceErrors.subscriptions),
+        retrySource: "subscriptions",
       },
       {
         title: "Chargeable Orgs",
@@ -181,6 +246,7 @@ export default function PlatformDashboardPage() {
         href: "/super-admin/organizations",
         subtitle: "May charge commercially",
         failed: Boolean(sourceErrors.accounts),
+        retrySource: "accounts",
       },
     ];
   }, [commercial, sourceErrors]);
@@ -234,10 +300,10 @@ export default function PlatformDashboardPage() {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
             {sourceErrors.platform ? (
               <>
-                <DegradedStatCard title="Organizations" icon={Building2} />
-                <DegradedStatCard title="Users" icon={Users} />
-                <DegradedStatCard title="Customers" icon={Users} />
-                <DegradedStatCard title="Invoices" icon={FileText} />
+                <DegradedStatCard title="Organizations" icon={Building2} onRetry={() => retrySource("platform")} />
+                <DegradedStatCard title="Users" icon={Users} onRetry={() => retrySource("platform")} />
+                <DegradedStatCard title="Customers" icon={Users} onRetry={() => retrySource("platform")} />
+                <DegradedStatCard title="Invoices" icon={FileText} onRetry={() => retrySource("platform")} />
               </>
             ) : (
               <>
@@ -267,7 +333,7 @@ export default function PlatformDashboardPage() {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {commercialKpis.map((kpi) =>
               kpi.failed ? (
-                <DegradedStatCard key={kpi.title} title={kpi.title} icon={kpi.icon} />
+                <DegradedStatCard key={kpi.title} title={kpi.title} icon={kpi.icon} onRetry={() => retrySource(kpi.retrySource)} />
               ) : (
                 <DashboardStatCard key={kpi.title} {...kpi} />
               )
@@ -279,7 +345,7 @@ export default function PlatformDashboardPage() {
           <SectionHeading><ShieldCheck size={13} className="text-brand-500" /> Security &amp; Governance</SectionHeading>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {sourceErrors.platform ? (
-              <DegradedStatCard title="Suspended Organizations" icon={Building2} />
+              <DegradedStatCard title="Suspended Organizations" icon={Building2} onRetry={() => retrySource("platform")} />
             ) : (
               <DashboardStatCard
                 title="Suspended Organizations"
@@ -291,7 +357,7 @@ export default function PlatformDashboardPage() {
               />
             )}
             {sourceErrors.approvals ? (
-              <DegradedStatCard title="Pending Approvals" icon={ClipboardCheck} />
+              <DegradedStatCard title="Pending Approvals" icon={ClipboardCheck} onRetry={() => retrySource("approvals")} />
             ) : (
               <DashboardStatCard
                 title="Pending Approvals"
@@ -310,7 +376,16 @@ export default function PlatformDashboardPage() {
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Production Readiness</p>
               {sourceErrors.readiness ? (
-                <h3 className="mt-2 text-xl font-extrabold leading-tight text-amber-800">Unavailable</h3>
+                <>
+                  <h3 className="mt-2 text-xl font-extrabold leading-tight text-amber-800">Unavailable</h3>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); retrySource("readiness"); }}
+                    className="mt-2 w-full rounded-xl border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-200"
+                  >
+                    Retry
+                  </button>
+                </>
               ) : (
                 <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-extrabold ${OVERALL_VERDICT_BADGE[readiness?.overall_status] || "bg-slate-100 text-slate-700"}`}>
                   {readiness?.overall_status || "Unknown"}
@@ -326,7 +401,7 @@ export default function PlatformDashboardPage() {
           {sourceErrors.activity ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
               {sourceErrors.activity}
-              <button type="button" onClick={load} className="ml-3 font-semibold underline">Retry</button>
+              <button type="button" onClick={() => retrySource("activity")} className="ml-3 font-semibold underline">Retry</button>
             </div>
           ) : (activity || []).length === 0 ? (
             <EmptyState

@@ -69,7 +69,15 @@ logging.getLogger("uvicorn.access").addFilter(_RedactSensitiveQueryFilter())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    initialize_database()
+    try:
+        initialize_database()
+    except Exception as exc:
+        logger.warning(
+            "Database initialization failed (%s). "
+            "The backend will start but API endpoints requiring the database "
+            "will return 503 until the database becomes reachable.",
+            exc,
+        )
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:
         from app.core.scheduler import start_scheduler
         start_scheduler()

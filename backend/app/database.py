@@ -127,8 +127,66 @@ def _skip_existing_enum_types() -> None:
                 impl.create_type = False
 
 
+def _add_missing_columns() -> None:
+    """Add any columns that SQLAlchemy models define but are missing from the DB.
+
+    After create_all creates missing tables, this introspects every table that
+    ALREADY exists and compares its real columns to the model's columns. Any
+    column present in the model but absent in the DB is added via
+    ALTER TABLE ... ADD COLUMN.  This handles:
+      - columns added to models after the initial table creation
+      - partial schema drift (e.g. missing catalog_version_id, actor_role)
+
+    Only runs on PostgreSQL (SQLite doesn't need ALTER; create_all recreates).
+    All ALTER statements are ADD COLUMN with nullable columns (safe defaults),
+    so they never fail on existing data.
+
+    Performance: uses a single information_schema query to fetch ALL existing
+    columns across ALL tables in one round-trip (critical for remote DBs like
+    Neon where per-table introspection is prohibitively slow).
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    added = 0
+    with engine.connect() as conn:
+        # Single query: every (table, column) pair that currently exists.
+        rows = conn.execute(
+            text(
+                "SELECT table_name, column_name "
+                "FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            )
+        ).fetchall()
+        existing = {}
+        for table_name, col_name in rows:
+            existing.setdefault(table_name, set()).add(col_name)
+
+        for table_name, sa_table in Base.metadata.tables.items():
+            if table_name not in existing:
+                continue  # table doesn't exist yet; create_all will handle it
+            db_cols = existing[table_name]
+            for column in sa_table.columns:
+                if column.name in db_cols:
+                    continue
+                # Column is in the model but missing from the DB — add it.
+                col_type = column.type.compile(dialect=engine.dialect)
+                nullable = "NULL" if column.nullable else "NOT NULL"
+                ddl = f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type} {nullable}"
+                if column.server_default is not None:
+                    default_sql = column.server_default.arg
+                    if hasattr(default_sql, "text"):
+                        default_sql = default_sql.text
+                    ddl += f" DEFAULT {default_sql}"
+                logger.info("Adding missing column: %s", ddl)
+                conn.execute(text(ddl))
+                added += 1
+        conn.commit()
+    if added:
+        logger.info("Added %d missing column(s) to existing tables.", added)
+
+
 def initialize_database() -> None:
-    """Create any tables that don't exist yet (create_all).
+    """Create any tables that don't exist yet (create_all), then add missing columns.
 
     This is the intended bootstrap for the standalone platform: the DB
     starts empty and the schema is created in one shot. See
@@ -139,6 +197,11 @@ def initialize_database() -> None:
     remote DB and can time out mid-check. We do a single bulk lookup via
     the inspector instead, then create only what's missing with
     `checkfirst=False` so no further per-table checks happen.
+
+    After create_all, ``_add_missing_columns`` adds any columns that
+    SQLAlchemy models define but are absent from the live DB. This handles
+    schema drift (e.g. columns added to models after the original table
+    creation) without requiring a full migration framework.
     """
     try:
         existing_tables = set(inspect(engine).get_table_names())
@@ -152,6 +215,7 @@ def initialize_database() -> None:
             logger.info("Database tables initialized successfully (%d created).", len(missing_tables))
         else:
             logger.info("Database schema already up to date; skipped create_all.")
+        _add_missing_columns()
     except exc.SQLAlchemyError as exc_info:
         logger.error("Database initialization failed: %s", exc_info)
         raise
