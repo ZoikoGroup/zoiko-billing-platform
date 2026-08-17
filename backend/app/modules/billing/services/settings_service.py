@@ -310,6 +310,14 @@ class BillingConfigurationService:
                 data["default_currency"] = currency
                 data["home_currency"] = currency
                 data["base_currency"] = currency
+                # Mirror organizations/router.py's currency-update path: the org's
+                # own currency must always be a supported currency, or a fresh
+                # non-USD org seeds with its base currency missing from
+                # supported_currencies (CONFIGURATION_DEFAULTS is USD-only).
+                supported = list(data.get("supported_currencies") or [])
+                if currency_str not in supported:
+                    supported.append(currency_str)
+                    data["supported_currencies"] = supported
 
         config = BillingConfiguration(organization_id=organization_id, **data)
         self.db.add(config)

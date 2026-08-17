@@ -1248,15 +1248,25 @@ export function BulkProductPickerModal({
 export function useConfirmationDialog() {
   const resolverRef = useRef(null);
   const [options, setOptions] = useState(null);
+  const [typedValue, setTypedValue] = useState("");
+  const panelRef = useRef(null);
+  const cancelButtonRef = useRef(null);
+  const typedInputRef = useRef(null);
+  const triggerRef = useRef(null);
 
   const confirm = useCallback((nextOptions) => new Promise((resolve) => {
     resolverRef.current = resolve;
+    setTypedValue("");
     setOptions({
       title: "Confirm action",
       message: "Are you sure you want to continue?",
       confirmLabel: "Confirm",
       cancelLabel: "Cancel",
       tone: "danger",
+      // When set, the Confirm button stays disabled until the user types
+      // this exact value — reserved for the single highest-risk actions
+      // (e.g. hard-deleting an organization) rather than every dialog.
+      confirmationValue: undefined,
       ...nextOptions,
     });
   }), []);
@@ -1265,23 +1275,87 @@ export function useConfirmationDialog() {
     resolverRef.current?.(result);
     resolverRef.current = null;
     setOptions(null);
+    setTypedValue("");
   }, []);
+
+  const typedConfirmationRequired = Boolean(options?.confirmationValue);
+  const canConfirm = !typedConfirmationRequired || typedValue === options.confirmationValue;
+
+  // Focus management: capture the trigger, move focus into the dialog on
+  // open (the typed-confirmation input when present, otherwise the Cancel
+  // button — the safe action, not the destructive one), trap Tab within the
+  // panel, close on Escape, and restore focus to the trigger on close.
+  // Mirrors billing-ui.jsx's shared Modal so every dialog in the app behaves
+  // consistently, without introducing a second modal implementation.
+  useEffect(() => {
+    if (!options) return;
+    triggerRef.current = document.activeElement;
+    const focusTarget = typedConfirmationRequired ? typedInputRef.current : cancelButtonRef.current;
+    focusTarget?.focus();
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        close(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(
+        panelRef.current?.querySelectorAll(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) || []
+      ).filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      if (triggerRef.current && typeof triggerRef.current.focus === "function") {
+        triggerRef.current.focus();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, typedConfirmationRequired, close]);
 
   const ConfirmationDialog = options ? (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" role="dialog" aria-modal="true" aria-labelledby="billing-confirm-title">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+      <div ref={panelRef} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
         <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full ${options.tone === "danger" ? "bg-red-100 text-red-600" : "bg-brand-100 text-brand-600"}`}>
           <AlertCircle size={22} />
         </div>
         <h2 id="billing-confirm-title" className="text-lg font-bold text-slate-900">{options.title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">{options.message}</p>
+        {typedConfirmationRequired && (
+          <label className="mt-4 block">
+            <span className="text-xs font-medium text-slate-500">
+              Type <span className="font-mono font-semibold text-slate-700">{options.confirmationValue}</span> to confirm
+            </span>
+            <input
+              ref={typedInputRef}
+              type="text"
+              value={typedValue}
+              onChange={(e) => setTypedValue(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+            />
+          </label>
+        )}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => close(false)}
+          <button ref={cancelButtonRef} type="button" onClick={() => close(false)}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
             {options.cancelLabel}
           </button>
-          <button type="button" onClick={() => close(true)}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+          <button type="button" onClick={() => close(true)} disabled={!canConfirm}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               options.tone === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-brand-600 hover:bg-brand-700"
             }`}>
             {options.confirmLabel}

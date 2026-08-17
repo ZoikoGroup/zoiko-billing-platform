@@ -34,6 +34,8 @@ import {
   UserCog,
   ShieldCheck,
   KeyRound,
+  CheckSquare,
+  Power,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -170,16 +172,49 @@ const NAV_SECTIONS = [
       ],
     },
   {
-    label: "Commercial Control",
+    label: "Overview",
+    icon: LayoutDashboard,
+    superAdminOnly: true,
+    children: [
+      { label: "Dashboard", href: "/super-admin/dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Platform",
+    icon: Building2,
+    superAdminOnly: true,
+    children: [
+      { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
+      { label: "Users", href: "/super-admin/users", icon: UserCog },
+      { label: "Settings", href: "/super-admin/settings", icon: Settings },
+    ],
+  },
+  {
+    label: "Commercial",
+    icon: Package,
+    superAdminOnly: true,
+    children: [
+      { label: "Plans", href: "/super-admin/commercial/plans", icon: Package },
+      { label: "Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
+      { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
+    ],
+  },
+  {
+    label: "Governance",
     icon: ShieldCheck,
     superAdminOnly: true,
     children: [
-      { label: "Dashboard", href: "/super-admin/commercial/dashboard", icon: LayoutDashboard },
-      { label: "Organizations", href: "/super-admin/commercial/organizations", icon: Building2 },
-      { label: "Commercial Plans", href: "/super-admin/commercial/plans", icon: Package },
-      { label: "Commercial Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
-      { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
-      { label: "Audit Logs", href: "/super-admin/commercial/audit-logs", icon: ScrollText },
+      { label: "Audit Logs", href: "/super-admin/audit-logs", icon: ScrollText },
+      { label: "Approval Queue", href: "/super-admin/approval-queue", icon: CheckSquare },
+      { label: "Production Readiness", href: "/super-admin/production-readiness", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Operations",
+    icon: Power,
+    superAdminOnly: true,
+    children: [
+      { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
     ],
   },
 ];
@@ -265,20 +300,31 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
 function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
-  const visibleSections = NAV_SECTIONS.filter(
-    (section) =>
-      (!section.orgAdminOnly || role !== "billing_admin") &&
-      (!section.superAdminOnly || role === "super_admin")
-  );
-  const visibleTop = TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
-  const visibleFooter = FOOTER_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
+  // Super Admin has no organization_id, so tenant-scoped sections (Billing's
+  // product nav, org-admin's own-org links) would either be meaningless or
+  // outright 403 (their pages call org-scoped backend helpers that explicitly
+  // reject super_admin). Super Admin therefore sees ONLY superAdminOnly
+  // sections; every other role never sees a superAdminOnly section.
+  const visibleSections = NAV_SECTIONS.filter((section) => {
+    if (role === "super_admin") return !!section.superAdminOnly;
+    if (section.superAdminOnly) return false;
+    return !section.orgAdminOnly || role !== "billing_admin";
+  });
+  const visibleTop =
+    role === "super_admin" ? [] : TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
+  const visibleFooter =
+    role === "super_admin" ? [] : FOOTER_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
   const [openSection, setOpenSection] = useState(null);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
-          <Link to="/billing" onClick={onNavigate} className="text-[22px] font-extrabold tracking-tight text-white">
+          <Link
+            to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
+            onClick={onNavigate}
+            className="text-[22px] font-extrabold tracking-tight text-white"
+          >
             <span>Zoiko</span>
             <span className="text-[#FC7800]">Billing</span>
           </Link>

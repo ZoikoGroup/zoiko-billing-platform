@@ -53,7 +53,10 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         )}
-        <Link to="/billing" className="text-xl font-extrabold text-[#1a0933] tracking-tight">
+        <Link
+          to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
+          className="text-xl font-extrabold text-[#1a0933] tracking-tight"
+        >
           Zoiko<span className="text-[#ff6b00]">Billing</span>
         </Link>
       </div>
@@ -99,20 +102,32 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
           {/* Dropdown Menu */}
           {isDropdownOpen && (
             <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg p-1.5 flex flex-col gap-1 z-50">
-              <Link
-                to="/settings"
-                onClick={closeDropdown}
-                className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <User size={16} /> Profile Settings
-              </Link>
-              <Link
-                to="/organization-admin/organization"
-                onClick={closeDropdown}
-                className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <Building size={16} /> Organization
-              </Link>
+              {role === "super_admin" ? (
+                <Link
+                  to="/super-admin/settings"
+                  onClick={closeDropdown}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <User size={16} /> Platform Settings
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    to="/settings"
+                    onClick={closeDropdown}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <User size={16} /> Profile Settings
+                  </Link>
+                  <Link
+                    to="/organization-admin/organization"
+                    onClick={closeDropdown}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <Building size={16} /> Organization
+                  </Link>
+                </>
+              )}
 
               <div className="h-px bg-gray-100 my-1" />
 

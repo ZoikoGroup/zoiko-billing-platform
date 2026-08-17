@@ -50,6 +50,7 @@ from app.modules.commercial.enums import (
     CommercialAccountStatus,
     CommercialBillingInterval,
     CommercialPlanStatus,
+    CommercialPlanVersionStatus,
     CommercialSubscriptionStatus,
 )
 
@@ -155,6 +156,68 @@ class CommercialPlan(Base):
         )
 
 
+class CommercialPlanVersion(Base):
+    """Immutable-once-published catalog snapshot (ZB-COM-BILL-001 §T1, Phase 4).
+
+    A CommercialPlan is the stable, reusable identity (plan_code/plan_name);
+    a CommercialPlanVersion is a versioned, point-in-time snapshot of its
+    priceable/entitlement fields. Editing a PUBLISHED price/limit is
+    prohibited — create a new version instead. Historical subscriptions keep
+    referencing their original catalog_version_id so past invoices/entitlements
+    remain reproducible even after the plan's live version changes.
+
+    No prices are invented here: fields stay NULL exactly like CommercialPlan
+    until an approved catalog supplies them.
+    """
+
+    __tablename__ = "commercial_plan_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_id = Column(
+        Integer,
+        ForeignKey("commercial_plans.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    # 1, 2, 3... per plan_id — assigned atomically by the service, never reused.
+    version_number = Column(Integer, nullable=False)
+
+    status = Column(
+        CaseInsensitiveEnum(CommercialPlanVersionStatus),
+        default=CommercialPlanVersionStatus.DRAFT,
+        server_default="DRAFT",
+        nullable=False,
+    )
+
+    # ── Versioned snapshot fields (structure only — no invented values) ──────
+    plan_name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    billing_interval = Column(CaseInsensitiveEnum(CommercialBillingInterval), nullable=True)
+    currency = Column(String(3), nullable=True)
+    price_amount = Column(Numeric(14, 2), nullable=True)
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
+    max_users = Column(Integer, nullable=True)
+    max_storage_gb = Column(Integer, nullable=True)
+    features = Column(JSON, nullable=True)
+
+    # ── Maker-checker linkage ────────────────────────────────────────────────
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approval_request_id = Column(Integer, ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True)
+    published_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    plan = relationship("CommercialPlan", backref="versions")
+
+    def __repr__(self):
+        return (
+            f"<CommercialPlanVersion id={self.id} plan_id={self.plan_id} "
+            f"v{self.version_number} status={self.status!r}>"
+        )
+
+
 class CommercialSubscription(Base):
     __tablename__ = "commercial_subscriptions"
 
@@ -170,6 +233,16 @@ class CommercialSubscription(Base):
         ForeignKey("commercial_plans.id", ondelete="RESTRICT"),
         index=True,
         nullable=False,
+    )
+    # Nullable: existing/historical subscriptions predate catalog versioning
+    # and reference commercial_plan_id only. New subscriptions record the
+    # specific PUBLISHED version they were created against (ZB-COM-BILL-001
+    # §T1 — "every subscription must retain catalog_version_id").
+    catalog_version_id = Column(
+        Integer,
+        ForeignKey("commercial_plan_versions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
     )
 
     status = Column(

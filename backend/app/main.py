@@ -18,6 +18,7 @@ Router mounting:
 
 import logging
 import re
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -93,6 +94,22 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(ZoikoException, zoiko_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Assigns a correlation ID to every request (reused from an incoming
+    X-Request-ID header if the caller already has one, e.g. a frontend retry
+    or an upstream proxy). Exposed on request.state for the error handlers
+    (core/exceptions.py) and echoed back as a response header so a Super
+    Admin reporting "something went wrong" can hand an engineer one ID that
+    resolves directly to the matching server log line — see Section AD of
+    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added."""
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 

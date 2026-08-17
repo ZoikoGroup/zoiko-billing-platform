@@ -155,6 +155,7 @@ class CommercialSubscriptionResponse(BaseModel):
     organization_code: str
     organization_name: str
     commercial_plan_id: int
+    catalog_version_id: Optional[int] = None
     plan_code: str
     plan_name: str
     status: CommercialSubscriptionStatus

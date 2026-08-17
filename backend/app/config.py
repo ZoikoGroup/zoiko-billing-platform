@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     # Admin accounts. Never create a Super Admin through public /auth/register.
     SETUP_KEY: str = ""
 
+    # ── Super Admin MFA (TOTP) — release-blocker pass, Blocker 4 ────────
+    # Separate key from BILLING_SECRET_KEY — see core/mfa_crypto.py.
+    MFA_ENCRYPTION_KEY: str = ""
+    MFA_ISSUER_NAME: str = "Zoiko Billing"
+    MFA_MAX_FAILED_ATTEMPTS: int = 5
+    MFA_LOCKOUT_MINUTES: int = 15
+    MFA_PENDING_TOKEN_EXPIRE_MINUTES: int = 10
+
     # ── Stripe (ported from the old platform's billing module) ─────────
     # Blank/inert by default. Fill these in once real Stripe credentials
     # are available; nothing in this platform requires them to boot.

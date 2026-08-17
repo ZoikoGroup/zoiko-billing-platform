@@ -155,7 +155,7 @@ export default function EntitlementsPage() {
             columns={columns}
             data={rows}
             loading={loading}
-            onRowClick={(row) => navigate(`/super-admin/commercial/organizations/${row.account.organization_id}`)}
+            onRowClick={(row) => navigate(`/super-admin/organizations/${row.account.organization_id}`)}
             emptyTitle="No organizations found"
             emptyMessage={search ? "No organizations match your search." : "Organizations will appear here once provisioned."}
             minWidth={820}

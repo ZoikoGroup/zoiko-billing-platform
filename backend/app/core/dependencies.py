@@ -39,13 +39,6 @@ ROLE_CREATION_RULES = {
     ROLE_BILLING_ADMIN: [],
 }
 
-# Default landing route per role (mirrored in the frontend roles.js).
-ROLE_DEFAULT_REDIRECT = {
-    ROLE_SUPER_ADMIN: "/super-admin/dashboard",
-    ROLE_ORG_ADMIN: "/organization-admin/dashboard",
-    ROLE_BILLING_ADMIN: "/billing",
-}
-
 
 def can_create_role(creator_role, target_role) -> bool:
     return target_role in ROLE_CREATION_RULES.get(creator_role, [])
