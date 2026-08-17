@@ -12,9 +12,19 @@ export const COMMERCIAL_SOURCE_OPTIONS = [
   { value: "registered_via_zoiko_one", label: "Registered via Zoiko One" },
 ];
 
+// ZB-COM-BILL-001 Table 9 — the full approved classification set. Only
+// COMMERCIAL_STANDALONE may create a live standalone commercial charge; every
+// other value is display/labels only here — the backend is the sole
+// enforcement point (CommercialAccountService.can_charge).
 export const COMMERCIAL_CLASSIFICATION_OPTIONS = [
   { value: "commercial_standalone", label: "Commercial Standalone" },
   { value: "commercial_zoiko_one", label: "Commercial Zoiko One" },
+  { value: "legacy_migration", label: "Legacy Migration" },
+  { value: "pilot_non_billable", label: "Pilot (Non-Billable)" },
+  { value: "internal", label: "Internal" },
+  { value: "demo", label: "Demo" },
+  { value: "sandbox", label: "Sandbox" },
+  { value: "qa_automation", label: "QA Automation" },
 ];
 
 export const COMMERCIAL_SOURCE_BADGES = {
@@ -23,8 +33,14 @@ export const COMMERCIAL_SOURCE_BADGES = {
 };
 
 export const COMMERCIAL_CLASSIFICATION_BADGES = {
-  commercial_standalone: { label: "Standalone", color: "bg-brand-100 text-brand-700" },
+  commercial_standalone: { label: "Standalone", color: "bg-emerald-100 text-emerald-700" },
   commercial_zoiko_one: { label: "Zoiko One", color: "bg-indigo-100 text-indigo-700" },
+  legacy_migration: { label: "Legacy Migration", color: "bg-amber-100 text-amber-700" },
+  pilot_non_billable: { label: "Pilot (Non-Billable)", color: "bg-amber-100 text-amber-700" },
+  internal: { label: "Internal", color: "bg-slate-100 text-slate-600" },
+  demo: { label: "Demo", color: "bg-slate-100 text-slate-600" },
+  sandbox: { label: "Sandbox", color: "bg-slate-100 text-slate-600" },
+  qa_automation: { label: "QA Automation", color: "bg-slate-100 text-slate-600" },
 };
 
 export const ACCOUNT_STATUS_OPTIONS = [
@@ -46,6 +62,33 @@ export const SUBSCRIPTION_STATUS_OPTIONS = [
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
 ];
 
+// ── Versioned price catalog (ZB-COM-BILL-001 §T1, Phase 4) ──────────────
+export const CATALOG_VERSION_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "pending_approval", label: "Pending Approval", color: "bg-amber-100 text-amber-700" },
+  { value: "published", label: "Published", color: "bg-emerald-100 text-emerald-700" },
+  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
+  { value: "archived", label: "Archived", color: "bg-slate-100 text-slate-600" },
+];
+
+// ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
+export const APPROVAL_STATUS_OPTIONS = [
+  { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-700" },
+  { value: "approved", label: "Approved", color: "bg-emerald-100 text-emerald-700" },
+  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
+];
+
+// ── Production Acceptance Center (ZB-COM-BILL-001 §26) ──────────────────
+export const ACCEPTANCE_STATUS_OPTIONS = [
+  { value: "PASS", label: "Pass", color: "bg-emerald-100 text-emerald-700" },
+  { value: "WARNING", label: "Warning", color: "bg-amber-100 text-amber-700" },
+  { value: "FAIL", label: "Fail", color: "bg-red-100 text-red-700" },
+  { value: "NOT_CONFIGURED", label: "Not Configured", color: "bg-slate-100 text-slate-600" },
+  { value: "NOT_APPLICABLE", label: "Not Applicable", color: "bg-slate-100 text-slate-500" },
+];
+
 export const BILLING_INTERVAL_OPTIONS = [
   { value: "monthly", label: "Monthly" },
   { value: "annual", label: "Annual" },
@@ -62,6 +105,7 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: "set_default", label: "Set Default" },
   { value: "clear_default", label: "Clear Default" },
   { value: "archive", label: "Archive" },
+  { value: "delete", label: "Delete" },
 ];
 
 export const AUDIT_ACTION_BADGES = {
@@ -72,15 +116,50 @@ export const AUDIT_ACTION_BADGES = {
   set_default: { label: "Set Default", color: "bg-indigo-100 text-indigo-700" },
   clear_default: { label: "Clear Default", color: "bg-slate-100 text-slate-600" },
   archive: { label: "Archive", color: "bg-red-100 text-red-700" },
+  delete: { label: "Delete", color: "bg-red-100 text-red-700" },
 };
 
 // Entity types currently recorded on the platform-plane audit trail.
 export const AUDIT_ENTITY_OPTIONS = [
   { value: "CommercialPlan", label: "Commercial Plan" },
+  { value: "Organization", label: "Organization" },
 ];
 
 export function AuditActionBadge({ value }) {
   const option = AUDIT_ACTION_BADGES[value] || {};
+  return (
+    <StatusBadge
+      status={value}
+      options={[{ value, ...option }]}
+      fallbackColor="bg-slate-100 text-slate-600"
+    />
+  );
+}
+
+// ── Subscription lifecycle audit presentation (PHASE 13) ──────────────────
+// Labels/colors only, for the read-only /subscription-audit-logs feed —
+// mirrors the backend's presentation-only lifecycle_event derivation
+// (super_admin/router.py::_subscription_lifecycle_event). No business
+// semantics live here.
+
+export const SUBSCRIPTION_LIFECYCLE_EVENT_OPTIONS = [
+  { value: "subscription_created", label: "Created" },
+  { value: "subscription_activated", label: "Activated" },
+  { value: "subscription_suspended", label: "Suspended" },
+  { value: "subscription_cancelled", label: "Cancelled" },
+  { value: "subscription_expired", label: "Expired" },
+];
+
+const SUBSCRIPTION_LIFECYCLE_EVENT_BADGES = {
+  subscription_created: { label: "Created", color: "bg-emerald-100 text-emerald-700" },
+  subscription_activated: { label: "Activated", color: "bg-green-100 text-green-700" },
+  subscription_suspended: { label: "Suspended", color: "bg-slate-100 text-slate-600" },
+  subscription_cancelled: { label: "Cancelled", color: "bg-red-100 text-red-700" },
+  subscription_expired: { label: "Expired", color: "bg-slate-100 text-slate-600" },
+};
+
+export function SubscriptionLifecycleBadge({ value }) {
+  const option = SUBSCRIPTION_LIFECYCLE_EVENT_BADGES[value] || {};
   return (
     <StatusBadge
       status={value}

@@ -25,10 +25,12 @@ from app.core.exceptions import (
 )
 from app.core.security import (
     create_access_token,
+    create_mfa_pending_token,
     create_refresh_token,
     hash_password,
     verify_password,
 )
+from app.modules.auth.country_currency import resolve_currency
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.commercial.enums import BillingClassification, BillingSource
@@ -142,6 +144,32 @@ def login_user(db: Session, email: str, password: str) -> dict:
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
 
+    # Super Admin MFA gate (release-blocker pass, Blocker 4 / SEC-01):
+    # password correctness alone is never sufficient to mint a real,
+    # privileged token for a super_admin. Every super_admin login routes
+    # through mfa_service — see that module's docstring for why this is a
+    # genuine backend enforcement point, not a frontend flag.
+    if user.role == UserRole.SUPER_ADMIN:
+        from app.modules.auth import mfa_service
+
+        token_payload = {
+            "sub": user.email,
+            "role": user.role.value,
+            "user_id": user.id,
+            "organization_id": user.organization_id,
+        }
+        if mfa_service.is_mfa_enabled(db, user.id):
+            logger.info("Super Admin %s password verified; awaiting MFA challenge", user.email)
+            return {
+                "mfa_status": "challenge_required",
+                "mfa_token": create_mfa_pending_token(token_payload, "challenge"),
+            }
+        logger.info("Super Admin %s password verified; MFA enrollment required", user.email)
+        return {
+            "mfa_status": "enrollment_required",
+            "mfa_token": create_mfa_pending_token(token_payload, "enroll"),
+        }
+
     token_payload = {
         "sub": user.email,
         "role": user.role.value,
@@ -153,6 +181,7 @@ def login_user(db: Session, email: str, password: str) -> dict:
 
     logger.info("User %s (%s) logged in", user.email, user.role.value)
     return {
+        "mfa_status": "none",
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
@@ -199,6 +228,14 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
 
     org_code = generate_organization_code(data.organization, db)
 
+    # Country → default currency intelligence (single authoritative mapping in
+    # auth/country_currency.py). Precedence: explicit currency > country-derived
+    # default > safe fallback. model_fields_set distinguishes "user chose USD"
+    # from "client did not send currency at all", so an India registration
+    # without an explicit currency correctly derives INR instead of USD.
+    explicit_currency = data.currency if "currency" in data.model_fields_set else None
+    currency = resolve_currency(explicit_currency, data.country)
+
     org = Organization(
         organization_name=data.organization,
         organization_code=org_code,
@@ -214,7 +251,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         website=data.website,
         tax_no=data.tax_no,
         registration_number=data.registration_number,
-        currency=(data.currency or "USD").upper(),
+        currency=currency,
         timezone=data.timezone or "UTC",
         fiscal_year_start=data.fiscal_year_start or "01-01",
         fiscal_year_end=data.fiscal_year_end or "12-31",
@@ -276,11 +313,12 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     db.refresh(org)
 
     # Best-effort starter tax catalogue seed for the org's billing currency
-    # (Phase 5.7). Never blocks registration -- a fresh org's currency is
-    # "USD" (the model default) unless later changed via PUT /organizations/me,
-    # and USD has no catalogue entry, so this is a safe no-op in the common
-    # case today; it exists so registration participates in the same
-    # idempotent seed path organizations/router.py's currency-update flow uses.
+    # (Phase 5.7). Never blocks registration -- a fresh org's currency is now
+    # derived from country (explicit > country-derived > USD fallback), so a
+    # country/currency with a real catalogue entry (e.g. India → INR) seeds its
+    # starter rate here; a currency without a catalogue entry (e.g. USD) is a
+    # deliberate no-op. Same idempotent seed path organizations/router.py's
+    # currency-update flow uses.
     try:
         from app.modules.billing.services.tax_service import TaxService
         TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id)

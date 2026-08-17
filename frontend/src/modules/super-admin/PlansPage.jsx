@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Package, Plus, Pencil, Star, StarOff, Power, Archive, Crown } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Package, Plus, Pencil, Star, StarOff, Power, Archive, Crown, GitBranch } from "lucide-react";
 import {
   listCommercialPlans,
   createCommercialPlan,
@@ -210,6 +211,7 @@ function PlanForm({ form, setForm, submitting, error, onCancel, onSubmit, editin
 }
 
 export default function PlansPage() {
+  const navigate = useNavigate();
   const [plans, setPlans] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -399,9 +401,18 @@ export default function PlansPage() {
       {
         key: "actions",
         label: "Actions",
-        width: 200,
+        width: 280,
         render: (row) => (
           <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={GitBranch}
+              onClick={() => navigate(`/super-admin/commercial/plans/${row.id}/versions`)}
+              aria-label={`View catalog versions for ${row.plan_code}`}
+            >
+              Versions
+            </Button>
             <Button size="sm" variant="secondary" icon={Pencil} onClick={() => openEdit(row)} aria-label={`Edit ${row.plan_code}`}>
               Edit
             </Button>

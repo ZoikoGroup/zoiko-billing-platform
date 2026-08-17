@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import BillingShell from "./components/BillingShell";
@@ -10,14 +10,16 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
 import OrgPortalPage from "./pages/OrgPortalPage";
-import DashboardPage from "./pages/DashboardPage";
-import UsersPage from "./pages/UsersPage";
-import OrganizationsPage from "./pages/OrganizationsPage";
-import SettingsPage from "./pages/SettingsPage";
 import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
+
+// Platform pages pull in billing-shared.jsx's shared component kit; lazy
+// loading keeps that out of the eagerly-loaded main bundle (matches every
+// other route below).
+const UsersPage = lazy(() => import("./pages/UsersPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 const BillingDashboard = lazy(() => import("./modules/billing/dashboard/dashboard"));
 const ReportsPage = lazy(() => import("./modules/billing/dashboard/reports"));
@@ -103,13 +105,17 @@ const TaxConfigurationPage = lazy(() => import("./modules/billing/tax/tax-config
 const TaxReportsPage = lazy(() => import("./modules/billing/tax/reports"));
 const TaxSettingsPage = lazy(() => import("./modules/billing/tax/settings"));
 
-const CommercialDashboardPage = lazy(() => import("./modules/super-admin/DashboardPage"));
 const CommercialOrganizationsPage = lazy(() => import("./modules/super-admin/OrganizationsPage"));
 const CommercialOrganizationDetailPage = lazy(() => import("./modules/super-admin/OrganizationDetailPage"));
 const CommercialPlansPage = lazy(() => import("./modules/super-admin/PlansPage"));
 const CommercialSubscriptionsPage = lazy(() => import("./modules/super-admin/SubscriptionsPage"));
 const CommercialEntitlementsPage = lazy(() => import("./modules/super-admin/EntitlementsPage"));
 const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
+const CommercialPlanVersionsPage = lazy(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
+const ApprovalQueuePage = lazy(() => import("./modules/super-admin/ApprovalQueuePage"));
+const KillSwitchPage = lazy(() => import("./modules/super-admin/KillSwitchPage"));
+const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/ProductionAcceptancePage"));
+const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
 
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
@@ -197,14 +203,41 @@ const BILLING_ROUTES = [
   { path: "/billing/write-offs/:id", element: <WriteOffDetailPage /> },
 ];
 
+// ONE canonical Super Admin route tree. Every page below is reachable at
+// exactly one URL; the legacy paths that used to serve some of these same
+// pages are registered separately, below, as redirects — never as a second
+// live copy of the page.
 const SUPER_ADMIN_ROUTES = [
-  { path: "/super-admin/commercial/dashboard", element: <CommercialDashboardPage /> },
-  { path: "/super-admin/commercial/organizations", element: <CommercialOrganizationsPage /> },
-  { path: "/super-admin/commercial/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
+  { path: "/super-admin/dashboard", element: <PlatformDashboardPage /> },
+  { path: "/super-admin/organizations", element: <CommercialOrganizationsPage /> },
+  { path: "/super-admin/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
+  { path: "/super-admin/users", element: <UsersPage /> },
+  { path: "/super-admin/settings", element: <SettingsPage /> },
   { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
+  { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
   { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
   { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
-  { path: "/super-admin/commercial/audit-logs", element: <CommercialAuditLogsPage /> },
+  { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
+  { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
+  { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
+  { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
+];
+
+// Legacy Super Admin paths that must keep working (bookmarks, old links)
+// but no longer render their own copy of a page — they redirect to the one
+// canonical location above.
+const SUPER_ADMIN_LEGACY_REDIRECTS = [
+  { from: "/dashboard", to: "/super-admin/dashboard" },
+  { from: "/users", to: "/super-admin/users" },
+  { from: "/settings", to: "/super-admin/settings" },
+  { from: "/organizations", to: "/super-admin/organizations" },
+  { from: "/super-admin/commercial/dashboard", to: "/super-admin/dashboard" },
+  { from: "/super-admin/commercial/organizations", to: "/super-admin/organizations" },
+  { from: "/super-admin/commercial/organizations/:organizationId", to: "/super-admin/organizations/:organizationId" },
+  { from: "/super-admin/commercial/audit-logs", to: "/super-admin/audit-logs" },
+  { from: "/super-admin/commercial/approvals", to: "/super-admin/approval-queue" },
+  { from: "/super-admin/commercial/kill-switch", to: "/super-admin/kill-switch" },
+  { from: "/super-admin/commercial/production-acceptance", to: "/super-admin/production-readiness" },
 ];
 
 function ModuleSpinner() {
@@ -221,7 +254,20 @@ function LandingRedirect() {
     const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/billing";
     return <Navigate to={target} replace />;
   }
-  return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/super-admin/dashboard" replace />;
+}
+
+// Substitutes any `:param` segments in a legacy redirect target with the
+// current route's matched params, and preserves the query string, so a
+// bookmarked/shared legacy URL (including detail pages) still lands on the
+// exact equivalent canonical page rather than a generic top-level route.
+function LegacyRedirect({ to }) {
+  const params = useParams();
+  const { search } = useLocation();
+  const resolved = to.replace(/:([A-Za-z0-9_]+)/g, (match, name) =>
+    params[name] !== undefined ? params[name] : match
+  );
+  return <Navigate to={`${resolved}${search}`} replace />;
 }
 
 export default function App() {
@@ -236,10 +282,9 @@ export default function App() {
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/portal" element={<OrgPortalPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/organizations" element={<OrganizationsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          {SUPER_ADMIN_LEGACY_REDIRECTS.map(({ from, to }) => (
+            <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
+          ))}
           {BILLING_ROUTES.map(({ path, element }) => (
             <Route key={path} path={path} element={<BillingShell>{element}</BillingShell>} />
           ))}

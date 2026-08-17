@@ -27,6 +27,25 @@ export const getCommercialOrganizationDetail = (organizationId) =>
 export const getOrganizationProfile = (organizationId) =>
   api.get(`/api/organizations/${organizationId}`);
 
+// ── Organization lifecycle (super-admin scope) ──────────────────────────
+export const createOrganization = (data) =>
+  api.post("/api/organizations/", data);
+
+export const setOrganizationStatus = (organizationId, isActive) =>
+  api.patch(`/api/organizations/${organizationId}/status`, undefined, {
+    params: { is_active: isActive },
+  });
+
+export const deleteOrganization = (organizationId) =>
+  api.delete(`/api/organizations/${organizationId}`);
+
+// ── Billing classification (ZB-COM-BILL-001 Phase 2) ────────────────────
+export const updateBillingClassification = (organizationId, billingClassification, reason) =>
+  api.patch(`/api/organizations/${organizationId}/billing-classification`, {
+    billing_classification: billingClassification,
+    reason,
+  });
+
 // ── Commercial plans ───────────────────────────────────────────────────
 export const listCommercialPlans = (params = {}) =>
   api.get("/api/super-admin/commercial-plans", { params });
@@ -63,6 +82,52 @@ export const setCommercialSubscriptionStatus = (subscriptionId, status) =>
 export const listPlatformAuditLogs = (params = {}) =>
   api.get("/api/super-admin/audit-logs", { params });
 
+// ── Subscription lifecycle audit feed (PHASE 13) ────────────────────────
+// Read-only projection over billing_audit_logs (entity_type=CommercialSubscription),
+// surfaced separately from the platform-plane feed above since it's a
+// different underlying audit table — see backend router docstring.
+export const listSubscriptionAuditLogs = (params = {}) =>
+  api.get("/api/super-admin/subscription-audit-logs", { params });
+
 // ── Super Admin platform users (actor filter options) ───────────────────
 export const listSuperAdminUsers = (params = {}) =>
   api.get("/api/super-admin/users", { params });
+
+// ── Versioned price catalog (ZB-COM-BILL-001 §T1, Phase 4) ──────────────
+export const listCommercialPlanVersions = (planId) =>
+  api.get(`/api/super-admin/commercial-plans/${planId}/versions`);
+
+export const getCommercialPlanVersion = (versionId) =>
+  api.get(`/api/super-admin/commercial-plan-versions/${versionId}`);
+
+export const createCommercialPlanVersion = (planId, data) =>
+  api.post(`/api/super-admin/commercial-plans/${planId}/versions`, data);
+
+export const submitCommercialPlanVersion = (versionId, reason) =>
+  api.post(`/api/super-admin/commercial-plan-versions/${versionId}/submit`, { reason });
+
+export const approveCommercialPlanVersion = (versionId) =>
+  api.post(`/api/super-admin/commercial-plan-versions/${versionId}/approve`, {});
+
+export const rejectCommercialPlanVersion = (versionId, rejectionReason) =>
+  api.post(`/api/super-admin/commercial-plan-versions/${versionId}/reject`, {
+    rejection_reason: rejectionReason,
+  });
+
+export const archiveCommercialPlanVersion = (versionId) =>
+  api.post(`/api/super-admin/commercial-plan-versions/${versionId}/archive`, {});
+
+// ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
+export const listApprovalRequests = (params = {}) =>
+  api.get("/api/super-admin/approval-requests", { params });
+
+// ── Billing kill switch (ZB-COM-BILL-001 §30.1) ─────────────────────────
+export const getBillingKillSwitch = () =>
+  api.get("/api/super-admin/billing-kill-switch");
+
+export const setBillingKillSwitch = (enabled, reason) =>
+  api.put("/api/super-admin/billing-kill-switch", { enabled, reason });
+
+// ── Production Acceptance Center (ZB-COM-BILL-001 §26) ──────────────────
+export const getProductionAcceptanceReport = () =>
+  api.get("/api/super-admin/production-acceptance");

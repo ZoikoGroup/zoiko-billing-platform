@@ -1,13 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Building2, ShieldCheck, Settings2, UserCheck, KeyRound, History } from "lucide-react";
-import { getCommercialOrganizationDetail, getOrganizationProfile } from "../../service/commercialService";
-import { PageHeader, DataTable } from "../../components/billing-ui";
-import { StatusBadge, ErrorState, PageSkeleton, EmptyState } from "../../components/billing-shared";
+import { Building2, ShieldCheck, Settings2, UserCheck, KeyRound, History, Power, Trash2, Pencil } from "lucide-react";
+import {
+  getCommercialOrganizationDetail,
+  getOrganizationProfile,
+  setOrganizationStatus,
+  deleteOrganization,
+  updateBillingClassification,
+} from "../../service/commercialService";
+import { PageHeader, DataTable, Modal, Field, Select, Button } from "../../components/billing-ui";
+import { StatusBadge, ErrorState, PageSkeleton, EmptyState, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import {
   ACCOUNT_STATUS_OPTIONS,
   PLAN_STATUS_OPTIONS,
   SUBSCRIPTION_STATUS_OPTIONS,
+  COMMERCIAL_CLASSIFICATION_OPTIONS,
   formatDateTime,
   formatDateOnly,
   displayValue,
@@ -15,6 +22,68 @@ import {
   CommercialSourceBadge,
   CommercialClassificationBadge,
 } from "./constants";
+
+function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
+  const [value, setValue] = useState(currentValue || "");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setValue(currentValue || "");
+      setReason("");
+      setError(null);
+    }
+  }, [open, currentValue]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await onSaved(value, reason);
+      if (updated !== false) onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to update billing classification.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Change billing classification" icon={ShieldCheck} size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-xs text-slate-500">
+          Per ZB-COM-BILL-001 Table 9 — only Commercial Standalone may create a live standalone commercial charge.
+          This change is audited with a required reason and an effective timestamp.
+        </p>
+        <Field label="New classification" htmlFor="new-classification" required>
+          <Select id="new-classification" value={value} onChange={setValue} options={COMMERCIAL_CLASSIFICATION_OPTIONS} placeholder="Select…" />
+        </Field>
+        <Field label="Reason" htmlFor="classification-reason" required hint="Required for the audit record.">
+          <textarea
+            id="classification-reason"
+            required
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          />
+        </Field>
+        {error && (
+          <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={!value || !reason}>Save change</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function InfoRow({ label, value, className = "" }) {
   return (
@@ -52,6 +121,11 @@ export default function OrganizationDetailPage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [classificationModalOpen, setClassificationModalOpen] = useState(false);
+  const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +152,72 @@ export default function OrganizationDetailPage() {
     load();
   }, [load]);
 
+  const orgName = detail?.organization_name || profile?.organization_name || `Organization #${organizationId}`;
+  const orgCode = detail?.organization_code || profile?.organization_code || "—";
+
+  const handleToggleStatus = useCallback(async () => {
+    const suspending = detail?.is_active;
+    const ok = await confirm({
+      title: suspending ? "Suspend organization?" : "Activate organization?",
+      message: suspending
+        ? `"${orgName}" will immediately lose access to the platform. This is reversible — you can activate it again at any time.`
+        : `"${orgName}" will regain access to the platform immediately.`,
+      confirmLabel: suspending ? "Suspend" : "Activate",
+      tone: suspending ? "danger" : "default",
+    });
+    if (!ok) return;
+
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await setOrganizationStatus(organizationId, !suspending);
+      setNotice(suspending ? "Organization suspended." : "Organization activated.");
+      await load();
+    } catch (err) {
+      setActionError(err?.message || "Failed to update organization status.");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [confirm, detail, orgName, organizationId, load]);
+
+  const handleClassificationChange = useCallback(
+    async (newClassification, reason) => {
+      setActionError(null);
+      try {
+        await updateBillingClassification(organizationId, newClassification, reason);
+        setNotice(`Billing classification changed to "${newClassification}".`);
+        await load();
+      } catch (err) {
+        throw new Error(err?.message || "Failed to update billing classification.");
+      }
+    },
+    [organizationId, load]
+  );
+
+  const handleDelete = useCallback(async () => {
+    const ok = await confirm({
+      title: "Delete organization?",
+      message: `This permanently hard-deletes "${orgName}" (${orgCode}) and ALL of its data — users, customers, invoices, payments. This cannot be undone.`,
+      confirmLabel: "Delete permanently",
+      tone: "danger",
+      confirmationValue: orgCode,
+    });
+    if (!ok) return;
+
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await deleteOrganization(organizationId);
+      navigate("/super-admin/organizations", {
+        replace: true,
+        state: { notice: `Organization "${orgName}" and all of its data were deleted.` },
+      });
+    } catch (err) {
+      setActionError(err?.message || "Failed to delete organization.");
+      setActionBusy(false);
+    }
+  }, [confirm, organizationId, orgName, orgCode, navigate]);
+
   const entitlements = useMemo(() => {
     const raw = detail?.entitlements || {};
     return {
@@ -86,9 +226,6 @@ export default function OrganizationDetailPage() {
       features: formatFeatureList(raw.features),
     };
   }, [detail]);
-
-  const orgName = detail?.organization_name || profile?.organization_name || `Organization #${organizationId}`;
-  const orgCode = detail?.organization_code || profile?.organization_code || "—";
 
   if (loading) {
     return (
@@ -167,13 +304,53 @@ export default function OrganizationDetailPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         crumbs={[
-          { label: "Organizations", href: "/super-admin/commercial/organizations" },
+          { label: "Organizations", href: "/super-admin/organizations" },
           { label: orgCode },
         ]}
         title={orgName}
         description={`Organization ${orgCode} · consolidated commercial plane view`}
         icon={Building2}
         meta={detail ? `Commercial account status: ${detail.account?.status || "—"} · Can charge: ${detail.can_charge ? "Yes" : "No"}` : null}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleStatus}
+              disabled={actionBusy}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                detail.is_active
+                  ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              }`}
+            >
+              <Power size={15} />
+              {detail.is_active ? "Suspend" : "Activate"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={actionBusy}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={15} />
+              Delete
+            </button>
+          </div>
+        }
+      />
+
+      {notice && <div className="mt-4"><SuccessMessage message={notice} onDismiss={() => setNotice(null)} /></div>}
+      {actionError && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          {actionError}
+        </div>
+      )}
+      {ConfirmationDialog}
+      <ChangeClassificationModal
+        open={classificationModalOpen}
+        currentValue={detail.billing_classification}
+        onClose={() => setClassificationModalOpen(false)}
+        onSaved={handleClassificationChange}
       />
 
       <div className="mt-6 space-y-6">
@@ -204,7 +381,16 @@ export default function OrganizationDetailPage() {
             </div>
           </SectionCard>
 
-          <SectionCard icon={ShieldCheck} title="Commercial Classification" subtitle="Server-stamped; not editable">
+          <SectionCard
+            icon={ShieldCheck}
+            title="Commercial Classification"
+            subtitle="Billing source is server-stamped; classification is Super-Admin controlled"
+            action={
+              <Button size="sm" variant="secondary" icon={Pencil} onClick={() => setClassificationModalOpen(true)}>
+                Change
+              </Button>
+            }
+          >
             <InfoRow label="Billing source" value={<CommercialSourceBadge value={detail.billing_source} />} />
             <InfoRow label="Classification" value={<CommercialClassificationBadge value={detail.billing_classification} />} />
             <InfoRow label="Account status" value={<StatusBadge status={detail.account?.status} options={ACCOUNT_STATUS_OPTIONS} />} />

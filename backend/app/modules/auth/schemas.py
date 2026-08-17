@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.modules.auth.country_currency import is_valid_currency_code
 from app.modules.auth.models import UserRole
 
 
@@ -46,6 +47,8 @@ class RegisterRequest(BaseModel):
             v = v.strip().upper()
             if not re.match(r"^[A-Z]{3}$", v):
                 raise ValueError("currency must be a 3-letter ISO-4217 code")
+            if not is_valid_currency_code(v):
+                raise ValueError("currency must be a supported ISO-4217 currency code")
         return v
 
     @field_validator("fiscal_year_start", "fiscal_year_end")
@@ -60,6 +63,19 @@ class RegisterRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+# ── Registration country → currency intelligence ────────────────────────────
+
+class CountryCurrencyDefault(BaseModel):
+    name: str
+    code: str
+    currency: str
+
+
+class CountryDefaultsResponse(BaseModel):
+    fallback_currency: str
+    countries: list[CountryCurrencyDefault]
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -102,6 +118,68 @@ class TokenResponse(BaseModel):
 
 class SuccessResponse(BaseModel):
     message: str
+
+
+# ── Super Admin MFA (release-blocker pass, Blocker 4) ───────────────────────
+
+class LoginResponse(BaseModel):
+    """POST /auth/login's response. For a Super Admin account, password
+    verification alone never yields a real token — mfa_status tells the
+    frontend exactly which restricted follow-up call to make next.
+    mfa_status == "none": access_token/refresh_token/user are populated,
+    login is complete (matches every non-super_admin login exactly as
+    before). mfa_status in {"enrollment_required","challenge_required"}:
+    only mfa_token is populated — it authorizes ONLY the matching
+    /auth/mfa/* follow-up call, nothing else."""
+
+    mfa_status: str  # "none" | "enrollment_required" | "challenge_required"
+    mfa_token: Optional[str] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    user: Optional[UserResponse] = None
+
+
+class MFAEnrollStartRequest(BaseModel):
+    mfa_token: str = Field(..., min_length=1)
+
+
+class MFAEnrollStartResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+    issuer: str
+
+
+class MFAEnrollVerifyRequest(BaseModel):
+    mfa_token: str = Field(..., min_length=1)
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+class MFAChallengeRequest(BaseModel):
+    mfa_token: str = Field(..., min_length=1)
+    code: Optional[str] = Field(None, min_length=6, max_length=8)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+    @field_validator("recovery_code")
+    @classmethod
+    def _require_one_factor(cls, value, info):
+        code = info.data.get("code")
+        if not value and not code:
+            raise ValueError("Either code or recovery_code is required.")
+        return value
+
+
+class MFACompletedLoginResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+    recovery_codes: Optional[list[str]] = None
+    recovery_codes_remaining: Optional[int] = None
+
+
+class MFADisableRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
 
 
 # ── Org Admin manages users ────────────────────────────────────────────────

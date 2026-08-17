@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { apiFetch } from "../api/client";
+import { getCurrencyInfo } from "../utils/currency";
 import {
   REGISTRATION_COUNTRIES,
   getStatesForCountryName,
@@ -42,11 +43,52 @@ export default function RegisterPage() {
     country: "",
     timezone: "",
     industry: "",
+    currency: "",
     termsAccepted: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+
+  // Country → default currency intelligence served by the backend's
+  // authoritative mapping (GET /api/auth/country-defaults). The backend
+  // persists the final Organization.currency; this is only a UX suggestion
+  // that the user can override.
+  const [countryCurrencyMap, setCountryCurrencyMap] = useState({});
+  const [currencyOptions, setCurrencyOptions] = useState([]);
+  const [currencyLoading, setCurrencyLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    apiFetch("/api/auth/country-defaults")
+      .then((res) => {
+        if (!mounted) return;
+        const byCountry = {};
+        const seen = {};
+        const options = [];
+        (res.countries || []).forEach((c) => {
+          if (!c.currency) return;
+          byCountry[c.name] = c.currency;
+          if (!seen[c.currency]) {
+            seen[c.currency] = true;
+            const info = getCurrencyInfo(c.currency);
+            options.push({
+              value: c.currency,
+              label: `${info?.flag ? `${info.flag} ` : ""}${c.currency}${info?.name ? ` — ${info.name}` : ""}`,
+            });
+          }
+        });
+        setCountryCurrencyMap(byCountry);
+        setCurrencyOptions(options.sort((a, b) => a.value.localeCompare(b.value)));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setCurrencyLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -58,6 +100,7 @@ export default function RegisterPage() {
       country: value,
       state: "",
       timezone: getDefaultTimezoneForCountry(value),
+      currency: countryCurrencyMap[value] || "",
     }));
   }
 
@@ -83,6 +126,7 @@ export default function RegisterPage() {
           country: form.country,
           timezone: form.timezone,
           industry: form.industry,
+          currency: form.currency || undefined,
         },
       });
       navigate("/register/success", {
@@ -334,7 +378,7 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px" }}>
                 <div>
                   <label htmlFor="timezone" style={labelStyle}>
                     Timezone
@@ -356,6 +400,31 @@ export default function RegisterPage() {
                       ))
                     )}
                   </select>
+                </div>
+
+                <div>
+                  <label htmlFor="currency" style={labelStyle}>
+                    Currency
+                  </label>
+                  <select
+                    id="currency"
+                    value={form.currency}
+                    onChange={(e) => update("currency", e.target.value)}
+                    disabled={currencyLoading && currencyOptions.length === 0}
+                    style={{ ...selectStyle, cursor: currencyLoading && currencyOptions.length === 0 ? "not-allowed" : "default" }}
+                    onFocus={e => e.target.style.borderColor = "#FF6B00"}
+                    onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+                  >
+                    <option value="">
+                      {currencyLoading && currencyOptions.length === 0 ? "Loading currencies…" : "Auto (by country)"}
+                    </option>
+                    {currencyOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#9CA3AF" }}>
+                    Auto-suggested from your country; you can change it.
+                  </p>
                 </div>
 
                 <div>

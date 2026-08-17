@@ -23,11 +23,20 @@ from app.core.exceptions import BadRequestException
 from app.core.rate_limiter import limiter
 from app.database import get_db
 from app.modules.auth import service
+from app.modules.auth.country_currency import country_defaults
 from app.modules.auth.models import SecurityActionPurpose, User, UserRole
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
+    CountryDefaultsResponse,
     ForgotPasswordRequest,
     LoginRequest,
+    LoginResponse,
+    MFAChallengeRequest,
+    MFACompletedLoginResponse,
+    MFADisableRequest,
+    MFAEnrollStartRequest,
+    MFAEnrollStartResponse,
+    MFAEnrollVerifyRequest,
     RefreshRequest,
     RegisterRequest,
     SuccessResponse,
@@ -105,16 +114,81 @@ def _action_form_page(title: str, token: str, action_path: str) -> HTMLResponse:
 
 # ── Public auth ─────────────────────────────────────────────────────────────
 
-@router.post("/login", response_model=TokenResponse, summary="Login and get access token")
+@router.post("/login", response_model=LoginResponse, summary="Login and get access token")
 @limiter.limit("10/minute")
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     return service.login_user(db, data.email, data.password)
+
+
+# ── Super Admin MFA (release-blocker pass, Blocker 4) ───────────────────────
+# Every endpoint below authenticates via the restricted mfa_token from
+# /auth/login's response, NOT via get_current_user — the caller does not
+# have a real access token yet at this stage of the flow.
+
+@router.post(
+    "/mfa/enroll/start", response_model=MFAEnrollStartResponse,
+    summary="Begin Super Admin MFA enrollment (issues a TOTP secret)",
+)
+@limiter.limit("10/minute")
+def mfa_enroll_start(request: Request, data: MFAEnrollStartRequest, db: Session = Depends(get_db)):
+    from app.modules.auth import mfa_service
+
+    user = mfa_service.resolve_pending_user(db, data.mfa_token, "enroll")
+    return mfa_service.start_enrollment(db, user)
+
+
+@router.post(
+    "/mfa/enroll/verify", response_model=MFACompletedLoginResponse,
+    summary="Confirm Super Admin MFA enrollment with a TOTP code and complete login",
+)
+@limiter.limit("10/minute")
+def mfa_enroll_verify(request: Request, data: MFAEnrollVerifyRequest, db: Session = Depends(get_db)):
+    from app.modules.auth import mfa_service
+
+    user = mfa_service.resolve_pending_user(db, data.mfa_token, "enroll")
+    return mfa_service.verify_enrollment(db, user, data.code)
+
+
+@router.post(
+    "/mfa/challenge", response_model=MFACompletedLoginResponse,
+    summary="Verify a Super Admin MFA code (or recovery code) and complete login",
+)
+@limiter.limit("10/minute")
+def mfa_challenge(request: Request, data: MFAChallengeRequest, db: Session = Depends(get_db)):
+    from app.modules.auth import mfa_service
+
+    user = mfa_service.resolve_pending_user(db, data.mfa_token, "challenge")
+    return mfa_service.challenge(db, user, data.code, data.recovery_code)
+
+
+@router.post(
+    "/mfa/disable", response_model=SuccessResponse,
+    summary="Disable MFA on your own Super Admin account (requires current password)",
+)
+def mfa_disable(data: MFADisableRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.modules.auth import mfa_service
+
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise BadRequestException("MFA is only available for Super Admin accounts.")
+    return mfa_service.disable_mfa_self(db, current_user, data.current_password)
 
 
 @router.post("/register", response_model=TokenResponse, summary="Register a new organization")
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterRequest, db: Session = Depends(get_db)):
     return service.register_enterprise(db, data)
+
+
+@router.get(
+    "/country-defaults",
+    response_model=CountryDefaultsResponse,
+    summary="Authoritative country → default currency map for registration UX",
+)
+def get_registration_country_defaults():
+    """Public, unauthenticated map consumed by the registration form so its
+    currency auto-suggest comes from the same authoritative definition the
+    backend persists (auth/country_currency.py)."""
+    return country_defaults()
 
 
 @router.post("/refresh", response_model=TokenResponse, summary="Refresh access token")

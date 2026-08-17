@@ -12,12 +12,13 @@ which creates the Organization + first org_admin in one transaction.
 """
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.exceptions import NotFoundException, ForbiddenException
+from app.core.exceptions import BadRequestException, NotFoundException, ForbiddenException
 from app.modules.auth.schemas import SuccessResponse
 from app.core.dependencies import (
     get_current_super_admin,
@@ -39,6 +40,7 @@ from app.modules.commercial.schemas import (
     CommercialAccountResponse,
     CommercialSubscriptionResponse,
 )
+from app.modules.super_admin.schemas import BillingClassificationUpdate
 
 logger = logging.getLogger("zoiko_billing.organizations")
 
@@ -80,6 +82,51 @@ def update_my_organization(
     db.refresh(org)
 
     if "currency" in updates and updates["currency"]:
+        new_currency = updates["currency"].strip().upper()
+
+        # Synchronize BillingConfiguration currency fields to match the new
+        # organization currency. This ensures the dashboard, billing settings,
+        # and other billing operations use the intended organization currency.
+        # Only currency-related fields are updated; operational settings like
+        # invoice_prefix, payment terms, date format, language, etc. are preserved.
+        try:
+            from app.modules.billing.models import BillingConfiguration, CurrencyCode
+            from app.modules.billing.services.settings_service import BillingConfigurationService
+
+            config = db.query(BillingConfiguration).filter(
+                BillingConfiguration.organization_id == org_id
+            ).first()
+            if config:
+                try:
+                    currency_enum = CurrencyCode(new_currency)
+                except ValueError:
+                    currency_enum = None
+                    logger.warning(
+                        "Organization %s currency %r is not a valid CurrencyCode; "
+                        "BillingConfiguration currency fields not updated",
+                        org.organization_code, new_currency,
+                    )
+                if currency_enum is not None:
+                    config.default_currency = currency_enum
+                    config.home_currency = currency_enum
+                    config.base_currency = currency_enum
+                    # Ensure the new currency is in supported_currencies
+                    supported = list(config.supported_currencies or [])
+                    if new_currency not in supported:
+                        supported.append(new_currency)
+                        config.supported_currencies = supported
+                    db.commit()
+                    logger.info(
+                        "Synchronized BillingConfiguration currencies to %s for org %s",
+                        new_currency, org.organization_code,
+                    )
+        except Exception as e:
+            logger.warning(
+                "Could not synchronize BillingConfiguration currencies for org %s: %s",
+                org.organization_code, e,
+            )
+            db.rollback()
+
         # Best-effort starter tax catalogue seed (Phase 5.7) -- an org's
         # billing currency is only ever set here or defaults to USD at
         # registration, so this is the point where a currency with a real
@@ -455,6 +502,10 @@ def create_organization(
         created_by_user_id=current_user.id,
     )
     db.add(org)
+    # Flush so org.id is assigned before it's used below — the session is
+    # autoflush=False (app/database.py), so without this org.id would still
+    # be None here and ensure_commercial_account(org.id) would fail.
+    db.flush()
     # Provision the platform-plane commercial account in the same transaction
     # (PHASE 6) — every provisioning path creates it. billing_source /
     # billing_classification use the Organization's Phase 1 server-side
@@ -468,6 +519,21 @@ def create_organization(
     # CommercialSubscription (PHASE 7): only when an approved default plan
     # exists — Phase 7 seeds none, so this is a safe no-op (flush-only).
     CommercialSubscriptionService(db).provision_default_subscription(account.id)
+    db.flush()
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.CREATE,
+        entity_type="Organization",
+        entity_id=org.id,
+        organization_id=org.id,
+        new_values={"organization_name": org.organization_name, "organization_code": code},
+    )
+
     db.commit()
     db.refresh(org)
     logger.info("Super Admin %s created organization %s (%s)", current_user.email, org.organization_name, code)
@@ -485,12 +551,100 @@ def update_organization_status(
     org = db.query(Organization).filter(Organization.id == organization_id).first()
     if org is None:
         raise NotFoundException("Organization", "id")
+
+    previous_is_active = org.is_active
     org.is_active = is_active
+
+    if previous_is_active != is_active:
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        PlatformAuditService(db).log_no_commit(
+            actor_id=current_user.id,
+            actor_role="super_admin",
+            action=PlatformAuditAction.ACTIVATE if is_active else PlatformAuditAction.DEACTIVATE,
+            entity_type="Organization",
+            entity_id=org.id,
+            organization_id=org.id,
+            old_values={"is_active": previous_is_active},
+            new_values={"is_active": is_active},
+        )
+
     db.commit()
     db.refresh(org)
     logger.info(
         "Super Admin %s set organization %s is_active=%s",
         current_user.email, org.organization_code, is_active,
+    )
+    return org
+
+
+@router.patch("/{organization_id}/billing-classification", response_model=OrganizationResponse)
+def update_billing_classification(
+    organization_id: int,
+    data: BillingClassificationUpdate,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Controlled billing_classification mutation (ZB-COM-BILL-001 Phase 2).
+
+    Requires an explicit reason and produces an audited before/after record
+    with an effective timestamp — this is authorized+audited, not a
+    maker-checker workflow (unlike catalog publishing), matching the
+    standard's Phase 2 requirement ("authorization, reason, audit,
+    before/after state, effective timestamp") rather than Phase 5's
+    material-financial-operation list (which billing_classification changes
+    are not part of).
+
+    Environment name is never a factor here by construction — this endpoint
+    only ever reads/writes the classification column; nothing in the
+    codebase derives charge authorization from APP_ENV/DEBUG (see
+    CommercialAccountService.can_charge).
+    """
+    from app.modules.commercial.enums import BillingClassification
+    from app.modules.organizations.models import Organization
+
+    org = db.query(Organization).filter(Organization.id == organization_id).first()
+    if org is None:
+        raise NotFoundException("Organization", "id")
+
+    try:
+        new_classification = BillingClassification(data.billing_classification)
+    except ValueError:
+        valid = ", ".join(c.value for c in BillingClassification)
+        raise BadRequestException(
+            f"Invalid billing_classification '{data.billing_classification}'. Valid values: {valid}."
+        )
+
+    previous_classification = org.billing_classification
+    if previous_classification == new_classification:
+        return org  # no-op: no audit row for a non-change, matching the CommercialPlan convention
+
+    org.billing_classification = new_classification
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    effective_at = datetime.utcnow()
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.UPDATE,
+        entity_type="Organization",
+        entity_id=org.id,
+        organization_id=org.id,
+        old_values={"billing_classification": previous_classification.value},
+        new_values={"billing_classification": new_classification.value},
+        reason=data.reason,
+        metadata={"effective_at": effective_at.isoformat(), "field": "billing_classification"},
+    )
+
+    db.commit()
+    db.refresh(org)
+    logger.info(
+        "Super Admin %s changed organization %s billing_classification %s -> %s (reason: %s)",
+        current_user.email, org.organization_code,
+        previous_classification.value, new_classification.value, data.reason,
     )
     return org
 
@@ -510,7 +664,10 @@ def delete_organization(
     tables and every one of them carries organization_id directly (verified
     against models.py), so there is no via-parent special case to hand-order.
     Global tables that are NOT org-scoped (platform_settings) are untouched.
-    Super Admin only.
+    platform_audit_logs is likewise excluded from the sweep even though it
+    carries an optional organization_id column: it is the platform-plane
+    audit trail, not organization-owned business data, and an audit record
+    must outlive the entity it describes. Super Admin only.
     """
     from sqlalchemy import text
     from app.database import Base
@@ -523,8 +680,26 @@ def delete_organization(
     org_name = org.organization_name
     org_code = org.organization_code
 
+    # organization_id is intentionally left NULL here (not organization_id=
+    # organization_id): platform_audit_logs.organization_id is FK(...,
+    # ondelete="RESTRICT"), so a row still referencing this org would block
+    # the org DELETE below within the same transaction. The org's identity is
+    # preserved in metadata_ instead.
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.DELETE,
+        entity_type="Organization",
+        entity_id=organization_id,
+        organization_id=None,
+        metadata={"organization_id": organization_id, "organization_name": org_name, "organization_code": org_code},
+    )
+
     for table in reversed(Base.metadata.sorted_tables):
-        if table.name in ("organizations", "users", "security_action_tokens"):
+        if table.name in ("organizations", "users", "security_action_tokens", "platform_audit_logs"):
             continue
         if "organization_id" not in table.columns:
             continue
@@ -532,6 +707,15 @@ def delete_organization(
             text(f'DELETE FROM "{table.name}" WHERE organization_id = :org_id'),
             {"org_id": organization_id},
         )
+
+    # Prior audit rows that referenced this org (CREATE/ACTIVATE/DEACTIVATE)
+    # must not dangle now that the org row is about to be deleted (RESTRICT
+    # FK) — null out the reference rather than deleting the rows, so the
+    # audit trail (actor/action/entity_id/metadata) survives intact.
+    db.execute(
+        text('UPDATE "platform_audit_logs" SET organization_id = NULL WHERE organization_id = :org_id'),
+        {"org_id": organization_id},
+    )
 
     # Login users + their action tokens (users has ondelete CASCADE from org).
     db.execute(

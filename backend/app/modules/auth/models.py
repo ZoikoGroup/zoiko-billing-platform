@@ -25,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -100,3 +101,56 @@ class SecurityActionToken(Base):
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ── Super Admin MFA (TOTP) — Release-Blocker Pass, Blocker 4 ────────────────
+# Backend-enforced: the full-privilege access/refresh token pair is only
+# minted after a real TOTP (or recovery-code) verification server-side (see
+# auth/service.py's login/mfa_* functions). A frontend flag can never
+# substitute for this — there is no code path that hands out a real access
+# token for a super_admin without going through here first.
+#
+# Scoped to role=SUPER_ADMIN only, matching this entire engagement's
+# boundary (org_admin/billing_admin authentication is explicitly untouched).
+
+class SuperAdminMFA(Base):
+    """One row per Super Admin user. `secret_encrypted` is a Fernet-encrypted
+    TOTP secret (core/mfa_crypto.py) — the raw secret is never persisted and
+    is only ever shown to the user once, at enrollment time."""
+
+    __tablename__ = "super_admin_mfa"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    secret_encrypted = Column(Text, nullable=False)
+    is_enabled = Column(Boolean, default=False, nullable=False)
+
+    # Brute-force protection independent of the IP-based slowapi rate limit
+    # on the endpoint — this blocks a distributed attempt against one
+    # account regardless of source IP.
+    failed_attempts = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime, nullable=True)
+
+    enrolled_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    enabled_at = Column(DateTime, nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class SuperAdminMFARecoveryCode(Base):
+    """Single-use recovery codes, stored only as a SHA-256 hash (same
+    never-store-the-raw-value pattern as SecurityActionToken above). The raw
+    code is shown to the user exactly once, at generation time."""
+
+    __tablename__ = "super_admin_mfa_recovery_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mfa_id = Column(Integer, ForeignKey("super_admin_mfa.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(64), unique=True, index=True, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    mfa = relationship("SuperAdminMFA", foreign_keys=[mfa_id])

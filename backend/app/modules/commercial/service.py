@@ -24,6 +24,7 @@ endpoints that persist via the caller).
 """
 
 import logging
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -122,23 +123,22 @@ class CommercialAccountService:
         return organization.billing_classification
 
     def can_charge(self, organization) -> bool:
-        """PHASE 8 double-charge-prevention READINESS check (read-only).
+        """Double-charge-prevention check (ZB-COM-BILL-001 §O2-O3, COM-04).
 
-        Returns whether the standalone platform is allowed to charge an
-        organization commercially:
-
-          REGISTERED_VIA_STANDALONE -> True  (standalone may charge)
-          REGISTERED_VIA_ZOIKO_ONE   -> False (Zoiko One is the billing owner;
-                                        the standalone platform must NOT
-                                        independently charge the org)
-
-        This is information preservation only — NO charging, invoicing, or
-        payment logic exists yet (Phase 9+). The Organization's server-stamped
-        billing_source remains the single source of truth.
+        Only COMMERCIAL_STANDALONE may create a live standalone commercial
+        charge (Table 9: every other classification is explicitly "No" /
+        "no duplicate" / non-billable). billing_source must independently
+        agree (REGISTERED_VIA_STANDALONE) — both server-stamped dimensions
+        must align, so if they ever disagree (e.g. a classification change
+        without a matching source update), charging fails CLOSED rather than
+        guessing which one is authoritative (§32).
         """
-        from app.modules.commercial.enums import BillingSource
+        from app.modules.commercial.enums import BillingClassification, BillingSource
 
-        return organization.billing_source == BillingSource.REGISTERED_VIA_STANDALONE
+        return (
+            organization.billing_classification == BillingClassification.COMMERCIAL_STANDALONE
+            and organization.billing_source == BillingSource.REGISTERED_VIA_STANDALONE
+        )
 
 
 class CommercialPlanService:
@@ -221,6 +221,7 @@ class CommercialPlanService:
 
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
             action=PlatformAuditAction.CREATE,
             entity_type="CommercialPlan",
             entity_id=plan.id,
@@ -319,6 +320,7 @@ class CommercialPlanService:
 
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
             action=PlatformAuditAction.UPDATE,
             entity_type="CommercialPlan",
             entity_id=plan.id,
@@ -382,6 +384,7 @@ class CommercialPlanService:
 
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
             action=action,
             entity_type="CommercialPlan",
             entity_id=plan.id,
@@ -431,6 +434,7 @@ class CommercialPlanService:
 
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
             action=(
                 PlatformAuditAction.SET_DEFAULT
                 if plan.is_default
@@ -442,6 +446,234 @@ class CommercialPlanService:
             new_values={"is_default": plan.is_default},
         )
         return plan
+
+
+def _version_snapshot(version: "CommercialPlanVersion") -> dict:
+    return {
+        "plan_name": version.plan_name,
+        "description": version.description,
+        "status": version.status.value if hasattr(version.status, "value") else version.status,
+        "billing_interval": (
+            version.billing_interval.value if hasattr(version.billing_interval, "value") else version.billing_interval
+        ),
+        "currency": version.currency,
+        "price_amount": version.price_amount,
+        "effective_from": version.effective_from,
+        "effective_to": version.effective_to,
+        "max_users": version.max_users,
+        "max_storage_gb": version.max_storage_gb,
+        "features": version.features,
+    }
+
+
+class CommercialPlanVersionService:
+    """Versioned price catalog (ZB-COM-BILL-001 §T1, Phase 4).
+
+    A published version is immutable: once PUBLISHED, no field on it may be
+    changed again — a correction creates a NEW draft version instead. This
+    is enforced here (update_version raises if the version isn't DRAFT), not
+    merely a UI convention. Publishing requires maker-checker approval via
+    ApprovalService (a DIFFERENT Super Admin than the requester).
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_version(self, version_id: int) -> "CommercialPlanVersion | None":
+        from app.modules.commercial.models import CommercialPlanVersion
+        return self.db.query(CommercialPlanVersion).filter(CommercialPlanVersion.id == version_id).first()
+
+    def list_versions_for_plan(self, plan_id: int) -> list:
+        from app.modules.commercial.models import CommercialPlanVersion
+        return (
+            self.db.query(CommercialPlanVersion)
+            .filter(CommercialPlanVersion.plan_id == plan_id)
+            .order_by(CommercialPlanVersion.version_number.desc())
+            .all()
+        )
+
+    def create_draft(
+        self,
+        plan: CommercialPlan,
+        *,
+        plan_name: str,
+        description=None,
+        billing_interval=None,
+        currency: str | None = None,
+        price_amount=None,
+        effective_from=None,
+        effective_to=None,
+        max_users: int | None = None,
+        max_storage_gb: int | None = None,
+        features=None,
+        actor_id: int | None = None,
+    ):
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.commercial.models import CommercialPlanVersion
+
+        last = (
+            self.db.query(CommercialPlanVersion)
+            .filter(CommercialPlanVersion.plan_id == plan.id)
+            .order_by(CommercialPlanVersion.version_number.desc())
+            .first()
+        )
+        next_number = (last.version_number + 1) if last else 1
+
+        version = CommercialPlanVersion(
+            plan_id=plan.id,
+            version_number=next_number,
+            status=CommercialPlanVersionStatus.DRAFT,
+            plan_name=plan_name,
+            description=description,
+            billing_interval=billing_interval,
+            currency=currency,
+            price_amount=price_amount,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            max_users=max_users,
+            max_storage_gb=max_storage_gb,
+            features=features,
+            created_by_user_id=actor_id,
+        )
+        self.db.add(version)
+        self.db.flush()
+        logger.info("Created CommercialPlanVersion draft v%s for plan %s", next_number, plan.plan_code)
+
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.CREATE,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+            new_values=_version_snapshot(version),
+            reason=f"Draft version {next_number} created for plan {plan.plan_code}",
+        )
+        return version
+
+    def submit_for_approval(self, version, *, requested_by_user_id: int, reason: str):
+        """DRAFT -> PENDING_APPROVAL. Creates the ApprovalRequest that must be
+        approved by a DIFFERENT Super Admin before this version can publish."""
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.super_admin.approval_service import ApprovalService
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if version.status != CommercialPlanVersionStatus.DRAFT:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not DRAFT; cannot submit."
+            )
+
+        request = ApprovalService(self.db).create_request(
+            request_type="catalog_version_publish",
+            requested_by_user_id=requested_by_user_id,
+            reason=reason,
+            scope={"plan_id": version.plan_id, "version_id": version.id},
+            proposed_state=_version_snapshot(version),
+            correlation_id=f"commercial_plan_version:{version.id}",
+        )
+        version.status = CommercialPlanVersionStatus.PENDING_APPROVAL
+        version.approval_request_id = request.id
+        self.db.flush()
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=requested_by_user_id,
+            actor_role="super_admin" if requested_by_user_id is not None else None,
+            action=PlatformAuditAction.SUBMIT,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+            reason=reason,
+            correlation_id=f"commercial_plan_version:{version.id}",
+        )
+        return version, request
+
+    def approve_and_publish(self, version, *, approver_user_id: int):
+        """PENDING_APPROVAL -> PUBLISHED. Raises SelfApprovalError if the
+        approver is the same user who submitted the request (enforced in
+        ApprovalService.approve, not merely here)."""
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.super_admin.approval_service import ApprovalService
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if version.status != CommercialPlanVersionStatus.PENDING_APPROVAL:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not PENDING_APPROVAL; cannot publish."
+            )
+        request = ApprovalService(self.db).get_request(version.approval_request_id)
+        if request is None:
+            raise ValueError(f"CommercialPlanVersion {version.id} has no linked ApprovalRequest.")
+
+        ApprovalService(self.db).approve(request, approver_user_id)  # raises SelfApprovalError if self
+
+        version.status = CommercialPlanVersionStatus.PUBLISHED
+        version.published_at = datetime.utcnow()
+        self.db.flush()
+        logger.info("CommercialPlanVersion %s published by %s", version.id, approver_user_id)
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=approver_user_id,
+            actor_role="super_admin" if approver_user_id is not None else None,
+            action=PlatformAuditAction.PUBLISH,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+            new_values=_version_snapshot(version),
+            correlation_id=f"commercial_plan_version:{version.id}",
+        )
+        return version
+
+    def reject(self, version, *, approver_user_id: int, rejection_reason: str):
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.super_admin.approval_service import ApprovalService
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if version.status != CommercialPlanVersionStatus.PENDING_APPROVAL:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not PENDING_APPROVAL; cannot reject."
+            )
+        request = ApprovalService(self.db).get_request(version.approval_request_id)
+        if request is None:
+            raise ValueError(f"CommercialPlanVersion {version.id} has no linked ApprovalRequest.")
+
+        ApprovalService(self.db).reject(request, approver_user_id, rejection_reason)  # raises SelfApprovalError if self
+
+        version.status = CommercialPlanVersionStatus.REJECTED
+        self.db.flush()
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=approver_user_id,
+            actor_role="super_admin" if approver_user_id is not None else None,
+            action=PlatformAuditAction.REJECT,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+            reason=rejection_reason,
+            correlation_id=f"commercial_plan_version:{version.id}",
+        )
+        return version
+
+    def archive(self, version, *, actor_id: int | None = None):
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if version.status != CommercialPlanVersionStatus.PUBLISHED:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not PUBLISHED; cannot archive."
+            )
+        version.status = CommercialPlanVersionStatus.ARCHIVED
+        self.db.flush()
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.ARCHIVE,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+        )
+        return version
 
 
 class CommercialSubscriptionService:
@@ -502,12 +734,44 @@ class CommercialSubscriptionService:
             .first()
         )
 
+    def _assert_may_charge_commercially(self, account_id: int) -> None:
+        """Real, backend-enforced gate before a subscription may become
+        ACTIVE (ZB-COM-BILL-001 COM-04 double-charge prevention + §30.1 kill
+        switch). Called from create_subscription (status=ACTIVE) and
+        transition (new_status=ACTIVE) — PENDING never reaches this check,
+        since a PENDING subscription is not live charging.
+        """
+        from app.modules.organizations.models import Organization
+        from app.modules.super_admin.kill_switch_service import (
+            COMMERCIAL_SUBSCRIPTION_CHARGING,
+            BillingKillSwitchService,
+        )
+
+        BillingKillSwitchService(self.db).require_enabled(COMMERCIAL_SUBSCRIPTION_CHARGING)
+
+        account = self.db.query(CommercialAccount).filter(CommercialAccount.id == account_id).first()
+        if account is None:
+            raise ValueError(f"Cannot activate: no CommercialAccount with id={account_id}.")
+        org = self.db.query(Organization).filter(Organization.id == account.organization_id).first()
+        if org is None:
+            raise ValueError(f"Cannot activate: no Organization for account {account_id}.")
+
+        if not CommercialAccountService(self.db).can_charge(org):
+            raise ValueError(
+                f"Organization {org.organization_code} cannot be charged by the standalone "
+                f"platform (billing_classification={org.billing_classification.value if hasattr(org.billing_classification, 'value') else org.billing_classification}, "
+                f"billing_source={org.billing_source.value if hasattr(org.billing_source, 'value') else org.billing_source}). "
+                "If this organization is entitled via Zoiko One, standalone charging for the "
+                "same entitlement period is prohibited (ZB-COM-BILL-001 COM-04)."
+            )
+
     def create_subscription(
         self,
         account_id: int,
         plan: CommercialPlan,
         *,
         status: CommercialSubscriptionStatus = CommercialSubscriptionStatus.PENDING,
+        catalog_version_id: int | None = None,
     ) -> CommercialSubscription:
         """Create a subscription for an account, guarding against duplicates.
 
@@ -521,6 +785,10 @@ class CommercialSubscriptionService:
             still reference it)
           - an INACTIVE plan cannot receive a new ACTIVE subscription (a PENDING
             subscription is allowed, but it cannot be activated later)
+
+        Creating with status=ACTIVE is real charging and is gated by
+        _assert_may_charge_commercially (double-charge prevention + kill
+        switch) — PENDING creation is not.
         """
         if plan.status == CommercialPlanStatus.ARCHIVED:
             raise ValueError(
@@ -541,6 +809,8 @@ class CommercialSubscriptionService:
                 f"{plan.plan_code} (status: {plan.status.name}): "
                 "only ACTIVE plans can be newly activated."
             )
+        if status == CommercialSubscriptionStatus.ACTIVE:
+            self._assert_may_charge_commercially(account_id)
 
         if self.get_active_subscription(account_id) is not None:
             raise ValueError(
@@ -548,9 +818,32 @@ class CommercialSubscriptionService:
                 "terminate it (cancel/expire) before creating a replacement."
             )
 
+        # ZB-COM-BILL-001 §T1: "every subscription must retain
+        # catalog_version_id". Auto-derive it from the plan's current
+        # PUBLISHED version when the caller doesn't explicitly supply one, so
+        # existing call sites keep working unchanged while new subscriptions
+        # still get a reproducible catalog reference wherever a published
+        # version actually exists.
+        if catalog_version_id is None:
+            from app.modules.commercial.enums import CommercialPlanVersionStatus
+            from app.modules.commercial.models import CommercialPlanVersion
+
+            latest_published = (
+                self.db.query(CommercialPlanVersion)
+                .filter(
+                    CommercialPlanVersion.plan_id == plan.id,
+                    CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+                )
+                .order_by(CommercialPlanVersion.version_number.desc())
+                .first()
+            )
+            if latest_published is not None:
+                catalog_version_id = latest_published.id
+
         subscription = CommercialSubscription(
             commercial_account_id=account_id,
             commercial_plan_id=plan.id,
+            catalog_version_id=catalog_version_id,
             status=status,
         )
         self.db.add(subscription)
@@ -571,7 +864,10 @@ class CommercialSubscriptionService:
 
         PHASE 8 compatibility: a subscription may only be ACTIVATED when its
         plan is still ACTIVE (an INACTIVE/ARCHIVED plan cannot be newly
-        activated; it may only be retained as history).
+        activated; it may only be retained as history). Activating (PENDING
+        or SUSPENDED -> ACTIVE) is real charging and is gated by
+        _assert_may_charge_commercially (double-charge prevention + kill
+        switch).
         """
         allowed = self._TRANSITIONS.get(subscription.status, set())
         if new_status not in allowed:
@@ -579,16 +875,14 @@ class CommercialSubscriptionService:
                 f"Illegal CommercialSubscription transition: "
                 f"{subscription.status.name} -> {new_status.name}"
             )
-        if (
-            new_status == CommercialSubscriptionStatus.ACTIVE
-            and subscription.plan is not None
-            and subscription.plan.status != CommercialPlanStatus.ACTIVE
-        ):
-            raise ValueError(
-                f"Cannot activate subscription {subscription.id}: plan "
-                f"{subscription.plan.plan_code} is {subscription.plan.status.name}, "
-                "not ACTIVE."
-            )
+        if new_status == CommercialSubscriptionStatus.ACTIVE:
+            if subscription.plan is not None and subscription.plan.status != CommercialPlanStatus.ACTIVE:
+                raise ValueError(
+                    f"Cannot activate subscription {subscription.id}: plan "
+                    f"{subscription.plan.plan_code} is {subscription.plan.status.name}, "
+                    "not ACTIVE."
+                )
+            self._assert_may_charge_commercially(subscription.commercial_account_id)
         subscription.status = new_status
         self.db.flush()
         return subscription

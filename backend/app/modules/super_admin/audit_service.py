@@ -71,6 +71,9 @@ class PlatformAuditService:
         old_values: Optional[dict] = None,
         new_values: Optional[dict] = None,
         metadata: Optional[dict] = None,
+        actor_role: Optional[str] = None,
+        reason: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> PlatformAuditLog:
         """Append a platform-plane audit entry to the caller's transaction.
 
@@ -78,6 +81,11 @@ class PlatformAuditService:
         discards both the mutation and its audit row together. Callers must
         invoke this ONLY after a mutation has succeeded, so a failed
         operation never produces an audit row.
+
+        actor_role / reason / correlation_id (ZB-COM-BILL-001 §R3/§29) are
+        optional so every existing call site keeps working unchanged; new
+        call sites (billing classification changes, catalog version
+        publish/reject, kill-switch toggles) supply them.
         """
         entry = PlatformAuditLog(
             actor_id=actor_id,
@@ -88,6 +96,9 @@ class PlatformAuditService:
             old_values=_json_safe(old_values),
             new_values=_json_safe(new_values),
             metadata_=_json_safe(metadata),
+            actor_role=actor_role,
+            reason=reason,
+            correlation_id=correlation_id,
         )
         self.db.add(entry)
         self.db.flush()

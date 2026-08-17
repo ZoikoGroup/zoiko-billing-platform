@@ -31,6 +31,18 @@ def _cors_headers(request: Request) -> dict:
     }
 
 
+def _request_id(request: Request):
+    """The per-request correlation ID set by main.py's request-ID middleware.
+
+    Included in every error response (both handlers below) so a user-facing
+    "something went wrong" message is still diagnosable: the generic handler
+    deliberately never leaks raw exception/DB detail to the browser (correct
+    security posture), but pairing the scrubbed message with this ID lets an
+    operator find the full server-side log line (which DOES capture
+    exc_info=True) without exposing internals to the client."""
+    return getattr(request.state, "request_id", None)
+
+
 # ── Custom Exception Classes ──────────────────────────────────────────────────
 
 class ZoikoException(HTTPException):
@@ -89,6 +101,7 @@ async def zoiko_exception_handler(request: Request, exc: ZoikoException):
             "error": exc.error_code,
             "message": exc.message,
             "detail": exc.message,
+            "request_id": _request_id(request),
         },
         headers=_cors_headers(request),
     )
@@ -97,13 +110,18 @@ async def zoiko_exception_handler(request: Request, exc: ZoikoException):
 async def generic_exception_handler(request: Request, exc: Exception):
     """Catches any unexpected server error and returns a clean message."""
     import logging
-    logging.getLogger("zoiko").error(f"Unhandled error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    request_id = _request_id(request)
+    logging.getLogger("zoiko").error(
+        f"Unhandled error on {request.method} {request.url.path} [request_id={request_id}]: {exc}",
+        exc_info=True,
+    )
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "error": "INTERNAL_SERVER_ERROR",
             "message": "Something went wrong on the server. Please try again later.",
+            "request_id": request_id,
         },
         headers=_cors_headers(request),
     )
