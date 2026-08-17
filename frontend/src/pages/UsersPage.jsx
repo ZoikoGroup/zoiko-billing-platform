@@ -253,7 +253,7 @@ export default function UsersPage() {
           </div>
         </>
       )}
-      <ConfirmationDialog />
+      {ConfirmationDialog}
     </div>
   );
 }

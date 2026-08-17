@@ -12,6 +12,10 @@ import { api } from "./api";
  * fields are NULL render as "—".
  */
 
+// ── Platform dashboard stats ───────────────────────────────────────────
+export const getPlatformDashboardStats = () =>
+  api.get("/api/super-admin/dashboard/stats");
+
 // ── Commercial accounts ────────────────────────────────────────────────
 export const listCommercialAccounts = (params = {}) =>
   api.get("/api/super-admin/commercial-accounts", { params });
