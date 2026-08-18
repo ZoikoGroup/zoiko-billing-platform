@@ -39,6 +39,7 @@ import {
   Bell,
   Activity,
   HelpCircle,
+  Bot,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -52,6 +53,7 @@ const NAV_SECTIONS = [
       { label: "Dashboard", href: "/billing", icon: LayoutDashboard },
       { label: "Reports", href: "/billing/reports", icon: FileText },
       { label: "Forecast", href: "/billing/reports/forecast", icon: TrendingUp },
+      { label: "AI Assistant", href: "/billing/assistant", icon: Bot },
       { label: "Settings", href: "/billing/settings", icon: SlidersHorizontal },
     ],
   },

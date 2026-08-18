@@ -34,6 +34,7 @@ const BillingDashboard = lazy(() => import("./modules/billing/dashboard/dashboar
 const ReportsPage = lazy(() => import("./modules/billing/dashboard/reports"));
 const ForecastReport = lazy(() => import("./modules/billing/dashboard/forecast-report"));
 const BillingSettingsPage = lazy(() => import("./modules/billing/dashboard/settings"));
+const AssistantPage = lazy(() => import("./modules/billing/assistant/AssistantPage"));
 const CustomerDashboardPage = lazy(() => import("./modules/billing/customers/customer-dashboard"));
 const CustomerListPage = lazy(() => import("./modules/billing/customers/customer-list"));
 const CustomerProfilePage = lazy(() => import("./modules/billing/customers/customer-profile"));
@@ -131,6 +132,7 @@ const BILLING_ROUTES = [
   { path: "/billing/reports", element: <ReportsPage /> },
   { path: "/billing/reports/forecast", element: <ForecastReport /> },
   { path: "/billing/settings", element: <BillingSettingsPage /> },
+  { path: "/billing/assistant", element: <AssistantPage /> },
   { path: "/billing/customers", element: <CustomerListPage /> },
   { path: "/billing/customers/dashboard", element: <CustomerDashboardPage /> },
   { path: "/billing/customers/:id", element: <CustomerProfilePage /> },
