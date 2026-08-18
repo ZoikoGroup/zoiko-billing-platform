@@ -370,7 +370,7 @@ function SidebarContent({ onNavigate, role }) {
 
         {showWorkspace ? (
           <div className="mb-6">
-            <p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+            <p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[0.32em] text-[#8A82B7]">
               My Organization
             </p>
             <div className="space-y-1.5">
@@ -388,7 +388,7 @@ function SidebarContent({ onNavigate, role }) {
         ) : null}
 
         {role === "super_admin" ? null : (
-          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#8A82B7]">
             {showWorkspace ? "Billing" : "Navigation"}
           </p>
         )}
