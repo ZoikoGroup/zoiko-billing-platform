@@ -8,12 +8,19 @@ import { ROLE_LABELS, ROLES } from "../config/roles";
 export default function OrgPortalPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(getStoredUser());
+  const [organization, setOrganization] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     apiFetch("/api/auth/me")
       .then(setUser)
       .catch((err) => setError(err.message));
+    // /api/auth/me only returns organization_code (often unset on older
+    // seed data) — the authoritative organization name lives on this
+    // endpoint instead, same one the billing/org-admin workspace pages use.
+    apiFetch("/api/organizations/me/detail")
+      .then(setOrganization)
+      .catch(() => {});
   }, []);
 
   function logout() {
@@ -59,7 +66,7 @@ export default function OrgPortalPage() {
               <span className="text-slate-500">Organization</span>
               <span className="flex items-center gap-1.5 font-medium text-slate-700">
                 <Building2 size={14} className="text-slate-400" />
-                {user?.organization_code || "—"}
+                {organization?.name || user?.organization_code || "—"}
               </span>
             </div>
           </div>

@@ -7,6 +7,8 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import RegistrationSuccessPage from "./pages/RegistrationSuccessPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import AcceptInvitePage from "./pages/AcceptInvitePage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
 import OrgPortalPage from "./pages/OrgPortalPage";
@@ -14,6 +16,13 @@ import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
+
+const BillingAdminWorkspaceDashboard = lazy(() => import("./modules/billing-admin/WorkspaceDashboardPage"));
+const BillingAdminWorkspaceOrganization = lazy(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
+const BillingAdminWorkspaceSubscription = lazy(() => import("./modules/billing-admin/WorkspaceSubscriptionPage"));
+const BillingAdminWorkspaceActivity = lazy(() => import("./modules/billing-admin/WorkspaceActivityPage"));
+const BillingAdminWorkspaceNotifications = lazy(() => import("./modules/billing-admin/WorkspaceNotificationsPage"));
+const BillingAdminWorkspaceHelp = lazy(() => import("./modules/billing-admin/WorkspaceHelpPage"));
 
 // Platform pages pull in billing-shared.jsx's shared component kit; lazy
 // loading keeps that out of the eagerly-loaded main bundle (matches every
@@ -278,6 +287,8 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/register/success" element={<RegistrationSuccessPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/auth/accept-invite" element={<AcceptInvitePage />} />
+        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
         <Route element={<ProtectedRoute />}>
@@ -312,6 +323,54 @@ export default function App() {
             element={
               <BillingShell>
                 <OrgAdminUserManagementPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/dashboard"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceDashboard />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/organization"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceOrganization />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/subscription"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceSubscription />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/activity"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceActivity />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/notifications"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceNotifications />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/help"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceHelp />
               </BillingShell>
             }
           />

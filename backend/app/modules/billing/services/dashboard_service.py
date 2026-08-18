@@ -90,6 +90,7 @@ class BillingDashboardService:
         period: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        currency_rates: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         now = datetime.utcnow()
         month_start = date(now.year, now.month, 1)
@@ -101,7 +102,14 @@ class BillingDashboardService:
         from app.modules.billing.models import BillingCustomer, BillingSubscriptionStatus
         from app.modules.billing.models import Subscription as SubModel
 
-        currency_rates = self._build_currency_rates(organization_id)
+        # currency_rates is expensive (2 distinct-currency queries plus a
+        # possible live exchange-rate API call when the cache is stale) —
+        # get_full_dashboard() computes it once and passes it through here
+        # instead of paying that cost again. Standalone callers of get_kpis
+        # (the /billing/dashboard/kpis endpoint) still get it computed for
+        # them when they don't have one to share.
+        if currency_rates is None:
+            currency_rates = self._build_currency_rates(organization_id)
         if any(rate != 1.0 for rate in currency_rates.values()):
             rate_case = case(
                 *[(Invoice.currency == curr, Decimal(str(rate))) for curr, rate in currency_rates.items() if rate != 1.0],
@@ -222,8 +230,10 @@ class BillingDashboardService:
         period: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        currency_rates: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
-        currency_rates = self._build_currency_rates(organization_id)
+        if currency_rates is None:
+            currency_rates = self._build_currency_rates(organization_id)
         if date_from or date_to:
             start, end = get_period_dates(period, date_from, date_to)
             data = (
@@ -294,10 +304,14 @@ class BillingDashboardService:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
     ) -> Dict[str, Any]:
-        kpis = self.get_kpis(organization_id, period=period, date_from=date_from, date_to=date_to)
+        # Computed once and shared with get_kpis/get_monthly_revenue below —
+        # see the comment on get_kpis for why this matters (each call is a
+        # real cost: 2 DB round trips plus, when the org's cached rates are
+        # stale, a live external exchange-rate API request).
         currency_rates = self._build_currency_rates(organization_id)
+        kpis = self.get_kpis(organization_id, period=period, date_from=date_from, date_to=date_to, currency_rates=currency_rates)
         inv_summary = self.get_invoice_summary(organization_id, currency_rates=currency_rates)
-        monthly = self.get_monthly_revenue(organization_id, period=period, date_from=date_from, date_to=date_to)
+        monthly = self.get_monthly_revenue(organization_id, period=period, date_from=date_from, date_to=date_to, currency_rates=currency_rates)
 
         # Customer + subscription summaries in 2 grouped queries (was 4 separate)
         from app.modules.billing.models import BillingCustomer, BillingSubscriptionStatus

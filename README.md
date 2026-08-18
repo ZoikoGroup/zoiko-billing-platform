@@ -69,8 +69,16 @@ python -m venv .venv
 .venv\Scripts\activate        # or: source .venv/bin/activate
 pip install -r requirements.txt
 copy .env.example .env        # or: cp .env.example .env
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
+
+`--host 0.0.0.0` matters: uvicorn defaults to `127.0.0.1` (loopback only). If
+`frontend/.env`'s `VITE_API_BASE_URL` points at a LAN IP (e.g.
+`http://192.168.x.x:8001`, needed to test from another device on the network),
+a loopback-only backend is unreachable at that address and every API call
+fails with `net::ERR_CONNECTION_REFUSED` even though the server is running
+and healthy on `127.0.0.1`. Match the bind address to whatever host
+`VITE_API_BASE_URL` uses — `0.0.0.0` covers both `localhost` and the LAN IP.
 
 There is no Alembic. The schema is created directly from the models via
 `Base.metadata.create_all` — this runs automatically on startup

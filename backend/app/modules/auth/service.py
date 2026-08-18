@@ -49,7 +49,7 @@ def _token_hash(raw_token: str) -> str:
 
 
 def _action_link(purpose: SecurityActionPurpose, raw_token: str) -> str:
-    base = os.environ.get("API_BASE_URL", "http://localhost:8000")
+    base = os.environ.get("FRONTEND_URL", "http://localhost:5173").rstrip("/")
     path = "accept-invite" if purpose == SecurityActionPurpose.INVITE else "reset-password"
     return f"{base}/auth/{path}?token={raw_token}"
 
@@ -122,6 +122,7 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
 
     user.hashed_password = hash_password(new_password)
     user.is_active = True
+    user.is_verified = True
     db.commit()
     db.refresh(user)
     return {"message": "Password set successfully. You can now sign in."}
