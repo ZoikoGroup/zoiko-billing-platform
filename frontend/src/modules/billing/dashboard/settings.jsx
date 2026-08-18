@@ -26,10 +26,16 @@ const TABS = [
   { id: "administration", label: "Administration", icon: Server },
 ];
 
-const COLORS = {
-  general: "brand", invoicing: "blue", payments: "emerald",
-  tax: "amber", dunning: "rose", revenue: "cyan",
-  notifications: "indigo", advanced: "slate", administration: "slate",
+const TAB_ACTIVE_CLASSES = {
+  general: "border-[#FF7A00] text-[#FF7A00]",
+  invoicing: "border-blue-500 text-blue-600",
+  payments: "border-emerald-500 text-emerald-600",
+  tax: "border-amber-500 text-amber-600",
+  dunning: "border-rose-500 text-rose-600",
+  revenue: "border-cyan-500 text-cyan-600",
+  notifications: "border-indigo-500 text-indigo-600",
+  advanced: "border-slate-500 text-slate-600",
+  administration: "border-slate-500 text-slate-600",
 };
 
 const CURRENCY_OPTIONS_WITH_INFO = getCurrencySelectOptions();
@@ -1538,24 +1544,25 @@ export default function BillingSettingsPage() {
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-slate-200 overflow-x-auto" role="tablist" aria-label="Billing settings tabs">
-        {TABS.map((tab) => {
-          const color = COLORS[tab.id];
-          const isActive = activeTab === tab.id;
-          return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} role="tab" aria-selected={isActive} aria-controls={`panel-${tab.id}`}
-              tabIndex={isActive ? 0 : -1}
-              onKeyDown={(e) => { if (e.key === "ArrowRight") { const idx = TABS.findIndex(t => t.id === tab.id); const next = TABS[(idx + 1) % TABS.length]; setActiveTab(next.id); } if (e.key === "ArrowLeft") { const idx = TABS.findIndex(t => t.id === tab.id); const prev = TABS[(idx - 1 + TABS.length) % TABS.length]; setActiveTab(prev.id); } }}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                isActive
-                  ? `border-${color}-500 text-${color}-600`
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}>
-              <tab.icon className="w-4 h-4" aria-hidden="true" />
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-1.5" role="tablist" aria-label="Billing settings tabs">
+        <div className="flex gap-1 overflow-x-auto" role="tablist">
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} role="tab" aria-selected={isActive} aria-controls={`panel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
+                onKeyDown={(e) => { if (e.key === "ArrowRight") { const idx = TABS.findIndex(t => t.id === tab.id); const next = TABS[(idx + 1) % TABS.length]; setActiveTab(next.id); } if (e.key === "ArrowLeft") { const idx = TABS.findIndex(t => t.id === tab.id); const prev = TABS[(idx - 1 + TABS.length) % TABS.length]; setActiveTab(prev.id); } }}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all whitespace-nowrap ${
+                  isActive
+                    ? `${TAB_ACTIVE_CLASSES[tab.id]} bg-slate-50 shadow-sm`
+                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"
+                }`}>
+                <tab.icon className="w-4 h-4" aria-hidden="true" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {activeTab === "general" && (

@@ -34,36 +34,45 @@ function ReportSection({ title, icon: Icon, children }) {
   );
 }
 
-function DataTable({ columns, data }) {
+function DataTable({ columns, data, maxRows = 10 }) {
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 bg-slate-50 rounded-xl">
+      <div className="flex flex-col items-center justify-center py-10 bg-slate-50/50 rounded-xl border border-slate-100">
+        <FileText size={20} className="text-slate-300 mb-2" />
         <p className="text-slate-400 text-sm">No data available</p>
       </div>
     );
   }
+  const sliced = data.slice(0, maxRows);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-<thead>
-           <tr className="bg-slate-50/70">
-             {columns.map((col) => (
-               <th key={col.key} scope="col" className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{col.label}</th>
-             ))}
-           </tr>
-         </thead>
-        <tbody className="divide-y divide-slate-100">
-          {data.slice(0, 10).map((row, idx) => (
-            <tr key={row.id ?? idx} className="hover:bg-slate-50/80 transition-colors">
+    <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50/80">
               {columns.map((col) => (
-                <td key={col.key} className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
-                  {col.render ? col.render(row) : row[col.key] ?? "—"}
-                </td>
+                <th key={col.key} scope="col" className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{col.label}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sliced.map((row, idx) => (
+              <tr key={row.id ?? idx} className="hover:bg-slate-50/60 transition-colors">
+                {columns.map((col) => (
+                  <td key={col.key} className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                    {col.render ? col.render(row) : row[col.key] ?? "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.length > maxRows && (
+        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-400">
+          Showing {maxRows} of {data.length} rows
+        </div>
+      )}
     </div>
   );
 }
@@ -184,7 +193,7 @@ export default function ReportsPage() {
         </div>
         <ChartErrorBoundary aria-live="polite">
           {fRevenue.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart data={fRevenue} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey={fRevenue[0]?.month ? "month" : "period"} tick={{ fontSize: 11, fill: "#64748b" }} />
@@ -233,7 +242,7 @@ export default function ReportsPage() {
         <div className="grid xl:grid-cols-2 gap-6 mb-6 items-stretch">
           <ChartErrorBoundary aria-live="polite">
             {statusData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
                   <Pie
                     data={statusData}
@@ -294,7 +303,7 @@ export default function ReportsPage() {
         <div className="grid xl:grid-cols-2 gap-6 mb-6 items-stretch">
           <ChartErrorBoundary aria-live="polite">
             {methodData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
                   <Pie data={methodData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}>
                     {methodData.map((_, idx) => (
@@ -334,7 +343,7 @@ export default function ReportsPage() {
         </div>
         <ChartErrorBoundary aria-live="polite">
           {fTaxData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart data={fTaxData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="jurisdiction" tick={{ fontSize: 11, fill: "#64748b" }} />
@@ -374,20 +383,14 @@ export default function ReportsPage() {
 
     return (
       <ReportSection title="Subscription Report" icon={TrendingUp}>
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Subscriptions</p>
-            <p className="text-2xl font-extrabold text-slate-800 mt-1">{fSubscriptions.length}</p>
-          </div>
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unique Plans</p>
-            <p className="text-2xl font-extrabold text-slate-800 mt-1">{planData.length}</p>
-          </div>
+        <div className={`${DASHBOARD_KPI_GRID} mb-6`}>
+          <DashboardStatCard title="Total Subscriptions" icon={TrendingUp} color={STAT_CARD_COLORS[0]} value={fSubscriptions.length} />
+          <DashboardStatCard title="Unique Plans" icon={FileText} color={STAT_CARD_COLORS[1]} value={planData.length} />
         </div>
         <div className="grid xl:grid-cols-2 gap-6 mb-6">
           <ChartErrorBoundary aria-live="polite">
             {planData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
                   <Pie
                     data={planData}
@@ -408,14 +411,12 @@ export default function ReportsPage() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-64 bg-slate-50/50 rounded-xl border border-slate-100">
-                <p className="text-slate-400 text-sm font-medium">No subscription distribution data</p>
-              </div>
+              <DashboardEmptyPanel title="No subscriptions" message="No subscription distribution data for the selected period." icon={TrendingUp} />
             )}
           </ChartErrorBoundary>
           <DataTable columns={columns} data={fSubscriptions.slice(0, 10)} />
         </div>
-        <button onClick={() => handleExport("subscription")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm">
+        <button onClick={() => handleExport("subscription")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
           <Download size={15} /> Export Subscription Report
         </button>
       </ReportSection>

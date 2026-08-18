@@ -110,6 +110,23 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
                 >
                   <User size={16} /> Platform Settings
                 </Link>
+              ) : role === "billing_admin" ? (
+                <>
+                  <Link
+                    to="/billing/workspace/organization"
+                    onClick={closeDropdown}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <Building size={16} /> Organization Profile
+                  </Link>
+                  <Link
+                    to="/billing/settings"
+                    onClick={closeDropdown}
+                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <User size={16} /> Billing Settings
+                  </Link>
+                </>
               ) : (
                 <>
                   <Link

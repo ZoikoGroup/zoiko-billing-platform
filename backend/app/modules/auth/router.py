@@ -230,6 +230,36 @@ def accept_invite_form(token: str = Query(...), db: Session = Depends(get_db)):
     return _action_form_page("Set up your account", ctx["token"], "/auth/accept-invite")
 
 
+@router.get("/validate-invite", summary="Validate an invitation token and return metadata (JSON)")
+def validate_invite_token(token: str = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import text as sql_text
+    import hashlib
+    from app.modules.auth.service import _token_hash
+    from app.modules.auth.models import SecurityActionPurpose
+    from app.modules.organizations.models import Organization
+
+    token_hash = _token_hash(token)
+    row = db.execute(
+        sql_text("SELECT email, organization_id, expires_at, used_at, purpose FROM security_action_tokens WHERE token_hash = :hash"),
+        {"hash": token_hash},
+    ).fetchone()
+    if row is None:
+        return {"valid": False, "error": "invalid_token"}
+    email, organization_id, expires_at, used_at, purpose_stored = row
+    if purpose_stored != SecurityActionPurpose.INVITE.name:
+        return {"valid": False, "error": "invalid_token"}
+    if used_at is not None:
+        return {"valid": False, "error": "already_accepted"}
+    from datetime import datetime
+    if expires_at <= datetime.utcnow():
+        return {"valid": False, "error": "expired"}
+    org_name = ""
+    if organization_id:
+        org = db.query(Organization).filter(Organization.id == organization_id).first()
+        org_name = org.organization_name if org else ""
+    return {"valid": True, "email": email, "organization_name": org_name}
+
+
 @router.post("/accept-invite", summary="Complete account setup from invitation link")
 @limiter.limit("10/minute")
 def accept_invite(request: Request, data: TokenPasswordRequest, db: Session = Depends(get_db)):
@@ -242,6 +272,30 @@ def reset_password_form(token: str = Query(...), db: Session = Depends(get_db)):
     if ctx is None:
         return _invalid_token_page()
     return _action_form_page("Reset your password", ctx["token"], "/auth/reset-password")
+
+
+@router.get("/validate-reset", summary="Validate a password-reset token and return metadata (JSON)")
+def validate_reset_token(token: str = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import text as sql_text
+    from app.modules.auth.service import _token_hash
+    from app.modules.auth.models import SecurityActionPurpose
+
+    token_hash = _token_hash(token)
+    row = db.execute(
+        sql_text("SELECT email, organization_id, expires_at, used_at, purpose FROM security_action_tokens WHERE token_hash = :hash"),
+        {"hash": token_hash},
+    ).fetchone()
+    if row is None:
+        return {"valid": False, "error": "invalid_token"}
+    email, organization_id, expires_at, used_at, purpose_stored = row
+    if purpose_stored != SecurityActionPurpose.RESET.name:
+        return {"valid": False, "error": "invalid_token"}
+    if used_at is not None:
+        return {"valid": False, "error": "already_used"}
+    from datetime import datetime
+    if expires_at <= datetime.utcnow():
+        return {"valid": False, "error": "expired"}
+    return {"valid": True, "email": email}
 
 
 @router.post("/reset-password", summary="Set a new password from a reset link")

@@ -13,7 +13,7 @@ export const ROLE_LABELS = {
 export const ROLE_DEFAULT_REDIRECT = {
   [ROLES.SUPER_ADMIN]: "/dashboard",
   [ROLES.ORG_ADMIN]: "/organization-admin/dashboard",
-  [ROLES.BILLING_ADMIN]: "/billing",
+  [ROLES.BILLING_ADMIN]: "/billing/workspace/dashboard",
 };
 
 export const VALID_ROLES = Object.values(ROLES);

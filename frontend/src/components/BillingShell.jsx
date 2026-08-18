@@ -36,12 +36,14 @@ import {
   KeyRound,
   CheckSquare,
   Power,
+  Bell,
+  Activity,
+  HelpCircle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import TopBar from "./TopBar";
 
-// Billing product navigation tree for the standalone platform.
 const NAV_SECTIONS = [
   {
     label: "Overview",
@@ -160,17 +162,17 @@ const NAV_SECTIONS = [
       { label: "Settings", href: "/billing/payments/settings", icon: SlidersHorizontal },
     ],
   },
-    {
-      label: "Tax",
-      icon: CircleDollarSign,
-      children: [
-        { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
-        { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
-        { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
-        { label: "Reports", href: "/billing/tax/reports", icon: FileText },
-        { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
-      ],
-    },
+  {
+    label: "Tax",
+    icon: CircleDollarSign,
+    children: [
+      { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
+      { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
+      { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
+      { label: "Reports", href: "/billing/tax/reports", icon: FileText },
+      { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
+    ],
+  },
   {
     label: "Overview",
     icon: LayoutDashboard,
@@ -219,15 +221,22 @@ const NAV_SECTIONS = [
   },
 ];
 
-// Top-level org links pinned above the billing sections.
 const TOP_NAV_ITEMS = [
   { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard, orgAdminOnly: true },
   { label: "My Organization", href: "/organization-admin/organization", icon: Building2, orgAdminOnly: true },
 ];
 
-// Pinned to the very bottom of the nav, separated from the billing sections.
+const WORKSPACE_NAV_ITEMS = [
+  { label: "Overview", href: "/billing/workspace/dashboard", icon: LayoutDashboard },
+  { label: "Organization Profile", href: "/billing/workspace/organization", icon: Building2 },
+  { label: "Billing Subscription", href: "/billing/workspace/subscription", icon: CreditCard },
+  { label: "Activity Timeline", href: "/billing/workspace/activity", icon: Activity },
+  { label: "Notifications", href: "/billing/workspace/notifications", icon: Bell },
+  { label: "Help & Documentation", href: "/billing/workspace/help", icon: HelpCircle },
+];
+
 const FOOTER_NAV_ITEMS = [
-  { label: "User Management", href: "/organization-admin/users", icon: UserCog, orgAdminOnly: true },
+  { label: "User Management", href: "/organization-admin/users", icon: UserCog },
 ];
 
 function isActive(href, pathname, search = "") {
@@ -300,20 +309,20 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
 function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
-  // Super Admin has no organization_id, so tenant-scoped sections (Billing's
-  // product nav, org-admin's own-org links) would either be meaningless or
-  // outright 403 (their pages call org-scoped backend helpers that explicitly
-  // reject super_admin). Super Admin therefore sees ONLY superAdminOnly
-  // sections; every other role never sees a superAdminOnly section.
   const visibleSections = NAV_SECTIONS.filter((section) => {
     if (role === "super_admin") return !!section.superAdminOnly;
     if (section.superAdminOnly) return false;
-    return !section.orgAdminOnly || role !== "billing_admin";
+    return true;
   });
+
   const visibleTop =
     role === "super_admin" ? [] : TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
-  const visibleFooter =
-    role === "super_admin" ? [] : FOOTER_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
+
+  const showWorkspace = role === "billing_admin";
+  const showOrgNav = role === "org_admin";
+
+  const visibleFooter = role === "super_admin" ? [] : FOOTER_NAV_ITEMS;
+
   const [openSection, setOpenSection] = useState(null);
 
   return (
@@ -321,7 +330,7 @@ function SidebarContent({ onNavigate, role }) {
       <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Link
-            to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
+            to={role === "super_admin" ? "/super-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
             onClick={onNavigate}
             className="text-[22px] font-extrabold tracking-tight text-white"
           >
@@ -344,8 +353,8 @@ function SidebarContent({ onNavigate, role }) {
       </div>
 
       <div className="sidebar-nav flex-1 min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-6 pr-1">
-        {visibleTop.length > 0 ? (
-          <div className="mb-10 space-y-3 border-b border-white/10 pb-6">
+        {showOrgNav && visibleTop.length > 0 ? (
+          <div className="mb-6 space-y-3 border-b border-white/10 pb-6">
             {visibleTop.map((item) => (
               <MenuItem
                 key={item.label}
@@ -358,6 +367,31 @@ function SidebarContent({ onNavigate, role }) {
             ))}
           </div>
         ) : null}
+
+        {showWorkspace ? (
+          <div className="mb-6">
+            <p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+              My Organization
+            </p>
+            <div className="space-y-1.5">
+              {WORKSPACE_NAV_ITEMS.map((item) => (
+                <MenuItem
+                  key={item.label}
+                  item={item}
+                  pathname={pathname}
+                  search={search}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {role === "super_admin" ? null : (
+          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+            {showWorkspace ? "Billing" : "Navigation"}
+          </p>
+        )}
 
         {visibleSections.map((section) => (
           <MenuItem

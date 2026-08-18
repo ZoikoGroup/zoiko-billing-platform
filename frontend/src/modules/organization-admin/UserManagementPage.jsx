@@ -191,15 +191,31 @@ const styles = `
 
 const STATUS_STYLES = {
   active: { bg: "rgba(23,138,80,0.11)", color: "#178A50" },
+  pending: { bg: "rgba(217,121,30,0.12)", color: "#B8600F" },
   inactive: { bg: "rgba(28,24,40,0.07)", color: "#635C72" },
 };
 
-function StatusPill({ active }) {
-  const s = active ? STATUS_STYLES.active : STATUS_STYLES.inactive;
+function StatusPill({ active, verified }) {
+  if (!active) {
+    return (
+      <span className="status-pill" style={{ background: STATUS_STYLES.inactive.bg, color: STATUS_STYLES.inactive.color }}>
+        <span className="dot" />
+        Deactivated
+      </span>
+    );
+  }
+  if (!verified) {
+    return (
+      <span className="status-pill" style={{ background: STATUS_STYLES.pending.bg, color: STATUS_STYLES.pending.color }}>
+        <span className="dot" />
+        Pending
+      </span>
+    );
+  }
   return (
-    <span className="status-pill" style={{ background: s.bg, color: s.color }}>
+    <span className="status-pill" style={{ background: STATUS_STYLES.active.bg, color: STATUS_STYLES.active.color }}>
       <span className="dot" />
-      {active ? "Active" : "Deactivated"}
+      Active
     </span>
   );
 }
@@ -378,23 +394,27 @@ export default function OrgAdminUserManagementPage() {
                         </div>
                       </td>
                       <td><span className="role-pill">{ROLE_LABELS[u.role] || u.role}</span></td>
-                      <td><StatusPill active={u.is_active} /></td>
+                      <td><StatusPill active={u.is_active} verified={u.is_verified} /></td>
                       <td>
                         <div className="row-actions">
-                          <button className="icon-btn" title="Resend invite" onClick={() => doResendInvite(u)}>
-                            <Mail className="w-4 h-4" />
-                          </button>
+                          {!u.is_verified && (
+                            <button className="icon-btn" title="Resend invite" onClick={() => doResendInvite(u)}>
+                              <Mail className="w-4 h-4" />
+                            </button>
+                          )}
                           <button className="icon-btn" title="Edit" onClick={() => openEdit(u)}>
                             <Pencil className="w-4 h-4" />
                           </button>
-                          <button
-                            className="icon-btn danger"
-                            title="Deactivate"
-                            disabled={u.id === currentUser?.id}
-                            onClick={() => setConfirmDeactivate(u)}
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
+                          {u.is_verified && (
+                            <button
+                              className="icon-btn danger"
+                              title="Deactivate"
+                              disabled={u.id === currentUser?.id}
+                              onClick={() => setConfirmDeactivate(u)}
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

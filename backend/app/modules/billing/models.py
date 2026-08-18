@@ -3,7 +3,7 @@ modules/billing/models.py
 -------------------------
 Enterprise SQLAlchemy ORM models for the Zoiko Billing module.
 
-Follows Zoiko HR enterprise patterns for multi-tenancy, audit, and RBAC.
+Follows Zoiko Billing enterprise patterns for multi-tenancy, audit, and RBAC.
 
 Tables (23):
   Core        - billing_settings, billing_customers, customer_contacts
