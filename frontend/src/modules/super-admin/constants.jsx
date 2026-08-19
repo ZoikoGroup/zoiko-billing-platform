@@ -54,9 +54,14 @@ export const PLAN_STATUS_OPTIONS = [
   { value: "archived", label: "Archived", color: "bg-slate-100 text-slate-600" },
 ];
 
+// Order mirrors the backend's dunning escalation path (N1): active ->
+// past_due (day 0) -> restricted (day 10) -> suspended (day 20) ->
+// cancelled (day 45, "terminate" — never a hard delete, per N2).
 export const SUBSCRIPTION_STATUS_OPTIONS = [
   { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-700" },
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
+  { value: "past_due", label: "Past Due", color: "bg-orange-100 text-orange-700" },
+  { value: "restricted", label: "Restricted", color: "bg-rose-100 text-rose-700" },
   { value: "suspended", label: "Suspended", color: "bg-slate-100 text-slate-600" },
   { value: "cancelled", label: "Cancelled", color: "bg-red-100 text-red-700" },
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
@@ -177,7 +182,9 @@ export function SubscriptionLifecycleBadge({ value }) {
  */
 export const SUBSCRIPTION_TRANSITIONS = {
   pending: ["active", "cancelled"],
-  active: ["suspended", "cancelled", "expired"],
+  active: ["past_due", "suspended", "cancelled", "expired"],
+  past_due: ["restricted", "active", "cancelled"],
+  restricted: ["suspended", "active", "cancelled"],
   suspended: ["active", "cancelled"],
   cancelled: [],
   expired: [],

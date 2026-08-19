@@ -22,6 +22,8 @@ const EMPTY_FORM = { organization_id: "", plan_id: "", status: "pending" };
 
 const TRANSITION_LABELS = {
   active: "Activate",
+  past_due: "Mark Past Due",
+  restricted: "Restrict",
   suspended: "Suspend",
   cancelled: "Cancel",
   expired: "Expire",

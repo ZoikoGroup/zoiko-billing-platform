@@ -133,7 +133,7 @@ in this environment — no running Docker daemon was available. Sanity-check a
 
 ## Verifying the extraction end to end
 
-1. `uvicorn app.main:app --reload` boots with no import errors.
+1. `uvicorn app.main:app --reload --port 8001` boots with no import errors.
 2. `python -m migrations.create_all.create_all` runs cleanly against a fresh SQLite/Postgres DB.
 3. `POST /api/auth/register` → `POST /api/auth/login` → JWT.
 4. `GET /billing/customers` and `GET /billing/products` return `200` with an empty list on a fresh org.

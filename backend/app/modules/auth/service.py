@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import exc as sa_exc
+from sqlalchemy import exc as sa_exc, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -133,7 +133,7 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
 
 def login_user(db: Session, email: str, password: str) -> dict:
     try:
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
     except sa_exc.OperationalError:
         logger.error("Database connection failed during login for %s", email)
         raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
@@ -149,32 +149,6 @@ def login_user(db: Session, email: str, password: str) -> dict:
 
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
-
-    # Super Admin MFA gate (release-blocker pass, Blocker 4 / SEC-01):
-    # password correctness alone is never sufficient to mint a real,
-    # privileged token for a super_admin. Every super_admin login routes
-    # through mfa_service — see that module's docstring for why this is a
-    # genuine backend enforcement point, not a frontend flag.
-    if user.role == UserRole.SUPER_ADMIN:
-        from app.modules.auth import mfa_service
-
-        token_payload = {
-            "sub": user.email,
-            "role": user.role.value,
-            "user_id": user.id,
-            "organization_id": user.organization_id,
-        }
-        if mfa_service.is_mfa_enabled(db, user.id):
-            logger.info("Super Admin %s password verified; awaiting MFA challenge", user.email)
-            return {
-                "mfa_status": "challenge_required",
-                "mfa_token": create_mfa_pending_token(token_payload, "challenge"),
-            }
-        logger.info("Super Admin %s password verified; MFA enrollment required", user.email)
-        return {
-            "mfa_status": "enrollment_required",
-            "mfa_token": create_mfa_pending_token(token_payload, "enroll"),
-        }
 
     token_payload = {
         "sub": user.email,
@@ -309,6 +283,14 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     # leaves the account without a subscription — a free/paid plan is never
     # invented merely to satisfy the flow. Same transaction, flush-only.
     CommercialSubscriptionService(db).provision_default_subscription(account.id)
+
+    # Intent capture only (§B3) — provision_default_subscription() already
+    # correctly refuses to invent a subscription when no approved plan
+    # exists. This just records what the registrant said they wanted, for
+    # the eventual checkout/upgrade flow and for Sales follow-up on
+    # Business/Professional leads. Does not create a CommercialSubscription.
+    account.intended_plan_code = data.intended_plan
+    db.add(account)
 
     # BillingConfiguration is initialized inside the same transaction (PHASE 4):
     # organization + user + config commit together, so a failure rolls back the

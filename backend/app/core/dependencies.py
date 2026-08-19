@@ -29,15 +29,25 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 ROLE_SUPER_ADMIN = "super_admin"
 ROLE_ORG_ADMIN = "org_admin"
 ROLE_BILLING_ADMIN = "billing_admin"
+# §25 Segregation-of-Duties Doctrine: a distinct approver role (so maker-
+# checker gates can require someone other than whoever can create the
+# request) and a read-only floor role for Support/Legal-style access.
+ROLE_FINANCE_APPROVER = "finance_approver"
+ROLE_AUDITOR = "auditor"
 
-VALID_ROLES = {ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_BILLING_ADMIN}
+VALID_ROLES = {
+    ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_BILLING_ADMIN,
+    ROLE_FINANCE_APPROVER, ROLE_AUDITOR,
+}
 
 # What each role may create (org admin manages org users; super admin
 # manages org admins platform-wide).
 ROLE_CREATION_RULES = {
     ROLE_SUPER_ADMIN: [ROLE_ORG_ADMIN],
-    ROLE_ORG_ADMIN: [ROLE_BILLING_ADMIN],
+    ROLE_ORG_ADMIN: [ROLE_BILLING_ADMIN, ROLE_FINANCE_APPROVER, ROLE_AUDITOR],
     ROLE_BILLING_ADMIN: [],
+    ROLE_FINANCE_APPROVER: [],
+    ROLE_AUDITOR: [],
 }
 
 
@@ -121,6 +131,25 @@ def get_current_billing_admin(current_user=Depends(get_current_user)):
         raise ForbiddenException(
             f"This action requires billing admin privileges. Your role: {role}"
         )
+    return current_user
+
+
+def get_current_finance_approver(current_user=Depends(get_current_user)):
+    """§25: distinct from billing_admin. Can approve refunds/discounts/
+    write-offs/credit-notes that a billing_admin submitted, but per SoD,
+    never their own (enforced separately, in each service's approve method)."""
+    role = _role_value(current_user)
+    if role not in (ROLE_FINANCE_APPROVER, ROLE_SUPER_ADMIN):
+        raise ForbiddenException(
+            f"This action requires Finance Approver privileges. Your role: {role}"
+        )
+    return current_user
+
+
+def get_current_auditor_or_above(current_user=Depends(get_current_user)):
+    """Read-only floor. Any authenticated role may satisfy this — it's a
+    minimum, not a ceiling, so org_admin/billing_admin/finance_approver/
+    super_admin all pass too."""
     return current_user
 
 

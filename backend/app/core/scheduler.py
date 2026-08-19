@@ -103,6 +103,12 @@ def _register_billing_jobs(scheduler: BackgroundScheduler) -> None:
             "promise_to_pay_check_job",
             "Promise-to-Pay Status Check",
         ),
+        (
+            "app.modules.commercial.tasks.dunning_process:run_commercial_dunning_job",
+            settings.COMMERCIAL_DUNNING_INTERVAL_MINUTES,
+            "commercial_dunning_job",
+            "Commercial (Plane-1) Failed-Payment Dunning",
+        ),
     ]
 
     for func_ref, interval_minutes, job_id, name in jobs:

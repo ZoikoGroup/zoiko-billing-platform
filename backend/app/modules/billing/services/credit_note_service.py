@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    ForbiddenException,
 )
 from app.modules.billing.models import (
     BillingAuditAction,
@@ -178,7 +179,7 @@ class CreditNoteService:
             credit_note_number=credit_note_number,
             credit_note_type=credit_note_type,
             total_amount=total_amount, remaining_amount=total_amount,
-            issue_date=issue_date, **data,
+            issue_date=issue_date, created_by=created_by, **data,
         )
         self._record_status_history(organization_id, cn.id, None, CreditNoteStatus.DRAFT.value, created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "CreditNote", cn.id, new_values=data)
@@ -229,6 +230,13 @@ class CreditNoteService:
 
     def approve_credit_note(self, cn_id: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> CreditNote:
         cn = self.repo.get_by_id(cn_id, organization_id)
+        # §25 SoD: the user who created a credit note cannot approve it,
+        # even if they hold a role that could approve someone else's.
+        if cn.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot approve a credit note you created yourself. "
+                "Ask another Finance Approver to review it."
+            )
         self._validate_status_transition(cn.status, CreditNoteStatus.APPROVED)
         old_status = cn.status.value
         cn.status = CreditNoteStatus.APPROVED
