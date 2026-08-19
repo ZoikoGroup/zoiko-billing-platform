@@ -14,7 +14,7 @@ from app.modules.billing.models import (
 )
 from app.modules.billing.repositories.base import BaseRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 # In-flight, not-yet-executed write-offs — used wherever an *independent*
 # persisted field (Invoice.balance_due) already reflects an EXECUTED

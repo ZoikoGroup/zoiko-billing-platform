@@ -35,7 +35,7 @@ from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
 from app.services.email_service import send_payment_receipt_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 VALID_PAYMENT_STATUS_TRANSITIONS: Dict[PaymentStatus, set[PaymentStatus]] = {
     PaymentStatus.PENDING: {PaymentStatus.PROCESSING, PaymentStatus.CLEARED, PaymentStatus.FAILED, PaymentStatus.CANCELLED},

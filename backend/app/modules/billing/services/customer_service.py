@@ -24,7 +24,7 @@ from app.modules.billing.repositories.customer import (
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _sanitize_audit_data(data: Dict[str, Any]) -> Dict[str, Any]:

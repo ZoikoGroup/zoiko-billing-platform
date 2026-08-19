@@ -44,7 +44,7 @@ from app.modules.billing.services.settings_service import BillingConfigurationSe
 # non-existent app/modules/email_templates and always logged "not found".)
 from app.services.email_service import TEMPLATE_DIR
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 _IF_BLOCK_RE = re.compile(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL)
 EMAIL_TEMPLATE_VARIABLE_RE = re.compile(r"\{\{(\w+)\}\}")

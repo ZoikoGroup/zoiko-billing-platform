@@ -31,7 +31,7 @@ PRODUCT_NULLABLE_FIELDS = {
 }
 CATEGORY_NULLABLE_FIELDS = {"description", "parent_id", "icon", "color"}
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _resolve_org_currency(db: Session, organization_id: int) -> str:

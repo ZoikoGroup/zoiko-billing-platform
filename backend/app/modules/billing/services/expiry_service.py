@@ -15,7 +15,7 @@ from app.modules.billing.models import (
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class ExpiryEngine:

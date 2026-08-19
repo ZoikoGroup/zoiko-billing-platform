@@ -41,7 +41,7 @@ COLLECTION_ALLOWED_FIELDS = {
     "notes", "amount_collected", "last_contact_at", "next_action_date",
 }
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class CollectionService:
