@@ -682,15 +682,33 @@ class CommercialSubscriptionService:
 
     # Explicit lifecycle state machine. Only these transitions are allowed;
     # arbitrary status changes raise ValueError.
+    #
+    # PAST_DUE/RESTRICTED (N1, Plane-1 failed-payment dunning) sit between
+    # ACTIVE and SUSPENDED: ACTIVE -> PAST_DUE (day 0) -> RESTRICTED (day 10)
+    # -> SUSPENDED (day 20) -> CANCELLED (day 45, "terminate" — never a hard
+    # delete, per N2). Each of PAST_DUE/RESTRICTED/SUSPENDED can also return
+    # straight to ACTIVE (N3: payment succeeds again, at any point in the
+    # sequence).
     _TRANSITIONS: dict[CommercialSubscriptionStatus, set[CommercialSubscriptionStatus]] = {
         CommercialSubscriptionStatus.PENDING: {
             CommercialSubscriptionStatus.ACTIVE,
             CommercialSubscriptionStatus.CANCELLED,
         },
         CommercialSubscriptionStatus.ACTIVE: {
+            CommercialSubscriptionStatus.PAST_DUE,
             CommercialSubscriptionStatus.SUSPENDED,
             CommercialSubscriptionStatus.CANCELLED,
             CommercialSubscriptionStatus.EXPIRED,
+        },
+        CommercialSubscriptionStatus.PAST_DUE: {
+            CommercialSubscriptionStatus.RESTRICTED,
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+        },
+        CommercialSubscriptionStatus.RESTRICTED: {
+            CommercialSubscriptionStatus.SUSPENDED,
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
         },
         CommercialSubscriptionStatus.SUSPENDED: {
             CommercialSubscriptionStatus.ACTIVE,
@@ -703,6 +721,8 @@ class CommercialSubscriptionService:
     _OPEN_STATUSES = {
         CommercialSubscriptionStatus.PENDING,
         CommercialSubscriptionStatus.ACTIVE,
+        CommercialSubscriptionStatus.PAST_DUE,
+        CommercialSubscriptionStatus.RESTRICTED,
         CommercialSubscriptionStatus.SUSPENDED,
     }
 

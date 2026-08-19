@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    ForbiddenException,
 )
 from app.modules.billing.models import (
     BillingAuditAction,
@@ -250,7 +251,7 @@ class RefundService:
         refund = self.repo.create(
             organization_id, customer_id=customer_id,
             refund_number=refund_number, refund_type=refund_type,
-            amount=amount, status=RefundStatus.DRAFT, **data,
+            amount=amount, status=RefundStatus.DRAFT, created_by=created_by, **data,
         )
         self._record_status_history(organization_id, refund.id, None, RefundStatus.DRAFT.value, created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Refund", refund.id, new_values=data)
@@ -300,6 +301,13 @@ class RefundService:
 
     def approve_refund(self, refund_id: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> Refund:
         refund = self.repo.get_by_id(refund_id, organization_id)
+        # §25 SoD: the user who requested/submitted a refund cannot approve
+        # it, even if they hold a role that could approve someone else's.
+        if refund.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot approve a refund you submitted yourself. "
+                "Ask another Finance Approver to review it."
+            )
         self._validate_status_transition(refund.status, RefundStatus.APPROVED)
         old_status = refund.status.value
         refund.status = RefundStatus.APPROVED

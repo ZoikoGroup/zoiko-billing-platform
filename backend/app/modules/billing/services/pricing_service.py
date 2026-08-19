@@ -7,12 +7,13 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    ForbiddenException,
     NotFoundException,
 )
 from app.modules.billing.models import (
     BillingAuditAction, PlanTier, PricingModel, PricingPlan,
     PriceList, PriceListItem, PricingRule, PricingRuleTier,
-    Discount, DiscountUsage, CurrencyPricing, TaxPricing,
+    Discount, DiscountStatus, DiscountUsage, CurrencyPricing, TaxPricing,
     TaxGroup, TaxGroupMember,
 )
 from app.modules.billing.repositories.catalog import (
@@ -372,7 +373,7 @@ class DiscountService:
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:
                 raise AlreadyExistsException("Discount", data["code"])
-        obj = self.repo.create(organization_id, **data)
+        obj = self.repo.create(organization_id, created_by=created_by, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Discount", obj.id, new_values=data)
         return obj
 
@@ -402,6 +403,75 @@ class DiscountService:
             discount_type=discount_type, status=status,
             customer_id=customer_id, search_term=search_term,
         )
+
+    # ── Approval Workflow (§25 maker-checker) ───────────────────────────────
+    # Draft -> Pending Approval -> Active
+    #                           -> Rejected
+    # Draft/Pending Approval -> Cancelled
+
+    def _validate_status_transition(self, current: DiscountStatus, target: DiscountStatus) -> None:
+        valid = {
+            DiscountStatus.DRAFT: [DiscountStatus.PENDING_APPROVAL, DiscountStatus.CANCELLED],
+            DiscountStatus.PENDING_APPROVAL: [DiscountStatus.ACTIVE, DiscountStatus.REJECTED, DiscountStatus.CANCELLED],
+            DiscountStatus.ACTIVE: [DiscountStatus.PAUSED, DiscountStatus.CANCELLED, DiscountStatus.EXPIRED, DiscountStatus.EXHAUSTED],
+            DiscountStatus.PAUSED: [DiscountStatus.ACTIVE, DiscountStatus.CANCELLED],
+            DiscountStatus.REJECTED: [],
+            DiscountStatus.CANCELLED: [],
+            DiscountStatus.EXPIRED: [],
+            DiscountStatus.EXHAUSTED: [],
+        }
+        if target not in valid.get(current, []):
+            raise BadRequestException(f"Cannot transition discount from {current.value} to {target.value}")
+
+    def submit_for_approval(self, pk: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> Discount:
+        discount = self.repo.get_by_id(pk, organization_id)
+        self._validate_status_transition(discount.status, DiscountStatus.PENDING_APPROVAL)
+        old_status = discount.status.value
+        discount.status = DiscountStatus.PENDING_APPROVAL
+        safe_commit_and_refresh(self.db, discount)
+        self.audit.log(
+            organization_id, updated_by, BillingAuditAction.UPDATE, "Discount", pk,
+            old_values={"status": old_status}, new_values={"status": discount.status.value},
+        )
+        return discount
+
+    def approve_discount(self, pk: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> Discount:
+        discount = self.repo.get_by_id(pk, organization_id)
+        # §25 SoD: the user who created a discount cannot approve it, even if
+        # they hold a role that could approve someone else's.
+        if discount.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot approve a discount you created yourself. "
+                "Ask another Finance Approver to review it."
+            )
+        self._validate_status_transition(discount.status, DiscountStatus.ACTIVE)
+        old_status = discount.status.value
+        discount.status = DiscountStatus.ACTIVE
+        discount.approved_by = updated_by
+        discount.approved_at = datetime.utcnow()
+        safe_commit_and_refresh(self.db, discount)
+        self.audit.log(
+            organization_id, updated_by, BillingAuditAction.APPROVE, "Discount", pk,
+            old_values={"status": old_status}, new_values={"status": discount.status.value},
+        )
+        return discount
+
+    def reject_discount(self, pk: int, organization_id: int, updated_by: int, reason: str) -> Discount:
+        discount = self.repo.get_by_id(pk, organization_id)
+        if discount.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot reject a discount you created yourself. "
+                "Ask another Finance Approver to review it."
+            )
+        self._validate_status_transition(discount.status, DiscountStatus.REJECTED)
+        old_status = discount.status.value
+        discount.status = DiscountStatus.REJECTED
+        safe_commit_and_refresh(self.db, discount)
+        self.audit.log(
+            organization_id, updated_by, BillingAuditAction.REJECT, "Discount", pk,
+            old_values={"status": old_status}, new_values={"status": discount.status.value, "rejection_reason": reason},
+        )
+        return discount
 
     def deactivate(self, pk: int, organization_id: int, updated_by: int) -> Discount:
         self.repo.get_by_id(pk, organization_id)

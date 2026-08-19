@@ -44,6 +44,7 @@ export default function RegisterPage() {
     timezone: "",
     industry: "",
     currency: "",
+    intendedPlan: "essentials",
     termsAccepted: false,
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -127,6 +128,7 @@ export default function RegisterPage() {
           timezone: form.timezone,
           industry: form.industry,
           currency: form.currency || undefined,
+          intended_plan: form.intendedPlan,
         },
       });
       navigate("/register/success", {
@@ -428,24 +430,26 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>
-                    Product <span style={{ color: "#DC2626" }}>*</span>
+                  <label htmlFor="intendedPlan" style={labelStyle}>
+                    Plan <span style={{ color: "#DC2626" }}>*</span>
                   </label>
-                  <div
-                    style={{
-                      padding: "12px", borderRadius: "12px", textAlign: "center",
-                      border: "2px solid #FF6B00", background: "#FFF7F0",
-                      boxShadow: "0 4px 12px rgba(255,107,0,0.15)",
-                      boxSizing: "border-box", height: "calc(100% - 26px)", marginTop: "26px",
-                    }}
+                  <select
+                    id="intendedPlan"
+                    required
+                    value={form.intendedPlan}
+                    onChange={(e) => update("intendedPlan", e.target.value)}
+                    style={selectStyle}
+                    onFocus={e => e.target.style.borderColor = "#FF6B00"}
+                    onBlur={e => e.target.style.borderColor = "#E5E7EB"}
                   >
-                    <p style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: "700", color: "#FF6B00" }}>
-                      Zoiko Billing
-                    </p>
-                    <p style={{ margin: 0, fontSize: "11px", color: "#6B7280", lineHeight: "1.3" }}>
-                      Customers, invoices & subscriptions
-                    </p>
-                  </div>
+                    <option value="essentials">Essentials</option>
+                    <option value="professional">Professional</option>
+                    <option value="business">Business</option>
+                  </select>
+                  <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#9CA3AF" }}>
+                    Need Enterprise? Contact your Zoiko representative — it's
+                    contract-based and isn't available through self-serve signup.
+                  </p>
                 </div>
               </div>
 

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # ── App Info ──────────────────────────────────────────────────────
     APP_NAME: str = "Zoiko Billing Platform Backend"
     APP_VERSION: str = "1.0.0"
+    APP_PORT: int = 8001
     DEBUG: bool = True
 
     @field_validator("DEBUG", mode="before")
@@ -98,6 +99,9 @@ class Settings(BaseSettings):
     DUNNING_PROCESS_INTERVAL_MINUTES: int = 1440
     ESCALATION_TO_COLLECTIONS_INTERVAL_MINUTES: int = 1440
     PROMISE_TO_PAY_CHECK_INTERVAL_MINUTES: int = 1440
+    # N1: Plane-1 (Zoiko's own subscription) failed-payment dunning sweep —
+    # independent of the Plane-2 jobs above (see commercial/dunning_service.py).
+    COMMERCIAL_DUNNING_INTERVAL_MINUTES: int = 1440
 
 
 settings = Settings()

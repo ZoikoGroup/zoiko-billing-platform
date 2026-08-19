@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services.pricing_service import DiscountService
 from app.modules.billing.schemas import (
-    DiscountCreate, DiscountUpdate, DiscountResponse, DiscountListResponse,
-    DiscountUsageResponse, SuccessResponse,
+    DiscountApproveRequest, DiscountCreate, DiscountRejectRequest, DiscountUpdate,
+    DiscountResponse, DiscountListResponse, DiscountUsageResponse, SuccessResponse,
 )
 
 router = APIRouter(prefix="/discounts", tags=["🏷️ Discounts"])
@@ -76,6 +76,24 @@ def deactivate_discount(pk: int, db: Session = Depends(get_db), current_user=Dep
     svc = DiscountService(db)
     svc.deactivate(pk, organization_id=current_user.organization_id, updated_by=current_user.id)
     return SuccessResponse(message="Discount deactivated successfully")
+
+
+@router.post("/{pk}/submit", response_model=DiscountResponse, summary="Submit a discount for approval", dependencies=[Depends(get_current_billing_admin)])
+def submit_discount_for_approval(pk: int, body: DiscountApproveRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    svc = DiscountService(db)
+    return svc.submit_for_approval(pk, organization_id=current_user.organization_id, updated_by=current_user.id, reason=body.reason)
+
+
+@router.post("/{pk}/approve", response_model=DiscountResponse, summary="Approve a discount", dependencies=[Depends(get_current_finance_approver)])
+def approve_discount(pk: int, body: DiscountApproveRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    svc = DiscountService(db)
+    return svc.approve_discount(pk, organization_id=current_user.organization_id, updated_by=current_user.id, reason=body.reason)
+
+
+@router.post("/{pk}/reject", response_model=DiscountResponse, summary="Reject a discount", dependencies=[Depends(get_current_finance_approver)])
+def reject_discount(pk: int, body: DiscountRejectRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    svc = DiscountService(db)
+    return svc.reject_discount(pk, organization_id=current_user.organization_id, updated_by=current_user.id, reason=body.reason)
 
 
 @router.get("/{pk}/usage", response_model=dict, summary="Get discount usage")

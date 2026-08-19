@@ -1352,6 +1352,14 @@ class DiscountListResponse(PaginatedResponse):
     items: List[DiscountResponse]
 
 
+class DiscountApproveRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class DiscountRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DISCOUNT USAGE
 # ═══════════════════════════════════════════════════════════════════════════════
