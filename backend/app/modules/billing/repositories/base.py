@@ -106,6 +106,29 @@ class BaseRepository(Generic[ModelType]):
         self.db.refresh(obj)
         return obj
 
+    def create_no_commit(self, organization_id: int, **data: Any) -> ModelType:
+        """Same as create() but only flushes -- the row is persisted by the
+        caller's own commit. Used inside multi-statement transactions (e.g.
+        registration) so this row can never be orphaned/partially seeded if
+        the outer transaction later rolls back.
+
+        On a collision, only a SAVEPOINT is rolled back (via begin_nested),
+        never the whole session -- a plain self.db.rollback() here would also
+        discard every other not-yet-committed row the caller's outer
+        transaction is holding (e.g. the Organization/User being registered
+        in the same transaction as this seed call)."""
+        if self._has_organization_id:
+            obj = self.model(organization_id=organization_id, **data)
+        else:
+            obj = self.model(**data)
+        try:
+            with self.db.begin_nested():
+                self.db.add(obj)
+                self.db.flush()
+        except IntegrityError as e:
+            raise AlreadyExistsException(self.model.__name__, str(e))
+        return obj
+
     def bulk_create(self, organization_id: int, items: List[Dict[str, Any]]) -> List[ModelType]:
         if self._has_organization_id:
             objs = [self.model(organization_id=organization_id, **item) for item in items]

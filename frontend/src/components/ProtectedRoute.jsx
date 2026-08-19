@@ -8,7 +8,9 @@ const ROLE_PATH_RULES = {
   org_admin: (pathname) =>
     pathname === "/portal" ||
     pathname === "/organization-admin" ||
-    pathname.startsWith("/organization-admin/"),
+    pathname.startsWith("/organization-admin/") ||
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
   billing_admin: (pathname) =>
     pathname === "/portal" ||
     pathname === "/billing" ||

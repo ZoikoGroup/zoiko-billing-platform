@@ -31,7 +31,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.modules.auth.country_currency import resolve_currency
+from app.modules.auth.country_currency import (
+    resolve_currency,
+    resolve_fiscal_year,
+    resolve_timezone,
+)
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.commercial.enums import BillingClassification, BillingSource
@@ -117,7 +121,7 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
     if consumed is None:
         raise BadRequestException(INVALID_TOKEN_MESSAGE)
 
-    user = db.query(User).filter(User.email == consumed["email"]).first()
+    user = db.query(User).filter(func.lower(User.email) == func.lower(consumed["email"])).first()
     if user is None:
         raise BadRequestException(INVALID_TOKEN_MESSAGE)
 
@@ -206,7 +210,7 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
 # ── Registration (public self-serve onboarding) ─────────────────────────────
 
 def register_enterprise(db: Session, data: RegisterRequest) -> dict:
-    existing = db.query(User).filter(User.email == data.email).first()
+    existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")
 
@@ -219,6 +223,16 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     # without an explicit currency correctly derives INR instead of USD.
     explicit_currency = data.currency if "currency" in data.model_fields_set else None
     currency = resolve_currency(explicit_currency, data.country)
+
+    # Same explicit > country-derived > safe-fallback precedence as currency
+    # above, applied to timezone and fiscal year -- so a direct API caller
+    # (bypassing RegisterPage's own client-side country defaults) still gets
+    # a country-appropriate value instead of a hardcoded UTC/Jan-Dec default.
+    explicit_timezone = data.timezone if "timezone" in data.model_fields_set else None
+    timezone = resolve_timezone(explicit_timezone, data.country)
+    explicit_fy_start = data.fiscal_year_start if "fiscal_year_start" in data.model_fields_set else None
+    explicit_fy_end = data.fiscal_year_end if "fiscal_year_end" in data.model_fields_set else None
+    fiscal_year_start, fiscal_year_end = resolve_fiscal_year(explicit_fy_start, explicit_fy_end, data.country)
 
     org = Organization(
         organization_name=data.organization,
@@ -236,9 +250,9 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         tax_no=data.tax_no,
         registration_number=data.registration_number,
         currency=currency,
-        timezone=data.timezone or "UTC",
-        fiscal_year_start=data.fiscal_year_start or "01-01",
-        fiscal_year_end=data.fiscal_year_end or "12-31",
+        timezone=timezone,
+        fiscal_year_start=fiscal_year_start,
+        fiscal_year_end=fiscal_year_end,
         # Stamped server-side — never accepted from the client, so a tenant
         # cannot self-attribute a Zoiko One source to skip a charge.
         billing_classification=BillingClassification.COMMERCIAL_STANDALONE,
@@ -264,6 +278,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         is_verified=True,
     )
     db.add(admin)
+    db.flush()
 
     # CommercialAccount is created inside the same transaction (PHASE 6):
     # organization + user + commercial account + billing configuration commit
@@ -300,22 +315,21 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     from app.modules.billing.services.settings_service import BillingConfigurationService
     BillingConfigurationService(db).seed_billing_configuration(org.id)
 
+    # Starter tax catalogue seed for the org's billing currency (Phase 5.7),
+    # inside the same transaction as org + user + config: a fresh org's
+    # currency is derived from country (explicit > country-derived > USD
+    # fallback), so a currency with a real catalogue entry (e.g. India → INR)
+    # seeds its starter rates here; a currency without a catalogue entry (e.g.
+    # USD) is a deliberate no-op, not an error. commit=False keeps this
+    # flush-only so a failure here rolls back org+user+config too instead of
+    # leaving a partially initialized tenant -- the same all-or-nothing
+    # guarantee PHASE 4/6 already give BillingConfiguration/CommercialAccount.
+    from app.modules.billing.services.tax_service import TaxService
+    TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id, commit=False)
+
     db.commit()
     db.refresh(admin)
     db.refresh(org)
-
-    # Best-effort starter tax catalogue seed for the org's billing currency
-    # (Phase 5.7). Never blocks registration -- a fresh org's currency is now
-    # derived from country (explicit > country-derived > USD fallback), so a
-    # country/currency with a real catalogue entry (e.g. India → INR) seeds its
-    # starter rate here; a currency without a catalogue entry (e.g. USD) is a
-    # deliberate no-op. Same idempotent seed path organizations/router.py's
-    # currency-update flow uses.
-    try:
-        from app.modules.billing.services.tax_service import TaxService
-        TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id)
-    except Exception as e:
-        logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
 
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
 
@@ -336,7 +350,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
 # ── Password flows ──────────────────────────────────────────────────────────
 
 def request_password_reset(db: Session, email: str) -> dict:
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
     if user is not None and user.is_active:
         raw_token, _ = _issue_action_token(db, user.email, user.organization_id, SecurityActionPurpose.RESET)
         link = _action_link(SecurityActionPurpose.RESET, raw_token)
@@ -371,7 +385,7 @@ def invite_user(db: Session, actor, data) -> User:
     if actor.organization_id is None:
         raise ForbiddenException("Super Admin must create users via the super-admin API.")
 
-    existing = db.query(User).filter(User.email == data.email).first()
+    existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")
 

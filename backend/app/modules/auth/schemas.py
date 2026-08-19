@@ -82,6 +82,10 @@ class CountryCurrencyDefault(BaseModel):
     name: str
     code: str
     currency: str
+    timezone: str
+    fiscal_year_start: str
+    fiscal_year_end: str
+    date_format: str
 
 
 class CountryDefaultsResponse(BaseModel):

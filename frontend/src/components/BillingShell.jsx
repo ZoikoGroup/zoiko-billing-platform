@@ -321,7 +321,7 @@ function SidebarContent({ onNavigate, role }) {
   const showWorkspace = role === "billing_admin";
   const showOrgNav = role === "org_admin";
 
-  const visibleFooter = role === "super_admin" ? [] : FOOTER_NAV_ITEMS;
+  const visibleFooter = role === "super_admin" || role === "org_admin" ? FOOTER_NAV_ITEMS : [];
 
   const [openSection, setOpenSection] = useState(null);
 
@@ -330,7 +330,7 @@ function SidebarContent({ onNavigate, role }) {
       <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Link
-            to={role === "super_admin" ? "/super-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
+            to={role === "super_admin" ? "/super-admin/dashboard" : role === "org_admin" ? "/organization-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
             onClick={onNavigate}
             className="text-[22px] font-extrabold tracking-tight text-white"
           >

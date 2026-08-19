@@ -104,7 +104,7 @@ export default function PriceListsPage() {
             </label>
             <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
           </div>
-          <button onClick={() => { setForm({ name: "", code: "", description: "", currency: "USD", is_default: false, effective_from: "", effective_to: "", is_active: true }); setShowCreate(true); setShowEdit(null); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Price List</button>
+          <button onClick={() => { setForm({ name: "", code: "", description: "", currency: orgCurrency, is_default: false, effective_from: "", effective_to: "", is_active: true }); setShowCreate(true); setShowEdit(null); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Price List</button>
         </div>
 
         {(showCreate || showEdit) && (

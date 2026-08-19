@@ -40,7 +40,16 @@ class TaxCatalogueEntry:
 # an unsupported currency.
 STARTER_TAX_CATALOGUE: Tuple[TaxCatalogueEntry, ...] = (
     TaxCatalogueEntry("GBP", "GB", "UK-VAT-STD", "UK Standard VAT", Decimal("20.00"), TaxType.VAT, "United Kingdom"),
+    # India's GST is a multi-slab system, not one flat rate -- IN-GST-STD
+    # (18%, the most common slab) is kept as the pre-existing code, listed
+    # first so it remains the is_default rate for organizations already
+    # seeded from it and for newly seeded ones alike; the other four
+    # published GST slabs are added alongside it, none of them default.
     TaxCatalogueEntry("INR", "IN", "IN-GST-STD", "India Standard GST", Decimal("18.00"), TaxType.GST, "India"),
+    TaxCatalogueEntry("INR", "IN", "IN-GST-0", "GST 0% (Nil-rated / Exempt)", Decimal("0.00"), TaxType.GST, "India"),
+    TaxCatalogueEntry("INR", "IN", "IN-GST-5", "GST 5%", Decimal("5.00"), TaxType.GST, "India"),
+    TaxCatalogueEntry("INR", "IN", "IN-GST-12", "GST 12%", Decimal("12.00"), TaxType.GST, "India"),
+    TaxCatalogueEntry("INR", "IN", "IN-GST-28", "GST 28%", Decimal("28.00"), TaxType.GST, "India"),
     TaxCatalogueEntry("EUR", "DE", "EU-VAT-STD", "EU Standard VAT (Germany reference)", Decimal("19.00"), TaxType.VAT, "Germany / Eurozone reference"),
     TaxCatalogueEntry("AED", "AE", "AE-VAT-STD", "UAE Standard VAT", Decimal("5.00"), TaxType.VAT, "United Arab Emirates"),
     TaxCatalogueEntry("SGD", "SG", "SG-GST-STD", "Singapore Standard GST", Decimal("9.00"), TaxType.GST, "Singapore"),
