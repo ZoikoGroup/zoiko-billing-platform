@@ -38,7 +38,7 @@ from app.modules.billing.services.customer_service import (
 )
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES as VALID_CURRENCIES
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 # ---------------------------------------------------------------------------
 # Supported file columns → customer field mapping

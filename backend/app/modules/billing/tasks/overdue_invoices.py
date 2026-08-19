@@ -24,7 +24,7 @@ from typing import Any, Dict, List
 from app.database import SessionLocal
 from app.modules.billing.models import Invoice, InvoiceStatus
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_USER_ID = None
 

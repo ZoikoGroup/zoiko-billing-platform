@@ -32,7 +32,7 @@ from app.modules.billing.models import (
     PriceSource, PricingModel, PricingPlan, PlanTier, Product, ResolvedPriceType,
 )
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 @dataclass

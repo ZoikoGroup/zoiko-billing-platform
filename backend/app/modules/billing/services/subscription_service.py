@@ -41,7 +41,7 @@ from app.modules.billing.services.exchange_rate_service import ExchangeRateServi
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.services.email_service import send_subscription_renewed_email, send_past_due_notice_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SUB_ALLOWED_FIELDS = {
     "customer_id", "plan_id", "contract_id", "subscription_number",

@@ -40,7 +40,7 @@ from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_write_off_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 WRITE_OFF_ALLOWED_FIELDS = {
     "customer_id", "write_off_number", "write_off_type", "adjustment_type",

@@ -39,7 +39,7 @@ from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_credit_note_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 CREDIT_NOTE_ALLOWED_FIELDS = {
     "customer_id", "credit_note_number", "credit_note_type",

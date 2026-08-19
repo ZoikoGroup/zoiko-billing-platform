@@ -26,7 +26,7 @@ from app.database import SessionLocal
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 from app.modules.billing.utils.date_utils import days_overdue as compute_days_overdue
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_USER_ID = None
 

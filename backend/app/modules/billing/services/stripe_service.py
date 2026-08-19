@@ -55,7 +55,7 @@ from app.modules.billing.services.payment_service import PaymentService
 from app.modules.billing.services.refund_service import RefundService
 from app.modules.billing.services.subscription_service import SubscriptionService
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_ACTOR = None
 

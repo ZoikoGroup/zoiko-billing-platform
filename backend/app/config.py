@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     APP_PORT: int = 8001
     DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
+
+    @field_validator("LOG_LEVEL", mode="before")
+    @classmethod
+    def normalize_log_level(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().upper()
+            valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+            if normalized in valid:
+                return normalized
+        return value
 
     @field_validator("DEBUG", mode="before")
     @classmethod

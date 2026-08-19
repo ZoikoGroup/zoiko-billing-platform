@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.billing.models import NumberFormat, SequenceReset
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def safe_commit(db: Session) -> None:

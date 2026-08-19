@@ -18,7 +18,7 @@ from app.core.exceptions import BadRequestException
 from app.modules.billing.models import BillingConfiguration, ExchangeRateProvider
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 OPEN_ER_API_BASE = "https://open.er-api.com/v6/latest"
 REQUEST_TIMEOUT = 10

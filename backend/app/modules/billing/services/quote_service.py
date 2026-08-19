@@ -42,7 +42,7 @@ from app.modules.billing.services.exchange_rate_service import ExchangeRateServi
 from app.modules.billing.utils.currency_utils import round_money, convert_amount
 from app.services.email_service import send_quote_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 QUOTE_ALLOWED_FIELDS = {
     "customer_id", "quote_number", "valid_until",
