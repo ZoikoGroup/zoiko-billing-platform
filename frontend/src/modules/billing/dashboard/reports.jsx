@@ -45,7 +45,7 @@ function DataTable({ columns, data, maxRows = 10 }) {
   }
   const sliced = data.slice(0, maxRows);
   return (
-    <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>

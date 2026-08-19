@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
-import { Save, RefreshCw, AlertCircle, CheckCircle, Settings2,
+import { Save, RefreshCw, AlertCircle, CheckCircle, Check, Settings2,
   Building2, Globe, FileText, Receipt, Wallet, Percent,
   Bell, Shield, RotateCcw, MapPin, CreditCard,
   BadgePercent, Activity, ChevronDown, X, Search, Info,
@@ -12,7 +12,7 @@ import {
 } from "../../../utils/currency";
 import { getLanguageSelectOptions } from "../../../utils/language";
 import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
-import { formatLastUpdated } from "../../../components/billing-shared";
+import { formatLastUpdated, DashboardHeader } from "../../../components/billing-shared";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -734,7 +734,6 @@ export default function BillingSettingsPage() {
 
   const hasChanges = original ? JSON.stringify(form) !== JSON.stringify(original) : false;
 
-  useEffect(() => {}, [form, original, hasChanges]);
 
   const [lastSavedTimestamp, setLastSavedTimestamp] = useState(null);
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -890,8 +889,6 @@ export default function BillingSettingsPage() {
       Object.values(transientTimersRef.current).forEach((t) => clearTimeout(t));
     };
   }, []);
-
-  const getColor = () => COLORS[activeTab] || "brand";
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -1323,7 +1320,7 @@ export default function BillingSettingsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading billing configuration">
+      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8" aria-label="Loading billing configuration">
         <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)] animate-pulse">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-slate-200 shrink-0" />
@@ -1360,7 +1357,7 @@ export default function BillingSettingsPage() {
 
   return (
     <HighlightContext.Provider value={highlightedField}>
-    <div className="space-y-8">
+    <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
       <style>{`
         @keyframes fieldHighlightPulse {
           0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.5); border-color: #eab308; }
@@ -1374,17 +1371,14 @@ export default function BillingSettingsPage() {
           transition: box-shadow 0.3s, border-color 0.3s;
         }
       `}</style>
-      <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white flex items-center justify-center shadow-sm shrink-0">
-              <Settings2 size={22} />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight dark:text-white">Billing Configuration</h1>
-              <p className="text-slate-500 text-sm mt-0.5 dark:text-slate-400">Enterprise billing module settings</p>
-            </div>
-          </div>
+      <DashboardHeader
+        title="Billing Configuration"
+        subtitle="Enterprise billing module settings"
+        icon={Settings2}
+        iconGradient="from-[#FF7A00] to-[#FF5500]"
+        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Settings" }]}
+        lastUpdated={lastSavedTimestamp}
+        primaryAction={
           <div className="flex flex-wrap items-center gap-3">
             {saved && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium animate-in fade-in">
@@ -1406,7 +1400,7 @@ export default function BillingSettingsPage() {
             )}
             <button onClick={handleValidate} disabled={validating}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
-              <Settings2 size={14} />
+              <Check size={14} />
               Validate
             </button>
             <button onClick={handleReset} disabled={!hasChanges}
@@ -1424,8 +1418,8 @@ export default function BillingSettingsPage() {
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {error && (
         <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm" role="alert">
@@ -2895,7 +2889,9 @@ function AdministrationPanel() {
                           <span className="text-xs text-slate-500">Rendered HTML Preview</span>
                         </div>
                         <div className="p-3 bg-white max-h-64 overflow-auto text-xs"
-                          dangerouslySetInnerHTML={{ __html: previewData.rendered_html }} />
+                          dangerouslySetInnerHTML={{ __html: previewData.rendered_html
+                            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                            .replace(/\son\w+\s*=/gi, ' data-blocked=') }} />
                       </div>
                     )}
                     {previewData.html_content && !previewData.rendered_html && (

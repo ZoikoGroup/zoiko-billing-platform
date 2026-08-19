@@ -38,7 +38,7 @@ const InvoiceStatusBadge = ({ status }) => {
     draft: <FileText size={12} />,
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-700"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-700"}`}>
       {icons[status] || null}
       {status || "unknown"}
     </span>
@@ -59,7 +59,7 @@ const PaymentStatusBadge = ({ status }) => {
     refunded: <DollarSign size={12} />,
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-700"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-700"}`}>
       {icons[status] || null}
       {status || "unknown"}
     </span>

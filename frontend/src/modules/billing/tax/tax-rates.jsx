@@ -67,7 +67,7 @@ const SORT_FIELDS = [
 // swap from the original local component is preserved.
 const STATUS_BADGE_OPTIONS = [
   { value: "active", label: "active", color: "bg-emerald-100 text-emerald-700" },
-  { value: "inactive", label: "inactive", color: "bg-gray-100 text-gray-600" },
+  { value: "inactive", label: "inactive", color: "bg-slate-100 text-slate-600" },
 ];
 
 const TAX_TYPE_BADGE_OPTIONS = [
@@ -225,7 +225,7 @@ export default function TaxRatesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8" aria-label="Loading tax rates">
+      <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto" aria-label="Loading tax rates">
         <DashboardHeader {...headerProps} />
         <PageSkeleton rows={6} />
       </div>
@@ -234,7 +234,7 @@ export default function TaxRatesPage() {
 
   if (error && taxRates.length === 0) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={() => { setLoading(true); fetchTaxRates(); }} title="Something went wrong" />
       </div>
@@ -242,7 +242,7 @@ export default function TaxRatesPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
 
       <div className={DASHBOARD_KPI_GRID}>
@@ -375,7 +375,7 @@ export default function TaxRatesPage() {
                   <td className="px-4 py-4">
                     <span className="font-semibold text-slate-800">{parseFloat(rate.rate || 0).toFixed(2)}%</span>
                   </td>
-                  <td className="px-4 py-4"><StatusBadge status={rate.tax_type} options={TAX_TYPE_BADGE_OPTIONS} fallbackColor="bg-gray-100 text-gray-600" /></td>
+                  <td className="px-4 py-4"><StatusBadge status={rate.tax_type} options={TAX_TYPE_BADGE_OPTIONS} fallbackColor="bg-slate-100 text-slate-600" /></td>
                   <td className="px-4 py-4 text-sm text-slate-600">
                     {rate.currency_code ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700">
@@ -438,7 +438,7 @@ export default function TaxRatesPage() {
               </div>
             )}
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
                   <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
@@ -456,7 +456,7 @@ export default function TaxRatesPage() {
                 <textarea rows={2} value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Rate (%) *</label>
                   <input type="number" step="0.01" min="0" max="100" value={formData.rate} onChange={(e) => setFormData((p) => ({ ...p, rate: e.target.value }))}
@@ -470,7 +470,7 @@ export default function TaxRatesPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction</label>
                   <input type="text" value={formData.jurisdiction} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction: e.target.value }))}
@@ -489,7 +489,7 @@ export default function TaxRatesPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-end pb-2.5">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={formData.is_active !== false} onChange={(e) => setFormData((p) => ({ ...p, is_active: e.target.checked }))}
@@ -510,7 +510,7 @@ export default function TaxRatesPage() {
                   </label>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
                   <select value={formData.country_code} onChange={(e) => setFormData((p) => ({ ...p, country_code: e.target.value }))}
@@ -528,7 +528,7 @@ export default function TaxRatesPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Tax Type Label</label>
                   <input type="text" value={formData.tax_type_label} onChange={(e) => setFormData((p) => ({ ...p, tax_type_label: e.target.value }))}

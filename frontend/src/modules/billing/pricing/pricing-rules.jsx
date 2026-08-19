@@ -41,8 +41,8 @@ function todayIsoDate() {
 }
 
 function StatusBadge({ status }) {
-  const colors = { draft: "bg-gray-100 text-gray-600", active: "bg-green-100 text-green-700", inactive: "bg-gray-100 text-gray-700", expired: "bg-red-100 text-red-600", scheduled: "bg-blue-100 text-blue-600" };
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-gray-100 text-gray-700"}`}>{status || "unknown"}</span>;
+  const colors = { draft: "bg-slate-100 text-slate-600", active: "bg-green-100 text-green-700", inactive: "bg-slate-100 text-slate-700", expired: "bg-red-100 text-red-600", scheduled: "bg-blue-100 text-blue-600" };
+  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-slate-100 text-slate-700"}`}>{status || "unknown"}</span>;
 }
 
 const EMPTY_FORM = {
@@ -122,51 +122,51 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">{editRule ? "Edit Pricing Rule" : "Create Pricing Rule"}</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="px-6 py-4 space-y-4">
           {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
           </div>
-          <div><label className="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Rule Type *</label>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Rule Type *</label>
               <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rule_type} onChange={e => set("rule_type", e.target.value)}>
                 {RULE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Scope</label>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Scope</label>
               <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.scope} onChange={e => set("scope", e.target.value)}>
                 {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Value Type</label>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
               <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
                 {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Value</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Priority</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Value</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
               <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
                 <option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="scheduled">Scheduled</option>
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Usage Limit</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Product ID</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder="Optional" /></div>
-            <div><label className="block text-xs font-medium text-gray-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder="Optional" /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Product ID</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder="Optional" /></div>
+            <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder="Optional" /></div>
           </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -175,7 +175,7 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
           </div>
         </div>
         <div className="flex gap-2 justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Cancel</button>
           <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editRule ? "Update Rule" : "Create Rule"}</button>
         </div>
       </div>
@@ -190,28 +190,28 @@ function DetailModal({ show, onClose, item }) {
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">Pricing Rule Details</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="px-6 py-4 space-y-3">
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-gray-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
-            <div><span className="text-gray-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
-            <div><span className="text-gray-500">Type:</span> <span className="ml-2 capitalize">{item.rule_type?.replace("_", " ")}</span></div>
-            <div><span className="text-gray-500">Scope:</span> <span className="ml-2 capitalize">{item.scope}</span></div>
-            <div><span className="text-gray-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.value}%` : `$${item.value}`}</span></div>
-            <div><span className="text-gray-500">Priority:</span> <span className="ml-2">{item.priority}</span></div>
-            <div><span className="text-gray-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
-            <div><span className="text-gray-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
-            <div><span className="text-gray-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
-            <div><span className="text-gray-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
-            {item.product_id && <div><span className="text-gray-500">Product ID:</span> <span className="ml-2">{item.product_id}</span></div>}
-            {item.region && <div><span className="text-gray-500">Region:</span> <span className="ml-2">{item.region}</span></div>}
-            {item.country && <div><span className="text-gray-500">Country:</span> <span className="ml-2">{item.country}</span></div>}
+            <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
+            <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
+            <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.rule_type?.replace("_", " ")}</span></div>
+            <div><span className="text-slate-500">Scope:</span> <span className="ml-2 capitalize">{item.scope}</span></div>
+            <div><span className="text-slate-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.value}%` : `$${item.value}`}</span></div>
+            <div><span className="text-slate-500">Priority:</span> <span className="ml-2">{item.priority}</span></div>
+            <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
+            <div><span className="text-slate-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
+            <div><span className="text-slate-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
+            <div><span className="text-slate-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
+            {item.product_id && <div><span className="text-slate-500">Product ID:</span> <span className="ml-2">{item.product_id}</span></div>}
+            {item.region && <div><span className="text-slate-500">Region:</span> <span className="ml-2">{item.region}</span></div>}
+            {item.country && <div><span className="text-slate-500">Country:</span> <span className="ml-2">{item.country}</span></div>}
           </div>
-          {item.description && <div className="text-sm"><span className="text-gray-500">Description:</span><p className="mt-1">{item.description}</p></div>}
+          {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
         </div>
         <div className="flex justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Close</button>
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
         </div>
       </div>
     </div>
@@ -267,7 +267,7 @@ export default function PricingRulesPage() {
         <div className="flex flex-wrap gap-3 items-center justify-between">
           <div className="flex gap-2 items-center">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select className="border rounded-lg px-3 py-2 text-sm" value={ruleTypeFilter} onChange={e => setRuleTypeFilter(e.target.value)}>
@@ -282,26 +282,26 @@ export default function PricingRulesPage() {
               <option value="expired">Expired</option>
               <option value="scheduled">Scheduled</option>
             </select>
-            <label className="flex items-center gap-2 text-sm text-gray-600 px-1">
+            <label className="flex items-center gap-2 text-sm text-slate-600 px-1">
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
               Show inactive
             </label>
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-gray-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
           </div>
           <button onClick={() => { setEditRule(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Rule</button>
         </div>
 
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No pricing rules found" /> : (
-          <div className="bg-white rounded-xl border overflow-x-auto">
+          <div className="bg-white rounded-3xl border overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
                 <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Type</th><th className="text-left px-4 py-3">Scope</th><th className="text-center px-4 py-3">Priority</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Effective</th><th className="text-right px-4 py-3">Actions</th></tr>
               </thead>
               <tbody className="divide-y">
                 {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-gray-400">{item.code}</div></td>
+                  <tr key={item.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-400">{item.code}</div></td>
                     <td className="px-4 py-3 text-sm capitalize">{item.rule_type?.replace("_", " ")}</td>
                     <td className="px-4 py-3 text-sm capitalize">{item.scope}</td>
                     <td className="px-4 py-3 text-center text-sm">{item.priority}</td>
@@ -326,7 +326,7 @@ export default function PricingRulesPage() {
         {data.pages > 1 && (
           <div className="flex justify-center gap-2">
             {Array.from({ length: data.pages }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => fetchData(p)} className={`px-3 py-1 rounded text-sm ${p === data.page ? "bg-brand-600 text-white" : "border hover:bg-gray-50"}`}>{p}</button>
+              <button key={p} onClick={() => fetchData(p)} className={`px-3 py-1 rounded text-sm ${p === data.page ? "bg-brand-600 text-white" : "border hover:bg-slate-50"}`}>{p}</button>
             ))}
           </div>
         )}

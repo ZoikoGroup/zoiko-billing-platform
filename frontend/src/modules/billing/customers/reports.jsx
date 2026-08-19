@@ -194,7 +194,7 @@ export default function CustomerReportsPage() {
     <HRPage title="Customer Reports" subtitle="Customer analytics and reporting">
 
       <div className="flex items-center justify-between mb-6">
-        <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+        <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -204,7 +204,7 @@ export default function CustomerReportsPage() {
                 className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.key
                     ? "border-brand-600 text-brand-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
                 }`}
               >
                 <Icon className="h-4 w-4" /> {tab.label}
@@ -221,7 +221,7 @@ export default function CustomerReportsPage() {
             onExportJSON={() => handleAllExport('json')}
           />
           <button onClick={refreshAll} disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
@@ -243,8 +243,8 @@ export default function CustomerReportsPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Customer Status Distribution</h3>
+                <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-4">Customer Status Distribution</h3>
                   {statusChartData.length === 0 ? (
                     <EmptyState icon={Users} title="No status data" />
                   ) : (
@@ -261,8 +261,8 @@ export default function CustomerReportsPage() {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Customer Growth Trend</h3>
+                <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-4">Customer Growth Trend</h3>
                   {customerGrowthData.length === 0 ? (
                     <EmptyState icon={TrendingUp} title="No growth data" />
                   ) : (
@@ -280,11 +280,11 @@ export default function CustomerReportsPage() {
               </div>
 
               {fInvoices.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <div className="bg-white rounded-3xl border border-slate-200 p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Invoice Status Summary</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Invoice Status Summary</h3>
                     <button onClick={() => downloadJSON({ total: totalRevenue, outstanding: totalOutstanding, paid: paidInvoices.length, unpaid: unpaidInvoices.length, overdue: overdueInvoices.length }, "customer-invoice-summary.json")}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" aria-label="Export invoice status summary">
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors" aria-label="Export invoice status summary">
                       <Download className="h-3.5 w-3.5" /> Export
                     </button>
                   </div>
@@ -319,11 +319,11 @@ export default function CustomerReportsPage() {
             <EmptyState icon={DollarSign} title="No revenue data" message="Invoice data will appear here once available." />
           ) : (
             <>
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-900">Top Customers by Revenue</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Top Customers by Revenue</h3>
                   <button onClick={() => downloadJSON(topRevenueCustomers, "top-customers-revenue.json")}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                     <Download className="h-3.5 w-3.5" /> Export
                   </button>
                 </div>
@@ -338,25 +338,25 @@ export default function CustomerReportsPage() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Revenue Details</h3>
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Revenue Details</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Customer</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Revenue</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Invoices</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Avg Invoice</th>
+                      <tr className="border-b border-slate-100">
+                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Customer</th>
+                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Revenue</th>
+                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoices</th>
+                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Avg Invoice</th>
                       </tr>
                     </thead>
                     <tbody>
                       {topRevenueCustomers.map((c, i) => (
-                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-3 px-3 font-medium text-gray-900">{c.name}</td>
-                          <td className="py-3 px-3 text-right font-medium text-gray-900">{formatCurrency(c.revenue, baseCurrency)}</td>
-                          <td className="py-3 px-3 text-right text-gray-500">{c.count}</td>
-                          <td className="py-3 px-3 text-right text-gray-500">{formatCurrency(c.count ? c.revenue / c.count : 0, baseCurrency)}</td>
+                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-3 px-3 font-medium text-slate-900">{c.name}</td>
+                          <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(c.revenue, baseCurrency)}</td>
+                          <td className="py-3 px-3 text-right text-slate-500">{c.count}</td>
+                          <td className="py-3 px-3 text-right text-slate-500">{formatCurrency(c.count ? c.revenue / c.count : 0, baseCurrency)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -382,8 +382,8 @@ export default function CustomerReportsPage() {
                 <StatCard title="Growth Rate" value={customerGrowthData.length > 1 ? `${((customerGrowthData[customerGrowthData.length - 1].cumulative - customerGrowthData[0].cumulative) / Math.max(customerGrowthData[0].cumulative, 1) * 100).toFixed(1)}%` : "—"} icon={TrendingUp} color="from-emerald-500 to-emerald-600" />
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Customer Growth</h3>
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Customer Growth</h3>
                 {customerGrowthData.length === 0 ? (
                   <EmptyState icon={TrendingUp} title="No growth data" />
                 ) : (
@@ -399,8 +399,8 @@ export default function CustomerReportsPage() {
                 )}
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Monthly Revenue Trend</h3>
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Monthly Revenue Trend</h3>
                 {monthlyRevenue.length === 0 ? (
                   <EmptyState icon={DollarSign} title="No revenue data" />
                 ) : (
@@ -430,8 +430,8 @@ export default function CustomerReportsPage() {
             <EmptyState icon={Clock} title="No aging data" message="Aging data will appear here once available." />
           ) : (
             <>
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Outstanding Aging</h3>
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Outstanding Aging</h3>
                 <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={agingChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -447,29 +447,29 @@ export default function CustomerReportsPage() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-900">Aging Details</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Aging Details</h3>
                   <button onClick={() => downloadJSON(agingChartData, "customer-aging.json")}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                     <Download className="h-3.5 w-3.5" /> Export
                   </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Bucket</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Count</th>
+                      <tr className="border-b border-slate-100">
+                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Bucket</th>
+                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Count</th>
                       </tr>
                     </thead>
                     <tbody>
                       {agingChartData.map((b, i) => (
-                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-3 px-3 font-medium text-gray-900">{b.name}</td>
-                          <td className="py-3 px-3 text-right font-medium text-gray-900">{formatCurrency(b.amount, baseCurrency)}</td>
-                          <td className="py-3 px-3 text-right text-gray-500">{b.count}</td>
+                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-3 px-3 font-medium text-slate-900">{b.name}</td>
+                          <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(b.amount, baseCurrency)}</td>
+                          <td className="py-3 px-3 text-right text-slate-500">{b.count}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -491,41 +491,41 @@ export default function CustomerReportsPage() {
             <EmptyState icon={Users} title="No customers" message="Customer data will appear here once available." />
           ) : (
             <>
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-900">All Customers</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">All Customers</h3>
                   <button onClick={() => downloadJSON(fCustomers.map((c) => ({ id: c.id, name: c.display_name || c.company_name, email: c.email, company: c.company_name, status: c.status, created_at: c.created_at })), "all-customers.json")}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                     <Download className="h-3.5 w-3.5" /> Export
                   </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
 <thead>
-                       <tr className="border-b border-gray-100">
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Name</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Email</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Company</th>
-                         <th scope="col" className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Created</th>
+                       <tr className="border-b border-slate-100">
+                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Name</th>
+                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Email</th>
+                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Company</th>
+                         <th scope="col" className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Created</th>
                        </tr>
                      </thead>
                     <tbody>
                       {fCustomers.map((c) => (
-                        <tr key={c.id || c._id} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-3 px-3 font-medium text-gray-900">{c.display_name || c.company_name}</td>
-                          <td className="py-3 px-3 text-gray-500">{c.email || "—"}</td>
-                          <td className="py-3 px-3 text-gray-500">{c.company_name || "—"}</td>
+                        <tr key={c.id || c._id} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-3 px-3 font-medium text-slate-900">{c.display_name || c.company_name}</td>
+                          <td className="py-3 px-3 text-slate-500">{c.email || "—"}</td>
+                          <td className="py-3 px-3 text-slate-500">{c.company_name || "—"}</td>
                           <td className="py-3 px-3 text-center">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               c.status === "active" ? "bg-emerald-100 text-emerald-700" :
                               c.status === "suspended" ? "bg-amber-100 text-amber-700" :
-                              c.status === "inactive" ? "bg-gray-100 text-gray-600" : "bg-blue-100 text-blue-700"
+                              c.status === "inactive" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-700"
                             }`}>
                               {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-gray-500">{formatDisplayDate(c.created_at)}</td>
+                          <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.created_at)}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -195,13 +195,13 @@ export default function PaymentReportsPage() {
   };
 
   const renderTabNav = () => (
-    <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+    <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
       {TABS.map((tab) => {
         const Icon = tab.icon;
         return (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              activeTab === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              activeTab === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>
             <Icon className="h-4 w-4" /> {tab.label}
           </button>
@@ -239,7 +239,7 @@ export default function PaymentReportsPage() {
             onExportJSON={() => handleAllExport('json')}
           />
           <button onClick={refreshAll} disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
@@ -248,34 +248,34 @@ export default function PaymentReportsPage() {
       {activeTab === "overview" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Collected</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
               <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">{completed.length} completed payments</p>
+              <p className="text-xs text-slate-400 mt-1">{completed.length} completed payments</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Refunded</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">{fRefunds.length} refunds</p>
+              <p className="text-xs text-slate-400 mt-1">{fRefunds.length} refunds</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Net Cash Flow</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">Collected minus refunds</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
+              <p className="text-xs text-slate-400 mt-1">Collected minus refunds</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Outstanding</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">{fInvoices.length} invoices</p>
+              <p className="text-xs text-slate-400 mt-1">{fInvoices.length} invoices</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Payment Status Distribution</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Payment Status Distribution</h3>
                 <button onClick={() => downloadJSON(paymentStatusData, "payment-status-distribution.json")}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600" aria-label="Export payment status distribution" title="Export"><Download size={15} /></button>
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export payment status distribution" title="Export"><Download size={15} /></button>
               </div>
               {paymentStatusData.length === 0 ? <EmptyState icon={PieChartIcon} title="No payment data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
@@ -289,11 +289,11 @@ export default function PaymentReportsPage() {
                 </ResponsiveContainer>
               )}
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Payment Value by Status</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Payment Value by Status</h3>
                 <button onClick={() => downloadJSON(paymentValueByStatus, "payment-value-by-status.json")}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600" aria-label="Export payment value by status" title="Export"><Download size={15} /></button>
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export payment value by status" title="Export"><Download size={15} /></button>
               </div>
               {paymentValueByStatus.length === 0 ? <EmptyState icon={BarChart3} title="No value data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
@@ -312,11 +312,11 @@ export default function PaymentReportsPage() {
           </div>
 
           {monthlyChartData.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Monthly Cash Flow</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Monthly Cash Flow</h3>
                 <button onClick={() => downloadCSV(monthlyChartData.map((d) => [d.month, d.value.toFixed(2), d.refunds.toFixed(2), d.net.toFixed(2)]), ["Month", "Collected", "Refunds", "Net"], "monthly-cashflow.csv")}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"><Download className="h-3.5 w-3.5" /> CSV</button>
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"><Download className="h-3.5 w-3.5" /> CSV</button>
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={monthlyChartData}>
@@ -340,22 +340,22 @@ export default function PaymentReportsPage() {
       {activeTab === "collection" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cases</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{fCollectionsCases.length}</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Cases</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{fCollectionsCases.length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Active Cases</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active Cases</p>
               <p className="text-2xl font-bold text-amber-600 mt-1">{fCollectionsCases.filter((c) => c.status === "open" || c.status === "in_progress").length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Escalated</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Escalated</p>
               <p className="text-2xl font-bold text-red-600 mt-1">{fCollectionsCases.filter((c) => c.status === "escalated").length}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">Collections Case Status</h3>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">Collections Case Status</h3>
               {colStatusData.length === 0 ? <EmptyState icon={BarChart3} title="No case data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={colStatusData}>
@@ -368,8 +368,8 @@ export default function PaymentReportsPage() {
                 </ResponsiveContainer>
               )}
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">Dunning Case Status</h3>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">Dunning Case Status</h3>
               {dunStatusData.length === 0 ? <EmptyState icon={BarChart3} title="No dunning data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={dunStatusData}>
@@ -388,11 +388,11 @@ export default function PaymentReportsPage() {
 
       {activeTab === "aging" && (
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900">Aging Distribution</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Aging Distribution</h3>
               <button onClick={() => downloadJSON(agingChartData, "aging-distribution.json")}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600" aria-label="Export aging distribution" title="Export"><Download size={15} /></button>
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export aging distribution" title="Export"><Download size={15} /></button>
             </div>
             {agingChartData.length === 0 ? <EmptyState icon={PieChartIcon} title="No aging data" /> : (
               <ResponsiveContainer width="100%" height={320}>
@@ -408,10 +408,10 @@ export default function PaymentReportsPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {agingChartData.map((a) => (
-              <div key={a.name} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <div key={a.name} className="bg-white rounded-3xl border border-slate-200 p-4 text-center">
                 <div className="w-3 h-3 rounded-full mx-auto mb-1.5" style={{ backgroundColor: a.color }} />
-                <p className="text-lg font-bold text-gray-900">{formatCurrency(a.value, baseCurrency)}</p>
-                <p className="text-xs text-gray-500">{a.name}</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(a.value, baseCurrency)}</p>
+                <p className="text-xs text-slate-500">{a.name}</p>
               </div>
             ))}
           </div>
@@ -421,24 +421,24 @@ export default function PaymentReportsPage() {
       {activeTab === "outstanding" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Outstanding</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Outstanding</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">{fInvoices.length} invoices</p>
+              <p className="text-xs text-slate-400 mt-1">{fInvoices.length} invoices</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Available Credits</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Available Credits</p>
               <p className="text-2xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatCurrency(totalCredits, baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">{fCredits.filter((c) => c.status === "issued").length} issued</p>
+              <p className="text-xs text-slate-400 mt-1">{fCredits.filter((c) => c.status === "issued").length} issued</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Net Receivable</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{formatCurrency(Math.max(0, totalOutstanding - totalCredits), baseCurrency)}</p>
-              <p className="text-xs text-gray-400 mt-1">Outstanding minus credits</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Receivable</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(Math.max(0, totalOutstanding - totalCredits), baseCurrency)}</p>
+              <p className="text-xs text-slate-400 mt-1">Outstanding minus credits</p>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Outstanding Over Time</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Outstanding Over Time</h3>
             {monthlyChartData.length === 0 ? <EmptyState icon={BarChart3} title="No trend data" /> : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={monthlyChartData}>
@@ -458,44 +458,44 @@ export default function PaymentReportsPage() {
       {activeTab === "credit" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Credits</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{fCredits.length}</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Credits</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{fCredits.length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Value</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Value</p>
               <p className="text-2xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatCurrency(sumInBaseCurrency(fCredits, baseCurrency).total, baseCurrency)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Refunds</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunds</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{fRefunds.length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Refund Value</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Refund Value</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Write-offs</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{fWriteOffs.length}</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Write-offs</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{fWriteOffs.length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Written-off Value</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Written-off Value</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalWrittenOff, baseCurrency)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Pending Approval</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Approval</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{fWriteOffs.filter((w) => w.status === "pending_approval").length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Reversed</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Reversed</p>
               <p className="text-2xl font-bold text-orange-600 mt-1 whitespace-nowrap">{fWriteOffs.filter((w) => w.status === "reversed").length}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">Credit Status</h3>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">Credit Status</h3>
               {creditStatusData.length === 0 ? <EmptyState icon={PieChartIcon} title="No credit data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
@@ -508,9 +508,9 @@ export default function PaymentReportsPage() {
                 </ResponsiveContainer>
               )}
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Refund Summary</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Refund Summary</h3>
                 <a href="/billing/refunds/dashboard" className="text-xs text-brand-600 hover:underline">Full Refund Dashboard →</a>
               </div>
               <div className="space-y-4">
@@ -521,10 +521,10 @@ export default function PaymentReportsPage() {
                 ].map((m) => (
                   <div key={m.label}>
                     <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-600">{m.label}</span>
-                      <span className="font-semibold text-gray-900">{m.value}</span>
+                      <span className="text-slate-600">{m.label}</span>
+                      <span className="font-semibold text-slate-900">{m.value}</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="w-full bg-slate-100 rounded-full h-2">
                       <div className={`rounded-full h-2 transition-all ${m.color}`} style={{ width: `${m.total > 0 ? (m.value / m.total) * 100 : 0}%` }} />
                     </div>
                   </div>
@@ -532,9 +532,9 @@ export default function PaymentReportsPage() {
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900">Write-off Summary</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Write-off Summary</h3>
               <a href="/billing/write-offs/dashboard" className="text-xs text-brand-600 hover:underline">Full Write-off Dashboard →</a>
             </div>
             <div className="space-y-4">
@@ -545,10 +545,10 @@ export default function PaymentReportsPage() {
               ].map((m) => (
                 <div key={m.label}>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-600">{m.label}</span>
-                    <span className="font-semibold text-gray-900">{m.value}</span>
+                    <span className="text-slate-600">{m.label}</span>
+                    <span className="font-semibold text-slate-900">{m.value}</span>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div className="w-full bg-slate-100 rounded-full h-2">
                     <div className={`rounded-full h-2 transition-all ${m.color}`} style={{ width: `${m.total > 0 ? (m.value / m.total) * 100 : 0}%` }} />
                   </div>
                 </div>
@@ -566,27 +566,27 @@ export default function PaymentReportsPage() {
             </a>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Recovery Rate</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Recovery Rate</p>
               <p className="text-2xl font-bold text-emerald-600 mt-1">{recoveryRate}%</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Resolved Cases</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{fCollectionsCases.filter((c) => c.status === "resolved" || c.status === "closed").length}</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Resolved Cases</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{fCollectionsCases.filter((c) => c.status === "resolved" || c.status === "closed").length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Active Dunning</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active Dunning</p>
               <p className="text-2xl font-bold text-amber-600 mt-1">{fDunningCases.filter((c) => c.status === "active").length}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Resolved Dunning</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Resolved Dunning</p>
               <p className="text-2xl font-bold text-emerald-600 mt-1">{fDunningCases.filter((c) => c.status === "resolved").length}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Case Resolution Overview</h3>
-              <p className="text-xs text-gray-400 mb-4">Collections and dunning case resolution metrics</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">Case Resolution Overview</h3>
+              <p className="text-xs text-slate-400 mb-4">Collections and dunning case resolution metrics</p>
               <div className="space-y-4">
                 {[
                   { label: "Collection Resolved", pct: fCollectionsCases.length > 0 ? (fCollectionsCases.filter((c) => c.status === "resolved").length / fCollectionsCases.length) * 100 : 0, color: "bg-emerald-400" },
@@ -596,18 +596,18 @@ export default function PaymentReportsPage() {
                 ].map((m) => (
                   <div key={m.label}>
                     <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-600">{m.label}</span>
-                      <span className="font-semibold text-gray-900">{m.pct.toFixed(1)}%</span>
+                      <span className="text-slate-600">{m.label}</span>
+                      <span className="font-semibold text-slate-900">{m.pct.toFixed(1)}%</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="w-full bg-slate-100 rounded-full h-2">
                       <div className={`rounded-full h-2 transition-all ${m.color}`} style={{ width: `${Math.min(m.pct, 100)}%` }} />
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">Dunning Level Distribution</h3>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">Dunning Level Distribution</h3>
               {fDunningCases.length === 0 ? <EmptyState icon={BarChart3} title="No dunning data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={[1, 2, 3, 4, 5].map((l) => ({
@@ -630,29 +630,29 @@ export default function PaymentReportsPage() {
       {activeTab === "cashflow" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Collected</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
               <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Refunded</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Net Cash Flow</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</p>
               <p className="text-2xl font-bold text-brand-600 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Count</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{fPayments.length}</p>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Count</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{fPayments.length}</p>
             </div>
           </div>
           {monthlyChartData.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Monthly Trend</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Monthly Trend</h3>
                 <button onClick={() => downloadCSV(monthlyChartData.map((d) => [d.month, d.count, d.value.toFixed(2)]), ["Month", "Count", "Value"], "monthly-payments.csv")}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"><Download className="h-3.5 w-3.5" /> CSV</button>
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"><Download className="h-3.5 w-3.5" /> CSV</button>
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={monthlyChartData}>
@@ -668,27 +668,27 @@ export default function PaymentReportsPage() {
               </ResponsiveContainer>
             </div>
           )}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Payment Summary</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Payment Summary</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th scope="col" className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Month</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Payments</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Collected</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Refunds</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Net</th>
+                  <tr className="border-b border-slate-100">
+                    <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Month</th>
+                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Payments</th>
+                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Collected</th>
+                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Refunds</th>
+                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Net</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthlyChartData.slice(-12).reverse().map((m) => (
-                    <tr key={m.month} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-3 px-3 font-medium text-gray-900">{m.month}</td>
-                      <td className="py-3 px-3 text-right text-gray-600">{m.count}</td>
+                    <tr key={m.month} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="py-3 px-3 font-medium text-slate-900">{m.month}</td>
+                      <td className="py-3 px-3 text-right text-slate-600">{m.count}</td>
                       <td className="py-3 px-3 text-right font-medium text-emerald-600">{formatCurrency(m.value, baseCurrency)}</td>
                       <td className="py-3 px-3 text-right font-medium text-red-600">{formatCurrency(m.refunds, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-right font-semibold text-gray-900">{formatCurrency(m.net, baseCurrency)}</td>
+                      <td className="py-3 px-3 text-right font-semibold text-slate-900">{formatCurrency(m.net, baseCurrency)}</td>
                     </tr>
                   ))}
                 </tbody>

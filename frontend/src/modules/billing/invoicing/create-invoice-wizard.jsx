@@ -1173,7 +1173,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
               </div>
             ))}
             <button onClick={addLineItem}
-              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-sm font-medium text-slate-500 hover:border-brand-300 hover:text-brand-600 transition-colors flex items-center justify-center gap-2">
+              className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-sm font-medium text-slate-500 hover:border-brand-300 hover:text-brand-600 transition-colors flex items-center justify-center gap-2">
               <Plus size={16} /> Add Line Item
             </button>
           </div>
@@ -1262,7 +1262,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             <div className="flex justify-between text-sm"><span className="text-slate-500">Tax</span><span className="font-medium">{formatDisplayCurrency(totals.tax)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-500">Shipping</span><span className="font-medium">{formatDisplayCurrency(totals.shipping)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-500">Round Off</span><span className="font-medium">{formatDisplayCurrency(totals.roundOff)}</span></div>
-            <div className="border-t border-gray-300 pt-2 flex justify-between"><span className="font-bold text-slate-800">Grand Total</span><span className="font-bold text-lg text-brand-600">{formatDisplayCurrency(totals.grandTotal)}</span></div>
+            <div className="border-t border-slate-300 pt-2 flex justify-between"><span className="font-bold text-slate-800">Grand Total</span><span className="font-bold text-lg text-brand-600">{formatDisplayCurrency(totals.grandTotal)}</span></div>
           </div>
         </div>
       );
@@ -1346,7 +1346,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             {lineItems.some(item => item.original_currency && item.invoice_currency &&
                                      item.original_currency !== item.invoice_currency &&
                                      item.exchange_rate) && (
-              <div className="mt-3 pt-3 border-t border-gray-300">
+              <div className="mt-3 pt-3 border-t border-slate-300">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Currency Conversion</p>
                 <div className="space-y-1 text-xs">
                   {lineItems.map((item, idx) => {
@@ -1366,7 +1366,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                 </div>
               </div>
             )}
-            <div className="border-t border-gray-300 mt-3 pt-3 space-y-1">
+            <div className="border-t border-slate-300 mt-3 pt-3 space-y-1">
               <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span>{formatDisplayCurrency(totals.subtotal)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-slate-500">Discount</span><span className="text-red-600">-{formatDisplayCurrency(totals.discount)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-slate-500">Tax</span><span>{formatDisplayCurrency(totals.tax)}</span></div>

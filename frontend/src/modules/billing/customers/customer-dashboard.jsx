@@ -318,7 +318,7 @@ export default function CustomerDashboard() {
       <StatGroup title="More Metrics">
         <DashboardStatCard title={`Total ${plural}`} value={d.total_customers || 0} subtitle="All registered (lifetime)" icon={Users} color="from-brand to-brand-hover" href="/billing/customers" />
         <DashboardStatCard title="Active" value={d.active_customers || 0} subtitle={`${d.total_customers ? Math.round((d.active_customers / d.total_customers) * 100) : 0}% of total`} icon={CheckCircle} color="from-green-500 to-emerald-500" href="/billing/customers?status=active" />
-        <DashboardStatCard title="Inactive" value={d.inactive_customers || 0} subtitle={`${d.total_customers ? Math.round((d.inactive_customers / d.total_customers) * 100) : 0}% of total`} icon={Clock} color="from-gray-500 to-slate-600" href="/billing/customers?status=inactive" />
+        <DashboardStatCard title="Inactive" value={d.inactive_customers || 0} subtitle={`${d.total_customers ? Math.round((d.inactive_customers / d.total_customers) * 100) : 0}% of total`} icon={Clock} color="from-slate-500 to-slate-600" href="/billing/customers?status=inactive" />
         <DashboardStatCard title="New This Month" value={newThisMonth} subtitle="Joined in the current calendar month" icon={Sparkles} color="from-cyan-500 to-blue-500" href="/billing/customers" />
         <DashboardStatCard title="Avg Revenue/Customer" value={Number(d.avg_revenue_per_customer || 0)} currency={baseCurrency} subtitle="Average per customer (lifetime)" icon={DollarSign} color="from-emerald-500 to-emerald-600" />
       </StatGroup>
@@ -451,23 +451,23 @@ export default function CustomerDashboard() {
       <div className={DASHBOARD_CHART_GRID_3}>
         <DashboardChartCard title="Payment Trends">
           <DashboardChartErrorBoundary>
-            <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <div className="grid grid-cols-2 gap-6 text-center">
                 <div>
                   <p className="text-2xl font-bold text-brand-600 whitespace-nowrap">{d.paid_invoices || 0}</p>
-                  <p className="text-xs text-gray-500 mt-1">Paid Invoices</p>
+                  <p className="text-xs text-slate-500 mt-1">Paid Invoices</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-amber-600 whitespace-nowrap">{d.total_invoices - d.paid_invoices || 0}</p>
-                  <p className="text-xs text-gray-500 mt-1">Unpaid</p>
+                  <p className="text-xs text-slate-500 mt-1">Unpaid</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-emerald-600 whitespace-nowrap">{d.open_quotations || 0}</p>
-                  <p className="text-xs text-gray-500 mt-1">Open Quotations</p>
+                  <p className="text-xs text-slate-500 mt-1">Open Quotations</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-blue-600 whitespace-nowrap">{d.active_subscriptions || 0}</p>
-                  <p className="text-xs text-gray-500 mt-1">Active Subscriptions</p>
+                  <p className="text-xs text-slate-500 mt-1">Active Subscriptions</p>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 mt-6 w-full max-w-sm">
@@ -528,8 +528,8 @@ export default function CustomerDashboard() {
                         {name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
-                        <p className="text-xs text-gray-400 truncate">{status} {singular.toLowerCase()} · joined {formatRelativeTime(c.created_at)}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
+                        <p className="text-xs text-slate-400 truncate">{status} {singular.toLowerCase()} · joined {formatRelativeTime(c.created_at)}</p>
                       </div>
                     </div>
                   );

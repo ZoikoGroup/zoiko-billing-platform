@@ -23,7 +23,7 @@ const TERMINOLOGY_OPTIONS = [
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
@@ -226,7 +226,7 @@ const [original, setOriginal] = useState({});
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Number Preview</p>
           <p className="mt-1 text-lg font-bold text-slate-900">{numberingPreview}</p>
@@ -268,7 +268,7 @@ const [original, setOriginal] = useState({});
         <SettingsField label="Invoice Numbering Format" icon={Hash} description="Invoice number format. Use {PREFIX} and {NUMBER} as placeholders">
           <input type="text" value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
             className={`${inputClass} max-w-xs`} />
-          <p className="mt-1 text-xs text-gray-400">Preview: {numberingPreview}</p>
+          <p className="mt-1 text-xs text-slate-400">Preview: {numberingPreview}</p>
         </SettingsField>
 
         <SettingsField label="Auto-Generate Invoice Numbers" icon={ToggleLeft} description="Automatically generate invoice numbers using the configured prefix/format">
@@ -437,7 +437,7 @@ const [original, setOriginal] = useState({});
           <input type="url" value={form.logo_url} onChange={(e) => updateField("logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
             className={`${inputClass} max-w-xs`} />
-          {form.logo_url && <p className="mt-1 text-xs text-gray-400 truncate max-w-xs">{form.logo_url}</p>}
+          {form.logo_url && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{form.logo_url}</p>}
         </SettingsField>
       </div>
     </div>

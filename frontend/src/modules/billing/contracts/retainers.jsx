@@ -197,20 +197,20 @@ export default function RetainersPage() {
   return (
     <HRPage title="Retainers" subtitle="Manage retainer products">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Retainers</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{retainers.length}</p>
-          <p className="text-xs text-gray-400 mt-1">{activeRetainers} active</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Retainers</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{retainers.length}</p>
+          <p className="text-xs text-slate-400 mt-1">{activeRetainers} active</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Value</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatDisplayCurrency(totalValue, defaultCurrency)}</p>
-          <p className="text-xs text-gray-400 mt-1">Sum of unit prices</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Value</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatDisplayCurrency(totalValue, defaultCurrency)}</p>
+          <p className="text-xs text-slate-400 mt-1">Sum of unit prices</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{retainers.length ? formatDisplayCurrency(totalValue / retainers.length, defaultCurrency) : "—"}</p>
-          <p className="text-xs text-gray-400 mt-1">Per retainer product</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Price</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{retainers.length ? formatDisplayCurrency(totalValue / retainers.length, defaultCurrency) : "—"}</p>
+          <p className="text-xs text-slate-400 mt-1">Per retainer product</p>
         </div>
       </div>
 
@@ -291,7 +291,7 @@ export default function RetainersPage() {
                   <td className="px-4 py-4 text-right font-medium text-slate-800">{formatDisplayCurrency(r.unit_price || r.price, r.currency)}</td>
                   <td className="px-4 py-4 capitalize text-slate-600">{r.billing_period?.replace(/_/g, " ") || "—"}</td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${r.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${r.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                       {r.status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
                       {r.status || "unknown"}
                     </span>
@@ -327,7 +327,7 @@ export default function RetainersPage() {
                   placeholder="e.g. Monthly Consulting Retainer"
                   className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">SKU</label>
                   <input type="text" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
@@ -341,7 +341,7 @@ export default function RetainersPage() {
                     className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Billing Period *</label>
                   <select value={form.billing_period} onChange={(e) => setForm((p) => ({ ...p, billing_period: e.target.value }))}
@@ -390,7 +390,7 @@ export default function RetainersPage() {
                 <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">SKU</label>
                   <input type="text" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
@@ -402,7 +402,7 @@ export default function RetainersPage() {
                     className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Billing Period</label>
                   <select value={form.billing_period} onChange={(e) => setForm((p) => ({ ...p, billing_period: e.target.value }))}

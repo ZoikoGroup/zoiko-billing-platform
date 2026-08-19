@@ -14,7 +14,7 @@ import { PageHeader, Button, DataTable, SearchInput, Select, Modal } from "../..
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "approved", label: "Approved", color: "bg-indigo-100 text-indigo-700" },
   { value: "issued", label: "Issued", color: "bg-blue-100 text-blue-700" },
   { value: "partially_applied", label: "Partially Applied", color: "bg-amber-100 text-amber-700" },

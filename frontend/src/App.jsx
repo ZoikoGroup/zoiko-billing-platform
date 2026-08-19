@@ -258,12 +258,16 @@ function ModuleSpinner() {
 }
 
 function LandingRedirect() {
+  const token = localStorage.getItem("zoiko_billing_access");
   const user = JSON.parse(localStorage.getItem("zoiko_billing_user") || "null");
-  if (user?.role && user.role !== "super_admin") {
-    const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/billing";
-    return <Navigate to={target} replace />;
+  if (!token || !user?.role) {
+    return <Navigate to="/login" replace />;
   }
-  return <Navigate to="/super-admin/dashboard" replace />;
+  if (user.role === "super_admin") {
+    return <Navigate to="/super-admin/dashboard" replace />;
+  }
+  const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/portal";
+  return <Navigate to={target} replace />;
 }
 
 // Substitutes any `:param` segments in a legacy redirect target with the
@@ -374,8 +378,8 @@ export default function App() {
               </BillingShell>
             }
           />
-          <Route path="/" element={<LandingRedirect />} />
         </Route>
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<LandingRedirect />} />
       </Routes>
     </Suspense>

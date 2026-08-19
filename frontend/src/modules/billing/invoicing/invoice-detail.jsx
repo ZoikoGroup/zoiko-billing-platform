@@ -8,7 +8,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 
 function StatusBadge({ status }) {
   const styles = {
-    draft: "bg-gray-100 text-gray-600",
+    draft: "bg-slate-100 text-slate-600",
     pending: "bg-blue-100 text-blue-700",
     sent: "bg-blue-100 text-blue-700",
     paid: "bg-emerald-100 text-emerald-700",
@@ -18,7 +18,7 @@ function StatusBadge({ status }) {
     void: "bg-slate-100 text-slate-500",
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-600"}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ") : "Unknown"}
     </span>
   );
@@ -258,8 +258,8 @@ export default function InvoiceDetailPage() {
           actions={<Button variant="secondary" icon={ArrowLeft} onClick={() => navigate("/billing/invoices")}>Back</Button>}
         />
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <FileText className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Invoice not found</p>
+          <FileText className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Invoice not found</p>
         </div>
       </div>
     );
@@ -397,11 +397,11 @@ export default function InvoiceDetailPage() {
 
         {/* ── HEADER: Summary + Quick Actions ── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Invoice Summary</p>
-                <h2 className="mt-1 text-xl font-bold text-gray-900">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Invoice Summary</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">
                   {invoice.customer_id ? (
                     <button onClick={() => navigate(`/billing/customers/${invoice.customer_id}`)} className="text-brand-600 hover:text-brand-700 hover:underline">
                       {invoice.customer_name || `${singular} #${invoice.customer_id}`}
@@ -410,10 +410,10 @@ export default function InvoiceDetailPage() {
                     invoice.customer_name || `${singular} #${invoice.customer_id || "—"}`
                   )}
                 </h2>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-slate-500">
                   {invoice.invoice_number || `#${id}`} &middot; {currency} &middot; {invoice.payment_terms?.replace(/_/g, " ") || "standard terms"} &middot; issued {formatDisplayDate(invoice.issue_date || invoice.created_at)}
                 </p>
-                {invoice.po_number && <p className="mt-0.5 text-xs text-gray-400">PO: {invoice.po_number}</p>}
+                {invoice.po_number && <p className="mt-0.5 text-xs text-slate-400">PO: {invoice.po_number}</p>}
               </div>
               <StatusBadge status={invoice.status} />
             </div>
@@ -424,7 +424,7 @@ export default function InvoiceDetailPage() {
               </div>
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Tax</p>
-                <p className="mt-1 text-lg font-bold text-gray-900 whitespace-nowrap">{formatDisplayCurrency(invoice.tax_amount || 0, "\u2014", currency)}</p>
+                <p className="mt-1 text-lg font-bold text-slate-900 whitespace-nowrap">{formatDisplayCurrency(invoice.tax_amount || 0, "\u2014", currency)}</p>
               </div>
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Total</p>
@@ -448,15 +448,15 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Quick Actions</p>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Quick Actions</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {isDraft && (
-                <button disabled title="Edit invoice workflow is not registered yet" className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-400 disabled:cursor-not-allowed disabled:opacity-60" aria-label="Edit invoice unavailable">
+                <button disabled title="Edit invoice workflow is not registered yet" className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-400 disabled:cursor-not-allowed disabled:opacity-60" aria-label="Edit invoice unavailable">
                   <Edit3 className="h-3.5 w-3.5" /> Edit
                 </button>
               )}
-              <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" aria-label="Preview or download invoice as PDF">
+              <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Preview or download invoice as PDF">
                 <Printer className="h-3.5 w-3.5" /> {isDraft ? "Preview" : "Download"}
               </button>
               {isDraft && (
@@ -470,32 +470,32 @@ export default function InvoiceDetailPage() {
                 </button>
               )}
               {canRecordPayment && (
-                <button onClick={() => navigate(`/billing/payments?create=1&invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" aria-label="Record payment for this invoice">
+                <button onClick={() => navigate(`/billing/payments?create=1&invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Record payment for this invoice">
                   <CreditCard className="h-3.5 w-3.5" /> Record Payment
                 </button>
               )}
               {invoice.paid_amount > 0 && (
-                <button onClick={() => navigate(`/billing/payments?invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" aria-label="View payments for this invoice">
+                <button onClick={() => navigate(`/billing/payments?invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="View payments for this invoice">
                   <CreditCard className="h-3.5 w-3.5" /> View Payments
                 </button>
               )}
               {canSendEmail && !isDraft && (
-                <button onClick={() => setShowSendModal(true)} disabled={actionLoading === "send-email"} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                <button onClick={() => setShowSendModal(true)} disabled={actionLoading === "send-email"} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   {actionLoading === "send-email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />} {isOverdue ? "Reminder" : "Send Email"}
                 </button>
               )}
               {!isDraft && (
-                <button onClick={() => setShowDuplicateModal(true)} disabled={actionLoading === "duplicate"} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50" aria-label="Duplicate invoice">
+                <button onClick={() => setShowDuplicateModal(true)} disabled={actionLoading === "duplicate"} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" aria-label="Duplicate invoice">
                   {actionLoading === "duplicate" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />} Duplicate
                 </button>
               )}
               {(isSent || isPaid || isOverdue || isPartiallyPaid) && (
-                <button onClick={() => navigate(`/billing/credit-notes?invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" aria-label="Create credit note for this invoice">
+                <button onClick={() => navigate(`/billing/credit-notes?invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Create credit note for this invoice">
                   <Undo2 className="h-3.5 w-3.5" /> Credit Note
                 </button>
               )}
               {isPaid && (
-                <button onClick={() => navigate(`/billing/refunds?create=1&invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" aria-label="Create refund for this invoice">
+                <button onClick={() => navigate(`/billing/refunds?create=1&invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Create refund for this invoice">
                   <RotateCcw className="h-3.5 w-3.5" /> Refund
                 </button>
               )}
@@ -530,73 +530,73 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* ── CUSTOMER INFORMATION ── */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">{singular} Information</h3>
+        <div className="rounded-3xl border border-slate-200 bg-white p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">{singular} Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Name</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Name</p>
                 {invoice.customer_id ? (
                   <button onClick={() => navigate(`/billing/customers/${invoice.customer_id}`)} className="text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline text-left mt-0.5 block">
                     {invoice.customer_name || invoice.customer_display_name || invoice.customer_company_name || "—"}
                   </button>
                 ) : (
-                  <p className="text-sm font-semibold text-gray-900 mt-0.5">{invoice.customer_name || invoice.customer_display_name || invoice.customer_company_name || "—"}</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-0.5">{invoice.customer_name || invoice.customer_display_name || invoice.customer_company_name || "—"}</p>
                 )}
                 {(invoice.customer_first_name || invoice.customer_last_name) && (
-                  <p className="text-xs text-gray-500">{invoice.customer_first_name || ""} {invoice.customer_last_name || ""}</p>
+                  <p className="text-xs text-slate-500">{invoice.customer_first_name || ""} {invoice.customer_last_name || ""}</p>
                 )}
               </div>
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Email</p>
-                <p className="text-sm text-gray-900 mt-0.5">{invoice.customer_email || "—"}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Email</p>
+                <p className="text-sm text-slate-900 mt-0.5">{invoice.customer_email || "—"}</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</p>
-                <p className="text-sm text-gray-900 mt-0.5">{invoice.customer_phone || invoice.customer_mobile || "—"}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Phone</p>
+                <p className="text-sm text-slate-900 mt-0.5">{invoice.customer_phone || invoice.customer_mobile || "—"}</p>
               </div>
               {(invoice.customer_gst_number || invoice.customer_vat_number || invoice.customer_pan || invoice.customer_tax_id) && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tax IDs</p>
-                  {invoice.customer_gst_number && <p className="text-sm text-gray-900 mt-0.5">GST: {invoice.customer_gst_number}</p>}
-                  {invoice.customer_vat_number && <p className="text-sm text-gray-900">VAT: {invoice.customer_vat_number}</p>}
-                  {invoice.customer_pan && <p className="text-sm text-gray-900">PAN: {invoice.customer_pan}</p>}
-                  {invoice.customer_tax_id && <p className="text-sm text-gray-900">{invoice.customer_tax_id_type || "Tax"}: {invoice.customer_tax_id}</p>}
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tax IDs</p>
+                  {invoice.customer_gst_number && <p className="text-sm text-slate-900 mt-0.5">GST: {invoice.customer_gst_number}</p>}
+                  {invoice.customer_vat_number && <p className="text-sm text-slate-900">VAT: {invoice.customer_vat_number}</p>}
+                  {invoice.customer_pan && <p className="text-sm text-slate-900">PAN: {invoice.customer_pan}</p>}
+                  {invoice.customer_tax_id && <p className="text-sm text-slate-900">{invoice.customer_tax_id_type || "Tax"}: {invoice.customer_tax_id}</p>}
                 </div>
               )}
             </div>
             <div className="space-y-3">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Address</p>
-                <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-line">{invoice.customer_billing_address || "—"}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Address</p>
+                <p className="text-sm text-slate-900 mt-0.5 whitespace-pre-line">{invoice.customer_billing_address || "—"}</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Shipping Address</p>
-                <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-line">{invoice.customer_shipping_address || "—"}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Shipping Address</p>
+                <p className="text-sm text-slate-900 mt-0.5 whitespace-pre-line">{invoice.customer_shipping_address || "—"}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {invoice.customer_credit_days != null && (
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Days</p>
-                    <p className="text-sm text-gray-900 mt-0.5">{invoice.customer_credit_days} days</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Days</p>
+                    <p className="text-sm text-slate-900 mt-0.5">{invoice.customer_credit_days} days</p>
                   </div>
                 )}
                 {invoice.customer_payment_terms && (
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Terms</p>
-                    <p className="text-sm text-gray-900 mt-0.5">{invoice.customer_payment_terms.replace(/_/g, " ")}</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Terms</p>
+                    <p className="text-sm text-slate-900 mt-0.5">{invoice.customer_payment_terms.replace(/_/g, " ")}</p>
                   </div>
                 )}
                 {invoice.customer_currency && (
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{singular} Currency</p>
-                    <p className="text-sm text-gray-900 mt-0.5">{invoice.customer_currency}</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{singular} Currency</p>
+                    <p className="text-sm text-slate-900 mt-0.5">{invoice.customer_currency}</p>
                   </div>
                 )}
                 {invoice.customer_credit_limit != null && (
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Limit</p>
-                    <p className="text-sm text-gray-900 mt-0.5">{formatDisplayCurrency(invoice.customer_credit_limit, "\u2014", currency)}</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Limit</p>
+                    <p className="text-sm text-slate-900 mt-0.5">{formatDisplayCurrency(invoice.customer_credit_limit, "\u2014", currency)}</p>
                   </div>
                 )}
               </div>
@@ -606,76 +606,76 @@ export default function InvoiceDetailPage() {
 
         {/* ── FINANCIAL SUMMARY ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Tax Summary</h4>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-3">Tax Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Tax Amount</span>
+                <span className="text-slate-500">Tax Amount</span>
                 <span className="font-medium">{formatDisplayCurrency(invoice.tax_amount || 0, "\u2014", currency)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Tax %</span>
+                <span className="text-slate-500">Tax %</span>
                 <span className="font-medium">—</span>
               </div>
-              <div className="border-t border-gray-100 pt-2 flex justify-between">
-                <span className="font-semibold text-gray-700">Total Tax</span>
-                <span className="font-bold text-gray-900">{formatDisplayCurrency(invoice.tax_amount || 0, "\u2014", currency)}</span>
+              <div className="border-t border-slate-100 pt-2 flex justify-between">
+                <span className="font-semibold text-slate-700">Total Tax</span>
+                <span className="font-bold text-slate-900">{formatDisplayCurrency(invoice.tax_amount || 0, "\u2014", currency)}</span>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Discount Summary</h4>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-3">Discount Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Discount %</span>
+                <span className="text-slate-500">Discount %</span>
                 <span className="font-medium">{invoice.discount_percentage || 0}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Discount Amount</span>
+                <span className="text-slate-500">Discount Amount</span>
                 <span className="font-medium text-red-600">-{formatDisplayCurrency(invoice.discount_amount || 0, "\u2014", currency)}</span>
               </div>
-              <div className="border-t border-gray-100 pt-2 flex justify-between">
-                <span className="font-semibold text-gray-700">Total Discount</span>
+              <div className="border-t border-slate-100 pt-2 flex justify-between">
+                <span className="font-semibold text-slate-700">Total Discount</span>
                 <span className="font-bold text-red-600">-{formatDisplayCurrency(invoice.discount_amount || 0, "\u2014", currency)}</span>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Payment Summary</h4>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-3">Payment Summary</h4>
             <div className="space-y-2 text-sm">
               {Number(invoice.shipping_amount || 0) !== 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Shipping</span>
+                  <span className="text-slate-500">Shipping</span>
                   <span className="font-medium">{formatDisplayCurrency(invoice.shipping_amount, "\u2014", currency)}</span>
                 </div>
               )}
               {Number(invoice.round_off || 0) !== 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Round Off</span>
+                  <span className="text-slate-500">Round Off</span>
                   <span className="font-medium">{formatDisplayCurrency(invoice.round_off, "\u2014", currency)}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-gray-500">Invoice Total</span>
+                <span className="text-slate-500">Invoice Total</span>
                 <span className="font-medium">{formatDisplayCurrency(invoice.total_amount ?? invoice.amount, "\u2014", currency)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Paid Amount</span>
+                <span className="text-slate-500">Paid Amount</span>
                 <span className="font-medium text-emerald-600">{formatDisplayCurrency(paidAmount, "\u2014", currency)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Balance Due</span>
+                <span className="text-slate-500">Balance Due</span>
                 <span className="font-bold text-amber-700">{formatDisplayCurrency(balanceDue, "\u2014", currency)}</span>
               </div>
               {invoice.paid_at && (
-                <div className="border-t border-gray-100 pt-2">
-                  <p className="text-xs text-gray-400">Paid on {formatDisplayDate(invoice.paid_at)}</p>
+                <div className="border-t border-slate-100 pt-2">
+                  <p className="text-xs text-slate-400">Paid on {formatDisplayDate(invoice.paid_at)}</p>
                 </div>
               )}
               {invoice.cancelled_at && (
-                <div className="border-t border-gray-100 pt-2">
+                <div className="border-t border-slate-100 pt-2">
                   <p className="text-xs text-red-400">Cancelled on {formatDisplayDate(invoice.cancelled_at)}</p>
-                  {invoice.cancellation_reason && <p className="text-xs text-gray-400">Reason: {invoice.cancellation_reason}</p>}
+                  {invoice.cancellation_reason && <p className="text-xs text-slate-400">Reason: {invoice.cancellation_reason}</p>}
                 </div>
               )}
             </div>
@@ -684,29 +684,29 @@ export default function InvoiceDetailPage() {
 
         {/* ── CURRENCY & EXCHANGE RATE ── */}
         {(invoice.exchange_rate && invoice.exchange_rate != 1) || invoice.currency ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Currency Information</h4>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-3">Currency Information</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice Currency</p>
-                <p className="text-gray-900 mt-0.5 font-medium">{currency}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Invoice Currency</p>
+                <p className="text-slate-900 mt-0.5 font-medium">{currency}</p>
               </div>
               {invoice.customer_currency && invoice.customer_currency !== currency && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{singular} Currency</p>
-                  <p className="text-gray-900 mt-0.5">{invoice.customer_currency}</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{singular} Currency</p>
+                  <p className="text-slate-900 mt-0.5">{invoice.customer_currency}</p>
                 </div>
               )}
               {!(invoice.exchange_rate == null || invoice.exchange_rate == 1) && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Exchange Rate</p>
-                  <p className="text-gray-900 mt-0.5 font-mono">{Number(invoice.exchange_rate).toFixed(6)}</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Exchange Rate</p>
+                  <p className="text-slate-900 mt-0.5 font-mono">{Number(invoice.exchange_rate).toFixed(6)}</p>
                 </div>
               )}
               {invoice.subtotal && invoice.total_amount && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</p>
-                  <p className="text-gray-900 mt-0.5">{formatDisplayCurrency(invoice.subtotal, "\u2014", currency)}</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Subtotal</p>
+                  <p className="text-slate-900 mt-0.5">{formatDisplayCurrency(invoice.subtotal, "\u2014", currency)}</p>
                 </div>
               )}
             </div>
@@ -715,12 +715,12 @@ export default function InvoiceDetailPage() {
 
         {/* ── LINE ITEMS ── */}
         {items.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Line Items</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Line Items</h3>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-slate-200">
                 <thead>
-                  <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                     <th className="text-left py-3 px-4">#</th>
                     <th className="text-left py-3 px-4">Description</th>
                     <th className="text-right py-3 px-4">Qty</th>
@@ -730,13 +730,13 @@ export default function InvoiceDetailPage() {
                     <th className="text-right py-3 px-4">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {items.map((item, i) => (
-                    <tr key={item.id || i} className="text-sm text-gray-900">
-                      <td className="py-3 px-4 text-gray-400">{i + 1}</td>
+                    <tr key={item.id || i} className="text-sm text-slate-900">
+                      <td className="py-3 px-4 text-slate-400">{i + 1}</td>
                       <td className="py-3 px-4">
                         <p className="font-medium">{item.description || item.name || "Item"}</p>
-                        {item.product_id && <p className="text-xs text-gray-400">Product #{item.product_id}</p>}
+                        {item.product_id && <p className="text-xs text-slate-400">Product #{item.product_id}</p>}
                       </td>
                       <td className="py-3 px-4 text-right">{Number(item.quantity).toFixed(2)}</td>
                       <td className="py-3 px-4 text-right">{formatDisplayCurrency(item.unit_price, "\u2014", item.invoice_currency || currency)}</td>
@@ -768,22 +768,22 @@ export default function InvoiceDetailPage() {
 
         {/* ── NOTES ── */}
         {invoice.notes && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Notes</h4>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{invoice.notes}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-3">Notes</h4>
+            <p className="text-sm text-slate-700 whitespace-pre-wrap">{invoice.notes}</p>
           </div>
         )}
 
         {/* ── ACTIVITY TIMELINE ── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <RefreshCw className="h-4 w-4 text-brand-500" /> Activity Timeline
           </h3>
           <ActivityTimeline entries={timelineEntries} emptyMessage="No activity recorded for this invoice yet." />
         </div>
         {/* -- COMMUNICATIONS -- */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <Mail className="h-4 w-4 text-brand-500" /> Communication History
           </h3>
           <CommunicationHistory entries={communicationEntries} emptyMessage="No communications sent for this invoice yet." />
@@ -843,17 +843,17 @@ export default function InvoiceDetailPage() {
             </span>
           </div>
         )}
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           This will email invoice <strong>{invoice.invoice_number || `#${id}`}</strong> to the {getLabel("singularLower")}'s registered email address.
         </p>
         <div className="bg-slate-50 rounded-xl p-4 mb-4">
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-500">{singular}:</span>
-            <span className="font-medium text-gray-900">{invoice.customer_name || `#${invoice.customer_id}`}</span>
+            <span className="text-slate-500">{singular}:</span>
+            <span className="font-medium text-slate-900">{invoice.customer_name || `#${invoice.customer_id}`}</span>
           </div>
           <div className="flex items-center gap-2 text-sm mt-1">
-            <span className="text-gray-500">Amount:</span>
-            <span className="font-medium text-gray-900">{formatDisplayCurrency(invoice.total_amount ?? invoice.amount, "\u2014", currency)}</span>
+            <span className="text-slate-500">Amount:</span>
+            <span className="font-medium text-slate-900">{formatDisplayCurrency(invoice.total_amount ?? invoice.amount, "\u2014", currency)}</span>
           </div>
         </div>
         {/* View Invoice & Payment Options preview */}
@@ -893,13 +893,13 @@ export default function InvoiceDetailPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           Are you sure you want to mark invoice <strong>{invoice.invoice_number || `#${id}`}</strong> as paid? This will set the balance due to zero.
         </p>
         <div className="bg-slate-50 rounded-xl p-4 mb-4">
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-500">Amount:</span>
-            <span className="font-medium text-gray-900">{formatDisplayCurrency(balanceDue, "\u2014", currency)}</span>
+            <span className="text-slate-500">Amount:</span>
+            <span className="font-medium text-slate-900">{formatDisplayCurrency(balanceDue, "\u2014", currency)}</span>
           </div>
         </div>
       </Modal>
@@ -920,7 +920,7 @@ export default function InvoiceDetailPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           Are you sure you want to cancel invoice <strong>{invoice.invoice_number || `#${id}`}</strong>? This action is <span className="font-semibold text-red-600">irreversible</span> and the invoice will no longer be payable.
         </p>
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-sm text-red-700">
@@ -949,7 +949,7 @@ export default function InvoiceDetailPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-slate-600 mb-4">
           This will create a new draft invoice for the same {getLabel("singularLower")} with the same line items, dated today. Invoice <strong>{invoice.invoice_number || `#${id}`}</strong> itself is not affected.
         </p>
       </Modal>

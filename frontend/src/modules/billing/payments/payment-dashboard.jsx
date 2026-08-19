@@ -43,7 +43,7 @@ const STATUS_OPTIONS = [
   { value: "processing", label: "Processing", color: "bg-sky-100 text-sky-700" },
   { value: "failed", label: "Failed", color: "bg-red-100 text-red-700" },
   { value: "refunded", label: "Refunded", color: "bg-blue-100 text-blue-700" },
-  { value: "cancelled", label: "Cancelled", color: "bg-gray-100 text-gray-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-700" },
 ];
 
 const STATUS_COLORS = {

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Zoiko Billing Platform Backend"
     APP_VERSION: str = "1.0.0"
     APP_PORT: int = 8001
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -45,9 +45,9 @@ class Settings(BaseSettings):
             return value
         if isinstance(value, str):
             normalized = value.strip().lower()
-            if normalized in {"release", "prod", "production"}:
+            if normalized in {"release", "prod", "production", "false", "0", "off", "no"}:
                 return False
-            if normalized in {"dev", "development"}:
+            if normalized in {"dev", "development", "true", "1", "yes", "on"}:
                 return True
         return value
 

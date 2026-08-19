@@ -9,7 +9,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
@@ -108,7 +108,7 @@ export default function QuotationSettingsPage() {
             </span>
           )}
           <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button onClick={saveSettings} disabled={!hasChanges || saving}
@@ -135,7 +135,7 @@ export default function QuotationSettingsPage() {
             type="text"
             value={form.quote_prefix}
             onChange={(e) => updateField("quote_prefix", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </SettingsField>
 
@@ -145,7 +145,7 @@ export default function QuotationSettingsPage() {
           description="Default currency for new quotations"
         >
           <select value={form.default_currency} onChange={(e) => updateField("default_currency", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {getCurrencySelectOptions().map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </SettingsField>
@@ -160,7 +160,7 @@ export default function QuotationSettingsPage() {
             onChange={(e) => updateField("default_terms_and_conditions", e.target.value)}
             rows={4}
             placeholder="Payment terms, delivery terms, validity..."
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </SettingsField>
 
@@ -174,11 +174,11 @@ export default function QuotationSettingsPage() {
             value={form.quote_logo_url}
             onChange={(e) => updateField("quote_logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </SettingsField>
 
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+        <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
           <div className="flex items-center gap-3 mb-4">
             <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
               <AlertCircle size={20} />

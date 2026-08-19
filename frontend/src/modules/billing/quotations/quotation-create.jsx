@@ -602,26 +602,26 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number *</label>
           <input type="text" value={form.quote_number}
             onChange={(e) => setForm((p) => ({ ...p, quote_number: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Valid Until</label>
           <input type="date" value={form.valid_until}
             onChange={(e) => setForm((p) => ({ ...p, valid_until: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Subject</label>
         <input type="text" placeholder="Brief description..." value={form.subject}
           onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
           <select value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {getCurrencySelectOptions().map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
@@ -638,12 +638,12 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Notes (Internal)</label>
         <textarea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-          rows={2} placeholder="Internal notes..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          rows={2} placeholder="Internal notes..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Terms & Conditions</label>
         <textarea value={form.terms} onChange={(e) => setForm((p) => ({ ...p, terms: e.target.value }))}
-          rows={3} placeholder="Payment terms, delivery terms, validity..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          rows={3} placeholder="Payment terms, delivery terms, validity..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
       </div>
     </div>
   );
@@ -772,31 +772,31 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                         <label className="block text-xs text-slate-500 mb-1">Qty</label>
                         <input type="number" min="0.01" step="0.01" value={item.quantity}
                           onChange={(e) => updateLineItem(item.id, "quantity", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Unit Price</label>
                         <input type="number" min="0" step="0.01" value={item.unit_price}
                           onChange={(e) => updateLineItem(item.id, "unit_price", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Discount %</label>
                         <input type="number" min="0" max="100" step="0.1" value={item.discount_percentage}
                           onChange={(e) => updateLineItem(item.id, "discount_percentage", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Tax %</label>
                         <input type="number" min="0" max="100" step="0.1" value={item.tax_percentage}
                           onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-xs text-slate-500 mb-1">Description</label>
                         <input type="text" value={item.description}
                           onChange={(e) => updateLineItem(item.id, "description", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                     </div>
                     {item.product_type === "retainer" && (

@@ -364,7 +364,7 @@ export default function ContractDashboardPage() {
           <div className={DASHBOARD_KPI_GRID}>
             <DashboardStatCard title="Total Contracts" value={contractsTotal.toLocaleString()} icon={FileSignature} color="from-brand to-brand-hover" href="/billing/contracts" />
             <DashboardStatCard title="Active" value={kpis.activeCount.toLocaleString()} subtitle={contractsTotal ? `${Math.round((kpis.activeCount / contractsTotal) * 100)}% of total` : undefined} icon={CheckCircle} color="from-emerald-500 to-emerald-600" href="/billing/contracts?status=active" />
-            <DashboardStatCard title="Expired" value={kpis.expiredCount.toLocaleString()} subtitle={isSampled ? "In most recent sample" : undefined} icon={XCircle} color="from-gray-500 to-slate-600" href="/billing/contracts?status=expired" />
+            <DashboardStatCard title="Expired" value={kpis.expiredCount.toLocaleString()} subtitle={isSampled ? "In most recent sample" : undefined} icon={XCircle} color="from-slate-500 to-slate-600" href="/billing/contracts?status=expired" />
             <DashboardStatCard title="Upcoming Expiry (30d)" value={expiringContracts.length.toLocaleString()} subtitle="Renewal window" icon={Clock} color="from-amber-500 to-orange-500" />
           </div>
 

@@ -18,7 +18,7 @@ const STATUS_STYLES = {
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
       {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
     </span>
   );
@@ -94,8 +94,8 @@ export default function CollectionsCaseDetailPage() {
     return (
       <HRPage title="Collections Case" subtitle="Not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <BarChart3 className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Collections case not found</p>
+          <BarChart3 className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Collections case not found</p>
         </div>
       </HRPage>
     );
@@ -108,7 +108,7 @@ export default function CollectionsCaseDetailPage() {
       title={caseData.case_number || `Collections Case #${caseData.id}`}
       subtitle={<StatusBadge status={caseData.status} />}
       actions={
-        <button onClick={() => navigate("/billing/collections-receivables")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+        <button onClick={() => navigate("/billing/collections-receivables")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }
@@ -123,10 +123,10 @@ export default function CollectionsCaseDetailPage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Case Summary</p>
-            <h2 className="mt-1 text-xl font-bold text-gray-900">{caseData.customer_name || `Customer #${caseData.customer_id}`}</h2>
-            <p className="mt-1 text-sm text-gray-500">Invoice {caseData.invoice_number || `#${caseData.invoice_id}`}</p>
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Case Summary</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">{caseData.customer_name || `Customer #${caseData.customer_id}`}</h2>
+            <p className="mt-1 text-sm text-slate-500">Invoice {caseData.invoice_number || `#${caseData.invoice_id}`}</p>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Outstanding</p>
@@ -158,8 +158,8 @@ export default function CollectionsCaseDetailPage() {
               </div>
             )}
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Quick Actions</p>
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Quick Actions</p>
             <div className="mt-4 grid grid-cols-1 gap-2">
               {canWork && (
                 <>
@@ -190,20 +190,20 @@ export default function CollectionsCaseDetailPage() {
         </div>
 
         {timeline.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4 text-brand-500" /> Timeline &amp; Audit History
             </h3>
             <div className="relative">
-              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
+              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-slate-200" />
               <div className="space-y-4">
                 {timeline.map((entry, i) => (
                   <div key={i} className="relative flex items-start gap-4 pl-10">
                     <div className="absolute left-2.5 w-3 h-3 rounded-full border-2 mt-1.5 bg-brand-400 border-brand-400" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-900">{entry.title}</span>
-                      {entry.description && <p className="text-xs text-gray-500 mt-0.5">{entry.description}</p>}
-                      <p className="text-xs text-gray-400 mt-1">{formatDisplayDate(entry.timestamp)}</p>
+                      <span className="text-sm font-medium text-slate-900">{entry.title}</span>
+                      {entry.description && <p className="text-xs text-slate-500 mt-0.5">{entry.description}</p>}
+                      <p className="text-xs text-slate-400 mt-1">{formatDisplayDate(entry.timestamp)}</p>
                     </div>
                   </div>
                 ))}
@@ -216,11 +216,11 @@ export default function CollectionsCaseDetailPage() {
       {assignModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAssignModal({ open: false, assignedTo: "" })}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Assign Case</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Assign Case</h2>
             <input type="number" placeholder="Employee ID" value={assignModal.assignedTo} onChange={(e) => setAssignModal((p) => ({ ...p, assignedTo: e.target.value }))}
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
-              <button onClick={() => setAssignModal({ open: false, assignedTo: "" })} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+              <button onClick={() => setAssignModal({ open: false, assignedTo: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
               <button
                 onClick={async () => { const to = Number(assignModal.assignedTo); setAssignModal({ open: false, assignedTo: "" }); await handleAction("assign", () => collectionApi.assignCase(caseData.id, to)); }}
                 disabled={!assignModal.assignedTo}
@@ -235,7 +235,7 @@ export default function CollectionsCaseDetailPage() {
       {actionModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setActionModal({ open: false, description: "", outcome: "" })}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Log Collection Action</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Log Collection Action</h2>
             <div className="space-y-3">
               <textarea value={actionModal.description} onChange={(e) => setActionModal((p) => ({ ...p, description: e.target.value }))} rows={2} placeholder="What happened?"
                 className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -243,7 +243,7 @@ export default function CollectionsCaseDetailPage() {
                 className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setActionModal({ open: false, description: "", outcome: "" })} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+              <button onClick={() => setActionModal({ open: false, description: "", outcome: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
               <button
                 onClick={async () => {
                   const { description, outcome } = actionModal;
@@ -261,16 +261,16 @@ export default function CollectionsCaseDetailPage() {
       {resolveModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Resolve Collections Case</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Resolve Collections Case</h2>
             <textarea value={resolveModal.resolution} onChange={(e) => setResolveModal((p) => ({ ...p, resolution: e.target.value }))} rows={3} placeholder="How was this resolved? (required)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <label className="block text-xs font-medium text-gray-500 mb-1">Amount Collected (optional)</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Amount Collected (optional)</label>
             <input type="number" min="0" step="0.01" value={resolveModal.amountCollected}
               onChange={(e) => setResolveModal((p) => ({ ...p, amountCollected: e.target.value }))}
               placeholder="0.00"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
-              <button onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+              <button onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
               <button
                 onClick={async () => {
                   const { resolution, amountCollected } = resolveModal;

@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import exc as sa_exc, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -132,7 +132,11 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
 # ── Login ───────────────────────────────────────────────────────────────────
 
 def login_user(db: Session, email: str, password: str) -> dict:
-    user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    except sa_exc.OperationalError:
+        logger.error("Database connection failed during login for %s", email)
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None or not verify_password(password, user.hashed_password):
         raise UnauthorizedException("Invalid email or password.")
 
@@ -172,7 +176,11 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
     if payload is None:
         raise UnauthorizedException("Invalid or expired refresh token.")
 
-    user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    try:
+        user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    except sa_exc.OperationalError:
+        logger.error("Database connection failed during token refresh")
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None or not user.is_active:
         raise UnauthorizedException("User not found or inactive.")
 

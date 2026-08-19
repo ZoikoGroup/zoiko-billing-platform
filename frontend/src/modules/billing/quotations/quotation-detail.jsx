@@ -11,7 +11,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-600" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "accepted", label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
@@ -36,13 +36,13 @@ const TABS = [
 
 function TabNav({ tabs, active, onChange }) {
   return (
-    <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+    <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
           <button key={tab.key} onClick={() => onChange(tab.key)}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>
             <Icon className="h-4 w-4" /> {tab.label}
           </button>
@@ -231,8 +231,8 @@ export default function QuotationDetailPage() {
     return (
       <HRPage title="Quotation Detail" subtitle="Quotation not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <FileSignature className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Quotation not found</p>
+          <FileSignature className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Quotation not found</p>
         </div>
       </HRPage>
     );
@@ -252,25 +252,25 @@ export default function QuotationDetailPage() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
           <div className="mt-2"><StatusBadge status={quote.status} /></div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(quote.total_amount, quote.currency)}</p>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Amount</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(quote.total_amount, quote.currency)}</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Valid Until</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatDisplayDate(quote.valid_until)}</p>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Valid Until</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatDisplayDate(quote.valid_until)}</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Items</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{items.length}</p>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Items</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{items.length}</p>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Quotation Information</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-4">Quotation Information</h3>
         <div className="grid grid-cols-2 gap-x-8">
           <InfoRow label="Quote Number" value={quote.quote_number} />
           <InfoRow label="Version" value={`v${quote.quote_version || 1}`} />
@@ -329,7 +329,7 @@ export default function QuotationDetailPage() {
   const renderCustomer = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h3>
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h3>
         {quote.customer_id && (
           <button onClick={() => navigate(`/billing/customers/${quote.customer_id}`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors">
@@ -386,7 +386,7 @@ export default function QuotationDetailPage() {
 
   const renderProducts = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Line Items ({items.length})</h3>
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Line Items ({items.length})</h3>
       {items.length === 0 ? (
         <div className="text-center py-8 text-slate-400">
           <Package size={32} className="mx-auto mb-2 text-slate-300" />
@@ -394,9 +394,9 @@ export default function QuotationDetailPage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th scope="col" className="text-left py-3 px-4">#</th>
                 <th scope="col" className="text-left py-3 px-4">Description</th>
                 <th scope="col" className="text-right py-3 px-4">Qty</th>
@@ -406,19 +406,19 @@ export default function QuotationDetailPage() {
                 <th scope="col" className="text-right py-3 px-4">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {items.map((item, i) => (
                 <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
-                  className={`text-sm text-gray-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                  <td className="py-3 px-4 text-gray-400">{item.line_number || i + 1}</td>
+                  className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
+                  <td className="py-3 px-4 text-slate-400">{item.line_number || i + 1}</td>
                   <td className="py-3 px-4">
                     <p className="font-medium text-slate-800">{item.description || "Item"}</p>
                     {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
                   </td>
                   <td className="py-3 px-4 text-right">{parseFloat(item.quantity).toFixed(2)}</td>
                   <td className="py-3 px-4 text-right">{formatDisplayCurrency(item.unit_price, quote.currency)}</td>
-                  <td className="py-3 px-4 text-right text-gray-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
-                  <td className="py-3 px-4 text-right text-gray-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
+                  <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
+                  <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
                   <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(item.total_amount, quote.currency)}</td>
                 </tr>
               ))}
@@ -435,7 +435,7 @@ export default function QuotationDetailPage() {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Subtotal ({items.length} items)</span>
@@ -456,7 +456,7 @@ export default function QuotationDetailPage() {
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h3>
           <div className="space-y-3">
           <InfoRow label="Currency" value={quote.currency || orgDefaultCurrency} />
             <InfoRow label="Discount %" value={discPct > 0 ? `${discPct}%` : "—"} />
@@ -472,7 +472,7 @@ export default function QuotationDetailPage() {
 
   const renderTimeline = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
       <div className="space-y-4">
         <TimelineEvent icon={FileSignature} label="Created" date={quote.created_at} color="bg-brand-500" />
         {quote.sent_at && <TimelineEvent icon={Send} label={`Sent to ${singular}`} date={quote.sent_at} color="bg-blue-500" />}
@@ -501,13 +501,13 @@ export default function QuotationDetailPage() {
     <div className="space-y-6">
       {quote.notes && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{quote.notes}</p>
         </div>
       )}
       {quote.terms && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Terms & Conditions</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Terms & Conditions</h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{quote.terms}</p>
         </div>
       )}
@@ -522,7 +522,7 @@ export default function QuotationDetailPage() {
 
   const renderActivity = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
       <div className="space-y-3">
         <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
           <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center"><FileSignature size={14} /></div>
@@ -587,7 +587,7 @@ export default function QuotationDetailPage() {
       actions={
         <div className="flex items-center gap-2">
           <button onClick={() => navigate("/billing/quotations")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
         </div>
@@ -609,7 +609,7 @@ export default function QuotationDetailPage() {
 
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Actions</h3>
             <div className="space-y-3">
               {quote.status === "draft" && (
                 <>
@@ -619,7 +619,7 @@ export default function QuotationDetailPage() {
                     Send Quotation
                   </button>
                   <button onClick={() => handleAction("recalculate")} disabled={isActing("recalculate")}
-                    className={`${btnClass} w-full text-gray-700 bg-gray-100 hover:bg-gray-200`}>
+                    className={`${btnClass} w-full text-slate-700 bg-slate-100 hover:bg-slate-200`}>
                     {isActing("recalculate") ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                     Recalculate
                   </button>
@@ -688,7 +688,7 @@ export default function QuotationDetailPage() {
                 </div>
               )}
 
-              <div className="border-t border-gray-100 pt-3 mt-3">
+              <div className="border-t border-slate-100 pt-3 mt-3">
                 <button onClick={() => handleAction("duplicate")} disabled={isActing("duplicate")}
                   className={`${btnClass} w-full text-slate-700 bg-slate-50 hover:bg-slate-100`}>
                   {isActing("duplicate") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
@@ -699,7 +699,7 @@ export default function QuotationDetailPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Summary</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-medium">{formatDisplayCurrency(quote.subtotal, quote.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Tax</span><span className="font-medium">{formatDisplayCurrency(quote.tax_amount, quote.currency)}</span></div>
@@ -714,14 +714,14 @@ export default function QuotationDetailPage() {
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRejectModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Reject Quotation</h3>
-            <p className="text-sm text-gray-500 mb-4">Provide a reason for rejecting this quotation.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Reject Quotation</h3>
+            <p className="text-sm text-slate-500 mb-4">Provide a reason for rejecting this quotation.</p>
             <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
               rows={3} placeholder="Reason for rejection..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleReject} disabled={!rejectReason.trim() || isActing("reject")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
                 {isActing("reject") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Reject
@@ -734,11 +734,11 @@ export default function QuotationDetailPage() {
       {showCancelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCancelModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Cancel Quotation</h3>
-            <p className="text-sm text-gray-500 mb-4">Are you sure you want to cancel this quotation? This action cannot be undone.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Cancel Quotation</h3>
+            <p className="text-sm text-slate-500 mb-4">Are you sure you want to cancel this quotation? This action cannot be undone.</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowCancelModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleCancelConfirm} disabled={isActing("cancel")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
                 {isActing("cancel") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Quotation
@@ -751,32 +751,32 @@ export default function QuotationDetailPage() {
       {showConvertContractModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowConvertContractModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Convert to Contract</h3>
-            <p className="text-sm text-gray-500 mb-4">Create a contract from this accepted quotation.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Convert to Contract</h3>
+            <p className="text-sm text-slate-500 mb-4">Create a contract from this accepted quotation.</p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Contract Name</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Contract Name</label>
                 <input type="text" value={convertContractForm.contract_name}
                   onChange={(e) => setConvertContractForm((f) => ({ ...f, contract_name: e.target.value }))}
                   placeholder={quote.subject || "Contract from " + quote.quote_number}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
                 <input type="date" value={convertContractForm.start_date}
                   onChange={(e) => setConvertContractForm((f) => ({ ...f, start_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">End Date (optional)</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">End Date (optional)</label>
                 <input type="date" value={convertContractForm.end_date}
                   onChange={(e) => setConvertContractForm((f) => ({ ...f, end_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
               </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowConvertContractModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleConvertToContract}
                 disabled={!convertContractForm.start_date || isActing("convertContract")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
@@ -790,32 +790,32 @@ export default function QuotationDetailPage() {
       {showConvertModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowConvertModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Convert to Invoice</h3>
-            <p className="text-sm text-gray-500 mb-4">Create an invoice from this accepted quotation.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Convert to Invoice</h3>
+            <p className="text-sm text-slate-500 mb-4">Create an invoice from this accepted quotation.</p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Number</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Invoice Number</label>
                 <input type="text" value={convertForm.invoice_number}
                   onChange={(e) => setConvertForm((f) => ({ ...f, invoice_number: e.target.value }))}
                   placeholder="INV-0001"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Issue Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Issue Date</label>
                 <input type="date" value={convertForm.issue_date}
                   onChange={(e) => setConvertForm((f) => ({ ...f, issue_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Due Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Due Date</label>
                 <input type="date" value={convertForm.due_date}
                   onChange={(e) => setConvertForm((f) => ({ ...f, due_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowConvertModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleConvert}
                 disabled={!convertForm.invoice_number || !convertForm.issue_date || !convertForm.due_date || isActing("convert")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">

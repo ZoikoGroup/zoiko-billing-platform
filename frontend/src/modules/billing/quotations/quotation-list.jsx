@@ -13,7 +13,7 @@ import { useBillingDateRange } from "../utils/DateRangeContext";
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-600" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "accepted", label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },

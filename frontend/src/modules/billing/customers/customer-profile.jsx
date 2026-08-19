@@ -24,11 +24,11 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, conf
         <div className={`h-12 w-12 rounded-full flex items-center justify-center mx-auto mb-4 ${variant === 'danger' ? 'bg-red-100' : 'bg-brand-100'}`}>
           {variant === 'danger' ? <AlertCircle className="h-6 w-6 text-red-600" /> : <CheckCircle className="h-6 w-6 text-brand-600" />}
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">{title}</h3>
-        <p className="text-sm text-gray-500 text-center mb-6">{message}</p>
+        <h3 className="text-lg font-semibold text-slate-900 text-center mb-2">{title}</h3>
+        <p className="text-sm text-slate-500 text-center mb-6">{message}</p>
         <div className="flex gap-3 justify-center">
           <button onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
@@ -96,16 +96,16 @@ const TABS = [
 function StatusBadge({ status }) {
   const styles = {
     active: 'bg-emerald-100 text-emerald-700',
-    inactive: 'bg-gray-100 text-gray-600',
+    inactive: 'bg-slate-100 text-slate-600',
     suspended: 'bg-amber-100 text-amber-700',
     pending: 'bg-blue-100 text-blue-700',
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${
         status === 'active' ? 'bg-emerald-500' :
         status === 'suspended' ? 'bg-amber-500' :
-        status === 'inactive' ? 'bg-gray-400' : 'bg-blue-500'
+        status === 'inactive' ? 'bg-slate-400' : 'bg-blue-500'
       }`} />
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'}
     </span>
@@ -117,12 +117,12 @@ function InvoiceStatusBadge({ status }) {
     paid: 'bg-emerald-100 text-emerald-700',
     unpaid: 'bg-amber-100 text-amber-700',
     overdue: 'bg-red-100 text-red-700',
-    draft: 'bg-gray-100 text-gray-600',
+    draft: 'bg-slate-100 text-slate-600',
     cancelled: 'bg-slate-100 text-slate-500',
     void: 'bg-slate-100 text-slate-500',
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'}
     </span>
   );
@@ -134,20 +134,20 @@ function InlineEditField({ label, value, editing, onChange, type = 'text', requi
   if (!editing) {
     return (
       <div>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
-        <p className="text-sm text-gray-900 mt-0.5">{value || '—'}</p>
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</p>
+        <p className="text-sm text-slate-900 mt-0.5">{value || '—'}</p>
       </div>
     );
   }
   return (
     <div>
-      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</label>
+      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
-        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
       />
     </div>
   );
@@ -868,7 +868,7 @@ export default function CustomerProfilePage() {
     <HRPage title={customer?.display_name || customer?.company_name || `${singular} Profile`} subtitle={`${singular} #${id}`}>
 
       <div className="mb-4">
-        <button onClick={() => navigate('/billing/customers')} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+        <button onClick={() => navigate('/billing/customers')} className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back to {plural}
         </button>
       </div>
@@ -879,7 +879,7 @@ export default function CustomerProfilePage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="h-14 w-14 rounded-full bg-brand-100 flex items-center justify-center">
@@ -887,10 +887,10 @@ export default function CustomerProfilePage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-gray-900">{customer?.display_name || customer?.company_name}</h2>
+                <h2 className="text-xl font-bold text-slate-900">{customer?.display_name || customer?.company_name}</h2>
                 <StatusBadge status={customer?.status} />
               </div>
-              <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+              <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
                 {customer?.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {customer.email}</span>}
                 {customer?.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {customer.phone}</span>}
                 {customer?.company_name && <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {customer.company_name}</span>}
@@ -900,7 +900,7 @@ export default function CustomerProfilePage() {
           <div className="flex items-center gap-2">
             {customer?.status === 'active' && (
               <button onClick={() => handleAction('deactivate')} disabled={actionLoading}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors">
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors">
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Deactivate
               </button>
             )}
@@ -916,7 +916,7 @@ export default function CustomerProfilePage() {
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />} Suspend
               </button>
             )}
-            <button onClick={refreshAll} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            <button onClick={refreshAll} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
           </div>
@@ -925,29 +925,29 @@ export default function CustomerProfilePage() {
 
       {/* Business Dashboard Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Outstanding</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding</p>
           <p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(customer?.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.outstanding_balance || 0, baseCurrency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
           <p className="text-xl font-bold text-emerald-600 mt-1 truncate" title={formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Limit</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Limit</p>
           <p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Balance</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Balance</p>
           <p className="text-xl font-bold text-blue-600 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Lifetime Value</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Lifetime Value</p>
           <p className="text-xl font-bold text-brand-600 mt-1 truncate" title={formatDisplayCurrency(customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Invoices</p>
-          <p className="text-xl font-bold text-gray-800 mt-1 whitespace-nowrap">{customer?.total_invoices || 0}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Invoices</p>
+          <p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{customer?.total_invoices || 0}</p>
         </div>
       </div>
 
@@ -988,7 +988,7 @@ export default function CustomerProfilePage() {
         </div>
       </div>
 
-      <div className="border-b border-gray-200 mb-6">
+      <div className="border-b border-slate-200 mb-6">
         <nav className="flex gap-0 -mb-px overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
@@ -999,7 +999,7 @@ export default function CustomerProfilePage() {
                 className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.key
                     ? 'border-brand-600 text-brand-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                 }`}
               >
                 <Icon className="h-4 w-4" /> {tab.label}
@@ -1014,8 +1014,8 @@ export default function CustomerProfilePage() {
           {/* Health + Insights Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Customer Health */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><AlertCircle size={14} className="text-brand-500" /> {singular} Health</h4>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><AlertCircle size={14} className="text-brand-500" /> {singular} Health</h4>
               {(() => {
                 const hasOverdue = invoices.some((i) => i.status === 'overdue');
                 const hasUnpaid = invoices.some((i) => i.status === 'unpaid' || i.status === 'sent');
@@ -1024,7 +1024,7 @@ export default function CustomerProfilePage() {
                 const needsAttention = customer?.status === 'active' && (hasOverdue || nearCreditLimit);
                 let healthStatus, healthColor, healthBg;
                 if (customer?.status === 'inactive' || customer?.status === 'suspended') {
-                  healthStatus = 'Inactive'; healthColor = 'text-gray-600'; healthBg = 'bg-gray-100';
+                  healthStatus = 'Inactive'; healthColor = 'text-slate-600'; healthBg = 'bg-slate-100';
                 } else if (isHealthy) {
                   healthStatus = 'Healthy'; healthColor = 'text-emerald-700'; healthBg = 'bg-emerald-100';
                 } else if (needsAttention) {
@@ -1035,18 +1035,18 @@ export default function CustomerProfilePage() {
                 return (
                   <>
                     <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${healthBg} ${healthColor} mb-3`}>
-                      <span className={`w-2 h-2 rounded-full ${healthColor === 'text-emerald-700' ? 'bg-emerald-500' : healthColor === 'text-amber-700' ? 'bg-amber-500' : healthColor === 'text-gray-600' ? 'bg-gray-400' : 'bg-blue-500'}`} />
+                      <span className={`w-2 h-2 rounded-full ${healthColor === 'text-emerald-700' ? 'bg-emerald-500' : healthColor === 'text-amber-700' ? 'bg-amber-500' : healthColor === 'text-slate-600' ? 'bg-slate-400' : 'bg-blue-500'}`} />
                       {healthStatus}
                     </div>
                     {customer?.credit_limit > 0 && (
                       <div className="mb-3">
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-gray-500">Credit Utilization</span>
+                          <span className="text-slate-500">Credit Utilization</span>
                           <span className={`font-medium ${((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 80 ? 'text-red-600' : ((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
                             {((customer.outstanding_balance || 0) / customer.credit_limit * 100).toFixed(0)}%
                           </span>
                         </div>
-                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full transition-all duration-500 ${
                             ((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 80 ? 'bg-red-500' :
                             ((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 50 ? 'bg-amber-500' : 'bg-emerald-500'
@@ -1055,12 +1055,12 @@ export default function CustomerProfilePage() {
                       </div>
                     )}
                     <div className="space-y-2 text-xs">
-                      <div className="flex justify-between"><span className="text-gray-500">Overdue Invoices</span><span className="font-medium text-gray-800">{invoices.filter((i) => i.status === 'overdue').length}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Unpaid Invoices</span><span className="font-medium text-gray-800">{invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent').length}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Active Contracts</span><span className="font-medium text-gray-800">{contracts.filter((c) => c.status === 'active').length}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Active Subscriptions</span><span className="font-medium text-gray-800">{subscriptions.filter((s) => s.status === 'active').length}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Credit Balance</span><span className="font-medium text-gray-800">{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Lifetime Value</span><span className="font-medium text-gray-800">{formatDisplayCurrency(customer?.lifetime_value || 0, baseCurrency)}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Overdue Invoices</span><span className="font-medium text-slate-800">{invoices.filter((i) => i.status === 'overdue').length}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Unpaid Invoices</span><span className="font-medium text-slate-800">{invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent').length}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Active Contracts</span><span className="font-medium text-slate-800">{contracts.filter((c) => c.status === 'active').length}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Active Subscriptions</span><span className="font-medium text-slate-800">{subscriptions.filter((s) => s.status === 'active').length}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Credit Balance</span><span className="font-medium text-slate-800">{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Lifetime Value</span><span className="font-medium text-slate-800">{formatDisplayCurrency(customer?.lifetime_value || 0, baseCurrency)}</span></div>
                     </div>
                   </>
                 );
@@ -1068,8 +1068,8 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Customer Insights */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Insights</h4>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Insights</h4>
               {(() => {
                 const thisYear = new Date().getFullYear();
                 const invThisYear = invoices.filter((i) => {
@@ -1085,27 +1085,27 @@ export default function CustomerProfilePage() {
                 const successRate = totalPmts > 0 ? (successfulPmts / totalPmts * 100).toFixed(0) : '—';
                 return (
                   <div className="space-y-2 text-xs">
-                    <div className="flex justify-between"><span className="text-gray-500">Invoices This Year</span><span className="font-medium text-gray-800">{invThisYear.length}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Payments This Year</span><span className="font-medium text-gray-800">{pmtThisYear.length}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Revenue This Year</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(revenueThisYear, baseCurrency)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Avg Invoice Value</span><span className="font-medium text-gray-800">{formatDisplayCurrency(avgInvoice, baseCurrency)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Payment Success Rate</span><span className="font-medium text-gray-800">{successRate}{successRate !== '—' ? '%' : ''}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Last Invoice</span><span className="font-medium text-gray-800">{invoices.length > 0 ? formatDisplayDate(invoices[0]?.issue_date || invoices[0]?.created_at) : '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Last Payment</span><span className="font-medium text-gray-800">{payments.length > 0 ? formatDisplayDate(payments[0]?.payment_date || payments[0]?.created_at) : '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Invoices This Year</span><span className="font-medium text-slate-800">{invThisYear.length}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Payments This Year</span><span className="font-medium text-slate-800">{pmtThisYear.length}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Revenue This Year</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(revenueThisYear, baseCurrency)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Avg Invoice Value</span><span className="font-medium text-slate-800">{formatDisplayCurrency(avgInvoice, baseCurrency)}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Payment Success Rate</span><span className="font-medium text-slate-800">{successRate}{successRate !== '—' ? '%' : ''}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Last Invoice</span><span className="font-medium text-slate-800">{invoices.length > 0 ? formatDisplayDate(invoices[0]?.issue_date || invoices[0]?.created_at) : '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Last Payment</span><span className="font-medium text-slate-800">{payments.length > 0 ? formatDisplayDate(payments[0]?.payment_date || payments[0]?.created_at) : '—'}</span></div>
                   </div>
                 );
               })()}
             </div>
 
             {/* Activity Timeline */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Activity size={14} className="text-brand-500" /> Activity Timeline</h4>
+            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Activity size={14} className="text-brand-500" /> Activity Timeline</h4>
               {activityLoading ? (
-                <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-gray-300" /></div>
+                <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
               ) : activityError ? (
                 <p className="text-xs text-red-500 text-center py-6 flex items-center justify-center gap-1.5"><AlertCircle size={13} /> {activityError}</p>
               ) : activity.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-6">No recent activity</p>
+                <p className="text-xs text-slate-400 text-center py-6">No recent activity</p>
               ) : (
                 <div className="space-y-3">
                   {activity.slice(0, 10).map((entry) => {
@@ -1123,25 +1123,25 @@ export default function CustomerProfilePage() {
                       update: 'bg-blue-100 text-blue-600',
                       delete: 'bg-red-100 text-red-600',
                       activate: 'bg-emerald-100 text-emerald-600',
-                      deactivate: 'bg-gray-100 text-gray-600',
+                      deactivate: 'bg-slate-100 text-slate-600',
                       send: 'bg-brand-100 text-brand-600',
                       payment: 'bg-amber-100 text-amber-600',
                     };
                     const actionKey = entry.action?.toLowerCase() || '';
                     const icon = actionIcons[actionKey] || <Clock className="h-3 w-3" />;
-                    const color = actionColors[actionKey] || 'bg-gray-100 text-gray-600';
+                    const color = actionColors[actionKey] || 'bg-slate-100 text-slate-600';
                     return (
                       <div key={entry.id} className="flex items-start gap-2.5 text-xs">
                         <div className={`h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${color}`}>
                           {icon}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-700">
+                          <p className="font-medium text-slate-700">
                             {entry.action ? entry.action.charAt(0).toUpperCase() + entry.action.slice(1) : 'Activity'}
-                            {entry.entity_type && <span className="text-gray-400 font-normal"> · {entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''}</span>}
+                            {entry.entity_type && <span className="text-slate-400 font-normal"> · {entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''}</span>}
                           </p>
-                          {entry.changes ? <p className="text-gray-400 mt-0.5 truncate">{typeof entry.changes === "string" ? entry.changes : JSON.stringify(entry.changes)}</p> : entry.details ? <p className="text-gray-400 mt-0.5 truncate">{entry.details}</p> : null}
-                          <p className="text-gray-400 mt-0.5">{formatDisplayDate(entry.timestamp || entry.created_at)}</p>
+                          {entry.changes ? <p className="text-slate-400 mt-0.5 truncate">{typeof entry.changes === "string" ? entry.changes : JSON.stringify(entry.changes)}</p> : entry.details ? <p className="text-slate-400 mt-0.5 truncate">{entry.details}</p> : null}
+                          <p className="text-slate-400 mt-0.5">{formatDisplayDate(entry.timestamp || entry.created_at)}</p>
                         </div>
                       </div>
                     );
@@ -1155,10 +1155,10 @@ export default function CustomerProfilePage() {
           </div>
 
           {/* Financial Overview */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><DollarSign size={14} className="text-brand-500" /> Financial Overview</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><DollarSign size={14} className="text-brand-500" /> Financial Overview</h3>
             {analyticsLoading ? (
-              <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-gray-300" /></div>
+              <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div className="bg-brand-50 rounded-lg p-4">
@@ -1177,22 +1177,22 @@ export default function CustomerProfilePage() {
                   <p className="text-[10px] font-medium text-blue-600 uppercase">Credit Balance</p>
                   <p className="text-lg font-bold text-blue-700 mt-1 truncate" title={formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-[10px] font-medium text-gray-500 uppercase">Last Invoice Date</p>
-                  <p className="text-sm font-bold text-gray-800 mt-1">{invoices.length > 0 ? formatDisplayDate(invoices[0]?.issue_date || invoices[0]?.created_at) : '—'}</p>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-[10px] font-medium text-slate-500 uppercase">Last Invoice Date</p>
+                  <p className="text-sm font-bold text-slate-800 mt-1">{invoices.length > 0 ? formatDisplayDate(invoices[0]?.issue_date || invoices[0]?.created_at) : '—'}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-[10px] font-medium text-gray-500 uppercase">Last Payment Date</p>
-                  <p className="text-sm font-bold text-gray-800 mt-1">{payments.length > 0 ? formatDisplayDate(payments[0]?.payment_date || payments[0]?.created_at) : '—'}</p>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-[10px] font-medium text-slate-500 uppercase">Last Payment Date</p>
+                  <p className="text-sm font-bold text-slate-800 mt-1">{payments.length > 0 ? formatDisplayDate(payments[0]?.payment_date || payments[0]?.created_at) : '—'}</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* Existing Detail Sections */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">{singular} Details</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{singular} Details</h3>
               <div className="flex items-center gap-2">
                 {editing ? (
                   <>
@@ -1231,7 +1231,7 @@ export default function CustomerProfilePage() {
                       tags: customer?.tags || [],
                       notes: customer?.notes || '',
                     }); }}
-                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                       Cancel
                     </button>
                     <button onClick={handleSave} disabled={saving}
@@ -1250,7 +1250,7 @@ export default function CustomerProfilePage() {
 
             {/* Company Information Section */}
             <div className="mb-8">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><Building2 size={16} className="text-brand-500" /> Company Information</h4>
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><Building2 size={16} className="text-brand-500" /> Company Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <InlineEditField label="Display Name" value={editForm.display_name} editing={editing} onChange={(v) => setEditForm({ ...editForm, display_name: v })} />
                 <InlineEditField label="Company Name" value={editForm.company_name} editing={editing} onChange={(v) => setEditForm({ ...editForm, company_name: v })} />
@@ -1258,10 +1258,10 @@ export default function CustomerProfilePage() {
                 {!editing && <InlineEditField label="Customer Code" value={customer?.customer_code} editing={false} />}
                 {editing ? (
                   <div>
-                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Type</label>
+                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Customer Type</label>
                     <select value={editForm.customer_type}
                       onChange={(v) => setEditForm({ ...editForm, customer_type: v.target.value })}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                      className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                       {CUSTOMER_TYPES.map((t) => (
                         <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
                       ))}
@@ -1282,10 +1282,10 @@ export default function CustomerProfilePage() {
                 <InlineEditField label="Industry" value={editing ? editForm.industry : (customer?.industry || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, industry: v })} />
                 {editing ? (
                   <div>
-                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Count</label>
+                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Employee Count</label>
                     <input type="number" min="0" value={editForm.employee_count}
                       onChange={(v) => setEditForm({ ...editForm, employee_count: v.target.value })}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                 ) : customer?.employee_count ? (
                   <InlineEditField label="Employee Count" value={String(customer.employee_count)} editing={false} />
@@ -1295,8 +1295,8 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Contact Information Section */}
-            <div className="mb-8 pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><Mail size={16} className="text-brand-500" /> Contact Information</h4>
+            <div className="mb-8 pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><Mail size={16} className="text-brand-500" /> Contact Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <InlineEditField label="Email" value={editForm.email} editing={editing} onChange={(v) => setEditForm({ ...editForm, email: v })} type="email" />
                 <InlineEditField label="Alternate Email" value={editing ? editForm.alternate_email : (customer?.alternate_email || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, alternate_email: v })} type="email" />
@@ -1307,16 +1307,16 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Billing Profile Section */}
-            <div className="mb-8 pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><CreditCard size={16} className="text-brand-500" /> Billing Profile</h4>
+            <div className="mb-8 pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><CreditCard size={16} className="text-brand-500" /> Billing Profile</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {editing ? (
                   <>
                     <div>
-                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Default Currency</label>
+                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Default Currency</label>
                       <select value={editForm.currency}
                         onChange={(v) => setEditForm({ ...editForm, currency: v.target.value })}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                         <option value="">Select currency</option>
                         {getCurrencySelectOptions().map((c) => (
                           <option key={c.value} value={c.value}>{c.value} - {c.label}</option>
@@ -1324,14 +1324,14 @@ export default function CustomerProfilePage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Terms</label>
+                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Terms</label>
                       <select value={editForm.payment_terms}
                         onChange={(v) => {
                           const terms = v.target.value;
                           const TERMS_MAP = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60, net_90: 90 };
                           setEditForm({ ...editForm, payment_terms: terms, credit_days: TERMS_MAP[terms] ?? 30 });
                         }}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                         <option value="due_on_receipt">Due on Receipt</option>
                         <option value="net_15">Net 15</option>
                         <option value="net_30">Net 30</option>
@@ -1341,16 +1341,16 @@ export default function CustomerProfilePage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Limit</label>
+                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Limit</label>
                       <input type="number" min="0" step="0.01" value={editForm.credit_limit}
                         onChange={(v) => setEditForm({ ...editForm, credit_limit: v.target.value })}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Days</label>
+                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Days</label>
                       <input type="number" min="0" step="1" value={editForm.credit_days ?? ''}
                         onChange={(v) => setEditForm({ ...editForm, credit_days: v.target.value === '' ? '' : Math.max(0, parseInt(v.target.value, 10) || 0) })}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                     </div>
                   </>
                 ) : (
@@ -1366,20 +1366,20 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Addresses Section */}
-            <div className="mb-8 pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><MapPin size={16} className="text-brand-500" /> Addresses</h4>
+            <div className="mb-8 pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><MapPin size={16} className="text-brand-500" /> Addresses</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   {editing ? (
                     <>
-                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Address</label>
+                      <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Address</label>
                       <textarea rows={3} value={editForm.billing_address}
                         onChange={(v) => setEditForm({ ...editForm, billing_address: v.target.value })}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                        className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       <div className="mt-3">
-                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Country</label>
+                        <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Country</label>
                         <select value={editForm.billing_country || ''} onChange={(e) => { const country = e.target.value; const curInfo = getCurrencyForCountry(country); setEditForm((p) => ({ ...p, billing_country: country, shipping_country: p.shipping_same_as_billing ? country : p.shipping_country, currency: p.currency || (curInfo ? curInfo.code : p.currency) })); }}
-                          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                          className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                           <option value="">Select Country</option>
                           {getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}
                         </select>
@@ -1395,22 +1395,22 @@ export default function CustomerProfilePage() {
                 <div>
                   {editing ? (
                     <>
-                      <label className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-500 mb-2">
                         <input type="checkbox" checked={editForm.shipping_same_as_billing}
                           onChange={(e) => setEditForm({ ...editForm, shipping_same_as_billing: e.target.checked, shipping_address: e.target.checked ? editForm.billing_address : (customer?.shipping_address || ''), shipping_country: e.target.checked ? editForm.billing_country : (customer?.shipping_country || '') })}
-                          className="rounded border-gray-300 text-brand-600 focus:ring-brand/30" />
+                          className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
                         Same as Billing Address
                       </label>
                       {!editForm.shipping_same_as_billing && (
                         <>
-                          <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Shipping Address</label>
+                          <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Shipping Address</label>
                           <textarea rows={3} value={editForm.shipping_address}
                             onChange={(v) => setEditForm({ ...editForm, shipping_address: v.target.value })}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                            className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                           <div className="mt-3">
-                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Shipping Country</label>
+                            <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Shipping Country</label>
                             <select value={editForm.shipping_country || ''} onChange={(e) => setEditForm((p) => ({ ...p, shipping_country: e.target.value }))}
-                              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                               <option value="">Select Country</option>
                               {getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}
                             </select>
@@ -1429,8 +1429,8 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Tax Information Section */}
-            <div className="mb-8 pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><Building2 size={16} className="text-brand-500" /> Tax Information</h4>
+            <div className="mb-8 pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><Building2 size={16} className="text-brand-500" /> Tax Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {getCustomerTaxFields(editing ? editForm.billing_country : customer?.billing_country).map((f) => (
                   <InlineEditField
@@ -1442,7 +1442,7 @@ export default function CustomerProfilePage() {
                   />
                 ))}
                 {editing && !editForm.billing_country && (
-                  <p className="lg:col-span-3 text-xs text-gray-400">Set a billing country in Addresses above to show its relevant tax identifier(s).</p>
+                  <p className="lg:col-span-3 text-xs text-slate-400">Set a billing country in Addresses above to show its relevant tax identifier(s).</p>
                 )}
                 <InlineEditField label="Tax ID Type" value={editing ? editForm.tax_id_type : (customer?.tax_id_type || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, tax_id_type: v })} />
                 <InlineEditField label="Tax Category" value={editing ? editForm.tax_category : (customer?.tax_category || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, tax_category: v })} />
@@ -1450,8 +1450,8 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* Tags Section */}
-            <div className="mb-8 pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4"><Tag size={16} className="text-brand-500" /> Tags</h4>
+            <div className="mb-8 pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-4"><Tag size={16} className="text-brand-500" /> Tags</h4>
               {editing ? (
                 <div>
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -1471,7 +1471,7 @@ export default function CustomerProfilePage() {
                         }
                       }}
                       placeholder="Type a tag and press Enter"
-                      className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                     <button type="button" onClick={() => {
                       if (tagInput.trim() && !(Array.isArray(editForm.tags) ? editForm.tags : []).includes(tagInput.trim())) {
                         setEditForm({ ...editForm, tags: [...(editForm.tags || []), tagInput.trim()] });
@@ -1486,30 +1486,30 @@ export default function CustomerProfilePage() {
                 <div className="flex flex-wrap gap-2">
                   {Array.isArray(customer?.tags) && customer.tags.length > 0
                     ? customer.tags.map((tag, i) => <TagBadge key={i} tag={tag} />)
-                    : <span className="text-sm text-gray-400">No tags</span>}
+                    : <span className="text-sm text-slate-400">No tags</span>}
                 </div>
               )}
             </div>
 
             {/* Account Summary Section */}
-            <div className="pt-6 border-t border-gray-100">
-              <h4 className="text-sm font-semibold text-gray-900 mb-4">Account Summary</h4>
+            <div className="pt-6 border-t border-slate-100">
+              <h4 className="text-sm font-semibold text-slate-900 mb-4">Account Summary</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Created</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">{formatDisplayDate(customer?.created_at || customer?.createdAt)}</p>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Created</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">{formatDisplayDate(customer?.created_at || customer?.createdAt)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">{formatDisplayDate(customer?.updated_at || customer?.updatedAt)}</p>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Updated</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">{formatDisplayDate(customer?.updated_at || customer?.updatedAt)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Invoices</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">{invoices.length}</p>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Invoices</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">{invoices.length}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">
                     <StatusBadge status={customer?.status} />
                   </p>
                 </div>
@@ -1517,14 +1517,14 @@ export default function CustomerProfilePage() {
             </div>
 
             {customer?.notes && (
-              <div className="mt-6 pt-6 border-t border-gray-100">
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Notes</h4>
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Notes</h4>
                 {editing ? (
                   <textarea rows={2} value={editForm.notes}
                     onChange={(v) => setEditForm({ ...editForm, notes: v.target.value })}
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 ) : (
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{customer?.notes || '—'}</p>
+                  <p className="text-sm text-slate-600 whitespace-pre-wrap">{customer?.notes || '—'}</p>
                 )}
               </div>
             )}
@@ -1533,15 +1533,15 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'contacts' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Contacts ({contacts.length})</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Contacts ({contacts.length})</h3>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input value={contactSearch} onChange={(e) => setContactSearch(e.target.value)}
-                  placeholder="Search contacts..." className="pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
-                {contactSearch && <button onClick={() => setContactSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
+                  placeholder="Search contacts..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
+                {contactSearch && <button onClick={() => setContactSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
               <button onClick={() => { setShowContactForm(true); setEditingContactId(null); setContactForm({ first_name: '', last_name: '', email: '', phone: '', job_title: '', department: '', is_primary: false }); }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
@@ -1557,41 +1557,41 @@ export default function CustomerProfilePage() {
           )}
 
           {showContactForm && (
-            <form onSubmit={handleSaveContact} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">{editingContactId ? 'Edit Contact' : 'Add Contact'}</h4>
+            <form onSubmit={handleSaveContact} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">{editingContactId ? 'Edit Contact' : 'Add Contact'}</h4>
               {contactFormError && (
                 <p className="mb-3 text-xs text-red-600">{contactFormError}</p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">First Name *</label>
                   <input required value={contactForm.first_name} onChange={(e) => setContactForm({ ...contactForm, first_name: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Last Name *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Last Name *</label>
                   <input required value={contactForm.last_name} onChange={(e) => setContactForm({ ...contactForm, last_name: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Email *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
                   <input type="email" required value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
                   <input value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Job Title</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
                   <input value={contactForm.job_title} onChange={(e) => setContactForm({ ...contactForm, job_title: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Department</label>
                   <select value={contactForm.department} onChange={(e) => setContactForm({ ...contactForm, department: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                     <option value="">Select department</option>
                     <option value="Billing">Billing</option>
                     <option value="Finance">Finance</option>
@@ -1605,8 +1605,8 @@ export default function CustomerProfilePage() {
               <div className="flex items-center gap-2 mt-3">
                 <input type="checkbox" id="is_primary" checked={contactForm.is_primary}
                   onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })}
-                  className="rounded border-gray-300 text-brand-600 focus:ring-brand/30" />
-                <label htmlFor="is_primary" className="text-sm text-gray-700">Set as primary contact</label>
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                <label htmlFor="is_primary" className="text-sm text-slate-700">Set as primary contact</label>
               </div>
               <div className="flex gap-2 mt-4">
                 <button type="submit" disabled={contactSaving}
@@ -1614,7 +1614,7 @@ export default function CustomerProfilePage() {
                   {contactSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} {editingContactId ? 'Update' : 'Add'} Contact
                 </button>
                 <button type="button" onClick={() => { setShowContactForm(false); setEditingContactId(null); setContactFormError(null); }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -1638,38 +1638,38 @@ export default function CustomerProfilePage() {
             return (
             <>
               {contactSearch && (
-                <p className="text-xs text-gray-400 mb-2">
+                <p className="text-xs text-slate-400 mb-2">
                   Showing {filteredContacts.length} of {contacts.length} contacts
                 </p>
               )}
               <div className="space-y-3">
               {filteredContacts.map((contact) => (
-                <div key={contact.id || contact._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div key={contact.id || contact._id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-brand-100 flex items-center justify-center">
                       <User className="h-4 w-4 text-brand-600" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-gray-900">{contact.first_name} {contact.last_name}</p>
+                        <p className="text-sm font-medium text-slate-900">{contact.first_name} {contact.last_name}</p>
                         {contact.is_primary && <Star className="h-3.5 w-3.5 text-amber-400" />}
                       </div>
-                      <p className="text-xs text-gray-500">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}{contact.job_title ? ` · ${contact.job_title}` : ''}{contact.department ? ` · ${contact.department}` : ''}</p>
+                      <p className="text-xs text-slate-500">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}{contact.job_title ? ` · ${contact.job_title}` : ''}{contact.department ? ` · ${contact.department}` : ''}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {!contact.is_primary && (
                       <button onClick={() => handleSetPrimaryContact(contact.id)} title="Set primary" aria-label="Set as primary contact"
-                        className="p-1.5 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
+                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
                         <Star className="h-4 w-4" />
                       </button>
                     )}
                     <button onClick={() => { setEditingContactId(contact.id); setContactForm({ first_name: contact.first_name || '', last_name: contact.last_name || '', email: contact.email, phone: contact.phone || '', job_title: contact.job_title || '', department: contact.department || '', is_primary: contact.is_primary || false }); setShowContactForm(true); }}
-                      className="p-1.5 text-gray-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit contact">
+                      className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit contact">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button onClick={() => openConfirm('Remove Contact', 'Are you sure you want to remove this contact? This action cannot be undone.', () => handleRemoveContact(contact.id))}
-                      className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete contact">
+                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete contact">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1683,9 +1683,9 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'payment-methods' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Payment Methods</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Payment Methods</h3>
             <button onClick={() => { setShowPmForm(true); setEditingPmId(null); setPmForm({ type: 'card', last_four: '', expiry_date: '', cardholder_name: '', is_default: false }); }}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
               <Plus className="h-4 w-4" /> Add Method
@@ -1699,16 +1699,16 @@ export default function CustomerProfilePage() {
           )}
 
           {showPmForm && (
-            <form onSubmit={handleSavePm} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">{editingPmId ? 'Edit Payment Method' : 'Add Payment Method'}</h4>
+            <form onSubmit={handleSavePm} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">{editingPmId ? 'Edit Payment Method' : 'Add Payment Method'}</h4>
               {pmFormError && (
                 <p className="mb-3 text-xs text-red-600">{pmFormError}</p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Type *</label>
                   <select required value={pmForm.type} onChange={(e) => setPmForm({ ...pmForm, type: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                     <option value="card">Card</option>
                     <option value="bank_account">Bank Account</option>
                     <option value="paypal">PayPal</option>
@@ -1716,26 +1716,26 @@ export default function CustomerProfilePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Cardholder Name</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Cardholder Name</label>
                   <input value={pmForm.cardholder_name} onChange={(e) => setPmForm({ ...pmForm, cardholder_name: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Last Four *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Last Four *</label>
                   <input required maxLength={4} value={pmForm.last_four} onChange={(e) => setPmForm({ ...pmForm, last_four: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Expiry Date</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Expiry Date</label>
                   <input placeholder="MM/YY" value={pmForm.expiry_date} onChange={(e) => setPmForm({ ...pmForm, expiry_date: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <input type="checkbox" id="pm_default" checked={pmForm.is_default}
                   onChange={(e) => setPmForm({ ...pmForm, is_default: e.target.checked })}
-                  className="rounded border-gray-300 text-brand-600 focus:ring-brand/30" />
-                <label htmlFor="pm_default" className="text-sm text-gray-700">Set as default method</label>
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                <label htmlFor="pm_default" className="text-sm text-slate-700">Set as default method</label>
               </div>
               <div className="flex gap-2 mt-4">
                 <button type="submit" disabled={pmSaving}
@@ -1743,7 +1743,7 @@ export default function CustomerProfilePage() {
                   {pmSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} {editingPmId ? 'Update' : 'Add'} Method
                 </button>
                 <button type="button" onClick={() => { setShowPmForm(false); setEditingPmId(null); setPmFormError(null); }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -1757,34 +1757,34 @@ export default function CustomerProfilePage() {
           ) : (
             <div className="space-y-3">
               {paymentMethods.map((pm) => (
-                <div key={pm.id || pm._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div key={pm.id || pm._id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center">
                       <CreditCard className="h-4 w-4 text-blue-600" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-slate-900">
                           {pm.type === 'card' ? '•••• ' : ''}{pm.last_four || pm.lastFour || pm.last_four_digits}
                         </p>
                         {pm.is_default && <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Default</span>}
                       </div>
-                      <p className="text-xs text-gray-500">{pm.cardholder_name}{pm.expiry_date ? ` · Exp: ${pm.expiry_date}` : ''}</p>
+                      <p className="text-xs text-slate-500">{pm.cardholder_name}{pm.expiry_date ? ` · Exp: ${pm.expiry_date}` : ''}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {!pm.is_default && (
                       <button onClick={() => handleSetDefaultPm(pm.id)} title="Set default" aria-label="Set as default payment method"
-                        className="p-1.5 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
+                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
                         <Star className="h-4 w-4" />
                       </button>
                     )}
                     <button onClick={() => { setEditingPmId(pm.id); setPmForm({ type: pm.type, last_four: pm.last_four || pm.lastFour || '', expiry_date: pm.expiry_date || '', cardholder_name: pm.cardholder_name || '', is_default: pm.is_default }); setShowPmForm(true); }}
-                      className="p-1.5 text-gray-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit payment method">
+                      className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit payment method">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button onClick={() => openConfirm('Remove Payment Method', 'Are you sure you want to remove this payment method?', () => handleRemovePm(pm.id))}
-                      className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete payment method">
+                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete payment method">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1798,8 +1798,8 @@ export default function CustomerProfilePage() {
       {activeTab === 'billing-overview' && (
         <div className="space-y-6">
           {/* Financial Summary */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Billing Summary</h4>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Billing Summary</h4>
             {(() => {
               const totalOutstanding = invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent' || i.status === 'overdue').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
               const totalPaid = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
@@ -1817,24 +1817,24 @@ export default function CustomerProfilePage() {
               const availableCredit = customer?.credit_limit > 0 ? Math.max(0, Number(customer.credit_limit) - Number(customer.outstanding_balance || 0)) : '—';
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Outstanding</p><p className="text-sm font-bold text-amber-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalPaid, baseCurrency)}>{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Overdue</p><p className="text-sm font-bold text-red-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOverdue, baseCurrency)}>{formatDisplayCurrency(totalOverdue, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Draft</p><p className="text-sm font-bold text-gray-600 mt-0.5 truncate" title={formatDisplayCurrency(totalDraft, baseCurrency)}>{formatDisplayCurrency(totalDraft, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Cancelled</p><p className="text-sm font-bold text-gray-400 mt-0.5 truncate" title={formatDisplayCurrency(totalCancelled, baseCurrency)}>{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Avg Payment Days</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{avgPaymentDays !== '—' ? `${avgPaymentDays} days` : '—'}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Limit</p><p className="text-sm font-bold text-gray-800 mt-0.5 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Credit Used</p><p className="text-sm font-bold text-gray-800 mt-0.5 whitespace-nowrap">{creditUsed !== '—' ? `${creditUsed}%` : '—'}</p></div>
-                  <div className="bg-gray-50 rounded-lg p-4"><p className="text-[10px] font-medium text-gray-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}>{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Outstanding</p><p className="text-sm font-bold text-amber-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalPaid, baseCurrency)}>{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Overdue</p><p className="text-sm font-bold text-red-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOverdue, baseCurrency)}>{formatDisplayCurrency(totalOverdue, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Draft</p><p className="text-sm font-bold text-slate-600 mt-0.5 truncate" title={formatDisplayCurrency(totalDraft, baseCurrency)}>{formatDisplayCurrency(totalDraft, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Cancelled</p><p className="text-sm font-bold text-slate-400 mt-0.5 truncate" title={formatDisplayCurrency(totalCancelled, baseCurrency)}>{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Avg Payment Days</p><p className="text-sm font-bold text-slate-800 mt-0.5 whitespace-nowrap">{avgPaymentDays !== '—' ? `${avgPaymentDays} days` : '—'}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Credit Limit</p><p className="text-sm font-bold text-slate-800 mt-0.5 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Credit Used</p><p className="text-sm font-bold text-slate-800 mt-0.5 whitespace-nowrap">{creditUsed !== '—' ? `${creditUsed}%` : '—'}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}>{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
                 </div>
               );
             })()}
           </div>
 
           {/* Invoices */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Invoices <span className="text-sm font-normal text-gray-400">({invoices.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Invoices <span className="text-sm font-normal text-slate-400">({invoices.length})</span></h3>
             </div>
             {invoicesLoading ? (
               <Spinner />
@@ -1846,19 +1846,19 @@ export default function CustomerProfilePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Invoice</th>
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                      <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                      <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                    <tr className="border-b border-slate-100">
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoice</th>
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                      <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                      <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {invoices.map((inv) => (
-                      <tr key={inv.id || inv._id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                        <td className="py-3 px-3 font-medium text-gray-900">{inv.invoice_number || inv.number || inv.id}</td>
-                        <td className="py-3 px-3 text-gray-500">{formatDisplayDate(inv.issue_date || inv.date || inv.created_at)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(inv.total || inv.amount || inv.total_amount, baseCurrency)}</td>
+                      <tr key={inv.id || inv._id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                        <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || inv.number || inv.id}</td>
+                        <td className="py-3 px-3 text-slate-500">{formatDisplayDate(inv.issue_date || inv.date || inv.created_at)}</td>
+                        <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(inv.total || inv.amount || inv.total_amount, baseCurrency)}</td>
                         <td className="py-3 px-3 text-center"><InvoiceStatusBadge status={inv.status} /></td>
                       </tr>
                     ))}
@@ -1869,9 +1869,9 @@ export default function CustomerProfilePage() {
           </div>
 
           {/* Payments */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Payments <span className="text-sm font-normal text-gray-400">({payments.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Payments <span className="text-sm font-normal text-slate-400">({payments.length})</span></h3>
             </div>
             {paymentsLoading ? (
               <Spinner />
@@ -1883,26 +1883,26 @@ export default function CustomerProfilePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Payment</th>
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                      <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Method</th>
-                      <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                    <tr className="border-b border-slate-100">
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Payment</th>
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                      <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Method</th>
+                      <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payments.map((p) => (
-                      <tr key={p.id || p._id} onClick={() => navigate(`/billing/payments/${p.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                        <td className="py-3 px-3 font-medium text-gray-900">{p.payment_number || p.transaction_id || p.id}</td>
-                        <td className="py-3 px-3 text-gray-500">{formatDisplayDate(p.payment_date || p.date || p.created_at)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(p.amount || p.total_amount, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-gray-500">{p.payment_method || p.method || p.type || '—'}</td>
+                      <tr key={p.id || p._id} onClick={() => navigate(`/billing/payments/${p.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                        <td className="py-3 px-3 font-medium text-slate-900">{p.payment_number || p.transaction_id || p.id}</td>
+                        <td className="py-3 px-3 text-slate-500">{formatDisplayDate(p.payment_date || p.date || p.created_at)}</td>
+                        <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(p.amount || p.total_amount, baseCurrency)}</td>
+                        <td className="py-3 px-3 text-slate-500">{p.payment_method || p.method || p.type || '—'}</td>
                         <td className="py-3 px-3 text-center">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             p.status === 'completed' || p.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700' :
                             p.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                            p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                            p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                           }`}>
                             {p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : 'Unknown'}
                           </span>
@@ -1916,9 +1916,9 @@ export default function CustomerProfilePage() {
           </div>
 
           {/* Credit Notes */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Credit Notes <span className="text-sm font-normal text-gray-400">({creditNotes.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Credit Notes <span className="text-sm font-normal text-slate-400">({creditNotes.length})</span></h3>
             </div>
             {creditNotesLoading ? (
               <Spinner />
@@ -1930,21 +1930,21 @@ export default function CustomerProfilePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Credit Note</th>
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                      <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                      <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Reason</th>
-                      <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                    <tr className="border-b border-slate-100">
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                      <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Reason</th>
+                      <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {creditNotes.map((cn) => (
-                      <tr key={cn.id || cn._id} onClick={() => navigate(`/billing/credit-notes/${cn.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                        <td className="py-3 px-3 font-medium text-gray-900">{cn.credit_note_number || cn.number || cn.id}</td>
-                        <td className="py-3 px-3 text-gray-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-gray-500">{cn.reason || cn.description || '—'}</td>
+                      <tr key={cn.id || cn._id} onClick={() => navigate(`/billing/credit-notes/${cn.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                        <td className="py-3 px-3 font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</td>
+                        <td className="py-3 px-3 text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
+                        <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
+                        <td className="py-3 px-3 text-slate-500">{cn.reason || cn.description || '—'}</td>
                         <td className="py-3 px-3 text-center"><InvoiceStatusBadge status={cn.status} /></td>
                       </tr>
                     ))}
@@ -1957,9 +1957,9 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'contracts' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Contracts <span className="text-sm font-normal text-gray-400">({contracts.length})</span></h3>
+            <h3 className="text-lg font-semibold text-slate-900">Contracts <span className="text-sm font-normal text-slate-400">({contracts.length})</span></h3>
           </div>
           {contractsLoading ? (
             <Spinner />
@@ -1971,21 +1971,21 @@ export default function CustomerProfilePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Contract</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Start Date</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">End Date</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Value</th>
-                    <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Contract</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Start Date</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">End Date</th>
+                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Value</th>
+                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {contracts.map((c) => (
-                    <tr key={c.id || c._id} onClick={() => navigate(`/billing/contracts/${c.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                      <td className="py-3 px-3 font-medium text-gray-900">{c.contract_number || c.name || c.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(c.start_date || c.startDate)}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(c.end_date || c.endDate)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(c.value || c.total_value || c.contract_value, baseCurrency)}</td>
+                    <tr key={c.id || c._id} onClick={() => navigate(`/billing/contracts/${c.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                      <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || c.name || c.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.start_date || c.startDate)}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.end_date || c.endDate)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value || c.contract_value, baseCurrency)}</td>
                       <td className="py-3 px-3 text-center"><StatusBadge status={c.status} /></td>
                     </tr>
                   ))}
@@ -1997,9 +1997,9 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'subscriptions' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Subscriptions <span className="text-sm font-normal text-gray-400">({subscriptions.length})</span></h3>
+            <h3 className="text-lg font-semibold text-slate-900">Subscriptions <span className="text-sm font-normal text-slate-400">({subscriptions.length})</span></h3>
           </div>
           {subscriptionsLoading ? (
             <Spinner />
@@ -2011,23 +2011,23 @@ export default function CustomerProfilePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Subscription</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Plan</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Start</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Next Billing</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                    <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Subscription</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Plan</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Start</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Next Billing</th>
+                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {subscriptions.map((sub) => (
-                    <tr key={sub.id || sub._id} onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                      <td className="py-3 px-3 font-medium text-gray-900">{sub.subscription_number || sub.name || sub.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{sub.plan_name || sub.plan?.name || '—'}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(sub.start_date || sub.startDate)}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(sub.next_billing_date || sub.nextBillingDate)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(sub.amount || sub.price || sub.recurring_amount, baseCurrency)}</td>
+                    <tr key={sub.id || sub._id} onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                      <td className="py-3 px-3 font-medium text-slate-900">{sub.subscription_number || sub.name || sub.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{sub.plan_name || sub.plan?.name || '—'}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(sub.start_date || sub.startDate)}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(sub.next_billing_date || sub.nextBillingDate)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(sub.amount || sub.price || sub.recurring_amount, baseCurrency)}</td>
                       <td className="py-3 px-3 text-center"><StatusBadge status={sub.status} /></td>
                     </tr>
                   ))}
@@ -2039,8 +2039,8 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'credit-notes' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Credit Notes</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Credit Notes</h3>
           {creditNotesLoading ? (
             <Spinner />
           ) : creditNotesError ? (
@@ -2051,21 +2051,21 @@ export default function CustomerProfilePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Credit Note</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Reason</th>
-                    <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Reason</th>
+                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {creditNotes.map((cn) => (
-                    <tr key={cn.id || cn._id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-3 px-3 font-medium text-gray-900">{cn.credit_note_number || cn.number || cn.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-gray-500">{cn.reason || cn.description || '—'}</td>
+                    <tr key={cn.id || cn._id} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="py-3 px-3 font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
+                      <td className="py-3 px-3 text-slate-500">{cn.reason || cn.description || '—'}</td>
                       <td className="py-3 px-3 text-center"><InvoiceStatusBadge status={cn.status} /></td>
                     </tr>
                   ))}
@@ -2077,9 +2077,9 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'timeline' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">{singular} Timeline</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{singular} Timeline</h3>
           </div>
           {timelineLoading ? (
             <Spinner />
@@ -2098,14 +2098,14 @@ export default function CustomerProfilePage() {
                     contract: 'bg-indigo-100 text-indigo-600',
                     subscription: 'bg-violet-100 text-violet-600',
                     document: 'bg-cyan-100 text-cyan-600',
-                    note: 'bg-gray-100 text-gray-600',
+                    note: 'bg-slate-100 text-slate-600',
                     activity: 'bg-slate-100 text-slate-600',
                   };
-                  const dotColor = typeStyles[event.type] || 'bg-gray-100 text-gray-600';
+                  const dotColor = typeStyles[event.type] || 'bg-slate-100 text-slate-600';
                   return (
                     <li key={idx}>
                       <div className="relative pb-8">
-                        {idx < Math.min(timeline.length - 1, 49) && <span className="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true" />}
+                        {idx < Math.min(timeline.length - 1, 49) && <span className="absolute left-4 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />}
                         <div className="relative flex gap-3">
                           <div className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white flex-shrink-0 ${dotColor}`}>
                             {event.type === 'payment' ? <CheckCircle className="h-4 w-4" /> :
@@ -2120,10 +2120,10 @@ export default function CustomerProfilePage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-gray-900">{event.label || 'Event'}</p>
-                              <span className="text-xs text-gray-500">{event.date ? formatDisplayDate(event.date) : ''}</span>
+                              <p className="text-sm font-medium text-slate-900">{event.label || 'Event'}</p>
+                              <span className="text-xs text-slate-500">{event.date ? formatDisplayDate(event.date) : ''}</span>
                             </div>
-                            <p className="text-xs text-gray-500 mt-0.5">
+                            <p className="text-xs text-slate-500 mt-0.5">
                               {event.description || ''}
                               {event.amount ? ` · ${formatDisplayCurrency(event.amount, baseCurrency)}` : ''}
                               {event.actor ? ` · by ${event.actor}` : ''}
@@ -2141,9 +2141,9 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'quotations' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Quotations <span className="text-sm font-normal text-gray-400">({quotations.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Quotations <span className="text-sm font-normal text-slate-400">({quotations.length})</span></h3>
               <button onClick={() => navigate(`/billing/quotations?create=1&customer_id=${id}`)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
                 <Plus className="h-4 w-4" /> New Quotation
@@ -2159,26 +2159,26 @@ export default function CustomerProfilePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Quotation</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Amount</th>
-                    <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Quotation</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {quotations.map((q) => (
-                    <tr key={q.id || q._id} onClick={() => navigate(`/billing/quotations/${q.id}`)} className="border-b border-gray-50 hover:bg-brand-50/60 cursor-pointer">
-                      <td className="py-3 px-3 font-medium text-gray-900">{q.quotation_number || q.number || q.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(q.issue_date || q.date || q.created_at)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(q.total || q.amount || q.total_amount, baseCurrency)}</td>
+                    <tr key={q.id || q._id} onClick={() => navigate(`/billing/quotations/${q.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
+                      <td className="py-3 px-3 font-medium text-slate-900">{q.quotation_number || q.number || q.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(q.issue_date || q.date || q.created_at)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(q.total || q.amount || q.total_amount, baseCurrency)}</td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           q.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
                           q.status === 'pending' || q.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                          q.status === 'draft' ? 'bg-gray-100 text-gray-600' :
+                          q.status === 'draft' ? 'bg-slate-100 text-slate-600' :
                           q.status === 'rejected' || q.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                          q.status === 'converted' ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-600'
+                          q.status === 'converted' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600'
                         }`}>
                           {q.status ? q.status.charAt(0).toUpperCase() + q.status.slice(1) : 'Unknown'}
                         </span>
@@ -2193,15 +2193,15 @@ export default function CustomerProfilePage() {
       )}
 
       {activeTab === 'documents' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Documents ({documents.length})</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Documents ({documents.length})</h3>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
-                  placeholder="Search documents..." className="pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
-                {docSearch && <button onClick={() => setDocSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
+                  placeholder="Search documents..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
+                {docSearch && <button onClick={() => setDocSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
               <button onClick={() => { setShowDocForm(true); setDocForm({ file_name: '', file_path: '', file_size: null, mime_type: '', document_type: '', notes: '' }); }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
@@ -2217,34 +2217,34 @@ export default function CustomerProfilePage() {
           )}
 
           {showDocForm && (
-            <form onSubmit={handleSaveDoc} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Add Document</h4>
+            <form onSubmit={handleSaveDoc} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">Add Document</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">File Name *</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">File Name *</label>
                   <input required value={docForm.file_name} onChange={(e) => setDocForm({ ...docForm, file_name: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">File Path</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">File Path</label>
                   <input value={docForm.file_path} onChange={(e) => setDocForm({ ...docForm, file_path: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Document Type</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Document Type</label>
                   <input value={docForm.document_type} onChange={(e) => setDocForm({ ...docForm, document_type: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">MIME Type</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">MIME Type</label>
                   <input value={docForm.mime_type} onChange={(e) => setDocForm({ ...docForm, mime_type: e.target.value })}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
               <div className="mt-4">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
                 <textarea value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} rows={2}
-                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div className="flex gap-2 mt-4">
                 <button type="submit" disabled={docSaving}
@@ -2252,7 +2252,7 @@ export default function CustomerProfilePage() {
                   {docSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Add Document
                 </button>
                 <button type="button" onClick={() => setShowDocForm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -2276,31 +2276,31 @@ export default function CustomerProfilePage() {
             return (
             <>
               {docSearch && (
-                <p className="text-xs text-gray-400 mb-2">
+                <p className="text-xs text-slate-400 mb-2">
                   Showing {filteredDocuments.length} of {documents.length} documents
                 </p>
               )}
               <div className="space-y-3">
               {filteredDocuments.map((doc) => (
-                <div key={doc.id || doc._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div key={doc.id || doc._id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-full bg-amber-100 flex items-center justify-center">
                       <FileText className="h-4 w-4 text-amber-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{doc.file_name}</p>
-                      <p className="text-xs text-gray-500">{doc.document_type ? `${doc.document_type}` : ''}{doc.file_size ? ` · ${(doc.file_size / 1024).toFixed(1)} KB` : ''}{doc.mime_type ? ` · ${doc.mime_type}` : ''}</p>
+                      <p className="text-sm font-medium text-slate-900">{doc.file_name}</p>
+                      <p className="text-xs text-slate-500">{doc.document_type ? `${doc.document_type}` : ''}{doc.file_size ? ` · ${(doc.file_size / 1024).toFixed(1)} KB` : ''}{doc.mime_type ? ` · ${doc.mime_type}` : ''}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {doc.file_path && (
                       <a href={doc.file_path} target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 text-gray-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
+                        className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Download className="h-4 w-4" />
                       </a>
                     )}
                     <button onClick={() => openConfirm('Delete Document', 'Are you sure you want to delete this document? This cannot be undone.', () => handleDeleteDoc(doc.id))}
-                      className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -2325,9 +2325,9 @@ export default function CustomerProfilePage() {
       />
 
       {activeTab === 'notes' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Notes</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Notes</h3>
             <button onClick={() => { setShowNoteForm(true); setEditingNoteId(null); setNoteForm({ content: '', is_pinned: false, is_internal: false }); }}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
               <Plus className="h-4 w-4" /> Add Note
@@ -2341,26 +2341,26 @@ export default function CustomerProfilePage() {
           )}
 
           {showNoteForm && (
-            <form onSubmit={handleSaveNote} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">{editingNoteId ? 'Edit Note' : 'Add Note'}</h4>
+            <form onSubmit={handleSaveNote} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3">{editingNoteId ? 'Edit Note' : 'Add Note'}</h4>
               {noteFormError && (
                 <p className="mb-3 text-xs text-red-600">{noteFormError}</p>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Content *</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Content *</label>
                 <textarea required rows={3} value={noteForm.content} onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
-                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div className="flex items-center gap-4 mt-3">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={noteForm.is_pinned} onChange={(e) => setNoteForm({ ...noteForm, is_pinned: e.target.checked })}
-                    className="rounded border-gray-300 text-brand-600 focus:ring-brand/30" />
-                  <span className="text-sm text-gray-700"><Pin className="h-3.5 w-3.5 inline mr-1" />Pinned</span>
+                    className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  <span className="text-sm text-slate-700"><Pin className="h-3.5 w-3.5 inline mr-1" />Pinned</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={noteForm.is_internal} onChange={(e) => setNoteForm({ ...noteForm, is_internal: e.target.checked })}
-                    className="rounded border-gray-300 text-brand-600 focus:ring-brand/30" />
-                  <span className="text-sm text-gray-700">Internal note</span>
+                    className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  <span className="text-sm text-slate-700">Internal note</span>
                 </label>
               </div>
               <div className="flex gap-2 mt-4">
@@ -2369,7 +2369,7 @@ export default function CustomerProfilePage() {
                   {noteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} {editingNoteId ? 'Update' : 'Add'} Note
                 </button>
                 <button type="button" onClick={() => { setShowNoteForm(false); setEditingNoteId(null); setNoteFormError(null); }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -2383,26 +2383,26 @@ export default function CustomerProfilePage() {
           ) : (
             <div className="space-y-3">
               {notes.filter(n => n.is_pinned).concat(notes.filter(n => !n.is_pinned)).map((note) => (
-                <div key={note.id || note._id} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div key={note.id || note._id} className="p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         {note.is_pinned && <Pin className="h-3.5 w-3.5 text-amber-400" />}
                         {note.is_internal && <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Internal</span>}
                       </div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
-                      <p className="text-xs text-gray-400 mt-2">
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.content}</p>
+                      <p className="text-xs text-slate-400 mt-2">
                         {note.created_at ? formatDisplayDate(note.created_at) : ''}
                         {note.created_by ? ` · by #${note.created_by}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => { setEditingNoteId(note.id); setNoteForm({ content: note.content, is_pinned: note.is_pinned || false, is_internal: note.is_internal || false }); setShowNoteForm(true); }}
-                        className="p-1.5 text-gray-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
+                        className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button onClick={() => openConfirm('Delete Note', 'Are you sure you want to delete this note?', () => handleDeleteNote(note.id))}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                        className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
