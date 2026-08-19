@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services.write_off_service import WriteOffService
 from app.modules.billing.schemas import (
     WriteOffApproveRequest,
@@ -215,6 +215,7 @@ def submit_write_off_for_approval(
     body: WriteOffApproveRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
 ):
     svc = WriteOffService(db)
     return svc.submit_for_approval(
@@ -229,7 +230,7 @@ def approve_write_off(
     body: WriteOffApproveRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-    _admin=Depends(get_current_billing_admin),
+    _approver=Depends(get_current_finance_approver),
 ):
     svc = WriteOffService(db)
     return svc.approve_write_off(

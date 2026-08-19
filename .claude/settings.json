@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python -m migrations.add_commercial_account_intended_plan_column --check)",
+      "Bash(python -m migrations.add_user_role_finance_approver_auditor --check)",
+      "Bash(python -m migrations.add_commercial_subscription_payment_failed_at_column --check)"
+    ]
+  }
+}

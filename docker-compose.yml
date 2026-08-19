@@ -16,12 +16,13 @@ services:
     # Vite reads that value at build time, so if you change this port, update
     # frontend/.env and rebuild the frontend image to match.
     ports:
-      - "8001:8000"
+      - "8001:8001"
     environment:
       BILLING_DATABASE_URL: postgresql+psycopg://billing:billing@db:5432/zoiko_billing
       BILLING_SECRET_KEY: change-me-to-a-long-random-string
       FRONTEND_URL: http://localhost:5173
       BILLING_CORS_ORIGINS: http://localhost:5173
+      APP_PORT: 8001
     depends_on:
       - db
 

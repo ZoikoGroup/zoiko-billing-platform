@@ -128,6 +128,7 @@ def test_registration_creates_billing_configuration(db_session):
         registration_number="08452128",
         fiscal_year_start="04-06",
         fiscal_year_end="04-05",
+        intended_plan="essentials",
     )
     register_enterprise(db_session, data)
 

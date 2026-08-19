@@ -81,6 +81,12 @@ class CommercialAccount(Base):
         nullable=False,
     )
 
+    # Captured at registration (§B3): which plan the registrant said they
+    # wanted, for Sales/onboarding visibility only. Never used to provision a
+    # CommercialSubscription — Phase 7 seeds no plans, so registration still
+    # leaves the account without one (see provision_default_subscription).
+    intended_plan_code = Column(String(50), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -256,6 +262,12 @@ class CommercialSubscription(Base):
     end_at = Column(DateTime, nullable=True)
     current_period_start = Column(DateTime, nullable=True)
     current_period_end = Column(DateTime, nullable=True)
+
+    # N1: set when a Plane-1 (Zoiko's own subscription) payment fails; cleared
+    # on the N3 restoration path when payment succeeds again. Drives
+    # CommercialDunningService's day 0/10/20/45 sweep — entirely independent
+    # of Plane-2's tenant-facing dunning (N4).
+    payment_failed_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

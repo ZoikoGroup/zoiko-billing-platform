@@ -97,16 +97,23 @@ class ApprovalStatus(str, enum.Enum):
 class CommercialSubscriptionStatus(str, enum.Enum):
     """Lifecycle of a commercial subscription (PHASE 7).
 
-    PENDING   — created awaiting activation (no approved default plan at
-                registration, or awaiting payment confirmation).
-    ACTIVE    — live; the org is entitled to the plan.
-    SUSPENDED — paused by a future Super Admin action (mirrors
-                CommercialAccountStatus.SUSPENDED).
-    CANCELLED — terminal; preserved for audit/history.
-    EXPIRED   — terminal; period ended without renewal; preserved.
+    PENDING    — created awaiting activation (no approved default plan at
+                 registration, or awaiting payment confirmation).
+    ACTIVE     — live; the org is entitled to the plan.
+    PAST_DUE   — N1 day 0: a Plane-1 (Zoiko's own subscription) payment
+                 failed. Entitlements unaffected so far.
+    RESTRICTED — N1 day 10: blocks new paid expansion only; existing
+                 entitlements keep working.
+    SUSPENDED  — N1 day 20 (also settable by a Super Admin action directly):
+                 read-only — never deletes records (N2).
+    CANCELLED  — terminal; preserved for audit/history. N1 day 45 (dunning
+                 "termination") lands here, not a hard delete.
+    EXPIRED    — terminal; period ended without renewal; preserved.
     """
     PENDING = "pending"
     ACTIVE = "active"
+    PAST_DUE = "past_due"
+    RESTRICTED = "restricted"
     SUSPENDED = "suspended"
     CANCELLED = "cancelled"
     EXPIRED = "expired"

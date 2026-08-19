@@ -14,6 +14,7 @@ from app.modules.auth.models import User
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.auth.service import register_enterprise
 from app.modules.commercial.enums import BillingClassification, BillingSource
+from app.modules.commercial.models import CommercialAccount, CommercialSubscription
 from app.modules.organizations.models import Organization
 from app.modules.organizations.schemas import OrganizationUpdate
 from tests.conftest import make_organization
@@ -48,6 +49,7 @@ def test_register_enterprise_persists_full_profile(db_session):
         registration_number="08452128",
         fiscal_year_start="04-06",
         fiscal_year_end="04-05",
+        intended_plan="essentials",
     )
     register_enterprise(db_session, data)
 
@@ -76,6 +78,7 @@ def test_register_enterprise_stamps_commercial_source_server_side(db_session):
         name="Bo Admin",
         email="bo@beta.example",
         password="StrongPass123!",
+        intended_plan="essentials",
     )
     register_enterprise(db_session, data)
 
@@ -163,6 +166,7 @@ def test_register_request_validates_currency_and_fiscal_year():
         password="StrongPass123!",
         currency="gbp",
         fiscal_year_start="04-06",
+        intended_plan="essentials",
     )
     assert ok.currency == "GBP"
     assert ok.fiscal_year_start == "04-06"
@@ -176,3 +180,56 @@ def test_organization_update_validates_currency_and_fiscal_year():
     ok = OrganizationUpdate(currency="inr", fiscal_year_start="04-01")
     assert ok.currency == "INR"
     assert ok.fiscal_year_start == "04-01"
+
+
+# ── ZB-COM-BILL-001 §B3: intended_plan capture, Enterprise self-serve block ──
+
+def test_intended_plan_enterprise_rejected_at_schema_layer():
+    """Enterprise is contract/quote-based only (§2) — it must be structurally
+    unreachable through self-serve registration, rejected before any org/
+    user/account row is ever created."""
+    with pytest.raises(ValidationError):
+        RegisterRequest(
+            organization="Big Co",
+            name="Big Admin",
+            email="big@bigco.example",
+            password="StrongPass123!",
+            intended_plan="enterprise",
+        )
+
+
+def test_intended_plan_requires_a_value():
+    with pytest.raises(ValidationError):
+        RegisterRequest(
+            organization="No Plan Co",
+            name="No Plan Admin",
+            email="noplan@example.com",
+            password="StrongPass123!",
+        )
+
+
+def test_intended_plan_stored_without_provisioning_subscription(db_session):
+    """A successful registration records the registrant's intended plan on
+    the CommercialAccount for Sales/onboarding visibility, but never
+    provisions a CommercialSubscription — Phase 7 seeds no plans, so a free/
+    paid plan must never be invented merely to satisfy this flow."""
+    data = RegisterRequest(
+        organization="Plan Intent Co",
+        name="Pat Admin",
+        email="pat@planintent.example",
+        password="StrongPass123!",
+        intended_plan="professional",
+    )
+    register_enterprise(db_session, data)
+
+    org = _org_for(db_session, "pat@planintent.example")
+    account = db_session.query(CommercialAccount).filter_by(organization_id=org.id).first()
+    assert account is not None
+    assert account.intended_plan_code == "professional"
+
+    subscription = (
+        db_session.query(CommercialSubscription)
+        .filter_by(commercial_account_id=account.id)
+        .first()
+    )
+    assert subscription is None

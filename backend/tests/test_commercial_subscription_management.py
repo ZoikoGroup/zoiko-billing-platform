@@ -104,6 +104,7 @@ def _register(db, email, organization="Acme Corp"):
             name="Ada Admin",
             email=email,
             password="StrongPass123!",
+            intended_plan="essentials",
         ),
     )
 

@@ -4,7 +4,7 @@ modules/auth/schemas.py
 """
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -39,6 +39,17 @@ class RegisterRequest(BaseModel):
     registration_number: Optional[str] = Field(None, max_length=100)
     fiscal_year_start: Optional[str] = "01-01"
     fiscal_year_end: Optional[str] = "12-31"
+    # Enterprise is contract/quote-based only (§2) and must be structurally
+    # unreachable through self-serve registration — excluding it from this
+    # Literal makes an "enterprise" submission a 422 at the schema layer,
+    # before any org/user/account row is created.
+    intended_plan: Literal["essentials", "professional", "business"] = Field(
+        ...,
+        description="Which plan the registrant intends to use. Recorded for "
+        "Sales/onboarding visibility only — it does not provision a "
+        "CommercialSubscription (see CommercialSubscriptionService."
+        "provision_default_subscription).",
+    )
 
     @field_validator("currency")
     @classmethod

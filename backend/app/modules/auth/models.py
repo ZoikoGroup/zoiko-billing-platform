@@ -36,6 +36,11 @@ class UserRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
     ORG_ADMIN = "org_admin"
     BILLING_ADMIN = "billing_admin"
+    # §25 Segregation-of-Duties Doctrine: distinct approver/read-only roles so
+    # maker-checker gates (refunds/write-offs/credit-notes/discounts) have a
+    # role to require that isn't the same one that can create the request.
+    FINANCE_APPROVER = "finance_approver"
+    AUDITOR = "auditor"
 
 
 class User(Base):

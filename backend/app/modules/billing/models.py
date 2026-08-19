@@ -454,6 +454,7 @@ class DiscountStatus(str, enum.Enum):
     EXHAUSTED = "exhausted"
     CANCELLED = "cancelled"
     PENDING_APPROVAL = "pending_approval"
+    REJECTED = "rejected"
 
 
 class TaxPricingType(str, enum.Enum):
