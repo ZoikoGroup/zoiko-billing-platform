@@ -2,9 +2,10 @@ import { Printer, Download } from "lucide-react";
 import { Button } from "../../../components/billing-ui";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import React from "react";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+// pdfmake + vfs_fonts are lazy-loaded inside generatePDF() so the ~1.74 MB
+// font bundle is only fetched when the user actually clicks "Download PDF",
+// not when they navigate to this page.
 
 // Single source of truth for reading organization branding out of the
 // BillingConfiguration API response — the org's own address/contact fields
@@ -27,7 +28,13 @@ function getOrgBranding(orgSettings = {}) {
   return { name, address, email, phone, website, taxRegistration, logo };
 }
 
-function generatePDF({ form, lineItems, totals, orgSettings, customerName, billingAddress, shippingAddress }) {
+async function generatePDF({ form, lineItems, totals, orgSettings, customerName, billingAddress, shippingAddress }) {
+  const pdfMakeModule = await import("pdfmake/build/pdfmake");
+  const pdfFontsModule = await import("pdfmake/build/vfs_fonts");
+  const pdfMake = pdfMakeModule.default;
+  const pdfFonts = pdfFontsModule.default;
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
   const { name: orgName, address: orgAddress, email: orgEmail, phone: orgPhone, website: orgWebsite, taxRegistration: orgTaxRegistration } = getOrgBranding(orgSettings);
   const currency = form.currency || orgSettings.default_currency || "USD";
   const invoiceNumber = form.invoice_number || (orgSettings?.auto_generate_invoice_number ? "Auto-generated on save" : "Draft Invoice");
@@ -202,12 +209,12 @@ export default function InvoicePDFPreview({
   const [downloading, setDownloading] = React.useState(false);
   const [downloadError, setDownloadError] = React.useState(null);
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (downloading) return;
     setDownloading(true);
     setDownloadError(null);
     try {
-      generatePDF({ form, lineItems, totals, orgSettings, customerName, billingAddress, shippingAddress });
+      await generatePDF({ form, lineItems, totals, orgSettings, customerName, billingAddress, shippingAddress });
     } catch (err) {
       setDownloadError(err?.message || "Failed to generate PDF");
     } finally {

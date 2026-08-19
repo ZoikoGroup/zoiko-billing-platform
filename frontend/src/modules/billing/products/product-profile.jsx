@@ -12,7 +12,7 @@ import { Spinner as SharedSpinner, ErrorState as SharedErrorState, EmptyState as
 
 const PRODUCT_STATUS_BADGE_OPTIONS = [
   { value: 'active', label: 'active', color: 'bg-green-100 text-green-700' },
-  { value: 'inactive', label: 'inactive', color: 'bg-gray-100 text-gray-700' },
+  { value: 'inactive', label: 'inactive', color: 'bg-slate-100 text-slate-700' },
   { value: 'archived', label: 'archived', color: 'bg-slate-100 text-slate-600' },
 ];
 
@@ -37,10 +37,10 @@ function TypeBadge({ type }) {
     subscription: 'bg-brand-100 text-brand-700',
     usage: 'bg-cyan-100 text-cyan-700',
     retainer: 'bg-indigo-100 text-indigo-700',
-    other: 'bg-gray-100 text-gray-600',
+    other: 'bg-slate-100 text-slate-600',
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${styles[type] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${styles[type] || 'bg-slate-100 text-slate-600'}`}>
       {type ? type.replace('_', ' ') : '—'}
     </span>
   );
@@ -240,32 +240,32 @@ export default function ProductProfilePage() {
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Status</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Status</p>
           <div className="mt-1"><StatusBadge status={product.status} /></div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Type</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Type</p>
           <div className="mt-1.5"><TypeBadge type={product.product_type} /></div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Default Price</p>
-          <p className="text-lg font-bold text-gray-900 mt-0.5 truncate" title={formatDisplayCurrency(product.default_price || 0, product.currency)}>{formatDisplayCurrency(product.default_price || 0, product.currency)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Default Price</p>
+          <p className="text-lg font-bold text-slate-900 mt-0.5 truncate" title={formatDisplayCurrency(product.default_price || 0, product.currency)}>{formatDisplayCurrency(product.default_price || 0, product.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Revenue (Paid)</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Revenue (Paid)</p>
           <p className="text-lg font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalRevenue, product.currency)}>{formatDisplayCurrency(totalRevenue, product.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Total Invoiced</p>
-          <p className="text-lg font-bold text-gray-900 mt-0.5 truncate" title={formatDisplayCurrency(totalInvoiced, product.currency)}>{formatDisplayCurrency(totalInvoiced, product.currency)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Total Invoiced</p>
+          <p className="text-lg font-bold text-slate-900 mt-0.5 truncate" title={formatDisplayCurrency(totalInvoiced, product.currency)}>{formatDisplayCurrency(totalInvoiced, product.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Active Subs</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Active Subs</p>
           <p className="text-lg font-bold text-brand-600 mt-0.5 whitespace-nowrap">{activeSubscriptions}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">Active Contracts</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Active Contracts</p>
           <p className="text-lg font-bold text-blue-600 mt-0.5 whitespace-nowrap">{activeContracts}</p>
         </div>
       </div>
@@ -304,11 +304,11 @@ export default function ProductProfilePage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex gap-1 overflow-x-auto mb-6 border-b border-gray-200">
+      <div className="flex gap-1 overflow-x-auto mb-6 border-b border-slate-200">
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeTab === tab.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
             }`}>
             <tab.icon size={15} /> {tab.label}
           </button>
@@ -320,49 +320,49 @@ export default function ProductProfilePage() {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Product Overview */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Overview</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Product Overview</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Product Name</p><p className="text-sm font-medium text-gray-900 mt-1">{product.name}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">SKU / Code</p><p className="text-sm font-medium text-gray-900 mt-1 font-mono">{product.code || '—'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Type</p><p className="text-sm font-medium text-gray-900 mt-1 capitalize">{product.product_type?.replace('_', ' ') || '—'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Category</p><p className="text-sm font-medium text-gray-900 mt-1">{categories.find(c => c.id === product.category_id)?.name || '—'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Brand</p><p className="text-sm font-medium text-gray-900 mt-1">{product.brand || '—'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Unit / Meter</p><p className="text-sm font-medium text-gray-900 mt-1">{product.unit_label || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Product Name</p><p className="text-sm font-medium text-slate-900 mt-1">{product.name}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">SKU / Code</p><p className="text-sm font-medium text-slate-900 mt-1 font-mono">{product.code || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Type</p><p className="text-sm font-medium text-slate-900 mt-1 capitalize">{product.product_type?.replace('_', ' ') || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Category</p><p className="text-sm font-medium text-slate-900 mt-1">{categories.find(c => c.id === product.category_id)?.name || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Brand</p><p className="text-sm font-medium text-slate-900 mt-1">{product.brand || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Unit / Meter</p><p className="text-sm font-medium text-slate-900 mt-1">{product.unit_label || '—'}</p></div>
             </div>
             {product.description && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Description</p>
-                <p className="text-sm text-gray-700">{product.description}</p>
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Description</p>
+                <p className="text-sm text-slate-700">{product.description}</p>
               </div>
             )}
           </div>
 
           {/* Billing Profile Summary */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Billing Profile</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Billing Profile</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Default Price</p><p className="text-sm font-bold text-gray-900 mt-1">{formatDisplayCurrency(product.default_price || 0, product.currency)}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Currency</p><p className="text-sm font-medium text-gray-900 mt-1">{product.currency || baseCurrency}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Billing Frequency</p><p className="text-sm font-medium text-gray-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Default Discount</p><p className="text-sm font-medium text-gray-900 mt-1">{product.default_discount ? `${product.default_discount}%` : '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Default Price</p><p className="text-sm font-bold text-slate-900 mt-1">{formatDisplayCurrency(product.default_price || 0, product.currency)}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Currency</p><p className="text-sm font-medium text-slate-900 mt-1">{product.currency || baseCurrency}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Billing Frequency</p><p className="text-sm font-medium text-slate-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Default Discount</p><p className="text-sm font-medium text-slate-900 mt-1">{product.default_discount ? `${product.default_discount}%` : '—'}</p></div>
             </div>
             {product.invoice_description && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Invoice Description</p>
-                <p className="text-sm text-gray-700">{product.invoice_description}</p>
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Invoice Description</p>
+                <p className="text-sm text-slate-700">{product.invoice_description}</p>
               </div>
             )}
           </div>
 
           {/* Tax & Pricing Info */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax & Cost</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Tax & Cost</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Tax Rate</p><p className="text-sm font-medium text-gray-900 mt-1">{product.tax_percentage ? `${product.tax_percentage}%` : '0%'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-gray-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Cost Price</p><p className="text-sm font-medium text-gray-900 mt-1">{formatDisplayCurrency(product.cost_price || 0, product.currency)}</p></div>
-              <div><p className="text-xs text-gray-500 uppercase tracking-wider">Margin</p><p className="text-sm font-medium text-gray-900 mt-1">
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Tax Rate</p><p className="text-sm font-medium text-slate-900 mt-1">{product.tax_percentage ? `${product.tax_percentage}%` : '0%'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-slate-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Cost Price</p><p className="text-sm font-medium text-slate-900 mt-1">{formatDisplayCurrency(product.cost_price || 0, product.currency)}</p></div>
+              <div><p className="text-xs text-slate-500 uppercase tracking-wider">Margin</p><p className="text-sm font-medium text-slate-900 mt-1">
                 {product.default_price && product.cost_price !== null && product.cost_price !== undefined && product.cost_price !== ''
                   ? `${((1 - Number(product.cost_price) / Number(product.default_price)) * 100).toFixed(1)}%`
                   : '—'}
@@ -373,31 +373,31 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'billing' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Billing Profile</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Billing Profile</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Default Price</p><p className="text-sm font-bold text-gray-900 mt-1">{formatDisplayCurrency(product.default_price || 0, product.currency)}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Preferred Currency</p><p className="text-sm font-medium text-gray-900 mt-1">{product.currency || baseCurrency}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Billing Frequency</p><p className="text-sm font-medium text-gray-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Default Discount</p><p className="text-sm font-medium text-gray-900 mt-1">{product.default_discount ? `${product.default_discount}%` : 'No discount'}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Tax Rate</p><p className="text-sm font-medium text-gray-900 mt-1">{product.tax_percentage ? `${product.tax_percentage}%` : '0%'}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-gray-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Default Price</p><p className="text-sm font-bold text-slate-900 mt-1">{formatDisplayCurrency(product.default_price || 0, product.currency)}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Preferred Currency</p><p className="text-sm font-medium text-slate-900 mt-1">{product.currency || baseCurrency}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Billing Frequency</p><p className="text-sm font-medium text-slate-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Default Discount</p><p className="text-sm font-medium text-slate-900 mt-1">{product.default_discount ? `${product.default_discount}%` : 'No discount'}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Tax Rate</p><p className="text-sm font-medium text-slate-900 mt-1">{product.tax_percentage ? `${product.tax_percentage}%` : '0%'}</p></div>
+            <div><p className="text-xs text-slate-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-slate-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
           </div>
           {product.invoice_description && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Invoice Description</p>
-              <p className="text-sm text-gray-700">{product.invoice_description}</p>
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Invoice Description</p>
+              <p className="text-sm text-slate-700">{product.invoice_description}</p>
             </div>
           )}
         </div>
       )}
 
       {activeTab === 'pricing' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Pricing Plans</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Plans override product defaults when active</p>
+              <h3 className="text-lg font-semibold text-slate-900">Pricing Plans</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Plans override product defaults when active</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => navigate(`/billing/pricing?product_id=${id}`)}
@@ -420,32 +420,32 @@ export default function ProductProfilePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Plan</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Model</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase">Price</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Period</th>
-                    <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Effective</th>
-                    <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase">Status</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Plan</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Model</th>
+                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase">Price</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Period</th>
+                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Effective</th>
+                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pricingPlans.map((plan) => (
-                    <tr key={plan.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/billing/pricing?product_id=${id}`)}>
-                      <td className="py-3 px-3 font-medium text-gray-900">{plan.name}</td>
-                      <td className="py-3 px-3 text-gray-500 capitalize">
+                    <tr key={plan.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/pricing?product_id=${id}`)}>
+                      <td className="py-3 px-3 font-medium text-slate-900">{plan.name}</td>
+                      <td className="py-3 px-3 text-slate-500 capitalize">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                           {plan.pricing_model?.replace('_', ' ') || 'flat'}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(plan.unit_price || plan.flat_fee || 0)}</td>
-                      <td className="py-3 px-3 text-gray-500 capitalize">{plan.billing_period?.replace('_', ' ')}</td>
-                      <td className="py-3 px-3 text-xs text-gray-500">
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(plan.unit_price || plan.flat_fee || 0)}</td>
+                      <td className="py-3 px-3 text-slate-500 capitalize">{plan.billing_period?.replace('_', ' ')}</td>
+                      <td className="py-3 px-3 text-xs text-slate-500">
                         {plan.effective_from ? `${plan.effective_from.slice(0, 10)}${plan.effective_to ? ` → ${plan.effective_to.slice(0, 10)}` : ' → ∞'}` : '—'}
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          plan.status === 'active' || plan.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                          plan.status === 'active' || plan.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
                         }`}>{plan.status === 'active' || plan.is_active ? 'Active' : 'Inactive'}</span>
                       </td>
                     </tr>
@@ -458,8 +458,8 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'quotations' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Quotations</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Recent Quotations</h3>
           {quotationsLoading ? <Spinner /> : quotationsError ? (
             <ErrorState message={quotationsError} onRetry={fetchQuotations} />
           ) : quotations.length === 0 ? (
@@ -467,24 +467,24 @@ export default function ProductProfilePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Quotation</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Date</th>
-                  <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase">Amount</th>
-                  <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase">Status</th>
+                <thead><tr className="border-b border-slate-100">
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Quotation</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Date</th>
+                  <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase">Amount</th>
+                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
                 </tr></thead>
                 <tbody>
                   {quotations.slice(0, 10).map((q) => (
-                    <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/billing/quotations/${q.id}`)}>
-                      <td className="py-3 px-3 font-medium text-gray-900">{q.quotation_number || q.number || q.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(q.issue_date || q.date || q.created_at)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(q.total || q.amount)}</td>
+                    <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/quotations/${q.id}`)}>
+                      <td className="py-3 px-3 font-medium text-slate-900">{q.quotation_number || q.number || q.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(q.issue_date || q.date || q.created_at)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(q.total || q.amount)}</td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           q.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
-                          q.status === 'draft' ? 'bg-gray-100 text-gray-600' :
+                          q.status === 'draft' ? 'bg-slate-100 text-slate-600' :
                           q.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                          q.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                          q.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                         }`}>{q.status ? q.status.charAt(0).toUpperCase() + q.status.slice(1) : 'Unknown'}</span>
                       </td>
                     </tr>
@@ -497,8 +497,8 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'invoices' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Invoices</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Recent Invoices</h3>
           {invoicesLoading ? <Spinner /> : invoicesError ? (
             <ErrorState message={invoicesError} onRetry={fetchInvoices} />
           ) : invoices.length === 0 ? (
@@ -506,25 +506,25 @@ export default function ProductProfilePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Invoice</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Date</th>
-                  <th className="text-right py-3 px-3 font-medium text-gray-500 text-xs uppercase">Amount</th>
-                  <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase">Status</th>
+                <thead><tr className="border-b border-slate-100">
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Invoice</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Date</th>
+                  <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase">Amount</th>
+                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
                 </tr></thead>
                 <tbody>
                   {invoices.slice(0, 10).map((inv) => (
-                    <tr key={inv.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/billing/invoices/${inv.id}`)}>
-                      <td className="py-3 px-3 font-medium text-gray-900">{inv.invoice_number || inv.number || inv.id}</td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(inv.issue_date || inv.date || inv.created_at)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-gray-900">{formatDisplayCurrency(inv.total || inv.amount)}</td>
+                    <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/invoices/${inv.id}`)}>
+                      <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || inv.number || inv.id}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(inv.issue_date || inv.date || inv.created_at)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(inv.total || inv.amount)}</td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
-                          inv.status === 'draft' ? 'bg-gray-100 text-gray-600' :
+                          inv.status === 'draft' ? 'bg-slate-100 text-slate-600' :
                           inv.status === 'sent' || inv.status === 'unpaid' ? 'bg-amber-100 text-amber-700' :
                           inv.status === 'overdue' ? 'bg-red-100 text-red-700' :
-                          inv.status === 'cancelled' || inv.status === 'void' ? 'bg-slate-100 text-slate-600' : 'bg-gray-100 text-gray-600'
+                          inv.status === 'cancelled' || inv.status === 'void' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600'
                         }`}>{inv.status ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1) : 'Unknown'}</span>
                       </td>
                     </tr>
@@ -537,8 +537,8 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'contracts' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Contracts</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Contracts</h3>
           {contractsLoading ? <Spinner /> : contractsError ? (
             <ErrorState message={contractsError} onRetry={fetchContracts} />
           ) : contracts.length === 0 ? (
@@ -546,32 +546,32 @@ export default function ProductProfilePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Contract</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Customer</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Start</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">End</th>
-                  <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase">Status</th>
+                <thead><tr className="border-b border-slate-100">
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Contract</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Customer</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Start</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">End</th>
+                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
                 </tr></thead>
                 <tbody>
                   {contracts.map((c) => (
-                    <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/billing/contracts/${c.id}`)}>
-                      <td className="py-3 px-3 font-medium text-gray-900">{c.contract_number || c.number || c.id}</td>
-                      <td className="py-3 px-3 text-gray-500">
+                    <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/contracts/${c.id}`)}>
+                      <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || c.number || c.id}</td>
+                      <td className="py-3 px-3 text-slate-500">
                         {c.customer_id ? (
                           <button onClick={(e) => { e.stopPropagation(); navigate(`/billing/customers/${c.customer_id}`); }} className="text-brand-600 hover:underline">
                             {c.customer_name || `Customer #${c.customer_id}`}
                           </button>
                         ) : (c.customer_name || '—')}
                       </td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(c.start_date)}</td>
-                      <td className="py-3 px-3 text-gray-500">{c.end_date ? formatDisplayDate(c.end_date) : '—'}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.start_date)}</td>
+                      <td className="py-3 px-3 text-slate-500">{c.end_date ? formatDisplayDate(c.end_date) : '—'}</td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           c.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                          c.status === 'draft' ? 'bg-gray-100 text-gray-600' :
+                          c.status === 'draft' ? 'bg-slate-100 text-slate-600' :
                           c.status === 'expired' ? 'bg-amber-100 text-amber-700' :
-                          c.status === 'terminated' || c.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                          c.status === 'terminated' || c.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                         }`}>{c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : 'Unknown'}</span>
                       </td>
                     </tr>
@@ -584,8 +584,8 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'subscriptions' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Subscriptions</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Subscriptions</h3>
           {subscriptionsLoading ? <Spinner /> : subscriptionsError ? (
             <ErrorState message={subscriptionsError} onRetry={fetchSubscriptions} />
           ) : subscriptions.length === 0 ? (
@@ -593,31 +593,31 @@ export default function ProductProfilePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Subscription</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Customer</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Start</th>
-                  <th className="text-left py-3 px-3 font-medium text-gray-500 text-xs uppercase">Period</th>
-                  <th className="text-center py-3 px-3 font-medium text-gray-500 text-xs uppercase">Status</th>
+                <thead><tr className="border-b border-slate-100">
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Subscription</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Customer</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Start</th>
+                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Period</th>
+                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
                 </tr></thead>
                 <tbody>
                   {subscriptions.map((s) => (
-                    <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/billing/subscriptions/${s.id}`)}>
-                      <td className="py-3 px-3 font-medium text-gray-900">{s.subscription_number || s.number || s.id}</td>
-                      <td className="py-3 px-3 text-gray-500">
+                    <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/subscriptions/${s.id}`)}>
+                      <td className="py-3 px-3 font-medium text-slate-900">{s.subscription_number || s.number || s.id}</td>
+                      <td className="py-3 px-3 text-slate-500">
                         {s.customer_id ? (
                           <button onClick={(e) => { e.stopPropagation(); navigate(`/billing/customers/${s.customer_id}`); }} className="text-brand-600 hover:underline">
                             {s.customer_name || `Customer #${s.customer_id}`}
                           </button>
                         ) : (s.customer_name || '—')}
                       </td>
-                      <td className="py-3 px-3 text-gray-500">{formatDisplayDate(s.start_date || s.created_at)}</td>
-                      <td className="py-3 px-3 text-gray-500 capitalize">{s.billing_period?.replace('_', ' ') || '—'}</td>
+                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(s.start_date || s.created_at)}</td>
+                      <td className="py-3 px-3 text-slate-500 capitalize">{s.billing_period?.replace('_', ' ') || '—'}</td>
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           s.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                           s.status === 'paused' ? 'bg-amber-100 text-amber-700' :
-                          s.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                          s.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                         }`}>{s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : 'Unknown'}</span>
                       </td>
                     </tr>
@@ -630,28 +630,28 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'usage' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Usage Settings</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Usage Settings</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Usage Billable</p>
-              <p className="text-sm font-medium text-gray-900 mt-1">{product.is_usage_billable ? 'Yes' : 'No'}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Usage Billable</p>
+              <p className="text-sm font-medium text-slate-900 mt-1">{product.is_usage_billable ? 'Yes' : 'No'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Subscribable</p>
-              <p className="text-sm font-medium text-gray-900 mt-1">{product.is_subscribable ? 'Yes' : 'No'}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Subscribable</p>
+              <p className="text-sm font-medium text-slate-900 mt-1">{product.is_subscribable ? 'Yes' : 'No'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Unit / Meter</p>
-              <p className="text-sm font-medium text-gray-900 mt-1">{product.unit_label || '—'}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Unit / Meter</p>
+              <p className="text-sm font-medium text-slate-900 mt-1">{product.unit_label || '—'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Billing Frequency</p>
-              <p className="text-sm font-medium text-gray-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Billing Frequency</p>
+              <p className="text-sm font-medium text-slate-900 mt-1 capitalize">{FREQ_LABELS[product.billing_frequency] || product.billing_frequency || '—'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Product Type</p>
-              <p className="text-sm font-medium text-gray-900 mt-1 capitalize">{product.product_type?.replace('_', ' ') || '—'}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Product Type</p>
+              <p className="text-sm font-medium text-slate-900 mt-1 capitalize">{product.product_type?.replace('_', ' ') || '—'}</p>
             </div>
           </div>
           {!product.is_usage_billable && (
@@ -668,8 +668,8 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'audit' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Audit History</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Audit History</h3>
           {auditLoading ? <Spinner /> : auditError ? (
             <ErrorState message={auditError} onRetry={fetchAuditLogs} />
           ) : auditLogs.length === 0 ? (
@@ -677,18 +677,18 @@ export default function ProductProfilePage() {
           ) : (
             <div className="space-y-3">
               {auditLogs.map((log, idx) => (
-                <div key={log.id || idx} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                <div key={log.id || idx} className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                     log.action === 'create' ? 'bg-green-100 text-green-600' :
                     log.action === 'update' ? 'bg-blue-100 text-blue-600' :
-                    log.action === 'delete' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
+                    log.action === 'delete' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'
                   }`}>
                     <Activity size={14} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{log.action ? log.action.charAt(0).toUpperCase() + log.action.slice(1) : 'Unknown'}</p>
-                    {log.details && <p className="text-xs text-gray-500 mt-0.5 truncate">{typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}</p>}
-                    <p className="text-xs text-gray-400 mt-0.5">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</p>
+                    <p className="text-sm font-medium text-slate-900">{log.action ? log.action.charAt(0).toUpperCase() + log.action.slice(1) : 'Unknown'}</p>
+                    {log.details && <p className="text-xs text-slate-500 mt-0.5 truncate">{typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}</p>}
+                    <p className="text-xs text-slate-400 mt-0.5">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</p>
                   </div>
                 </div>
               ))}
@@ -698,18 +698,18 @@ export default function ProductProfilePage() {
       )}
 
       {activeTab === 'notes' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Notes</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Notes</h3>
           </div>
           <EmptyState icon={StickyNote} title="No notes" message="Notes will appear here." />
         </div>
       )}
 
       {activeTab === 'documents' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Documents</h3>
           </div>
           <EmptyState icon={Files} title="No documents" message="Documents will appear here." />
         </div>

@@ -53,7 +53,7 @@ async function refreshSession() {
   return true;
 }
 
-export async function apiFetch(path, { method = "GET", body, params } = {}) {
+export async function apiFetch(path, { method = "GET", body, params, timeout = 30000 } = {}) {
   const url = new URL(API_BASE + path);
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
@@ -64,11 +64,11 @@ export async function apiFetch(path, { method = "GET", body, params } = {}) {
   }
 
   let attempt = true;
-  let res = await rawFetch(url, method, body);
+  let res = await rawFetch(url, method, body, timeout);
 
   if (res.status === 401 && attempt && (await refreshSession())) {
     attempt = false;
-    res = await rawFetch(url, method, body);
+    res = await rawFetch(url, method, body, timeout);
   }
 
   let data = {};
@@ -88,13 +88,18 @@ export async function apiFetch(path, { method = "GET", body, params } = {}) {
   return data;
 }
 
-function rawFetch(url, method, body) {
+function rawFetch(url, method, body, timeout = 30000) {
   const headers = { "Content-Type": "application/json" };
   const token = getAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
   return fetch(url, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 }

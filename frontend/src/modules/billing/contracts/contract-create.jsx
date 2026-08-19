@@ -715,13 +715,13 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Contract Number *</label>
           <input type="text" value={form.contract_number}
             onChange={(e) => setForm((p) => ({ ...p, contract_number: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Start Date *</label>
           <input type="date" value={form.start_date}
             onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
       </div>
     </div>
@@ -735,19 +735,19 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Contract Name *</label>
           <input type="text" value={form.contract_name}
             onChange={(e) => setForm((p) => ({ ...p, contract_name: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">End Date</label>
           <input type="date" value={form.end_date}
             onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
         <select value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
           {getCurrencySelectOptions().map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
       </div>
@@ -756,7 +756,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Notice Period (days)</label>
           <input type="number" min="0" value={form.notice_period_days}
             onChange={(e) => setForm((p) => ({ ...p, notice_period_days: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Auto Renew</label>
@@ -772,18 +772,18 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <input type="number" min="1" value={form.renewal_term_days}
             onChange={(e) => setForm((p) => ({ ...p, renewal_term_days: e.target.value }))}
             disabled={!form.auto_renew}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:bg-slate-50" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:bg-slate-50" />
         </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Notes (Internal)</label>
         <textarea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-          rows={2} placeholder="Internal notes..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          rows={2} placeholder="Internal notes..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Terms & Conditions</label>
         <textarea value={form.terms} onChange={(e) => setForm((p) => ({ ...p, terms: e.target.value }))}
-          rows={3} placeholder="Payment terms, delivery terms, validity..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          rows={3} placeholder="Payment terms, delivery terms, validity..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
       </div>
     </div>
   );
@@ -880,31 +880,31 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
                         <label className="block text-xs text-slate-500 mb-1">Qty</label>
                         <input type="number" min="0.01" step="0.01" value={item.quantity}
                           onChange={(e) => updateLineItem(item.id, "quantity", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Unit Price</label>
                         <input type="number" min="0" step="0.01" value={item.unit_price}
                           onChange={(e) => updateLineItem(item.id, "unit_price", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Discount %</label>
                         <input type="number" min="0" max="100" step="0.1" value={item.discount_percentage}
                           onChange={(e) => updateLineItem(item.id, "discount_percentage", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Tax %</label>
                         <input type="number" min="0" max="100" step="0.1" value={item.tax_percentage}
                           onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-xs text-slate-500 mb-1">Description</label>
                         <input type="text" value={item.description}
                           onChange={(e) => updateLineItem(item.id, "description", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                     </div>
                     {item.product_type === "retainer" && (
@@ -1011,7 +1011,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Billing Period *</label>
           <select value={form.billing_period} onChange={(e) => setForm((p) => ({ ...p, billing_period: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {BILLING_PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </div>
@@ -1019,7 +1019,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Billing Day *</label>
           <input type="number" min="1" max="31" value={form.billing_day}
             onChange={(e) => setForm((p) => ({ ...p, billing_day: Math.min(31, Math.max(1, parseInt(e.target.value) || 1)) }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Next Billing Date</label>
@@ -1027,8 +1027,8 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm bg-slate-50" readOnly />
         </div>
       </div>
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Schedule Preview</h3>
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Schedule Preview</h3>
         <div className="space-y-3">
           <p className="text-sm text-slate-600">Invoices will be generated on day <strong>{form.billing_day}</strong> of each <strong>{form.billing_period}</strong> period.</p>
           <p className="text-sm text-slate-600">First invoice: <strong>{formatDisplayDate(form.start_date)}</strong></p>

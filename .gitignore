@@ -13,3 +13,4 @@ node_modules/
 venv/
 dist/
 build/
+*.log

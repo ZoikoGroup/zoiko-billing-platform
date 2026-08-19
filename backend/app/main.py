@@ -19,6 +19,7 @@ Router mounting:
 import logging
 import re
 import uuid
+import warnings
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -66,9 +67,24 @@ class _RedactSensitiveQueryFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_RedactSensitiveQueryFilter())
 
+# Suppress harmless SQLAlchemy cycle warning from document-conversion FKs
+# (quotations ↔ invoices ↔ contracts ↔ subscriptions ↔ organizations ↔ users).
+# All cross-table FKs are nullable with SET NULL; no INSERT ordering dependency exists.
+warnings.filterwarnings(
+    "ignore",
+    message=".*Cannot correctly sort tables.*",
+    category=Warning,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.DEBUG and settings.BILLING_SECRET_KEY == "change-me-billing-platform-secret":
+        logger.critical(
+            "BILLING_SECRET_KEY is still the default placeholder. "
+            "Set a unique secret in .env before running in production."
+        )
+        raise SystemExit("BILLING_SECRET_KEY must be overridden in production.")
     try:
         initialize_database()
     except Exception as exc:
@@ -93,8 +109,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    docs_url="/docs",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 
@@ -131,8 +148,8 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_origin_regex=r".*" if settings.DEBUG else None,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"] if settings.DEBUG else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"] if settings.DEBUG else ["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
@@ -168,7 +185,7 @@ def health_root():
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "ok",
-        "docs": "/docs",
+        **({"docs": "/docs"} if settings.DEBUG else {}),
     }
 
 

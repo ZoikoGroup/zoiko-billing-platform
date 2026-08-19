@@ -17,13 +17,14 @@ import { PageHeader, Button, DataTable, SearchInput, Select } from "../../../com
 const ITEMS_PER_PAGE = 15;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "paid", label: "Paid", color: "bg-green-100 text-green-700" },
   { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-amber-100 text-amber-700" },
   { value: "partially_paid", label: "Partially Paid", color: "bg-brand-100 text-brand-700" },
   { value: "refunded", label: "Refunded", color: "bg-pink-100 text-pink-700" },
+  { value: "written_off", label: "Written Off", color: "bg-slate-100 text-slate-600" },
 ];
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();

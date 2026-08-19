@@ -205,6 +205,7 @@ def submit_refund_for_approval(
     refund_id: int,
     body: RefundApproveRequest,
     db: Session = Depends(get_db),
+    _admin=Depends(get_current_billing_admin),
     current_user=Depends(get_current_user),
 ):
     svc = RefundService(db)
@@ -313,6 +314,7 @@ def fail_refund(
 def send_refund_email_endpoint(
     refund_id: int,
     db: Session = Depends(get_db),
+    _admin=Depends(get_current_billing_admin),
     current_user=Depends(get_current_user),
 ):
     svc = RefundService(db)

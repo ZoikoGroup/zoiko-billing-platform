@@ -16,6 +16,7 @@ or require_organization_access), or it is blocked.
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -64,7 +65,10 @@ def get_current_user(
 
     from app.modules.auth.models import User
 
-    user = db.query(User).filter(User.id == user_id).first()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+    except sa_exc.OperationalError:
+        raise UnauthorizedException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None:
         raise UnauthorizedException("User account not found. Please log in again.")
     if not user.is_active:
@@ -191,7 +195,10 @@ def require_active_subscription(product_code: str):
 
         from app.modules.organizations.models import Organization
 
-        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+        try:
+            org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+        except sa_exc.OperationalError:
+            raise ForbiddenException("The database is temporarily unavailable. Please try again in a moment.")
         if org is None:
             raise ForbiddenException("Your organization no longer exists.")
         if not org.is_active:

@@ -227,7 +227,7 @@ export default function ProductSettingsPage() {
             </SettingsField>
             <SettingsField label="Product Numbering Format" icon={Hash} description="Product code format. Use {PREFIX} and {NUMBER} as placeholders">
               <input type="text" value={form.product_numbering_format} onChange={(e) => updateField("product_numbering_format", e.target.value)} className={inputCls} />
-              <p className="mt-1 text-xs text-gray-400">Preview: <code className="font-mono text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{numberingPreview}</code></p>
+              <p className="mt-1 text-xs text-slate-400">Preview: <code className="font-mono text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{numberingPreview}</code></p>
             </SettingsField>
             <SettingsField label="Default Category" icon={Folder} description="Default category assigned to new products">
               <select value={form.default_category_id} onChange={(e) => updateField("default_category_id", e.target.value)} className={inputCls}>
@@ -246,7 +246,7 @@ export default function ProductSettingsPage() {
                 <select value={form.default_product_currency} onChange={(e) => updateField("default_product_currency", e.target.value)} className={inputCls}>
                   {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <p className="mt-1 text-xs text-gray-400">Current: {getCurrencySymbol(form.default_product_currency)} {form.default_product_currency}</p>
+                <p className="mt-1 text-xs text-slate-400">Current: {getCurrencySymbol(form.default_product_currency)} {form.default_product_currency}</p>
               </Field>
             </SettingsField>
             <SettingsField label="Default Tax Rate" icon={Tag} description="Default tax rate applied to new products">
@@ -396,7 +396,7 @@ export default function ProductSettingsPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={fetchSettings}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
             <button onClick={discardChanges} disabled={!hasChanges}

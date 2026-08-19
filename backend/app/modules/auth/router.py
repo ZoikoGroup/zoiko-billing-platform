@@ -165,7 +165,8 @@ def mfa_challenge(request: Request, data: MFAChallengeRequest, db: Session = Dep
     "/mfa/disable", response_model=SuccessResponse,
     summary="Disable MFA on your own Super Admin account (requires current password)",
 )
-def mfa_disable(data: MFADisableRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def mfa_disable(request: Request, data: MFADisableRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
     if current_user.role != UserRole.SUPER_ADMIN:
@@ -192,7 +193,8 @@ def get_registration_country_defaults():
 
 
 @router.post("/refresh", response_model=TokenResponse, summary="Refresh access token")
-def refresh_token(data: RefreshRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def refresh_token(request: Request, data: RefreshRequest, db: Session = Depends(get_db)):
     return service.refresh_user_token(db, data.refresh_token)
 
 
@@ -208,7 +210,9 @@ def logout(current_user=Depends(get_current_user), request: Request = None):
 
 
 @router.post("/change-password", response_model=SuccessResponse, summary="Change current user password")
+@limiter.limit("5/minute")
 def change_password(
+    request: Request,
     data: ChangePasswordRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),

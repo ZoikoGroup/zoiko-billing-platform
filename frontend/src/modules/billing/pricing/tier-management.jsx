@@ -148,7 +148,7 @@ export default function TierManagementPage() {
                 {TIER_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Min Units</label>
                 <input type="number" min="0" value={newTier.min_units} onChange={(e) => setNewTier({ ...newTier, min_units: e.target.value })}
@@ -160,7 +160,7 @@ export default function TierManagementPage() {
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price *</label>
                 <input type="number" step="0.01" min="0" value={newTier.unit_price} onChange={(e) => setNewTier({ ...newTier, unit_price: e.target.value })}

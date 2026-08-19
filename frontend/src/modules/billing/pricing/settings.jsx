@@ -97,7 +97,7 @@ export default function PricingSettingsPage() {
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
@@ -140,7 +140,7 @@ function SettingsField({ label, icon: Icon, children, description }) {
             </span>
           )}
           <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button onClick={handleSave} disabled={!hasChanges || saving}
@@ -160,31 +160,31 @@ function SettingsField({ label, icon: Icon, children, description }) {
       <div className="space-y-6">
         <SettingsField label="Default Currency" icon={DollarSign} description="Default currency for pricing">
           <select value={settings.default_currency} onChange={(e) => handleChange("default_currency", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </SettingsField>
 
         <SettingsField label="Default Billing Frequency" icon={Calendar} description="Default billing cycle for pricing plans">
           <select value={settings.default_billing_frequency} onChange={(e) => handleChange("default_billing_frequency", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {FREQUENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </SettingsField>
 
         <SettingsField label="Default Trial Days" icon={Hash} description="Default trial duration for new pricing plans">
           <input type="number" min="0" value={settings.default_trial_days} onChange={(e) => handleChange("default_trial_days", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Price Precision" icon={Hash} description="Number of decimal places for prices">
           <input type="number" min="0" max="6" value={settings.price_precision} onChange={(e) => handleChange("price_precision", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Tax Inclusive Pricing" icon={Percent} description="Whether prices include tax by default">
           <select value={settings.tax_inclusive} onChange={(e) => handleChange("tax_inclusive", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="yes">Yes (prices include tax)</option>
             <option value="no">No (tax added at checkout)</option>
           </select>
@@ -192,14 +192,14 @@ function SettingsField({ label, icon: Icon, children, description }) {
 
         <SettingsField label="Default Pricing Strategy" icon={BarChart3} description="Default pricing model for new plans">
           <select value={settings.default_pricing_strategy} onChange={(e) => handleChange("default_pricing_strategy", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {STRATEGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </SettingsField>
 
         <SettingsField label="Rounding Rule" icon={DollarSign} description="How prices are rounded">
           <select value={settings.rounding_rule} onChange={(e) => handleChange("rounding_rule", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {ROUNDING_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </SettingsField>

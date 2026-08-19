@@ -214,6 +214,7 @@ def submit_write_off_for_approval(
     write_off_id: int,
     body: WriteOffApproveRequest,
     db: Session = Depends(get_db),
+    _admin=Depends(get_current_billing_admin),
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
@@ -289,6 +290,7 @@ def reverse_write_off(
 def send_write_off_email_endpoint(
     write_off_id: int,
     db: Session = Depends(get_db),
+    _admin=Depends(get_current_billing_admin),
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)

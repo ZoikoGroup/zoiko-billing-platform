@@ -27,7 +27,7 @@ const UNIT_OPTIONS = [
 ];
 
 function StatusPill({ status }) {
-  const styles = { active: "bg-emerald-100 text-emerald-700", inactive: "bg-gray-100 text-gray-600" };
+  const styles = { active: "bg-emerald-100 text-emerald-700", inactive: "bg-slate-100 text-slate-600" };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-600"}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
@@ -284,11 +284,11 @@ export default function UsageBillingPage() {
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <button onClick={handleDownloadLog}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
                 <Download size={14} /> Log CSV
               </button>
               <button onClick={() => { setRefreshing(true); fetchData(); }} disabled={refreshing}
-                className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50" aria-label="Refresh">
+                className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50" aria-label="Refresh">
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </button>
             </div>

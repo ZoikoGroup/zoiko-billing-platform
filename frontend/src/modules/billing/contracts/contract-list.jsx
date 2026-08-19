@@ -13,9 +13,8 @@ const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  { value: "pending", label: "Pending", color: "bg-blue-100 text-blue-700" },
   { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
-  { value: "expired", label: "Expired", color: "bg-gray-100 text-gray-700" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-700" },
   { value: "terminated", label: "Terminated", color: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-500" },
 ];
@@ -30,7 +29,7 @@ const BILLING_PERIODS = [
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, pending: Clock, draft: FileText, expired: Clock, terminated: XCircle, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -225,18 +224,18 @@ export default function ContractListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && contracts.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchContracts(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && contracts.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchContracts(true)} /></div>;
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
           <DashboardStatCard title="Contracts" value={kpiTotal} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
           <DashboardStatCard title="Active Contracts" value={kpiActive} icon={FileText} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => { setStatusFilter("active"); setCurrentPage(1); }} />
           <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={Clock} color="from-amber-500 to-orange-500" loading={summaryLoading} />
-          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-gray-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("expired"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("expired"); setCurrentPage(1); }} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
           <DashboardStatCard title="Draft" value={kpiDraft} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("draft"); setCurrentPage(1); }} />

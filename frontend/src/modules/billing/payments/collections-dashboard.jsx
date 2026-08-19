@@ -329,7 +329,7 @@ export default function CollectionsDashboard() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Dunning Performance</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-4">Dunning Performance</h3>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div className="rounded-lg bg-slate-50 p-4">
             <p className="text-xs font-medium text-slate-500">Resolution Rate</p>

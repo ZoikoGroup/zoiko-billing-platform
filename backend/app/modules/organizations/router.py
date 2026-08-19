@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -245,9 +246,13 @@ def get_my_organization_detail(
     from app.modules.organizations.models import Organization
     from app.modules.auth.models import User, UserRole
     from app.modules.billing.models import BillingCustomer, CustomerStatus
+    from app.core.exceptions import BadRequestException
 
     org_id = get_organization_id(current_user)
-    org = db.query(Organization).filter(Organization.id == org_id).first()
+    try:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+    except sa_exc.OperationalError:
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if org is None:
         raise NotFoundException("Organization", "id")
 

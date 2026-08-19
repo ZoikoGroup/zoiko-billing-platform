@@ -9,12 +9,12 @@ import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing
 import { useTerminology } from "../utils/TerminologyContext";
 import { StatusBadge } from "../../../components/billing-shared";
 import { PageHeader, Button, Modal, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+// pdfmake + vfs_fonts are lazy-loaded inside buildCreditNotePdf() so the
+// ~1.74 MB font bundle is only fetched when the user clicks "Download".
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "approved", label: "Approved", color: "bg-indigo-100 text-indigo-700" },
   { value: "issued", label: "Issued", color: "bg-blue-100 text-blue-700" },
   { value: "partially_applied", label: "Partially Applied", color: "bg-amber-100 text-amber-700" },
@@ -26,7 +26,13 @@ const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-
 const cardClass = "rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]";
 const labelClass = "text-xs font-medium uppercase tracking-wider text-slate-500";
 
-function buildCreditNotePdf(cn, orgSettings = {}) {
+async function buildCreditNotePdf(cn, orgSettings = {}) {
+  const pdfMakeModule = await import("pdfmake/build/pdfmake");
+  const pdfFontsModule = await import("pdfmake/build/vfs_fonts");
+  const pdfMake = pdfMakeModule.default;
+  const pdfFonts = pdfFontsModule.default;
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
   const currency = cn.currency || "USD";
   const fmt = (v) => {
     if (v == null || v === "") return "—";
@@ -185,9 +191,10 @@ export default function CreditNoteDetailPage() {
     }
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (!cn) return;
-    buildCreditNotePdf(cn).download(`${(cn.credit_note_number || `credit-note-${cn.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
+    const pdf = await buildCreditNotePdf(cn, {});
+    pdf.download(`${(cn.credit_note_number || `credit-note-${cn.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
   };
 
   if (loading) {

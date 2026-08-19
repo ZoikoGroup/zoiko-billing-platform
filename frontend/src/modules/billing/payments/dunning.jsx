@@ -35,7 +35,7 @@ function getStatusStyle(status) {
     resolved: "bg-emerald-100 text-emerald-700",
     closed: "bg-slate-100 text-slate-500",
   };
-  return map[status] || "bg-gray-100 text-gray-600";
+  return map[status] || "bg-slate-100 text-slate-600";
 }
 
 function getLevelStyle(level) {
@@ -187,22 +187,22 @@ export default function DunningPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input type="text" placeholder="Search dunning cases..." value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
+              className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
           </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
               showFilters || hasActiveFilters
                 ? "border-brand-200 bg-brand-50 text-brand-700"
-                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50"
             }`}>
             <Filter className="h-4 w-4" /> Filters {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-brand-500" />}
           </button>
           {hasActiveFilters && (
             <button onClick={clearFilters}
-              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-800">
               <X className="h-4 w-4" /> Clear
             </button>
           )}
@@ -220,19 +220,19 @@ export default function DunningPage() {
       </div>
 
       {showFilters && (
-        <div className="mb-6 p-4 bg-white rounded-xl border border-gray-200 space-y-4">
+        <div className="mb-6 p-4 bg-white rounded-3xl border border-slate-200 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Status</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Status</label>
               <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-                className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Dunning Level</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Dunning Level</label>
               <select value={levelFilter} onChange={(e) => { setLevelFilter(e.target.value); setCurrentPage(1); }}
-                className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {LEVEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -247,7 +247,7 @@ export default function DunningPage() {
         <DashboardStatCard title="Level 3+" value={(levelCounts[3] || 0) + (levelCounts[4] || 0) + (levelCounts[5] || 0)} subtitle="Escalated level" icon={AlertCircle} color="from-red-500 to-rose-500" />
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200">
+      <div className="bg-white rounded-3xl border border-slate-200">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
@@ -256,45 +256,45 @@ export default function DunningPage() {
           <ErrorState message={error} onRetry={fetchData} />
         ) : cases.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bell className="h-10 w-10 text-gray-300 mb-3" />
-            <p className="text-sm font-medium text-gray-500 mb-1">No dunning cases found</p>
-            <p className="text-xs text-gray-400">{hasActiveFilters ? "Try adjusting your filters." : "No active dunning processes at this time."}</p>
+            <Bell className="h-10 w-10 text-slate-300 mb-3" />
+            <p className="text-sm font-medium text-slate-500 mb-1">No dunning cases found</p>
+            <p className="text-xs text-slate-400">{hasActiveFilters ? "Try adjusting your filters." : "No active dunning processes at this time."}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Case ID</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Customer</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Invoice</th>
-                  <th scope="col" className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Overdue Amount</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Level</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Days Overdue</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Next Action</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Actions</th>
+                <tr className="border-b border-slate-100">
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Case ID</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Customer</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoice</th>
+                  <th scope="col" className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Overdue Amount</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Level</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Days Overdue</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Next Action</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {cases.map((c) => (
-                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-900">#{c.id}</td>
-                    <td className="py-3 px-4 text-gray-600">{c.customer_name || `Customer #${c.customer_id}`}</td>
-                    <td className="py-3 px-4 text-gray-600">{c.invoice_number || `#${c.invoice_id}`}</td>
-                    <td className="py-3 px-4 text-right font-medium text-gray-900">{formatDisplayCurrency(c.total_overdue_amount, c.currency)}</td>
+                  <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="py-3 px-4 font-medium text-slate-900">#{c.id}</td>
+                    <td className="py-3 px-4 text-slate-600">{c.customer_name || `Customer #${c.customer_id}`}</td>
+                    <td className="py-3 px-4 text-slate-600">{c.invoice_number || `#${c.invoice_id}`}</td>
+                    <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.total_overdue_amount, c.currency)}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getLevelStyle(c.current_level)}`}>
                         Level {c.current_level || 1}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-gray-600">{c.days_overdue || 0}d</td>
+                    <td className="py-3 px-4 text-slate-600">{c.days_overdue || 0}d</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
                         {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{c.next_action_at ? formatDisplayDate(c.next_action_at) : "—"}</td>
+                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{c.next_action_at ? formatDisplayDate(c.next_action_at) : "—"}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
                         <button onClick={() => navigate(`/billing/dunning/${c.id}`)}
@@ -327,13 +327,13 @@ export default function DunningPage() {
         )}
 
         {!loading && !error && totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+            <p className="text-xs text-slate-500">
               Showing {Math.min((safePage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(safePage * ITEMS_PER_PAGE, total)} of {total}
             </p>
             <div className="flex items-center gap-1">
               <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40">
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-40">
                 Previous
               </button>
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
@@ -343,14 +343,14 @@ export default function DunningPage() {
                 return (
                   <button key={page} onClick={() => setCurrentPage(page)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
-                      page === safePage ? "bg-brand-600 text-white" : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                      page === safePage ? "bg-brand-600 text-white" : "text-slate-600 bg-slate-100 hover:bg-slate-200"
                     }`}>
                     {page}
                   </button>
                 );
               })}
               <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40">
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-40">
                 Next
               </button>
             </div>
@@ -360,16 +360,16 @@ export default function DunningPage() {
     {resolveModal.open && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (actionLoading !== "resolve") setResolveModal({ open: false, caseId: null, note: "" }); }}>
         <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Resolve Dunning Case</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Resolve Dunning Case</h3>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">Resolution Note (optional)</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">Resolution Note (optional)</label>
             <textarea value={resolveModal.note} onChange={(e) => setResolveModal((p) => ({ ...p, note: e.target.value }))} rows={3}
               placeholder="Enter resolution details..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setResolveModal({ open: false, caseId: null, note: "" })} disabled={actionLoading === "resolve"}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg">Cancel</button>
             <button onClick={handleResolve} disabled={actionLoading === "resolve"}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50">
               {actionLoading === "resolve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
@@ -383,11 +383,11 @@ export default function DunningPage() {
     {confirmModal.open && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (!actionLoading) setConfirmModal({ open: false, caseId: null, action: null, title: "", message: "" }); }}>
         <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-gray-900 mb-4">{confirmModal.title}</h3>
-          <p className="text-sm text-gray-600 mb-4">{confirmModal.message}</p>
+          <h3 className="text-lg font-bold text-slate-900 mb-4">{confirmModal.title}</h3>
+          <p className="text-sm text-slate-600 mb-4">{confirmModal.message}</p>
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setConfirmModal({ open: false, caseId: null, action: null, title: "", message: "" })} disabled={!!actionLoading}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg">Cancel</button>
             <button onClick={async () => {
                 const { caseId, action } = confirmModal;
                 setConfirmModal({ open: false, caseId: null, action: null, title: "", message: "" });

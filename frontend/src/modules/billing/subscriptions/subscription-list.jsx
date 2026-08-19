@@ -14,12 +14,12 @@ const STATUS_OPTIONS = [
   { value: "paused", label: "Paused", color: "bg-amber-100 text-amber-700" },
   { value: "past_due", label: "Past Due", color: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-500" },
-  { value: "expired", label: "Expired", color: "bg-gray-100 text-gray-700" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-700" },
 ];
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertCircle, cancelled: XCircle, expired: Clock };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -238,11 +238,11 @@ export default function SubscriptionListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && subscriptions.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchSubscriptions(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && subscriptions.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchSubscriptions(true)} /></div>;
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>

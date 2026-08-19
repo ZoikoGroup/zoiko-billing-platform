@@ -11,11 +11,11 @@ const STATUS_STYLES = {
   paused: "bg-amber-100 text-amber-700",
   past_due: "bg-red-100 text-red-700",
   cancelled: "bg-slate-100 text-slate-500",
-  expired: "bg-gray-100 text-gray-700",
+  expired: "bg-slate-100 text-slate-700",
 };
 
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || "bg-gray-100 text-gray-600";
+  const s = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertTriangle, cancelled: XCircle, expired: Clock };
   const Icon = icons[status] || Clock;
   return (
@@ -42,13 +42,13 @@ const TABS = [
 
 function TabNav({ tabs, active, onChange }) {
   return (
-    <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+    <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
           <button key={tab.key} onClick={() => onChange(tab.key)}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>            <Icon className="h-4 w-4" /> {tab.label}
           </button>
         );
@@ -68,13 +68,13 @@ function InfoRow({ label, value }) {
 
 function KpiCard({ label, value, sub, color, icon: Icon }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0 overflow-hidden">
+    <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider truncate">{label}</p>
-        {Icon && <Icon size={16} className="text-gray-300 shrink-0" />}
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">{label}</p>
+        {Icon && <Icon size={16} className="text-slate-300 shrink-0" />}
       </div>
-      <p className={`text-xl font-bold whitespace-nowrap ${color || "text-gray-900"}`} title={typeof value === 'string' ? value : undefined}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5 truncate">{sub}</p>}
+      <p className={`text-xl font-bold whitespace-nowrap ${color || "text-slate-900"}`} title={typeof value === 'string' ? value : undefined}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>}
     </div>
   );
 }
@@ -174,8 +174,8 @@ export default function SubscriptionDetailPage() {
     return (
       <HRPage title="Subscription Detail" subtitle="Subscription not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Repeat className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Subscription not found</p>
+          <Repeat className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Subscription not found</p>
         </div>
       </HRPage>
     );
@@ -206,15 +206,15 @@ export default function SubscriptionDetailPage() {
   const renderOverview = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <KpiCard label="Plan" value={subscription.plan_name || subscription.plan?.name || "—"} color="text-gray-900" icon={CreditCard} />
-        <KpiCard label="Next Billing" value={formatDisplayDate(subscription.next_billing_at)} color="text-gray-900" icon={Calendar} />
-        <KpiCard label="Amount" value={formatDisplayCurrency(subscription.amount ?? subscription.unit_price)} color="text-gray-900" />
-        <KpiCard label="Status" value={<StatusBadge status={subscription.status} />} color="text-gray-900" />
+        <KpiCard label="Plan" value={subscription.plan_name || subscription.plan?.name || "—"} color="text-slate-900" icon={CreditCard} />
+        <KpiCard label="Next Billing" value={formatDisplayDate(subscription.next_billing_at)} color="text-slate-900" icon={Calendar} />
+        <KpiCard label="Amount" value={formatDisplayCurrency(subscription.amount ?? subscription.unit_price)} color="text-slate-900" />
+        <KpiCard label="Status" value={<StatusBadge status={subscription.status} />} color="text-slate-900" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Subscription Information</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscription Information</h3>
           <div className="space-y-3">
             <InfoRow label="Subscription Number" value={subscription.subscription_number} />
             <InfoRow label={singular} value={subscription.customer_name || `${singular} #${subscription.customer_id}`} />
@@ -225,8 +225,8 @@ export default function SubscriptionDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Financial Summary</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Financial Summary</h3>
           <div className="space-y-3">
             <InfoRow label="Monthly Amount" value={formatDisplayCurrency(subscription.amount || subscription.unit_price)} />
             <InfoRow label="Quantity" value={subscription.quantity} />
@@ -237,8 +237,8 @@ export default function SubscriptionDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Subscription Status</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscription Status</h3>
           <div className="space-y-2">
             {isActive && (
               <div className="flex items-center gap-2">
@@ -272,8 +272,8 @@ export default function SubscriptionDetailPage() {
   );
 
   const renderCustomer = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Building2 size={16} className="text-brand-500" /> {singular} Details</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Building2 size={16} className="text-brand-500" /> {singular} Details</h3>
       {customer ? (
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
@@ -319,8 +319,8 @@ export default function SubscriptionDetailPage() {
   const renderContract = () => {
     if (!contract) {
       return (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract</h3>
           <div className="text-center py-8 text-slate-400">
             <FileText size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No contract linked to this subscription</p>
@@ -332,38 +332,38 @@ export default function SubscriptionDetailPage() {
 
     return (
       <div className="space-y-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Contract Information</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Contract Information</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contract</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{contract.contract_number}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Contract</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{contract.contract_number}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
               <div className="mt-2"><StatusBadge status={contract.status} /></div>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Value</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayCurrency(contract.total_value ?? contract.value)}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Value</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayCurrency(contract.total_value ?? contract.value)}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(contract.start_date)}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Start Date</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(contract.start_date)}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(contract.end_date) || "Ongoing"}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">End Date</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(contract.end_date) || "Ongoing"}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Auto Renew</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{contract.auto_renew ? "Yes" : "No"}</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Auto Renew</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">{contract.auto_renew ? "Yes" : "No"}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Contract Details</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Contract Details</h3>
           <div className="grid grid-cols-2 gap-4">
             <InfoRow label="Contract Name" value={contract.contract_name} />
             <InfoRow label={`${singular} ID`} value={contract.customer_id} />
@@ -379,8 +379,8 @@ export default function SubscriptionDetailPage() {
   };
 
   const renderProducts = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Subscription Products</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Subscription Products</h3>
       <div className="space-y-3">
         {subscription.plan_name && (
           <div className="p-4 bg-slate-50 rounded-lg">
@@ -426,8 +426,8 @@ export default function SubscriptionDetailPage() {
   );
 
   const renderPricing = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-brand-500" /> Pricing Breakdown</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-brand-500" /> Pricing Breakdown</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <InfoRow label="Unit Price" value={formatDisplayCurrency(subscription.unit_price || subscription.amount, subscription.currency)} />
         <InfoRow label="Setup Fee" value={subscription.setup_fee > 0 ? formatDisplayCurrency(subscription.setup_fee, subscription.currency) : "—"} />
@@ -442,29 +442,29 @@ export default function SubscriptionDetailPage() {
   const renderBilling = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Period</p>
-          <p className="text-lg font-bold text-gray-900 mt-1 capitalize">{subscription.plan?.billing_period?.replace(/_/g, " ") || subscription.billing_period?.replace(/_/g, " ")}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Period</p>
+          <p className="text-lg font-bold text-slate-900 mt-1 capitalize">{subscription.plan?.billing_period?.replace(/_/g, " ") || subscription.billing_period?.replace(/_/g, " ")}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Next Billing Date</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(subscription.next_billing_at)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Next Billing Date</p>
+          <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(subscription.next_billing_at)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Current Term</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(subscription.current_term_start)} — {formatDisplayDate(subscription.current_term_end)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Current Term</p>
+          <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(subscription.current_term_start)} — {formatDisplayDate(subscription.current_term_end)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Trial End Date</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(subscription.trial_end_date) || "—"}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Trial End Date</p>
+          <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(subscription.trial_end_date) || "—"}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Next Billing Amount</p>
-          <p className="text-lg font-bold text-gray-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(subscription.amount ?? subscription.unit_price * subscription.quantity, subscription.currency)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Next Billing Amount</p>
+          <p className="text-lg font-bold text-slate-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(subscription.amount ?? subscription.unit_price * subscription.quantity, subscription.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Auto Renew</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">{subscription.auto_renew ? "Yes" : "No"}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Auto Renew</p>
+          <p className="text-lg font-bold text-slate-900 mt-1">{subscription.auto_renew ? "Yes" : "No"}</p>
         </div>
       </div>
 
@@ -478,8 +478,8 @@ export default function SubscriptionDetailPage() {
   );
 
   const renderInvoices = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoices ({invoiceList.length})</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoices ({invoiceList.length})</h3>
       {invoiceList.length === 0 ? (
         <div className="text-center py-8 text-slate-400">
           <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
@@ -487,9 +487,9 @@ export default function SubscriptionDetailPage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Invoice</th>
                 <th className="text-left py-3 px-4">Date</th>
                 <th className="text-right py-3 px-4">Amount</th>
@@ -498,9 +498,9 @@ export default function SubscriptionDetailPage() {
                 <th className="text-left py-3 px-4">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {invoiceList.map((inv) => (
-                <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-gray-900 hover:bg-slate-50 cursor-pointer">
+                <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
                   <td className="py-3 px-4 font-medium">{inv.invoice_number || `#${inv.id}`}</td>
                   <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
                   <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
@@ -512,7 +512,7 @@ export default function SubscriptionDetailPage() {
                       inv.status === "overdue" ? "bg-red-100 text-red-700" :
                       inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" :
                       inv.status === "sent" ? "bg-blue-100 text-blue-700" :
-                      "bg-gray-100 text-gray-600"
+                      "bg-slate-100 text-slate-600"
                     }`}>{inv.status?.replace(/_/g, " ")}</span>
                   </td>
                 </tr>
@@ -525,8 +525,8 @@ export default function SubscriptionDetailPage() {
   );
 
   const renderPayments = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><DollarSignIcon size={16} className="text-brand-500" /> Payments ({paymentList.length})</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><DollarSignIcon size={16} className="text-brand-500" /> Payments ({paymentList.length})</h3>
       {paymentList.length === 0 ? (
         <div className="text-center py-8 text-slate-400">
           <DollarSignIcon size={32} className="mx-auto mb-2 text-slate-300" />
@@ -534,9 +534,9 @@ export default function SubscriptionDetailPage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Payment</th>
                 <th className="text-left py-3 px-4">Date</th>
                 <th className="text-left py-3 px-4">Method</th>
@@ -545,9 +545,9 @@ export default function SubscriptionDetailPage() {
                 <th className="text-left py-3 px-4">Transaction ID</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {paymentList.map((pay) => (
-                <tr key={pay.id} onClick={() => navigate(`/billing/payments/${pay.id}`)} className="text-sm text-gray-900 hover:bg-slate-50 cursor-pointer">
+                <tr key={pay.id} onClick={() => navigate(`/billing/payments/${pay.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
                   <td className="py-3 px-4 font-medium">{pay.payment_number || `#${pay.id}`}</td>
                   <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(pay.payment_date)}</td>
                   <td className="py-3 px-4 text-slate-600 capitalize">{pay.payment_type?.replace(/_/g, " ") || pay.payment_method || "—"}</td>
@@ -614,8 +614,8 @@ export default function SubscriptionDetailPage() {
     items.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Subscription Timeline ({items.length})</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Subscription Timeline ({items.length})</h3>
         <div className="space-y-4">
           {items.map((ev, i) => (
             <div key={i} className="flex gap-3">
@@ -635,8 +635,8 @@ export default function SubscriptionDetailPage() {
   const renderNotes = () => (
     <div className="space-y-6">
       {subscription.notes && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{subscription.notes}</p>
         </div>
       )}
@@ -652,16 +652,16 @@ export default function SubscriptionDetailPage() {
   const renderActivity = () => (
     <div className="space-y-4">
       {events.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
           <div className="text-center py-8 text-slate-400">
             <Activity size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No activity recorded</p>
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity ({events.length} events)</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity ({events.length} events)</h3>
           <div className="space-y-2">
             {events.slice(0, 10).map((evt, i) => (
               <div key={evt.id || i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
@@ -693,8 +693,8 @@ export default function SubscriptionDetailPage() {
   );
 
   const renderAudit = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><ShieldIcon size={16} className="text-brand-500" /> Audit Trail</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><ShieldIcon size={16} className="text-brand-500" /> Audit Trail</h3>
       {auditLogs.length === 0 ? (
         <div className="text-center py-8 text-slate-400">
           <ShieldIcon size={32} className="mx-auto mb-2 text-slate-300" />
@@ -702,18 +702,18 @@ export default function SubscriptionDetailPage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Action</th>
                 <th className="text-left py-3 px-4">User</th>
                 <th className="text-left py-3 px-4">Details</th>
                 <th className="text-left py-3 px-4">Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {auditLogs.map((log, i) => (
-                <tr key={log.id || i} className="text-sm text-gray-900 hover:bg-slate-50">
+                <tr key={log.id || i} className="text-sm text-slate-900 hover:bg-slate-50">
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
                       log.action === "created" ? "bg-brand-100 text-brand-700" :
@@ -721,7 +721,7 @@ export default function SubscriptionDetailPage() {
                       log.action === "cancelled" ? "bg-red-100 text-red-700" :
                       log.action === "paused" ? "bg-amber-100 text-amber-700" :
                       log.action === "activated" ? "bg-emerald-100 text-emerald-700" :
-                      "bg-gray-100 text-gray-600"
+                      "bg-slate-100 text-slate-600"
                     }`}>{log.action || log.event_type || "—"}</span>
                   </td>
                   <td className="py-3 px-4 text-slate-600">{log.user_name || log.user_id || log.performed_by || "—"}</td>
@@ -760,7 +760,7 @@ export default function SubscriptionDetailPage() {
       subtitle={<StatusBadge status={subscription.status} />}
       actions={
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate("/billing/subscriptions")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button onClick={() => navigate("/billing/subscriptions")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
         </div>
@@ -781,8 +781,8 @@ export default function SubscriptionDetailPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Summary</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Quick Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Subscription</span><span className="font-medium text-slate-800">{subscription.subscription_number || `#${id}`}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Plan</span><span className="font-medium text-slate-800">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></div>
@@ -796,8 +796,8 @@ export default function SubscriptionDetailPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Actions</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Actions</h3>
             <div className="space-y-3">
 {subscription.status === "active" && (
                 <>
@@ -867,8 +867,8 @@ export default function SubscriptionDetailPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Subscription Health</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscription Health</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Status</span><StatusBadge status={subscription.status} /></div>
               <div className="flex justify-between"><span className="text-slate-500">Created</span><span className="font-medium">{formatDisplayDate(subscription.created_at)}</span></div>

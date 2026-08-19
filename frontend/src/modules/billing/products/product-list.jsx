@@ -13,7 +13,7 @@ import { useConfirmationDialog, PageSkeleton, SuccessMessage, ErrorState, Pagina
 
 const PRODUCT_STATUS_BADGE_OPTIONS = [
   { value: "active", label: "active", color: "bg-green-100 text-green-700" },
-  { value: "inactive", label: "inactive", color: "bg-gray-100 text-gray-700" },
+  { value: "inactive", label: "inactive", color: "bg-slate-100 text-slate-700" },
   { value: "archived", label: "archived", color: "bg-slate-100 text-slate-600" },
 ];
 
@@ -439,7 +439,7 @@ export default function ProductListPage() {
     <div className="space-y-6">
       {/* ── Basic Information ── */}
       <div>
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <Package size={14} className="text-brand-500" /> Basic Information
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -514,7 +514,7 @@ export default function ProductListPage() {
 
       {/* ── Billing Profile ── */}
       <div className="border-t border-slate-100 pt-5">
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <CreditCard size={14} className="text-brand-500" /> Billing Profile
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -907,7 +907,7 @@ export default function ProductListPage() {
               <CheckCircle size={14} /> Activate
             </button>
             <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-medium hover:bg-slate-700 disabled:opacity-50">
               <Clock size={14} /> Deactivate
             </button>
             <button onClick={() => handleBulkAction("archive")} disabled={bulkActionLoading}

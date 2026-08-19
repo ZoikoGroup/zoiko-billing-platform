@@ -86,7 +86,7 @@ export default function DunningLevelsPage() {
       title="Dunning Levels"
       subtitle="Configure escalating reminder rules by days overdue"
       actions={
-        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }

@@ -23,7 +23,7 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_STYLES = {
-  draft: "bg-gray-100 text-gray-700",
+  draft: "bg-slate-100 text-slate-700",
   pending_approval: "bg-amber-100 text-amber-700",
   approved: "bg-indigo-100 text-indigo-700",
   processing: "bg-blue-100 text-blue-700",
@@ -62,7 +62,7 @@ const METHOD_OPTIONS = [
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-gray-100 text-gray-700"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700"}`}>
       {status?.replace(/_/g, " ") || "unknown"}
     </span>
   );

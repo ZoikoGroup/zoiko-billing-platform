@@ -16,7 +16,7 @@ const STATUS_OPTIONS = [
   { value: "processing", label: "Processing", color: "bg-sky-100 text-sky-700" },
   { value: "failed", label: "Failed", color: "bg-red-100 text-red-700" },
   { value: "refunded", label: "Refunded", color: "bg-blue-100 text-blue-700" },
-  { value: "cancelled", label: "Cancelled", color: "bg-gray-100 text-gray-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-700" },
 ];
 
 // How the customer paid — shown in the "Record Payment" wizard. These map to
@@ -50,7 +50,7 @@ const PAYMENT_TYPE_FILTER_OPTIONS = [
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -468,11 +468,11 @@ export default function PaymentListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && payments.length === 0) return <div className="space-y-8"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchPayments(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && payments.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchPayments(true)} /></div>;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>

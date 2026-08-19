@@ -9,7 +9,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
@@ -136,7 +136,7 @@ export default function SubscriptionSettingsPage() {
             </span>
           )}
           <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button onClick={handleSave} disabled={!hasChanges || saving}
@@ -156,18 +156,18 @@ export default function SubscriptionSettingsPage() {
       <div className="space-y-6">
         <SettingsField label="Subscription Numbering Prefix" icon={Hash} description="Prefix used when auto-generating subscription numbers">
           <input type="text" value={form.default_subscription_prefix} onChange={(e) => updateField("default_subscription_prefix", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Subscription Numbering Format" icon={Hash} description="Number format. Use {PREFIX} and {NUMBER} as placeholders">
           <input type="text" value={form.subscription_number_format} onChange={(e) => updateField("subscription_number_format", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-          <p className="mt-1 text-xs text-gray-400">Preview: {numberingPreview}</p>
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          <p className="mt-1 text-xs text-slate-400">Preview: {numberingPreview}</p>
         </SettingsField>
 
         <SettingsField label="Auto-Generate Subscription Numbers" icon={ToggleLeft} description="Automatically generate subscription numbers using the configured prefix/format">
           <select value={String(form.auto_generate_subscription_number)} onChange={(e) => updateField("auto_generate_subscription_number", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -175,7 +175,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Default Billing Period" icon={Calendar} description="Default billing cycle for new subscriptions">
           <select value={form.default_billing_period} onChange={(e) => updateField("default_billing_period", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="monthly">Monthly</option>
             <option value="quarterly">Quarterly</option>
             <option value="semi_annual">Semi-Annual</option>
@@ -186,7 +186,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Enable Trials" icon={Clock} description="Allow free trial periods for new subscriptions">
           <select value={String(form.enable_trials)} onChange={(e) => updateField("enable_trials", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -194,12 +194,12 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Default Trial Period (Days)" icon={Clock} description="Default trial duration for new subscriptions when trials are enabled">
           <input type="number" min="0" value={form.default_trial_days} onChange={(e) => updateField("default_trial_days", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Enable Auto-Renewal" icon={Repeat} description="Allow subscriptions to auto-renew at end of billing period">
           <select value={String(form.enable_auto_renewal)} onChange={(e) => updateField("enable_auto_renewal", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -207,7 +207,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Default Cancellation Policy" icon={Ban} description="Default behaviour when a subscription is cancelled">
           <select value={form.default_cancellation_policy} onChange={(e) => updateField("default_cancellation_policy", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="immediate">Immediate</option>
             <option value="end_of_period">End of Current Period</option>
             <option value="notice_period">Notice Period</option>
@@ -216,7 +216,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Prorate on Plan Change" icon={Percent} description="Prorate charges when a subscription changes plan mid-cycle">
           <select value={String(form.prorate_on_change)} onChange={(e) => updateField("prorate_on_change", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -224,7 +224,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Prorate on Cancel" icon={Percent} description="Refund prorated amount when a subscription is cancelled mid-cycle">
           <select value={String(form.prorate_on_cancel)} onChange={(e) => updateField("prorate_on_cancel", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -232,12 +232,12 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Grace Period (Days)" icon={Clock} description="Days after billing date before subscription is marked past due">
           <input type="number" min="0" value={form.grace_period_days} onChange={(e) => updateField("grace_period_days", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Billing Cycle Alignment" icon={Calendar} description="How billing cycles are aligned for subscriptions">
           <select value={form.billing_cycle_alignment} onChange={(e) => updateField("billing_cycle_alignment", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="calendar">Calendar Aligned</option>
             <option value="subscription">Subscription Start Date</option>
             <option value="customer">{singular} Sign-Up Date</option>
@@ -246,7 +246,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Require Payment Method" icon={DollarSign} description="Require a payment method before activating a subscription">
           <select value={String(form.require_payment_method)} onChange={(e) => updateField("require_payment_method", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Required</option>
             <option value="false">Not Required</option>
           </select>
@@ -254,7 +254,7 @@ export default function SubscriptionSettingsPage() {
 
         <SettingsField label="Enable Dunning" icon={Repeat} description="Automatically retry failed payments and send reminders">
           <select value={String(form.enable_dunning)} onChange={(e) => updateField("enable_dunning", e.target.value === "true")}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -263,14 +263,14 @@ export default function SubscriptionSettingsPage() {
         <SettingsField label="Default Terms & Conditions" icon={FileText} description="Default terms and conditions for new subscriptions">
           <textarea value={form.default_terms_and_conditions} onChange={(e) => updateField("default_terms_and_conditions", e.target.value)}
             rows={3} placeholder="Standard subscription terms..."
-            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Subscription Logo URL" icon={Image} description="URL to company logo displayed on subscription documents">
           <input type="url" value={form.subscription_logo_url} onChange={(e) => updateField("subscription_logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-          {form.subscription_logo_url && <p className="mt-1 text-xs text-gray-400 truncate max-w-xs">{form.subscription_logo_url}</p>}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          {form.subscription_logo_url && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{form.subscription_logo_url}</p>}
         </SettingsField>
       </div>
     </HRPage>

@@ -18,7 +18,7 @@ const ITEMS_PER_PAGE = 15;
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  { value: "inactive", label: "Inactive", color: "bg-gray-100 text-gray-700" },
+  { value: "inactive", label: "Inactive", color: "bg-slate-100 text-slate-700" },
   { value: "suspended", label: "Suspended", color: "bg-amber-100 text-amber-700" },
   { value: "closed", label: "Closed", color: "bg-red-100 text-red-700" },
 ];
@@ -319,6 +319,7 @@ export default function CustomerListPage() {
       const payload = {
         ...newCustomer,
         customer_code: newCustomer.customer_code || `CUST-${Date.now()}`,
+        display_name: newCustomer.display_name?.trim() || newCustomer.company_name.trim(),
         credit_days: newCustomer.credit_days === "" || newCustomer.credit_days == null ? PAYMENT_TERMS_CREDIT_DAYS[newCustomer.payment_terms] ?? 30 : Math.max(0, parseInt(newCustomer.credit_days, 10) || 0),
         credit_limit: newCustomer.credit_limit === "" || newCustomer.credit_limit == null ? undefined : Math.max(0, parseFloat(newCustomer.credit_limit) || 0),
       };
@@ -352,6 +353,7 @@ export default function CustomerListPage() {
     if (!editCustomer.company_name?.trim()) { setFormError("Company name is required"); setFormLoading(false); return; }
     try {
       const payload = { ...editCustomer };
+      payload.display_name = editCustomer.display_name?.trim() || editCustomer.company_name.trim();
       payload.credit_days = editCustomer.credit_days === "" || editCustomer.credit_days == null ? undefined : Math.max(0, parseInt(editCustomer.credit_days, 10) || 0);
       payload.credit_limit = editCustomer.credit_limit === "" || editCustomer.credit_limit == null ? undefined : Math.max(0, parseFloat(editCustomer.credit_limit) || 0);
       if (payload.credit_days === undefined) delete payload.credit_days;
@@ -491,13 +493,13 @@ export default function CustomerListPage() {
     <HRPage title={plural} subtitle={`Manage your ${getLabel("pluralLower")}`}>
       {kpiData && (
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-3 mb-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Total</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.total_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Active</p><p className="text-xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{kpiData.active_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Inactive</p><p className="text-xl font-bold text-slate-500 mt-1 whitespace-nowrap">{kpiData.inactive_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">New (30d)</p><p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{kpiData.new_customers_30d || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Collection</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.avg_collection_time_days || 0}d</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Total</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.total_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Active</p><p className="text-xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{kpiData.active_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Inactive</p><p className="text-xl font-bold text-slate-500 mt-1 whitespace-nowrap">{kpiData.inactive_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">New (30d)</p><p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{kpiData.new_customers_30d || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Collection</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.avg_collection_time_days || 0}d</p></div>
         </div>
       )}
 
@@ -613,7 +615,7 @@ export default function CustomerListPage() {
             <span className="text-sm font-medium text-brand-700">{selectedIds.size} selected</span>
             <div className="h-4 w-px bg-brand-200" />
             <button onClick={() => handleBulkAction("activate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50"><UserCheck size={14} /> Activate</button>
-            <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700 disabled:opacity-50"><UserX size={14} /> Deactivate</button>
+            <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-medium hover:bg-slate-700 disabled:opacity-50"><UserX size={14} /> Deactivate</button>
             <button onClick={() => handleBulkAction("suspend")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50"><AlertCircle size={14} /> Suspend</button>
             <button onClick={handleBulkDelete} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50"><Trash2 size={14} /> Delete</button>
           </div>

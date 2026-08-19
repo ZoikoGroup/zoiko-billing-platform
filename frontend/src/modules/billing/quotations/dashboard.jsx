@@ -34,7 +34,7 @@ import { Button, DataTable, StatGroup } from "../../../components/billing-ui";
 const PAGE_SIZE = 200;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-600" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "accepted", label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
@@ -367,7 +367,7 @@ export default function QuotationDashboardPage() {
 
           <div className={DASHBOARD_KPI_GRID}>
             <DashboardStatCard title="Total Quotations" value={total} subtitle="In selected period" icon={FileSignature} color="from-slate-500 to-slate-600" href="/billing/quotations" />
-            <DashboardStatCard title="Draft" value={draftCount} subtitle={total > 0 ? `${((draftCount / total) * 100).toFixed(0)}% of total` : "—"} icon={Clock} color="from-gray-500 to-slate-600" href="/billing/quotations?status=draft" />
+            <DashboardStatCard title="Draft" value={draftCount} subtitle={total > 0 ? `${((draftCount / total) * 100).toFixed(0)}% of total` : "—"} icon={Clock} color="from-slate-500 to-slate-600" href="/billing/quotations?status=draft" />
             <DashboardStatCard title="Sent" value={sentCount} subtitle={total > 0 ? `${((sentCount / total) * 100).toFixed(0)}% of total` : "—"} icon={Send} color="from-blue-500 to-blue-600" href="/billing/quotations?status=sent" />
             <DashboardStatCard title="Accepted" value={acceptedCount} subtitle={total > 0 ? `${((acceptedCount / total) * 100).toFixed(0)}% of total` : "—"} icon={CheckCircle} color="from-emerald-500 to-emerald-600" href="/billing/quotations?status=accepted" />
           </div>
