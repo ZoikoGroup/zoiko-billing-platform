@@ -52,7 +52,7 @@ export default function LoginPage() {
   function defaultRedirectFor(role) {
     return VALID_ROLES.includes(role)
       ? ROLE_DEFAULT_REDIRECT[role]
-      : "/portal";
+      : "/login";
   }
 
   function completeLogin(data) {
