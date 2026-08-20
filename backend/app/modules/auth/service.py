@@ -7,7 +7,6 @@ reset), change password, and org-admin user management.
 
 import hashlib
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -54,7 +53,14 @@ def _token_hash(raw_token: str) -> str:
 
 
 def _action_link(purpose: SecurityActionPurpose, raw_token: str) -> str:
-    base = os.environ.get("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    # Phase 6 production-readiness finding: os.environ.get("FRONTEND_URL")
+    # only sees a value if it's a real exported shell/container env var --
+    # pydantic-settings reads .env into its own internal source without
+    # writing it back into os.environ, so a FRONTEND_URL set only in .env
+    # (this app's documented configuration mechanism) was silently ignored
+    # here, and every invite/password-reset email linked to localhost
+    # regardless of the configured production frontend URL.
+    base = settings.FRONTEND_URL.rstrip("/")
     path = "accept-invite" if purpose == SecurityActionPurpose.INVITE else "reset-password"
     return f"{base}/auth/{path}?token={raw_token}"
 
@@ -160,6 +166,17 @@ def login_user(db: Session, email: str, password: str) -> dict:
         "user_id": user.id,
         "organization_id": user.organization_id,
     }
+
+    if user.role == UserRole.SUPER_ADMIN:
+        from app.modules.auth import mfa_service
+
+        purpose = "challenge" if mfa_service.is_mfa_enabled(db, user.id) else "enroll"
+        logger.info("Super Admin %s login pending MFA (%s)", user.email, purpose)
+        return {
+            "mfa_status": "challenge_required" if purpose == "challenge" else "enrollment_required",
+            "mfa_token": create_mfa_pending_token(token_payload, purpose),
+        }
+
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
 

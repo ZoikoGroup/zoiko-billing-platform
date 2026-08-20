@@ -453,6 +453,13 @@ class StripeService:
         except Exception as e:
             raise BadRequestException(f"Invalid Stripe webhook signature: {e}")
 
+        # stripe>=10 SDK: Event is a StripeObject exposing __getitem__ but
+        # NOT .get() -- converting to a plain dict up front keeps every
+        # downstream .get() call below correct regardless of installed SDK
+        # version (Phase 4.1 remediation: this crashed with AttributeError
+        # on every real webhook call before test coverage caught it).
+        event = event.to_dict() if hasattr(event, "to_dict") else event
+
         event_id = event.get("id")
         event_type = event.get("type")
         data_object = (event.get("data") or {}).get("object") or {}

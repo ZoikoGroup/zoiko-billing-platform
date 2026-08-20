@@ -314,6 +314,10 @@ export const ENDPOINTS = {
 
   AUDIT_LOGS: `${BILLING}/audit-logs`,
 
+  // ── Public Invoice (no auth required) ─────────────────────────────────────
+  INVOICE_PUBLIC_VIEW: (token) => `${BILLING}/invoices/public/${token}`,
+  INVOICE_PUBLIC_CHECKOUT: (token) => `${BILLING}/invoices/public/${token}/checkout`,
+
   // ── Phase 5C.4: Admin / Diagnostics ──────────────────────────────────────
   SETTINGS_ADMIN_SMTP_TEST: `${BILLING}/settings/smtp/test`,
   SETTINGS_ADMIN_EMAIL_TEMPLATES: `${BILLING}/settings/email-templates`,

@@ -22,12 +22,17 @@ import uuid
 import warnings
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.core.cors import (
+    ALLOWED_ORIGINS as _cors_origins,
+    parse_cors_origins,
+    validate_production_cors,
+)
 from app.core.exceptions import (
     ZoikoException,
     zoiko_exception_handler,
@@ -88,6 +93,7 @@ async def lifespan(app: FastAPI):
             "Set a unique secret in .env before running in production."
         )
         raise SystemExit("BILLING_SECRET_KEY must be overridden in production.")
+    validate_production_cors(_cors_origins, settings.DEBUG)
     try:
         initialize_database()
     except Exception as exc:
@@ -140,12 +146,9 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
+# _cors_origins is computed above (before `lifespan`), which refuses to boot
+# in production if it is empty or contains a wildcard — see lifespan().
 
-_cors_origins = [
-    o.strip()
-    for o in settings.BILLING_CORS_ORIGINS.split(",")
-    if o.strip()
-]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -194,6 +197,22 @@ def health_root():
 
 @app.get("/health", tags=["Health"])
 def health_check():
+    """Liveness: is the process up and able to respond at all. Does not
+    imply the database is reachable -- see /ready for that."""
     from app.database import check_connection
 
     return {"status": "ok", "database": "connected" if check_connection() else "unavailable"}
+
+
+@app.get("/ready", tags=["Health"])
+def readiness_check(response: Response):
+    """Readiness: is the app able to serve real billing requests right now.
+    Kept separate from /health (liveness) so an orchestrator restarts the
+    process only when it's truly unresponsive, but pulls it out of the load
+    balancer -- without restarting it -- purely for a transient DB outage.
+    Never leaks connection details (host/credentials/stack traces)."""
+    from app.database import check_connection
+
+    db_ok = check_connection()
+    response.status_code = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"status": "ready" if db_ok else "not_ready", "checks": {"database": "ok" if db_ok else "unavailable"}}

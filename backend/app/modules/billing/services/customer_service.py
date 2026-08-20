@@ -645,31 +645,32 @@ class CustomerService:
     # ── Credit Balance ────────────────────────────────────────────────────
 
     def adjust_credit_balance(
-        self, customer_id: int, organization_id: int, amount: float,
+        self, customer_id: int, organization_id: int, amount: Decimal,
         adj_type: str, reason: str, updated_by: int,
     ) -> Dict[str, Any]:
         customer = self.repo.get_by_id(customer_id, organization_id)
-        prev = float(customer.credit_balance or 0)
+        prev = Decimal(str(customer.credit_balance or 0))
+        adj = Decimal(str(amount))
         if adj_type == "increase":
-            customer.credit_balance = prev + amount
+            customer.credit_balance = prev + adj
         elif adj_type == "decrease":
-            new_val = prev - amount
+            new_val = prev - adj
             if new_val < 0:
                 raise BadRequestException("Credit balance cannot be negative")
             customer.credit_balance = new_val
         else:
-            if amount < 0:
+            if adj < 0:
                 raise BadRequestException("Adjusted balance cannot be negative")
-            customer.credit_balance = amount
+            customer.credit_balance = adj
         safe_commit_and_refresh(self.db, customer)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return {
             "customer_id": customer_id,
-            "previous_balance": prev,
+            "previous_balance": float(prev),
             "new_balance": float(customer.credit_balance or 0),
-            "adjustment": amount,
+            "adjustment": float(adj),
             "type": adj_type,
-            "message": f"Credit balance {adj_type} of {amount} completed",
+            "message": f"Credit balance {adj_type} of {adj} completed",
         }
 
     # ── Customer Documents ────────────────────────────────────────────────

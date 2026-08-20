@@ -4,7 +4,9 @@ billing/tasks/recurring_billing.py
 Automatic recurring billing job.
 
 Runs on a configurable interval (default: every hour).
-Processes ALL organisations in a single pass.
+Processes ALL organisations in a single pass, in bounded batches (see
+BATCH_SIZE) rather than loading every due subscription across every
+organization into memory at once.
 Each subscription is processed independently — failures are isolated.
 
 Idempotency:
@@ -15,12 +17,25 @@ Idempotency:
 Concurrency:
   - APScheduler max_instances=1 prevents same job overlapping
   - Database unique constraint prevents duplicate invoices across app instances
+
+Batching (Phase 4.1 remediation):
+  - Due subscriptions are fetched with keyset pagination on Subscription.id
+    (WHERE id > last_seen_id ORDER BY id LIMIT BATCH_SIZE), not one
+    unbounded `.all()` across every organization.
+  - Each batch is grouped by organization_id and processed (and its
+    per-subscription commits flushed) before the next batch is fetched, so
+    at most BATCH_SIZE subscription rows are held in memory at a time.
+  - Keyset pagination on a monotonically increasing primary key guarantees
+    each subscription is visited at most once per job run even though
+    processing a subscription mutates its own next_billing_at/status: once
+    a row's id has been paged past, it is never re-fetched in a later page
+    of the same run, regardless of how its own columns change afterward.
 """
 
 import logging
 import time
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_
@@ -38,6 +53,12 @@ logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_USER_ID = None
 
+# Upper bound on how many Subscription rows are loaded into memory at once.
+# Tenant isolation, idempotency, and duplicate prevention are unaffected by
+# batch size — they're enforced per-subscription (row lock + unique
+# constraint) in SubscriptionService.generate_invoice, not by this loop.
+BATCH_SIZE = 500
+
 
 def _local_today(tz_name: Optional[str]) -> date:
     """Today's date in the organization's configured timezone (fallback UTC)."""
@@ -50,15 +71,17 @@ def _local_today(tz_name: Optional[str]) -> date:
     return datetime.now(tz).date()
 
 
-def run_recurring_billing_job() -> Dict[str, Any]:
+def run_recurring_billing_job(batch_size: int = BATCH_SIZE) -> Dict[str, Any]:
     """
     Entry point called by APScheduler.
 
-    Processes due subscriptions across ALL organisations.
+    Processes due subscriptions across ALL organisations, one bounded batch
+    at a time (see _iter_due_subscription_batches) instead of loading every
+    due subscription into memory up front.
     Returns a summary dict for observability.
     """
     start_time = time.monotonic()
-    logger.info("[SCHEDULER] Recurring billing job started")
+    logger.info("[SCHEDULER] Recurring billing job started (batch_size=%d)", batch_size)
 
     summary = {
         "started_at": datetime.utcnow().isoformat(),
@@ -67,23 +90,32 @@ def run_recurring_billing_job() -> Dict[str, Any]:
         "total_processed": 0,
         "total_skipped": 0,
         "total_failed": 0,
+        "batches_processed": 0,
         "errors": [],
     }
 
     db = SessionLocal()
     try:
-        due_subs_by_org = _find_all_due_subscriptions(db)
-        summary["organisations_processed"] = len(due_subs_by_org)
-        summary["total_subscriptions_found"] = sum(
-            len(subs) for subs in due_subs_by_org.values()
-        )
+        org_tz = _load_org_timezones(db)
+        orgs_seen: set = set()
 
-        for org_id, subs in due_subs_by_org.items():
-            org_result = _process_org_subscriptions(db, org_id, subs)
-            summary["total_processed"] += org_result["processed"]
-            summary["total_skipped"] += org_result["skipped"]
-            summary["total_failed"] += org_result["failed"]
-            summary["errors"].extend(org_result["errors"])
+        for batch in _iter_due_subscription_batches(db, org_tz, batch_size):
+            summary["batches_processed"] += 1
+            summary["total_subscriptions_found"] += len(batch)
+
+            by_org: Dict[int, List[Subscription]] = {}
+            for sub in batch:
+                by_org.setdefault(sub.organization_id, []).append(sub)
+
+            for org_id, subs in by_org.items():
+                orgs_seen.add(org_id)
+                org_result = _process_org_subscriptions(db, org_id, subs)
+                summary["total_processed"] += org_result["processed"]
+                summary["total_skipped"] += org_result["skipped"]
+                summary["total_failed"] += org_result["failed"]
+                summary["errors"].extend(org_result["errors"])
+
+        summary["organisations_processed"] = len(orgs_seen)
 
     except Exception as exc:
         logger.error("[SCHEDULER] Fatal error in billing job: %s", exc, exc_info=True)
@@ -96,8 +128,9 @@ def run_recurring_billing_job() -> Dict[str, Any]:
 
     logger.info(
         "[SCHEDULER] Billing job completed in %.3fs — "
-        "orgs=%d, found=%d, processed=%d, skipped=%d, failed=%d",
+        "batches=%d, orgs=%d, found=%d, processed=%d, skipped=%d, failed=%d",
         elapsed,
+        summary["batches_processed"],
         summary["organisations_processed"],
         summary["total_subscriptions_found"],
         summary["total_processed"],
@@ -107,44 +140,22 @@ def run_recurring_billing_job() -> Dict[str, Any]:
     return summary
 
 
-def _find_all_due_subscriptions(db) -> Dict[int, List[Subscription]]:
-    """
-    Find all subscriptions due for billing across ALL organisations.
-
-    Query criteria:
-      - is_active = True
-      - status = 'active'
-      - next_billing_at IS NOT NULL
-      - next_billing_at <= today in the ORGANIZATION's timezone
-
-    Timezone safety: "today" is evaluated per organization using the org's
-    configured timezone (Organization.timezone), not a global UTC day. To avoid
-    a per-org query storm, one broad query fetches rows up to UTC-today+1
-    (the maximum UTC offset is +14, so no due subscription can fall outside
-    [utc_today-1, utc_today+1]) and then rows are filtered in Python against
-    each org's local date.
-
-    Returns dict keyed by organization_id.
-
-    Eligibility guard: a subscription linked to a CANCELLED/TERMINATED
-    contract must never be selected here, even if its own status is still
-    ACTIVE — contract and subscription lifecycles are independent (see
-    CONTRACT_BLOCKED_STATUSES on the Subscription/Contract models).
-    Standalone subscriptions (contract_id IS NULL) are unaffected. This must
-    stay in agreement with SubscriptionRepository.list_due_for_billing, the
-    other "find due subscriptions" entry point (used by the manual
-    process-billing endpoint) — a subscription must never be selected by one
-    path and rejected by the other.
-    """
+def _load_org_timezones(db) -> Dict[int, str]:
     from app.modules.organizations.models import Organization
 
-    org_tz: Dict[int, str] = {}
-    for org_id, tz in db.query(Organization.id, Organization.timezone).all():
-        org_tz[org_id] = tz or "UTC"
+    return {
+        org_id: (tz or "UTC")
+        for org_id, tz in db.query(Organization.id, Organization.timezone).all()
+    }
 
-    # Upper bound: local date in any timezone is at most utc_today + 1.
-    upper_bound = date.today() + timedelta(days=1)
-    rows = (
+
+def _due_subscriptions_base_query(db, upper_bound: date):
+    """Shared eligibility filter for "is this subscription due for
+    billing", independent of pagination. Must stay in agreement with
+    SubscriptionRepository.list_due_for_billing (used by the manual
+    process-billing endpoint) — a subscription must never be selected by
+    one path and rejected by the other."""
+    return (
         db.query(Subscription)
         .outerjoin(Subscription.contract)
         .filter(
@@ -157,15 +168,68 @@ def _find_all_due_subscriptions(db) -> Dict[int, List[Subscription]]:
                 Contract.status.notin_(CONTRACT_BLOCKED_STATUSES),
             ),
         )
-        .all()
     )
 
-    by_org: Dict[int, List[Subscription]] = {}
-    for sub in rows:
-        local_today = _local_today(org_tz.get(sub.organization_id))
-        if sub.next_billing_at <= local_today:
-            by_org.setdefault(sub.organization_id, []).append(sub)
-    return by_org
+
+def _iter_due_subscription_batches(
+    db, org_tz: Dict[int, str], batch_size: int = BATCH_SIZE
+) -> Iterator[List[Subscription]]:
+    """
+    Yield due subscriptions across ALL organisations in bounded batches,
+    instead of one unbounded `.all()` across every organization.
+
+    Query criteria (same as before batching was introduced):
+      - is_active = True
+      - status = 'active'
+      - next_billing_at IS NOT NULL
+      - next_billing_at <= today in the ORGANIZATION's timezone
+
+    Timezone safety: "today" is evaluated per organization using the org's
+    configured timezone (Organization.timezone), not a global UTC day. To
+    avoid a per-org query storm, each page fetches rows up to UTC-today+1
+    (the maximum UTC offset is +14, so no due subscription can fall outside
+    [utc_today-1, utc_today+1]) and then rows are filtered in Python against
+    each org's local date.
+
+    Pagination: keyset pagination on Subscription.id (WHERE id > last_seen_id
+    ORDER BY id LIMIT batch_size), not OFFSET-based — offset pagination would
+    re-scan and re-skip an ever-growing prefix as batch count grows, and
+    would also risk skipping/duplicating rows if a row's own eligibility
+    changes mid-run (which happens here: processing a subscription updates
+    its own next_billing_at). Keyset-by-id has neither problem: a row is
+    fetched at most once per run because id is monotonically increasing and
+    never reassigned.
+
+    Eligibility guard: a subscription linked to a CANCELLED/TERMINATED
+    contract must never be selected here, even if its own status is still
+    ACTIVE — contract and subscription lifecycles are independent (see
+    CONTRACT_BLOCKED_STATUSES on the Subscription/Contract models).
+    Standalone subscriptions (contract_id IS NULL) are unaffected.
+    """
+    upper_bound = date.today() + timedelta(days=1)
+    last_seen_id = 0
+
+    while True:
+        page = (
+            _due_subscriptions_base_query(db, upper_bound)
+            .filter(Subscription.id > last_seen_id)
+            .order_by(Subscription.id)
+            .limit(batch_size)
+            .all()
+        )
+        if not page:
+            return
+
+        last_seen_id = page[-1].id
+        eligible = [
+            sub for sub in page
+            if sub.next_billing_at <= _local_today(org_tz.get(sub.organization_id))
+        ]
+        if eligible:
+            yield eligible
+
+        if len(page) < batch_size:
+            return
 
 
 def _process_org_subscriptions(

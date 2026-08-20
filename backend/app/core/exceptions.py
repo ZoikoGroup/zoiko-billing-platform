@@ -18,17 +18,30 @@ Standard error response format we use everywhere:
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.cors import is_origin_allowed
+
 
 def _cors_headers(request: Request) -> dict:
-    """Return CORS headers that mirror the ForceCORSMiddleware logic."""
+    """CORS headers for error responses (ZoikoException / unhandled 500).
+
+    CORSMiddleware (main.py) only ever ADDS an Access-Control-Allow-Origin
+    header when the origin is allowed -- it never strips one a response
+    already carries. This used to reflect ANY request Origin unconditionally
+    with credentials=true, which meant every error response (400/401/403/
+    404/409/500) bypassed BILLING_CORS_ORIGINS entirely, in both DEBUG and
+    production. Routed through the same is_origin_allowed() check the
+    middleware itself uses, so a disallowed origin gets no CORS header here
+    either (Phase 6 production-readiness finding)."""
     origin = request.headers.get("origin", "")
-    return {
-        "Access-Control-Allow-Origin": origin if origin else "*",
+    headers = {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Expose-Headers": "*",
     }
+    if origin and is_origin_allowed(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+    return headers
 
 
 def _request_id(request: Request):

@@ -415,7 +415,7 @@ class RefundService:
                 )
             elif source == RefundSource.CUSTOMER_CREDIT_BALANCE:
                 self.customer_service.adjust_credit_balance(
-                    refund.customer_id, organization_id, float(refund.amount), "decrease",
+                    refund.customer_id, organization_id, Decimal(str(refund.amount)), "decrease",
                     reason=f"Refund {refund.refund_number}", updated_by=updated_by,
                 )
         except Exception as e:
