@@ -23,8 +23,8 @@ TAX_RATE_ALLOWED_FIELDS = {
 }
 TAX_ALLOWED_FIELDS = {
     "invoice_id", "credit_note_id", "tax_rate_id",
-    "tax_name", "tax_percentage", "tax_amount",
-    "jurisdiction", "tax_type", "is_active",
+    "tax_name", "taxable_amount", "tax_percentage", "tax_amount",
+    "jurisdiction", "tax_type", "is_reverse_charge", "is_active",
 }
 
 

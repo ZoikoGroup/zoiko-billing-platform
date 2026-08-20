@@ -111,6 +111,96 @@ class InvoiceService:
     def _record_status_history(self, organization_id: int, invoice_id: int, from_status: Optional[str], to_status: str, changed_by: Optional[int] = None, reason: Optional[str] = None) -> InvoiceStatusHistory:
         return self.history_repo.log_status_change(organization_id, invoice_id, from_status, to_status, changed_by, reason)
 
+    def _record_invoice_tax_snapshots(self, invoice_id: int, organization_id: int, created_by: int) -> None:
+        """Persist tax snapshot rows for a finalized invoice.
+
+        Groups invoice line items by tax_rate_id (where available) and
+        creates one Tax record per group. Items with no tax or no
+        tax_rate_id are grouped into a single aggregate record when their
+        combined tax amount is > 0.
+
+        Called during finalize_invoice / send_invoice_via_email after the
+        invoice status is set to SENT.  Failures are logged but never
+        block the invoice from being issued — tax snapshots are an
+        informational audit trail, not a gate.
+        """
+        try:
+            from app.modules.billing.services.tax_service import TaxService
+
+            items = self.item_repo.list_by_invoice(organization_id, invoice_id)
+            if not items:
+                return
+
+            # Group line items by tax_rate_id for consolidated snapshots
+            grouped: Dict[Optional[int], Dict[str, Any]] = {}
+            for item in items:
+                tax_pct = Decimal(str(item.tax_percentage or 0))
+                tax_amt = Decimal(str(item.tax_amount or 0))
+                if tax_pct <= 0 and tax_amt <= 0:
+                    continue
+                taxable = Decimal(str(item.quantity or 0)) * Decimal(str(item.unit_price or 0))
+                taxable -= Decimal(str(item.discount_amount or 0))
+                if item.is_tax_inclusive:
+                    # Tax is already included in the line total; extract base
+                    if tax_pct > 0:
+                        taxable = (taxable * Decimal("100")) / (Decimal("100") + tax_pct)
+
+                rate_key = getattr(item, "tax_rate_id", None)
+                if rate_key not in grouped:
+                    grouped[rate_key] = {
+                        "taxable_amount": Decimal("0"),
+                        "tax_amount": Decimal("0"),
+                        "tax_percentage": tax_pct,
+                        "invoice_id": invoice_id,
+                        "tax_rate_id": rate_key,
+                    }
+                grouped[rate_key]["taxable_amount"] += taxable
+                grouped[rate_key]["tax_amount"] += tax_amt
+
+            if not grouped:
+                return
+
+            tax_svc = TaxService(self.db)
+            snapshot_records = []
+            for rate_key, data in grouped.items():
+                # Resolve jurisdiction and tax_type from the TaxRate if available
+                jurisdiction = None
+                tax_type = None
+                is_reverse_charge = False
+                if rate_key:
+                    try:
+                        from app.modules.billing.models import TaxRate
+                        rate_obj = self.db.query(TaxRate).filter(TaxRate.id == rate_key).first()
+                        if rate_obj:
+                            jurisdiction = rate_obj.jurisdiction
+                            tax_type = rate_obj.tax_type.value if rate_obj.tax_type else None
+                    except Exception:
+                        pass
+
+                snapshot_records.append({
+                    "invoice_id": invoice_id,
+                    "tax_rate_id": rate_key,
+                    "taxable_amount": data["taxable_amount"],
+                    "tax_amount": data["tax_amount"],
+                    "tax_percentage": data["tax_percentage"],
+                    "jurisdiction": jurisdiction,
+                    "tax_type": tax_type,
+                    "is_reverse_charge": is_reverse_charge,
+                })
+
+            if snapshot_records:
+                tax_svc.record_taxes(organization_id, created_by, snapshot_records)
+                logger.info(
+                    "Recorded %d tax snapshot(s) for invoice %d",
+                    len(snapshot_records), invoice_id,
+                )
+        except Exception as e:
+            # Tax snapshot recording must never block invoice issuance
+            logger.warning(
+                "Failed to record tax snapshots for invoice %d: %s",
+                invoice_id, e,
+            )
+
     def _generate_invoice_number(self, organization_id: int) -> str:
         """Generate invoice number using billing configuration format.
 
@@ -569,6 +659,7 @@ class InvoiceService:
         inv.status = InvoiceStatus.SENT
         inv.sent_at = datetime.utcnow()
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT, updated_by)
+        self._record_invoice_tax_snapshots(invoice_id, organization_id, updated_by)
         self.audit.log(organization_id, updated_by, BillingAuditAction.SEND, "Invoice", invoice_id)
         safe_commit_and_refresh(self.db, inv)
         return inv
@@ -694,6 +785,7 @@ class InvoiceService:
         self.db.refresh(inv)
 
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT.value, sent_by, "Sent via email")
+        self._record_invoice_tax_snapshots(invoice_id, organization_id, sent_by)
         self.audit.log(
             organization_id, sent_by, BillingAuditAction.SEND, "Invoice", invoice_id,
             new_values={"email_sent_to": email, "email_delivered": True},

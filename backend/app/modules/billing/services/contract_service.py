@@ -12,18 +12,24 @@ from app.core.exceptions import (
 )
 from app.modules.billing.models import (
     BillingAuditAction,
+    BillingPeriod,
+    BillingSubscriptionStatus,
     Contract,
     ContractItem,
     ContractStatus,
     Invoice,
     InvoiceStatus,
+    PlanCategory,
     PriceSource,
     Product,
     Quotation,
     QuoteStatus,
+    Subscription,
+    SubscriptionPlan,
 )
 from app.modules.billing.services.price_resolver import PriceResolver
 from app.modules.billing.repositories.sales import ContractRepository
+from app.modules.billing.repositories.subscription import SubscriptionPlanRepository, SubscriptionRepository
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh
 from app.modules.billing.services.customer_service import CustomerService
@@ -52,6 +58,8 @@ class ContractService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = ContractRepository(db)
+        self.sub_repo = SubscriptionRepository(db)
+        self.plan_repo = SubscriptionPlanRepository(db)
         self.customer_service = CustomerService(db)
         self.quote_service = QuotationService(db)
         self.invoice_service = InvoiceService(db)
@@ -196,10 +204,23 @@ class ContractService:
         contract = self.repo.get_by_id(contract_id, organization_id)
         if contract.status != ContractStatus.DRAFT:
             raise BadRequestException("Only draft contracts can be activated")
+
+        # Check if subscription already exists for this contract (idempotency)
+        existing_sub = self.sub_repo.get_first(organization_id, contract_id=contract_id)
+
+        # Transition: DRAFT -> ACTIVE
         contract.status = ContractStatus.ACTIVE
         contract.start_date = date.today()
         safe_commit_and_refresh(self.db, contract)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "Contract", contract_id)
+
+        # Create subscription if one doesn't already exist for this contract
+        created_subscription = False
+        if not existing_sub:
+            created_subscription = self._create_subscription_from_contract(
+                contract, organization_id, updated_by,
+            )
+
         email_sent_to = None
         email_delivered = False
         try:
@@ -221,9 +242,103 @@ class ContractService:
             logger.warning("Failed to send contract activated email for contract %d: %s", contract_id, e)
         self.audit.log(
             organization_id, updated_by, BillingAuditAction.SEND, "Contract", contract_id,
-            new_values={"email_sent_to": email_sent_to, "email_delivered": email_delivered},
+            new_values={
+                "email_sent_to": email_sent_to,
+                "email_delivered": email_delivered,
+                "subscription_created": created_subscription,
+            },
         )
         return contract
+
+    def _create_subscription_from_contract(
+        self, contract: Contract, organization_id: int, created_by: int,
+    ) -> bool:
+        """Create a Subscription from a Contract's billing information.
+
+        Returns True if a subscription was created, False if skipped due to
+        missing required data (e.g. no billing_period or customer).
+        """
+        if not contract.customer_id:
+            logger.info("Contract %d has no customer_id, skipping subscription creation", contract.id)
+            return False
+
+        billing_period = contract.billing_period or BillingPeriod.MONTHLY
+        value = contract.value or Decimal("0")
+        if value <= 0:
+            logger.info("Contract %d has zero/negative value (%s), skipping subscription creation", contract.id, value)
+            return False
+
+        # Find or create a SubscriptionPlan that matches this contract's billing period
+        plan_code = f"CONTRACT-{billing_period.value.upper()}"
+        plan = self.plan_repo.get_by_code(organization_id, plan_code)
+        if not plan:
+            plan = self.plan_repo.create(
+                organization_id,
+                plan_code=plan_code,
+                plan_name=f"Contract Plan ({billing_period.value})",
+                description=f"Auto-created plan for contract-based subscriptions with {billing_period.value} billing",
+                category=PlanCategory.SUBSCRIPTION,
+                billing_period=billing_period,
+                unit_price=str(value),
+                is_active=True,
+                is_public=False,
+            )
+            self.audit.log(
+                organization_id, created_by, BillingAuditAction.CREATE,
+                "SubscriptionPlan", plan.id,
+                new_values={"plan_code": plan_code, "source": "contract_activation"},
+            )
+
+        # Generate subscription number from contract number
+        subscription_number = f"SUB-{contract.contract_number}"
+
+        # Avoid duplicate subscription numbers (very unlikely but defensive)
+        if self.sub_repo.exists(organization_id, subscription_number=subscription_number):
+            subscription_number = f"{subscription_number}-{int(datetime.utcnow().strftime('%Y%m%d%H%M%S'))}"
+
+        try:
+            sub = Subscription(
+                organization_id=organization_id,
+                customer_id=contract.customer_id,
+                plan_id=plan.id,
+                contract_id=contract.id,
+                subscription_number=subscription_number,
+                status=BillingSubscriptionStatus.ACTIVE,
+                currency=contract.currency or "USD",
+                quantity=1,
+                unit_price=value,
+                start_date=contract.start_date or date.today(),
+                current_term_start=contract.start_date or date.today(),
+                current_term_end=contract.end_date or (contract.start_date or date.today()) + timedelta(days=30),
+                next_billing_at=contract.next_billing_date or date.today(),
+                is_active=True,
+                created_by=created_by,
+            )
+            self.db.add(sub)
+            self.db.flush()
+
+            # Audit the subscription creation
+            self.audit.log(
+                organization_id, created_by, BillingAuditAction.CREATE,
+                "Subscription", sub.id,
+                new_values={
+                    "subscription_number": subscription_number,
+                    "contract_id": contract.id,
+                    "plan_id": plan.id,
+                    "source": "contract_activation",
+                },
+            )
+            logger.info(
+                "Created subscription %s for contract %d during activation",
+                subscription_number, contract.id,
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "Failed to create subscription for contract %d during activation: %s",
+                contract.id, e,
+            )
+            return False
 
     def terminate_contract(self, contract_id: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> Contract:
         contract = self.repo.get_by_id(contract_id, organization_id)

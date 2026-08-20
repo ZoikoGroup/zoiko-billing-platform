@@ -38,8 +38,8 @@ export default function LoginPage() {
   const location = useLocation();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState(import.meta.env.VITE_DEFAULT_EMAIL || "");
-  const [password, setPassword] = useState(import.meta.env.VITE_DEFAULT_PASSWORD || "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);

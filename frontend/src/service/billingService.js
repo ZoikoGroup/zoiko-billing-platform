@@ -443,6 +443,12 @@ export const invoiceApi = {
   getTimeline: (id) => api.get(ENDPOINTS.INVOICE_TIMELINE(id)),
 };
 
+export const publicInvoiceApi = {
+  getView: (token) => api.get(ENDPOINTS.INVOICE_PUBLIC_VIEW(token), { auth: false }),
+  createCheckout: (token, successUrl, cancelUrl) =>
+    api.post(ENDPOINTS.INVOICE_PUBLIC_CHECKOUT(token), { success_url: successUrl, cancel_url: cancelUrl }, { auth: false }),
+};
+
 export const paymentApi = {
   listMethods: (customerId) =>
     api.get(ENDPOINTS.PAYMENT_METHODS_BY_CUSTOMER(customerId)),
@@ -704,6 +710,7 @@ export default {
   quotes: quoteApi,
   subscriptions: subscriptionApi,
   invoices: invoiceApi,
+  publicInvoices: publicInvoiceApi,
   payments: paymentApi,
   tax: taxApi,
   creditNotes: creditNoteApi,
