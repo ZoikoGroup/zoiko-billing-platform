@@ -33,6 +33,7 @@ from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit, safe_commit_and_refresh, filter_allowed
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.services.email_service import send_payment_receipt_email
 
 logger = logging.getLogger("zoiko_billing")
@@ -95,6 +96,7 @@ class PaymentService:
         self.attempt_repo = PaymentAttemptRepository(db)
         self.customer_service = CustomerService(db)
         self.invoice_service = InvoiceService(db)
+        self.config_service = BillingConfigurationService(db)
         self.audit = BillingAuditService(db)
 
     # ── Payment Methods ────────────────────────────────────────────────────
@@ -139,7 +141,7 @@ class PaymentService:
         idempotency_key: Optional[str] = None, **data: Any,
     ) -> Payment:
         data = filter_allowed(data, PAYMENT_ALLOWED_FIELDS)
-        self.customer_service.get_customer(customer_id, organization_id)
+        customer = self.customer_service.get_customer(customer_id, organization_id)
         if self.repo.exists(organization_id, payment_number=payment_number):
             raise AlreadyExistsException("Payment", "payment_number")
         # Normalize empty transaction ids to NULL so the unique
@@ -157,10 +159,14 @@ class PaymentService:
                 existing = self.repo.get_first(organization_id, transaction_id=tx_id)
                 if existing:
                     raise AlreadyExistsException("Payment", "transaction_id")
-        # Validate currency
-        currency = data.get("currency")
+        # Currency: explicit > customer's own currency > org default -- same
+        # precedence already used for invoices/contracts/subscriptions.
+        # Never silently falls through to the Payment.currency column's own
+        # USD default when the client omits it.
+        currency = data.get("currency") or customer.currency or self.config_service.get_default_currency(organization_id)
         if currency and currency.upper() not in VALID_CURRENCY_CODES:
             raise BadRequestException(f"Unsupported currency code: {currency}")
+        data["currency"] = currency
         data.pop("transaction_id", None)
         # This method backs the manual "Record Payment" flow, where the funds have
         # already been collected — default to cleared so it can be allocated

@@ -86,6 +86,7 @@ _COUNTRY_CURRENCY_TABLE: Tuple[Tuple[str, str, str], ...] = (
 # into BillingConfiguration without falling back to USD.
 COUNTRY_NAME_TO_CURRENCY: Dict[str, str] = {}
 COUNTRY_CODE_TO_CURRENCY: Dict[str, str] = {}
+COUNTRY_NAME_TO_CODE: Dict[str, str] = {}
 for _code, _name, _currency in _COUNTRY_CURRENCY_TABLE:
     if not validate_currency_code(_currency):
         raise ValueError(
@@ -94,6 +95,104 @@ for _code, _name, _currency in _COUNTRY_CURRENCY_TABLE:
         )
     COUNTRY_CODE_TO_CURRENCY[_code.upper()] = _currency
     COUNTRY_NAME_TO_CURRENCY[_name.upper()] = _currency
+    COUNTRY_NAME_TO_CODE[_name.upper()] = _code.upper()
+
+# Representative primary IANA timezone per registration country. Several of
+# these countries span multiple zones (US, CA, AU, BR, CN, RU) -- the value
+# here is only ever a sensible single-country registration default, never a
+# claim that it's the only zone in use; the organization can change it after
+# registration.
+_COUNTRY_TIMEZONE_TABLE: Dict[str, str] = {
+    "IN": "Asia/Kolkata", "US": "America/New_York", "GB": "Europe/London",
+    "AE": "Asia/Dubai", "AU": "Australia/Sydney", "BD": "Asia/Dhaka",
+    "BH": "Asia/Bahrain", "BR": "America/Sao_Paulo", "CA": "America/Toronto",
+    "CH": "Europe/Zurich", "CN": "Asia/Shanghai", "DK": "Europe/Copenhagen",
+    "DE": "Europe/Berlin", "FR": "Europe/Paris", "IE": "Europe/Dublin",
+    "NL": "Europe/Amsterdam", "IT": "Europe/Rome", "ES": "Europe/Madrid",
+    "BE": "Europe/Brussels", "AT": "Europe/Vienna", "FI": "Europe/Helsinki",
+    "PT": "Europe/Lisbon", "GR": "Europe/Athens", "HK": "Asia/Hong_Kong",
+    "JP": "Asia/Tokyo", "KR": "Asia/Seoul", "KW": "Asia/Kuwait",
+    "LK": "Asia/Colombo", "MX": "America/Mexico_City", "MY": "Asia/Kuala_Lumpur",
+    "NG": "Africa/Lagos", "NO": "Europe/Oslo", "NP": "Asia/Kathmandu",
+    "NZ": "Pacific/Auckland", "OM": "Asia/Muscat", "PK": "Asia/Karachi",
+    "QA": "Asia/Qatar", "SA": "Asia/Riyadh", "SE": "Europe/Stockholm",
+    "SG": "Asia/Singapore", "TH": "Asia/Bangkok", "ZA": "Africa/Johannesburg",
+}
+DEFAULT_FALLBACK_TIMEZONE = "UTC"
+
+# Countries whose statutory/business fiscal year is NOT the calendar year.
+# (start, end) as MM-DD, matching Organization.fiscal_year_start/end's format.
+# Every country not listed here defaults to the plain calendar year.
+_COUNTRY_FISCAL_YEAR_TABLE: Dict[str, Tuple[str, str]] = {
+    "IN": ("04-01", "03-31"),
+    "GB": ("04-01", "03-31"),
+    "AU": ("07-01", "06-30"),
+    "NZ": ("04-01", "03-31"),
+    "PK": ("07-01", "06-30"),
+    "BD": ("07-01", "06-30"),
+    "ZA": ("04-01", "03-31"),
+}
+DEFAULT_FISCAL_YEAR: Tuple[str, str] = ("01-01", "12-31")
+
+# Countries that conventionally write dates ISO-style or month-first rather
+# than the platform's day-first default (DateFormat.DD_MM_YYYY).
+_COUNTRY_DATE_FORMAT_TABLE: Dict[str, str] = {
+    "US": "MM-DD-YYYY",
+    "JP": "YYYY-MM-DD",
+    "KR": "YYYY-MM-DD",
+    "CN": "YYYY-MM-DD",
+}
+
+
+def _resolve_country_code(country: Optional[str]) -> Optional[str]:
+    """Best-effort ISO alpha-2 code for a country given as either a code or a
+    canonical name, reusing the same registration country list as currency
+    resolution."""
+    if not country:
+        return None
+    key = country.strip().upper()
+    if key in COUNTRY_CODE_TO_CURRENCY:
+        return key
+    if key in COUNTRY_NAME_TO_CODE:
+        return COUNTRY_NAME_TO_CODE[key]
+    if key == "UK":
+        return "GB"
+    return None
+
+
+def get_default_timezone_for_country(country: Optional[str]) -> Optional[str]:
+    code = _resolve_country_code(country)
+    return _COUNTRY_TIMEZONE_TABLE.get(code) if code else None
+
+
+def resolve_timezone(explicit_timezone: Optional[str], country: Optional[str]) -> str:
+    """Same precedence as resolve_currency: explicit value > country-derived
+    default > safe fallback (UTC)."""
+    if explicit_timezone and explicit_timezone.strip():
+        return explicit_timezone.strip()
+    return get_default_timezone_for_country(country) or DEFAULT_FALLBACK_TIMEZONE
+
+
+def get_default_fiscal_year_for_country(country: Optional[str]) -> Optional[Tuple[str, str]]:
+    code = _resolve_country_code(country)
+    return _COUNTRY_FISCAL_YEAR_TABLE.get(code) if code else None
+
+
+def resolve_fiscal_year(
+    explicit_start: Optional[str], explicit_end: Optional[str], country: Optional[str],
+) -> Tuple[str, str]:
+    """Same precedence as resolve_currency. Both start and end must be
+    explicitly supplied to count as "explicit" -- a single stray value
+    without its pair is treated as not supplied, since a fiscal year needs
+    both ends to be meaningful."""
+    if explicit_start and explicit_end:
+        return explicit_start.strip(), explicit_end.strip()
+    return get_default_fiscal_year_for_country(country) or DEFAULT_FISCAL_YEAR
+
+
+def get_default_date_format_for_country(country: Optional[str]) -> Optional[str]:
+    code = _resolve_country_code(country)
+    return _COUNTRY_DATE_FORMAT_TABLE.get(code) if code else None
 
 # Registration countries present in the frontend list but intentionally absent
 # above (currency outside CurrencyCode enum) — kept for reporting/debugging.
@@ -151,7 +250,15 @@ def country_defaults() -> Dict:
     what the backend persists."""
     countries = sorted(
         (
-            {"name": name, "code": code, "currency": currency}
+            {
+                "name": name,
+                "code": code,
+                "currency": currency,
+                "timezone": _COUNTRY_TIMEZONE_TABLE.get(code, DEFAULT_FALLBACK_TIMEZONE),
+                "fiscal_year_start": _COUNTRY_FISCAL_YEAR_TABLE.get(code, DEFAULT_FISCAL_YEAR)[0],
+                "fiscal_year_end": _COUNTRY_FISCAL_YEAR_TABLE.get(code, DEFAULT_FISCAL_YEAR)[1],
+                "date_format": _COUNTRY_DATE_FORMAT_TABLE.get(code, "DD-MM-YYYY"),
+            }
             for code, name, currency in _COUNTRY_CURRENCY_TABLE
         ),
         key=lambda c: c["name"],

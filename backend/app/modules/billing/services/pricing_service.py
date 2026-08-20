@@ -33,6 +33,7 @@ from app.modules.billing.repositories.catalog import (
 from app.modules.billing.repositories.catalog import ProductRepository
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit_and_refresh
+from app.modules.billing.services.settings_service import BillingConfigurationService
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -162,6 +163,7 @@ class PriceListService:
         self.repo = PriceListRepository(db)
         self.item_repo = PriceListItemRepository(db)
         self.product_repo = ProductRepository(db)
+        self.config_service = BillingConfigurationService(db)
         self.audit = BillingAuditService(db)
 
     def create(self, organization_id: int, created_by: int, **data: Any) -> PriceList:
@@ -169,6 +171,10 @@ class PriceListService:
         existing = self.repo.get_by_code(organization_id, data.get("code"))
         if existing:
             raise AlreadyExistsException("PriceList", data.get("code"))
+        # A price list has no customer of its own to derive from -- explicit
+        # value > org default, never the PriceList.currency column's own USD
+        # default when the client omits it.
+        data["currency"] = data.get("currency") or self.config_service.get_default_currency(organization_id)
         obj = self.repo.create(organization_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "PriceList", obj.id, new_values=data)
         return obj

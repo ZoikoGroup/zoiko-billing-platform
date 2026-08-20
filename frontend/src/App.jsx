@@ -1,6 +1,7 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 
+import { useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import BillingShell from "./components/BillingShell";
 import LoginPage from "./pages/LoginPage";
@@ -256,10 +257,9 @@ function ModuleSpinner() {
   );
 }
 
-function LandingRedirect() {
-  const token = localStorage.getItem("zoiko_billing_access");
-  const user = JSON.parse(localStorage.getItem("zoiko_billing_user") || "null");
-  if (!token || !user?.role) {
+function LandingRedirectComp() {
+  const { user, isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
   if (user.role === "super_admin") {
@@ -378,7 +378,7 @@ export default function App() {
           />
         </Route>
         <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<LandingRedirect />} />
+        <Route path="*" element={<LandingRedirectComp />} />
       </Routes>
     </Suspense>
   );

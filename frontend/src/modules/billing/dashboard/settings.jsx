@@ -933,9 +933,16 @@ export default function BillingSettingsPage() {
 
       const initialStatus = {};
       const country = merged.country;
-      const defaults = getCountryDefaults(country);
-      Object.keys(defaults).forEach((k) => {
-        if (merged[k] !== undefined && merged[k] !== null && merged[k] === defaults[k]) initialStatus[k] = FIELD_STATUS.AUTO_CONFIGURED;
+      const backendDefaults = configData.value || {};
+      const countryDefaults = getCountryDefaults(country);
+      Object.keys(defaultForm).forEach((k) => {
+        const backendValue = backendDefaults[k];
+        const formValue = merged[k];
+        if (backendValue !== undefined && backendValue !== null && formValue !== undefined && formValue !== null && formValue === backendValue) {
+          initialStatus[k] = FIELD_STATUS.AUTO_CONFIGURED;
+        } else if (!backendValue && countryDefaults[k] !== undefined && formValue !== undefined && formValue !== null && formValue === countryDefaults[k]) {
+          initialStatus[k] = FIELD_STATUS.SUGGESTED;
+        }
       });
       setFieldStatus(initialStatus);
 
@@ -943,7 +950,7 @@ export default function BillingSettingsPage() {
         setExchangeRates(ratesData.value);
       }
     } catch (err) {
-      // Failed to load billing configuration
+      console.error("[BillingConfiguration] fetchConfig threw after fetch resolved:", err);
       setError("Failed to load billing configuration. The backend may not be available.");
     } finally {
       setLoading(false);

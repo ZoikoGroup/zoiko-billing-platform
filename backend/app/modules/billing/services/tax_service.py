@@ -112,6 +112,7 @@ class TaxService:
 
     def seed_starter_tax_rates(
         self, organization_id: int, currency_code: Optional[str], created_by: Optional[int] = None,
+        commit: bool = True,
     ) -> List[TaxRate]:
         """Idempotently seed an organization's starter tax catalogue for its
         billing currency, from STARTER_TAX_CATALOGUE (utils/tax_catalogue.py).
@@ -124,6 +125,14 @@ class TaxService:
         and never touches an existing is_default rate for the same
         currency. A currency with no catalogue entry (e.g. USD) is a
         deliberate no-op -- no rate is ever fabricated.
+
+        commit=False (used by registration) makes every insert flush-only, so
+        the caller's own commit covers this seed together with the rest of
+        the tenant-initialization transaction -- a failure here then rolls
+        back the whole registration instead of leaving a partially
+        initialized tenant. commit=True (the default, used by the standalone
+        org-currency-update flow) keeps each row's own commit, matching
+        every other direct/ad-hoc TaxService caller.
         """
         if not currency_code:
             return []
@@ -137,7 +146,8 @@ class TaxService:
             if self.rate_repo.exists(organization_id, code=entry.code):
                 continue
             try:
-                rate = self.rate_repo.create(
+                creator = self.rate_repo.create if commit else self.rate_repo.create_no_commit
+                rate = creator(
                     organization_id,
                     name=entry.name,
                     code=entry.code,
@@ -158,7 +168,8 @@ class TaxService:
                 continue
             has_default_for_currency = True  # at most one newly-seeded entry becomes the default
             created.append(rate)
-            self.audit.log(
+            audit_log = self.audit.log if commit else self.audit.log_no_commit
+            audit_log(
                 organization_id, created_by, BillingAuditAction.CREATE, "TaxRate", rate.id,
                 new_values={"code": entry.code, "rate": str(entry.rate), "source": "starter_catalogue"},
             )

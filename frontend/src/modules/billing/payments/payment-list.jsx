@@ -313,7 +313,7 @@ export default function PaymentListPage() {
   };
 
   const selectCustomer = async (c) => {
-    const currency = c.currency || "USD";
+    const currency = c.currency || baseCurrency;
     setWizardData((p) => ({
       ...p, customer_id: c.id,
       customer_name: c.display_name || c.company_name || c.name || `Customer #${c.id}`,
@@ -327,7 +327,7 @@ export default function PaymentListPage() {
     if (inv.customer_id && !wizardData.customer_id) {
       const c = await customerApi.get(inv.customer_id).catch(() => null);
       if (c) {
-        const currency = inv.currency || c.currency || "USD";
+        const currency = inv.currency || c.currency || baseCurrency;
         setWizardData((p) => ({
           ...p,
           customer_id: c.id,
@@ -352,7 +352,7 @@ export default function PaymentListPage() {
       invoice_balance: suggested,
       invoice_status: inv.status, invoice_payment_terms: inv.payment_terms || "",
       amount: suggested,
-      currency: inv.currency || p.currency || "USD",
+      currency: inv.currency || p.currency || baseCurrency,
       reference_number: inv.invoice_number || p.reference_number,
       notes: p.notes || `Payment for ${inv.invoice_number || `invoice #${inv.id}`}`,
       allocations: [{ invoice_id: inv.id, amount: suggested }],
@@ -371,8 +371,8 @@ export default function PaymentListPage() {
           setWizardData((p) => ({
             ...p, customer_id: c.id,
             customer_name: c.display_name || c.company_name || c.name || `Customer #${c.id}`,
-            customer_email: c.email || "", customer_phone: c.phone || "", customer_currency: c.currency || "USD",
-            currency: c.currency || "USD",
+            customer_email: c.email || "", customer_phone: c.phone || "", customer_currency: c.currency || baseCurrency,
+            currency: c.currency || baseCurrency,
           }));
           await loadCustomerData(c.id);
         }

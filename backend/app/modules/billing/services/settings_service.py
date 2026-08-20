@@ -287,6 +287,17 @@ class BillingConfigurationService:
         data["timezone"] = org.timezone or "UTC"
         data["fiscal_year_start"] = org.fiscal_year_start or "01-01"
         data["fiscal_year_end"] = org.fiscal_year_end or "12-31"
+
+        # Country-appropriate date format (e.g. US -> MM-DD-YYYY) instead of
+        # always leaving CONFIGURATION_DEFAULTS' DD-MM-YYYY, which is only
+        # correct for most-but-not-all registration countries.
+        from app.modules.auth.country_currency import get_default_date_format_for_country
+        date_format_str = get_default_date_format_for_country(org.country)
+        if date_format_str:
+            try:
+                data["date_format"] = DateFormat(date_format_str)
+            except ValueError:
+                pass
         # Generic tax number -> generic tax_number field. Organization.tax_no is
         # a single field covering GST/PAN/VAT/TIN with no type semantics, so it
         # must NOT be copied into gst_number/vat_number/pan_number/tin_number.
@@ -318,6 +329,15 @@ class BillingConfigurationService:
                 if currency_str not in supported:
                     supported.append(currency_str)
                     data["supported_currencies"] = supported
+
+                # Derive the tax_label ("GST" vs "VAT") from the same starter
+                # tax catalogue seed_starter_tax_rates() reads, instead of
+                # always leaving CONFIGURATION_DEFAULTS' "VAT" -- a currency
+                # with no catalogue entry keeps the generic default.
+                from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
+                catalogue_entries = get_catalogue_entries_for_currency(currency_str)
+                if catalogue_entries:
+                    data["tax_label"] = catalogue_entries[0].tax_type.value.upper()
 
         config = BillingConfiguration(organization_id=organization_id, **data)
         self.db.add(config)

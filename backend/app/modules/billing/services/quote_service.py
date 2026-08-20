@@ -76,9 +76,14 @@ class QuoteService:
         quote_number: str, **data: Any,
     ) -> Quotation:
         data = filter_allowed(data, QUOTE_ALLOWED_FIELDS)
-        self.customer_service.get_customer(customer_id, organization_id)
+        customer = self.customer_service.get_customer(customer_id, organization_id)
         if self.repo.exists(organization_id, quote_number=quote_number):
             raise AlreadyExistsException("Quotation", "quote_number")
+        # Currency: explicit > customer's own currency > org default -- same
+        # precedence already used for invoices/contracts/subscriptions. Never
+        # silently falls through to the Quotation.currency column's own USD
+        # default when the client omits it.
+        data["currency"] = data.get("currency") or customer.currency or self.config_service.get_default_currency(organization_id)
         quote = self.repo.create(
             organization_id,
             customer_id=customer_id, quote_number=quote_number,
