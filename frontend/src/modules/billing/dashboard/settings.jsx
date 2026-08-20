@@ -27,7 +27,7 @@ const TABS = [
 ];
 
 const TAB_ACTIVE_CLASSES = {
-  general: "border-[#FF7A00] text-[#FF7A00]",
+  general: "border-[#2563EB] text-[#2563EB]",
   invoicing: "border-blue-500 text-blue-600",
   payments: "border-emerald-500 text-emerald-600",
   tax: "border-amber-500 text-amber-600",
@@ -531,10 +531,10 @@ function StatusBadge({ fieldId, status, autoHide = true, hideAfterMs = 4000 }) {
 
 function Card({ title, description, children, icon: Icon, color = "brand" }) {
   const colorClasses = {
-    brand: "from-brand to-brand-hover", blue: "from-blue-500 to-cyan-500",
-    emerald: "from-emerald-500 to-teal-500", amber: "from-amber-500 to-orange-500",
+    brand: "from-blue-600 to-blue-700", blue: "from-blue-500 to-cyan-500",
+    emerald: "from-emerald-500 to-teal-500", amber: "from-amber-500 to-amber-600",
     rose: "from-rose-500 to-pink-500", slate: "from-slate-500 to-slate-500",
-    cyan: "from-cyan-500 to-blue-500", indigo: "from-indigo-500 to-brand-hover",
+    cyan: "from-cyan-500 to-blue-500", indigo: "from-indigo-500 to-blue-600",
   };
   return (
     <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
@@ -1382,7 +1382,7 @@ export default function BillingSettingsPage() {
         title="Billing Configuration"
         subtitle="Enterprise billing module settings"
         icon={Settings2}
-        iconGradient="from-[#FF7A00] to-[#FF5500]"
+        iconGradient="from-[#2563EB] to-[#1D4ED8]"
         crumbs={[{ label: "Billing", href: "/billing" }, { label: "Settings" }]}
         lastUpdated={lastSavedTimestamp}
         primaryAction={
@@ -1406,12 +1406,12 @@ export default function BillingSettingsPage() {
               </div>
             )}
             <button onClick={handleValidate} disabled={validating}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
               <Check size={14} />
               Validate
             </button>
             <button onClick={handleReset} disabled={!hasChanges}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50 ${
                 confirmReset
                   ? "border-red-300 bg-red-50 text-red-700"
                   : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
@@ -1420,7 +1420,7 @@ export default function BillingSettingsPage() {
               {confirmReset ? "Confirm Reset" : "Reset"}
             </button>
             <button onClick={handleSave} disabled={saving || !hasChanges}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 focus-visible:ring-offset-1">
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50 focus-visible:ring-offset-1">
               {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
               {saving ? "Saving..." : "Save Changes"}
             </button>

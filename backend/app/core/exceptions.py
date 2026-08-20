@@ -111,7 +111,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     """Catches any unexpected server error and returns a clean message."""
     import logging
     request_id = _request_id(request)
-    logging.getLogger("zoiko").error(
+    logging.getLogger("zoiko_billing").error(
         f"Unhandled error on {request.method} {request.url.path} [request_id={request_id}]: {exc}",
         exc_info=True,
     )

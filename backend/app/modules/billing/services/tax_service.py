@@ -13,7 +13,7 @@ from app.modules.billing.services.base import filter_allowed, safe_commit
 from app.modules.billing.utils.currency_utils import percentage_of
 from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 TAX_RATE_ALLOWED_FIELDS = {
     "name", "code", "rate", "tax_type", "jurisdiction",

@@ -50,7 +50,7 @@ from app.modules.billing.services.exchange_rate_service import ExchangeRateServi
 from app.modules.billing.services.tax_service import TaxService
 from app.modules.billing.utils.currency_utils import round_money, convert_amount
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _fmt_short_date(value) -> str:

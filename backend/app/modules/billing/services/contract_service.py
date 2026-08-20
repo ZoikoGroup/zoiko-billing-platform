@@ -36,7 +36,7 @@ from app.modules.billing.services.tax_service import TaxService
 from app.modules.billing.services.base import filter_allowed
 from app.services.email_service import send_contract_activated_email, send_contract_renewed_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 CONTRACT_ITEM_ALLOWED_FIELDS = {

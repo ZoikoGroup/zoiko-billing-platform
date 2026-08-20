@@ -35,7 +35,7 @@ from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit_and_refresh
 from app.modules.billing.services.settings_service import BillingConfigurationService
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 PLAN_ALLOWED_FIELDS = {
     "name", "product_id", "billing_period",

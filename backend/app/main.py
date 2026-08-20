@@ -38,7 +38,10 @@ from app.database import initialize_database
 
 logger = logging.getLogger("zoiko_billing")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+)
 
 # ── Access-log redaction for security tokens in query strings ───────────────
 

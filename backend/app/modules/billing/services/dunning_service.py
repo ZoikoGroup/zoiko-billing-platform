@@ -32,7 +32,7 @@ from app.modules.billing.services.base import safe_commit_and_refresh, filter_al
 from app.modules.billing.services.customer_service import CustomerService
 from app.services.email_service import send_dunning_reminder_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 LEVEL_ALLOWED_FIELDS = {
     "name", "description", "level_number", "min_days_overdue",

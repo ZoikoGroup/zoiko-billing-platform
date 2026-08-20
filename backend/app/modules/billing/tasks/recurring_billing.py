@@ -34,7 +34,7 @@ from app.modules.billing.models import (
 )
 from app.modules.billing.repositories.subscription import SubscriptionRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_USER_ID = None
 

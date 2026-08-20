@@ -55,9 +55,9 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
         )}
         <Link
           to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
-          className="text-xl font-extrabold text-[#1a0933] tracking-tight"
+          className="flex items-center"
         >
-          Zoiko<span className="text-[#ff6b00]">Billing</span>
+          <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-11 w-auto" />
         </Link>
       </div>
 

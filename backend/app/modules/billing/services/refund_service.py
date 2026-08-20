@@ -43,7 +43,7 @@ from app.modules.billing.services.payment_service import PaymentService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_refund_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 REFUND_ALLOWED_FIELDS = {
     "customer_id", "refund_number", "refund_type", "amount",

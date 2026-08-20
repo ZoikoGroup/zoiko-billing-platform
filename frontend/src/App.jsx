@@ -12,7 +12,6 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
-import OrgPortalPage from "./pages/OrgPortalPage";
 import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
@@ -266,11 +265,8 @@ function LandingRedirectComp() {
   if (user.role === "super_admin") {
     return <Navigate to="/super-admin/dashboard" replace />;
   }
-  if (user.role && VALID_ROLES.includes(user.role)) {
-    const target = ROLE_DEFAULT_REDIRECT[user.role];
-    return <Navigate to={target} replace />;
-  }
-  return <Navigate to="/login" replace />;
+  const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/login";
+  return <Navigate to={target} replace />;
 }
 
 // Substitutes any `:param` segments in a legacy redirect target with the
@@ -299,7 +295,6 @@ export default function App() {
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/portal" element={<OrgPortalPage />} />
           {SUPER_ADMIN_LEGACY_REDIRECTS.map(({ from, to }) => (
             <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
           ))}

@@ -23,7 +23,7 @@ from typing import Any, Dict
 from app.database import SessionLocal
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def run_promise_to_pay_check_job() -> Dict[str, Any]:

@@ -215,7 +215,7 @@ export default function ForecastReport() {
     title: "Forecast Report",
     subtitle: "Revenue and MRR forecast projections",
     icon: BarChart3,
-    iconGradient: "from-[#FF7A00] to-[#FF5500]",
+    iconGradient: "from-[#2563EB] to-[#1D4ED8]",
     lastUpdated,
     refreshing,
     onRefresh: () => { setRefreshing(true); fetchData().finally(() => setRefreshing(false)); },
@@ -287,8 +287,8 @@ export default function ForecastReport() {
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
               <Tooltip formatter={(v) => v != null ? formatCurrency(v, baseCurrency) : "—"} />
               <Legend />
-              <Line type="monotone" dataKey="Revenue" stroke="#FF7A00" strokeWidth={2} dot={false} connectNulls={false} name="Revenue (Historical)" />
-              <Line type="monotone" dataKey="Forecast" stroke="#FF7A00" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="Revenue (Forecast)" />
+              <Line type="monotone" dataKey="Revenue" stroke="#2563EB" strokeWidth={2} dot={false} connectNulls={false} name="Revenue (Historical)" />
+              <Line type="monotone" dataKey="Forecast" stroke="#2563EB" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="Revenue (Forecast)" />
               <Line type="monotone" dataKey="MRR" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} name="MRR (Historical)" />
               <Line type="monotone" dataKey="MRR Forecast" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="MRR (Forecast)" />
             </LineChart>

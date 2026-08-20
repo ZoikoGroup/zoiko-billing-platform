@@ -264,7 +264,7 @@ export function DashboardHeader({
   title,
   subtitle,
   icon: Icon,
-  iconGradient = "from-[#FF7A00] to-[#FF5500]",
+  iconGradient = "from-[#2563EB] to-[#1D4ED8]",
   crumbs = [],
   primaryAction,
   lastUpdated,
@@ -607,7 +607,7 @@ export function DashboardStatCard({
                   <stop offset="95%" stopColor="currentColor" stopOpacity={0} className="text-brand-500" />
                 </linearGradient>
               </defs>
-              <Area type="monotone" dataKey="v" stroke="#FF7A00" strokeWidth={1.5} fill={`url(#sparkline-${title})`} isAnimationActive={false} />
+              <Area type="monotone" dataKey="v" stroke="#2563EB" strokeWidth={1.5} fill={`url(#sparkline-${title})`} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -681,7 +681,7 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
         <div className="flex flex-wrap items-center justify-center gap-2">
           {ctaText && onCtaClick && (
             <button onClick={onCtaClick}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#FF7A00] hover:bg-[#FF5500] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
               {ctaText}
             </button>
           )}

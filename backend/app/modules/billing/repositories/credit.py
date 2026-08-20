@@ -17,7 +17,7 @@ from app.modules.billing.models import (
 )
 from app.modules.billing.repositories.base import BaseRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class CreditNoteRepository(BaseRepository[CreditNote]):

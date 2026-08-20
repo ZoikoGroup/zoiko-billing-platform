@@ -32,7 +32,7 @@ from app.modules.billing.schemas import (
     TaxDiagnosticsItem,
 )
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 router = APIRouter(prefix="/settings", tags=["🧾 Settings"])
 
 

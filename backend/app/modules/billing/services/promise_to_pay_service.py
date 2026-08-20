@@ -22,7 +22,7 @@ from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit_and_refresh
 from app.modules.billing.services.customer_service import CustomerService
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 PROMISE_ALLOWED_FIELDS = {
     "customer_id", "invoice_id", "dunning_case_id", "collections_case_id",

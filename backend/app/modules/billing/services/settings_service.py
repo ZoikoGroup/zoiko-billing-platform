@@ -17,7 +17,7 @@ from app.modules.billing.repositories.settings import BillingConfigurationReposi
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.utils.currency_utils import get_currency_symbol, validate_currency_code, validate_language_code
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def validate_email(email: Optional[str]) -> Optional[str]:
