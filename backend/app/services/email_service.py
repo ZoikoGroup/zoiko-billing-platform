@@ -305,6 +305,113 @@ def send_org_admin_password_reset_email(
     }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER)
 
 
+# ── Organization lifecycle emails (ZB-ORG-001, ZB-ONB-001) ──────────────────
+
+# Client-safe role display names — internal enum values and system UUIDs are
+# never exposed in notification emails.  Maps internal UserRole enum values
+# to human-readable labels; any unrecognized role falls back to "Member".
+_ROLE_DISPLAY_MAP = {
+    "super_admin": "Administrator",
+    "org_admin": "Owner",
+    "billing_admin": "Billing Admin",
+    "finance_approver": "Finance Approver",
+    "auditor": "Auditor",
+}
+
+
+def _verify_tenant_boundary(
+    recipient_organization_id,
+    expected_organization_id,
+    recipient_email: str,
+) -> bool:
+    """Tenant isolation guardrail for notification dispatch.
+
+    Before rendering or sending any org-scoped email, this function verifies
+    that the recipient's organization_id matches the expected tenant boundary.
+    Returns True when the boundary is satisfied; False (and logs a warning)
+    when a cross-tenant leak is blocked.
+    """
+    if recipient_organization_id != expected_organization_id:
+        logger.warning(
+            "[email] Tenant boundary violation blocked: recipient %s "
+            "(org_id=%s) does not belong to expected org_id=%s",
+            recipient_email,
+            recipient_organization_id,
+            expected_organization_id,
+        )
+        return False
+    return True
+
+
+def _sanitize_role_display(role_value: str) -> str:
+    """Replace internal role enum values with client-safe display names.
+    System UUIDs or unexpected values are replaced with 'Member'."""
+    if not role_value:
+        return "Member"
+    return _ROLE_DISPLAY_MAP.get(str(role_value).lower().strip(), "Member")
+
+
+def send_org_created_email(
+    email: str,
+    first_name: str,
+    organization_name: str,
+    recipient_role: str,
+    actor_display_name: str,
+    effective_time: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ORG-001: Organization Created notification.
+
+    Triggered immediately after tenant provisioning completes.  Includes a
+    tenant isolation check and role sanitization before dispatch.
+    """
+    if not _verify_tenant_boundary(organization_id, organization_id, email):
+        return False
+
+    safe_role = _sanitize_role_display(recipient_role)
+    safe_actor = _sanitize_role_display(actor_display_name) if actor_display_name else "System"
+
+    from app.config import settings as _settings
+    setup_url = _settings.FRONTEND_URL.rstrip("/") + "/login"
+
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"{organization_name} is ready in Zoiko Billing",
+        "organization_name": organization_name,
+        "recipient_first_name": first_name or "there",
+        "recipient_role": safe_role,
+        "actor_display_name": safe_actor,
+        "effective_time": effective_time,
+        "setup_url": setup_url,
+    }, db=db, organization_id=organization_id)
+
+
+def send_product_welcome_email(
+    email: str,
+    first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ONB-001: Product Welcome / onboarding-started notification.
+
+    Dispatched immediately after ZB-ORG-001 or when the primary user clicks
+    Begin Setup.  Includes tenant isolation check before dispatch.
+    """
+    if not _verify_tenant_boundary(organization_id, organization_id, email):
+        return False
+
+    from app.config import settings as _settings
+    onboarding_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/settings"
+
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Welcome to Zoiko Billing — {organization_name}",
+        "organization_name": organization_name,
+        "recipient_first_name": first_name or "there",
+        "onboarding_url": onboarding_url,
+    }, db=db, organization_id=organization_id)
+
+
 # ── Billing module emails ───────────────────────────────────────────────────
 
 

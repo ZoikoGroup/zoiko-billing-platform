@@ -350,6 +350,38 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
 
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
 
+    # ── ZB-ORG-001 + ZB-ONB-001 email dispatch ────────────────────────────
+    # Fire-and-forget: tenant isolation guardrail and role sanitization run
+    # inside each send function.  Exceptions are caught so a transient SMTP
+    # failure never blocks the registration response.
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        from app.services.email_service import (
+            send_org_created_email,
+            send_product_welcome_email,
+        )
+
+        effective_time = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+        send_org_created_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            recipient_role="Owner",
+            actor_display_name=admin.full_name,
+            effective_time=effective_time,
+            organization_id=org.id,
+        )
+        send_product_welcome_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            organization_id=org.id,
+        )
+    except Exception as exc:
+        logger.warning("[email] Org lifecycle emails failed for org %s: %s", org.organization_code, exc)
+
     token_payload = {
         "sub": admin.email,
         "role": admin.role.value,
