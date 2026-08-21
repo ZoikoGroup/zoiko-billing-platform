@@ -79,6 +79,7 @@ def test_register_enterprise_stamps_commercial_source_server_side(db_session):
         email="bo@beta.example",
         password="StrongPass123!",
         intended_plan="essentials",
+        currency="USD",
     )
     register_enterprise(db_session, data)
 
@@ -219,6 +220,7 @@ def test_intended_plan_stored_without_provisioning_subscription(db_session):
         email="pat@planintent.example",
         password="StrongPass123!",
         intended_plan="professional",
+        currency="USD",
     )
     register_enterprise(db_session, data)
 

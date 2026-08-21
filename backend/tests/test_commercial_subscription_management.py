@@ -105,6 +105,7 @@ def _register(db, email, organization="Acme Corp"):
             email=email,
             password="StrongPass123!",
             intended_plan="essentials",
+            currency="USD",
         ),
     )
 
