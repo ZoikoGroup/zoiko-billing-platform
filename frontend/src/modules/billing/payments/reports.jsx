@@ -250,23 +250,23 @@ export default function PaymentReportsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{completed.length} completed payments</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
+              <p className="text-xs text-slate-500 mt-1">{completed.length} completed payments</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{fRefunds.length} refunds</p>
+              <p className="text-xs text-slate-500 mt-1">{fRefunds.length} refunds</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</p>
               <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">Collected minus refunds</p>
+              <p className="text-xs text-slate-500 mt-1">Collected minus refunds</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{fInvoices.length} invoices</p>
+              <p className="text-xs text-slate-500 mt-1">{fInvoices.length} invoices</p>
             </div>
           </div>
 
@@ -275,7 +275,7 @@ export default function PaymentReportsPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-900">Payment Status Distribution</h3>
                 <button onClick={() => downloadJSON(paymentStatusData, "payment-status-distribution.json")}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export payment status distribution" title="Export"><Download size={15} /></button>
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export payment status distribution" title="Export"><Download size={15} /></button>
               </div>
               {paymentStatusData.length === 0 ? <EmptyState icon={PieChartIcon} title="No payment data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
@@ -293,7 +293,7 @@ export default function PaymentReportsPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-900">Payment Value by Status</h3>
                 <button onClick={() => downloadJSON(paymentValueByStatus, "payment-value-by-status.json")}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export payment value by status" title="Export"><Download size={15} /></button>
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export payment value by status" title="Export"><Download size={15} /></button>
               </div>
               {paymentValueByStatus.length === 0 ? <EmptyState icon={BarChart3} title="No value data" /> : (
                 <ResponsiveContainer width="100%" height={300}>
@@ -392,7 +392,7 @@ export default function PaymentReportsPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-slate-900">Aging Distribution</h3>
               <button onClick={() => downloadJSON(agingChartData, "aging-distribution.json")}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export aging distribution" title="Export"><Download size={15} /></button>
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export aging distribution" title="Export"><Download size={15} /></button>
             </div>
             {agingChartData.length === 0 ? <EmptyState icon={PieChartIcon} title="No aging data" /> : (
               <ResponsiveContainer width="100%" height={320}>
@@ -424,17 +424,17 @@ export default function PaymentReportsPage() {
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Outstanding</p>
               <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{fInvoices.length} invoices</p>
+              <p className="text-xs text-slate-500 mt-1">{fInvoices.length} invoices</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Available Credits</p>
               <p className="text-2xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatCurrency(totalCredits, baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">{fCredits.filter((c) => c.status === "issued").length} issued</p>
+              <p className="text-xs text-slate-500 mt-1">{fCredits.filter((c) => c.status === "issued").length} issued</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Receivable</p>
               <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(Math.max(0, totalOutstanding - totalCredits), baseCurrency)}</p>
-              <p className="text-xs text-slate-400 mt-1">Outstanding minus credits</p>
+              <p className="text-xs text-slate-500 mt-1">Outstanding minus credits</p>
             </div>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
@@ -568,7 +568,7 @@ export default function PaymentReportsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Recovery Rate</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{recoveryRate}%</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{recoveryRate}%</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Resolved Cases</p>
@@ -580,13 +580,13 @@ export default function PaymentReportsPage() {
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Resolved Dunning</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{fDunningCases.filter((c) => c.status === "resolved").length}</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{fDunningCases.filter((c) => c.status === "resolved").length}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-3xl border border-slate-200 p-6">
               <h3 className="text-sm font-semibold text-slate-900 mb-2">Case Resolution Overview</h3>
-              <p className="text-xs text-slate-400 mb-4">Collections and dunning case resolution metrics</p>
+              <p className="text-xs text-slate-500 mb-4">Collections and dunning case resolution metrics</p>
               <div className="space-y-4">
                 {[
                   { label: "Collection Resolved", pct: fCollectionsCases.length > 0 ? (fCollectionsCases.filter((c) => c.status === "resolved").length / fCollectionsCases.length) * 100 : 0, color: "bg-emerald-400" },
@@ -632,7 +632,7 @@ export default function PaymentReportsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
@@ -686,7 +686,7 @@ export default function PaymentReportsPage() {
                     <tr key={m.month} className="border-b border-slate-50 hover:bg-slate-50">
                       <td className="py-3 px-3 font-medium text-slate-900">{m.month}</td>
                       <td className="py-3 px-3 text-right text-slate-600">{m.count}</td>
-                      <td className="py-3 px-3 text-right font-medium text-emerald-600">{formatCurrency(m.value, baseCurrency)}</td>
+                      <td className="py-3 px-3 text-right font-medium text-emerald-700">{formatCurrency(m.value, baseCurrency)}</td>
                       <td className="py-3 px-3 text-right font-medium text-red-600">{formatCurrency(m.refunds, baseCurrency)}</td>
                       <td className="py-3 px-3 text-right font-semibold text-slate-900">{formatCurrency(m.net, baseCurrency)}</td>
                     </tr>

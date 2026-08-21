@@ -125,6 +125,13 @@ const ApprovalQueuePage = lazy(() => import("./modules/super-admin/ApprovalQueue
 const KillSwitchPage = lazy(() => import("./modules/super-admin/KillSwitchPage"));
 const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/ProductionAcceptancePage"));
 const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
+const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccessPage"));
+const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
+const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
+const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
+const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
+const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
+const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
@@ -230,6 +237,12 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
   { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
   { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
+  { path: "/super-admin/support-access", element: <SupportAccessPage /> },
+  { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
+  { path: "/super-admin/governance", element: <GovernancePage /> },
+  { path: "/super-admin/reliability", element: <ReliabilityPage /> },
+  { path: "/super-admin/triage", element: <TriagePage /> },
+  { path: "/super-admin/launch-readiness", element: <LaunchReadinessPage /> },
 ];
 
 // Legacy Super Admin paths that must keep working (bookmarks, old links)
@@ -325,6 +338,14 @@ export default function App() {
             element={
               <BillingShell>
                 <OrgAdminUserManagementPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/organization-admin/privileged-access-log"
+            element={
+              <BillingShell>
+                <OrgAdminPrivilegedAccessLogPage />
               </BillingShell>
             }
           />

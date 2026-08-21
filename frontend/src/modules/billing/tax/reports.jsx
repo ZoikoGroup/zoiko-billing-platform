@@ -162,17 +162,17 @@ export default function TaxReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Tax Rates</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{fTaxRates.length}</p>
-                  <p className="text-xs text-slate-400 mt-1">{activeRates.length} active</p>
+                  <p className="text-xs text-slate-500 mt-1">{activeRates.length} active</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tax Collected</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalTaxCollected, baseCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1">From {fInvoices.length} invoices</p>
+                  <p className="text-xs text-slate-500 mt-1">From {fInvoices.length} invoices</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Jurisdictions</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{jurisdictionCount}</p>
-                  <p className="text-xs text-slate-400 mt-1">Countries / regions</p>
+                  <p className="text-xs text-slate-500 mt-1">Countries / regions</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Rate</p>
@@ -256,7 +256,7 @@ export default function TaxReportsPage() {
                         <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50">
                           <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</td>
                           <td className="py-3 px-3 text-right text-slate-900 font-medium">{formatCurrency(inv.total || inv.total_amount || 0, inv.currency)}</td>
-                          <td className="py-3 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.tax_amount || inv.tax_total || 0, inv.currency)}</td>
+                          <td className="py-3 px-3 text-right text-emerald-700 font-medium">{formatCurrency(inv.tax_amount || inv.tax_total || 0, inv.currency)}</td>
                           <td className="py-3 px-3 text-center">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :
@@ -352,22 +352,22 @@ export default function TaxReportsPage() {
                       <div className="bg-white rounded-3xl border border-slate-200 p-5">
                         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Next Filing Due</p>
                         <p className="text-2xl font-bold text-slate-900 mt-1">{nextFilingDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
-                        <p className="text-xs text-slate-400 mt-1">{daysUntilFiling > 0 ? `${daysUntilFiling} days remaining` : "Overdue"}</p>
+                        <p className="text-xs text-slate-500 mt-1">{daysUntilFiling > 0 ? `${daysUntilFiling} days remaining` : "Overdue"}</p>
                       </div>
                       <div className="bg-white rounded-3xl border border-slate-200 p-5">
                         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Tax Collected</p>
                         <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(totalTaxCollected, baseCurrency)}</p>
-                        <p className="text-xs text-slate-400 mt-1">{invoicesWithTax.length} invoices with tax</p>
+                        <p className="text-xs text-slate-500 mt-1">{invoicesWithTax.length} invoices with tax</p>
                       </div>
                       <div className="bg-white rounded-3xl border border-slate-200 p-5">
                         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Returns</p>
                         <p className="text-2xl font-bold text-slate-900 mt-1">{pendingReturns}</p>
-                        <p className="text-xs text-slate-400 mt-1">Prior period returns</p>
+                        <p className="text-xs text-slate-500 mt-1">Prior period returns</p>
                       </div>
                       <div className="bg-white rounded-3xl border border-slate-200 p-5">
                         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Non-Recoverable Rates</p>
                         <p className="text-2xl font-bold text-slate-900 mt-1">{nonRecoverable.length || "—"}</p>
-                        <p className="text-xs text-slate-400 mt-1">Exemption categories</p>
+                        <p className="text-xs text-slate-500 mt-1">Exemption categories</p>
                       </div>
                     </div>
                     <div className="bg-white rounded-3xl border border-slate-200 p-6">
@@ -400,7 +400,7 @@ export default function TaxReportsPage() {
                           </thead>
                           <tbody>
                             {jurisdictionChartData.length === 0 ? (
-                              <tr><td colSpan={5} className="py-8 text-center text-slate-400 text-sm">No jurisdiction data available</td></tr>
+                              <tr><td colSpan={5} className="py-8 text-center text-slate-500 text-sm">No jurisdiction data available</td></tr>
                             ) : jurisdictionChartData.map((j, idx) => (
                               <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
                                 <td className="py-3 px-3 font-medium text-slate-900">{j.name}</td>

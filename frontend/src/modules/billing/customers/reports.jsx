@@ -291,7 +291,7 @@ export default function CustomerReportsPage() {
                   <div className="grid grid-cols-3 gap-4 mb-4">
                     <div className="text-center p-3 bg-emerald-50 rounded-lg">
                       <p className="text-2xl font-bold text-emerald-700">{paidInvoices.length}</p>
-                      <p className="text-xs text-emerald-600 font-medium">Paid</p>
+                      <p className="text-xs text-emerald-700 font-medium">Paid</p>
                     </div>
                     <div className="text-center p-3 bg-amber-50 rounded-lg">
                       <p className="text-2xl font-bold text-amber-700">{unpaidInvoices.length}</p>

@@ -102,11 +102,11 @@ function StepBar({ current }) {
               <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
                 ${done ? "bg-brand-600 text-white shadow-lg shadow-brand-200"
                        : active ? "bg-brand-600 text-white ring-4 ring-brand-200"
-                                : "bg-slate-100 text-slate-400"}`}>
+                                : "bg-slate-100 text-slate-500"}`}>
                 {done ? <CheckCircle size={18} /> : step.id}
               </div>
               <span className={`mt-1 text-xs font-medium whitespace-nowrap
-                ${active ? "text-brand-700" : done ? "text-brand-500" : "text-slate-400"}`}>
+                ${active ? "text-brand-700" : done ? "text-brand-500" : "text-slate-500"}`}>
                 {step.label}
               </span>
             </div>
@@ -299,11 +299,11 @@ export default function CustomerImportWizard({ onClose, onImported }) {
         {file ? (
           <>
             <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
-              <FileText size={28} className="text-emerald-600" />
+              <FileText size={28} className="text-emerald-700" />
             </div>
             <p className="font-semibold text-slate-800">{file.name}</p>
             <p className="text-sm text-slate-500">{(file.size / 1024).toFixed(1)} KB · Ready to process</p>
-            <span className="text-xs text-emerald-600 font-medium bg-emerald-100 px-3 py-1 rounded-full">✓ File selected</span>
+            <span className="text-xs text-emerald-700 font-medium bg-emerald-100 px-3 py-1 rounded-full">✓ File selected</span>
           </>
         ) : (
           <>
@@ -361,7 +361,7 @@ export default function CustomerImportWizard({ onClose, onImported }) {
                   ? "border-brand-300 bg-brand-50 ring-2 ring-brand-200"
                   : "border-slate-200 hover:border-brand-200 hover:bg-slate-50"}`}
             >
-              <Icon size={16} className={duplicateStrategy === value ? "text-brand-600 mt-0.5" : "text-slate-400 mt-0.5"} />
+              <Icon size={16} className={duplicateStrategy === value ? "text-brand-600 mt-0.5" : "text-slate-500 mt-0.5"} />
               <div>
                 <p className={`text-xs font-semibold ${duplicateStrategy === value ? "text-brand-700" : "text-slate-700"}`}>{label}</p>
                 <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
@@ -372,7 +372,7 @@ export default function CustomerImportWizard({ onClose, onImported }) {
       </div>
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-2">
-        <Info size={16} className="text-slate-400 flex-shrink-0 mt-0.5" />
+        <Info size={16} className="text-slate-500 flex-shrink-0 mt-0.5" />
         <p className="text-xs text-slate-500">
           Duplicates are detected by <strong>Customer Code</strong> and <strong>Email</strong> within your organization.
         </p>
@@ -428,7 +428,7 @@ export default function CustomerImportWizard({ onClose, onImported }) {
                             <option key={f.value} value={f.value}>{f.label}</option>
                           ))}
                         </select>
-                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                       </div>
                     </td>
                   </tr>
@@ -532,20 +532,20 @@ export default function CustomerImportWizard({ onClose, onImported }) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100 bg-white sticky top-0">
-                  <th className="px-3 py-2 text-left text-slate-400 font-semibold">#</th>
-                  <th className="px-3 py-2 text-left text-slate-400 font-semibold">Company Name</th>
-                  <th className="px-3 py-2 text-left text-slate-400 font-semibold">Code</th>
-                  <th className="px-3 py-2 text-left text-slate-400 font-semibold">Status</th>
+                  <th className="px-3 py-2 text-left text-slate-500 font-semibold">#</th>
+                  <th className="px-3 py-2 text-left text-slate-500 font-semibold">Company Name</th>
+                  <th className="px-3 py-2 text-left text-slate-500 font-semibold">Code</th>
+                  <th className="px-3 py-2 text-left text-slate-500 font-semibold">Status</th>
                   {duplicate > 0 && duplicateStrategy === "review" && (
-                    <th className="px-3 py-2 text-left text-slate-400 font-semibold">Action</th>
+                    <th className="px-3 py-2 text-left text-slate-500 font-semibold">Action</th>
                   )}
-                  <th className="px-3 py-2 text-left text-slate-400 font-semibold">Issues</th>
+                  <th className="px-3 py-2 text-left text-slate-500 font-semibold">Issues</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows?.map((row) => (
                   <tr key={row.row_index} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="px-3 py-2 text-slate-400">{row.row_index}</td>
+                    <td className="px-3 py-2 text-slate-500">{row.row_index}</td>
                     <td className="px-3 py-2 text-slate-700 font-medium max-w-[160px] truncate">
                       {row.mapped_data?.company_name || row.raw_data?.company_name || row.raw_data?.companyName || "—"}
                     </td>

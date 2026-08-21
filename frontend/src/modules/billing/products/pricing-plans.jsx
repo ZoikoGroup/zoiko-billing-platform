@@ -267,7 +267,7 @@ export default function ProductPricingPlansPage() {
             <div className="bg-white rounded-2xl border border-slate-200 p-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pricing models</p>
               <p className="text-2xl font-extrabold text-slate-800 mt-1">{activeTypes.length}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{activeTypes.map((t) => t.replace("_", " ")).join(" · ")}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{activeTypes.map((t) => t.replace("_", " ")).join(" · ")}</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 p-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total plans</p>
@@ -279,7 +279,7 @@ export default function ProductPricingPlansPage() {
             <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center mb-6">
               <Sparkles className="h-10 w-10 text-slate-300 mx-auto mb-3" />
               <p className="text-slate-500 font-medium">No active pricing plans yet</p>
-              <p className="text-slate-400 text-sm mt-1 mb-4">Create an active plan to see it here</p>
+              <p className="text-slate-500 text-sm mt-1 mb-4">Create an active plan to see it here</p>
               <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
                 <Plus size={18} /> Add Plan
@@ -305,10 +305,10 @@ export default function ProductPricingPlansPage() {
                     </div>
                     <div className="flex items-baseline gap-1 mb-1">
                       <span className={`text-3xl font-extrabold ${isFeatured ? "text-white" : "text-slate-800"}`}>{planPriceFor(plan, currency)}</span>
-                      <span className={`text-sm ${isFeatured ? "text-white/80" : "text-slate-400"}`}>{planSuffixFor(plan)}</span>
+                      <span className={`text-sm ${isFeatured ? "text-white/80" : "text-slate-500"}`}>{planSuffixFor(plan)}</span>
                     </div>
                     {annual && plan.billing_interval === "monthly" && (
-                      <p className={`text-xs font-semibold mb-3 ${isFeatured ? "text-emerald-200" : "text-emerald-600"}`}>
+                      <p className={`text-xs font-semibold mb-3 ${isFeatured ? "text-emerald-200" : "text-emerald-700"}`}>
                         You save {formatCurrency(parseFloat(plan.price || 0) * 2.4, currency)} / yr
                       </p>
                     )}
@@ -338,11 +338,11 @@ export default function ProductPricingPlansPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search pricing plans..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -392,7 +392,7 @@ export default function ProductPricingPlansPage() {
                   <option value="">All Types</option>
                   {PLAN_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
@@ -401,7 +401,7 @@ export default function ProductPricingPlansPage() {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
             </div>
           )}
@@ -428,7 +428,7 @@ export default function ProductPricingPlansPage() {
                     <div className="flex flex-col items-center">
                       <DollarSign size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No pricing plans found</p>
-                      <p className="text-slate-400 text-sm mt-1">{search || typeFilter ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{search || typeFilter ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
                     </div>
                   </td>
                 </tr>
@@ -459,17 +459,17 @@ export default function ProductPricingPlansPage() {
                         <Layers size={12} /> Tiers
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs text-slate-500">—</span>
                     )}
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</td>
                   <td className="px-4 py-4 text-right">
                     <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors" title="Edit">
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit">
                       <Pencil size={16} />
                     </button>
                     <button onClick={() => handleDeactivatePlan(plan)}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors" title="Deactivate">
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate">
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -610,19 +610,19 @@ export default function ProductPricingPlansPage() {
             </div>
 
             {tiers.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-4">No tiers configured yet</p>
+              <p className="text-sm text-slate-500 text-center py-4">No tiers configured yet</p>
             ) : (
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {tiers.map((tier, i) => (
                   <div key={tier.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                     <div className="text-sm">
                       <span className="font-medium text-slate-800">{tier.from_quantity}</span>
-                      <span className="text-slate-400 mx-1">→</span>
+                      <span className="text-slate-500 mx-1">→</span>
                       <span className="font-medium text-slate-800">{tier.to_quantity ?? "∞"}</span>
-                      <span className="text-slate-400 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
-                      {tier.flat_fee > 0 && <span className="text-slate-400 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
+                      <span className="text-slate-500 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
+                      {tier.flat_fee > 0 && <span className="text-slate-500 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
                     </div>
-                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-400 hover:text-red-600">
+                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600">
                       <Trash2 size={14} />
                     </button>
                   </div>

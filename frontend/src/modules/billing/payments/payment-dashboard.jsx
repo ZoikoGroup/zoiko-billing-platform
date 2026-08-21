@@ -253,7 +253,7 @@ export default function PaymentDashboardPage() {
 
   const recentPaymentColumns = useMemo(() => [
     { key: "payment_number", label: "Payment", render: (p) => (
-      <span className="flex items-center gap-2 font-medium text-slate-700"><Receipt size={14} className="text-slate-400" />{p.payment_number || `#${p.id}`}</span>
+      <span className="flex items-center gap-2 font-medium text-slate-700"><Receipt size={14} className="text-slate-500" />{p.payment_number || `#${p.id}`}</span>
     ) },
     { key: "customer", label: "Customer", render: (p) => p.customer_name || p.customer?.name || `Customer #${p.customer_id}` },
     { key: "amount", label: "Amount", render: (p) => <span className="font-medium text-slate-800">{formatDisplayCurrency(p.amount, p.currency)}</span> },
@@ -262,7 +262,7 @@ export default function PaymentDashboardPage() {
     { key: "payment_date", label: "Date", render: (p) => <span className="text-xs text-slate-500">{formatDisplayDate(p.payment_date)}</span> },
     { key: "view", label: "", align: "right", render: (p) => (
       <button onClick={(e) => { e.stopPropagation(); navigate(`/billing/payments/${p.id}`); }}
-        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
         aria-label={`View payment ${p.payment_number || p.id}`}>
         <Eye size={16} />
       </button>

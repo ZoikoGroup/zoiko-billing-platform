@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New organization created: {{organization_name}}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0B0F19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #E2E8F0;">
+  <div style="display: none; max-height: 0px; overflow: hidden; opacity: 0; font-size: 1px; line-height: 1px; color: #0B0F19;">
+    A new organization was created on the Zoiko Billing platform.
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0B0F19; padding: 40px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 600px; background-color: #0F172A; border-radius: 16px; border: 1px solid #1E293B; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #4F46E5 0%, #2563EB 100%); padding: 32px 40px; text-align: left;">
+              <table role="presentation" width="100%">
+                <tr>
+                  <td>
+                    <span style="font-size: 22px; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px;">ZOIKO<span style="color: #60A5FA;">BILLING</span></span>
+                  </td>
+                  <td align="right">
+                    <span style="background-color: rgba(255, 255, 255, 0.15); color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;">Super Admin Notice</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #FFFFFF; line-height: 1.3;">
+                New organization created
+              </h1>
+              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #CBD5E1;">
+                A new organization was successfully provisioned on the platform.
+                As a platform administrator you are being notified of this event.
+              </p>
+              <table role="presentation" width="100%" style="background-color: #1E293B; border-radius: 12px; border: 1px solid #334155; margin-bottom: 32px;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <table role="presentation" width="100%" style="font-size: 14px; color: #CBD5E1;">
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B; width: 35%;">Organization:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{organization_name}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B;">Organization Code:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{organization_code}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B;">Country:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{country}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B;">Billing Currency:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{currency}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B;">Status:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{status}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 10px; color: #64748B;">Created By:</td>
+                        <td style="padding-bottom: 10px; font-weight: 600; color: #FFFFFF;">{{created_by}}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748B;">Created At:</td>
+                        <td style="font-weight: 600; color: #FFFFFF;">{{created_time}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin-bottom: 32px;">
+                <tr>
+                  <td style="border-radius: 8px; background: linear-gradient(135deg, #2563EB 0%, #4F46E5 100%);">
+                    <a href="{{view_url}}" target="_blank" style="font-size: 15px; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 8px; padding: 14px 28px; display: inline-block; border: 1px solid rgba(255, 255, 255, 0.1);">
+                      Review organization &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #64748B;">
+                This automated platform notification is sent to active Super Admins whenever a new
+                organization is created. It contains no credentials or secrets — sign in through the
+                official Zoiko Billing application to act on it.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #0B0F19; padding: 24px 40px; border-top: 1px solid #1E293B; text-align: center;">
+              <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748B;">
+                Zoiko Billing Notifications &bull; Official Account Security &amp; System Communication
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #475569;">
+                &copy; Zoiko Billing. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

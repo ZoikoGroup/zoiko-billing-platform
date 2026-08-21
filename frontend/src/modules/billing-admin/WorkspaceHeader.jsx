@@ -21,7 +21,7 @@ const TONE_DOT = {
 function HeaderChip({ label, value, tone = "default", dot = false }) {
   return (
     <div className="flex flex-col gap-1 px-4 py-3">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">{label}</span>
       <span className={`flex items-center gap-1.5 text-sm font-bold ${TONE_TEXT[tone] || TONE_TEXT.default}`}>
         {dot && <span className={`h-1.5 w-1.5 rounded-full ${TONE_DOT[tone] || TONE_DOT.default}`} />}
         {value}
@@ -88,7 +88,7 @@ export default function WorkspaceHeader({ title, subtitle, icon: Icon, actions, 
           </div>
         )}
         {Icon && title && (
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
+          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
             <Icon size={14} />
             <span>{title}</span>
           </div>

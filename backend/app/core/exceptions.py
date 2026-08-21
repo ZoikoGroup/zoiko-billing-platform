@@ -102,6 +102,15 @@ class BadRequestException(ZoikoException):
         super().__init__(status_code=400, error_code="BAD_REQUEST", message=message)
 
 
+class ServiceUnavailableException(ZoikoException):
+    """Use when a downstream dependency (e.g. the database) is temporarily
+    unreachable (503). Deliberately distinct from a 500: it tells the caller
+    the failure is transient/environmental and worth retrying, not a bug —
+    e.g. the documented intermittent Neon DNS resolution failures (ISS-012)."""
+    def __init__(self, message: str = "Service temporarily unavailable. Please try again shortly."):
+        super().__init__(status_code=503, error_code="SERVICE_UNAVAILABLE", message=message)
+
+
 # ── Global Exception Handlers ─────────────────────────────────────────────────
 # These are registered in main.py so every error returns our clean JSON format.
 

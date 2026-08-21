@@ -29,7 +29,7 @@ const TABS = [
 const TAB_ACTIVE_CLASSES = {
   general: "border-[#2563EB] text-[#2563EB]",
   invoicing: "border-blue-500 text-blue-600",
-  payments: "border-emerald-500 text-emerald-600",
+  payments: "border-emerald-500 text-emerald-700",
   tax: "border-amber-500 text-amber-600",
   dunning: "border-rose-500 text-rose-600",
   revenue: "border-cyan-500 text-cyan-600",
@@ -451,7 +451,7 @@ function Field({ label, description, children, className = "", error, tooltip, i
         <label htmlFor={id} className="block text-sm font-medium text-slate-700">{label}</label>
         {tooltip && (
           <span className="group relative inline-flex" role="tooltip">
-            <span className="text-slate-400 cursor-help text-xs border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center" aria-hidden="true">?</span>
+            <span className="text-slate-500 cursor-help text-xs border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center" aria-hidden="true">?</span>
             <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 pointer-events-none">{tooltip}</span>
           </span>
         )}
@@ -680,19 +680,19 @@ function SearchableSelect({ id, value, onChange, options, placeholder = "Search.
         aria-haspopup="listbox" aria-expanded={open} aria-label={placeholder}
         className={`w-full flex items-center justify-between px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30/20 focus:border-brand-300 ${highlightClass}`}>
         <span className="truncate text-left">{selectedLabel || placeholder}</span>
-        {open ? <X size={14} className="shrink-0 ml-1 text-slate-400" onClick={(e) => { e.stopPropagation(); setOpen(false); setSearch(""); setActiveIndex(-1); }} /> : <ChevronDown size={14} className="shrink-0 ml-1 text-slate-400" />}
+        {open ? <X size={14} className="shrink-0 ml-1 text-slate-500" onClick={(e) => { e.stopPropagation(); setOpen(false); setSearch(""); setActiveIndex(-1); }} /> : <ChevronDown size={14} className="shrink-0 ml-1 text-slate-500" />}
       </button>
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-hidden">
           <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-100">
-            <Search size={14} className="text-slate-400 shrink-0" />
+            <Search size={14} className="text-slate-500 shrink-0" />
             <input ref={inputRef} type="text" value={search} onChange={(e) => { setSearch(e.target.value); setActiveIndex(0); }} onKeyDown={handleKeyDown}
               placeholder={placeholder} autoFocus aria-label="Search options"
               className="w-full text-sm outline-none border-none bg-transparent py-1" />
           </div>
           <div ref={listRef} className="overflow-y-auto max-h-48" role="listbox">
             {filtered.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-slate-400 text-center">No results</div>
+              <div className="px-3 py-2 text-sm text-slate-500 text-center">No results</div>
             ) : (
               filtered.map((opt, idx) => (
                 <button key={opt.value} type="button" role="option" aria-selected={value === opt.value}
@@ -1532,7 +1532,7 @@ export default function BillingSettingsPage() {
                           >
                             <span className="mt-0.5 shrink-0">•</span>
                             <span>{e}</span>
-                            {fieldId && <ArrowRight size={10} className="mt-0.5 shrink-0 text-slate-400" />}
+                            {fieldId && <ArrowRight size={10} className="mt-0.5 shrink-0 text-slate-500" />}
                           </li>
                         );
                       })}
@@ -1674,7 +1674,7 @@ export default function BillingSettingsPage() {
                                   <div key={field} className={`flex items-center justify-between px-2 py-1 rounded text-xs ${isChanged ? "bg-amber-100/60" : "bg-white/40"}`}>
                                     <span className="text-slate-600 font-medium capitalize">{field.replace(/_/g, " ")}</span>
                                     <div className="flex items-center gap-1.5">
-                                      {isChanged && <span className="text-slate-400 line-through">{String(currentVal).slice(0, 15)}</span>}
+                                      {isChanged && <span className="text-slate-500 line-through">{String(currentVal).slice(0, 15)}</span>}
                                       {isChanged && <span className="text-amber-500">&rarr;</span>}
                                       <span className="text-slate-800 font-medium">{String(newVal).slice(0, 20)}</span>
                                     </div>
@@ -2014,7 +2014,7 @@ export default function BillingSettingsPage() {
               <Field id="default_due_days" label="Default Due Days" tooltip="Default payment due period in days" error={fieldErrors.default_due_days}>
                 <Input id="default_due_days" type="number" value={form.default_due_days} min={1} max={365}
                   onChange={(e) => update("default_due_days", parseInt(e.target.value) || 30)} ariaLabel="Default due days" />
-                <p className="text-xs text-slate-400 mt-1">Must be at least 1 day</p>
+                <p className="text-xs text-slate-500 mt-1">Must be at least 1 day</p>
               </Field>
               <Field id="payment_reminder_days_before" label="Reminder Days Before" tooltip="Days before due date to send reminder" error={fieldErrors.payment_reminder_days_before}>
                 <Input id="payment_reminder_days_before" type="number" value={form.payment_reminder_days_before} min={0} max={form.default_due_days || 90}
@@ -2044,12 +2044,12 @@ export default function BillingSettingsPage() {
                     }
                     update("late_payment_fee_percentage", val);
                   }} ariaLabel="Late payment fee percentage" />
-                <p className="text-xs text-slate-400 mt-1">Max 100%, cannot be negative</p>
+                <p className="text-xs text-slate-500 mt-1">Max 100%, cannot be negative</p>
               </Field>
               <Field id="late_payment_fee_flat" label="Late Fee (Flat)" tooltip="Fixed late payment fee amount">
                 <Input id="late_payment_fee_flat" type="number" value={form.late_payment_fee_flat} min={0} step={0.01}
                   onChange={(e) => update("late_payment_fee_flat", parseFloat(e.target.value) || 0)} ariaLabel="Late payment fee flat amount" />
-                <p className="text-xs text-slate-400 mt-1">Fixed amount added as late fee</p>
+                <p className="text-xs text-slate-500 mt-1">Fixed amount added as late fee</p>
               </Field>
               <Field id="invoice_template" label="Invoice Template" tooltip="Visual template for invoices">
                 <Select id="invoice_template" value={form.invoice_template} onChange={(e) => update("invoice_template", e.target.value)}
@@ -2061,7 +2061,7 @@ export default function BillingSettingsPage() {
                     {value:"minimal", label:"Minimal", description:"Simple, distraction-free design"},
                     {value:"bold", label:"Bold", description:"High-impact visual design"},
                   ]} />
-                <p className="text-xs text-slate-400 mt-1">{TEMPLATE_DESCRIPTIONS[form.invoice_template] || ""}</p>
+                <p className="text-xs text-slate-500 mt-1">{TEMPLATE_DESCRIPTIONS[form.invoice_template] || ""}</p>
               </Field>
               <Field id="invoice_pdf_template" label="PDF Template" tooltip="PDF export template">
                 <Select id="invoice_pdf_template" value={form.invoice_pdf_template} onChange={(e) => update("invoice_pdf_template", e.target.value)}
@@ -2683,7 +2683,7 @@ function AdministrationPanel() {
       <span className="text-sm text-slate-600">{label}</span>
       <div className="flex items-center gap-2">
         <HealthStatusBadge status={status} />
-        {detail && <span className="text-xs text-slate-400">{detail}</span>}
+        {detail && <span className="text-xs text-slate-500">{detail}</span>}
       </div>
     </div>
   );
@@ -2732,7 +2732,7 @@ function AdministrationPanel() {
                 </div>
               </div>
             )}
-            <p className="text-xs text-slate-400">Checked at: {health.checked_at ? new Date(health.checked_at).toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-500">Checked at: {health.checked_at ? new Date(health.checked_at).toLocaleString() : "—"}</p>
           </div>
         ) : (
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500">
@@ -2777,31 +2777,31 @@ function AdministrationPanel() {
               {smtpResult.message && <p className="text-xs text-slate-500">{smtpResult.message}</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block">Connection</span>
+                  <span className="text-slate-500 block">Connection</span>
                   <HealthStatusBadge status={smtpResult.connection?.success ? "healthy" : "critical"} />
-                  {smtpResult.connection?.details && <p className="text-slate-400 mt-1">{smtpResult.connection.details}</p>}
+                  {smtpResult.connection?.details && <p className="text-slate-500 mt-1">{smtpResult.connection.details}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block">TLS</span>
+                  <span className="text-slate-500 block">TLS</span>
                   <HealthStatusBadge status={smtpResult.tls?.success ? "healthy" : "critical"} />
-                  {smtpResult.tls?.details && <p className="text-slate-400 mt-1">{smtpResult.tls.details}</p>}
+                  {smtpResult.tls?.details && <p className="text-slate-500 mt-1">{smtpResult.tls.details}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block">Authentication</span>
+                  <span className="text-slate-500 block">Authentication</span>
                   <HealthStatusBadge status={smtpResult.authentication?.success ? "healthy" : "critical"} />
-                  {smtpResult.authentication?.details && <p className="text-slate-400 mt-1">{smtpResult.authentication.details}</p>}
+                  {smtpResult.authentication?.details && <p className="text-slate-500 mt-1">{smtpResult.authentication.details}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block">Test Email</span>
+                  <span className="text-slate-500 block">Test Email</span>
                   <HealthStatusBadge status={smtpResult.test_email_sent?.success ? "healthy" : "warning"} />
-                  {smtpResult.test_email_sent?.details && <p className="text-slate-400 mt-1">{smtpResult.test_email_sent.details}</p>}
+                  {smtpResult.test_email_sent?.details && <p className="text-slate-500 mt-1">{smtpResult.test_email_sent.details}</p>}
                 </div>
               </div>
               {smtpResult.sender_identity && (
                 <div className="p-2 bg-white rounded-lg border border-slate-100 text-xs">
-                  <span className="text-slate-400 block">Sender Identity</span>
+                  <span className="text-slate-500 block">Sender Identity</span>
                   <HealthStatusBadge status={smtpResult.sender_identity?.success ? "healthy" : "warning"} />
-                  {smtpResult.sender_identity?.details && <p className="text-slate-400 mt-1">{smtpResult.sender_identity.details}</p>}
+                  {smtpResult.sender_identity?.details && <p className="text-slate-500 mt-1">{smtpResult.sender_identity.details}</p>}
                 </div>
               )}
             </div>
@@ -2834,7 +2834,7 @@ function AdministrationPanel() {
                 <div key={tpl.name || i} className="flex items-center justify-between py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-800 truncate">{tpl.name}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-500">
                       {tpl.size_bytes ? `${(tpl.size_bytes / 1024).toFixed(1)} KB` : ""}
                       {tpl.last_modified ? ` · ${new Date(tpl.last_modified).toLocaleDateString()}` : ""}
                     </p>
@@ -2853,7 +2853,7 @@ function AdministrationPanel() {
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-slate-800">Preview: {previewTemplate}</h4>
                   <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }}
-                    className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+                    className="text-slate-500 hover:text-slate-600"><X size={16} /></button>
                 </div>
                 <div className="mb-3">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Template Variables (JSON)</label>
@@ -2873,12 +2873,12 @@ function AdministrationPanel() {
                   <div className="space-y-3">
                     <div className="flex gap-3 text-xs">
                       <div className="p-2 bg-white rounded border border-slate-100">
-                        <span className="text-slate-400 block">Subject</span>
+                        <span className="text-slate-500 block">Subject</span>
                         <span className="font-medium text-slate-700">{previewData.subject || "—"}</span>
                       </div>
                       {previewData.variables_found?.length > 0 && (
                         <div className="p-2 bg-white rounded border border-slate-100">
-                          <span className="text-slate-400 block">Variables Found</span>
+                          <span className="text-slate-500 block">Variables Found</span>
                           <span className="font-medium text-slate-700">{previewData.variables_found.join(", ")}</span>
                         </div>
                       )}
@@ -2892,7 +2892,7 @@ function AdministrationPanel() {
                     {previewData.rendered_html && (
                       <div className="border border-slate-200 rounded-lg overflow-hidden">
                         <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
-                          <FileText size={12} className="text-slate-400" />
+                          <FileText size={12} className="text-slate-500" />
                           <span className="text-xs text-slate-500">Rendered HTML Preview</span>
                         </div>
                         <div className="p-3 bg-white max-h-64 overflow-auto text-xs"
@@ -2904,7 +2904,7 @@ function AdministrationPanel() {
                     {previewData.html_content && !previewData.rendered_html && (
                       <div className="border border-slate-200 rounded-lg overflow-hidden">
                         <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
-                          <FileText size={12} className="text-slate-400" />
+                          <FileText size={12} className="text-slate-500" />
                           <span className="text-xs text-slate-500">HTML Content</span>
                         </div>
                         <pre className="p-3 bg-white max-h-48 overflow-auto text-xs text-slate-600 font-mono whitespace-pre-wrap">{previewData.html_content}</pre>
@@ -3052,31 +3052,31 @@ function AdministrationPanel() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Provider</span>
+                <span className="text-slate-500 block">Provider</span>
                 <span className="font-medium text-slate-800">{exchangeDiag.provider || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Base Currency</span>
+                <span className="text-slate-500 block">Base Currency</span>
                 <span className="font-medium text-slate-800">{exchangeDiag.base_currency || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Last Refreshed</span>
+                <span className="text-slate-500 block">Last Refreshed</span>
                 <span className="font-medium text-slate-800">
                   {exchangeDiag.last_refreshed ? new Date(exchangeDiag.last_refreshed).toLocaleDateString() : "—"}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Staleness</span>
+                <span className="text-slate-500 block">Staleness</span>
                 <span className="font-medium text-slate-800">
                   {exchangeDiag.staleness_hours != null ? `${exchangeDiag.staleness_hours}h` : "—"}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Cached Rates</span>
+                <span className="text-slate-500 block">Cached Rates</span>
                 <span className="font-medium text-slate-800">{exchangeDiag.cached_rates_count ?? "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-slate-400 block">Status</span>
+                <span className="text-slate-500 block">Status</span>
                 <HealthStatusBadge status={exchangeDiag.valid ? "healthy" : "warning"} />
               </div>
             </div>
@@ -3090,7 +3090,7 @@ function AdministrationPanel() {
                     </span>
                   ))}
                   {Object.keys(exchangeDiag.cached_rates).length > 20 && (
-                    <span className="text-xs text-slate-400">+{Object.keys(exchangeDiag.cached_rates).length - 20} more</span>
+                    <span className="text-xs text-slate-500">+{Object.keys(exchangeDiag.cached_rates).length - 20} more</span>
                   )}
                 </div>
               </div>
@@ -3191,7 +3191,7 @@ function AdministrationPanel() {
               </div>
             )}
             {enhancedValidation.validated_at && (
-              <p className="text-xs text-slate-400">Validated at: {new Date(enhancedValidation.validated_at).toLocaleString()}</p>
+              <p className="text-xs text-slate-500">Validated at: {new Date(enhancedValidation.validated_at).toLocaleString()}</p>
             )}
           </div>
         ) : (

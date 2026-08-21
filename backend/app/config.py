@@ -99,6 +99,8 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_CURRENCY_DEFAULT: str = "usd"
+    STRIPE_PAYMENT_METHOD_TYPES: str = "card"
+    STRIPE_BILLING_ADDRESS_COLLECTION: str = "auto"
 
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
@@ -113,6 +115,8 @@ class Settings(BaseSettings):
     # N1: Plane-1 (Zoiko's own subscription) failed-payment dunning sweep —
     # independent of the Plane-2 jobs above (see commercial/dunning_service.py).
     COMMERCIAL_DUNNING_INTERVAL_MINUTES: int = 1440
+    # ZB-SA-CMD-003 §8/§15 — internal financial-integrity check cadence.
+    FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
 
 
 settings = Settings()

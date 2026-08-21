@@ -393,19 +393,19 @@ export default function ProductReportsPage() {
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Churn Rate</p>
-                  <p className={`text-2xl font-bold mt-1 ${subChurn.churnRate > 10 ? "text-red-600" : "text-emerald-600"}`}>{subChurn.churnRate.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{subChurn.cancelled} of {subChurn.total} subscriptions</p>
+                  <p className={`text-2xl font-bold mt-1 ${subChurn.churnRate > 10 ? "text-red-600" : "text-emerald-700"}`}>{subChurn.churnRate.toFixed(1)}%</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{subChurn.cancelled} of {subChurn.total} subscriptions</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Retention Rate</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{subChurn.retentionRate.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Expansion health</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Expansion health</p>
                 </div>
               </div>
 
               <div className="bg-white rounded-3xl border border-slate-200 p-6">
                 <h3 className="text-sm font-semibold text-slate-900 mb-1">Subscription Growth & Churn</h3>
-                <p className="text-xs text-slate-400 mb-4">Monthly additions vs churned subscriptions</p>
+                <p className="text-xs text-slate-500 mb-4">Monthly additions vs churned subscriptions</p>
                 {subTrend.length === 0 ? (
                   <EmptyState icon={TrendingUp} title="No subscription history" />
                 ) : (

@@ -69,7 +69,7 @@ export default function EntitlementsPage() {
             </span>
             <span>
               <span className="block font-semibold text-slate-800">{row.account.organization_name}</span>
-              <span className="block text-xs text-slate-400">{row.account.organization_code}</span>
+              <span className="block text-xs text-slate-500">{row.account.organization_code}</span>
             </span>
           </span>
         ),
@@ -78,7 +78,7 @@ export default function EntitlementsPage() {
         key: "subscription",
         label: "Current Subscription",
         render: (row) => {
-          if (!row.sub) return <span className="text-xs text-slate-400">No open subscription</span>;
+          if (!row.sub) return <span className="text-xs text-slate-500">No open subscription</span>;
           return (
             <span className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-600">{row.sub.plan_code}</span>
@@ -94,7 +94,7 @@ export default function EntitlementsPage() {
           row.plan ? (
             <StatusBadge status={row.plan.status} options={PLAN_STATUS_OPTIONS} />
           ) : (
-            <span className="text-xs text-slate-400">—</span>
+            <span className="text-xs text-slate-500">—</span>
           ),
       },
       {

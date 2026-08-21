@@ -18,6 +18,7 @@ Router mounting:
 
 import logging
 import re
+import time
 import uuid
 import warnings
 from contextlib import asynccontextmanager
@@ -138,10 +139,26 @@ async def request_id_middleware(request: Request, call_next):
     (core/exceptions.py) and echoed back as a response header so a Super
     Admin reporting "something went wrong" can hand an engineer one ID that
     resolves directly to the matching server log line — see Section AD of
-    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added."""
+    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added.
+
+    Also records server-side handling time for /api/super-admin/* into the
+    in-memory sliding window (core/api_metrics.py) — the real measurement
+    behind launch-readiness item PERF-01 (ZB-SA-CMD-003 §18.2)."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
+
+    is_command_center = request.url.path.startswith("/api/super-admin/")
+    started = time.perf_counter() if is_command_center else None
+
     response = await call_next(request)
+
+    if started is not None:
+        try:
+            import app.core.api_metrics as api_metrics
+
+            api_metrics.record((time.perf_counter() - started) * 1000)
+        except Exception:  # noqa: BLE001 - telemetry must never break a request
+            pass
     response.headers["X-Request-ID"] = request_id
     return response
 

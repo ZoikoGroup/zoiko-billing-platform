@@ -192,11 +192,11 @@ export default function PromiseToPayPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input type="text" placeholder="Search promises..." value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
           </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -263,21 +263,21 @@ export default function PromiseToPayPage() {
                   <td className="px-4 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
                       <button onClick={() => openTimeline(p)} disabled={!!actionLoading}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors disabled:opacity-40" title="View History">
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors disabled:opacity-40" title="View History">
                         <History size={15} />
                       </button>
                       {["pending", "overdue"].includes(p.status) && (
                         <>
                           <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "fulfil", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Mark Fulfilled">
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors disabled:opacity-40" title="Mark Fulfilled">
                             {actionLoading === `fulfil-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
                           </button>
                           <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "break", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-40" title="Mark Broken">
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Mark Broken">
                             {actionLoading === `break-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <XCircle size={15} />}
                           </button>
                           <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "cancel", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40" title="Cancel">
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600 transition-colors disabled:opacity-40" title="Cancel">
                             {actionLoading === `cancel-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <Ban size={15} />}
                           </button>
                         </>
@@ -299,7 +299,7 @@ export default function PromiseToPayPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-800">Log a Promise to Pay</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
@@ -358,12 +358,12 @@ export default function PromiseToPayPage() {
                   {timelinePromise.customer_name || `Customer #${timelinePromise.customer_id}`} · {formatDisplayCurrency(timelinePromise.promise_amount, "—")}
                 </p>
               </div>
-              <button onClick={() => setTimelinePromise(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setTimelinePromise(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6">
               {timelineError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {timelineError}</div>}
               {timelineLoading ? (
-                <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={20} className="animate-spin" /></div>
+                <div className="flex items-center justify-center py-10 text-slate-500"><Loader2 size={20} className="animate-spin" /></div>
               ) : timelineEntries.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-8">No history yet for this promise.</p>
               ) : (
@@ -373,7 +373,7 @@ export default function PromiseToPayPage() {
                       <span className={`absolute -left-[7px] mt-1 h-3 w-3 rounded-full border-2 border-white ${e.event_type?.includes("fulfilled") ? "bg-emerald-500" : e.event_type?.includes("broken") ? "bg-red-500" : e.event_type?.includes("reminder") ? "bg-sky-500" : "bg-brand-400"}`} />
                       <div className="text-sm font-medium text-slate-800">{e.title}</div>
                       {e.description && <div className="text-xs text-slate-500 mt-0.5">{e.description}</div>}
-                      <div className="text-[11px] text-slate-400 mt-0.5">{formatDisplayDate(e.timestamp)}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{formatDisplayDate(e.timestamp)}</div>
                     </li>
                   ))}
                 </ol>

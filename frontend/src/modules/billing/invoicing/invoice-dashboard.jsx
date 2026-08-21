@@ -478,7 +478,7 @@ export default function InvoiceDashboard() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-700 truncate">{act.action}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       Invoice #{act.invoice_id} &middot; {act.created_at ? new Date(act.created_at).toLocaleDateString() : "—"}
                     </p>
                   </div>
@@ -528,7 +528,7 @@ export default function InvoiceDashboard() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{c.count} invoice{c.count === 1 ? "" : "s"}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{c.count} invoice{c.count === 1 ? "" : "s"}</p>
                     </div>
                   </div>
                   <span className="text-sm font-bold text-slate-700 shrink-0 whitespace-nowrap">{formatDisplayCurrency(c.total, "—", baseCurrency)}</span>

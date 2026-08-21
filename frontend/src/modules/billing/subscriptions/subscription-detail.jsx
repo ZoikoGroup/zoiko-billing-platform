@@ -74,7 +74,7 @@ function KpiCard({ label, value, sub, color, icon: Icon }) {
         {Icon && <Icon size={16} className="text-slate-300 shrink-0" />}
       </div>
       <p className={`text-xl font-bold whitespace-nowrap ${color || "text-slate-900"}`} title={typeof value === 'string' ? value : undefined}>{value}</p>
-      {sub && <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>}
+      {sub && <p className="text-xs text-slate-500 mt-0.5 truncate">{sub}</p>}
     </div>
   );
 }
@@ -307,10 +307,10 @@ export default function SubscriptionDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Building2 size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">{singular} details not available</p>
-          <p className="text-xs text-slate-400 mt-1">{singular} #{subscription.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">{singular} #{subscription.customer_id}</p>
         </div>
       )}
     </div>
@@ -321,10 +321,10 @@ export default function SubscriptionDetailPage() {
       return (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract</h3>
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <FileText size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No contract linked to this subscription</p>
-            <p className="text-xs text-slate-400 mt-1">Contract ID: {subscription.contract_id}</p>
+            <p className="text-xs text-slate-500 mt-1">Contract ID: {subscription.contract_id}</p>
           </div>
         </div>
       );
@@ -481,7 +481,7 @@ export default function SubscriptionDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoices ({invoiceList.length})</h3>
       {invoiceList.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No invoices generated yet</p>
         </div>
@@ -504,7 +504,7 @@ export default function SubscriptionDetailPage() {
                   <td className="py-3 px-4 font-medium">{inv.invoice_number || `#${inv.id}`}</td>
                   <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
                   <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
-                  <td className="py-3 px-4 text-right text-emerald-600">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
+                  <td className="py-3 px-4 text-right text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
                   <td className="py-3 px-4 text-right text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -528,7 +528,7 @@ export default function SubscriptionDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><DollarSignIcon size={16} className="text-brand-500" /> Payments ({paymentList.length})</h3>
       {paymentList.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <DollarSignIcon size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No payments recorded yet</p>
         </div>
@@ -623,7 +623,7 @@ export default function SubscriptionDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-800">{ev.label}</p>
-                <p className="text-xs text-slate-400">{formatDisplayDate(ev.date)}{ev.description ? ` · ${ev.description}` : ""}</p>
+                <p className="text-xs text-slate-500">{formatDisplayDate(ev.date)}{ev.description ? ` · ${ev.description}` : ""}</p>
               </div>
             </div>
           ))}
@@ -641,7 +641,7 @@ export default function SubscriptionDetailPage() {
         </div>
       )}
       {!subscription.notes && (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes for this subscription</p>
         </div>
@@ -654,7 +654,7 @@ export default function SubscriptionDetailPage() {
       {events.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Activity size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No activity recorded</p>
           </div>
@@ -681,9 +681,9 @@ export default function SubscriptionDetailPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-slate-800 capitalize">{evt.event_type}</p>
-                  <p className="text-xs text-slate-400">{evt.description || evt.reason || "—"}</p>
+                  <p className="text-xs text-slate-500">{evt.description || evt.reason || "—"}</p>
                 </div>
-                <span className="text-xs text-slate-400 whitespace-nowrap">{formatDisplayDate(evt.created_at || evt.timestamp)}</span>
+                <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(evt.created_at || evt.timestamp)}</span>
               </div>
             ))}
           </div>
@@ -696,7 +696,7 @@ export default function SubscriptionDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><ShieldIcon size={16} className="text-brand-500" /> Audit Trail</h3>
       {auditLogs.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <ShieldIcon size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No audit log entries</p>
         </div>
@@ -726,7 +726,7 @@ export default function SubscriptionDetailPage() {
                   </td>
                   <td className="py-3 px-4 text-slate-600">{log.user_name || log.user_id || log.performed_by || "—"}</td>
                   <td className="py-3 px-4 text-slate-500 max-w-xs truncate">{log.details || log.description || log.message || "—"}</td>
-                  <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
+                  <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -791,7 +791,7 @@ export default function SubscriptionDetailPage() {
               <div className="flex justify-between"><span className="text-slate-500">Invoices</span><span className="font-medium text-slate-800">{totalInvoices} ({paidValue > 0 ? paidValue : "—"} paid)</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Payments</span><span className="font-medium text-slate-800">{totalPaymentAmount > 0 ? formatDisplayCurrency(totalPaymentAmount, subscription.currency) : "—"}</span></div>
               <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-2 mt-2">
-                <span>Auto Renew</span><span className="text-emerald-600">{subscription.auto_renew ? "Yes" : "No"}</span>
+                <span>Auto Renew</span><span className="text-emerald-700">{subscription.auto_renew ? "Yes" : "No"}</span>
               </div>
             </div>
           </div>
@@ -887,7 +887,7 @@ export default function SubscriptionDetailPage() {
             {changePlanLoading ? (
               <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" /></div>
             ) : availablePlans.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">No other active plans available.</p>
+              <p className="text-sm text-slate-500 text-center py-8">No other active plans available.</p>
             ) : (
               <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
                 {availablePlans.map((plan) => (
@@ -896,7 +896,7 @@ export default function SubscriptionDetailPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-slate-800">{plan.plan_name}</p>
-                        <p className="text-xs text-slate-400">{plan.billing_period?.replace(/_/g, " ")} · {plan.pricing_model}</p>
+                        <p className="text-xs text-slate-500">{plan.billing_period?.replace(/_/g, " ")} · {plan.pricing_model}</p>
                       </div>
                       <p className="font-semibold text-slate-800">{formatDisplayCurrency(plan.unit_price, subscription.currency)}</p>
                     </div>
@@ -936,7 +936,7 @@ export default function SubscriptionDetailPage() {
               <div className="flex justify-between"><span className="text-sm text-slate-500">{singular}</span><span className="font-medium text-slate-800">{customer?.company_name || customer?.name || `ID: ${subscription.customer_id}`}</span></div>
               <div className="flex justify-between"><span className="text-sm text-slate-500">Billing Period</span><span className="font-medium text-slate-800">{formatDisplayDate(subscription.current_term_start)} — {formatDisplayDate(subscription.current_term_end)}</span></div>
               <div className="flex justify-between"><span className="text-sm text-slate-500">Currency</span><span className="font-medium text-slate-800">{subscription.currency}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Amount</span><span className="font-semibold text-emerald-600">{formatDisplayCurrency(subscription.unit_price * (subscription.quantity || 1), subscription.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-sm text-slate-500">Amount</span><span className="font-semibold text-emerald-700">{formatDisplayCurrency(subscription.unit_price * (subscription.quantity || 1), subscription.currency)}</span></div>
             </div>
             <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4">Tax will be applied based on customer billing country. Invoice number will be auto-generated.</p>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

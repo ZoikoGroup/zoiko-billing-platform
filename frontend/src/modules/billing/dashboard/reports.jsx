@@ -39,7 +39,7 @@ function DataTable({ columns, data, maxRows = 10 }) {
     return (
       <div className="flex flex-col items-center justify-center py-10 bg-slate-50/50 rounded-xl border border-slate-100">
         <FileText size={20} className="text-slate-300 mb-2" />
-        <p className="text-slate-400 text-sm">No data available</p>
+        <p className="text-slate-500 text-sm">No data available</p>
       </div>
     );
   }
@@ -69,7 +69,7 @@ function DataTable({ columns, data, maxRows = 10 }) {
         </table>
       </div>
       {data.length > maxRows && (
-        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-400">
+        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-500">
           Showing {maxRows} of {data.length} rows
         </div>
       )}

@@ -23,9 +23,9 @@ function StateBlock({ title, value }) {
     value === null || value === undefined || (typeof value === "object" && Object.keys(value).length === 0);
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-600">{title}</p>
       {empty ? (
-        <p className="text-sm italic text-slate-400">No state change recorded.</p>
+        <p className="text-sm italic text-slate-500">No state change recorded.</p>
       ) : (
         <pre className="max-h-64 overflow-auto rounded-lg bg-white p-3 text-xs leading-5 text-slate-700">
           {JSON.stringify(value, null, 2)}
@@ -39,7 +39,7 @@ function ChangeSummary({ log }) {
   const hasNew = log.new_values && Object.keys(log.new_values).length > 0;
   const hasOld = log.old_values && Object.keys(log.old_values).length > 0;
   if (!hasNew && !hasOld) {
-    return <span className="text-xs text-slate-400">—</span>;
+    return <span className="text-xs text-slate-500">—</span>;
   }
   const keys = Object.keys(log.new_values || log.old_values || {});
   return <span className="text-xs text-slate-500">{keys.join(", ")}</span>;
@@ -179,7 +179,7 @@ export default function AuditLogsPage() {
         render: (row) => (
           <span className="text-xs text-slate-600">
             {row.entity_type}
-            {row.entity_id ? <span className="text-slate-400"> #{row.entity_id}</span> : null}
+            {row.entity_id ? <span className="text-slate-500"> #{row.entity_id}</span> : null}
           </span>
         ),
       },
@@ -282,7 +282,7 @@ export default function AuditLogsPage() {
         label: "Subscription",
         render: (row) => (
           <span className="text-xs text-slate-600">
-            {row.subscription_id ? <>Subscription <span className="text-slate-400">#{row.subscription_id}</span></> : "—"}
+            {row.subscription_id ? <>Subscription <span className="text-slate-500">#{row.subscription_id}</span></> : "—"}
           </span>
         ),
       },
@@ -292,7 +292,7 @@ export default function AuditLogsPage() {
         render: (row) => (
           <span>
             <span className="block text-xs font-medium text-slate-700">{row.organization_name}</span>
-            <span className="block text-[11px] text-slate-400">{row.organization_code}</span>
+            <span className="block text-[11px] text-slate-500">{row.organization_code}</span>
           </span>
         ),
       },
@@ -341,7 +341,7 @@ export default function AuditLogsPage() {
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
                 <Filter size={13} className="text-brand-500" />
                 Filters
               </div>
@@ -444,7 +444,7 @@ export default function AuditLogsPage() {
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
                 <Filter size={13} className="text-brand-500" />
                 Filters
               </div>

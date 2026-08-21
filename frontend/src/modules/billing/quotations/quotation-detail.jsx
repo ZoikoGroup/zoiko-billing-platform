@@ -375,10 +375,10 @@ export default function QuotationDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <User size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">{singular} details not available</p>
-          <p className="text-xs text-slate-400 mt-1">{singular} #{quote.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">{singular} #{quote.customer_id}</p>
         </div>
       )}
     </div>
@@ -388,7 +388,7 @@ export default function QuotationDetailPage() {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Line Items ({items.length})</h3>
       {items.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Package size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No line items</p>
         </div>
@@ -410,7 +410,7 @@ export default function QuotationDetailPage() {
               {items.map((item, i) => (
                 <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
                   className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                  <td className="py-3 px-4 text-slate-400">{item.line_number || i + 1}</td>
+                  <td className="py-3 px-4 text-slate-500">{item.line_number || i + 1}</td>
                   <td className="py-3 px-4">
                     <p className="font-medium text-slate-800">{item.description || "Item"}</p>
                     {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
@@ -492,7 +492,7 @@ export default function QuotationDetailPage() {
       </div>
       <div>
         <p className="text-sm font-medium text-slate-800">{label}</p>
-        <p className="text-xs text-slate-400">{formatDisplayDate(date)}</p>
+        <p className="text-xs text-slate-500">{formatDisplayDate(date)}</p>
       </div>
     </div>
   );
@@ -512,7 +512,7 @@ export default function QuotationDetailPage() {
         </div>
       )}
       {!quote.notes && !quote.terms && (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes or terms</p>
         </div>
@@ -528,7 +528,7 @@ export default function QuotationDetailPage() {
           <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center"><FileSignature size={14} /></div>
           <div className="flex-1">
             <p className="text-sm font-medium text-slate-800">Quotation created</p>
-            <p className="text-xs text-slate-400">{formatDisplayDate(quote.created_at)}</p>
+            <p className="text-xs text-slate-500">{formatDisplayDate(quote.created_at)}</p>
           </div>
         </div>
         {quote.status === "sent" && (
@@ -536,16 +536,16 @@ export default function QuotationDetailPage() {
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><Send size={14} /></div>
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-800">Sent to customer</p>
-              <p className="text-xs text-slate-400">{formatDisplayDate(quote.updated_at)}</p>
+              <p className="text-xs text-slate-500">{formatDisplayDate(quote.updated_at)}</p>
             </div>
           </div>
         )}
         {quote.accepted_at && (
           <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center"><CheckCircle size={14} /></div>
+            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center"><CheckCircle size={14} /></div>
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-800">Accepted by customer</p>
-              <p className="text-xs text-slate-400">{formatDisplayDate(quote.accepted_at)}</p>
+              <p className="text-xs text-slate-500">{formatDisplayDate(quote.accepted_at)}</p>
             </div>
           </div>
         )}
@@ -554,7 +554,7 @@ export default function QuotationDetailPage() {
             <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center"><XCircle size={14} /></div>
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-800">Rejected: {quote.rejected_reason}</p>
-              <p className="text-xs text-slate-400">{formatDisplayDate(quote.updated_at)}</p>
+              <p className="text-xs text-slate-500">{formatDisplayDate(quote.updated_at)}</p>
             </div>
           </div>
         )}
@@ -581,7 +581,7 @@ export default function QuotationDetailPage() {
       subtitle={
         <span className="flex items-center gap-2">
           <StatusBadge status={quote.status} />
-          {quote.quote_version > 1 && <span className="text-xs text-slate-400">v{quote.quote_version}</span>}
+          {quote.quote_version > 1 && <span className="text-xs text-slate-500">v{quote.quote_version}</span>}
         </span>
       }
       actions={

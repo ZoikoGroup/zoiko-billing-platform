@@ -1,22 +1,33 @@
 """
 modules/auth/mfa_service.py
-----------------------------
-Backend-enforced TOTP MFA for Super Admin accounts only (release-blocker
-pass, Blocker 4 — SEC-01).
+---------------------------
+Server-enforced TOTP MFA for Super Admin accounts — STEP-UP ONLY
+(ZB-SA-CMD-003 v3.0 master directive).
 
-Enforcement point: login_user() (auth/service.py) never issues a real
-access/refresh token pair to a super_admin directly. It always routes
-through here first — either start_enrollment (no MFA configured yet) or a
-challenge (MFA already enabled) — and only THIS module's verify_enrollment/
-challenge functions ever call create_access_token/create_refresh_token for a
-super_admin. A frontend "MFA passed" flag has no bearing on this: there is
-no code path that mints a real token for a super_admin without a verified
-TOTP code (or recovery code) having been checked server-side, in this
-module, against the database.
+Normal login NEVER involves MFA: login_user() issues a real access/refresh
+token pair to every role on a plain password check, with no mfa_status /
+mfa_token side-channel and no enrollment redirect. There is deliberately no
+fallback around this.
 
-Secrets: encrypted at rest (core/mfa_crypto.py, a key separate from the JWT
-signing key). Recovery codes: only their SHA-256 hash is ever stored (same
-pattern as SecurityActionToken). Neither is ever logged.
+What MFA still guards — and the ONLY thing it guards — is privileged
+actions taken from an already-authenticated session:
+
+  * privileged tenant access activation (privileged_access_service)
+  * circuit-breaker engage/lift, proposal and decision (§9)
+  * any other operation routed through verify_step_up()
+
+verify_step_up() reuses the same SuperAdminMFA row, TOTP secret and
+account-level lockout counter that enrollment set up, never mints tokens,
+and requires a FRESH code on every call (replay protection). A frontend
+"MFA passed" flag has no bearing on any of this: enforcement is always a
+server-side database check inside this module at the moment of the action.
+
+Enrollment is self-service from an authenticated Super Admin session via
+start_enrollment()/verify_enrollment() (exposed at /auth/mfa/setup/*) —
+NOT at login. Secrets are encrypted at rest (core/mfa_crypto.py, a key
+separate from the JWT signing key). Recovery codes: only their SHA-256
+hash is ever stored (same pattern as SecurityActionToken). Neither is ever
+logged.
 """
 
 import hashlib
@@ -30,12 +41,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.exceptions import BadRequestException, UnauthorizedException
 from app.core.mfa_crypto import decrypt_secret, encrypt_secret
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_mfa_pending_token,
-    verify_password,
-)
+from app.core.security import verify_password
 from app.modules.auth.models import SuperAdminMFA, SuperAdminMFARecoveryCode, User, UserRole
 
 logger = logging.getLogger("zoiko_billing.auth.mfa")
@@ -43,46 +49,33 @@ logger = logging.getLogger("zoiko_billing.auth.mfa")
 RECOVERY_CODE_COUNT = 10
 
 
-def resolve_pending_user(db: Session, mfa_token: str, expected_purpose: str) -> User:
-    """Decodes a restricted mfa_pending token and loads the matching, still
-    just-as-active Super Admin. Re-verifies is_active/role from the DB
-    (never trusts the token claims alone) -- the same stale-claim-rejection
-    discipline get_current_user applies to real access tokens."""
-    payload = decode_mfa_pending_token(mfa_token, expected_purpose)
-    if payload is None:
-        raise UnauthorizedException("Invalid or expired MFA session. Please log in again.")
-
-    user = db.query(User).filter(User.id == payload.get("user_id")).first()
-    if user is None or not user.is_active or user.role != UserRole.SUPER_ADMIN:
-        raise UnauthorizedException("Invalid or expired MFA session. Please log in again.")
-    return user
-
-
 def _hash_code(raw_code: str) -> str:
     return hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
 
 
+# TOTP replay window: matches pyotp's valid_window=1 (±1 step of 30s = up
+# to ~90s a code stays verifiable). Anything shorter would under-protect;
+# anything much longer risks rejecting a legitimately-reused-looking but
+# actually-new code from a resynced client clock — 120s gives a safety
+# margin without meaningfully widening the attack window.
+TOTP_REPLAY_WINDOW_SECONDS = 120
+
+
+def _totp_code_is_replay(row: "SuperAdminMFA", code: str) -> bool:
+    if not row.last_used_code_hash or not row.last_used_code_at:
+        return False
+    if row.last_used_code_at < datetime.utcnow() - timedelta(seconds=TOTP_REPLAY_WINDOW_SECONDS):
+        return False
+    return row.last_used_code_hash == _hash_code(code)
+
+
+def _record_totp_code_used(row: "SuperAdminMFA", code: str) -> None:
+    row.last_used_code_hash = _hash_code(code)
+    row.last_used_code_at = datetime.utcnow()
+
+
 def _generate_recovery_codes() -> list[str]:
     return [secrets.token_hex(5) for _ in range(RECOVERY_CODE_COUNT)]
-
-
-def _token_payload(user: User) -> dict:
-    return {
-        "sub": user.email,
-        "role": user.role.value,
-        "user_id": user.id,
-        "organization_id": user.organization_id,
-    }
-
-
-def _issue_real_tokens(user: User) -> dict:
-    payload = _token_payload(user)
-    return {
-        "access_token": create_access_token(data=payload),
-        "refresh_token": create_refresh_token(data=payload),
-        "token_type": "bearer",
-        "user": user,
-    }
 
 
 def get_or_create_mfa_row(db: Session, user: User) -> SuperAdminMFA:
@@ -99,7 +92,7 @@ def is_mfa_enabled(db: Session, user_id: int) -> bool:
     return bool(row and row.is_enabled)
 
 
-# ── Enrollment ───────────────────────────────────────────────────────────────
+# ── Enrollment (self-service from an authenticated session) ──────────────────
 
 def start_enrollment(db: Session, user: User) -> dict:
     """(Re)generates a fresh, unconfirmed TOTP secret. Safe to call again
@@ -134,9 +127,10 @@ def start_enrollment(db: Session, user: User) -> dict:
 
 
 def verify_enrollment(db: Session, user: User, code: str) -> dict:
-    """Confirms enrollment with a real TOTP code from the authenticator app,
-    enables MFA, issues one-time recovery codes, and completes login by
-    minting the real access/refresh token pair."""
+    """Confirms enrollment with a real TOTP code from the authenticator app
+    and enables MFA for step-up verification. Called from an already-
+    authenticated session — it NEVER mints tokens (login does not involve
+    MFA). Issues one-time recovery codes, returned exactly once."""
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
@@ -179,33 +173,35 @@ def verify_enrollment(db: Session, user: User, code: str) -> dict:
     db.refresh(user)
 
     logger.info("Super Admin %s completed MFA enrollment", user.email)
-    result = _issue_real_tokens(user)
-    result["recovery_codes"] = raw_codes
-    return result
+    return {"recovery_codes": raw_codes}
 
 
-# ── Login-time challenge ─────────────────────────────────────────────────────
+# ── Step-up (re-)verification for an already-authenticated session ──────────
+# ZB-SA-CMD-003 §7: privileged tenant access requires "MFA step-up" at the
+# moment of activation. This is now the SOLE enforcement point of MFA in the
+# system (there is no login-time gate anymore). Reuses the exact same
+# SuperAdminMFA row, TOTP secret and account-level lockout counter as every
+# other flow (one shared brute-force budget per account), but never mints
+# tokens — the caller already holds a valid access token; this only proves
+# fresh possession of the factor for one sensitive action.
 
-def challenge(db: Session, user: User, code: str | None, recovery_code: str | None) -> dict:
-    """Verifies a TOTP code or a recovery code for a user whose MFA is
-    already enabled, enforcing account-level lockout after repeated
-    failures (independent of the IP-based rate limit on the endpoint
-    itself). On success, mints the real access/refresh token pair."""
+def verify_step_up(db: Session, user: User, code: str | None, recovery_code: str | None) -> None:
+    """Raises BadRequestException/UnauthorizedException on failure. Returns
+    None (no tokens) on success."""
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
     row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user.id).first()
     if row is None or not row.is_enabled:
-        raise BadRequestException("MFA is not enabled on this account.")
+        raise BadRequestException("MFA is not enabled on this account. Step-up verification requires MFA.")
 
     if row.locked_until and row.locked_until > datetime.utcnow():
         raise UnauthorizedException(
             f"Too many failed MFA attempts. Try again after {row.locked_until.isoformat()}Z."
         )
 
-    used_recovery = False
     verified = False
-
+    used_recovery = False
     if recovery_code:
         candidate_hash = _hash_code(recovery_code.strip().replace("-", "").lower())
         recovery_row = (
@@ -223,7 +219,10 @@ def challenge(db: Session, user: User, code: str | None, recovery_code: str | No
             used_recovery = True
     elif code:
         raw_secret = decrypt_secret(row.secret_encrypted)
-        verified = pyotp.TOTP(raw_secret).verify(code, valid_window=1)
+        # Replay protection: a code consumed by an earlier step-up cannot be
+        # reused — each privileged action needs a FRESH authentication event
+        # (ZB-SA-CMD-003 §19).
+        verified = pyotp.TOTP(raw_secret).verify(code, valid_window=1) and not _totp_code_is_replay(row, code)
 
     if not verified:
         row.failed_attempts += 1
@@ -236,52 +235,33 @@ def challenge(db: Session, user: User, code: str | None, recovery_code: str | No
             action=PlatformAuditAction.MFA_CHALLENGE_FAILURE,
             entity_type="SuperAdminMFA",
             entity_id=row.id,
-            metadata={"stage": "challenge", "locked": locked, "failed_attempts": row.failed_attempts},
+            metadata={"stage": "step_up", "locked": locked, "failed_attempts": row.failed_attempts},
         )
         db.commit()
         raise UnauthorizedException("Incorrect verification code.")
 
+    if code and not used_recovery:
+        _record_totp_code_used(row, code)
     row.failed_attempts = 0
     row.locked_until = None
-
     PlatformAuditService(db).log_no_commit(
         actor_id=user.id,
         actor_role="super_admin",
         action=PlatformAuditAction.MFA_CHALLENGE_SUCCESS,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
-        metadata={"via": "recovery_code" if used_recovery else "totp"},
+        metadata={"stage": "step_up", "via": "recovery_code" if used_recovery else "totp"},
     )
-    if used_recovery:
-        PlatformAuditService(db).log_no_commit(
-            actor_id=user.id,
-            actor_role="super_admin",
-            action=PlatformAuditAction.MFA_RECOVERY_CODE_USED,
-            entity_type="SuperAdminMFA",
-            entity_id=row.id,
-        )
     db.commit()
-    db.refresh(user)
-
-    logger.info("Super Admin %s passed MFA challenge (%s)", user.email, "recovery_code" if used_recovery else "totp")
-    result = _issue_real_tokens(user)
-    if used_recovery:
-        remaining = (
-            db.query(SuperAdminMFARecoveryCode)
-            .filter(SuperAdminMFARecoveryCode.mfa_id == row.id, SuperAdminMFARecoveryCode.used_at.is_(None))
-            .count()
-        )
-        result["recovery_codes_remaining"] = remaining
-    return result
 
 
 # ── Self-service disable + administrative reset ─────────────────────────────
 
 def disable_mfa_self(db: Session, user: User, current_password: str) -> dict:
-    """A fully-authenticated Super Admin (already holds a real access token,
-    which itself required a passed MFA challenge if MFA was enabled) may
-    disable their own MFA -- step-up-confirmed by re-entering their current
-    password, since this reduces their own account's security posture."""
+    """A fully-authenticated Super Admin may disable their own MFA —
+    confirmed by re-entering their current password, since this reduces
+    their own account's security posture (step-up will then fail until they
+    re-enroll, which is surfaced honestly rather than papered over)."""
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
@@ -306,14 +286,14 @@ def disable_mfa_self(db: Session, user: User, current_password: str) -> dict:
         metadata={"initiated_by": "self"},
     )
     db.commit()
-    return {"message": "MFA has been disabled on your account. You will be asked to re-enroll on your next login."}
+    return {"message": "MFA has been disabled on your account. Privileged actions will require re-enrolling first."}
 
 
 def admin_reset_mfa(db: Session, actor: User, target_user_id: int) -> dict:
     """Disaster-recovery path: another Super Admin resets a locked-out
     colleague's MFA (lost device + lost recovery codes) so they can
-    re-enroll from scratch on their next login. Strongly authorized (caller
-    must already hold a real, fully-privileged Super Admin session -- see
+    re-enroll from Settings. Strongly authorized (caller must already hold
+    a real, fully-privileged Super Admin session -- see
     get_current_super_admin) and always audited with both actor and target
     identity."""
     from app.modules.super_admin.audit_service import PlatformAuditService
@@ -346,4 +326,4 @@ def admin_reset_mfa(db: Session, actor: User, target_user_id: int) -> dict:
     )
     db.commit()
     logger.warning("Super Admin %s administratively reset MFA for %s", actor.email, target.email)
-    return {"message": f"MFA has been reset for {target.email}. They will be asked to re-enroll on their next login."}
+    return {"message": f"MFA has been reset for {target.email}. They can re-enroll from Settings."}

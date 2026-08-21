@@ -84,6 +84,7 @@ class SuperAdminUserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     mfa_enabled: Optional[bool] = None  # only meaningful for role == super_admin
+    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
 
 
 class SuperAdminUserListResponse(BaseModel):
@@ -285,6 +286,8 @@ class BillingKillSwitchResponse(BaseModel):
     scope: str
     enabled: bool
     reason: Optional[str] = None
+    # ZB-SA-CMD-003 §9.1 — mandatory auto-expiry deadline for engaged breaks.
+    expires_at: Optional[datetime] = None
     changed_by_user_id: Optional[int] = None
     changed_by_email: Optional[str] = None
     changed_at: datetime
@@ -294,6 +297,76 @@ class BillingKillSwitchResponse(BaseModel):
 class BillingKillSwitchUpdate(BaseModel):
     enabled: bool
     reason: str = Field(..., min_length=1, max_length=1000)
+
+
+# ZB-SA-CMD-003 §9 — Domain B circuit breaker toggle (break-glass direct
+# path), MFA step-up required. Engaging a breaker REQUIRES an incident
+# reference (§12 privileged-access discipline) and always carries a bounded
+# auto-expiry window; releasing clears any pending expiry.
+class CircuitBreakerToggleRequest(BaseModel):
+    enabled: bool
+    reason: str = Field(..., min_length=1, max_length=1000)
+    incident_reference: Optional[str] = Field(None, max_length=100)
+    auto_expire_minutes: Optional[int] = None  # clamped server-side
+    code: Optional[str] = Field(None, min_length=6, max_length=10)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+    @model_validator(mode="after")
+    def _one_factor_required(self):
+        if not self.code and not self.recovery_code:
+            raise ValueError("Either a TOTP code or a recovery code is required to change a circuit breaker.")
+        return self
+
+    @model_validator(mode="after")
+    def _incident_reference_required_to_engage(self):
+        if not self.enabled and not (self.incident_reference or "").strip():
+            raise ValueError("An incident_reference is required to engage (disable) a circuit breaker.")
+        return self
+
+
+# §9.1 catalog entry — blast-radius preview metadata so the UI can show what
+# engaging a breaker actually stops BEFORE an operator confirms anything.
+class CircuitBreakerCatalogEntry(BaseModel):
+    scope: str
+    display_name: str
+    domain: str
+    effect: str
+    gated_paths: list[str]
+    enabled: bool
+    expires_at: Optional[datetime] = None
+    reason: Optional[str] = None
+    changed_by_email: Optional[str] = None
+    changed_at: Optional[datetime] = None
+
+
+class CircuitBreakerCatalogResponse(BaseModel):
+    breakers: list[CircuitBreakerCatalogEntry]
+    generated_at: datetime
+
+
+# §9 maker-checker path: a proposed breaker change goes through the generic
+# ApprovalRequest engine as request_type="circuit_breaker_change"; a second,
+# different Super Admin approves/rejects via /approval-requests/{id}/decision.
+class CircuitBreakerChangeProposalCreate(BaseModel):
+    enabled: bool
+    reason: str = Field(..., min_length=1, max_length=1000)
+    incident_reference: Optional[str] = Field(None, max_length=100)
+    auto_expire_minutes: Optional[int] = None  # clamped server-side
+
+    @model_validator(mode="after")
+    def _incident_reference_required_to_engage(self):
+        if not self.enabled and not (self.incident_reference or "").strip():
+            raise ValueError("An incident_reference is required to propose engaging (disabling) a circuit breaker.")
+        return self
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decision: str = Field(..., pattern="^(approve|reject)$")
+    reason: str = Field(..., min_length=1, max_length=2000)
+    # Required when deciding a circuit_breaker_change request — the CHECKER
+    # authenticates with the same depth as the maker (§9/§12).
+    code: Optional[str] = Field(None, min_length=6, max_length=10)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -312,3 +385,269 @@ class ProductionAcceptanceReport(BaseModel):
     items: list[ProductionAcceptanceItem]
     overall_status: str  # READY | CONDITIONAL | BLOCKED
     summary: str
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §6/§7 — Domain B: privileged tenant support access
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PrivilegedAccessRequestCreate(BaseModel):
+    organization_id: int
+    reason: str = Field(..., min_length=1, max_length=2000)
+    ticket_reference: str = Field(..., min_length=1, max_length=100)
+    requested_minutes: int = Field(30, ge=1, le=30)
+
+
+class PrivilegedAccessStepUp(BaseModel):
+    code: Optional[str] = Field(None, min_length=6, max_length=10)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+    @model_validator(mode="after")
+    def _one_factor_required(self):
+        if not self.code and not self.recovery_code:
+            raise ValueError("Either a TOTP code or a recovery code is required.")
+        return self
+
+
+class PrivilegedAccessGrantResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    organization_name: Optional[str] = None
+    requested_by_user_id: Optional[int] = None
+    reason: str
+    ticket_reference: str
+    scope: str
+    status: str
+    correlation_id: str
+    requested_minutes: int
+    requested_at: datetime
+    activated_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    exited_at: Optional[datetime] = None
+
+
+class PrivilegedAccessGrantListResponse(BaseModel):
+    grants: list[PrivilegedAccessGrantResponse]
+
+
+class TenantAccessSummaryResponse(BaseModel):
+    grant_id: int
+    organization_id: int
+    organization_name: Optional[str] = None
+    organization_code: Optional[str] = None
+    domain: str
+    scope: str
+    expires_at: Optional[datetime] = None
+    customer_summary: dict
+    subscription_summary: dict
+    invoice_summary: dict
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §8 — Domain C: cross-tenant operational telemetry
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class OrganizationHealthResponse(BaseModel):
+    total_organizations: int
+    active_organizations: int
+    suspended_organizations: int
+
+
+class JobHealthItem(BaseModel):
+    job_name: str
+    display_name: Optional[str] = None
+    last_status: Optional[str] = None
+    last_started_at: Optional[datetime] = None
+    last_finished_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    run_count_24h: int
+    failure_count_24h: int
+    # ZB-SA-CMD-003 §10.2 — freshness of the underlying job signal itself
+    # (time since last run vs its configured scheduler interval), not the
+    # freshness of this HTTP response.
+    freshness: str  # "fresh" | "stale" | "unknown"
+    freshness_age_seconds: Optional[float] = None
+    expected_interval_minutes: Optional[int] = None
+
+
+class JobHealthListResponse(BaseModel):
+    jobs: list[JobHealthItem]
+    scheduler_enabled: bool
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §10/§11 — Attention Engine / incident lifecycle
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AttentionItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source: str
+    source_key: str
+    title: str
+    description: Optional[str] = None
+    severity: str
+    status: str
+    organization_id: Optional[int] = None
+    owner_user_id: Optional[int] = None
+    occurrence_count: int
+    correlation_id: str
+    opened_at: datetime
+    last_seen_at: datetime
+    acknowledged_at: Optional[datetime] = None
+    assigned_at: Optional[datetime] = None
+    mitigating_at: Optional[datetime] = None
+    monitoring_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
+    reopened_at: Optional[datetime] = None
+    resolution_code: Optional[str] = None
+    suppressed_until: Optional[datetime] = None
+    suppression_reason: Optional[str] = None
+    sla_ack_deadline: Optional[datetime] = None
+    sla_mitigate_deadline: Optional[datetime] = None
+
+
+class AttentionItemListResponse(BaseModel):
+    items: list[AttentionItemResponse]
+
+
+class AttentionCountsResponse(BaseModel):
+    p0: int
+    p1: int
+    p2: int
+    p3: int
+    total_open: int
+    sla_breaches: int
+
+
+class AttentionAssignRequest(BaseModel):
+    owner_user_id: int
+
+
+class AttentionTransitionRequest(BaseModel):
+    to_status: str
+    resolution_code: Optional[str] = Field(None, max_length=100)
+
+
+class AttentionSuppressRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=1000)
+    minutes: int = Field(..., ge=1, le=10080)  # up to 7 days
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §10.1 — Metric Dictionary v1
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MetricDefinitionResponse(BaseModel):
+    metric_id: str
+    display_name: str
+    definition: str
+    domain: str
+    unit: str
+    numerator: Optional[str] = None
+    denominator: Optional[str] = None
+    period_basis: str
+    timezone: str
+    currency_basis: Optional[str] = None
+    authoritative_source: str
+    refresh_cadence_seconds: Optional[int] = None
+    stale_threshold_seconds: Optional[int] = None
+    unknown_threshold_seconds: Optional[int] = None
+    owner: str
+    version: str
+    effective_date: str
+    drilldown_route: Optional[str] = None
+
+
+class MetricDictionaryResponse(BaseModel):
+    metrics: list[MetricDefinitionResponse]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §13/§14 — global search / command palette
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SearchResultItem(BaseModel):
+    domain: str
+    entity_type: str
+    id: int
+    label: str
+    route: str
+    requires_access: bool
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: list[SearchResultItem]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §23 — Launch Readiness
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class LaunchReadinessItem(BaseModel):
+    id: str
+    criterion: str
+    status: str  # PASS | FAIL | WARNING | UNKNOWN
+    evidence: str
+
+
+class LaunchReadinessResponse(BaseModel):
+    overall_status: str
+    items: list[LaunchReadinessItem]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 15 — internal financial consistency (NOT external reconciliation)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FinancialConsistencyResponse(BaseModel):
+    state: str  # VERIFIED | FAILED | UNKNOWN
+    scope: str
+    total_invoices_checked: int
+    over_allocated_count: int
+    over_allocated_examples: list[dict]
+    under_allocated_paid_count_informational: int
+    coverage_note: str
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §11 — Triage lens: one pane, four sections. Composed from the
+# SAME real sources as their dedicated endpoints (attention engine, job
+# telemetry, breaker catalog, platform audit) — never a parallel data path.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TriageIncidentsSection(BaseModel):
+    counts: AttentionCountsResponse
+    top_items: list[AttentionItemResponse]
+
+
+class TriageSafetyControl(BaseModel):
+    scope: str
+    display_name: str
+    enabled: bool
+    expires_at: Optional[datetime] = None
+    reason: Optional[str] = None
+
+
+class TriageCriticalEvent(BaseModel):
+    id: int
+    action: str
+    entity_type: str
+    entity_id: Optional[int] = None
+    actor_email: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: datetime
+
+
+class TriageSummaryResponse(BaseModel):
+    generated_at: datetime
+    incidents: TriageIncidentsSection
+    pipeline_stages: list[JobHealthItem]
+    scheduler_enabled: bool
+    safety_controls: list[TriageSafetyControl]
+    critical_events: list[TriageCriticalEvent]

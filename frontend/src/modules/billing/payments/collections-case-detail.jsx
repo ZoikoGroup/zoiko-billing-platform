@@ -124,7 +124,7 @@ export default function CollectionsCaseDetailPage() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
           <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Case Summary</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-600">Case Summary</p>
             <h2 className="mt-1 text-xl font-bold text-slate-900">{caseData.customer_name || `Customer #${caseData.customer_id}`}</h2>
             <p className="mt-1 text-sm text-slate-500">Invoice {caseData.invoice_number || `#${caseData.invoice_id}`}</p>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -153,13 +153,13 @@ export default function CollectionsCaseDetailPage() {
             )}
             {caseData.resolution && (
               <div className="mt-3 rounded-lg bg-emerald-50 p-4">
-                <p className="text-xs font-medium text-emerald-600">Resolution</p>
+                <p className="text-xs font-medium text-emerald-700">Resolution</p>
                 <p className="mt-1 text-sm font-medium text-emerald-800">{caseData.resolution}</p>
               </div>
             )}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Quick Actions</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Quick Actions</p>
             <div className="mt-4 grid grid-cols-1 gap-2">
               {canWork && (
                 <>
@@ -203,7 +203,7 @@ export default function CollectionsCaseDetailPage() {
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-slate-900">{entry.title}</span>
                       {entry.description && <p className="text-xs text-slate-500 mt-0.5">{entry.description}</p>}
-                      <p className="text-xs text-slate-400 mt-1">{formatDisplayDate(entry.timestamp)}</p>
+                      <p className="text-xs text-slate-500 mt-1">{formatDisplayDate(entry.timestamp)}</p>
                     </div>
                   </div>
                 ))}

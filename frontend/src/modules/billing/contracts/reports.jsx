@@ -162,7 +162,7 @@ export default function ContractReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Contracts</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{fContracts.length}</p>
-                  <p className="text-xs text-slate-400 mt-1">{active.length} active</p>
+                  <p className="text-xs text-slate-500 mt-1">{active.length} active</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Value</p>
@@ -170,12 +170,12 @@ export default function ContractReportsPage() {
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active Value</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatDisplayCurrency(activeValue, defaultCurrency)}</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatDisplayCurrency(activeValue, defaultCurrency)}</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Auto-Renewal</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{autoRenew}</p>
-                  <p className="text-xs text-slate-400 mt-1">{fContracts.length ? `${((autoRenew / fContracts.length) * 100).toFixed(0)}% of contracts` : "—"}</p>
+                  <p className="text-xs text-slate-500 mt-1">{fContracts.length ? `${((autoRenew / fContracts.length) * 100).toFixed(0)}% of contracts` : "—"}</p>
                 </div>
               </div>
 
@@ -184,7 +184,7 @@ export default function ContractReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Contract Status Distribution</h3>
                     <button onClick={() => downloadJSON(statusData, "contract-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {statusData.length === 0 ? <EmptyState icon={PieChartIcon} title="No contract data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -202,7 +202,7 @@ export default function ContractReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Value by Status</h3>
                     <button onClick={() => downloadJSON(valueByStatus, "contract-value-by-status.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {valueByStatus.length === 0 ? <EmptyState icon={BarChart3} title="No value data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -319,7 +319,7 @@ export default function ContractReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Auto-Renewal</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{expiring.filter((c) => c.auto_renew).length}</p>
-                  <p className="text-xs text-slate-400 mt-1">Will auto-renew</p>
+                  <p className="text-xs text-slate-500 mt-1">Will auto-renew</p>
                 </div>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-6">

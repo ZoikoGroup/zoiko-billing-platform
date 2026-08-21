@@ -199,7 +199,7 @@ export default function TaxSettingsPage() {
           {selectedRate && (() => {
             const rateVal = parseFloat(selectedRate.rate || 0);
             const displayRate = rateVal > 0 && rateVal <= 1 ? rateVal * 100 : rateVal;
-            return <p className="mt-1 text-xs text-slate-400">Rate: {displayRate.toFixed(2)}% — {selectedRate.jurisdiction || "No jurisdiction"}</p>;
+            return <p className="mt-1 text-xs text-slate-500">Rate: {displayRate.toFixed(2)}% — {selectedRate.jurisdiction || "No jurisdiction"}</p>;
           })()}
         </SettingsField>
 

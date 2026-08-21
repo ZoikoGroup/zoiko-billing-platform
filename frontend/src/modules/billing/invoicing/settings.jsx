@@ -3,7 +3,7 @@ import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, Percent, M
 import { PageHeader, Button } from "../../../components/billing-ui";
 
 const inputClass =
-  "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
+  "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
 import { settingsApi, taxApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -228,19 +228,19 @@ const [original, setOriginal] = useState({});
 
       <div className="mb-6 grid grid-cols-1 gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Number Preview</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Number Preview</p>
           <p className="mt-1 text-lg font-bold text-slate-900">{numberingPreview}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Currency</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Currency</p>
           <p className="mt-1 text-lg font-bold text-slate-900">{form.default_currency}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Payment Terms</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Payment Terms</p>
           <p className="mt-1 text-lg font-bold capitalize text-slate-900">{form.default_payment_terms.replace(/_/g, " ")}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Automation</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Automation</p>
           <p className="mt-1 text-lg font-bold text-slate-900">{form.auto_generate_invoice_number ? "Numbering on" : "Manual numbers"}</p>
         </div>
       </div>
@@ -268,7 +268,7 @@ const [original, setOriginal] = useState({});
         <SettingsField label="Invoice Numbering Format" icon={Hash} description="Invoice number format. Use {PREFIX} and {NUMBER} as placeholders">
           <input type="text" value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
             className={`${inputClass} max-w-xs`} />
-          <p className="mt-1 text-xs text-slate-400">Preview: {numberingPreview}</p>
+          <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
         </SettingsField>
 
         <SettingsField label="Auto-Generate Invoice Numbers" icon={ToggleLeft} description="Automatically generate invoice numbers using the configured prefix/format">
@@ -437,7 +437,7 @@ const [original, setOriginal] = useState({});
           <input type="url" value={form.logo_url} onChange={(e) => updateField("logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
             className={`${inputClass} max-w-xs`} />
-          {form.logo_url && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{form.logo_url}</p>}
+          {form.logo_url && <p className="mt-1 text-xs text-slate-500 truncate max-w-xs">{form.logo_url}</p>}
         </SettingsField>
       </div>
     </div>

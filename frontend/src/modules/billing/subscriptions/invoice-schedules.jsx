@@ -143,7 +143,7 @@ export default function InvoiceSchedulesPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input type="text" placeholder="Search schedules..." value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
@@ -185,7 +185,7 @@ export default function InvoiceSchedulesPage() {
           <button key={chip.value} onClick={() => { setDateRange(chip.value); setCurrentPage(1); }}
             className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${dateRange === chip.value ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
             {chip.label}
-            <span className={dateRange === chip.value ? "text-white/80" : "text-slate-400"}>{chip.count}</span>
+            <span className={dateRange === chip.value ? "text-white/80" : "text-slate-500"}>{chip.count}</span>
           </button>
         ))}
       </div>
@@ -224,15 +224,15 @@ export default function InvoiceSchedulesPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Active Schedules</p>
           </div>
           <p className="text-2xl font-bold text-slate-900">{activeSchedules.length}</p>
-          <p className="text-xs text-slate-400 mt-1">{schedules.length} total</p>
+          <p className="text-xs text-slate-500 mt-1">{schedules.length} total</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle className="h-5 w-5 text-emerald-500" />
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Due Today</p>
           </div>
-          <p className="text-2xl font-bold text-emerald-600">{dueToday.length}</p>
-          <p className="text-xs text-slate-400 mt-1">Ready to invoice</p>
+          <p className="text-2xl font-bold text-emerald-700">{dueToday.length}</p>
+          <p className="text-xs text-slate-500 mt-1">Ready to invoice</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -254,7 +254,7 @@ export default function InvoiceSchedulesPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Overdue</p>
           </div>
           <p className="text-2xl font-bold text-red-600">{overdue.length}</p>
-          <p className="text-xs text-slate-400 mt-1">Past billing date</p>
+          <p className="text-xs text-slate-500 mt-1">Past billing date</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -262,7 +262,7 @@ export default function InvoiceSchedulesPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Renewals</p>
           </div>
           <p className="text-2xl font-bold text-indigo-600">{renewalReminders.length}</p>
-          <p className="text-xs text-slate-400 mt-1">Term ends this month</p>
+          <p className="text-xs text-slate-500 mt-1">Term ends this month</p>
         </div>
       </div>
 
@@ -277,7 +277,7 @@ export default function InvoiceSchedulesPage() {
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Calendar className="h-10 w-10 text-slate-300 mb-3" />
             <p className="text-sm font-medium text-slate-500 mb-1">No schedules found</p>
-            <p className="text-xs text-slate-400">{hasActiveFilters ? "Try adjusting your filters." : "No subscription billing schedules available."}</p>
+            <p className="text-xs text-slate-500">{hasActiveFilters ? "Try adjusting your filters." : "No subscription billing schedules available."}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -326,7 +326,7 @@ export default function InvoiceSchedulesPage() {
                       </td>
                       <td className="py-3 px-4 text-right font-medium text-slate-900">
                         {formatCurrency(s.unit_price, s.currency || "—")}
-                        {s.quantity > 1 && <span className="text-xs text-slate-400 ml-1">x{s.quantity}</span>}
+                        {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}
                       </td>
                       <td className={`py-3 px-4 whitespace-nowrap ${billingStyle}`}>
                         {s.next_billing_at ? formatDate(s.next_billing_at) : "—"}

@@ -451,7 +451,7 @@ export default function CustomerDashboard() {
       <div className={DASHBOARD_CHART_GRID_3}>
         <DashboardChartCard title="Payment Trends">
           <DashboardChartErrorBoundary>
-            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+            <div className="flex flex-col items-center justify-center h-64 text-slate-500">
               <div className="grid grid-cols-2 gap-6 text-center">
                 <div>
                   <p className="text-2xl font-bold text-brand-600 whitespace-nowrap">{d.paid_invoices || 0}</p>
@@ -462,7 +462,7 @@ export default function CustomerDashboard() {
                   <p className="text-xs text-slate-500 mt-1">Unpaid</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-emerald-600 whitespace-nowrap">{d.open_quotations || 0}</p>
+                  <p className="text-2xl font-bold text-emerald-700 whitespace-nowrap">{d.open_quotations || 0}</p>
                   <p className="text-xs text-slate-500 mt-1">Open Quotations</p>
                 </div>
                 <div>
@@ -529,7 +529,7 @@ export default function CustomerDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
-                        <p className="text-xs text-slate-400 truncate">{status} {singular.toLowerCase()} · joined {formatRelativeTime(c.created_at)}</p>
+                        <p className="text-xs text-slate-500 truncate">{status} {singular.toLowerCase()} · joined {formatRelativeTime(c.created_at)}</p>
                       </div>
                     </div>
                   );

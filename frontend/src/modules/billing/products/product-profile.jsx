@@ -254,7 +254,7 @@ export default function ProductProfilePage() {
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Revenue (Paid)</p>
-          <p className="text-lg font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalRevenue, product.currency)}>{formatDisplayCurrency(totalRevenue, product.currency)}</p>
+          <p className="text-lg font-bold text-emerald-700 mt-0.5 truncate" title={formatDisplayCurrency(totalRevenue, product.currency)}>{formatDisplayCurrency(totalRevenue, product.currency)}</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0">
           <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider truncate">Total Invoiced</p>
@@ -397,7 +397,7 @@ export default function ProductProfilePage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Pricing Plans</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Plans override product defaults when active</p>
+              <p className="text-xs text-slate-500 mt-0.5">Plans override product defaults when active</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => navigate(`/billing/pricing?product_id=${id}`)}
@@ -688,7 +688,7 @@ export default function ProductProfilePage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{log.action ? log.action.charAt(0).toUpperCase() + log.action.slice(1) : 'Unknown'}</p>
                     {log.details && <p className="text-xs text-slate-500 mt-0.5 truncate">{typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}</p>}
-                    <p className="text-xs text-slate-400 mt-0.5">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</p>
                   </div>
                 </div>
               ))}

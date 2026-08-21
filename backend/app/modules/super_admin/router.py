@@ -8,11 +8,13 @@ and PlatformSetting configuration.
 
 import logging
 from datetime import date, datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
+from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
 from app.database import get_db
 from app.modules.auth.models import User, UserRole
@@ -41,17 +43,42 @@ from app.modules.commercial.schemas import (
     CommercialSubscriptionSummary,
 )
 from app.modules.organizations.models import Organization
+from app.modules.super_admin.attention_service import AttentionService
+from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+from app.modules.super_admin.telemetry_service import TelemetryService
+from app.modules.super_admin import metric_dictionary
+from app.modules.super_admin.search_service import GlobalSearchService
+from app.modules.super_admin.launch_readiness_service import LaunchReadinessService
+from app.modules.super_admin.financial_consistency_service import FinancialConsistencyService
 from app.modules.super_admin.schemas import (
+    ApprovalDecisionRequest,
     ApprovalRequestListResponse,
     ApprovalRequestResponse,
+    AttentionAssignRequest,
+    AttentionCountsResponse,
+    AttentionItemListResponse,
+    AttentionItemResponse,
+    AttentionSuppressRequest,
+    AttentionTransitionRequest,
     BillingKillSwitchResponse,
     BillingKillSwitchUpdate,
+    CircuitBreakerCatalogEntry,
+    CircuitBreakerCatalogResponse,
+    CircuitBreakerChangeProposalCreate,
+    CircuitBreakerToggleRequest,
     CommercialPlanVersionCreate,
     CommercialPlanVersionListResponse,
     CommercialPlanVersionResponse,
     DashboardStats,
+    JobHealthListResponse,
+    MetricDictionaryResponse,
+    OrganizationHealthResponse,
     PlatformAuditLogListResponse,
     PlatformAuditLogResponse,
+    PrivilegedAccessGrantListResponse,
+    PrivilegedAccessGrantResponse,
+    PrivilegedAccessRequestCreate,
+    PrivilegedAccessStepUp,
     ProductionAcceptanceItem,
     ProductionAcceptanceReport,
     RejectApprovalRequest,
@@ -59,10 +86,18 @@ from app.modules.super_admin.schemas import (
     SettingResponse,
     SettingUpdate,
     SubmitForApprovalRequest,
+    FinancialConsistencyResponse,
+    LaunchReadinessResponse,
+    SearchResponse,
     SubscriptionAuditLogListResponse,
     SubscriptionAuditLogResponse,
+    TriageCriticalEvent,
+    TriageIncidentsSection,
+    TriageSafetyControl,
+    TriageSummaryResponse,
     SuperAdminUserListResponse,
     SuperAdminUserResponse,
+    TenantAccessSummaryResponse,
 )
 
 logger = logging.getLogger("zoiko_billing.super_admin")
@@ -168,6 +203,7 @@ def list_platform_users(
             is_active=u.is_active,
             created_at=u.created_at,
             mfa_enabled=mfa_enabled_by_user_id.get(u.id, False) if u.role == UserRole.SUPER_ADMIN else None,
+            platform_role=(u.platform_role.value if u.platform_role else "platform_administrator") if u.role == UserRole.SUPER_ADMIN else None,
         )
         for u, o in rows
     ]
@@ -208,6 +244,57 @@ def set_user_status(
     user.is_active = is_active
     db.commit()
     return {"message": "User status updated."}
+
+
+@router.put("/users/{user_id}/platform-role", response_model=SuccessResponse)
+def set_platform_role(
+    user_id: int,
+    platform_role: str,
+    current_user=Depends(require_capability("platform_role.manage")),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-CMD-003 §26 — assign a super_admin account's PlatformRole
+    (least-privilege capability set). Only PLATFORM_ADMINISTRATOR holds
+    the `platform_role.manage` capability (see capabilities.py's empty
+    role-set for it — that's not a bug, it means "admin-only"), preventing
+    a support/security/reliability operator from escalating their own or
+    a peer's privileges. Self-demotion from PLATFORM_ADMINISTRATOR is
+    intentionally allowed (unlike self-deactivation above) since it never
+    drives active-Super-Admin count to zero and another platform
+    administrator can always reverse it."""
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.auth.models import PlatformRole
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if target is None:
+        raise NotFoundException("User", "id")
+    if target.role != UserRole.SUPER_ADMIN:
+        raise BadRequestException("platform_role only applies to super_admin accounts.")
+
+    try:
+        new_role = PlatformRole(platform_role.lower())
+    except ValueError:
+        raise BadRequestException(
+            f"Unknown platform_role {platform_role!r}. Valid values: {[r.value for r in PlatformRole]}"
+        )
+
+    old_role = target.platform_role.value if target.platform_role else "platform_administrator"
+    target.platform_role = new_role
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.UPDATE,
+        entity_type="User",
+        entity_id=target.id,
+        old_values={"platform_role": old_role},
+        new_values={"platform_role": new_role.value},
+    )
+    db.commit()
+    return {"message": f"Platform role for {target.email} set to {new_role.value}."}
 
 
 @router.put("/users/{user_id}/reset-password", response_model=SuccessResponse)
@@ -1043,6 +1130,7 @@ def get_billing_kill_switch(
         scope=switch.scope,
         enabled=switch.enabled,
         reason=switch.reason,
+        expires_at=switch.expires_at,
         changed_by_user_id=switch.changed_by_user_id,
         changed_by_email=switch.changed_by.email if switch.changed_by else None,
         changed_at=switch.changed_at,
@@ -1093,11 +1181,352 @@ def set_billing_kill_switch(
         scope=switch.scope,
         enabled=switch.enabled,
         reason=switch.reason,
+        expires_at=switch.expires_at,
         changed_by_user_id=switch.changed_by_user_id,
         changed_by_email=switch.changed_by.email if switch.changed_by else None,
         changed_at=switch.changed_at,
         created_at=switch.created_at,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §9 — Domain B circuit breakers (generalized, session 7).
+#
+# Every scope below is REAL, server-enforced at its billing code path:
+#   - tenant_invoice_finalization  → InvoiceService.finalize_invoice()/mark_sent()
+#   - tenant_payment_attempts      → StripeService.create_payment_intent()/
+#                                    create_checkout_session(), PaymentService.
+#                                    record_attempt() (webhooks deliberately
+#                                    NOT gated — in-flight processor activity)
+#   - tenant_dunning               → DunningService.process_dunning()/
+#                                    process_due_reminders()
+#   - tenant_billing_communications→ InvoiceService.send_invoice_via_email(),
+#                                    dunning reminder sends
+# ("Freeze connector sync" / "Release freeze" have no live code path in this
+# repository and are therefore NOT registered — see the catalog response.)
+#
+# Two change paths, per §9:
+#   - Maker-checker (default): POST /circuit-breakers/{scope}/approval-request
+#     creates an ApprovalRequest(request_type="circuit_breaker_change"); a
+#     DIFFERENT Super Admin decides it via POST /approval-requests/{id}/decision
+#     (self-approval rejected server-side in ApprovalService).
+#   - Break-glass: PUT /circuit-breakers/{scope} applies directly but demands
+#     fresh MFA step-up AND an incident_reference when engaging.
+# All engaged pauses carry a mandatory bounded auto-expiry (§9.1).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _kill_switch_to_response(switch) -> BillingKillSwitchResponse:
+    return BillingKillSwitchResponse(
+        id=switch.id,
+        scope=switch.scope,
+        enabled=switch.enabled,
+        reason=switch.reason,
+        expires_at=switch.expires_at,
+        changed_by_user_id=switch.changed_by_user_id,
+        changed_by_email=switch.changed_by.email if switch.changed_by else None,
+        changed_at=switch.changed_at,
+        created_at=switch.created_at,
+    )
+
+
+def _breaker_state_response(scope: str, db: Session) -> BillingKillSwitchResponse:
+    from app.modules.super_admin.kill_switch_service import BillingKillSwitchService
+
+    switch = BillingKillSwitchService(db).effective_state(scope)
+    db.commit()
+    db.refresh(switch)
+    return _kill_switch_to_response(switch)
+
+
+def _apply_breaker_toggle(scope: str, data, current_user, db: Session) -> BillingKillSwitchResponse:
+    """Shared break-glass toggle: fresh MFA step-up + audited state change."""
+    from app.modules.auth.mfa_service import verify_step_up
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.kill_switch_service import BillingKillSwitchService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    verify_step_up(db, current_user, code=data.code, recovery_code=data.recovery_code)
+
+    switch = BillingKillSwitchService(db).set_enabled(
+        scope,
+        data.enabled,
+        reason=data.reason,
+        actor_id=current_user.id,
+        auto_expire_minutes=data.auto_expire_minutes,
+    )
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.ACTIVATE if data.enabled else PlatformAuditAction.DEACTIVATE,
+        entity_type="BillingKillSwitch",
+        entity_id=switch.id,
+        reason=f"{data.reason} [incident: {data.incident_reference}]"
+        if data.incident_reference
+        else data.reason,
+        old_values={"enabled": not data.enabled},
+        new_values={"enabled": data.enabled, "expires_at": switch.expires_at.isoformat() if switch.expires_at else None},
+    )
+    db.commit()
+    db.refresh(switch)
+    logger.warning(
+        "Super Admin %s set circuit breaker '%s' enabled=%s (reason: %s, incident: %s, expires_at: %s)",
+        current_user.email, scope, data.enabled, data.reason,
+        data.incident_reference, switch.expires_at,
+    )
+    return _kill_switch_to_response(switch)
+
+
+@router.get("/circuit-breakers", response_model=CircuitBreakerCatalogResponse)
+def list_circuit_breakers(
+    current_user=Depends(require_capability("circuit_breaker.read")),
+    db: Session = Depends(get_db),
+):
+    """§9.1 catalog with blast-radius preview metadata + live state."""
+    from datetime import datetime as _dt
+
+    from app.modules.super_admin.kill_switch_service import (
+        DOMAIN_B_BREAKER_CATALOG,
+        BillingKillSwitchService,
+    )
+
+    svc = BillingKillSwitchService(db)
+    entries = []
+    for scope, meta in DOMAIN_B_BREAKER_CATALOG.items():
+        switch = svc.effective_state(scope)
+        entries.append(
+            CircuitBreakerCatalogEntry(
+                scope=scope,
+                display_name=meta["display_name"],
+                domain=meta["domain"],
+                effect=meta["effect"],
+                gated_paths=meta["gated_paths"],
+                enabled=switch.enabled,
+                expires_at=switch.expires_at,
+                reason=switch.reason,
+                changed_by_email=switch.changed_by.email if switch.changed_by else None,
+                changed_at=switch.changed_at,
+            )
+        )
+    db.commit()
+    return CircuitBreakerCatalogResponse(breakers=entries, generated_at=_dt.utcnow())
+
+
+@router.get("/circuit-breakers/{scope}", response_model=BillingKillSwitchResponse)
+def get_circuit_breaker(
+    scope: str,
+    current_user=Depends(require_capability("circuit_breaker.read")),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.super_admin.kill_switch_service import KNOWN_BREAKER_SCOPES
+
+    if scope not in KNOWN_BREAKER_SCOPES:
+        raise NotFoundException(f"Unknown circuit breaker scope '{scope}'.")
+    return _breaker_state_response(scope, db)
+
+
+@router.put("/circuit-breakers/{scope}", response_model=BillingKillSwitchResponse)
+def set_circuit_breaker(
+    scope: str,
+    data: CircuitBreakerToggleRequest,
+    current_user=Depends(require_capability("circuit_breaker.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.super_admin.kill_switch_service import KNOWN_BREAKER_SCOPES
+
+    if scope not in KNOWN_BREAKER_SCOPES:
+        raise NotFoundException(f"Unknown circuit breaker scope '{scope}'.")
+    if scope == "commercial_subscription_charging":
+        raise BadRequestException(
+            "Use PUT /super-admin/billing-kill-switch for the commercial "
+            "subscription charging switch."
+        )
+    return _apply_breaker_toggle(scope, data, current_user, db)
+
+
+@router.post("/circuit-breakers/{scope}/approval-request", response_model=ApprovalRequestResponse)
+def propose_circuit_breaker_change(
+    scope: str,
+    data: CircuitBreakerChangeProposalCreate,
+    current_user=Depends(require_capability("circuit_breaker.manage")),
+    db: Session = Depends(get_db),
+):
+    """Maker-checker path (§9 default): stage a breaker change for review by
+    a different Super Admin. No state changes here — only the request row."""
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.enums import ApprovalStatus  # noqa: F401 (status used via service)
+    from app.modules.super_admin.approval_service import ApprovalService
+    from app.modules.super_admin.kill_switch_service import (
+        DEFAULT_AUTO_EXPIRE_MINUTES,
+        KNOWN_BREAKER_SCOPES,
+        MAX_AUTO_EXPIRE_MINUTES,
+        MIN_AUTO_EXPIRE_MINUTES,
+    )
+
+    if scope not in KNOWN_BREAKER_SCOPES or scope == "commercial_subscription_charging":
+        raise NotFoundException(f"Unknown or non-Domain-B circuit breaker scope '{scope}'.")
+
+    expire_minutes = data.auto_expire_minutes
+    if data.enabled:
+        expire_minutes = None  # releasing clears any expiry
+    elif expire_minutes is None:
+        expire_minutes = DEFAULT_AUTO_EXPIRE_MINUTES
+    if expire_minutes is not None and not (MIN_AUTO_EXPIRE_MINUTES <= expire_minutes <= MAX_AUTO_EXPIRE_MINUTES):
+        raise BadRequestException(
+            f"auto_expire_minutes must be between {MIN_AUTO_EXPIRE_MINUTES} and {MAX_AUTO_EXPIRE_MINUTES}."
+        )
+
+    request = ApprovalService(db).create_request(
+        request_type="circuit_breaker_change",
+        requested_by_user_id=current_user.id,
+        reason=data.reason,
+        scope={"breaker_scope": scope},
+        proposed_state={
+            "enabled": data.enabled,
+            "reason": data.reason,
+            "incident_reference": data.incident_reference,
+            "auto_expire_minutes": expire_minutes,
+        },
+    )
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.CREATE,
+        entity_type="ApprovalRequest",
+        entity_id=request.id,
+        reason=f"Proposed circuit breaker change '{scope}': enabled={data.enabled}. {data.reason}",
+        new_values={"request_type": "circuit_breaker_change", "scope": scope, "proposed_state": request.proposed_state},
+    )
+    db.commit()
+    db.refresh(request)
+
+    return ApprovalRequestResponse(
+        id=request.id,
+        request_type=request.request_type,
+        requested_by_user_id=request.requested_by_user_id,
+        requested_by_email=current_user.email,
+        requested_at=request.requested_at,
+        reason=request.reason,
+        scope=request.scope,
+        before_state=request.before_state,
+        proposed_state=request.proposed_state,
+        evidence=request.evidence,
+        status=request.status,
+        correlation_id=request.correlation_id,
+    )
+
+
+@router.post("/approval-requests/{request_id}/decision", response_model=ApprovalRequestResponse)
+def decide_approval_request(
+    request_id: int,
+    data: ApprovalDecisionRequest,
+    current_user=Depends(require_capability("circuit_breaker.manage")),
+    db: Session = Depends(get_db),
+):
+    """Generic checker endpoint. Currently dispatches exactly one request
+    type — "circuit_breaker_change" — and, on approval, APPLIES the proposed
+    breaker state through the same audited service path as break-glass.
+    Self-approval is rejected server-side by ApprovalService."""
+    from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
+    from app.modules.auth.mfa_service import verify_step_up
+    from app.modules.super_admin.approval_service import ApprovalService, SelfApprovalError
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.kill_switch_service import BillingKillSwitchService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    request = ApprovalService(db).get_request(request_id)
+    if request is None:
+        raise NotFoundException(f"ApprovalRequest {request_id} not found.")
+    if request.request_type != "circuit_breaker_change":
+        raise BadRequestException(
+            f"Request type '{request.request_type}' is decided on its own domain endpoint, "
+            "not via the generic decision endpoint."
+        )
+
+    # The checker authenticates with the same depth as the maker.
+    verify_step_up(db, current_user, code=data.code, recovery_code=data.recovery_code)
+
+    try:
+        if data.decision == "approve":
+            request = ApprovalService(db).approve(request, approver_user_id=current_user.id)
+            proposed = request.proposed_state or {}
+            switch = BillingKillSwitchService(db).set_enabled(
+                (request.scope or {}).get("breaker_scope", ""),
+                bool(proposed.get("enabled")),
+                reason=f"[approved request #{request.id}] {proposed.get('reason', request.reason)}",
+                actor_id=current_user.id,
+                auto_expire_minutes=proposed.get("auto_expire_minutes"),
+            )
+            audit_action = PlatformAuditAction.ACTIVATE if switch.enabled else PlatformAuditAction.DEACTIVATE
+            detail = {"enabled": switch.enabled, "expires_at": switch.expires_at.isoformat() if switch.expires_at else None}
+        else:
+            request = ApprovalService(db).reject(request, approver_user_id=current_user.id, rejection_reason=data.reason)
+            audit_action = PlatformAuditAction.UPDATE
+            detail = {"rejected": True}
+    except SelfApprovalError as exc:
+        raise ForbiddenException(str(exc))
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=audit_action,
+        entity_type="ApprovalRequest",
+        entity_id=request.id,
+        reason=data.reason,
+        old_values={"status": "PENDING"},
+        new_values={"status": request.status.name if hasattr(request.status, "name") else str(request.status), **detail},
+    )
+    db.commit()
+    db.refresh(request)
+
+    return ApprovalRequestResponse(
+        id=request.id,
+        request_type=request.request_type,
+        requested_by_user_id=request.requested_by_user_id,
+        requested_by_email=request.requested_by.email if request.requested_by else None,
+        requested_at=request.requested_at,
+        reason=request.reason,
+        scope=request.scope,
+        before_state=request.before_state,
+        proposed_state=request.proposed_state,
+        evidence=request.evidence,
+        approver_user_id=request.approver_user_id,
+        approver_email=request.approver.email if request.approver else None,
+        approved_at=request.approved_at,
+        rejection_reason=request.rejection_reason,
+        status=request.status,
+        correlation_id=request.correlation_id,
+    )
+
+
+# Legacy single-scope endpoints (kept for backward compatibility with the
+# session-6 frontend/tests; thin delegates to the generic implementations).
+
+@router.get("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
+def get_tenant_invoice_finalization_breaker(
+    current_user=Depends(require_capability("circuit_breaker.read")),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
+
+    return _breaker_state_response(TENANT_INVOICE_FINALIZATION, db)
+
+
+@router.put("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
+def set_tenant_invoice_finalization_breaker(
+    data: CircuitBreakerToggleRequest,
+    current_user=Depends(require_capability("circuit_breaker.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
+
+    return _apply_breaker_toggle(TENANT_INVOICE_FINALIZATION, data, current_user, db)
 
 
 # ── Platform audit feed (PHASE 11, Super Admin only) ────────────────────────
@@ -1606,16 +2035,17 @@ def get_production_acceptance_report(
         criterion="RBAC, MFA/step-up, dual control, secret management and break-glass procedures pass Security review.",
         status="WARNING",
         evidence=(
-            "RBAC exists (super_admin/org_admin/billing_admin, server-enforced). Backend-enforced TOTP MFA now exists "
-            "for every Super Admin account (mfa_service.py): password verification alone never mints a real access "
-            "token for a super_admin -- login returns a restricted mfa_pending token that only authorizes an "
-            "enrollment or challenge call, and the real token is minted only after a verified TOTP code or single-use "
-            "recovery code. Secrets are encrypted at rest with a key separate from the JWT signing key "
-            "(core/mfa_crypto.py); recovery codes are stored only as SHA-256 hashes. Brute-force protection "
-            "(account lockout after repeated failures) and an audited administrative break-glass reset "
-            "(MFA_ADMIN_RESET) both exist. This resolves the MFA prerequisite this criterion previously blocked on. "
-            "Remaining gap: no DUAL CONTROL (two-person approval) exists for any single-actor Super Admin action "
-            "(kill-switch disable, MFA admin-reset, org deletion each require only one authenticated actor) and "
+            "RBAC exists (super_admin/org_admin/billing_admin, server-enforced). Backend-enforced TOTP MFA exists "
+            "as a STEP-UP factor for every privileged Super Admin action (mfa_service.py): normal login issues a "
+            "real token on a valid password for every role (no login-time MFA gate, per the ZB-SA-CMD-003 v3.0 "
+            "master directive), but tenant-access activation, circuit-breaker toggles/proposals/decisions each "
+            "demand a fresh TOTP code or single-use recovery code verified server-side at the moment of the "
+            "action (verify_step_up) -- with replay protection and no bypass. Secrets are encrypted at rest with "
+            "a key separate from the JWT signing key (core/mfa_crypto.py); recovery codes are stored only as "
+            "SHA-256 hashes. Brute-force protection (account lockout after repeated failures) and an audited "
+            "administrative break-glass reset (MFA_ADMIN_RESET) both exist. Remaining gap: DUAL CONTROL now "
+            "covers circuit-breaker changes (maker-checker via ApprovalRequest) but other single-actor Super "
+            "Admin actions (MFA admin-reset, org deletion) still require only one authenticated actor, and "
             "processor-credential secret management is unassessed since no real payment processor integration "
             "exists yet (see PAY-01/PAY-02) -- not yet a full PASS."
         ),
@@ -1719,4 +2149,342 @@ def get_production_acceptance_report(
         items=items,
         overall_status=overall_status,
         summary=summary,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §6/§7 — Domain B: privileged tenant support access.
+#
+# Every endpoint below is super_admin-only, and every mutation additionally
+# re-verifies the grant belongs to the calling actor (see
+# PrivilegedAccessService._load_owned_grant) — there is no path for one
+# Super Admin to see or act on another's privileged-access grant.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _grant_to_response(grant) -> PrivilegedAccessGrantResponse:
+    data = PrivilegedAccessGrantResponse.model_validate(grant)
+    data.organization_name = grant.organization.organization_name if grant.organization else None
+    return data
+
+
+@router.post("/privileged-access/request", response_model=PrivilegedAccessGrantResponse)
+def request_privileged_access(
+    payload: PrivilegedAccessRequestCreate,
+    current_user=Depends(require_capability('tenant_support.request')),
+    db: Session = Depends(get_db),
+):
+    grant = PrivilegedAccessService(db).request_access(
+        actor=current_user,
+        organization_id=payload.organization_id,
+        reason=payload.reason,
+        ticket_reference=payload.ticket_reference,
+        requested_minutes=payload.requested_minutes,
+    )
+    return _grant_to_response(grant)
+
+
+@router.post("/privileged-access/{grant_id}/activate", response_model=PrivilegedAccessGrantResponse)
+def activate_privileged_access(
+    grant_id: int,
+    payload: PrivilegedAccessStepUp,
+    current_user=Depends(require_capability('tenant_support.activate')),
+    db: Session = Depends(get_db),
+):
+    grant = PrivilegedAccessService(db).activate(
+        actor=current_user,
+        grant_id=grant_id,
+        code=payload.code,
+        recovery_code=payload.recovery_code,
+    )
+    return _grant_to_response(grant)
+
+
+@router.get("/privileged-access/active", response_model=Optional[PrivilegedAccessGrantResponse])
+def get_active_privileged_access(
+    current_user=Depends(require_capability('tenant_support.request')),
+    db: Session = Depends(get_db),
+):
+    grant = PrivilegedAccessService(db).get_active_or_pending_grant(current_user)
+    return _grant_to_response(grant) if grant else None
+
+
+@router.post("/privileged-access/{grant_id}/exit", response_model=PrivilegedAccessGrantResponse)
+def exit_privileged_access(
+    grant_id: int,
+    current_user=Depends(require_capability('tenant_support.exit')),
+    db: Session = Depends(get_db),
+):
+    grant = PrivilegedAccessService(db).exit_grant(current_user, grant_id)
+    return _grant_to_response(grant)
+
+
+@router.get("/privileged-access/mine", response_model=PrivilegedAccessGrantListResponse)
+def list_my_privileged_access(
+    limit: int = Query(20, ge=1, le=100),
+    current_user=Depends(require_capability('tenant_support.request')),
+    db: Session = Depends(get_db),
+):
+    grants = PrivilegedAccessService(db).list_my_grants(current_user, limit=limit)
+    return PrivilegedAccessGrantListResponse(grants=[_grant_to_response(g) for g in grants])
+
+
+@router.get("/privileged-access/{grant_id}/tenant-summary", response_model=TenantAccessSummaryResponse)
+def get_privileged_access_tenant_summary(
+    grant_id: int,
+    current_user=Depends(require_capability('tenant_support.request')),
+    db: Session = Depends(get_db),
+):
+    """Read-only Domain B snapshot, built from the same authoritative
+    BillingDashboardService the tenant's own dashboard uses — never
+    recomputed or estimated here. No export/download action exists for
+    this endpoint anywhere in the frontend."""
+    summary = PrivilegedAccessService(db).get_tenant_summary(current_user, grant_id)
+    return TenantAccessSummaryResponse(**summary)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §8 — Domain C: cross-tenant operational telemetry only.
+# Counts, rates and job-run history — never a monetary figure. See
+# telemetry_service.py's module docstring for what is deliberately NOT
+# reported (queue age / connector state have no real backing data today).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/telemetry/organizations", response_model=OrganizationHealthResponse)
+def get_organization_telemetry(
+    current_user=Depends(require_capability('reliability.read')),
+    db: Session = Depends(get_db),
+):
+    return OrganizationHealthResponse(**TelemetryService(db).get_organization_health())
+
+
+@router.get("/telemetry/jobs", response_model=JobHealthListResponse)
+def get_job_telemetry(
+    current_user=Depends(require_capability('reliability.read')),
+    db: Session = Depends(get_db),
+):
+    from app.config import settings
+
+    jobs = TelemetryService(db).get_job_health()
+    return JobHealthListResponse(jobs=jobs, scheduler_enabled=settings.ENABLE_RECURRING_BILLING_SCHEDULER)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §10.1 — Metric Dictionary v1 (read-only, code-versioned registry)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/metric-dictionary", response_model=MetricDictionaryResponse)
+def get_metric_dictionary(
+    domain: Optional[str] = Query(None, description="Filter by domain: B | C | governance"),
+    current_user=Depends(require_capability('metric_dictionary.read')),
+):
+    metrics = [m.to_dict() for m in metric_dictionary.list_metrics(domain=domain)]
+    return MetricDictionaryResponse(metrics=metrics)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §13 — global identity-first search (command palette backing)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/search", response_model=SearchResponse)
+def global_search(
+    q: str = Query(..., min_length=1, max_length=200),
+    current_user=Depends(require_capability('global_search.read')),
+    db: Session = Depends(get_db),
+):
+    results = GlobalSearchService(db).search(q)
+    return SearchResponse(query=q, results=results)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §23 — Launch Readiness (real checks — see launch_readiness_service.py)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/launch-readiness", response_model=LaunchReadinessResponse)
+def get_launch_readiness(
+    current_user=Depends(require_capability('launch_readiness.read')),
+    db: Session = Depends(get_db),
+):
+    return LaunchReadinessResponse(**LaunchReadinessService(db).evaluate())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 15 — internal financial (allocation) consistency check.
+# NOT reconciliation against a processor/bank — see the service module
+# docstring and ISS-017 for why that remains genuinely blocked.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/financial-consistency", response_model=FinancialConsistencyResponse)
+def get_financial_consistency(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return FinancialConsistencyResponse(**FinancialConsistencyService(db).check_allocation_consistency())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §10/§11 — Attention Engine.
+#
+# Read-only for now to every super_admin (triage visibility is the whole
+# point of the persistent strip); lifecycle mutations require
+# get_current_super_admin same as everything else in this module. There is
+# NO endpoint to fabricate an attention item from the API — every item's
+# `source`/`source_key` traces back to a real signal (see
+# attention_service.py's module docstring).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/attention", response_model=AttentionItemListResponse)
+def list_attention_items(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('governance.read')),
+    db: Session = Depends(get_db),
+):
+    items = AttentionService(db).list_open(limit=limit)
+    return AttentionItemListResponse(items=items)
+
+
+@router.get("/attention/counts", response_model=AttentionCountsResponse)
+def get_attention_counts(
+    current_user=Depends(require_capability('governance.read')),
+    db: Session = Depends(get_db),
+):
+    return AttentionCountsResponse(**AttentionService(db).get_counts())
+
+
+@router.post("/attention/{item_id}/acknowledge", response_model=AttentionItemResponse)
+def acknowledge_attention_item(
+    item_id: int,
+    current_user=Depends(require_capability('incident.acknowledge')),
+    db: Session = Depends(get_db),
+):
+    item = AttentionService(db).acknowledge(current_user, item_id)
+    db.commit()
+    return item
+
+
+@router.post("/attention/{item_id}/assign", response_model=AttentionItemResponse)
+def assign_attention_item(
+    item_id: int,
+    payload: AttentionAssignRequest,
+    current_user=Depends(require_capability('incident.assign')),
+    db: Session = Depends(get_db),
+):
+    item = AttentionService(db).assign(current_user, item_id, payload.owner_user_id)
+    db.commit()
+    return item
+
+
+@router.post("/attention/{item_id}/transition", response_model=AttentionItemResponse)
+def transition_attention_item(
+    item_id: int,
+    payload: AttentionTransitionRequest,
+    current_user=Depends(require_capability('incident.transition')),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.models import AttentionStatus
+
+    try:
+        to_status = AttentionStatus(payload.to_status.lower())
+    except ValueError:
+        raise BadRequestException(f"Unknown target status: {payload.to_status}")
+
+    item = AttentionService(db).transition(current_user, item_id, to_status, payload.resolution_code)
+    db.commit()
+    return item
+
+
+@router.post("/attention/{item_id}/suppress", response_model=AttentionItemResponse)
+def suppress_attention_item(
+    item_id: int,
+    payload: AttentionSuppressRequest,
+    current_user=Depends(require_capability('incident.suppress')),
+    db: Session = Depends(get_db),
+):
+    item = AttentionService(db).suppress(current_user, item_id, payload.reason, payload.minutes)
+    db.commit()
+    return item
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 §11 — Triage lens (single read-only pane).
+# Composes the SAME real sources as the dedicated endpoints above; a
+# triage.read holder sees incident/pipeline/safety state without needing
+# every underlying capability. Critical events are deliberately REDACTED to
+# action/entity/actor/time — no before/after payloads leak through triage.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/triage/summary", response_model=TriageSummaryResponse)
+def get_triage_summary(
+    current_user=Depends(require_capability('triage.read')),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime as _dt
+
+    from app.config import settings
+    from app.modules.super_admin.kill_switch_service import (
+        COMMERCIAL_SUBSCRIPTION_CHARGING,
+        DOMAIN_B_BREAKER_CATALOG,
+        BillingKillSwitchService,
+    )
+    from app.modules.super_admin.models import PlatformAuditLog
+
+    attention = AttentionService(db)
+    counts = AttentionCountsResponse(**attention.get_counts())
+    top_items = [
+        AttentionItemResponse.model_validate(i) for i in attention.list_open(limit=10)
+    ]
+
+    jobs = TelemetryService(db).get_job_health()
+
+    breaker_svc = BillingKillSwitchService(db)
+    safety_controls = []
+    for scope, meta in DOMAIN_B_BREAKER_CATALOG.items():
+        s = breaker_svc.effective_state(scope)
+        safety_controls.append(
+            TriageSafetyControl(
+                scope=scope, display_name=meta["display_name"],
+                enabled=s.enabled, expires_at=s.expires_at, reason=s.reason,
+            )
+        )
+    commercial = breaker_svc.effective_state(COMMERCIAL_SUBSCRIPTION_CHARGING)
+    safety_controls.append(
+        TriageSafetyControl(
+            scope=commercial.scope, display_name="Pause commercial subscription charging",
+            enabled=commercial.enabled, expires_at=commercial.expires_at, reason=commercial.reason,
+        )
+    )
+
+    recent_events = (
+        db.query(PlatformAuditLog)
+        .order_by(PlatformAuditLog.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    critical_events = []
+    for e in recent_events:
+        actor_email = None
+        if e.actor_id:
+            from app.modules.auth.models import User as _User
+
+            actor = db.query(_User).filter(_User.id == e.actor_id).first()
+            actor_email = actor.email if actor else None
+        critical_events.append(
+            TriageCriticalEvent(
+                id=e.id,
+                action=e.action.value if hasattr(e.action, "value") else str(e.action),
+                entity_type=e.entity_type,
+                entity_id=e.entity_id,
+                actor_email=actor_email,
+                reason=e.reason,
+                created_at=e.created_at,
+            )
+        )
+
+    return TriageSummaryResponse(
+        generated_at=_dt.utcnow(),
+        incidents=TriageIncidentsSection(counts=counts, top_items=top_items),
+        pipeline_stages=[JobHealthItem(**j) for j in jobs],
+        scheduler_enabled=settings.ENABLE_RECURRING_BILLING_SCHEDULER,
+        safety_controls=safety_controls,
+        critical_events=critical_events,
     )

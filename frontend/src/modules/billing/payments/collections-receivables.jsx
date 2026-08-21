@@ -131,15 +131,15 @@ export default function CollectionsReceivablesPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">In Collections</p>
           </div>
           <p className="text-xl font-bold text-slate-900 whitespace-nowrap">{totalInCollections}</p>
-          <p className="text-xs text-slate-400 mt-1 whitespace-nowrap" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding</p>
+          <p className="text-xs text-slate-500 mt-1 whitespace-nowrap" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="h-5 w-5 text-emerald-500 shrink-0" />
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Recovery Rate</p>
           </div>
-          <p className="text-xl font-bold text-emerald-600 whitespace-nowrap">{recoveryRate}%</p>
-          <p className="text-xs text-slate-400 mt-1">{resolvedCount} resolved cases</p>
+          <p className="text-xl font-bold text-emerald-700 whitespace-nowrap">{recoveryRate}%</p>
+          <p className="text-xs text-slate-500 mt-1">{resolvedCount} resolved cases</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
