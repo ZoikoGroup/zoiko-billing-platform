@@ -11,31 +11,45 @@ import { Pagination } from "../../../components/billing-shared";
 const ITEMS_PER_PAGE = 10;
 
 const INVOICE_STATUS_OPTIONS = [
-  { value: "paid", label: "Paid" },
-  { value: "unpaid", label: "Unpaid" },
-  { value: "overdue", label: "Overdue" },
   { value: "draft", label: "Draft" },
+  { value: "sent", label: "Sent" },
+  { value: "paid", label: "Paid" },
+  { value: "overdue", label: "Overdue" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "partially_paid", label: "Partially Paid" },
+  { value: "refunded", label: "Refunded" },
+  { value: "written_off", label: "Written Off" },
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-  { value: "completed", label: "Completed" },
   { value: "pending", label: "Pending" },
+  { value: "processing", label: "Processing" },
+  { value: "cleared", label: "Cleared" },
   { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
   { value: "refunded", label: "Refunded" },
 ];
 
 const InvoiceStatusBadge = ({ status }) => {
   const styles = {
-    paid: "bg-green-100 text-green-700",
-    unpaid: "bg-amber-100 text-amber-700",
-    overdue: "bg-red-100 text-red-700",
     draft: "bg-slate-100 text-slate-700",
+    sent: "bg-blue-100 text-blue-700",
+    paid: "bg-green-100 text-green-700",
+    overdue: "bg-red-100 text-red-700",
+    cancelled: "bg-slate-100 text-slate-500",
+    partially_paid: "bg-amber-100 text-amber-700",
+    refunded: "bg-pink-100 text-pink-700",
+    written_off: "bg-slate-100 text-slate-600",
   };
   const icons = {
-    paid: <CheckCircle size={12} />,
-    unpaid: <Clock size={12} />,
-    overdue: <AlertCircle size={12} />,
     draft: <FileText size={12} />,
+    sent: <Clock size={12} />,
+    paid: <CheckCircle size={12} />,
+    overdue: <AlertCircle size={12} />,
+    cancelled: <FileText size={12} />,
+    partially_paid: <Clock size={12} />,
+    refunded: <CheckCircle size={12} />,
+    written_off: <FileText size={12} />,
   };
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-700"}`}>
@@ -47,15 +61,19 @@ const InvoiceStatusBadge = ({ status }) => {
 
 const PaymentStatusBadge = ({ status }) => {
   const styles = {
-    completed: "bg-green-100 text-green-700",
     pending: "bg-amber-100 text-amber-700",
+    processing: "bg-blue-100 text-blue-700",
+    cleared: "bg-green-100 text-green-700",
     failed: "bg-red-100 text-red-700",
+    cancelled: "bg-slate-100 text-slate-500",
     refunded: "bg-blue-100 text-blue-700",
   };
   const icons = {
-    completed: <CheckCircle size={12} />,
     pending: <Clock size={12} />,
+    processing: <Clock size={12} />,
+    cleared: <CheckCircle size={12} />,
     failed: <AlertCircle size={12} />,
+    cancelled: <FileText size={12} />,
     refunded: <DollarSign size={12} />,
   };
   return (

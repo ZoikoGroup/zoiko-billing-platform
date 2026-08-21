@@ -483,6 +483,7 @@ class InvoiceRepository(BaseRepository[Invoice]):
         base = self.db.query(Invoice).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
+            Invoice.status != "draft",
         )
         if date_from:
             base = base.filter(Invoice.issue_date >= date_from)

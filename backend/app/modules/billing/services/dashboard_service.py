@@ -1,7 +1,7 @@
 import logging
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, case, and_
 from sqlalchemy.orm import Session
@@ -92,6 +92,24 @@ class BillingDashboardService:
         date_to: Optional[str] = None,
         currency_rates: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
+        """Single source of truth for the headline financial KPIs.
+
+        Canonical definitions (T05 data-integrity guardrail — the dashboard
+        page, the chatbot Inspect-mode answers and the DB must all agree):
+
+        - total_revenue     = SUM(total_amount) of active invoices whose status
+                              is NOT draft/cancelled ("billed revenue": issued
+                              invoices regardless of payment status). Drafts
+                              are not issued and cancelled invoices are void,
+                              so neither counts as revenue. Paid-only revenue
+                              is exposed separately as paid_amount.
+        - outstanding_amount= SUM(balance_due) of active invoices with status
+                              in (sent, overdue, partially_paid).
+        - total_invoices    = COUNT of active invoices with status != draft.
+
+        Every surface that shows these numbers MUST read them from here —
+        never re-derive them with different filters.
+        """
         now = datetime.utcnow()
         month_start = date(now.year, now.month, 1)
         today = date.today()
@@ -123,15 +141,27 @@ class BillingDashboardService:
                 case((Invoice.is_active == True, Invoice.total_amount * rate_case), else_=0)
             ), 0).label("all_total"),
             func.coalesce(func.sum(
-                case((Invoice.is_active == True, Invoice.balance_due * rate_case), else_=0)
+                case((and_(Invoice.is_active == True, Invoice.status.in_(["sent", "overdue", "partially_paid"])), Invoice.balance_due * rate_case), else_=0)
             ), 0).label("all_outstanding"),
             func.coalesce(func.sum(
                 case((and_(Invoice.is_active == True, Invoice.status == "overdue"), Invoice.balance_due * rate_case), else_=0)
             ), 0).label("all_overdue"),
-            func.count(case((Invoice.is_active == True, Invoice.id), else_=None)).label("all_count"),
+            func.count(case((
+                and_(Invoice.is_active == True, Invoice.status.notin_(["draft", "cancelled"])),
+                Invoice.id
+            ), else_=None)).label("all_count"),
             func.coalesce(func.sum(
                 case((and_(Invoice.is_active == True, Invoice.status == "paid"), Invoice.total_amount * rate_case), else_=0)
             ), 0).label("all_paid"),
+            func.coalesce(func.sum(
+                case((
+                    and_(
+                        Invoice.is_active == True,
+                        Invoice.status.notin_(["draft", "cancelled"]),
+                    ),
+                    Invoice.total_amount * rate_case
+                ), else_=0)
+            ), 0).label("all_billed"),
             func.coalesce(func.sum(
                 case((
                     and_(
@@ -147,6 +177,7 @@ class BillingDashboardService:
                 case((
                     and_(
                         Invoice.is_active == True,
+                        Invoice.status.notin_(["draft", "cancelled"]),
                         Invoice.issue_date >= period_start,
                         Invoice.issue_date <= period_end,
                     ),
@@ -167,6 +198,7 @@ class BillingDashboardService:
             func.count(case((
                 and_(
                     Invoice.is_active == True,
+                    Invoice.status.notin_(["draft", "cancelled"]),
                     Invoice.issue_date >= period_start,
                     Invoice.issue_date <= period_end,
                 ),
@@ -175,7 +207,7 @@ class BillingDashboardService:
         ).filter(Invoice.organization_id == organization_id).first()
 
         summary = {
-            "total_revenue": float(inv_rows.all_total),
+            "total_revenue": float(inv_rows.all_billed),
             "paid_revenue": float(inv_rows.all_paid),
             "outstanding_amount": float(inv_rows.all_outstanding),
             "overdue_amount": float(inv_rows.all_overdue),
@@ -280,6 +312,38 @@ class BillingDashboardService:
 
     def get_invoice_summary(self, organization_id: int, currency_rates: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         return self.invoice_repo.get_invoice_summary_by_status(organization_id, currency_rates=currency_rates)
+
+    def get_outstanding_by_customer(self, organization_id: int) -> List[Dict[str, Any]]:
+        """Per-customer outstanding using the SAME aggregation as get_kpis:
+        status IN (sent, overdue, partially_paid), is_active, balance_due > 0,
+        converted to the org's base currency.
+
+        The sum of these per-customer values ALWAYS equals the org-wide
+        outstanding_amount from get_kpis, because they share the exact same
+        filters and rate_case. This is the single authoritative breakdown the
+        chatbot / customer pages must use so per-customer and aggregate figures
+        can never diverge (T05 data-integrity guardrail).
+        """
+        from app.modules.billing.models import Invoice
+        currency_rates = self._build_currency_rates(organization_id)
+        if any(rate != 1.0 for rate in currency_rates.values()):
+            rate_case = case(
+                *[(Invoice.currency == curr, Decimal(str(rate))) for curr, rate in currency_rates.items() if rate != 1.0],
+                else_=Decimal("1.0"),
+            )
+        else:
+            rate_case = Decimal("1.0")
+
+        rows = self.db.query(
+            Invoice.customer_id,
+            func.coalesce(func.sum(Invoice.balance_due * rate_case), 0).label("outstanding"),
+        ).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.is_active == True,
+            Invoice.status.in_(["sent", "overdue", "partially_paid"]),
+            Invoice.balance_due > 0,
+        ).group_by(Invoice.customer_id).all()
+        return [{"customer_id": r[0], "outstanding": float(r[1])} for r in rows]
 
     def get_customer_summary(self, organization_id: int) -> Dict[str, Any]:
         base = self.customer_repo.count(organization_id, active_only=True)

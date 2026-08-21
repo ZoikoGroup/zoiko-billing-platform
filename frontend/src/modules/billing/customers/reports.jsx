@@ -130,7 +130,7 @@ export default function CustomerReportsPage() {
   ].filter((d) => d.value > 0);
 
   const paidInvoices = fInvoices.filter((i) => i.status === "paid");
-  const unpaidInvoices = fInvoices.filter((i) => i.status === "unpaid" || i.status === "pending");
+  const unpaidInvoices = fInvoices.filter((i) => i.status === "sent" || i.status === "partially_paid");
   const overdueInvoices = fInvoices.filter((i) => i.status === "overdue");
   const totalRevenue = paidInvoices.reduce((s, i) => s + parseFloat(i.total || i.amount || 0), 0);
   const totalOutstanding = unpaidInvoices.reduce((s, i) => s + parseFloat(i.total || i.amount || 0), 0) +

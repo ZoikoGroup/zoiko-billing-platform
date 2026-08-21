@@ -22,6 +22,11 @@ body {
   color: #111827;
 }
 
+:where(.dark) body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
 /* Modern minimalist sidebar scrollbar (dark nav on gradient background) */
 .sidebar-nav {
   scrollbar-width: thin;
@@ -42,5 +47,133 @@ body {
 }
 .sidebar-nav::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ── Assistant Panel Theme (CSS variables set via inline style on .ab-panel) ── */
+
+.ab-panel {
+  background: var(--ab-bg);
+  border-left: 1px solid var(--ab-border);
+}
+
+/* Icon buttons (New, Recent, Theme toggle, Close) */
+.ab-icon-btn {
+  background: var(--ab-icon-btn-bg);
+  color: var(--ab-icon-btn-text);
+}
+.ab-icon-btn:hover {
+  background: var(--ab-icon-btn-hover-bg);
+  color: var(--ab-icon-btn-hover-text);
+}
+.ab-icon-btn:focus-visible {
+  outline: 2px solid var(--ab-accent);
+  outline-offset: 2px;
+}
+.ab-icon-btn--active {
+  background: var(--ab-accent-15);
+  color: var(--ab-accent-text);
+}
+
+/* Message viewport */
+.ab-viewport {
+  background: var(--ab-bg);
+}
+
+/* Assistant message bubble */
+.ab-bubble-assistant {
+  background: var(--ab-assistant-bubble);
+  color: var(--ab-assistant-bubble-text);
+}
+
+/* System message bubble */
+.ab-bubble-system {
+  background: var(--ab-system-bubble);
+  color: var(--ab-system-bubble-text);
+  border: 1px solid var(--ab-system-bubble-border);
+}
+
+/* Citation / evidence text */
+.ab-citation {
+  color: var(--ab-text-muted);
+}
+
+/* Caption typography for timestamps / metadata / provenance (UX section 5) */
+.ab-caption {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ab-text-secondary, #6b7280);
+}
+
+/* Suggested prompt chips */
+.ab-chip {
+  color: var(--ab-accent-text);
+  border-color: var(--ab-accent-15);
+}
+.ab-chip:hover {
+  background: var(--ab-accent-10);
+  border-color: var(--ab-accent-30, rgba(245,132,31,0.3));
+}
+
+/* Composer input */
+.ab-input {
+  background: var(--ab-input-bg);
+  border-color: var(--ab-input-border);
+  color: var(--ab-input-text);
+}
+.ab-input::placeholder {
+  color: var(--ab-input-placeholder);
+}
+.ab-input:focus {
+  border-color: var(--ab-accent);
+  box-shadow: 0 0 0 2px var(--ab-focus-ring);
+}
+
+/* Recent conversations dropdown */
+.ab-dropdown {
+  background: var(--ab-bg);
+  border: 1px solid var(--ab-border);
+}
+.ab-dropdown-item {
+  border-bottom: 1px solid var(--ab-border-subtle);
+}
+.ab-dropdown-item:last-child {
+  border-bottom: none;
+}
+.ab-dropdown-item:hover {
+  background: var(--ab-surface);
+}
+.ab-dropdown-item--active {
+  background: var(--ab-accent-10);
+}
+
+/* Footer bar */
+.ab-footer {
+  background: var(--ab-bg);
+}
+
+/* Category menu buttons (empty-state numbered grid) */
+.ab-cat-btn {
+  border: 1px solid var(--ab-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--ab-surface);
+}
+.ab-cat-btn:hover {
+  border-color: var(--ab-accent);
+  background: var(--ab-accent-10);
+}
+.ab-cat-num {
+  background: var(--ab-accent-15);
+  color: var(--ab-accent-text);
+}
+.ab-cat-btn:hover .ab-cat-num {
+  background: var(--ab-accent);
+  color: #ffffff;
+}
+.ab-cat-btn--escalate {
+  border-style: dashed;
+}
+.ab-cat-btn--escalate:hover {
+  border-style: solid;
 }
 

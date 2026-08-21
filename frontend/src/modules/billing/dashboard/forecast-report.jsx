@@ -111,7 +111,7 @@ export default function ForecastReport() {
       if (!d) return;
       const period = d.slice(0, 7);
       const match = months.find((m) => m.key === period);
-      if (match && (inv.status === "paid" || inv.status === "pending" || inv.status === "unpaid")) {
+      if (match && (inv.status === "paid" || inv.status === "sent" || inv.status === "partially_paid")) {
         match.collected += parseFloat(inv.total || inv.amount || 0);
       }
     });

@@ -24,6 +24,7 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled", color: "bg-amber-100 text-amber-700" },
   { value: "partially_paid", label: "Partially Paid", color: "bg-brand-100 text-brand-700" },
   { value: "refunded", label: "Refunded", color: "bg-pink-100 text-pink-700" },
+  { value: "written_off", label: "Written Off", color: "bg-slate-100 text-slate-600" },
 ];
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
