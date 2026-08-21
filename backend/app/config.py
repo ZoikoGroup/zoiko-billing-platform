@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     STRIPE_PAYMENT_METHOD_TYPES: str = "card"
     STRIPE_BILLING_ADDRESS_COLLECTION: str = "auto"
 
+    # ── AI Model Gateway (provider-neutral, Claude default) ───────────
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL_DEFAULT: str = "claude-sonnet-4-20250514"
+    ANTHROPIC_MAX_TOKENS: int = 4096
+    ANTHROPIC_TEMPERATURE: float = 0.1
+    AI_MODEL_TIMEOUT_SECONDS: int = 30
+    AI_SAFE_MODE: bool = False
+
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
     # is explicitly enabled — see app/core/scheduler.py.

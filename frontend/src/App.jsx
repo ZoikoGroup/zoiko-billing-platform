@@ -295,8 +295,29 @@ function LegacyRedirect({ to }) {
   return <Navigate to={`${resolved}${search}`} replace />;
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, fontFamily: "monospace", background: "#fff", color: "#b00", minHeight: "100vh" }}>
+          <h1 style={{ fontSize: 20, marginBottom: 12 }}>Render Error</h1>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, background: "#fee", padding: 16, borderRadius: 8, border: "1px solid #fcc" }}>
+            {this.state.error.message}
+            {"\n\n"}
+            {this.state.error.stack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
+    <ErrorBoundary>
     <Suspense fallback={<ModuleSpinner />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -402,5 +423,6 @@ export default function App() {
         <Route path="*" element={<LandingRedirectComp />} />
       </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 }

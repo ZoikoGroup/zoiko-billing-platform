@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   X,
@@ -43,6 +43,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import TopBar from "./TopBar";
+import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
@@ -440,8 +441,11 @@ function SidebarContent({ onNavigate, role }) {
   );
 }
 
+const AssistantPanel = lazy(() => import("../modules/ai-assistant/AssistantPanel"));
+
 export default function BillingShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const { role } = useAuth();
 
   return (
@@ -474,6 +478,26 @@ export default function BillingShell({ children }) {
           {children}
         </main>
       </div>
+
+      {/* AI Assistant launcher — spec §6 "Assistant Launcher": product-branded
+          mark (no separate AI icon set), 48 px target (44–56 control scale),
+          defined hover/focus states and unread-style accent dot */}
+      <button
+        onClick={() => setAssistantOpen(true)}
+        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a00]"
+        aria-label="Open AI Billing Assistant"
+        title="AI Billing Assistant"
+      >
+        <ZoikoMark size={48} rounded="rounded-full" showAccentDot className="transition-transform" />
+      </button>
+
+      {/* AI Assistant panel */}
+      <Suspense fallback={null}>
+        <AssistantPanel
+          isOpen={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+        />
+      </Suspense>
 
       {role === "super_admin" && <CommandPalette />}
     </div>

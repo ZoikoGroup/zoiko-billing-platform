@@ -145,6 +145,7 @@ export default function InvoiceDashboard() {
     cancelled: stats.status_counts?.cancelled || 0,
     partiallyPaid: stats.status_counts?.partially_paid || 0,
     refunded: stats.status_counts?.refunded || 0,
+    writtenOff: stats.status_counts?.written_off || 0,
     totalRevenue: stats.total_amount || 0,
     outstandingAmount: stats.outstanding_amount || 0,
     collectedAmount: stats.collected_amount || 0,
@@ -334,6 +335,7 @@ export default function InvoiceDashboard() {
         <EnterpriseStatCard title="Cancelled" value={kpis.cancelled.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} />
         <EnterpriseStatCard title="Partially Paid" value={kpis.partiallyPaid.toLocaleString()} icon={Activity} color={CARD_GRADIENTS[6]} />
         <EnterpriseStatCard title="Refunded" value={kpis.refunded.toLocaleString()} icon={TrendingDown} color={CARD_GRADIENTS[2]} />
+        <EnterpriseStatCard title="Written Off" value={kpis.writtenOff.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} />
       </StatGroup>
 
       <StatGroup title="More Metrics">

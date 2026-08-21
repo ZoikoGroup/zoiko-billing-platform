@@ -15,7 +15,8 @@ function StatusBadge({ status }) {
     overdue: "bg-red-100 text-red-700",
     partially_paid: "bg-amber-100 text-amber-700",
     cancelled: "bg-slate-100 text-slate-500",
-    void: "bg-slate-100 text-slate-500",
+    refunded: "bg-pink-100 text-pink-700",
+    written_off: "bg-slate-100 text-slate-500",
   };
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-600"}`}>

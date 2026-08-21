@@ -158,19 +158,17 @@ class CustomerService:
         invoices. Shared by PaymentService.allocate_payment/deallocate_payment
         and CreditNoteService.apply_to_invoice — any operation that moves an
         invoice's balance_due must call this afterward to keep the customer's
-        cached balance in sync."""
+        cached balance in sync.
+
+        Uses the SAME aggregation as the dashboard (status filter + is_active
+        + currency conversion to the org's base currency) so the cached value
+        is always consistent with the org-wide outstanding figure (Issue 1)."""
         from app.modules.billing.models import Invoice
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
         customer = self.get_customer(customer_id, organization_id)
-        outstanding = (
-            self.db.query(func.coalesce(func.sum(Invoice.balance_due), 0))
-            .filter(
-                Invoice.organization_id == organization_id,
-                Invoice.customer_id == customer_id,
-                Invoice.status.in_(["sent", "overdue", "partially_paid"]),
-                Invoice.is_active == True,
-            )
-            .scalar()
-        )
+        svc = BillingDashboardService(self.db)
+        by_customer = svc.get_outstanding_by_customer(organization_id)
+        outstanding = float(next((r["outstanding"] for r in by_customer if r["customer_id"] == customer_id), 0.0))
         customer.outstanding_balance = Decimal(str(outstanding))
         safe_commit_and_refresh(self.db, customer)
         return customer
@@ -336,10 +334,17 @@ class CustomerService:
 
     def get_customer_analytics(self, organization_id: int, customer_id: int) -> Dict[str, Any]:
         from app.modules.billing.models import Invoice, Payment, Quotation, Contract, Subscription, CreditNote, Refund, PaymentAllocation
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
         customer = self.repo.get_by_id(customer_id, organization_id)
 
         total_revenue = float(customer.total_revenue or 0)
-        outstanding = float(customer.outstanding_balance or 0)
+        # FIX (Issue 1): outstanding must be computed LIVE with the same
+        # aggregation as the dashboard aggregate (status filter + is_active +
+        # currency conversion) — never from the possibly-stale cached column.
+        # This guarantees per-customer outstanding sums to the org aggregate.
+        svc = BillingDashboardService(self.db)
+        by_customer = svc.get_outstanding_by_customer(organization_id)
+        outstanding = float(next((r["outstanding"] for r in by_customer if r["customer_id"] == customer_id), 0.0))
 
         # All previously loaded every invoice/payment row for this customer
         # into Python, then walked a nested loop over `i.payment_allocations`
@@ -601,15 +606,15 @@ class CustomerService:
             func.coalesce(func.sum(Invoice.total_amount), 0).desc()
         ).limit(10).all()
         
-        outstanding_by_customer = self.db.query(
-            Invoice.customer_id,
-            func.coalesce(func.sum(Invoice.balance_due), 0).label("outstanding"),
-        ).filter(
-            Invoice.organization_id == organization_id,
-            Invoice.status.in_(["sent", "overdue", "partially_paid"]),
-        ).group_by(Invoice.customer_id).order_by(
-            func.coalesce(func.sum(Invoice.balance_due), 0).desc()
-        ).limit(10).all()
+        # FIX (Issue 1): outstanding_by_customer must use the SAME aggregation
+        # as the org aggregate (status filter + is_active + currency conversion)
+        # so the sum of per-customer outstanding always equals the dashboard
+        # aggregate. The previous query summed raw balance_due WITHOUT currency
+        # conversion and WITHOUT the is_active filter — so per-customer figures
+        # could never sum to the org-wide converted aggregate.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        obc_svc = BillingDashboardService(self.db)
+        outstanding_by_customer = obc_svc.get_outstanding_by_customer(organization_id)
         
         from app.modules.billing.models import PaymentAllocation
         avg_collection_days = self.db.query(
@@ -654,7 +659,8 @@ class CustomerService:
                 {"customer_id": r[0], "revenue": float(r[1])} for r in revenue_by_customer
             ],
             "outstanding_by_customer": [
-                {"customer_id": r[0], "outstanding": float(r[1])} for r in outstanding_by_customer
+                {"customer_id": r["customer_id"], "outstanding": float(r["outstanding"])}
+                for r in outstanding_by_customer
             ],
         }
 

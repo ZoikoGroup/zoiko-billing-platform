@@ -32,6 +32,9 @@ certifi>=2024.2.2
 cryptography>=42.0.0
 pyotp>=2.9.0
 
+# AI Model Gateway (Anthropic Claude as default, provider-neutral interface)
+anthropic>=0.34.0
+
 # Test-only — runs against an isolated in-memory SQLite DB (see tests/conftest.py),
 # never against BILLING_DATABASE_URL.
 pytest>=8.0.0

@@ -87,7 +87,9 @@ export default function InvoiceReportsPage() {
     { name: "Overdue", value: fInvoices.filter((i) => i.status === "overdue").length, color: "#ef4444" },
     { name: "Draft", value: fInvoices.filter((i) => i.status === "draft").length, color: "#6b7280" },
     { name: "Partially Paid", value: fInvoices.filter((i) => i.status === "partially_paid").length, color: "#f59e0b" },
-    { name: "Cancelled", value: fInvoices.filter((i) => i.status === "cancelled" || i.status === "void").length, color: "#ec4898" },
+    { name: "Cancelled", value: fInvoices.filter((i) => i.status === "cancelled").length, color: "#ec4898" },
+    { name: "Refunded", value: fInvoices.filter((i) => i.status === "refunded").length, color: "#d946ef" },
+    { name: "Written Off", value: fInvoices.filter((i) => i.status === "written_off").length, color: "#9ca3af" },
   ].filter((d) => d.value > 0);
 
   const cnStatusData = [

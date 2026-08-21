@@ -17,13 +17,13 @@ function classNames(...cls) {
 /* ─── status colour map ───────────────────────────────────────────────────── */
 const STATUS_MAP = {
   draft:          { label: "Draft",           bg: "bg-slate-100",  text: "text-slate-600",  dot: "bg-slate-400"  },
-  pending:        { label: "Pending",          bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500"   },
   sent:           { label: "Sent",             bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500"   },
   paid:           { label: "Paid",             bg: "bg-emerald-100",text: "text-emerald-700",dot: "bg-emerald-500"},
   overdue:        { label: "Overdue",          bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-500"    },
   partially_paid: { label: "Partially Paid",   bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-500"  },
   cancelled:      { label: "Cancelled",        bg: "bg-slate-100",  text: "text-slate-500",  dot: "bg-slate-300"  },
-  void:           { label: "Void",             bg: "bg-slate-100",  text: "text-slate-500",  dot: "bg-slate-300"  },
+  refunded:       { label: "Refunded",         bg: "bg-pink-100",   text: "text-pink-700",   dot: "bg-pink-500"   },
+  written_off:    { label: "Written Off",      bg: "bg-slate-100",  text: "text-slate-500",  dot: "bg-slate-300"  },
 };
 
 /* ─── sub-components ─────────────────────────────────────────────────────── */
@@ -165,7 +165,7 @@ export default function PublicInvoicePage() {
   const currency     = invoice?.currency;
   const status       = (invoice?.status || "").toLowerCase();
   const isPaid       = status === "paid";
-  const isCancelled  = ["cancelled", "void"].includes(status);
+  const isCancelled  = ["cancelled", "void", "written_off"].includes(status);
   const invoiceTotal = parseMoney(invoice?.total_amount ?? invoice?.amount ?? 0);
   const balanceDue   = parseMoney(invoice?.balance_due ?? invoice?.amount_due ?? invoiceTotal);
   const paidAmount   = Math.max(0, invoiceTotal - balanceDue);

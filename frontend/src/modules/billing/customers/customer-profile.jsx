@@ -114,12 +114,15 @@ function StatusBadge({ status }) {
 
 function InvoiceStatusBadge({ status }) {
   const styles = {
+    draft: 'bg-slate-100 text-slate-600',
+    sent: 'bg-blue-100 text-blue-700',
     paid: 'bg-emerald-100 text-emerald-700',
     unpaid: 'bg-amber-100 text-amber-700',
     overdue: 'bg-red-100 text-red-700',
-    draft: 'bg-slate-100 text-slate-600',
     cancelled: 'bg-slate-100 text-slate-500',
-    void: 'bg-slate-100 text-slate-500',
+    partially_paid: 'bg-amber-100 text-amber-700',
+    refunded: 'bg-pink-100 text-pink-700',
+    written_off: 'bg-slate-100 text-slate-500',
   };
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
@@ -1018,7 +1021,7 @@ export default function CustomerProfilePage() {
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><AlertCircle size={14} className="text-brand-500" /> {singular} Health</h4>
               {(() => {
                 const hasOverdue = invoices.some((i) => i.status === 'overdue');
-                const hasUnpaid = invoices.some((i) => i.status === 'unpaid' || i.status === 'sent');
+                const hasUnpaid = invoices.some((i) => i.status === 'sent' || i.status === 'partially_paid');
                 const nearCreditLimit = customer?.credit_limit > 0 && (customer?.outstanding_balance || 0) / customer.credit_limit >= 0.8;
                 const isHealthy = customer?.status === 'active' && !hasOverdue && !nearCreditLimit;
                 const needsAttention = customer?.status === 'active' && (hasOverdue || nearCreditLimit);
@@ -1056,7 +1059,7 @@ export default function CustomerProfilePage() {
                     )}
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between"><span className="text-slate-500">Overdue Invoices</span><span className="font-medium text-slate-800">{invoices.filter((i) => i.status === 'overdue').length}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">Unpaid Invoices</span><span className="font-medium text-slate-800">{invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent').length}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Unpaid Invoices</span><span className="font-medium text-slate-800">{invoices.filter((i) => i.status === 'sent' || i.status === 'partially_paid').length}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Active Contracts</span><span className="font-medium text-slate-800">{contracts.filter((c) => c.status === 'active').length}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Active Subscriptions</span><span className="font-medium text-slate-800">{subscriptions.filter((s) => s.status === 'active').length}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Credit Balance</span><span className="font-medium text-slate-800">{formatDisplayCurrency(customer?.credit_balance || 0, baseCurrency)}</span></div>
@@ -1081,7 +1084,7 @@ export default function CustomerProfilePage() {
                 const revenueThisYear = invThisYear.reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
                 const avgInvoice = invoices.length > 0 ? invoices.reduce((s, i) => s + Number(i.total || i.amount || 0), 0) / invoices.length : 0;
                 const totalPmts = payments.length;
-                const successfulPmts = payments.filter((p) => p.status === 'completed' || p.status === 'succeeded').length;
+                const successfulPmts = payments.filter((p) => p.status === 'cleared').length;
                 const successRate = totalPmts > 0 ? (successfulPmts / totalPmts * 100).toFixed(0) : '—';
                 return (
                   <div className="space-y-2 text-xs">
@@ -1801,11 +1804,11 @@ export default function CustomerProfilePage() {
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5"><BarChart3 size={14} className="text-brand-500" /> Billing Summary</h4>
             {(() => {
-              const totalOutstanding = invoices.filter((i) => i.status === 'unpaid' || i.status === 'sent' || i.status === 'overdue').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
+              const totalOutstanding = invoices.filter((i) => i.status === 'sent' || i.status === 'partially_paid' || i.status === 'overdue').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
               const totalPaid = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
               const totalOverdue = invoices.filter((i) => i.status === 'overdue').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
               const totalDraft = invoices.filter((i) => i.status === 'draft').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
-              const totalCancelled = invoices.filter((i) => i.status === 'cancelled' || i.status === 'void').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
+              const totalCancelled = invoices.filter((i) => i.status === 'cancelled' || i.status === 'written_off').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
               const avgPaymentDays = payments.length > 0 && invoices.length > 0 ? Math.round(payments.reduce((s, p) => {
                 const inv = invoices.find((i) => i.id === p.invoice_id);
                 if (inv && inv.issue_date && p.payment_date) {
@@ -1900,9 +1903,12 @@ export default function CustomerProfilePage() {
                         <td className="py-3 px-3 text-slate-500">{p.payment_method || p.method || p.type || '—'}</td>
                         <td className="py-3 px-3 text-center">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            p.status === 'completed' || p.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700' :
+                            p.status === 'cleared' ? 'bg-emerald-100 text-emerald-700' :
                             p.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                            p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                            p.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                            p.status === 'failed' ? 'bg-red-100 text-red-700' :
+                            p.status === 'cancelled' ? 'bg-slate-100 text-slate-500' :
+                            p.status === 'refunded' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                           }`}>
                             {p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : 'Unknown'}
                           </span>

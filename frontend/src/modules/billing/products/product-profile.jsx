@@ -226,7 +226,7 @@ export default function ProductProfilePage() {
     );
   }
 
-  const totalRevenue = invoices.filter((i) => i.status === 'paid' || i.status === 'paid_at').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
+  const totalRevenue = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
   const totalInvoiced = invoices.reduce((s, i) => s + Number(i.total || i.amount || 0), 0);
   const activeSubscriptions = subscriptions.filter((s) => s.status === 'active').length;
   const activeContracts = contracts.filter((c) => c.status === 'active').length;
@@ -522,9 +522,10 @@ export default function ProductProfilePage() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
                           inv.status === 'draft' ? 'bg-slate-100 text-slate-600' :
-                          inv.status === 'sent' || inv.status === 'unpaid' ? 'bg-amber-100 text-amber-700' :
+                          inv.status === 'sent' || inv.status === 'partially_paid' || inv.status === 'unpaid' ? 'bg-amber-100 text-amber-700' :
                           inv.status === 'overdue' ? 'bg-red-100 text-red-700' :
-                          inv.status === 'cancelled' || inv.status === 'void' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600'
+                          inv.status === 'cancelled' || inv.status === 'written_off' || inv.status === 'void' ? 'bg-slate-100 text-slate-600' :
+                          inv.status === 'refunded' ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-600'
                         }`}>{inv.status ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1) : 'Unknown'}</span>
                       </td>
                     </tr>
