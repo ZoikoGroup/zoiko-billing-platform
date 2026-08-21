@@ -234,7 +234,7 @@ class ContractService:
                     start_date=str(contract.start_date),
                     end_date=str(contract.end_date) if contract.end_date else "N/A",
                     total_amount=str(contract.value),
-                    currency=contract.currency or "USD",
+                    currency=contract.currency or self.config_service.get_default_currency(organization_id),
                     organization_id=organization_id,
                     db=self.db,
                 )
@@ -304,7 +304,7 @@ class ContractService:
                 contract_id=contract.id,
                 subscription_number=subscription_number,
                 status=BillingSubscriptionStatus.ACTIVE,
-                currency=contract.currency or "USD",
+                currency=contract.currency or self.config_service.get_default_currency(organization_id),
                 quantity=1,
                 unit_price=value,
                 start_date=contract.start_date or date.today(),
@@ -381,7 +381,7 @@ class ContractService:
                     contract_number=contract.contract_number,
                     new_end_date=str(contract.end_date),
                     total_amount=str(contract.value),
-                    currency=contract.currency or "USD",
+                    currency=contract.currency or self.config_service.get_default_currency(organization_id),
                     organization_id=organization_id,
                     db=self.db,
                 )

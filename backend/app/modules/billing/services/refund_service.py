@@ -40,6 +40,7 @@ from app.modules.billing.models import NumberFormat, SequenceReset
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.services.payment_service import PaymentService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_refund_email
 
@@ -202,9 +203,11 @@ class RefundService:
             from app.modules.billing.services.exchange_rate_service import ExchangeRateService
             config_svc = BillingConfigurationService(self.db)
             org_config = config_svc.get_configuration(organization_id)
+            if not org_config.base_currency:
+                raise ValueError("Base currency is not configured for the organization.")
             base_currency = (
                 org_config.base_currency.value if hasattr(org_config.base_currency, "value")
-                else str(org_config.base_currency or "USD")
+                else str(org_config.base_currency)
             )
             if data["currency"] != base_currency:
                 rate_svc = ExchangeRateService(self.db)
@@ -492,7 +495,7 @@ class RefundService:
                 refund_number=refund.refund_number,
                 refund_date=str(refund.completed_at.date()) if refund.completed_at else "",
                 amount=f"{round_money(refund.amount or 0, refund.currency):,.2f}",
-                currency=refund.currency or "USD",
+                currency=refund.currency or BillingConfigurationService(self.db).get_default_currency(organization_id),
                 reason=refund.reason or "",
                 organization_id=organization_id,
                 db=self.db,

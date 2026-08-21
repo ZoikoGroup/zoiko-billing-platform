@@ -138,7 +138,7 @@ export default function TaxRatesPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, typeFilter, statusFilter, loading]);
+  }, [safePage, debouncedSearch, typeFilter, statusFilter]);
 
   useEffect(() => { fetchTaxRates(); }, [fetchTaxRates]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

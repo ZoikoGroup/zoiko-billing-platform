@@ -98,7 +98,7 @@ export default function WorkspaceSubscriptionPage() {
     return [...activeSubs].sort((a, b) => (Number(b.unit_price) || 0) - (Number(a.unit_price) || 0))[0];
   }, [activeSubs]);
 
-  const currency = reporting?.reporting_currency || config?.default_currency || "USD";
+  const currency = reporting?.reporting_currency || config?.default_currency;
 
   if (loading) {
     return (

@@ -40,11 +40,11 @@ export function formatNumber(amount, locale = 'en-US', precision = 2) {
 }
 
 export function formatCurrency(amount, currencyCode, locale = 'en-US', position = 'before') {
-  const cleanCurrency = currencyCode || 'USD';
-  const info = CURRENCY_MASTER[cleanCurrency] || { symbol: '$', decimalDigits: 2, locale: 'en-US' };
-  const symbol = info.symbol || '$';
-  const precision = typeof info.decimalDigits === 'number' ? info.decimalDigits : 2;
-  const numLocale = info.locale || locale || 'en-US';
+  const cleanCurrency = currencyCode;
+  const info = CURRENCY_MASTER[cleanCurrency] ;
+  const symbol = (info && info.symbol) || cleanCurrency || '';
+  const precision = (info && typeof info.decimalDigits === 'number') ? info.decimalDigits : 2; // === 'number' ? info.decimalDigits : 2;
+  const numLocale = (info && info.locale) || locale || 'en-US';
 
   let cleanAmount = 0;
   if (amount !== null && amount !== undefined && amount !== '' && !isNaN(amount)) {
@@ -68,9 +68,9 @@ export function formatCurrency(amount, currencyCode, locale = 'en-US', position 
 }
 
 export function formatCompactCurrency(amount, currencyCode, locale = 'en-US', position = 'before') {
-  const cleanCurrency = currencyCode || 'USD';
-  const info = CURRENCY_MASTER[cleanCurrency] || { symbol: '$', decimalDigits: 2, locale: 'en-US' };
-  const symbol = info.symbol || '$';
+  const cleanCurrency = currencyCode;
+  const info = CURRENCY_MASTER[cleanCurrency] ;
+  const symbol = (info && info.symbol) || cleanCurrency || '';
   let num = 0;
   if (amount !== null && amount !== undefined && amount !== '' && !isNaN(amount)) {
     num = Number(amount);

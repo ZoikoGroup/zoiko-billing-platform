@@ -21,6 +21,20 @@ from app.core.exceptions import (
 ModelType = TypeVar("ModelType")
 
 
+def _integrity_error_field(e: IntegrityError) -> str:
+    """A safe, user-facing label for a duplicate-key IntegrityError.
+
+    Never interpolate str(e) directly into a client-facing message -- on
+    Postgres/psycopg2 that string includes the raw SQL, table/constraint
+    internals, and parameter values, all of which would otherwise leak
+    straight into a 409 response body. Only the constraint name (already a
+    bounded, non-sensitive identifier such as
+    "uq_billing_customers_org_code") is used when the driver exposes one.
+    """
+    constraint_name = getattr(getattr(e.orig, "diag", None), "constraint_name", None)
+    return constraint_name or "a unique field"
+
+
 class BaseRepository(Generic[ModelType]):
     def __init__(self, db: Session, model: Type[ModelType]):
         self.db = db
@@ -102,7 +116,7 @@ class BaseRepository(Generic[ModelType]):
             self.db.commit()
         except IntegrityError as e:
             self.db.rollback()
-            raise AlreadyExistsException(self.model.__name__, str(e))
+            raise AlreadyExistsException(self.model.__name__, _integrity_error_field(e))
         self.db.refresh(obj)
         return obj
 
@@ -126,7 +140,7 @@ class BaseRepository(Generic[ModelType]):
                 self.db.add(obj)
                 self.db.flush()
         except IntegrityError as e:
-            raise AlreadyExistsException(self.model.__name__, str(e))
+            raise AlreadyExistsException(self.model.__name__, _integrity_error_field(e))
         return obj
 
     def bulk_create(self, organization_id: int, items: List[Dict[str, Any]]) -> List[ModelType]:

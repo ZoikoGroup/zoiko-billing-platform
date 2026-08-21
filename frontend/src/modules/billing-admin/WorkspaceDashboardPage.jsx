@@ -144,7 +144,7 @@ export default function WorkspaceDashboardPage() {
     return [...activeSubs].sort((a, b) => (Number(b.unit_price) || 0) - (Number(a.unit_price) || 0))[0];
   }, [activeSubs]);
 
-  const currency = config?.default_currency || config?.base_currency || org?.currency || "USD";
+  const currency = config?.default_currency || config?.base_currency || org?.currency;
   const planName = primarySub ? (planMap[primarySub.plan_id] || primarySub.plan_name || "Active Plan") : null;
   const health = computeHealth(kpis);
   const healthStyle = HEALTH_STYLES[health?.tone] || HEALTH_STYLES.good;

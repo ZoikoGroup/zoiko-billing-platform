@@ -110,7 +110,7 @@ export default function CreditNotesPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter]);
 
   useEffect(() => { fetchCreditNotes(); }, [fetchCreditNotes]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
@@ -149,7 +149,7 @@ export default function CreditNotesPage() {
       total_amount: total ? String(total) : p.total_amount,
       subtotal: total ? String(Math.max(0, total - tax)) : p.subtotal,
       tax_amount: String(tax || 0),
-      currency: inv.currency || p.currency || "USD",
+      currency: inv.currency || p.currency,
       reason: p.reason || `Credit for ${inv.invoice_number || `invoice #${inv.id}`}`,
     }));
   }, []);

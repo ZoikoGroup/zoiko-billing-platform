@@ -205,7 +205,7 @@ class PaymentService:
                     payment_number=payment_number,
                     payment_date=str(payment_date),
                     amount=str(amount),
-                    currency=data.get("currency", "USD"),
+                    currency=data.get("currency") or self.config_service.get_default_currency(organization_id),
                     payment_method=data.get("payment_method_type", ""),
                     organization_id=organization_id,
                     db=self.db,

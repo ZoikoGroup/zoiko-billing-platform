@@ -78,7 +78,7 @@ export default function TierManagementPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedPlanId, loading]);
+  }, [selectedPlanId]);
 
   useEffect(() => { fetchTiers(); }, [fetchTiers]);
 

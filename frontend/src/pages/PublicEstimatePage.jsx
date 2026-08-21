@@ -48,7 +48,7 @@ export default function PublicEstimatePage() {
   const quote = state.quote;
   const badge = quote ? STATUS_BADGE[quote.status] || STATUS_BADGE.draft : null;
   const canRespond = quote?.status === "sent";
-  const currency = quote?.currency || "USD";
+  const currency = quote?.currency;
 
   const items = useMemo(() => {
     return (quote?.items || []).filter((i) => i.description || parseFloat(i.total_amount || 0) !== 0);

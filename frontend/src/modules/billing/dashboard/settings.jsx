@@ -2204,7 +2204,7 @@ export default function BillingSettingsPage() {
                   <thead className="bg-slate-50">
                     <tr>
                       <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Currency Code</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Rate (vs {exchangeRates.base_currency || "USD"})</th>
+                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Rate (vs {exchangeRates.base_currency})</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">

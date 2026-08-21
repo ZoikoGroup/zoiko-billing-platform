@@ -342,7 +342,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     # leaving a partially initialized tenant -- the same all-or-nothing
     # guarantee PHASE 4/6 already give BillingConfiguration/CommercialAccount.
     from app.modules.billing.services.tax_service import TaxService
-    TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id, commit=False)
+    TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id, commit=False, country_code=org.country)
 
     db.commit()
     db.refresh(admin)

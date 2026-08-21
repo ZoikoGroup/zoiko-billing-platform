@@ -32,7 +32,7 @@ function CurrencyFormModal({ show, onClose, onSave, editItem, saving, productMap
   useEffect(() => {
     if (editItem) {
       setForm({
-        product_id: editItem.product_id ?? "", currency: editItem.currency || "USD",
+        product_id: editItem.product_id ?? "", currency: editItem.currency,
         price: editItem.price ?? "", cost_price: editItem.cost_price ?? "",
         conversion_type: editItem.conversion_type || "manual",
         exchange_rate: editItem.exchange_rate ?? "", exchange_rate_date: editItem.exchange_rate_date || "",

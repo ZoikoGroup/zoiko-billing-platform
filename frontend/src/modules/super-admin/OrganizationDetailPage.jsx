@@ -443,7 +443,7 @@ export default function OrganizationDetailPage() {
                 <InfoRow label="Default plan" value={plan.is_default ? "Yes" : "No"} />
                 <InfoRow label="Billing interval" value={displayValue(plan.billing_interval)} />
                 <InfoRow label="Currency" value={displayValue(plan.currency)} />
-                <InfoRow label="Price" value={plan.price_amount === null || plan.price_amount === undefined ? "—" : `${plan.currency || "USD"} ${Number(plan.price_amount).toLocaleString()}`} />
+                <InfoRow label="Price" value={plan.price_amount === null || plan.price_amount === undefined ? "—" : `${plan.currency} ${Number(plan.price_amount).toLocaleString()}`} />
                 <InfoRow label="Effective" value={plan.effective_from ? `${formatDateOnly(plan.effective_from)} — ${formatDateOnly(plan.effective_to)}` : "—"} />
                 <InfoRow label="Period" value={`${formatDateOnly(subscription.start_at)} — ${formatDateOnly(subscription.end_at)}`} />
                 <InfoRow label="Current period" value={`${formatDateOnly(subscription.current_period_start)} — ${formatDateOnly(subscription.current_period_end)}`} />

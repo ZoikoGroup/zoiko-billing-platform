@@ -12,6 +12,8 @@ from app.modules.billing.models import (
     SubscriptionEvent,
     SubscriptionPlan,
 )
+from sqlalchemy.orm import joinedload
+
 from app.modules.billing.repositories.base import BaseRepository
 
 
@@ -214,6 +216,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         """Return all active subscriptions eagerly loaded with their plan."""
         return (
             self.db.query(Subscription)
+            .options(joinedload(Subscription.plan))
             .filter(
                 Subscription.organization_id == organization_id,
                 Subscription.is_active == True,

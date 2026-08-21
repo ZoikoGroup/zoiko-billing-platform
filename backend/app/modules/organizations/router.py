@@ -135,7 +135,7 @@ def update_my_organization(
         # Idempotent and never overwrites existing/custom tax rates.
         try:
             from app.modules.billing.services.tax_service import TaxService
-            TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=current_user.id)
+            TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=current_user.id, country_code=org.country)
         except Exception as e:
             logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
 

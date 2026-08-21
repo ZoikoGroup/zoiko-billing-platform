@@ -19,6 +19,21 @@ def _fmt_money(value: Any, currency: str = "") -> str:
     return f"{currency} {amount}".strip()
 
 
+def _document_currency(record_currency: Optional[str], org_config: Any = None) -> str:
+    """A document's own currency always wins. If it's genuinely missing,
+    fall back to the organization's actual configured currency (already
+    loaded into org_config by the caller) rather than a hardcoded "USD" --
+    that would mislabel every document for an INR/EUR/AED organization.
+    org_config itself is only ever absent when a caller didn't have one to
+    pass in at all, which is the true last-resort case."""
+    if record_currency:
+        return record_currency
+    base_currency = getattr(org_config, "base_currency", None) if org_config is not None else None
+    if base_currency:
+        return base_currency.value if hasattr(base_currency, "value") else str(base_currency)
+    return "USD"
+
+
 def _fmt_date(value: Any) -> str:
     if not value:
         return ""
@@ -1173,7 +1188,7 @@ def generate_invoice_pdf(invoice, customer, items, org_config=None, db=None) -> 
     if customer_gstin:
         customer_lines.append(f"GSTIN: {customer_gstin}")
 
-    currency = invoice.currency or "USD"
+    currency = _document_currency(invoice.currency, org_config)
     invoice_label = "Invoice"
     payment_terms = ""
     if getattr(invoice, "payment_terms", None):
@@ -1287,7 +1302,7 @@ def generate_credit_note_pdf(credit_note, customer, org_config=None) -> bytes:
         getattr(customer, "email", None),
     ]
 
-    currency = credit_note.currency or "USD"
+    currency = _document_currency(credit_note.currency, org_config)
     credit_note_type = credit_note.credit_note_type
     type_label = (credit_note_type.value if hasattr(credit_note_type, "value") else str(credit_note_type)).replace("_", " ").title()
     status = credit_note.status
@@ -1340,7 +1355,7 @@ def generate_refund_pdf(refund, customer, org_config=None) -> bytes:
         getattr(customer, "email", None),
     ]
 
-    currency = refund.currency or "USD"
+    currency = _document_currency(refund.currency, org_config)
     refund_type = refund.refund_type
     type_label = (refund_type.value if hasattr(refund_type, "value") else str(refund_type)).replace("_", " ").title()
     refund_status = refund.status
@@ -1403,7 +1418,7 @@ def generate_write_off_pdf(write_off, customer, org_config=None) -> bytes:
         getattr(customer, "email", None),
     ]
 
-    currency = write_off.currency or "USD"
+    currency = _document_currency(write_off.currency, org_config)
     write_off_type = write_off.write_off_type
     type_label = (write_off_type.value if hasattr(write_off_type, "value") else str(write_off_type)).replace("_", " ").title()
     wo_status = write_off.status
@@ -1505,7 +1520,7 @@ def generate_quote_pdf(quote, customer, items, org_config=None, db=None) -> byte
     if customer_gstin:
         customer_lines.append(f"GSTIN: {customer_gstin}")
 
-    currency = quote.currency or "USD"
+    currency = _document_currency(quote.currency, org_config)
     status = quote.status
     status_label = (status.value if hasattr(status, "value") else str(status)).replace("_", " ").title()
 

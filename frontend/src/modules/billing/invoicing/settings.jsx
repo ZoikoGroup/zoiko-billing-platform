@@ -111,7 +111,7 @@ const [original, setOriginal] = useState({});
 
       const values = {
         relationship_terminology: settings.relationship_terminology || "customer",
-        default_currency: settings.default_currency || "USD",
+        default_currency: settings.default_currency,
         fiscal_year_start: settings.fiscal_year_start || "january",
         default_payment_terms: settings.default_payment_terms || "net_30",
         invoice_prefix: settings.invoice_prefix || "INV-",

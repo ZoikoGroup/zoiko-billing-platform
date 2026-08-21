@@ -11,7 +11,7 @@ from app.modules.billing.repositories.tax import TaxRateRepository, TaxRepositor
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit
 from app.modules.billing.utils.currency_utils import percentage_of
-from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
+from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_country, get_catalogue_entries_for_currency
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -112,10 +112,17 @@ class TaxService:
 
     def seed_starter_tax_rates(
         self, organization_id: int, currency_code: Optional[str], created_by: Optional[int] = None,
-        commit: bool = True,
+        commit: bool = True, country_code: Optional[str] = None,
     ) -> List[TaxRate]:
-        """Idempotently seed an organization's starter tax catalogue for its
-        billing currency, from STARTER_TAX_CATALOGUE (utils/tax_catalogue.py).
+        """Idempotently seed an organization's starter tax catalogue, from
+        STARTER_TAX_CATALOGUE (utils/tax_catalogue.py).
+
+        Prefers country_code when the caller has it: this correctly
+        distinguishes countries that share a currency (France vs. Germany,
+        both EUR) instead of always resolving to whichever entry happens to
+        be that currency's representative. Falls back to currency-only
+        resolution when no country is supplied (older/indirect callers),
+        which keeps returning exactly the pre-country-aware behavior.
 
         Safe to call repeatedly and safe for organizations that already have
         custom tax rates: only catalogue entries the organization doesn't
@@ -123,8 +130,8 @@ class TaxService:
         enforced unique per organization via uq_tax_rates_org_code) are
         inserted. Never updates, deletes, or reprioritizes any existing row,
         and never touches an existing is_default rate for the same
-        currency. A currency with no catalogue entry (e.g. USD) is a
-        deliberate no-op -- no rate is ever fabricated.
+        currency. A currency/country with no catalogue entry (e.g. USD) is
+        a deliberate no-op -- no rate is ever fabricated.
 
         commit=False (used by registration) makes every insert flush-only, so
         the caller's own commit covers this seed together with the rest of
@@ -134,9 +141,11 @@ class TaxService:
         org-currency-update flow) keeps each row's own commit, matching
         every other direct/ad-hoc TaxService caller.
         """
-        if not currency_code:
-            return []
-        entries = get_catalogue_entries_for_currency(currency_code)
+        entries = get_catalogue_entries_for_country(country_code) if country_code else ()
+        if not entries:
+            if not currency_code:
+                return []
+            entries = get_catalogue_entries_for_currency(currency_code)
         if not entries:
             return []
 

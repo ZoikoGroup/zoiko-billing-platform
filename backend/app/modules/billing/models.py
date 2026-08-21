@@ -2957,6 +2957,12 @@ class BillingConfiguration(Base):
     tax_calculation_method          = Column(CaseInsensitiveEnum(TaxCalculationMethod), default=TaxCalculationMethod.EXCLUSIVE, nullable=False)
     default_tax_rate_id             = Column(Integer, ForeignKey("tax_rates.id", ondelete="SET NULL"), nullable=True)
     tax_label                       = Column(String(50), default="VAT")
+    # What this org's tax identifier is actually called (GSTIN, VAT
+    # Registration Number, EIN, ABN, ...) -- seeded from the registration
+    # country's tax profile (utils/country_tax_profiles.py). Distinct from
+    # tax_label (the tax SYSTEM's name, e.g. "GST"/"VAT") and from
+    # tax_number (the org's actual stored identifier value below).
+    tax_id_label                    = Column(String(100), nullable=True)
     tax_number                      = Column(String(100), nullable=True)
     tax_profiles                    = Column(JSON, default=lambda: [])
     is_tax_inclusive_default        = Column(Boolean, default=False)

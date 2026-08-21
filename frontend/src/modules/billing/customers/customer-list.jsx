@@ -198,7 +198,7 @@ export default function CustomerListPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -416,7 +416,30 @@ export default function CustomerListPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address</label><textarea rows={2} value={newCustomer.billing_address} onChange={(e) => setNewCustomer((p) => ({ ...p, billing_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => { const country = e.target.value; const curInfo = getCurrencyForCountry(country); setNewCustomer((p) => ({ ...p, billing_country: country, shipping_country: p.shipping_same_as_billing ? country : p.shipping_country, currency: p.currency || (curInfo ? curInfo.code : p.currency) })); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => {
+            const country = e.target.value;
+            const curInfo = getCurrencyForCountry(country);
+            const newCurrency = curInfo ? curInfo.code : newCustomer.currency;
+
+            const updateCountry = (confirmCurrencyUpdate) => {
+              setNewCustomer((p) => ({
+                ...p,
+                billing_country: country,
+                shipping_country: p.shipping_same_as_billing ? country : p.shipping_country,
+                currency: confirmCurrencyUpdate ? newCurrency : p.currency
+              }));
+            };
+
+            if (newCustomer.currency && newCustomer.currency !== newCurrency && newCurrency) {
+              if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+                updateCountry(true);
+              } else {
+                updateCountry(false);
+              }
+            } else {
+              updateCountry(true);
+            }
+          }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
 
             <label className="flex items-center gap-2 text-sm text-slate-700 mb-2"><input type="checkbox" checked={newCustomer.shipping_same_as_billing} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_same_as_billing: e.target.checked, shipping_address: e.target.checked ? p.billing_address : "", shipping_country: e.target.checked ? p.billing_country : "" }))} className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" /> Same as billing</label>
             {!newCustomer.shipping_same_as_billing && (<><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={newCustomer.shipping_address} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={newCustomer.shipping_country} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></>)}
@@ -463,7 +486,29 @@ export default function CustomerListPage() {
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={editCustomer.shipping_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={editCustomer.billing_country || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, billing_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={editCustomer.billing_country || ""} onChange={(e) => {
+              const country = e.target.value;
+              const curInfo = getCurrencyForCountry(country);
+              const newCurrency = curInfo ? curInfo.code : editCustomer.currency;
+
+              const updateCountry = (confirmCurrencyUpdate) => {
+                setEditCustomer((p) => ({
+                  ...p,
+                  billing_country: country,
+                  currency: confirmCurrencyUpdate ? newCurrency : p.currency
+                }));
+              };
+
+              if (editCustomer.currency && editCustomer.currency !== newCurrency && newCurrency) {
+                if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+                  updateCountry(true);
+                } else {
+                  updateCountry(false);
+                }
+              } else {
+                updateCountry(true);
+              }
+            }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={editCustomer.shipping_country || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

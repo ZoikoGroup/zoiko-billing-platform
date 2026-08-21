@@ -870,7 +870,7 @@ class InvoiceService:
         customer = inv.customer
         items = sorted(inv.items or [], key=lambda i: i.line_number or 0)
 
-        currency = inv.currency or "USD"
+        currency = inv.currency or self.config_service.get_default_currency(inv.organization_id)
 
         def _money(v) -> str:
             return f"{round_money(v if v is not None else 0, currency):,.2f}"

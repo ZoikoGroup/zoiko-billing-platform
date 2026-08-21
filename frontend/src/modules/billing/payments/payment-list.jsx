@@ -211,7 +211,7 @@ export default function PaymentListPage() {
     const headers = ["Payment #", "Customer", "Amount", "Currency", "Method", "Status", "Date", "Transaction ID"];
     const rows = payments.map((p) => [
       p.payment_number || `#${p.id}`, p.customer_name || p.customer?.name || "",
-      p.amount || 0, p.currency || "USD",
+      p.amount || 0, p.currency,
       p.payment_method_type || p.payment_type || "", p.status || "",
       p.payment_date || "", p.transaction_id || "",
     ]);

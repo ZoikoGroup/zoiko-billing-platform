@@ -99,7 +99,7 @@ export default function InvoicingPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, currencyFilter, dateFrom, dateTo, minAmount, maxAmount, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, currencyFilter, dateFrom, dateTo, minAmount, maxAmount, sortField, sortDir]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -132,7 +132,7 @@ export default function InvoicingPage() {
     { key: "total_amount", label: "Amount", sortable: true, align: "right", render: (r) => <span className="font-semibold text-slate-800 whitespace-nowrap">{formatDisplayCurrency(r.total || r.total_amount, "—", r.currency)}</span> },
     { key: "paid_amount", label: "Paid", align: "right", render: (r) => <span className="text-sm text-emerald-600 whitespace-nowrap">{formatDisplayCurrency(r.paid_amount, "—", r.currency)}</span> },
     { key: "balance_due", label: "Balance", align: "right", render: (r) => <span className="text-sm text-red-600 whitespace-nowrap">{formatDisplayCurrency(r.balance_due, "—", r.currency)}</span> },
-    { key: "currency", label: "Currency", align: "center", render: (r) => <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{r.currency || "USD"}</span> },
+    { key: "currency", label: "Currency", align: "center", render: (r) => <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{r.currency}</span> },
     { key: "status", label: "Status", sortable: true, render: (r) => <StatusBadge status={r.status} /> },
     { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-400">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</span> },
   ];

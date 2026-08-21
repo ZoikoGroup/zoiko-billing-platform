@@ -34,7 +34,7 @@ async function buildWriteOffPdf(writeOff, orgSettings = {}) {
   const pdfFonts = pdfFontsModule.default;
   pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
-  const currency = writeOff.currency || "USD";
+  const currency = writeOff.currency;
   const fmt = (v) => {
     if (v == null || v === "") return "—";
     const num = Number(v);
@@ -198,7 +198,7 @@ export default function WriteOffDetailPage() {
     );
   }
 
-  const currency = writeOff.currency || "USD";
+  const currency = writeOff.currency;
   const isDraft = writeOff.status === "draft";
   const isPendingApproval = writeOff.status === "pending_approval";
   const isApproved = writeOff.status === "approved";
