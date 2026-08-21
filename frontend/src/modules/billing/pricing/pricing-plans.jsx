@@ -172,7 +172,7 @@ export default function PricingPlansPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
   useEffect(() => {
@@ -286,7 +286,7 @@ export default function PricingPlansPage() {
     return {
       ...formData,
       price: formData.price || product.default_price || "",
-      currency: formData.currency || product.currency || "USD",
+      currency: formData.currency || product.currency,
       billing_period: formData.billing_period || product.billing_frequency || "monthly",
     };
   };
@@ -391,7 +391,7 @@ export default function PricingPlansPage() {
       name: `${plan.name} (Copy)`,
       description: plan.description || "",
       price: plan.price || "",
-      currency: plan.currency || "USD",
+      currency: plan.currency,
       billing_period: plan.billing_period || plan.billing_frequency || "monthly",
       pricing_model: plan.pricing_model || plan.plan_type || "flat",
       trial_days: plan.trial_days || "",
@@ -474,7 +474,7 @@ export default function PricingPlansPage() {
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-500 uppercase tracking-wider">Currency</p>
-                  <p className="text-sm font-medium text-slate-700">{prod.currency || "USD"}</p>
+                  <p className="text-sm font-medium text-slate-700">{prod.currency}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-500 uppercase tracking-wider">Billing Default</p>
@@ -550,7 +550,7 @@ export default function PricingPlansPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-            <select value={data.currency || "USD"} onChange={(e) => onChange({ ...data, currency: e.target.value })}
+            <select value={data.currency} onChange={(e) => onChange({ ...data, currency: e.target.value })}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>

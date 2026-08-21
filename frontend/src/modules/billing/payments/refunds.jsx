@@ -134,7 +134,7 @@ export default function RefundsPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
 
   useEffect(() => { fetchRefunds(); }, [fetchRefunds]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

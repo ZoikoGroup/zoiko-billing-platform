@@ -175,12 +175,12 @@ export default function WorkspaceOrganizationPage() {
 
         <Card title="Billing Defaults" icon={Coins}>
           <Field label="Fiscal Year" value={formatFiscalYearRange(config?.fiscal_year_start, config?.fiscal_year_end)} />
-          <Field label="Default Currency" value={config?.default_currency || org?.currency || "USD"} />
+          <Field label="Default Currency" value={config?.default_currency || org?.currency} />
           <Field label="Supported Currencies" value={Array.isArray(config?.supported_currencies) && config.supported_currencies.length ? config.supported_currencies.join(", ") : "—"} />
           <Field label="Date Format" value={config?.date_format || "—"} />
           <Field label="Timezone" value={config?.timezone || org?.timezone || "UTC"} />
           <Field label="Language" value={config?.language || "—"} />
-          <Field label="Base Currency" value={config?.base_currency || "USD"} />
+          <Field label="Base Currency" value={config?.base_currency} />
           <Field label="Tax Label" value={config?.tax_label || "—"} />
         </Card>
 

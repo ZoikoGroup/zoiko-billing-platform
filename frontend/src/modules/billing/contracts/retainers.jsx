@@ -79,7 +79,7 @@ export default function RetainersPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, loading]);
+  }, [safePage, debouncedSearch, statusFilter]);
 
   const fetchOrgSettings = useCallback(async () => {
     try { const data = await settingsApi.get(); setOrgSettings(data || {}); }

@@ -375,7 +375,7 @@ export default function PlansPage() {
             <span className="text-xs text-slate-400">—</span>
           ) : (
             <span className="text-xs font-semibold text-slate-700">
-              {(row.currency || "USD")} {Number(row.price_amount).toLocaleString()}
+              {(row.currency)} {Number(row.price_amount).toLocaleString()}
             </span>
           ),
       },

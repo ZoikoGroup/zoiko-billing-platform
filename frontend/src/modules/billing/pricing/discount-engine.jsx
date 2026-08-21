@@ -68,7 +68,7 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
         name: editItem.name || "", code: editItem.code || "", description: editItem.description || "",
         discount_type: editItem.discount_type || "coupon", discount_value: editItem.discount_value ?? "",
         value_type: editItem.value_type || "percentage", min_order_amount: editItem.min_order_amount ?? "",
-        max_discount_amount: editItem.max_discount_amount ?? "", currency: editItem.currency || "USD",
+        max_discount_amount: editItem.max_discount_amount ?? "", currency: editItem.currency,
         usage_limit: editItem.usage_limit ?? "", per_customer_limit: editItem.per_customer_limit ?? 1,
         valid_from: vf, valid_to: vt, status: editItem.status || "draft",
         is_active: editItem.is_active ?? true, requires_approval: editItem.requires_approval ?? false,

@@ -271,7 +271,7 @@ export default function OrgAdminOrganizationPage() {
       industry: org.industry || "",
       address: org.address || "",
       timezone: org.timezone || "UTC",
-      currency: org.currency || "USD",
+      currency: org.currency,
     });
     setShowEdit(true);
   };
@@ -324,7 +324,7 @@ export default function OrgAdminOrganizationPage() {
   const totalCustomers = org.total_customers || 0;
   const activeCustomers = org.active_customers || 0;
   const billingAdmins = org.billing_admins || 0;
-  const currency = org.currency || "USD";
+  const currency = org.currency;
   const regDate = org.created_at ? new Date(org.created_at).toLocaleDateString() : "—";
 
   const EditField = ({ label, value, onChange, textarea, mono }) => {

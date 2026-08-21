@@ -184,9 +184,6 @@ export default function ZoikoBillingModule() {
     expiringContracts: [],
     agingBuckets: [],
     auditLogs: [],
-    invoiceStats: null,
-    outstandingTotal: null,
-    totalCollected: null,
     paymentTrend: [],
   });
 
@@ -206,6 +203,17 @@ export default function ZoikoBillingModule() {
         return;
       }
 
+      // invoiceApi.getDashboardStats()/getOutstandingTotal() used to be
+      // fetched here too, but everything they returned (paid/overdue/sent/
+      // draft counts+amounts, outstanding_amount) is already present in
+      // dashboardApi.getFull()'s own invoice_summary/outstanding_amount --
+      // those were two extra backend round trips on every load and every
+      // 60s poll purely to duplicate numbers already in `full`. Dropped;
+      // see the `kpis`/`invoiceStatusData` memos below, which now read
+      // straight from `full`. getTotalCollected() is fetched lazily, only
+      // when the user actually clicks "Export CSV" (see handleExport) --
+      // it was previously paid on every load/poll for a feature most page
+      // views never use.
       const results = await Promise.allSettled([
         dashboardApi.getFull(undefined, range),
         dashboardApi.getPaymentTrend(undefined, range),
@@ -214,9 +222,6 @@ export default function ZoikoBillingModule() {
         customerApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
         subscriptionApi.listActive(),
         contractApi.listActive(),
-        invoiceApi.getDashboardStats(undefined),
-        invoiceApi.getOutstandingTotal(),
-        paymentApi.getTotalCollected(),
         collectionApi.getAgingBuckets(),
         contractApi.listExpiring(30),
         auditApi.list({ per_page: 10 }),
@@ -228,8 +233,8 @@ export default function ZoikoBillingModule() {
       if (currentRequestId !== requestIdRef.current) return;
 
       const [fullResult, paymentTrendResult, invoicesResult, paymentsResult, customersResult,
-        subscriptionsResult, contractsResult, invoiceStatsResult, outstandingResult,
-        totalCollectedResult, agingResult, expiringResult, auditResult, productResult, reportingResult, healthResult] = results;
+        subscriptionsResult, contractsResult,
+        agingResult, expiringResult, auditResult, productResult, reportingResult, healthResult] = results;
 
       const safeValue = (result, transform = (v) => v) =>
         result.status === "fulfilled" ? transform(result.value) : null;
@@ -258,9 +263,6 @@ export default function ZoikoBillingModule() {
           customers: safeValue(customersResult, extractArray) || [],
           activeSubscriptions: safeValue(subscriptionsResult, extractArray) || [],
           activeContracts: safeValue(contractsResult, extractArray) || [],
-          invoiceStats: safeValue(invoiceStatsResult),
-          outstandingTotal: safeValue(outstandingResult),
-          totalCollected: safeValue(totalCollectedResult),
           agingBuckets: safeValue(agingResult, extractArray) || [],
           expiringContracts: safeValue(expiringResult, extractArray) || [],
           auditLogs: safeValue(auditResult, extractArray) || [],
@@ -301,14 +303,16 @@ export default function ZoikoBillingModule() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  const handleExport = useCallback((format) => {
+  const handleExport = useCallback(async (format) => {
     const prefix = `billing-dashboard-${new Date().toISOString().split("T")[0]}`;
     if (format === "csv") {
+      // getTotalCollected() is only needed for this export, not for the
+      // dashboard's normal render -- fetched here on demand instead of on
+      // every page load/60s poll.
+      const totalCollected = await paymentApi.getTotalCollected().catch(() => null);
       exportToCsv({
         kpis: dashboardData.kpis,
-        invoiceStats: dashboardData.invoiceStats,
-        outstandingTotal: dashboardData.outstandingTotal,
-        totalCollected: dashboardData.totalCollected,
+        totalCollected,
         date_from: dateRange.date_from,
         date_to: dateRange.date_to,
       }, prefix);
@@ -340,9 +344,16 @@ export default function ZoikoBillingModule() {
   const kpis = useMemo(() => {
     const full = d.full || {};
     const kpi = d.kpis || {};
-    const stats = d.invoiceStats || {};
+    // kpi (= full.kpis, from BillingDashboardService.get_kpis) already
+    // includes paid_amount/overdue_amount/outstanding_amount/total_invoices
+    // directly -- the invoiceApi.getDashboardStats()/getOutstandingTotal()
+    // calls this used to fall back to duplicated the same numbers via two
+    // extra backend round trips. full.invoice_summary (fetched below in
+    // invoiceStatusData) is the remaining fallback source when kpi itself
+    // is unavailable.
+    const invSummary = full.invoice_summary || {};
     const totalRev = kpi.total_revenue ?? full.total_revenue ?? 0;
-    const totalInv = kpi.total_invoices ?? stats.total_invoices ?? full.total_invoices ?? d.invoices.length;
+    const totalInv = kpi.total_invoices ?? invSummary.total_invoices ?? d.invoices.length;
     const collections = kpi.collections ?? 0;
     const revData = d.revenue;
     let monthlyGrowth = kpi.monthly_growth ?? full.monthly_growth ?? 0;
@@ -354,9 +365,9 @@ export default function ZoikoBillingModule() {
     return {
       totalRevenue: totalRev,
       monthlyRevenue: kpi.monthly_revenue ?? full.monthly_revenue ?? 0,
-      outstandingAmount: kpi.outstanding_amount ?? d.outstandingTotal?.total_outstanding ?? full.outstanding_amount ?? 0,
-      paidAmount: kpi.paid_amount ?? stats.paid_amount ?? full.paid_amount ?? 0,
-      overdueAmount: kpi.overdue_amount ?? stats.overdue_amount ?? full.overdue_amount ?? 0,
+      outstandingAmount: kpi.outstanding_amount ?? full.outstanding_amount ?? 0,
+      paidAmount: kpi.paid_amount ?? invSummary.paid_amount ?? 0,
+      overdueAmount: kpi.overdue_amount ?? full.overdue_amount ?? invSummary.overdue_amount ?? 0,
       activeCustomers: kpi.active_customers ?? full.total_customers ?? d.customers.length,
       activeContracts: d.activeContracts.length,
       activeSubscriptions: kpi.active_subscriptions ?? full.active_subscriptions ?? d.activeSubscriptions.length,
@@ -466,12 +477,11 @@ export default function ZoikoBillingModule() {
   }, [d]);
 
   const invoiceStatusData = useMemo(() => {
-    const stats = d.invoiceStats || {};
     const summary = d.full?.invoice_summary || {};
-    const totalPaid = summary.paid_count ?? stats.paid_count ?? stats.paid ?? 0;
-    const totalSent = summary.sent_count ?? stats.sent_count ?? 0;
-    const totalOverdue = summary.overdue_count ?? stats.overdue_count ?? stats.overdue ?? 0;
-    const totalDraft = summary.draft_count ?? stats.draft_count ?? stats.draft ?? 0;
+    const totalPaid = summary.paid_count ?? 0;
+    const totalSent = summary.sent_count ?? 0;
+    const totalOverdue = summary.overdue_count ?? 0;
+    const totalDraft = summary.draft_count ?? 0;
     return [
       { name: "Paid", value: totalPaid, color: "#10b981" },
       { name: "Sent", value: totalSent, color: "#f59e0b" },

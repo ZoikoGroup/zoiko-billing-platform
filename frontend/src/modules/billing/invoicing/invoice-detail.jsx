@@ -143,7 +143,7 @@ export default function InvoiceDetailPage() {
         customer_id: Number(invoice.customer_id),
         issue_date: today,
         due_date: dueDate,
-        currency: invoice.currency || "USD",
+        currency: invoice.currency,
         notes: invoice.notes || undefined,
         payment_terms: invoice.payment_terms || "net_30",
         po_number: invoice.po_number || undefined,
@@ -275,7 +275,7 @@ export default function InvoiceDetailPage() {
   const invoiceTotal = Number(invoice.total_amount ?? invoice.amount ?? 0);
   const balanceDue = Number(invoice.balance_due ?? invoice.amount_due ?? 0);
   const paidAmount = Math.max(0, invoiceTotal - balanceDue);
-  const currency = invoice.currency || "USD";
+  const currency = invoice.currency;
   const hasBalanceDue = balanceDue > 0.005;
   const canFinalize = isDraft;
   const canRecordPayment = hasBalanceDue && (isSent || isOverdue || isPartiallyPaid);

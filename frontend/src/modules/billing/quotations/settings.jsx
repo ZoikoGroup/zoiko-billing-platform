@@ -53,7 +53,7 @@ export default function QuotationSettingsPage() {
 
       const values = {
         quote_prefix: settings.default_quote_prefix || "QOT-",
-        default_currency: settings.default_currency || "USD",
+        default_currency: settings.default_currency,
         default_terms_and_conditions: settings.terms_and_conditions || "",
         quote_logo_url: settings.logo_url || "",
       };

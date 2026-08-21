@@ -255,8 +255,8 @@ export default function TaxReportsPage() {
                       {fInvoices.filter((i) => parseFloat(i.tax_amount || i.tax_total || 0) > 0).slice(0, 20).map((inv) => (
                         <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50">
                           <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</td>
-                          <td className="py-3 px-3 text-right text-slate-900 font-medium">{formatCurrency(inv.total || inv.total_amount || 0, inv.currency || "USD")}</td>
-                          <td className="py-3 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.tax_amount || inv.tax_total || 0, inv.currency || "USD")}</td>
+                          <td className="py-3 px-3 text-right text-slate-900 font-medium">{formatCurrency(inv.total || inv.total_amount || 0, inv.currency)}</td>
+                          <td className="py-3 px-3 text-right text-emerald-600 font-medium">{formatCurrency(inv.tax_amount || inv.tax_total || 0, inv.currency)}</td>
                           <td className="py-3 px-3 text-center">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :

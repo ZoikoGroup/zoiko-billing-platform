@@ -200,7 +200,7 @@ export default function PaymentDetailPage() {
         refund_number: "auto",
         refund_type: refundType === "full" ? "full" : "partial",
         amount: amt,
-        currency: payment.currency || "USD",
+        currency: payment.currency,
         reason: refundReason || undefined,
       });
       // A new refund starts in DRAFT — it must go through the same
@@ -292,7 +292,7 @@ export default function PaymentDetailPage() {
               </button>
             ) : (payment.customer_name || `Customer #${payment.customer_id}`)
           } />
-          <InfoRow label="Currency" value={payment.currency || "USD"} />
+          <InfoRow label="Currency" value={payment.currency} />
           <InfoRow label="Reference" value={payment.reference_number} />
           <InfoRow label="Gateway" value={payment.gateway} />
           <InfoRow label="Gateway Fee" value={payment.gateway_fee > 0 ? formatDisplayCurrency(payment.gateway_fee) : "—"} />
@@ -547,7 +547,7 @@ export default function PaymentDetailPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1.5">Amount ({payment.currency || "USD"})</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1.5">Amount ({payment.currency})</label>
                   <input type="number" min="0.01" step="0.01" max={remaining.toFixed(2)} value={allocateForm.amount}
                     onChange={(e) => setAllocateForm((p) => ({ ...p, amount: e.target.value }))}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand/30" />
@@ -855,7 +855,7 @@ export default function PaymentDetailPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1.5">Refund Amount ({payment.currency || "USD"}) *</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">Refund Amount ({payment.currency}) *</label>
               <input type="number" min="0.01" step="0.01" max={parseFloat(payment.amount || 0)} value={refundAmount}
                 onChange={(e) => setRefundAmount(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />

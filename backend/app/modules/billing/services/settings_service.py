@@ -330,14 +330,26 @@ class BillingConfigurationService:
                     supported.append(currency_str)
                     data["supported_currencies"] = supported
 
-                # Derive the tax_label ("GST" vs "VAT") from the same starter
-                # tax catalogue seed_starter_tax_rates() reads, instead of
-                # always leaving CONFIGURATION_DEFAULTS' "VAT" -- a currency
-                # with no catalogue entry keeps the generic default.
-                from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
-                catalogue_entries = get_catalogue_entries_for_currency(currency_str)
-                if catalogue_entries:
-                    data["tax_label"] = catalogue_entries[0].tax_type.value.upper()
+                # Derive tax_label/tax_id_label from the registration
+                # country's tax profile (country_tax_profiles.py) when this
+                # country is covered -- this is the precise, country-aware
+                # source ("GST"/"VAT"/"Sales Tax"/"Consumption Tax" plus the
+                # actual tax-identifier name like "GSTIN"), and correctly
+                # distinguishes countries that share a currency (France vs.
+                # Germany, both EUR). Falls back to deriving tax_label from
+                # the starter tax catalogue by currency alone (the older,
+                # coarser behavior) when the country isn't covered yet, and
+                # to CONFIGURATION_DEFAULTS' generic "VAT" when neither is.
+                from app.modules.billing.utils.country_tax_profiles import get_country_tax_profile
+                tax_profile = get_country_tax_profile(org.country)
+                if tax_profile is not None:
+                    data["tax_label"] = tax_profile.tax_system
+                    data["tax_id_label"] = tax_profile.tax_id_label
+                else:
+                    from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
+                    catalogue_entries = get_catalogue_entries_for_currency(currency_str)
+                    if catalogue_entries:
+                        data["tax_label"] = catalogue_entries[0].tax_type.value.upper()
 
         config = BillingConfiguration(organization_id=organization_id, **data)
         self.db.add(config)

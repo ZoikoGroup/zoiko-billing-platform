@@ -36,7 +36,7 @@ async function generatePDF({ form, lineItems, totals, orgSettings, customerName,
   pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
   const { name: orgName, address: orgAddress, email: orgEmail, phone: orgPhone, website: orgWebsite, taxRegistration: orgTaxRegistration } = getOrgBranding(orgSettings);
-  const currency = form.currency || orgSettings.default_currency || "USD";
+  const currency = form.currency || orgSettings.default_currency;
   const invoiceNumber = form.invoice_number || (orgSettings?.auto_generate_invoice_number ? "Auto-generated on save" : "Draft Invoice");
   const showTaxBreakdown = orgSettings.show_tax_breakdown !== false;
   const showDiscount = orgSettings.show_discount !== false;
@@ -199,7 +199,7 @@ export default function InvoicePDFPreview({
   shippingAddress = "",
 }) {
   const { name: orgName, address: orgAddress, email: orgEmail, phone: orgPhone, website: orgWebsite, taxRegistration: orgTaxRegistration, logo: orgLogo } = getOrgBranding(orgSettings);
-  const currency = form.currency || orgSettings.default_currency || "USD";
+  const currency = form.currency || orgSettings.default_currency;
   const invoiceNumber = form.invoice_number || (orgSettings?.auto_generate_invoice_number ? "Auto-generated on save" : "Draft Invoice");
   const showTaxBreakdown = orgSettings.show_tax_breakdown !== false;
   const showDiscount = orgSettings.show_discount !== false;

@@ -77,7 +77,7 @@ export default function PaymentSettingsPage() {
         payment_number_format: settings.payment_number_format || "{PREFIX}{NUMBER}",
         auto_generate_payment_number: settings.auto_generate_payment_number ?? true,
         default_payment_gateway: settings.default_payment_gateway || "stripe",
-        payment_currency: settings.payment_currency || settings.default_currency || "USD",
+        payment_currency: settings.payment_currency || settings.default_currency,
         auto_reconcile: settings.auto_reconcile ?? true,
         reconciliation_threshold: settings.reconciliation_threshold || "0.50",
         enable_partial_payments: settings.enable_partial_payments ?? true,

@@ -997,7 +997,7 @@ export function ProductSelector({
   const formatPrice = useCallback((p) => {
     if (formatPriceProp) return formatPriceProp(p);
     const price = p.original_price || p.default_price || p.unit_price || 0;
-    const currency = p.currency || invoiceCurrency || "USD";
+    const currency = p.currency || invoiceCurrency;
     return `${currency} ${Number(price).toFixed(2)}`;
   }, [formatPriceProp, invoiceCurrency]);
 

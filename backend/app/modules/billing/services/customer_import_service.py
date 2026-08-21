@@ -426,7 +426,14 @@ class CustomerImportService:
             matched_code = None
 
             # 1) Existing customer in this org
-            existing = existing_by_code.get(code) if code else None
+            # existing_by_code's keys are customer_code.lower() (built in
+            # _get_existing_maps, matching the email map's own .lower()
+            # convention below) -- looking it up with the case-preserved
+            # `code` meant this branch only ever matched when the imported
+            # code happened to already be all-lowercase, silently missing
+            # every case-different duplicate against a real existing
+            # customer (e.g. CSV "acme-01" vs stored "ACME-01").
+            existing = existing_by_code.get(code.lower()) if code else None
             if existing:
                 dup_note = f"Duplicate customer code '{code}'"
                 matched_id = existing.id
@@ -548,6 +555,7 @@ class CustomerImportService:
 
         imported: List[int] = []
         skipped: List[int] = []
+        skipped_details: List[Dict[str, Any]] = []
         failed: List[Dict[str, Any]] = []
         warning_rows: List[int] = []
 
@@ -569,6 +577,7 @@ class CustomerImportService:
                 action = per_row_actions.get(row_idx, duplicate_strategy)
                 if action == "skip":
                     skipped.append(row_idx)
+                    skipped_details.append({"row": row_idx, "reason": "Duplicate — skipped per import strategy"})
                     continue
                 elif action == "overwrite" and matched_id:
                     try:
@@ -584,6 +593,7 @@ class CustomerImportService:
                     # falls through to create below
                 else:
                     skipped.append(row_idx)
+                    skipped_details.append({"row": row_idx, "reason": f"Duplicate — skipped (unrecognized action '{action}')"})
                     continue
 
             # Create new customer
@@ -599,20 +609,28 @@ class CustomerImportService:
         if is_complete:
             _PREVIEW_CACHE.pop(cache_key, None)
 
-        self.audit.log(
-            organization_id, user_id,
-            BillingAuditAction.UPDATE, "CustomerImport", None,
-            new_values={
-                "session_id": session_id,
-                "batch_offset": offset,
-                "batch_rows": len(rows),
-                "is_complete": is_complete,
-                "imported": len(imported),
-                "skipped": len(skipped),
-                "failed": len(failed),
-                "warnings": len(warning_rows),
-            },
-        )
+        try:
+            self.audit.log(
+                organization_id, user_id,
+                BillingAuditAction.UPDATE, "CustomerImport", None,
+                new_values={
+                    "session_id": session_id,
+                    "batch_offset": offset,
+                    "batch_rows": len(rows),
+                    "is_complete": is_complete,
+                    "imported": len(imported),
+                    "skipped": len(skipped),
+                    "failed": len(failed),
+                    "warnings": len(warning_rows),
+                },
+            )
+        except Exception:
+            # Every row above already committed independently (per-row
+            # transactions) -- a failure logging the batch-summary audit
+            # entry must never mask an otherwise-successful import result.
+            logger.warning(
+                "Failed to write CustomerImport batch-summary audit log for session %s", session_id, exc_info=True,
+            )
 
         return {
             "imported": len(imported),
@@ -621,6 +639,7 @@ class CustomerImportService:
             "warnings": len(warning_rows),
             "imported_row_indices": imported,
             "skipped_row_indices": skipped,
+            "skipped_details": skipped_details,
             "failed_details": failed,
             "warning_row_indices": warning_rows,
             "total_rows": total_rows,
@@ -767,11 +786,25 @@ class CustomerImportService:
 
     def _get_existing_maps(self, organization_id: int) -> Tuple[Dict[str, BillingCustomer], Dict[str, BillingCustomer]]:
         """Return ({customer_code.lower(): customer}, {email.lower(): customer})
-        for all non-deleted org customers — used for duplicate detection."""
+        for ALL org customers, including inactive and soft-deleted ones —
+        used for duplicate detection. Must include them: create_customer's
+        own duplicate check (CustomerService._validate_duplicate ->
+        repo.get_first) applies NO active/deleted-at filter at all, so it
+        matches inactive AND soft-deleted rows at confirm time. If preview
+        only checked active, non-deleted rows, a row matching an inactive or
+        soft-deleted customer would show as "valid" in preview and then fail
+        with a confusing "already exists" error at confirm. repo.list_all()
+        can't express this even with active_only=False -- it unconditionally
+        excludes deleted_at IS NOT NULL rows regardless of that flag -- so
+        this queries the model directly with no filter beyond organization,
+        mirroring exactly what get_first() itself checks."""
         by_code: Dict[str, BillingCustomer] = {}
         by_email: Dict[str, BillingCustomer] = {}
         try:
-            for customer in self.repo.list_all(organization_id):
+            all_org_customers = self.db.query(BillingCustomer).filter(
+                BillingCustomer.organization_id == organization_id,
+            ).all()
+            for customer in all_org_customers:
                 if customer and customer.customer_code:
                     by_code[customer.customer_code.lower()] = customer
                 if customer and customer.email:
@@ -841,15 +874,49 @@ class CustomerImportService:
             mapped["status"] = "active"
             mapped["is_active"] = True
 
+        # --- Country (billing/shipping) ---
+        from app.modules.auth.country_currency import resolve_country_code
+        from app.modules.billing.utils.country_tax_profiles import get_country_tax_profile
+
+        billing_country_code = None
+        for country_field, display_name in (("billing_country", "Billing Country"), ("shipping_country", "Shipping Country")):
+            raw_country = (mapped.get(country_field) or "").strip()
+            if not raw_country:
+                continue
+            resolved = resolve_country_code(raw_country)
+            if not resolved:
+                errors.append(f"{display_name} '{raw_country}' is not recognized. Use a valid name or 2-letter ISO code.")
+            else:
+                mapped[country_field] = resolved
+                if country_field == "billing_country":
+                    billing_country_code = resolved
+
         # --- Currency ---
         currency = (mapped.get("currency") or "").upper().strip()
+        tax_profile = get_country_tax_profile(billing_country_code) if billing_country_code else None
+
         if currency:
             if currency not in VALID_CURRENCIES:
                 errors.append(f"Invalid currency '{currency}'. Use 3-letter ISO codes like USD, EUR, INR.")
             else:
                 mapped["currency"] = currency
         else:
-            mapped["currency"] = org_currency
+            if tax_profile:
+                mapped["currency"] = tax_profile.currency
+                warnings.append(f"Currency not specified — defaulted to country currency '{tax_profile.currency}' based on Billing Country.")
+            else:
+                mapped["currency"] = org_currency
+                warnings.append(f"Currency not specified — defaulted to organization currency '{org_currency}'")
+
+        # --- Tax Configuration ---
+        if tax_profile:
+            if not mapped.get("tax_id_type"):
+                mapped["tax_id_type"] = tax_profile.tax_id_label
+            # Auto-map generic tax fields to country-specific fields if available
+            if tax_profile.tax_system == "GST" and mapped.get("tax_id") and not mapped.get("gst_number"):
+                mapped["gst_number"] = mapped["tax_id"]
+            if tax_profile.tax_system == "VAT" and mapped.get("tax_id") and not mapped.get("vat_number"):
+                mapped["vat_number"] = mapped["tax_id"]
 
         # --- Payment terms ---
         terms = (mapped.get("payment_terms") or "").lower().strip()
@@ -862,6 +929,7 @@ class CustomerImportService:
                 mapped["payment_terms"] = terms
         else:
             mapped["payment_terms"] = "net_30"
+            warnings.append("Payment terms not specified — defaulted to 'net_30'")
 
         # --- Numeric fields ---
         for field_name, display_name, check in [

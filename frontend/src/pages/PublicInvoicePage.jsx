@@ -5,7 +5,7 @@ import { formatDisplayCurrency, formatDisplayDate } from "../utils/billing-helpe
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 function fmtCcy(v, currency) {
-  return formatDisplayCurrency(v, "—", currency || "USD");
+  return formatDisplayCurrency(v, "—", currency);
 }
 function fmtDate(d) {
   return formatDisplayDate(d);
@@ -162,7 +162,7 @@ export default function PublicInvoicePage() {
     return isNaN(n) ? 0 : n;
   };
   const customer = invoice?.customer || {};
-  const currency     = invoice?.currency || "USD";
+  const currency     = invoice?.currency;
   const status       = (invoice?.status || "").toLowerCase();
   const isPaid       = status === "paid";
   const isCancelled  = ["cancelled", "void"].includes(status);

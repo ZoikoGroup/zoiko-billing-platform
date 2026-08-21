@@ -214,7 +214,7 @@ export default function SubscriptionListPage() {
   }).length;
   const kpiMrr        = summary?.mrr   != null ? parseFloat(summary.mrr)  : 0;
   const kpiArr        = summary?.arr   != null ? parseFloat(summary.arr)  : 0;
-  const reportingCurrency = summary?.reporting_currency || orgCurrency || "USD";
+  const reportingCurrency = summary?.reporting_currency || orgCurrency;
 
   // Next billing estimate: page-derived only (not in summary)
   const nextBillingAmount = subscriptions

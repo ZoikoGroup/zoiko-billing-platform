@@ -128,7 +128,7 @@ export default function WriteOffsPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
 
   useEffect(() => { fetchWriteOffs(); }, [fetchWriteOffs]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

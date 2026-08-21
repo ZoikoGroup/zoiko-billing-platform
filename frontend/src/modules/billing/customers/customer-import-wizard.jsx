@@ -621,6 +621,16 @@ export default function CustomerImportWizard({ onClose, onImported }) {
           ))}
         </div>
 
+        {/* Skipped detail */}
+        {summary.skipped_details?.length > 0 && (
+          <div className="w-full max-h-36 overflow-auto bg-slate-50 border border-slate-200 rounded-xl p-3 text-left">
+            <p className="text-xs font-semibold text-slate-600 mb-2">Skipped Rows:</p>
+            {summary.skipped_details.map((sd, i) => (
+              <p key={i} className="text-xs text-slate-500 mb-0.5">Row {sd.row}: {sd.reason}</p>
+            ))}
+          </div>
+        )}
+
         {/* Failed detail */}
         {summary.failed_details?.length > 0 && (
           <div className="w-full max-h-36 overflow-auto bg-red-50 border border-red-200 rounded-xl p-3 text-left">

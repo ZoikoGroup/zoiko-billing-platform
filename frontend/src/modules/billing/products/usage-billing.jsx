@@ -74,7 +74,7 @@ export default function UsageBillingPage() {
   const [testQty, setTestQty] = useState("1");
   const [testEvent, setTestEvent] = useState(null);
   const [createForm, setCreateForm] = useState({
-    name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency || "USD",
+    name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency,
     is_subscribable: false, description: "",
   });
   const [formLoading, setFormLoading] = useState(false);
@@ -150,7 +150,7 @@ export default function UsageBillingPage() {
         is_active: true,
       });
       setShowCreate(false);
-      setCreateForm({ name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency || "USD", is_subscribable: false, description: "" });
+      setCreateForm({ name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency, is_subscribable: false, description: "" });
       await fetchData();
       setSuccessMessage("Meter created successfully");
       setTimeout(() => setSuccessMessage(null), 4000);

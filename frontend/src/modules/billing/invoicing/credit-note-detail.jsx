@@ -33,7 +33,7 @@ async function buildCreditNotePdf(cn, orgSettings = {}) {
   const pdfFonts = pdfFontsModule.default;
   pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
-  const currency = cn.currency || "USD";
+  const currency = cn.currency;
   const fmt = (v) => {
     if (v == null || v === "") return "—";
     const num = Number(v);
@@ -250,7 +250,7 @@ export default function CreditNoteDetailPage() {
     );
   }
 
-  const currency = cn.currency || "USD";
+  const currency = cn.currency;
   const isDraft = cn.status === "draft";
   const isApproved = cn.status === "approved";
   const canApply = cn.status === "issued" || cn.status === "partially_applied";

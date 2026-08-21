@@ -30,6 +30,7 @@ from app.modules.billing.repositories.invoice import InvoiceCommunicationReposit
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 from app.modules.billing.services.customer_service import CustomerService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.services.email_service import send_dunning_reminder_email
 
 logger = logging.getLogger("zoiko_billing")
@@ -65,6 +66,14 @@ class DunningService:
         row exists yet (auto_dunning off, wait days 3/30, level-based
         fees, no penalty/interest), so None is safe everywhere it's used."""
         return self.config_repo.get_by_organization(organization_id)
+
+    def _org_currency(self, organization_id: int) -> str:
+        """The org's real configured currency -- used only as a display
+        fallback when an invoice's own `currency` is unexpectedly missing.
+        Never a hardcoded "USD" literal: for an INR/EUR/AED organization
+        that would silently mislabel the reminder email with the wrong
+        currency."""
+        return BillingConfigurationService(self.db).get_default_currency(organization_id)
 
     def _record_status_history(
         self, organization_id: int, case_id: int, from_status: Optional[str], to_status: str,
@@ -341,7 +350,7 @@ class DunningService:
                                 invoice_number=inv.invoice_number,
                                 days_overdue=str(days_overdue),
                                 overdue_amount=str(inv.balance_due or 0),
-                                currency=inv.currency or "USD",
+                                currency=inv.currency or self._org_currency(organization_id),
                                 late_fee=str(fee["total_fee"]),
                                 organization_id=organization_id,
                                 db=self.db,
@@ -423,7 +432,7 @@ class DunningService:
                         invoice_number=inv.invoice_number,
                         days_overdue="0",
                         overdue_amount=str(inv.balance_due or 0),
-                        currency=inv.currency or "USD",
+                        currency=inv.currency or self._org_currency(organization_id),
                         late_fee="0",
                         organization_id=organization_id,
                         db=self.db,
@@ -483,7 +492,7 @@ class DunningService:
                     invoice_number=invoice.invoice_number,
                     days_overdue=str(case.days_overdue or 0),
                     overdue_amount=str(invoice.balance_due or 0),
-                    currency=invoice.currency or "USD",
+                    currency=invoice.currency or self._org_currency(organization_id),
                     late_fee=str(fee["total_fee"]),
                     organization_id=organization_id,
                     db=self.db,
@@ -532,7 +541,7 @@ class DunningService:
             "action_type": level.action_type.value if level and level.action_type else None,
             "days_overdue": case.days_overdue or 0,
             "overdue_amount": float(invoice.balance_due or 0),
-            "currency": invoice.currency or "USD",
+            "currency": invoice.currency or self._org_currency(organization_id),
             "late_fee": float(fee["total_fee"]),
             "subject": f"Payment Reminder — Invoice {invoice.invoice_number} | Zoiko Billing",
             "channels": {

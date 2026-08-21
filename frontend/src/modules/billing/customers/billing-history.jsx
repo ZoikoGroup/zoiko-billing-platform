@@ -133,7 +133,7 @@ export default function BillingHistoryPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd, loading]);
+  }, [activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd]);
 
   useEffect(() => {
     fetchData();

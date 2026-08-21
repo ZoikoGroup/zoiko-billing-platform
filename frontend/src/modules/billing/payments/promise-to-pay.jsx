@@ -106,7 +106,7 @@ export default function PromiseToPayPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, loading]);
+  }, [safePage, debouncedSearch, statusFilter]);
 
   useEffect(() => { fetchPromises(); }, [fetchPromises]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

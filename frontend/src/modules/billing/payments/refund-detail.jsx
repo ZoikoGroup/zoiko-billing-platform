@@ -39,7 +39,7 @@ async function buildRefundPdf(refund, orgSettings = {}) {
   const pdfFonts = pdfFontsModule.default;
   pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
-  const currency = refund.currency || "USD";
+  const currency = refund.currency;
   const fmt = (v) => {
     if (v == null || v === "") return "—";
     const num = Number(v);
@@ -210,7 +210,7 @@ export default function RefundDetailPage() {
     );
   }
 
-  const currency = refund.currency || "USD";
+  const currency = refund.currency;
   const isDraft = refund.status === "draft";
   const isPendingApproval = refund.status === "pending_approval";
   const isApproved = refund.status === "approved";

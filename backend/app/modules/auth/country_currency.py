@@ -160,6 +160,15 @@ def _resolve_country_code(country: Optional[str]) -> Optional[str]:
     return None
 
 
+def resolve_country_code(country: Optional[str]) -> Optional[str]:
+    """Public entry point for _resolve_country_code -- the tax-terminology
+    system (billing/utils/country_tax_profiles.py) reuses this exact
+    resolver so a registration country string ("India" or "IN") maps to
+    the same ISO alpha-2 code everywhere, instead of a second, possibly
+    diverging implementation."""
+    return _resolve_country_code(country)
+
+
 def get_default_timezone_for_country(country: Optional[str]) -> Optional[str]:
     code = _resolve_country_code(country)
     return _COUNTRY_TIMEZONE_TABLE.get(code) if code else None
