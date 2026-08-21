@@ -153,7 +153,7 @@ export default function ContractSettingsPage() {
         <SettingsField label="Contract Numbering Format" icon={Hash} description="Contract number format. Use {PREFIX} and {NUMBER} as placeholders">
           <input type="text" value={form.contract_number_format} onChange={(e) => updateField("contract_number_format", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-          <p className="mt-1 text-xs text-slate-400">Preview: {numberingPreview}</p>
+          <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
         </SettingsField>
 
         <SettingsField label="Auto-Generate Contract Numbers" icon={ToggleLeft} description="Automatically generate contract numbers using the configured prefix/format">
@@ -229,7 +229,7 @@ export default function ContractSettingsPage() {
           <input type="url" value={form.contract_logo_url} onChange={(e) => updateField("contract_logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-          {form.contract_logo_url && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{form.contract_logo_url}</p>}
+          {form.contract_logo_url && <p className="mt-1 text-xs text-slate-500 truncate max-w-xs">{form.contract_logo_url}</p>}
         </SettingsField>
       </div>
     </HRPage>

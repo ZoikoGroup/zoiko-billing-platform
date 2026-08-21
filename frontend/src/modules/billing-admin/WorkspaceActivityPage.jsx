@@ -165,7 +165,7 @@ export default function WorkspaceActivityPage() {
       />
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
-        <Filter className="w-4 h-4 text-slate-400" />
+        <Filter className="w-4 h-4 text-slate-500" />
         {filters.map((f) => (
           <button
             key={f}
@@ -196,9 +196,9 @@ export default function WorkspaceActivityPage() {
             {grouped.map((group, gi) => (
               <div key={gi}>
                 <div className="flex items-center gap-3 mb-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">{group.label}</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap">{group.label}</h3>
                   <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-[11px] text-slate-400">{group.items.length}</span>
+                  <span className="text-[11px] text-slate-500">{group.items.length}</span>
                 </div>
                 <div className="space-y-4">
                   {group.items.map((item) => {
@@ -215,7 +215,7 @@ export default function WorkspaceActivityPage() {
                             <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{item.entityType}</span>
                           </div>
                           {item.description && <p className="text-[12px] mt-0.5 truncate text-slate-500">{item.description}</p>}
-                          <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
                             <span>{item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}</span>
                             {item.entityId && <span className="font-mono">#{item.entityId}</span>}
                             {item.amount != null && <span className="font-semibold text-slate-600">{formatOrgMoney(item.amount, config)}</span>}

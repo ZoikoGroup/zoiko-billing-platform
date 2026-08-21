@@ -652,6 +652,22 @@ class InvoiceService:
     # ── Status Transitions ─────────────────────────────────────────────────
 
     def finalize_invoice(self, invoice_id: int, organization_id: int, updated_by: int) -> Invoice:
+        # ZB-SA-CMD-003 §18 — real, server-enforced circuit breaker (not a
+        # UI-only switch): a Super Admin can pause new invoice finalization
+        # platform-wide via BillingKillSwitchService. Converted to a plain
+        # BadRequestException (400) here rather than letting the raw
+        # BillingBlockedError propagate to the generic 500 handler.
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_INVOICE_FINALIZATION,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_INVOICE_FINALIZATION)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
+
         inv = self.repo.get_by_id(invoice_id, organization_id)
         self._validate_status_transition(inv.status, InvoiceStatus.SENT)
         old_status = inv.status.value
@@ -682,6 +698,20 @@ class InvoiceService:
         return are treated as delivery failure here.
         """
         from app.services.email_service import send_invoice_email
+
+        # ZB-SA-CMD-003 §9.2 — "Pause customer billing communications":
+        # stops outbound customer billing emails while preserving generated
+        # artifacts (the invoice itself is untouched).
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_BILLING_COMMUNICATIONS,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_BILLING_COMMUNICATIONS)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
 
         inv = self.repo.get_by_id(invoice_id, organization_id)
 

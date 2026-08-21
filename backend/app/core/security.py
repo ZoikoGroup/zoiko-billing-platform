@@ -49,26 +49,12 @@ def create_refresh_token(data: dict) -> str:
     return _encode(data, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 
-def create_mfa_pending_token(data: dict, mfa_purpose: str) -> str:
-    """Short-lived, narrowly-scoped token issued after password verification
-    but BEFORE MFA is satisfied. `mfa_purpose` is either "enroll" or
-    "challenge" — decode_mfa_pending_token enforces the caller asked for the
-    matching purpose, so an enrollment-pending token can never be replayed
-    against the challenge endpoint (or vice versa). This token alone grants
-    NO access to any privileged endpoint — get_current_user/
-    get_current_super_admin only ever accept type="access" tokens."""
-    payload = dict(data)
-    payload["mfa_purpose"] = mfa_purpose
-    return _encode(payload, timedelta(minutes=settings.MFA_PENDING_TOKEN_EXPIRE_MINUTES), "mfa_pending")
-
-
-def decode_mfa_pending_token(token: str, expected_purpose: str) -> Optional[dict]:
-    payload = _decode(token, expected_type="mfa_pending")
-    if payload is None:
-        return None
-    if payload.get("mfa_purpose") != expected_purpose:
-        return None
-    return payload
+# NOTE (ZB-SA-CMD-003 v3.0): the former create_mfa_pending_token /
+# decode_mfa_pending_token pair was removed together with the login-time MFA
+# gate. Login now issues real tokens for every role on a valid password; MFA
+# exists only as a step-up factor verified server-side at the moment of a
+# privileged action (mfa_service.verify_step_up). There is deliberately no
+# half-authenticated token type left in the system.
 
 
 def decode_access_token(token: str) -> Optional[dict]:

@@ -23,7 +23,7 @@ const OVERALL_VERDICT_STYLES = {
   READY: {
     icon: ShieldCheck,
     wrapper: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    iconWrapper: "bg-emerald-100 text-emerald-600",
+    iconWrapper: "bg-emerald-100 text-emerald-700",
     label: "READY",
   },
 };
@@ -106,7 +106,7 @@ export default function ProductionAcceptancePage() {
               {ACCEPTANCE_STATUS_OPTIONS.map((opt) => (
                 <div key={opt.value} className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                   <p className="text-2xl font-extrabold text-slate-800">{summary[opt.value] ?? 0}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{opt.label}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-600">{opt.label}</p>
                 </div>
               ))}
             </div>

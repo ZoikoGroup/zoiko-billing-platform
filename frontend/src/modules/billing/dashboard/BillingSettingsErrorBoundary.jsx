@@ -62,7 +62,7 @@ export default class BillingSettingsErrorBoundary extends React.Component {
               </button>
             </div>
             <details className="mt-6 text-left max-w-lg mx-auto">
-              <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 rounded">View Error Details</summary>
+              <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 rounded">View Error Details</summary>
               <pre className="mt-2 p-3 bg-red-50 rounded-xl text-xs text-red-700 overflow-auto max-h-40">
                 {errorMsg}
                 {this.state.error?.stack ? `\n\n${this.state.error.stack}` : ""}

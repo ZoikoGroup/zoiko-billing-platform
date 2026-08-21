@@ -629,7 +629,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><User size={20} className="text-brand-500" /> Select {singular}</h3>
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input
           type="text"
           placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`}
@@ -668,7 +668,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
       <div className="mt-8 pt-6 border-t border-slate-100">
         <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><FileText size={20} className="text-brand-500" /> Accepted Quotation (Optional)</h3>
         <div className="relative mt-3">
-          <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             placeholder="Search accepted quotations..."
@@ -850,7 +850,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
-                      {item.product_id && <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Product</span>}
+                      {item.product_id && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Product</span>}
                       {item.price_source && <span className="text-xs text-brand-500 bg-brand-50 px-2 py-0.5 rounded">{item.price_source === "pricing_plan" ? "Plan" : "Catalog"}</span>}
                     </div>
                     {item.needs_plan_selection && item.available_plans && (
@@ -951,7 +951,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
                       <span className="font-medium text-slate-800">Total: {formatDisplayCurrency(t.total, form.currency)}</span>
                     </div>
                   </div>
-                  <button onClick={() => removeLineItem(item.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove" aria-label="Remove line item"><Trash2 size={18} /></button>
+                  <button onClick={() => removeLineItem(item.id)} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove" aria-label="Remove line item"><Trash2 size={18} /></button>
                 </div>
               </div>
             );
@@ -1033,7 +1033,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <p className="text-sm text-slate-600">Invoices will be generated on day <strong>{form.billing_day}</strong> of each <strong>{form.billing_period}</strong> period.</p>
           <p className="text-sm text-slate-600">First invoice: <strong>{formatDisplayDate(form.start_date)}</strong></p>
           {form.end_date && <p className="text-sm text-slate-600">Last invoice period ends: <strong>{formatDisplayDate(form.end_date)}</strong></p>}
-          {form.auto_renew && <p className="text-sm text-slate-600 text-emerald-600">✓ Auto-renewal enabled (every {form.renewal_term_days || "Not set"} days)</p>}
+          {form.auto_renew && <p className="text-sm text-slate-600 text-emerald-700">✓ Auto-renewal enabled (every {form.renewal_term_days || "Not set"} days)</p>}
         </div>
       </div>
     </div>
@@ -1051,7 +1051,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
             </div>
             <div className="text-right">
               <p className="text-sm text-slate-500">Status: Draft</p>
-              <p className="text-xs text-slate-400 mt-1">Valid: {formatDisplayDate(form.start_date)} — {formatDisplayDate(form.end_date) || "Ongoing"}</p>
+              <p className="text-xs text-slate-500 mt-1">Valid: {formatDisplayDate(form.start_date)} — {formatDisplayDate(form.end_date) || "Ongoing"}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -1184,7 +1184,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
                 <button
                   onClick={() => idx + 1 < step && setStep(idx + 1)}
                   disabled={idx + 1 > step}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${idx + 1 === step ? "bg-brand-600 text-white ring-2 ring-brand-200" : idx + 1 < step ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${idx + 1 === step ? "bg-brand-600 text-white ring-2 ring-brand-200" : idx + 1 < step ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500 cursor-not-allowed"}`}
                   aria-current={idx + 1 === step ? "step" : undefined}
                   title={s.description}
                 >

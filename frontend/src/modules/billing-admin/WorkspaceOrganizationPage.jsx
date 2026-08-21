@@ -10,7 +10,7 @@ import { Building2, Mail, MapPin, Landmark, CalendarDays, Coins, FileText, Shiel
 function Field({ label, value }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">{label}</p>
       <p className="text-sm font-medium text-slate-700">{value || "—"}</p>
     </div>
   );
@@ -35,7 +35,7 @@ function StatTile({ label, value, sub }) {
     <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 text-center">
       <p className="text-2xl font-bold text-slate-800">{value}</p>
       <p className="text-[11px] font-medium text-slate-500 mt-1">{label}</p>
-      {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
 }

@@ -250,19 +250,19 @@ export default function ForecastReport() {
           <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Forecasted 6-Month Revenue</p>
             <p className="text-xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(forecast.totalForecastRevenue, baseCurrency)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Next 6 months</p>
+            <p className="text-xs text-slate-500 mt-0.5">Next 6 months</p>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Growth Trend</p>
-            <p className={`text-xl font-bold mt-1 ${forecast.avgGrowth >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            <p className={`text-xl font-bold mt-1 ${forecast.avgGrowth >= 0 ? "text-emerald-700" : "text-red-500"}`}>
               {forecast.avgGrowth >= 0 ? "+" : ""}{forecast.avgGrowth.toFixed(1)}%
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">12-month MRR change</p>
+            <p className="text-xs text-slate-500 mt-0.5">12-month MRR change</p>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Expected MRR (6 months)</p>
             <p className="text-xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(forecast.projectedMRR, baseCurrency)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Monthly recurring revenue</p>
+            <p className="text-xs text-slate-500 mt-0.5">Monthly recurring revenue</p>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Confidence</p>

@@ -139,17 +139,17 @@ export default function CustomerProfitabilityReport() {
               <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Most Profitable</p>
                 <p className="text-xl font-bold text-slate-900 mt-1 truncate" title={kpis.mostProfitable?.name}>{kpis.mostProfitable?.name || "—"}</p>
-                <p className="text-xs text-emerald-600 font-semibold mt-0.5">{formatCurrency(kpis.mostProfitable?.profit || 0, baseCurrency)}</p>
+                <p className="text-xs text-emerald-700 font-semibold mt-0.5">{formatCurrency(kpis.mostProfitable?.profit || 0, baseCurrency)}</p>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Average Margin</p>
                 <p className="text-xl font-bold text-slate-900 mt-1">{kpis.avgMargin.toFixed(1)}%</p>
-                <p className="text-xs text-slate-400 mt-0.5">Across {profitabilityData.length} customers</p>
+                <p className="text-xs text-slate-500 mt-0.5">Across {profitabilityData.length} customers</p>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
                 <p className="text-xl font-bold text-slate-900 mt-1 truncate" title={formatCurrency(kpis.totalRevenue, baseCurrency)}>{formatCurrency(kpis.totalRevenue, baseCurrency)}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{filteredInvoices.length} invoices</p>
+                <p className="text-xs text-slate-500 mt-0.5">{filteredInvoices.length} invoices</p>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Least Profitable</p>

@@ -931,7 +931,7 @@ export default function CustomerProfilePage() {
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
-          <p className="text-xl font-bold text-emerald-600 mt-1 truncate" title={formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}</p>
+          <p className="text-xl font-bold text-emerald-700 mt-1 truncate" title={formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(customer?.total_revenue || 0, baseCurrency)}</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Limit</p>
@@ -1042,7 +1042,7 @@ export default function CustomerProfilePage() {
                       <div className="mb-3">
                         <div className="flex justify-between text-xs mb-1">
                           <span className="text-slate-500">Credit Utilization</span>
-                          <span className={`font-medium ${((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 80 ? 'text-red-600' : ((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          <span className={`font-medium ${((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 80 ? 'text-red-600' : ((customer.outstanding_balance || 0) / customer.credit_limit * 100) >= 50 ? 'text-amber-600' : 'text-emerald-700'}`}>
                             {((customer.outstanding_balance || 0) / customer.credit_limit * 100).toFixed(0)}%
                           </span>
                         </div>
@@ -1105,7 +1105,7 @@ export default function CustomerProfilePage() {
               ) : activityError ? (
                 <p className="text-xs text-red-500 text-center py-6 flex items-center justify-center gap-1.5"><AlertCircle size={13} /> {activityError}</p>
               ) : activity.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-6">No recent activity</p>
+                <p className="text-xs text-slate-500 text-center py-6">No recent activity</p>
               ) : (
                 <div className="space-y-3">
                   {activity.slice(0, 10).map((entry) => {
@@ -1119,10 +1119,10 @@ export default function CustomerProfilePage() {
                       payment: <DollarSign className="h-3 w-3" />,
                     };
                     const actionColors = {
-                      create: 'bg-emerald-100 text-emerald-600',
+                      create: 'bg-emerald-100 text-emerald-700',
                       update: 'bg-blue-100 text-blue-600',
                       delete: 'bg-red-100 text-red-600',
-                      activate: 'bg-emerald-100 text-emerald-600',
+                      activate: 'bg-emerald-100 text-emerald-700',
                       deactivate: 'bg-slate-100 text-slate-600',
                       send: 'bg-brand-100 text-brand-600',
                       payment: 'bg-amber-100 text-amber-600',
@@ -1138,10 +1138,10 @@ export default function CustomerProfilePage() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-700">
                             {entry.action ? entry.action.charAt(0).toUpperCase() + entry.action.slice(1) : 'Activity'}
-                            {entry.entity_type && <span className="text-slate-400 font-normal"> · {entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''}</span>}
+                            {entry.entity_type && <span className="text-slate-500 font-normal"> · {entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''}</span>}
                           </p>
-                          {entry.changes ? <p className="text-slate-400 mt-0.5 truncate">{typeof entry.changes === "string" ? entry.changes : JSON.stringify(entry.changes)}</p> : entry.details ? <p className="text-slate-400 mt-0.5 truncate">{entry.details}</p> : null}
-                          <p className="text-slate-400 mt-0.5">{formatDisplayDate(entry.timestamp || entry.created_at)}</p>
+                          {entry.changes ? <p className="text-slate-500 mt-0.5 truncate">{typeof entry.changes === "string" ? entry.changes : JSON.stringify(entry.changes)}</p> : entry.details ? <p className="text-slate-500 mt-0.5 truncate">{entry.details}</p> : null}
+                          <p className="text-slate-500 mt-0.5">{formatDisplayDate(entry.timestamp || entry.created_at)}</p>
                         </div>
                       </div>
                     );
@@ -1166,7 +1166,7 @@ export default function CustomerProfilePage() {
                   <p className="text-lg font-bold text-brand-700 mt-1 truncate" title={formatDisplayCurrency(analytics?.total_revenue || customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(analytics?.total_revenue || customer?.lifetime_value || customer?.total_revenue || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-4">
-                  <p className="text-[10px] font-medium text-emerald-600 uppercase">Total Paid</p>
+                  <p className="text-[10px] font-medium text-emerald-700 uppercase">Total Paid</p>
                   <p className="text-lg font-bold text-emerald-700 mt-1 truncate" title={formatDisplayCurrency(analytics?.total_paid || 0, baseCurrency)}>{formatDisplayCurrency(analytics?.total_paid || 0, baseCurrency)}</p>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-4">
@@ -1442,7 +1442,7 @@ export default function CustomerProfilePage() {
                   />
                 ))}
                 {editing && !editForm.billing_country && (
-                  <p className="lg:col-span-3 text-xs text-slate-400">Set a billing country in Addresses above to show its relevant tax identifier(s).</p>
+                  <p className="lg:col-span-3 text-xs text-slate-500">Set a billing country in Addresses above to show its relevant tax identifier(s).</p>
                 )}
                 <InlineEditField label="Tax ID Type" value={editing ? editForm.tax_id_type : (customer?.tax_id_type || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, tax_id_type: v })} />
                 <InlineEditField label="Tax Category" value={editing ? editForm.tax_category : (customer?.tax_category || '—')} editing={editing} onChange={(v) => setEditForm({ ...editForm, tax_category: v })} />
@@ -1486,7 +1486,7 @@ export default function CustomerProfilePage() {
                 <div className="flex flex-wrap gap-2">
                   {Array.isArray(customer?.tags) && customer.tags.length > 0
                     ? customer.tags.map((tag, i) => <TagBadge key={i} tag={tag} />)
-                    : <span className="text-sm text-slate-400">No tags</span>}
+                    : <span className="text-sm text-slate-500">No tags</span>}
                 </div>
               )}
             </div>
@@ -1538,10 +1538,10 @@ export default function CustomerProfilePage() {
             <h3 className="text-lg font-semibold text-slate-900">Contacts ({contacts.length})</h3>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <input value={contactSearch} onChange={(e) => setContactSearch(e.target.value)}
                   placeholder="Search contacts..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
-                {contactSearch && <button onClick={() => setContactSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
+                {contactSearch && <button onClick={() => setContactSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
               <button onClick={() => { setShowContactForm(true); setEditingContactId(null); setContactForm({ first_name: '', last_name: '', email: '', phone: '', job_title: '', department: '', is_primary: false }); }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
@@ -1638,7 +1638,7 @@ export default function CustomerProfilePage() {
             return (
             <>
               {contactSearch && (
-                <p className="text-xs text-slate-400 mb-2">
+                <p className="text-xs text-slate-500 mb-2">
                   Showing {filteredContacts.length} of {contacts.length} contacts
                 </p>
               )}
@@ -1660,16 +1660,16 @@ export default function CustomerProfilePage() {
                   <div className="flex items-center gap-1">
                     {!contact.is_primary && (
                       <button onClick={() => handleSetPrimaryContact(contact.id)} title="Set primary" aria-label="Set as primary contact"
-                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
+                        className="p-1.5 text-slate-500 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
                         <Star className="h-4 w-4" />
                       </button>
                     )}
                     <button onClick={() => { setEditingContactId(contact.id); setContactForm({ first_name: contact.first_name || '', last_name: contact.last_name || '', email: contact.email, phone: contact.phone || '', job_title: contact.job_title || '', department: contact.department || '', is_primary: contact.is_primary || false }); setShowContactForm(true); }}
-                      className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit contact">
+                      className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit contact">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button onClick={() => openConfirm('Remove Contact', 'Are you sure you want to remove this contact? This action cannot be undone.', () => handleRemoveContact(contact.id))}
-                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete contact">
+                      className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete contact">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1775,16 +1775,16 @@ export default function CustomerProfilePage() {
                   <div className="flex items-center gap-1">
                     {!pm.is_default && (
                       <button onClick={() => handleSetDefaultPm(pm.id)} title="Set default" aria-label="Set as default payment method"
-                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
+                        className="p-1.5 text-slate-500 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
                         <Star className="h-4 w-4" />
                       </button>
                     )}
                     <button onClick={() => { setEditingPmId(pm.id); setPmForm({ type: pm.type, last_four: pm.last_four || pm.lastFour || '', expiry_date: pm.expiry_date || '', cardholder_name: pm.cardholder_name || '', is_default: pm.is_default }); setShowPmForm(true); }}
-                      className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit payment method">
+                      className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit payment method">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button onClick={() => openConfirm('Remove Payment Method', 'Are you sure you want to remove this payment method?', () => handleRemovePm(pm.id))}
-                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete payment method">
+                      className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete payment method">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1818,14 +1818,14 @@ export default function CustomerProfilePage() {
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Outstanding</p><p className="text-sm font-bold text-amber-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)}</p></div>
-                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={formatDisplayCurrency(totalPaid, baseCurrency)}>{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Paid</p><p className="text-sm font-bold text-emerald-700 mt-0.5 truncate" title={formatDisplayCurrency(totalPaid, baseCurrency)}>{formatDisplayCurrency(totalPaid, baseCurrency)}</p></div>
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Overdue</p><p className="text-sm font-bold text-red-600 mt-0.5 truncate" title={formatDisplayCurrency(totalOverdue, baseCurrency)}>{formatDisplayCurrency(totalOverdue, baseCurrency)}</p></div>
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Draft</p><p className="text-sm font-bold text-slate-600 mt-0.5 truncate" title={formatDisplayCurrency(totalDraft, baseCurrency)}>{formatDisplayCurrency(totalDraft, baseCurrency)}</p></div>
-                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Cancelled</p><p className="text-sm font-bold text-slate-400 mt-0.5 truncate" title={formatDisplayCurrency(totalCancelled, baseCurrency)}>{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Cancelled</p><p className="text-sm font-bold text-slate-500 mt-0.5 truncate" title={formatDisplayCurrency(totalCancelled, baseCurrency)}>{formatDisplayCurrency(totalCancelled, baseCurrency)}</p></div>
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Avg Payment Days</p><p className="text-sm font-bold text-slate-800 mt-0.5 whitespace-nowrap">{avgPaymentDays !== '—' ? `${avgPaymentDays} days` : '—'}</p></div>
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Credit Limit</p><p className="text-sm font-bold text-slate-800 mt-0.5 truncate" title={formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}>{formatDisplayCurrency(customer?.credit_limit || 0, baseCurrency)}</p></div>
                   <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Credit Used</p><p className="text-sm font-bold text-slate-800 mt-0.5 whitespace-nowrap">{creditUsed !== '—' ? `${creditUsed}%` : '—'}</p></div>
-                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-600 mt-0.5 truncate" title={availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}>{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
+                  <div className="bg-slate-50 rounded-lg p-4"><p className="text-[10px] font-medium text-slate-500 uppercase">Available Credit</p><p className="text-sm font-bold text-emerald-700 mt-0.5 truncate" title={availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}>{availableCredit !== '—' ? formatDisplayCurrency(availableCredit, baseCurrency) : '—'}</p></div>
                 </div>
               );
             })()}
@@ -1834,7 +1834,7 @@ export default function CustomerProfilePage() {
           {/* Invoices */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Invoices <span className="text-sm font-normal text-slate-400">({invoices.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Invoices <span className="text-sm font-normal text-slate-500">({invoices.length})</span></h3>
             </div>
             {invoicesLoading ? (
               <Spinner />
@@ -1871,7 +1871,7 @@ export default function CustomerProfilePage() {
           {/* Payments */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Payments <span className="text-sm font-normal text-slate-400">({payments.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Payments <span className="text-sm font-normal text-slate-500">({payments.length})</span></h3>
             </div>
             {paymentsLoading ? (
               <Spinner />
@@ -1918,7 +1918,7 @@ export default function CustomerProfilePage() {
           {/* Credit Notes */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Credit Notes <span className="text-sm font-normal text-slate-400">({creditNotes.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Credit Notes <span className="text-sm font-normal text-slate-500">({creditNotes.length})</span></h3>
             </div>
             {creditNotesLoading ? (
               <Spinner />
@@ -1959,7 +1959,7 @@ export default function CustomerProfilePage() {
       {activeTab === 'contracts' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-slate-900">Contracts <span className="text-sm font-normal text-slate-400">({contracts.length})</span></h3>
+            <h3 className="text-lg font-semibold text-slate-900">Contracts <span className="text-sm font-normal text-slate-500">({contracts.length})</span></h3>
           </div>
           {contractsLoading ? (
             <Spinner />
@@ -1999,7 +1999,7 @@ export default function CustomerProfilePage() {
       {activeTab === 'subscriptions' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-slate-900">Subscriptions <span className="text-sm font-normal text-slate-400">({subscriptions.length})</span></h3>
+            <h3 className="text-lg font-semibold text-slate-900">Subscriptions <span className="text-sm font-normal text-slate-500">({subscriptions.length})</span></h3>
           </div>
           {subscriptionsLoading ? (
             <Spinner />
@@ -2092,7 +2092,7 @@ export default function CustomerProfilePage() {
                   const typeStyles = {
                     customer: 'bg-brand-100 text-brand-600',
                     invoice: 'bg-blue-100 text-blue-600',
-                    payment: 'bg-emerald-100 text-emerald-600',
+                    payment: 'bg-emerald-100 text-emerald-700',
                     quotation: 'bg-brand-100 text-brand-600',
                     credit_note: 'bg-amber-100 text-amber-600',
                     contract: 'bg-indigo-100 text-indigo-600',
@@ -2143,7 +2143,7 @@ export default function CustomerProfilePage() {
       {activeTab === 'quotations' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Quotations <span className="text-sm font-normal text-slate-400">({quotations.length})</span></h3>
+              <h3 className="text-lg font-semibold text-slate-900">Quotations <span className="text-sm font-normal text-slate-500">({quotations.length})</span></h3>
               <button onClick={() => navigate(`/billing/quotations?create=1&customer_id=${id}`)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
                 <Plus className="h-4 w-4" /> New Quotation
@@ -2198,10 +2198,10 @@ export default function CustomerProfilePage() {
             <h3 className="text-lg font-semibold text-slate-900">Documents ({documents.length})</h3>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
                   placeholder="Search documents..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
-                {docSearch && <button onClick={() => setDocSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
+                {docSearch && <button onClick={() => setDocSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
               <button onClick={() => { setShowDocForm(true); setDocForm({ file_name: '', file_path: '', file_size: null, mime_type: '', document_type: '', notes: '' }); }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
@@ -2276,7 +2276,7 @@ export default function CustomerProfilePage() {
             return (
             <>
               {docSearch && (
-                <p className="text-xs text-slate-400 mb-2">
+                <p className="text-xs text-slate-500 mb-2">
                   Showing {filteredDocuments.length} of {documents.length} documents
                 </p>
               )}
@@ -2295,12 +2295,12 @@ export default function CustomerProfilePage() {
                   <div className="flex items-center gap-1">
                     {doc.file_path && (
                       <a href={doc.file_path} target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
+                        className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Download className="h-4 w-4" />
                       </a>
                     )}
                     <button onClick={() => openConfirm('Delete Document', 'Are you sure you want to delete this document? This cannot be undone.', () => handleDeleteDoc(doc.id))}
-                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                      className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -2391,18 +2391,18 @@ export default function CustomerProfilePage() {
                         {note.is_internal && <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Internal</span>}
                       </div>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.content}</p>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-500 mt-2">
                         {note.created_at ? formatDisplayDate(note.created_at) : ''}
                         {note.created_by ? ` · by #${note.created_by}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => { setEditingNoteId(note.id); setNoteForm({ content: note.content, is_pinned: note.is_pinned || false, is_internal: note.is_internal || false }); setShowNoteForm(true); }}
-                        className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
+                        className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button onClick={() => openConfirm('Delete Note', 'Are you sure you want to delete this note?', () => handleDeleteNote(note.id))}
-                        className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                        className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>

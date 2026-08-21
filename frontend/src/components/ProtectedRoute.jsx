@@ -14,6 +14,16 @@ const ROLE_PATH_RULES = {
   billing_admin: (pathname) =>
     pathname === "/billing" ||
     pathname.startsWith("/billing/"),
+  // Finance Approver and Auditor are billing-plane roles with no organization
+  // or super-admin surface of their own — server-side dependencies
+  // (get_current_finance_approver / get_current_auditor_or_above) gate the
+  // specific mutations/reads each can perform within /billing/*.
+  finance_approver: (pathname) =>
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
+  auditor: (pathname) =>
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
 };
 
 export default function ProtectedRoute() {

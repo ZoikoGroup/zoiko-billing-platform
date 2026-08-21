@@ -25,7 +25,6 @@ from app.core.exceptions import (
 )
 from app.core.security import (
     create_access_token,
-    create_mfa_pending_token,
     create_refresh_token,
     hash_password,
     verify_password,
@@ -167,22 +166,17 @@ def login_user(db: Session, email: str, password: str) -> dict:
         "organization_id": user.organization_id,
     }
 
-    if user.role == UserRole.SUPER_ADMIN:
-        from app.modules.auth import mfa_service
-
-        purpose = "challenge" if mfa_service.is_mfa_enabled(db, user.id) else "enroll"
-        logger.info("Super Admin %s login pending MFA (%s)", user.email, purpose)
-        return {
-            "mfa_status": "challenge_required" if purpose == "challenge" else "enrollment_required",
-            "mfa_token": create_mfa_pending_token(token_payload, purpose),
-        }
-
+    # ZB-SA-CMD-003 v3.0 master directive: normal Super Admin login is a
+    # plain password check — NO login-time MFA challenge/enrollment gate.
+    # MFA is still enforced server-side at the moment of privileged access
+    # via mfa_service.verify_step_up() (grant activation, circuit-breaker
+    # toggles/proposals/decisions). There is deliberately no fallback that
+    # bypasses that step-up.
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
 
     logger.info("User %s (%s) logged in", user.email, user.role.value)
     return {
-        "mfa_status": "none",
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
@@ -357,6 +351,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     try:
         from datetime import datetime as _dt, timezone as _tz
         from app.services.email_service import (
+            notify_super_admins_org_created,
             send_org_created_email,
             send_product_welcome_email,
         )
@@ -379,6 +374,9 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
             organization_name=org.organization_name,
             organization_id=org.id,
         )
+        # Master directive (ZB-SA-CMD-003 v3.0): every successful organization
+        # creation notifies all active Super Admins via real email.
+        notify_super_admins_org_created(db=db, organization=org, actor_email=admin.email)
     except Exception as exc:
         logger.warning("[email] Org lifecycle emails failed for org %s: %s", org.organization_code, exc)
 

@@ -45,7 +45,7 @@ function FaqItem({ item, isOpen, onToggle }) {
         className="w-full flex items-center justify-between p-4 text-left bg-white hover:bg-slate-50 transition-colors cursor-pointer"
       >
         <span className="text-[13px] font-semibold text-slate-800">{item.q}</span>
-        {isOpen ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />}
+        {isOpen ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-500" />}
       </button>
       {isOpen && (
         <div className="px-4 pb-4">

@@ -43,6 +43,9 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import TopBar from "./TopBar";
+import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
+import TriageStrip from "./TriageStrip";
+import CommandPalette from "./CommandPalette";
 
 const NAV_SECTIONS = [
   {
@@ -189,6 +192,8 @@ const NAV_SECTIONS = [
       { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
       { label: "Users", href: "/super-admin/users", icon: UserCog },
       { label: "Settings", href: "/super-admin/settings", icon: Settings },
+      { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
+      { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
     ],
   },
   {
@@ -202,12 +207,23 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Reliability",
+    icon: Activity,
+    superAdminOnly: true,
+    children: [
+      { label: "Triage", href: "/super-admin/triage", icon: ClipboardList },
+      { label: "Reliability Overview", href: "/super-admin/reliability", icon: Activity },
+    ],
+  },
+  {
     label: "Governance",
     icon: ShieldCheck,
     superAdminOnly: true,
     children: [
+      { label: "Governance Overview", href: "/super-admin/governance", icon: ShieldCheck },
       { label: "Audit Logs", href: "/super-admin/audit-logs", icon: ScrollText },
       { label: "Approval Queue", href: "/super-admin/approval-queue", icon: CheckSquare },
+      { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: ClipboardCheck },
       { label: "Production Readiness", href: "/super-admin/production-readiness", icon: ClipboardCheck },
     ],
   },
@@ -224,6 +240,7 @@ const NAV_SECTIONS = [
 const TOP_NAV_ITEMS = [
   { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard, orgAdminOnly: true },
   { label: "My Organization", href: "/organization-admin/organization", icon: Building2, orgAdminOnly: true },
+  { label: "Privileged Access Log", href: "/organization-admin/privileged-access-log", icon: ShieldCheck, orgAdminOnly: true },
 ];
 
 const WORKSPACE_NAV_ITEMS = [
@@ -447,8 +464,18 @@ export default function BillingShell({ children }) {
       <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
       <div className="lg:pl-72">
-        <main className="w-full pt-[65px]">{children}</main>
+        <main className="w-full pt-[65px]">
+          {role === "super_admin" && (
+            <>
+              <PrivilegedSessionBanner />
+              <TriageStrip />
+            </>
+          )}
+          {children}
+        </main>
       </div>
+
+      {role === "super_admin" && <CommandPalette />}
     </div>
   );
 }

@@ -29,6 +29,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
+from app.core.db_types import CaseInsensitiveEnum
+
 from app.database import Base
 
 
@@ -43,6 +45,26 @@ class UserRole(str, enum.Enum):
     AUDITOR = "auditor"
 
 
+class PlatformRole(str, enum.Enum):
+    """ZB-SA-CMD-003 §26 — a second, ORTHOGONAL dimension applying only to
+    users with UserRole.SUPER_ADMIN. `role=super_admin` remains the floor
+    every Command Center endpoint checks first (unchanged); `platform_role`
+    narrows WHICH capabilities that specific super_admin account holds
+    within the Command Center surface — see app/core/capabilities.py.
+
+    NULL (unset) is treated as PLATFORM_ADMINISTRATOR (full access) for
+    backward compatibility — every super_admin account that existed before
+    this column was added keeps exactly the access it had before, with no
+    data migration required.
+    """
+    PLATFORM_ADMINISTRATOR = "platform_administrator"
+    SUPPORT_OPERATOR = "support_operator"
+    SECURITY_OPERATOR = "security_operator"
+    RELIABILITY_OPERATOR = "reliability_operator"
+    AUDITOR = "auditor"
+    FINANCE_READONLY = "finance_readonly"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -51,6 +73,12 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
 
     role = Column(Enum(UserRole), nullable=False, default=UserRole.BILLING_ADMIN)
+    # Only meaningful when role=SUPER_ADMIN (ZB-SA-CMD-003 §26 capability
+    # scaffolding — see PlatformRole docstring). CaseInsensitiveEnum
+    # (VARCHAR-backed), matching every other enum column added to this
+    # schema after initial table creation, so no native Postgres ENUM TYPE
+    # DDL is needed from the self-healing _add_missing_columns() path.
+    platform_role = Column(CaseInsensitiveEnum(PlatformRole), nullable=True)
     # NULL for super_admin; required for every org-scoped role.
     organization_id = Column(
         Integer,
@@ -135,6 +163,15 @@ class SuperAdminMFA(Base):
     # account regardless of source IP.
     failed_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+
+    # TOTP replay protection (session 5 security hardening): a bare
+    # window-based `pyotp.verify()` accepts the SAME code again for its
+    # whole validity window (~90s with valid_window=1) — a code observed
+    # once (shoulder-surfed, logged, intercepted) could otherwise be
+    # replayed to complete a second login or step-up within that window.
+    # Only the SHA-256 hash is stored, matching the recovery-code pattern.
+    last_used_code_hash = Column(String(64), nullable=True)
+    last_used_code_at = Column(DateTime, nullable=True)
 
     enrolled_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     enabled_at = Column(DateTime, nullable=True)

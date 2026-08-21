@@ -441,7 +441,7 @@ export default function PricingDashboardPage() {
                   <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                     <div>
                       <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.billing_period?.replace(/_/g, " ")}</p>
+                      <p className="text-xs text-slate-500">{p.billing_period?.replace(/_/g, " ")}</p>
                     </div>
                     <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">{formatDisplayCurrency(p.unit_price, p.currency)}</span>
                   </div>
@@ -461,7 +461,7 @@ export default function PricingDashboardPage() {
                   <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                     <div>
                       <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—"}</p>
+                      <p className="text-xs text-slate-500">{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—"}</p>
                     </div>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       p.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"

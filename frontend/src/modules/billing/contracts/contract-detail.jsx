@@ -78,7 +78,7 @@ function TimelineEvent({ icon: Icon, label, date, color }) {
       </div>
       <div>
         <p className="text-sm font-medium text-slate-800">{label}</p>
-        <p className="text-xs text-slate-400">{formatDisplayDate(date)}</p>
+        <p className="text-xs text-slate-500">{formatDisplayDate(date)}</p>
       </div>
     </div>
   );
@@ -336,7 +336,7 @@ export default function ContractDetailPage() {
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscriptions</h3>
           {subscriptions.length === 0 ? (
-            <div className="text-center py-4 text-slate-400">
+            <div className="text-center py-4 text-slate-500">
               <CreditCard size={24} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm">No subscriptions linked</p>
             </div>
@@ -404,10 +404,10 @@ export default function ContractDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <User size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">{singular} details not available</p>
-          <p className="text-xs text-slate-400 mt-1">{singular} #{contract.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">{singular} #{contract.customer_id}</p>
         </div>
       )}
     </div>
@@ -419,7 +419,7 @@ export default function ContractDetailPage() {
       <div className="bg-white rounded-3xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({products.length})</h3>
         {products.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Package size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No products linked to this contract</p>
           </div>
@@ -441,7 +441,7 @@ export default function ContractDetailPage() {
                 {products.map((item, i) => (
                   <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
                     className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                    <td className="py-3 px-4 text-slate-400">{item.line_number || i + 1}</td>
+                    <td className="py-3 px-4 text-slate-500">{item.line_number || i + 1}</td>
                     <td className="py-3 px-4">
                       <p className="font-medium text-slate-800">{item.description || "Item"}</p>
                       {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
@@ -524,7 +524,7 @@ export default function ContractDetailPage() {
       <div className="bg-white rounded-3xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Invoice Schedule</h3>
         {invoices.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No invoices generated yet</p>
           </div>
@@ -549,7 +549,7 @@ export default function ContractDetailPage() {
                     <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
                     <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.due_date)}</td>
                     <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
-                    <td className="py-3 px-4 text-right text-emerald-600">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
+                    <td className="py-3 px-4 text-right text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
                     <td className="py-3 px-4 text-right text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -605,13 +605,13 @@ export default function ContractDetailPage() {
             <FileText className="h-8 w-8 text-brand-500" />
             <div className="flex-1">
               <p className="font-medium text-slate-800">Contract Document</p>
-              <p className="text-xs text-slate-400">Uploaded: {formatDisplayDate(contract.updated_at)}</p>
+              <p className="text-xs text-slate-500">Uploaded: {formatDisplayDate(contract.updated_at)}</p>
             </div>
             <a href={contract.document_url} target="_blank" rel="noopener noreferrer" className="text-sm text-brand-600 hover:text-brand-700 font-medium">View</a>
           </div>
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <File size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No documents uploaded</p>
         </div>
@@ -634,7 +634,7 @@ export default function ContractDetailPage() {
         </div>
       )}
       {!contract.notes && !contract.terms && (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes or terms</p>
         </div>
@@ -646,7 +646,7 @@ export default function ContractDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
       {auditLogs.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Activity size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No activity recorded</p>
         </div>
@@ -666,7 +666,7 @@ export default function ContractDetailPage() {
                 <p className="text-sm font-medium text-slate-800 capitalize">{log.action || log.event_type || "Activity"}</p>
                 <p className="text-xs text-slate-500">{log.details || log.description || log.message || "—"}</p>
               </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</span>
+              <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</span>
             </div>
           ))}
         </div>
@@ -686,7 +686,7 @@ export default function ContractDetailPage() {
         </button>
       </div>
       {amendments.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No amendments recorded</p>
         </div>
@@ -748,7 +748,7 @@ export default function ContractDetailPage() {
       subtitle={
         <span className="flex items-center gap-2">
           <StatusBadge status={contract.status} />
-          {contract.contract_version > 1 && <span className="text-xs text-slate-400">v{contract.contract_version}</span>}
+          {contract.contract_version > 1 && <span className="text-xs text-slate-500">v{contract.contract_version}</span>}
         </span>
       }
       actions={
@@ -880,7 +880,7 @@ export default function ContractDetailPage() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Contract Value</span><span className="font-medium">{formatDisplayCurrency(contract.total_value ?? contract.value, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Total Invoiced</span><span className="font-medium">{formatDisplayCurrency(totalInvoiceValue, contract.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Paid</span><span className="font-medium text-emerald-600">{formatDisplayCurrency(paidValue, contract.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Paid</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(paidValue, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Outstanding</span><span className="font-medium text-amber-600">{formatDisplayCurrency(outstandingValue, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Invoices</span><span className="font-medium">{totalInvoices} ({outstandingInvoices.length} outstanding)</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Subscriptions</span><span className="font-medium">{subscriptions.length}</span></div>

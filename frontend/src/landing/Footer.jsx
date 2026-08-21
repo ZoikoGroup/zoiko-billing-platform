@@ -39,7 +39,7 @@ const styles = {
   colTitle: {
     fontSize: "11.5px",
     fontWeight: "700",
-    color: "#2563EB",
+    color: "#60A5FA",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     marginBottom: "14px",
@@ -59,7 +59,7 @@ const styles = {
     margin: "0 auto",
     padding: "20px 28px 28px",
     fontSize: "12px",
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(255,255,255,0.72)",
     display: "flex",
     flexWrap: "wrap",
     gap: "6px 20px",

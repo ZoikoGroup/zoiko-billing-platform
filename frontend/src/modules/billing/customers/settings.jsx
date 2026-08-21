@@ -180,7 +180,7 @@ export default function CustomerSettingsPage() {
       <div className="space-y-6">
         <SettingsField label="Default Customer Type" icon={Users} description="Not yet available — this preference is not persisted or enforced yet">
           <select value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="individual">Individual</option>
             <option value="business">Business</option>
             <option value="non_profit">Non-Profit</option>
@@ -190,13 +190,13 @@ export default function CustomerSettingsPage() {
 
         <SettingsField label="Customer Numbering Prefix" icon={Hash} description="Not yet available — this preference is not persisted or enforced yet">
           <input type="text" value={form.customer_numbering_prefix} onChange={(e) => updateField("customer_numbering_prefix", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
         </SettingsField>
 
         <SettingsField label="Customer Numbering Format" icon={Hash} description="Not yet available — this preference is not persisted or enforced yet">
           <input type="text" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed" />
-          <p className="mt-1 text-xs text-slate-400">Preview: {form.customer_numbering_format.replace("{PREFIX}", form.customer_numbering_prefix).replace("{NUMBER}", "0001")}</p>
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
+          <p className="mt-1 text-xs text-slate-500">Preview: {form.customer_numbering_format.replace("{PREFIX}", form.customer_numbering_prefix).replace("{NUMBER}", "0001")}</p>
         </SettingsField>
 
         <SettingsField label="Default Payment Terms" icon={CreditCard} description="Default payment terms assigned to new customers">
@@ -231,7 +231,7 @@ export default function CustomerSettingsPage() {
 
         <SettingsField label="Require Billing Address" icon={FileText} description="Not yet available — this preference is not persisted or enforced yet">
           <select value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="yes">Required</option>
             <option value="no">Optional</option>
           </select>
@@ -239,7 +239,7 @@ export default function CustomerSettingsPage() {
 
         <SettingsField label="Require Tax ID" icon={FileText} description="Not yet available — this preference is not persisted or enforced yet">
           <select value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="yes">Required</option>
             <option value="no">Optional</option>
           </select>

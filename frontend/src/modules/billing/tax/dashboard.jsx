@@ -377,7 +377,7 @@ export default function TaxDashboardPage() {
           </DashboardChartErrorBoundary>
         </DashboardChartCard>
 
-        <DashboardChartCard title="Country Distribution" action={<span className="text-[11px] text-slate-400 font-medium">By configured jurisdiction</span>}>
+        <DashboardChartCard title="Country Distribution" action={<span className="text-[11px] text-slate-500 font-medium">By configured jurisdiction</span>}>
           <DashboardChartErrorBoundary>
             {countryChartData.length === 0 ? (
               <DashboardEmptyPanel title={errorRates || "No jurisdiction data"} message="Countries will appear here once tax rates with a jurisdiction are configured." icon={Globe} ctaText="Configure Tax" onCtaClick={() => navigate("/billing/tax/configuration")} steps={[

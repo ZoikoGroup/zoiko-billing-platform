@@ -6,7 +6,6 @@ import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "../config/roles";
 import { useAuth } from "../context/AuthContext";
 import LandingHeader from "../landing/LandingHeader";
 import Footer from "../landing/Footer";
-import SuperAdminMFAGate from "../components/SuperAdminMFAGate";
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -43,11 +42,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
-  // When /auth/login reports a Super Admin account still needs MFA, the
-  // real access/refresh tokens are withheld entirely (see mfa_service.py) —
-  // this page hands off to SuperAdminMFAGate, which is the only place that
-  // can complete the login, via a verified TOTP/recovery code.
-  const [pendingMfa, setPendingMfa] = useState(null); // { status, token } | null
 
   function defaultRedirectFor(role) {
     return VALID_ROLES.includes(role)
@@ -69,31 +63,19 @@ export default function LoginPage() {
     setLocalError(null);
     setSubmitting(true);
     try {
+      // ZB-SA-CMD-003 v3.0: a valid password completes the login for EVERY
+      // role — including Super Admin. There is no MFA screen at login; MFA
+      // is enforced only as a step-up when a privileged action demands it.
       const data = await apiFetch("/api/auth/login", {
         method: "POST",
         body: { email, password },
       });
-      if (data.mfa_status === "enrollment_required" || data.mfa_status === "challenge_required") {
-        setPendingMfa({ status: data.mfa_status, token: data.mfa_token });
-        return;
-      }
       completeLogin(data);
     } catch (err) {
       setLocalError(err.message || "Unable to sign in. Please check your credentials.");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (pendingMfa) {
-    return (
-      <SuperAdminMFAGate
-        status={pendingMfa.status}
-        mfaToken={pendingMfa.token}
-        onComplete={completeLogin}
-        onCancel={() => setPendingMfa(null)}
-      />
-    );
   }
 
   const inputStyle = {
@@ -178,7 +160,7 @@ export default function LoginPage() {
                     onBlur={e => e.target.style.borderColor = "#E5E7EB"}
                   />
                   <button type="button" onClick={() => setShowPassword(v => !v)}
-                    style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", padding: 0 }}
+                    style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6B7280", padding: "6px" }}
                     aria-label={showPassword ? "Hide password" : "Show password"}>
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -209,7 +191,7 @@ export default function LoginPage() {
 
             <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "20px 0" }}>
               <div style={{ flex: 1, height: "1px", background: "#E5E7EB" }} />
-              <span style={{ fontSize: "12px", color: "#9CA3AF" }}>or</span>
+              <span style={{ fontSize: "12px", color: "#6B7280" }}>or</span>
               <div style={{ flex: 1, height: "1px", background: "#E5E7EB" }} />
             </div>
 
@@ -237,7 +219,7 @@ export default function LoginPage() {
               ))}
             </div>
 
-            <p style={{ fontSize: "11px", color: "#9CA3AF", marginTop: "24px", lineHeight: "1.6" }}>
+            <p style={{ fontSize: "11px", color: "#6B7280", marginTop: "24px", lineHeight: "1.6" }}>
               🔵 Your access is governed by your organization's permissions, roles, workspace settings and security policies.
             </p>
           </div>

@@ -168,12 +168,12 @@ export default function QuotationReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Quotations</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{fQuotations.length}</p>
-                  <p className="text-xs text-slate-400 mt-1">{sent.length} sent</p>
+                  <p className="text-xs text-slate-500 mt-1">{sent.length} sent</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Conversion Rate</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1">{conversionRate.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-400 mt-1">{accepted.length + converted.length} won</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{conversionRate.toFixed(1)}%</p>
+                  <p className="text-xs text-slate-500 mt-1">{accepted.length + converted.length} won</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Average Value</p>
@@ -182,7 +182,7 @@ export default function QuotationReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Value</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalValue, displayCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1 whitespace-nowrap">{formatCurrency(acceptedValue + convertedValue, displayCurrency)} won</p>
+                  <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{formatCurrency(acceptedValue + convertedValue, displayCurrency)} won</p>
                 </div>
               </div>
 
@@ -191,7 +191,7 @@ export default function QuotationReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Status Distribution</h3>
                     <button onClick={() => downloadJSON(statusData, "quotation-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export status distribution">
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export status distribution">
                       <Download size={15} />
                     </button>
                   </div>
@@ -211,7 +211,7 @@ export default function QuotationReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Value by Status</h3>
                     <button onClick={() => downloadJSON(valueByStatus, "quotation-value-by-status.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export value by status">
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export value by status">
                       <Download size={15} />
                     </button>
                   </div>
@@ -329,22 +329,22 @@ export default function QuotationReportsPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Conversion Rate</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{conversionRate.toFixed(1)}%</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{conversionRate.toFixed(1)}%</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Accepted</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{accepted.length}</p>
-                  <p className="text-xs text-slate-400 mt-1 whitespace-nowrap">{formatCurrency(acceptedValue, displayCurrency)}</p>
+                  <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{formatCurrency(acceptedValue, displayCurrency)}</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Converted to Invoice</p>
                   <p className="text-2xl font-bold text-brand-600 mt-1 whitespace-nowrap">{converted.length}</p>
-                  <p className="text-xs text-slate-400 mt-1 whitespace-nowrap">{formatCurrency(convertedValue, displayCurrency)}</p>
+                  <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{formatCurrency(convertedValue, displayCurrency)}</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Rejected</p>
                   <p className="text-2xl font-bold text-red-600 mt-1">{rejected.length}</p>
-                  <p className="text-xs text-slate-400 mt-1">{rejected.length > 0 ? `${((rejected.length / fQuotations.length) * 100).toFixed(1)}% rate` : "—"}</p>
+                  <p className="text-xs text-slate-500 mt-1">{rejected.length > 0 ? `${((rejected.length / fQuotations.length) * 100).toFixed(1)}% rate` : "—"}</p>
                 </div>
               </div>
 
@@ -353,7 +353,7 @@ export default function QuotationReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Conversion Funnel</h3>
                     <button onClick={() => downloadJSON(conversionFunnel, "conversion-funnel.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export conversion funnel" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export conversion funnel" title="Export"><Download size={15} /></button>
                   </div>
                   {conversionFunnel.length === 0 ? <EmptyState icon={BarChart3} title="No funnel data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -373,7 +373,7 @@ export default function QuotationReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Conversion Overview</h3>
                     <button onClick={() => downloadJSON([{ metric: "Sent", value: sent.length }, { metric: "Accepted", value: accepted.length }, { metric: "Converted", value: converted.length }, { metric: "Rejected", value: rejected.length }], "conversion-overview.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Export conversion overview" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Export conversion overview" title="Export"><Download size={15} /></button>
                   </div>
                   <div className="space-y-4">
                     {[

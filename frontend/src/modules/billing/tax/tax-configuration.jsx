@@ -198,7 +198,7 @@ export default function TaxConfigurationPage() {
           </div>
 
           {jurisdictions.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">No jurisdictions configured. Add one above.</p>
+            <p className="text-sm text-slate-500 text-center py-4">No jurisdictions configured. Add one above.</p>
           ) : (
             <div className="space-y-2">
               {jurisdictions.map((j, i) => (
@@ -206,14 +206,14 @@ export default function TaxConfigurationPage() {
                   <div className="flex items-center gap-3">
                     <Globe size={16} className="text-brand-500" />
                     <span className="text-sm font-medium text-slate-800">{j.name}</span>
-                    <span className="text-xs text-slate-400 capitalize">({j.type})</span>
+                    <span className="text-xs text-slate-500 capitalize">({j.type})</span>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       j.tax_rule === "standard" ? "bg-blue-100 text-blue-700" :
                       j.tax_rule === "reduced" ? "bg-amber-100 text-amber-700" :
                       j.tax_rule === "zero" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
                     }`}>{j.tax_rule}</span>
                   </div>
-                  <button onClick={() => removeJurisdiction(j.id)} className="p-1 text-slate-400 hover:text-red-600">
+                  <button onClick={() => removeJurisdiction(j.id)} className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -254,7 +254,7 @@ export default function TaxConfigurationPage() {
           </div>
 
           {exemptions.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">No exemptions configured. Add one above.</p>
+            <p className="text-sm text-slate-500 text-center py-4">No exemptions configured. Add one above.</p>
           ) : (
             <div className="space-y-2">
               {exemptions.map((e, i) => (
@@ -262,14 +262,14 @@ export default function TaxConfigurationPage() {
                   <div className="flex items-center gap-3">
                     <X size={16} className="text-amber-500" />
                     <span className="text-sm font-medium text-slate-800">{e.name}</span>
-                    {e.description && <span className="text-xs text-slate-400">{e.description}</span>}
+                    {e.description && <span className="text-xs text-slate-500">{e.description}</span>}
                     {e.tax_rate_id && (
                       <span className="text-xs text-brand-600 font-medium">
                         Rate: {taxRates.find((r) => String(r.id) === String(e.tax_rate_id))?.name || `#${e.tax_rate_id}`}
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeExemption(e.id)} className="p-1 text-slate-400 hover:text-red-600">
+                  <button onClick={() => removeExemption(e.id)} className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>

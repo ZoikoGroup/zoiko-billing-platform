@@ -280,12 +280,12 @@ export default function TaxRatesPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search tax rates..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   aria-label="Search tax rates"
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+                {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -308,7 +308,7 @@ export default function TaxRatesPage() {
                   <option value="">All Types</option>
                   {TAX_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
@@ -316,14 +316,14 @@ export default function TaxRatesPage() {
                   <option value="">All Statuses</option>
                   {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={sortField} onChange={(e) => setSortField(e.target.value)}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   {SORT_FIELDS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <button onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
                 className="flex items-center gap-1 px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
@@ -355,7 +355,7 @@ export default function TaxRatesPage() {
                     <div className="flex flex-col items-center">
                       <Receipt size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No tax rates found</p>
-                      <p className="text-slate-400 text-sm mt-1">{search || typeFilter || statusFilter ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{search || typeFilter || statusFilter ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}</p>
                     </div>
                   </td>
                 </tr>
@@ -368,7 +368,7 @@ export default function TaxRatesPage() {
                       </div>
                       <div>
                         <p className="font-medium text-slate-800">{rate.name || "Unnamed"}</p>
-                        {rate.description && <p className="text-xs text-slate-400 line-clamp-1">{rate.description}</p>}
+                        {rate.description && <p className="text-xs text-slate-500 line-clamp-1">{rate.description}</p>}
                       </div>
                     </div>
                   </td>
@@ -395,20 +395,20 @@ export default function TaxRatesPage() {
                         Default
                       </span>
                     ) : (
-                      <span className="text-slate-400 text-xs">—</span>
+                      <span className="text-slate-500 text-xs">—</span>
                     )}
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(rate.created_at)}</td>
                   <td className="px-4 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => { setEditRate(rate); setFormData({ name: rate.name || "", code: rate.code || "", description: rate.description || "", rate: (parseFloat(rate.rate || 0)).toString(), tax_type: rate.tax_type || "sales_tax", jurisdiction: rate.jurisdiction || "", jurisdiction_type: rate.jurisdiction_type || "country", is_active: rate.is_active !== false, is_compound: !!rate.is_compound, is_recoverable: rate.is_recoverable !== false, country_code: rate.country_code || "", currency_code: rate.currency_code || "", tax_type_label: rate.tax_type_label || "", is_default: !!rate.is_default, priority: rate.priority || 0 }); setShowForm(true); }}
-                       className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors" title="Edit" aria-label={`Edit tax rate ${rate.name || ""}`}
+                       className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label={`Edit tax rate ${rate.name || ""}`}
                       >
                         <Pencil size={16} />
                       </button>
                       {rate.is_active !== false && (
                         <button onClick={() => handleDeactivate(rate.id)}
-                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-amber-600 transition-colors" title="Deactivate" aria-label={`Deactivate tax rate ${rate.name || ""}`}>
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-amber-600 transition-colors" title="Deactivate" aria-label={`Deactivate tax rate ${rate.name || ""}`}>
                           <Clock size={16} />
                         </button>
                       )}

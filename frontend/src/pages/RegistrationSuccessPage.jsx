@@ -97,14 +97,14 @@ export default function RegistrationSuccessPage() {
               is ready for Zoiko Billing. We've sent a confirmation to
             </p>
             <p className="mt-0.5 flex items-center justify-center gap-1.5 text-sm font-medium text-slate-700">
-              <Mail size={14} className="text-slate-400" />
+              <Mail size={14} className="text-slate-500" />
               {email}
             </p>
           </div>
 
           <div className="mt-7 space-y-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4">
             <div className="flex items-center gap-3">
-              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">
                 <Check size={13} strokeWidth={3} />
               </div>
               <span className="text-sm text-slate-700">
@@ -113,7 +113,7 @@ export default function RegistrationSuccessPage() {
             </div>
             <div className="ml-3 h-3 w-px bg-slate-200" />
             <div className="flex items-center gap-3">
-              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">
                 <Check size={13} strokeWidth={3} />
               </div>
               <span className="text-sm text-slate-700">
@@ -131,7 +131,7 @@ export default function RegistrationSuccessPage() {
             </div>
           </div>
 
-          <p className="mt-6 text-center text-xs leading-relaxed text-slate-400">
+          <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
             Sign in as organization admin to invite your team and start your first pay run.
           </p>
 
@@ -144,7 +144,7 @@ export default function RegistrationSuccessPage() {
           </button>
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-500">
           Wrong email? Contact your organization administrator.
         </p>
       </div>

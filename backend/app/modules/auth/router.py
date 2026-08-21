@@ -30,13 +30,11 @@ from app.modules.auth.schemas import (
     CountryDefaultsResponse,
     ForgotPasswordRequest,
     LoginRequest,
-    LoginResponse,
-    MFAChallengeRequest,
-    MFACompletedLoginResponse,
     MFADisableRequest,
-    MFAEnrollStartRequest,
-    MFAEnrollStartResponse,
-    MFAEnrollVerifyRequest,
+    MFASetupStartResponse,
+    MFASetupVerifyRequest,
+    MFASetupVerifyResponse,
+    MFAStatusResponse,
     RefreshRequest,
     RegisterRequest,
     SuccessResponse,
@@ -114,51 +112,56 @@ def _action_form_page(title: str, token: str, action_path: str) -> HTMLResponse:
 
 # ── Public auth ─────────────────────────────────────────────────────────────
 
-@router.post("/login", response_model=LoginResponse, summary="Login and get access token")
+@router.post("/login", response_model=TokenResponse, summary="Login and get access token")
 @limiter.limit("10/minute")
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
+    # ZB-SA-CMD-003 v3.0 master directive: a valid password yields tokens for
+    # EVERY role, including super_admin. There is no login-time MFA challenge
+    # and no enrollment redirect; MFA is enforced only as a step-up at the
+    # moment of privileged actions (see /auth/mfa/* below).
     return service.login_user(db, data.email, data.password)
 
 
-# ── Super Admin MFA (release-blocker pass, Blocker 4) ───────────────────────
-# Every endpoint below authenticates via the restricted mfa_token from
-# /auth/login's response, NOT via get_current_user — the caller does not
-# have a real access token yet at this stage of the flow.
+# ── Super Admin MFA (step-up factor management) ─────────────────────────────
+# ZB-SA-CMD-003 v3.0: MFA is NOT part of login. These endpoints let an
+# already-authenticated Super Admin manage the TOTP factor that
+# mfa_service.verify_step_up() enforces at the moment of privileged actions
+# (tenant-access activation, circuit-breaker changes, approval decisions).
+# Every endpoint requires a real access token via get_current_user.
 
 @router.post(
-    "/mfa/enroll/start", response_model=MFAEnrollStartResponse,
+    "/mfa/setup/start", response_model=MFASetupStartResponse,
     summary="Begin Super Admin MFA enrollment (issues a TOTP secret)",
 )
 @limiter.limit("10/minute")
-def mfa_enroll_start(request: Request, data: MFAEnrollStartRequest, db: Session = Depends(get_db)):
+def mfa_setup_start(request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
-    user = mfa_service.resolve_pending_user(db, data.mfa_token, "enroll")
-    return mfa_service.start_enrollment(db, user)
+    _require_super_admin(current_user)
+    return mfa_service.start_enrollment(db, current_user)
 
 
 @router.post(
-    "/mfa/enroll/verify", response_model=MFACompletedLoginResponse,
-    summary="Confirm Super Admin MFA enrollment with a TOTP code and complete login",
+    "/mfa/setup/verify", response_model=MFASetupVerifyResponse,
+    summary="Confirm Super Admin MFA enrollment with a TOTP code",
 )
 @limiter.limit("10/minute")
-def mfa_enroll_verify(request: Request, data: MFAEnrollVerifyRequest, db: Session = Depends(get_db)):
+def mfa_setup_verify(request: Request, data: MFASetupVerifyRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
-    user = mfa_service.resolve_pending_user(db, data.mfa_token, "enroll")
-    return mfa_service.verify_enrollment(db, user, data.code)
+    _require_super_admin(current_user)
+    return mfa_service.verify_enrollment(db, current_user, data.code)
 
 
-@router.post(
-    "/mfa/challenge", response_model=MFACompletedLoginResponse,
-    summary="Verify a Super Admin MFA code (or recovery code) and complete login",
+@router.get(
+    "/mfa/status", response_model=MFAStatusResponse,
+    summary="Whether the calling Super Admin has MFA enabled for step-up",
 )
-@limiter.limit("10/minute")
-def mfa_challenge(request: Request, data: MFAChallengeRequest, db: Session = Depends(get_db)):
+def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
-    user = mfa_service.resolve_pending_user(db, data.mfa_token, "challenge")
-    return mfa_service.challenge(db, user, data.code, data.recovery_code)
+    _require_super_admin(current_user)
+    return {"enabled": mfa_service.is_mfa_enabled(db, current_user.id)}
 
 
 @router.post(
@@ -169,9 +172,13 @@ def mfa_challenge(request: Request, data: MFAChallengeRequest, db: Session = Dep
 def mfa_disable(request: Request, data: MFADisableRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise BadRequestException("MFA is only available for Super Admin accounts.")
+    _require_super_admin(current_user)
     return mfa_service.disable_mfa_self(db, current_user, data.current_password)
+
+
+def _require_super_admin(user) -> None:
+    if user.role != UserRole.SUPER_ADMIN:
+        raise BadRequestException("MFA is only available for Super Admin accounts.")
 
 
 @router.post("/register", response_model=TokenResponse, summary="Register a new organization")

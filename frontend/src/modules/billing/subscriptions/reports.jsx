@@ -172,22 +172,22 @@ export default function SubscriptionReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Subscriptions</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{fSubscriptions.length}</p>
-                  <p className="text-xs text-slate-400 mt-1">{active.length} active</p>
+                  <p className="text-xs text-slate-500 mt-1">{active.length} active</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">MRR</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalMRR, orgCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1 whitespace-nowrap">{formatCurrency(totalARR, orgCurrency)} ARR</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalMRR, orgCurrency)}</p>
+                  <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{formatCurrency(totalARR, orgCurrency)} ARR</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Churn Rate</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{churnRate.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-400 mt-1">{churnedCount} cancelled</p>
+                  <p className="text-xs text-slate-500 mt-1">{churnedCount} cancelled</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Est. LTV</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(estimatedLTV, orgCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Per subscriber</p>
+                  <p className="text-xs text-slate-500 mt-1">Per subscriber</p>
                 </div>
               </div>
 
@@ -196,7 +196,7 @@ export default function SubscriptionReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Subscription Status Distribution</h3>
                     <button onClick={() => downloadJSON(statusData, "subscription-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {statusData.length === 0 ? <EmptyState icon={PieChartIcon} title="No subscription data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -214,7 +214,7 @@ export default function SubscriptionReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">MRR Distribution</h3>
                     <button onClick={() => downloadJSON(mrrData, "subscription-mrr-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {mrrData.length === 0 ? <EmptyState icon={BarChart3} title="No MRR data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -236,7 +236,7 @@ export default function SubscriptionReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-6">
                   <h3 className="text-sm font-semibold text-slate-900 mb-4">
                     Subscription Value by Original Currency
-                    <span className="ml-2 text-xs font-normal text-slate-400">
+                    <span className="ml-2 text-xs font-normal text-slate-500">
                       (MRR expressed in {formatCurrency(0, reportingCurrency).replace(/[\d.]/g, "").trim() || reportingCurrency})
                     </span>
                   </h3>
@@ -330,7 +330,7 @@ export default function SubscriptionReportsPage() {
                           </td>
                           <td className="py-3 px-3 text-right font-medium text-slate-900">
                             {formatCurrency(s.unit_price, orgCurrency)}
-                            {s.quantity > 1 && <span className="text-xs text-slate-400 ml-1">x{s.quantity}</span>}
+                            {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}
                           </td>
                           <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{s.start_date ? new Date(s.start_date).toLocaleDateString() : "—"}</td>
                           <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{s.next_billing_at ? new Date(s.next_billing_at).toLocaleDateString() : "—"}</td>
@@ -354,7 +354,7 @@ export default function SubscriptionReportsPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Monthly Recurring Revenue</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{formatCurrency(totalMRR, orgCurrency)}</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalMRR, orgCurrency)}</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Annual Recurring Revenue</p>
@@ -363,12 +363,12 @@ export default function SubscriptionReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Revenue/Sub</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(avgRevenuePerSub, orgCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Monthly</p>
+                  <p className="text-xs text-slate-500 mt-1">Monthly</p>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Estimated LTV</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(estimatedLTV, orgCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1">24-month estimate</p>
+                  <p className="text-xs text-slate-500 mt-1">24-month estimate</p>
                 </div>
               </div>
 
@@ -377,7 +377,7 @@ export default function SubscriptionReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">MRR by Status</h3>
                     <button onClick={() => downloadJSON(mrrData, "mrr-by-status.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {mrrData.length === 0 ? <EmptyState icon={PieChartIcon} title="No MRR data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -395,7 +395,7 @@ export default function SubscriptionReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Churn Overview</h3>
                     <button onClick={() => downloadJSON([{ metric: "Churn Rate", value: churnRate.toFixed(1) }, { metric: "Churned", value: churnedCount }, { metric: "Total", value: fSubscriptions.length }], "churn-overview.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   <div className="space-y-4">
                     <div>

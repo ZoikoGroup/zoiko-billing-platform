@@ -22,7 +22,7 @@ function CategoryNode({ category, depth, selectedId, onSelect, onToggle, product
           <button
             onClick={(e) => { e.stopPropagation(); onToggle(category.id); }}
             aria-label={expanded ? "Collapse" : "Expand"}
-            className={`shrink-0 rounded p-0.5 ${isSelected ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-slate-600"}`}
+            className={`shrink-0 rounded p-0.5 ${isSelected ? "text-white/80 hover:text-white" : "text-slate-500 hover:text-slate-600"}`}
           >
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
@@ -232,9 +232,9 @@ export default function CategoriesPage() {
       {successMessage && (
         <div className="mb-6 flex items-center justify-between p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
           <div className="flex items-center gap-2 text-sm text-emerald-800">
-            <CheckCircle size={16} className="text-emerald-600" /> {successMessage}
+            <CheckCircle size={16} className="text-emerald-700" /> {successMessage}
           </div>
-          <button onClick={() => setSuccessMessage(null)} aria-label="Dismiss" className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
+          <button onClick={() => setSuccessMessage(null)} aria-label="Dismiss" className="text-emerald-700 hover:text-emerald-800"><X size={16} /></button>
         </div>
       )}
 
@@ -246,11 +246,11 @@ export default function CategoriesPage() {
               <Boxes className="h-4 w-4 text-brand" />
               <h3 className="text-sm font-semibold text-slate-800">Categories</h3>
             </div>
-            <span className="text-xs text-slate-400 font-medium">{activeCount} active · {totalProducts} products</span>
+            <span className="text-xs text-slate-500 font-medium">{activeCount} active · {totalProducts} products</span>
           </div>
           <div className="p-3 border-b border-slate-100">
             <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="text" placeholder="Search categories..." value={search} onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search categories"
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -260,7 +260,7 @@ export default function CategoriesPage() {
             {treeList.length === 0 ? (
               <div className="px-4 py-10 text-center">
                 <Folder className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">No categories found</p>
+                <p className="text-sm text-slate-500">No categories found</p>
               </div>
             ) : (
               treeList.map((c) => (
@@ -279,7 +279,7 @@ export default function CategoriesPage() {
               <div className="text-center">
                 <FolderOpen className="h-10 w-10 text-slate-300 mx-auto mb-3" />
                 <p className="text-sm font-medium text-slate-500">Select a category</p>
-                <p className="text-xs text-slate-400 mt-1">Choose a category from the tree to see details and products.</p>
+                <p className="text-xs text-slate-500 mt-1">Choose a category from the tree to see details and products.</p>
               </div>
             </div>
           ) : (
@@ -303,11 +303,11 @@ export default function CategoriesPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button onClick={() => openEdit(selected)} aria-label="Edit category"
-                      className="p-2 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-700 transition-colors" title="Edit category">
+                      className="p-2 rounded-lg hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors" title="Edit category">
                       <Pencil size={16} />
                     </button>
                     <button onClick={() => handleDelete(selected)} aria-label="Delete category"
-                      className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="Delete category">
+                      className="p-2 rounded-lg hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Delete category">
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -322,7 +322,7 @@ export default function CategoriesPage() {
                   ].map((s) => (
                     <div key={s.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
                       <p className="text-lg font-bold text-slate-800 truncate">{s.value}</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">{s.label}</p>
+                      <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wide">{s.label}</p>
                     </div>
                   ))}
                 </div>
@@ -364,12 +364,12 @@ export default function CategoriesPage() {
                                   <img src={p.image_url} alt="" className="h-8 w-8 rounded-lg object-cover" />
                                 ) : (
                                   <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                                    <Package className="h-3.5 w-3.5 text-slate-400" />
+                                    <Package className="h-3.5 w-3.5 text-slate-500" />
                                   </div>
                                 )}
                                 <div>
                                   <p className="font-medium text-slate-800">{p.name}</p>
-                                  {p.code && <p className="text-xs text-slate-400 font-mono">{p.code}</p>}
+                                  {p.code && <p className="text-xs text-slate-500 font-mono">{p.code}</p>}
                                 </div>
                               </div>
                             </td>
@@ -435,7 +435,7 @@ export default function CategoriesPage() {
               <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
                 <div>
                   <p className="text-sm font-medium text-slate-700">Active</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Inactive categories are hidden from new product forms</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Inactive categories are hidden from new product forms</p>
                 </div>
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
                   className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />

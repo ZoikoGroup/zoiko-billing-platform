@@ -181,7 +181,7 @@ export default function PaymentSettingsPage() {
           <SettingsField label="Payment Numbering Format" icon={Hash} description="Number format. Use {PREFIX} and {NUMBER} as placeholders">
             <input type="text" value={form.payment_number_format} onChange={(e) => updateField("payment_number_format", e.target.value)}
               className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            <p className="mt-1 text-xs text-slate-400">Preview: {numberingPreview}</p>
+            <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
           </SettingsField>
         </div>
 

@@ -200,29 +200,29 @@ export default function RetainersPage() {
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Retainers</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{retainers.length}</p>
-          <p className="text-xs text-slate-400 mt-1">{activeRetainers} active</p>
+          <p className="text-xs text-slate-500 mt-1">{activeRetainers} active</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Value</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatDisplayCurrency(totalValue, defaultCurrency)}</p>
-          <p className="text-xs text-slate-400 mt-1">Sum of unit prices</p>
+          <p className="text-xs text-slate-500 mt-1">Sum of unit prices</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Price</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{retainers.length ? formatDisplayCurrency(totalValue / retainers.length, defaultCurrency) : "—"}</p>
-          <p className="text-xs text-slate-400 mt-1">Per retainer product</p>
+          <p className="text-xs text-slate-500 mt-1">Per retainer product</p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3 flex-1">
 <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="text" placeholder="Search retainers..." value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search retainers"
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+              {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
             </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
@@ -252,7 +252,7 @@ export default function RetainersPage() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
       )}
@@ -277,7 +277,7 @@ export default function RetainersPage() {
                     <div className="flex flex-col items-center">
                       <Wallet size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No retainer products found</p>
-                      <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first retainer product"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first retainer product"}</p>
                     </div>
                   </td>
                 </tr>
@@ -285,7 +285,7 @@ export default function RetainersPage() {
                 <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-4">
                     <p className="font-medium text-slate-800">{r.name}</p>
-                    {r.description && <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">{r.description}</p>}
+                    {r.description && <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{r.description}</p>}
                   </td>
                   <td className="px-4 py-4 text-slate-500">{r.sku || "—"}</td>
                   <td className="px-4 py-4 text-right font-medium text-slate-800">{formatDisplayCurrency(r.unit_price || r.price, r.currency)}</td>
@@ -298,8 +298,8 @@ export default function RetainersPage() {
                   </td>
                   <td className="px-4 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
-                      <button onClick={() => openEditModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors" aria-label="Edit retainer"><Edit size={15} /></button>
-                      <button onClick={() => openDeleteModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors" aria-label="Delete retainer"><Trash2 size={15} /></button>
+                      <button onClick={() => openEditModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" aria-label="Edit retainer"><Edit size={15} /></button>
+                      <button onClick={() => openDeleteModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" aria-label="Delete retainer"><Trash2 size={15} /></button>
                     </div>
                   </td>
                 </tr>
@@ -317,7 +317,7 @@ export default function RetainersPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-800">Create Retainer</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
@@ -381,7 +381,7 @@ export default function RetainersPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-800">Edit {selectedRetainer.name}</h3>
-              <button onClick={() => setShowEditModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setShowEditModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}

@@ -54,7 +54,7 @@ function IdentityChip({ icon: Icon, label, value }) {
   if (!value) return null;
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3 min-w-0">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
         <Icon className="w-3 h-3 shrink-0" />
         {label}
       </div>
@@ -66,13 +66,13 @@ function IdentityChip({ icon: Icon, label, value }) {
 const StatCard = React.memo(({ icon: Icon, color, label, value, subtitle, onClick }) => (
   <div onClick={onClick} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] cursor-pointer transition-shadow hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
     <div className="flex items-start justify-between gap-2 mb-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{label}</p>
       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}15`, color }}>
         <Icon className="w-[18px] h-[18px]" strokeWidth={2.5} />
       </div>
     </div>
     <p className="text-2xl font-extrabold tracking-[-0.01em] leading-none text-slate-800">{value}</p>
-    {subtitle && <p className="text-[11px] text-slate-400 mt-1">{subtitle}</p>}
+    {subtitle && <p className="text-[11px] text-slate-500 mt-1">{subtitle}</p>}
   </div>
 ));
 
@@ -220,7 +220,7 @@ export default function WorkspaceDashboardPage() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-800">{companyName || "Organization"}</h2>
-              {config?.company_name && <p className="text-[12px] text-slate-400">Legal Business Name · {config.company_name}</p>}
+              {config?.company_name && <p className="text-[12px] text-slate-500">Legal Business Name · {config.company_name}</p>}
             </div>
           </div>
           <button onClick={() => navigate("/billing/workspace/organization")} className="flex items-center gap-1.5 text-[12.5px] font-semibold cursor-pointer text-brand hover:text-brand-hover">
@@ -303,7 +303,7 @@ export default function WorkspaceDashboardPage() {
 
       <div className="flex items-baseline justify-between mb-3.5 mt-8">
         <h2 className="text-base font-bold text-slate-800">Quick Actions</h2>
-        <span className="text-xs text-slate-400">Reuses the existing Billing pages</span>
+        <span className="text-xs text-slate-500">Reuses the existing Billing pages</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
         {quickActions.map((a) => (
@@ -340,7 +340,7 @@ export default function WorkspaceDashboardPage() {
                     <p className="truncate text-sm font-medium text-slate-700">
                       {item?.description || item?.event_type || item?.action || `Invoice #${item?.invoice_number || item?.invoice_id || ""}`}
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-500">
                       {(item?.created_at || item?.timestamp || item?.date) ? new Date(item.created_at || item.timestamp || item.date).toLocaleDateString() : ""}
                     </p>
                   </div>
@@ -394,7 +394,7 @@ export default function WorkspaceDashboardPage() {
             <thead>
               <tr className="border-y border-slate-100 bg-slate-50/60">
                 {["Invoice", "Status", "Amount"].map((h) => (
-                  <th key={h} className="text-left text-xs uppercase tracking-wider text-slate-400 font-semibold px-6 py-3">{h}</th>
+                  <th key={h} className="text-left text-xs uppercase tracking-wider text-slate-600 font-semibold px-6 py-3">{h}</th>
                 ))}
               </tr>
             </thead>

@@ -248,11 +248,11 @@ export default function WriteOffsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input type="text" placeholder="Search write-offs..." value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
           </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -288,7 +288,7 @@ export default function WriteOffsPage() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
           <div className="relative">
             <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
@@ -296,7 +296,7 @@ export default function WriteOffsPage() {
               <option value="">All Types</option>
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
         </div>
       )}
@@ -329,7 +329,7 @@ export default function WriteOffsPage() {
                     <div className="flex flex-col items-center">
                       <ScrollText size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No write-offs found</p>
-                      <p className="text-slate-400 text-sm mt-1">{search || statusFilter || typeFilter ? "Try adjusting your search or filters" : "Create your first write-off"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter || typeFilter ? "Try adjusting your search or filters" : "Create your first write-off"}</p>
                     </div>
                   </td>
                 </tr>
@@ -344,14 +344,14 @@ export default function WriteOffsPage() {
                   <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(w.created_at)}</td>
                   <td className="px-4 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
-                      <button onClick={() => navigate(`/billing/write-offs/${w.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="View"><Eye size={15} /></button>
+                      <button onClick={() => navigate(`/billing/write-offs/${w.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="View"><Eye size={15} /></button>
                       {w.status === "draft" && (
                         <button onClick={() => handleAction("submit", () => writeOffApi.submit(w.id))} disabled={actionLoading === "submit"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-amber-600 transition-colors disabled:opacity-40" title="Submit for Approval"><Send size={15} /></button>
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-amber-600 transition-colors disabled:opacity-40" title="Submit for Approval"><Send size={15} /></button>
                       )}
                       {["draft", "pending_approval", "approved"].includes(w.status) && (
                         <button onClick={() => handleAction("cancel", () => writeOffApi.cancel(w.id, "Cancelled by user"))} disabled={actionLoading === "cancel"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-40" title="Cancel"><Ban size={15} /></button>
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Cancel"><Ban size={15} /></button>
                       )}
                     </div>
                   </td>
@@ -370,7 +370,7 @@ export default function WriteOffsPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-800">Create Write-off</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
@@ -382,7 +382,7 @@ export default function WriteOffsPage() {
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.display_name || c.company_name || `#${c.id}`}</option>)}
                 </select>
                 {selectedCustomer && (
-                  <p className="mt-1 text-xs text-slate-400">Outstanding balance: {formatDisplayCurrency(selectedCustomer.outstanding_balance || 0, "—", selectedCustomer.currency)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Outstanding balance: {formatDisplayCurrency(selectedCustomer.outstanding_balance || 0, "—", selectedCustomer.currency)}</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">

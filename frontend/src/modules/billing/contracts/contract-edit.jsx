@@ -425,7 +425,7 @@ export default function ContractEditPage() {
   return (
     <HRPage
       title={`Edit ${form.contract_name || form.contract_number || "Contract"}`}
-      subtitle={<span className="text-slate-400">ID: {id}</span>}
+      subtitle={<span className="text-slate-500">ID: {id}</span>}
       actions={
         <button onClick={() => navigate(`/billing/contracts/${id}`)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
@@ -514,7 +514,7 @@ export default function ContractEditPage() {
           </div>
 
           <div className="relative mb-4">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input type="text" placeholder="Search products to add..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className={`${inputClass} pl-9`} />
             {productSearching && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={16} className="animate-spin text-brand-500" /></div>}
             {productResults.length > 0 && (
@@ -530,7 +530,7 @@ export default function ContractEditPage() {
           </div>
 
           {items.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-slate-500">
               <Package size={32} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm">No products. Search above to add.</p>
             </div>
@@ -559,7 +559,7 @@ export default function ContractEditPage() {
                     return (
                       <React.Fragment key={item.id}>
                       <tr className="text-sm text-slate-900 hover:bg-slate-50">
-                        <td className="py-2 px-3 text-slate-400">{item.line_number}</td>
+                        <td className="py-2 px-3 text-slate-500">{item.line_number}</td>
                         <td className="py-2 px-3">
                           <input type="text" value={item.description} onChange={(e) => updateLineItem(item.id, "description", e.target.value)} className="w-full px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-brand/30" />
                         </td>

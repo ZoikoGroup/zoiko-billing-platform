@@ -556,7 +556,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><User size={20} className="text-brand-500" /> Select {singular}</h3>
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input
           type="text"
           placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`}
@@ -628,7 +628,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
           <div className="relative max-w-xs">
-            <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input type="number" min="0" max="100" step="0.1" value={form.discount_percentage}
               onChange={(e) => setForm((p) => ({ ...p, discount_percentage: parseFloat(e.target.value) || 0 }))}
               className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -708,7 +708,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
-                      {item.product_id && <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Product</span>}
+                      {item.product_id && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Product</span>}
                       {item.price_source && <span className={`text-xs px-2 py-0.5 rounded ${item.price_source === "catalog" ? "bg-blue-100 text-blue-600" : item.price_source === "pricing_plan" ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"}`}>{item.price_source}</span>}
                     </div>
                     {item.needs_plan_selection && item.available_plans?.length > 1 && (
@@ -843,7 +843,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                       <span className="font-medium text-slate-800">Total: {formatDisplayCurrency(t.total, form.currency)}</span>
                     </div>
                   </div>
-                  <button onClick={() => removeLineItem(item.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove" aria-label={`Remove line item ${item.product_name || item.description || ""}`.trim()}><Trash2 size={18} /></button>
+                  <button onClick={() => removeLineItem(item.id)} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove" aria-label={`Remove line item ${item.product_name || item.description || ""}`.trim()}><Trash2 size={18} /></button>
                 </div>
               </div>
             );
@@ -1013,7 +1013,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                 <button
                   onClick={() => idx + 1 < step && setStep(idx + 1)}
                   disabled={idx + 1 > step}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${idx + 1 === step ? "bg-brand-600 text-white ring-2 ring-brand-200" : idx + 1 < step ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${idx + 1 === step ? "bg-brand-600 text-white ring-2 ring-brand-200" : idx + 1 < step ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500 cursor-not-allowed"}`}
                   aria-current={idx + 1 === step ? "step" : undefined}
                   title={s.description || s.label}
                 >

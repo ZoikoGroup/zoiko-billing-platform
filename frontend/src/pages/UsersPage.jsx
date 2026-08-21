@@ -20,6 +20,18 @@ const USER_STATUS_BADGE_OPTIONS = [
   { value: false, label: "Inactive", color: "bg-red-100 text-red-700" },
 ];
 
+// ZB-SA-CMD-003 §26 — Super Admin platform-role scaffolding (session 6).
+// Only meaningful for role=super_admin; None/"platform_administrator" is
+// full access. See docs/SUPER_ADMIN_RBAC_MATRIX.md.
+const PLATFORM_ROLE_OPTIONS = [
+  { value: "platform_administrator", label: "Platform Administrator" },
+  { value: "support_operator", label: "Support Operator" },
+  { value: "security_operator", label: "Security Operator" },
+  { value: "reliability_operator", label: "Reliability Operator" },
+  { value: "auditor", label: "Auditor" },
+  { value: "finance_readonly", label: "Finance (Read-Only)" },
+];
+
 const PAGE_SIZE = 25;
 
 export default function UsersPage() {
@@ -113,6 +125,24 @@ export default function UsersPage() {
     }
   }
 
+  async function changePlatformRole(u, newRole) {
+    setBusyId(u.id);
+    setNotice("");
+    setError("");
+    try {
+      await apiFetch(`/api/super-admin/users/${u.id}/platform-role`, {
+        method: "PUT",
+        params: { platform_role: newRole },
+      });
+      setNotice(`Platform role for ${u.email} set to ${newRole.replace(/_/g, " ")}.`);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function resetMfa(u) {
     const ok = await confirm({
       title: "Reset MFA?",
@@ -146,7 +176,7 @@ export default function UsersPage() {
         render: (u) => (
           <span>
             <span className="block font-medium text-slate-800">{u.first_name} {u.last_name}</span>
-            <span className="block text-xs text-slate-400">{u.email}</span>
+            <span className="block text-xs text-slate-500">{u.email}</span>
           </span>
         ),
       },
@@ -166,7 +196,7 @@ export default function UsersPage() {
         label: "MFA",
         render: (u) =>
           u.role !== "super_admin" ? (
-            <span className="text-xs text-slate-400">—</span>
+            <span className="text-xs text-slate-500">—</span>
           ) : u.mfa_enabled ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
               <ShieldCheck size={12} /> Enabled
@@ -176,6 +206,34 @@ export default function UsersPage() {
               <ShieldOff size={12} /> Not enrolled
             </span>
           ),
+      },
+      {
+        key: "platform_role",
+        label: "Platform Role",
+        render: (u) => {
+          if (u.role !== "super_admin") return <span className="text-xs text-slate-500">—</span>;
+          const canManage = me && (!me.platform_role || me.platform_role === "platform_administrator");
+          const current = u.platform_role || "platform_administrator";
+          if (!canManage) {
+            return (
+              <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                {PLATFORM_ROLE_OPTIONS.find((o) => o.value === current)?.label || current}
+              </span>
+            );
+          }
+          return (
+            <select
+              value={current}
+              disabled={busyId === u.id}
+              onChange={(e) => changePlatformRole(u, e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            >
+              {PLATFORM_ROLE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          );
+        },
       },
       { key: "created_at", label: "Created", render: (u) => <span className="text-xs text-slate-500">{new Date(u.created_at).toLocaleDateString()}</span> },
       {

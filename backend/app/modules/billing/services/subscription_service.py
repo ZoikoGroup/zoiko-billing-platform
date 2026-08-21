@@ -111,6 +111,11 @@ class SubscriptionService:
     def _resolve_currency(self, data: dict, customer_id: int, contract_id: Optional[int], organization_id: int) -> str:
         """Resolve subscription currency using priority:
         Explicit currency → Contract currency → Customer currency → Org default
+
+        The terminal fallback is the ORGANIZATION's own stored currency
+        (which is itself country-derived at creation — ZB-SA-CMD-003 v3.0),
+        never a hardcoded "USD". An org with no resolvable currency at all is
+        an explicit error, not a silent substitution.
         """
         currency = data.get("currency")
         if currency:
@@ -127,7 +132,16 @@ class SubscriptionService:
         customer = self.customer_service.get_customer(customer_id, organization_id)
         if customer and hasattr(customer, 'currency') and customer.currency:
             return customer.currency.upper()
-        return self.config_service.get_default_currency(organization_id) or "USD"
+        from app.modules.organizations.models import Organization
+
+        org = self.db.query(Organization).filter(Organization.id == organization_id).first()
+        if org is None or not org.currency:
+            raise BadRequestException(
+                f"Cannot determine a billing currency for organization {organization_id}: "
+                "no explicit/contract/customer currency and the organization has no "
+                "country-derived default currency."
+            )
+        return org.currency
 
     def create_subscription(
         self, organization_id: int, created_by: int, customer_id: int,

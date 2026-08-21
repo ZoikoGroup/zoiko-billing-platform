@@ -18,6 +18,7 @@ import os
 import re
 import smtplib
 import ssl
+from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -410,6 +411,78 @@ def send_product_welcome_email(
         "recipient_first_name": first_name or "there",
         "onboarding_url": onboarding_url,
     }, db=db, organization_id=organization_id)
+
+
+def notify_super_admins_org_created(db=None, organization=None, actor_email: str = None) -> list[str]:
+    """ZB-SA-CMD-003 v3.0 master directive: notify every ACTIVE Super Admin
+    by real email whenever a new organization is created.
+
+    Recipients are resolved server-side from the users table (role ==
+    super_admin AND is_active) — never from client input. The email carries
+    only operational metadata (name, code, country, currency, status,
+    creator, timestamp and a deep link); it contains NO credentials or
+    secrets. Returns the list of recipient addresses that were dispatched
+    (best-effort per recipient; a send failure for one admin does not stop
+    the others). Callers invoke this AFTER their transaction has committed;
+    exceptions bubble to the caller's fire-and-forget guard so a transient
+    SMTP failure never fails an already-committed creation.
+    """
+    if organization is None:
+        return []
+
+    from app.config import settings as _settings
+    from app.modules.auth.models import User, UserRole
+
+    recipients = (
+        db.query(User)
+        .filter(User.role == UserRole.SUPER_ADMIN, User.is_active.is_(True))
+        .all()
+        if db is not None
+        else []
+    )
+    if not recipients:
+        logger.warning(
+            "[email] No active Super Admin found to notify about organization %s creation",
+            getattr(organization, "organization_code", "?"),
+        )
+        return []
+
+    view_url = _settings.FRONTEND_URL.rstrip("/") + "/super-admin/organizations"
+    status = "Active" if getattr(organization, "is_active", True) else "Suspended"
+    created_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    context = {
+        "subject": f"New organization created: {organization.organization_name}",
+        "organization_name": organization.organization_name,
+        "organization_code": organization.organization_code,
+        "country": organization.country or "—",
+        "currency": organization.currency or "—",
+        "status": status,
+        "created_by": actor_email or "System",
+        "created_time": created_time,
+        "view_url": view_url,
+    }
+
+    dispatched: list[str] = []
+    for admin in recipients:
+        try:
+            if send_approval_email(admin.email, "super_admin_org_created.html", context, db=db):
+                dispatched.append(admin.email)
+            else:
+                logger.warning(
+                    "[email] Super Admin org-created notification could not be sent to %s (org %s)",
+                    admin.email, organization.organization_code,
+                )
+        except Exception as exc:
+            logger.warning(
+                "[email] Super Admin org-created notification failed for %s (org %s): %s",
+                admin.email, organization.organization_code, exc,
+            )
+    logger.info(
+        "[email] Super Admin org-created notifications dispatched to %d/%d admins for org %s",
+        len(dispatched), len(recipients), organization.organization_code,
+    )
+    return dispatched
 
 
 # ── Billing module emails ───────────────────────────────────────────────────

@@ -362,7 +362,7 @@ export default function PaymentDetailPage() {
       return (
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoice</h3>
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No invoice linked to this payment</p>
           </div>
@@ -453,10 +453,10 @@ export default function PaymentDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <User size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">Customer details not available</p>
-          <p className="text-xs text-slate-400 mt-1">Customer #{payment.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">Customer #{payment.customer_id}</p>
         </div>
       )}
     </div>
@@ -466,7 +466,7 @@ export default function PaymentDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Layers size={16} className="text-brand-500" /> Allocations ({allocations.length})</h3>
       {allocations.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Layers size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No allocations for this payment</p>
         </div>
@@ -520,7 +520,7 @@ export default function PaymentDetailPage() {
         </div>
         <div className="flex justify-between text-sm font-medium border-t border-slate-200 pt-2 mt-1">
           <span>{remaining > 0 ? "Unallocated" : remaining < 0 ? "Over-allocated" : "Balance"}</span>
-          <span className={remaining > 0 ? "text-amber-600" : remaining < 0 ? "text-red-600" : "text-emerald-600"}>
+          <span className={remaining > 0 ? "text-amber-600" : remaining < 0 ? "text-red-600" : "text-emerald-700"}>
             {formatDisplayCurrency(Math.abs(remaining))}
           </span>
         </div>
@@ -611,7 +611,7 @@ export default function PaymentDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-800">{ev.label}</p>
-                <p className="text-xs text-slate-400">{formatDisplayDate(ev.date)}</p>
+                <p className="text-xs text-slate-500">{formatDisplayDate(ev.date)}</p>
               </div>
             </div>
           ))}
@@ -626,7 +626,7 @@ export default function PaymentDetailPage() {
       {payment.notes ? (
         <p className="text-sm text-slate-700 whitespace-pre-wrap">{payment.notes}</p>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes for this payment</p>
         </div>
@@ -638,7 +638,7 @@ export default function PaymentDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Payment Attempts ({attempts.length})</h3>
       {attempts.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Activity size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No payment attempts recorded</p>
         </div>
@@ -647,7 +647,7 @@ export default function PaymentDetailPage() {
           {attempts.map((att, i) => (
             <div key={att.id || i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                att.status === "success" || att.status === "completed" ? "bg-emerald-100 text-emerald-600" :
+                att.status === "success" || att.status === "completed" ? "bg-emerald-100 text-emerald-700" :
                 att.status === "failed" ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"
               }`}>
                 {att.status === "success" || att.status === "completed" ? <CheckCircle size={14} /> :
@@ -662,9 +662,9 @@ export default function PaymentDetailPage() {
                   }`}>{att.status || "—"}</span>
                 </div>
                 {att.message && <p className="text-xs text-slate-500 mt-0.5">{att.message}</p>}
-                {att.gateway_response && <p className="text-xs text-slate-400 mt-0.5">Gateway: {att.gateway_response}</p>}
+                {att.gateway_response && <p className="text-xs text-slate-500 mt-0.5">Gateway: {att.gateway_response}</p>}
               </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">{formatDisplayDate(att.created_at || att.attempted_at)}</span>
+              <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(att.created_at || att.attempted_at)}</span>
             </div>
           ))}
         </div>
@@ -676,7 +676,7 @@ export default function PaymentDetailPage() {
     <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Shield size={16} className="text-brand-500" /> Audit Trail</h3>
       {auditLogs.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Shield size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No audit log entries</p>
         </div>
@@ -704,7 +704,7 @@ export default function PaymentDetailPage() {
                   </td>
                   <td className="py-3 px-4 text-slate-600">{log.user_name || log.user_id || log.performed_by || "—"}</td>
                   <td className="py-3 px-4 text-slate-500 max-w-xs truncate">{log.details || log.description || log.message || "—"}</td>
-                  <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
+                  <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -805,7 +805,7 @@ export default function PaymentDetailPage() {
             <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Amount</span><span className="font-medium">{formatDisplayCurrency(payment.amount, payment.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Allocated</span><span className="font-medium text-emerald-600">{formatDisplayCurrency(allocatedTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Allocated</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(allocatedTotal)}</span></div>
               {remaining > 0 && <div className="flex justify-between"><span className="text-slate-500">Unallocated</span><span className="font-medium text-amber-600">{formatDisplayCurrency(remaining)}</span></div>}
               <div className="flex justify-between"><span className="text-slate-500">Fee</span><span className="font-medium">{payment.gateway_fee > 0 ? formatDisplayCurrency(payment.gateway_fee) : "—"}</span></div>
               <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-2 mt-2">
@@ -859,7 +859,7 @@ export default function PaymentDetailPage() {
               <input type="number" min="0.01" step="0.01" max={parseFloat(payment.amount || 0)} value={refundAmount}
                 onChange={(e) => setRefundAmount(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-              <p className="text-xs text-slate-400 mt-1">Max: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
+              <p className="text-xs text-slate-500 mt-1">Max: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
             </div>
 
             <div>

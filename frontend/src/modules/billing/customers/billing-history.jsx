@@ -231,7 +231,7 @@ export default function BillingHistoryPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
                   placeholder="Search by invoice, receipt, customer..."
@@ -241,7 +241,7 @@ export default function BillingHistoryPage() {
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
                 />
                 {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600">
                     <X size={16} />
                   </button>
                 )}
@@ -276,7 +276,7 @@ export default function BillingHistoryPage() {
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div>
                 <input
@@ -287,7 +287,7 @@ export default function BillingHistoryPage() {
                   className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
                 />
               </div>
-              <span className="text-slate-400 text-sm">to</span>
+              <span className="text-slate-500 text-sm">to</span>
               <div>
                 <input
                   type="date"
@@ -352,7 +352,7 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <FileText size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No invoices found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No invoices have been created yet"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No invoices have been created yet"}</p>
                       </div>
                     </td>
                   </tr>
@@ -387,7 +387,7 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <CreditCard size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No payments found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No payments have been recorded yet"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No payments have been recorded yet"}</p>
                       </div>
                     </td>
                   </tr>

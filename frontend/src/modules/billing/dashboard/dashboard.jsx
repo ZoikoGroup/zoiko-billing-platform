@@ -42,7 +42,7 @@ class WidgetErrorBoundary extends React.Component {
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <Activity className="h-8 w-8 text-slate-300 mb-2" />
             <p className="text-slate-600 text-sm font-medium">{this.props.title || "Section"} Summary</p>
-            <p className="text-slate-400 text-xs mt-1">No updates recorded for this period</p>
+            <p className="text-slate-500 text-xs mt-1">No updates recorded for this period</p>
           </div>
         </div>
       );
@@ -134,10 +134,10 @@ const SecondaryStatCard = React.memo(function SecondaryStatCard({ title, value, 
         <Icon size={15} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</span>
+        <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-slate-600">{title}</span>
         <span className="block truncate text-sm font-bold text-slate-800">{displayValue}</span>
         {trend && (
-          <span className={`block text-[10px] font-semibold ${trend === "up" ? "text-emerald-600" : "text-red-600"}`}>{trendValue}</span>
+          <span className={`block text-[10px] font-semibold ${trend === "up" ? "text-emerald-700" : "text-red-600"}`}>{trendValue}</span>
         )}
       </span>
     </button>
@@ -440,7 +440,7 @@ export default function ZoikoBillingModule() {
 
   const renderEmptyState = () => (
     <div className="flex flex-col items-center justify-center py-20">
-      <div className="h-16 w-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-4">
+      <div className="h-16 w-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
         <FileText size={32} />
       </div>
       <h3 className="text-xl font-bold text-slate-800 mb-2">No billing data yet</h3>
@@ -664,9 +664,9 @@ export default function ZoikoBillingModule() {
       return <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{name}</span>;
     }},
     { key: "created_at", label: "Time", render: (r) => {
-      if (!r.created_at) return <span className="text-slate-400 text-xs">Today</span>;
+      if (!r.created_at) return <span className="text-slate-500 text-xs">Today</span>;
       const date = new Date(r.created_at);
-      if (isNaN(date.getTime())) return <span className="text-slate-400 text-xs">Today</span>;
+      if (isNaN(date.getTime())) return <span className="text-slate-500 text-xs">Today</span>;
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
@@ -770,7 +770,7 @@ export default function ZoikoBillingModule() {
                 </Button>
                 {showExportMenu && (
                   <div className="absolute top-12 right-0 bg-white border border-slate-200 rounded-2xl p-3 shadow-xl z-50 w-44">
-                    <p className="text-xs font-semibold text-slate-400 px-2 py-1 uppercase tracking-wider">Export Format</p>
+                    <p className="text-xs font-semibold text-slate-500 px-2 py-1 uppercase tracking-wider">Export Format</p>
                     <div className="space-y-1 mt-1">
                       <button onClick={() => handleExport("json")} className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors text-xs font-medium text-slate-700">Export as JSON</button>
                       <button onClick={() => handleExport("csv")} className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors text-xs font-medium text-slate-700">Export as CSV</button>
@@ -810,7 +810,7 @@ export default function ZoikoBillingModule() {
           <section aria-label="Secondary metrics" className="space-y-3">
             <div className="flex items-center gap-2 px-1">
               <Users size={15} className="text-brand-500" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Customer & Subscription Metrics</h2>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Customer & Subscription Metrics</h2>
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-4 xl:grid-cols-8">
@@ -842,7 +842,7 @@ export default function ZoikoBillingModule() {
           {healthSummary && (
             <div className="bg-white border border-slate-200 rounded-2xl px-5 py-3 flex flex-wrap items-center gap-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-2">
-                <Activity size={16} className="text-slate-400" />
+                <Activity size={16} className="text-slate-500" />
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">System Health</span>
               </div>
               <div className="flex items-center gap-2">

@@ -352,7 +352,7 @@ export default function PlansPage() {
                   </span>
                 )}
               </span>
-              <span className="block text-xs text-slate-400">{row.plan_code}</span>
+              <span className="block text-xs text-slate-500">{row.plan_code}</span>
             </span>
           </span>
         ),
@@ -372,7 +372,7 @@ export default function PlansPage() {
         label: "Price",
         render: (row) =>
           row.price_amount === null || row.price_amount === undefined ? (
-            <span className="text-xs text-slate-400">—</span>
+            <span className="text-xs text-slate-500">—</span>
           ) : (
             <span className="text-xs font-semibold text-slate-700">
               {(row.currency)} {Number(row.price_amount).toLocaleString()}

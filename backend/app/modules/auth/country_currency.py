@@ -18,20 +18,22 @@ Countries whose national currency is NOT in the backend CurrencyCode enum
 (e.g. Ghana GHS, Kenya KES, Rwanda RWF, Tanzania TZS, Uganda UGX) are
 deliberately excluded: persisting a currency outside the enum would make
 BillingConfiguration seed fall back to USD, producing an
-Organization.currency ≠ BillingConfiguration.base_currency mismatch. Those
-countries keep the project's existing safe fallback (USD) and are reported
-as such.
+Organization.currency ≠ BillingConfiguration.base_currency mismatch. For
+those countries the caller MUST supply an explicit supported currency —
+registration without one fails with an explicit error. There is NO silent
+USD fallback anywhere (ZB-SA-CMD-003 v3.0 master directive).
 
 Currency precedence (see resolve_currency):
     1. explicit currency supplied by the user (must be a valid code)
     2. country-derived default currency
-    3. safe fallback (DEFAULT_FALLBACK_CURRENCY) when neither is available
+    3. neither available → explicit BadRequestException (never a silent USD)
 """
 from typing import Dict, Optional, Tuple
 
+from app.core.exceptions import BadRequestException
 from app.modules.billing.utils.currency_utils import validate_currency_code
 
-DEFAULT_FALLBACK_CURRENCY = "USD"
+DEFAULT_FALLBACK_CURRENCY = "USD"  # kept only for reporting/debugging payloads
 
 # (ISO-3166-1 alpha-2, canonical country name, ISO-4217 currency code)
 # Mirrors frontend/src/utils/currency.js COUNTRY_OPTIONS. Countries whose
@@ -205,12 +207,15 @@ def get_default_date_format_for_country(country: Optional[str]) -> Optional[str]
 
 # Registration countries present in the frontend list but intentionally absent
 # above (currency outside CurrencyCode enum) — kept for reporting/debugging.
+# ZB-SA-CMD-003 v3.0: these are NOT silently mapped to USD any more — a
+# registration for one of them without an explicit supported currency is
+# rejected with a clear error telling the caller to choose one.
 UNSUPPORTED_COUNTRY_NOTES: Dict[str, str] = {
-    "Ghana": "GHS is not a supported backend CurrencyCode; falls back to USD",
-    "Kenya": "KES is not a supported backend CurrencyCode; falls back to USD",
-    "Rwanda": "RWF is not a supported backend CurrencyCode; falls back to USD",
-    "Tanzania": "TZS is not a supported backend CurrencyCode; falls back to USD",
-    "Uganda": "UGX is not a supported backend CurrencyCode; falls back to USD",
+    "Ghana": "GHS is not a supported backend CurrencyCode; registration requires an explicit supported currency",
+    "Kenya": "KES is not a supported backend CurrencyCode; registration requires an explicit supported currency",
+    "Rwanda": "RWF is not a supported backend CurrencyCode; registration requires an explicit supported currency",
+    "Tanzania": "TZS is not a supported backend CurrencyCode; registration requires an explicit supported currency",
+    "Uganda": "UGX is not a supported backend CurrencyCode; registration requires an explicit supported currency",
 }
 
 
@@ -239,18 +244,32 @@ def get_default_currency_for_country(country: Optional[str]) -> Optional[str]:
 def resolve_currency(explicit_currency: Optional[str], country: Optional[str]) -> str:
     """Resolve the registration currency with strict precedence:
 
-        1. explicit currency supplied by the user (already normalized/validated)
+        1. explicit currency supplied by the user (validated against the
+           backend CurrencyCode enum — an unsupported code is an explicit
+           error, never silently accepted or swapped)
         2. country-derived default currency
-        3. DEFAULT_FALLBACK_CURRENCY when neither is available
+        3. neither available → BadRequestException naming the country and
+           the supported options. There is NO silent USD fallback
+           (ZB-SA-CMD-003 v3.0 master directive).
 
     An explicit but empty/blank value counts as "not supplied" so a client
     that sends currency="" still gets the country-derived default."""
     if explicit_currency and explicit_currency.strip():
-        return explicit_currency.strip().upper()
+        candidate = explicit_currency.strip().upper()
+        if not validate_currency_code(candidate):
+            raise BadRequestException(
+                f"Currency '{candidate}' is not supported by this platform. "
+                "Choose one of the supported ISO-4217 codes offered at registration."
+            )
+        return candidate
     derived = get_default_currency_for_country(country)
     if derived:
         return derived
-    return DEFAULT_FALLBACK_CURRENCY
+    raise BadRequestException(
+        f"Cannot determine a billing currency: no explicit currency was supplied and "
+        f"'{country or 'unknown country'}' has no supported default mapping. "
+        "Supply an explicit supported currency for this organization."
+    )
 
 
 def country_defaults() -> Dict:
@@ -273,6 +292,5 @@ def country_defaults() -> Dict:
         key=lambda c: c["name"],
     )
     return {
-        "fallback_currency": DEFAULT_FALLBACK_CURRENCY,
         "countries": countries,
     }

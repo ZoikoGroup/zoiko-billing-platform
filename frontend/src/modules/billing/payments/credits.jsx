@@ -162,7 +162,7 @@ export default function CreditsPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input type="text" placeholder="Search credits..." value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
@@ -216,7 +216,7 @@ export default function CreditsPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Available Credits</p>
           </div>
           <p className="text-2xl font-bold text-slate-900">{formatDisplayCurrency(availableTotal, baseCurrency)}</p>
-          <p className="text-xs text-slate-400 mt-1">{availableCredits.length} credit(s) available</p>
+          <p className="text-xs text-slate-500 mt-1">{availableCredits.length} credit(s) available</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -224,7 +224,7 @@ export default function CreditsPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Issued (MTD)</p>
           </div>
           <p className="text-2xl font-bold text-blue-600">{formatDisplayCurrency(issuedMtdTotal, baseCurrency)}</p>
-          <p className="text-xs text-slate-400 mt-1">{issuedMtd.length} credit(s)</p>
+          <p className="text-xs text-slate-500 mt-1">{issuedMtd.length} credit(s)</p>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -232,7 +232,7 @@ export default function CreditsPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Applied (MTD)</p>
           </div>
           <p className="text-2xl font-bold text-amber-600">{formatDisplayCurrency(appliedMtdTotal, baseCurrency)}</p>
-          <p className="text-xs text-slate-400 mt-1">{appliedMtd.length} credit(s)</p>
+          <p className="text-xs text-slate-500 mt-1">{appliedMtd.length} credit(s)</p>
         </div>
       </div>
 
@@ -247,7 +247,7 @@ export default function CreditsPage() {
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Receipt className="h-10 w-10 text-slate-300 mb-3" />
             <p className="text-sm font-medium text-slate-500 mb-1">No credits found</p>
-            <p className="text-xs text-slate-400">{hasActiveFilters ? "Try adjusting your filters." : "No credit notes have been issued yet."}</p>
+            <p className="text-xs text-slate-500">{hasActiveFilters ? "Try adjusting your filters." : "No credit notes have been issued yet."}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

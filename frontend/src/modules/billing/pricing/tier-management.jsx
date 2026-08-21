@@ -224,14 +224,14 @@ export default function TierManagementPage() {
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Layers size={20} className="text-slate-400" />
+              <Layers size={20} className="text-slate-500" />
               <div className="relative w-72">
                 <select value={selectedPlanId} onChange={(e) => handlePlanChange(e.target.value)}
                   className="appearance-none w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">Select a pricing plan...</option>
                   {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -295,7 +295,7 @@ export default function TierManagementPage() {
                     <td className="px-4 py-4 text-right text-slate-600">{parseFloat(tier.flat_fee) > 0 ? formatCurrency(tier.flat_fee, tier.currency || orgCurrency) : "—"}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => setConfirmRemove(tier)}
-                        className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="Remove">
+                        className="p-2 rounded-lg hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Remove">
                         <Trash2 size={16} />
                       </button>
                     </td>

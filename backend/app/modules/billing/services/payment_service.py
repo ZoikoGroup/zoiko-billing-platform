@@ -553,6 +553,22 @@ class PaymentService:
     # ── Payment Attempts ───────────────────────────────────────────────────
 
     def record_attempt(self, payment_id: int, organization_id: int, attempt_number: int, status: str, **data: Any) -> PaymentAttempt:
+        # ZB-SA-CMD-003 §9.2 — "Pause automatic payment attempts" breaker:
+        # recording a NEW capture attempt is platform-initiated payment
+        # activity and is gated. Webhook-driven status confirmations for
+        # in-flight processor activity are NOT gated (they only record what
+        # the processor already did).
+        from app.core.exceptions import BadRequestException
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_PAYMENT_ATTEMPTS,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_PAYMENT_ATTEMPTS)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
         self.repo.get_by_id(payment_id, organization_id)
         attempt = self.attempt_repo.create(organization_id, payment_id=payment_id, attempt_number=attempt_number, status=status, **data)
         return attempt

@@ -192,7 +192,7 @@ export default function OrganizationsPage() {
             </span>
             <span>
               <span className="block font-semibold text-slate-800">{row.organization_name}</span>
-              <span className="block text-xs text-slate-400">{row.organization_code}</span>
+              <span className="block text-xs text-slate-500">{row.organization_code}</span>
             </span>
           </div>
         ),
@@ -231,7 +231,7 @@ export default function OrganizationsPage() {
         label: "Current Subscription",
         render: (row) => {
           const sub = row.current_subscription;
-          if (!sub) return <span className="text-xs text-slate-400">—</span>;
+          if (!sub) return <span className="text-xs text-slate-500">—</span>;
           return (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-600">{sub.plan_code}</span>
