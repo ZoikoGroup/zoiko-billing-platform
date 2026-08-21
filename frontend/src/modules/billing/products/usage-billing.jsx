@@ -27,7 +27,7 @@ const UNIT_OPTIONS = [
 ];
 
 function StatusPill({ status }) {
-  const styles = { active: "bg-emerald-100 text-emerald-700", inactive: "bg-gray-100 text-gray-600" };
+  const styles = { active: "bg-emerald-100 text-emerald-700", inactive: "bg-slate-100 text-slate-600" };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-600"}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
@@ -74,7 +74,7 @@ export default function UsageBillingPage() {
   const [testQty, setTestQty] = useState("1");
   const [testEvent, setTestEvent] = useState(null);
   const [createForm, setCreateForm] = useState({
-    name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency || "USD",
+    name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency,
     is_subscribable: false, description: "",
   });
   const [formLoading, setFormLoading] = useState(false);
@@ -150,7 +150,7 @@ export default function UsageBillingPage() {
         is_active: true,
       });
       setShowCreate(false);
-      setCreateForm({ name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency || "USD", is_subscribable: false, description: "" });
+      setCreateForm({ name: "", code: "", unit_label: "unit", meter_type: "sum", unit_price: "", currency: baseCurrency, is_subscribable: false, description: "" });
       await fetchData();
       setSuccessMessage("Meter created successfully");
       setTimeout(() => setSuccessMessage(null), 4000);
@@ -247,7 +247,7 @@ export default function UsageBillingPage() {
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{card.label}</p>
                 <p className="text-2xl font-extrabold text-slate-800 mt-2 leading-tight truncate">{card.value}</p>
-                <p className="text-xs text-slate-400 mt-1 truncate">{card.sub}</p>
+                <p className="text-xs text-slate-500 mt-1 truncate">{card.sub}</p>
               </div>
               <div className={`h-10 w-10 rounded-xl ${card.iconBg} text-white flex items-center justify-center shrink-0 shadow-sm`}>
                 <card.icon size={20} />
@@ -267,28 +267,28 @@ export default function UsageBillingPage() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search meters..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   aria-label="Search usage products"
                   className="w-44 pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div className="hidden lg:flex items-center gap-2">
-                <Calendar size={14} className="text-slate-400" />
+                <Calendar size={14} className="text-slate-500" />
                 <input type="date" value={dateRange.from} onChange={(e) => setDateRange((p) => ({ ...p, from: e.target.value }))}
                   aria-label="Filter from date"
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                <span className="text-slate-400 text-sm">—</span>
+                <span className="text-slate-500 text-sm">—</span>
                 <input type="date" value={dateRange.to} onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
                   aria-label="Filter to date"
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <button onClick={handleDownloadLog}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
                 <Download size={14} /> Log CSV
               </button>
               <button onClick={() => { setRefreshing(true); fetchData(); }} disabled={refreshing}
-                className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50" aria-label="Refresh">
+                className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50" aria-label="Refresh">
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </button>
             </div>
@@ -328,7 +328,7 @@ export default function UsageBillingPage() {
                             className="font-medium text-slate-800 hover:text-brand-700 hover:underline truncate block text-left">
                             {product.name || "Unnamed"}
                           </button>
-                          {product.code && <p className="text-xs text-slate-400 font-mono">{product.code}</p>}
+                          {product.code && <p className="text-xs text-slate-500 font-mono">{product.code}</p>}
                         </div>
                       </div>
                     </td>
@@ -349,16 +349,16 @@ export default function UsageBillingPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openTest(product)} aria-label={`Test ${product.name}`}
-                          className="p-2 rounded-lg hover:bg-violet-50 text-slate-400 hover:text-violet-600 transition-colors" title="Test API Event">
+                          className="p-2 rounded-lg hover:bg-violet-50 text-slate-500 hover:text-violet-600 transition-colors" title="Test API Event">
                           <FlaskConical size={16} />
                         </button>
                         <button onClick={() => navigate(`/billing/products/${product.id}`)} aria-label={`Configure ${product.name}`}
-                          className="p-2 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-700 transition-colors" title="Configure">
+                          className="p-2 rounded-lg hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors" title="Configure">
                           <Settings2 size={16} />
                         </button>
                         {product.status === "active" && (
                           <button onClick={() => handleDeactivate(product)} aria-label={`Deactivate ${product.name}`}
-                            className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="Deactivate">
+                            className="p-2 rounded-lg hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate">
                             <X size={16} />
                           </button>
                         )}
@@ -372,9 +372,9 @@ export default function UsageBillingPage() {
         )}
 
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-slate-400">{mergedProducts.length} meter(s) · {activeMeters.length} active</p>
+          <p className="text-xs text-slate-500">{mergedProducts.length} meter(s) · {activeMeters.length} active</p>
           {dateRange.from && dateRange.to && (
-            <p className="text-xs text-slate-400">Filtering by: {formatDisplayDate(dateRange.from)} — {formatDisplayDate(dateRange.to)}</p>
+            <p className="text-xs text-slate-500">Filtering by: {formatDisplayDate(dateRange.from)} — {formatDisplayDate(dateRange.to)}</p>
           )}
         </div>
       </div>
@@ -450,7 +450,7 @@ export default function UsageBillingPage() {
               <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
                 <div>
                   <p className="text-sm font-medium text-slate-700">Bill via subscription</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Include this meter in recurring subscription invoices</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Include this meter in recurring subscription invoices</p>
                 </div>
                 <input type="checkbox" checked={createForm.is_subscribable}
                   onChange={(e) => setCreateForm((p) => ({ ...p, is_subscribable: e.target.checked }))}
@@ -486,7 +486,7 @@ export default function UsageBillingPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-800">{testProduct.name}</p>
-                  <p className="text-xs text-slate-400">{meterTypeFor(testProduct)} · {testProduct.unit_label || "unit"} · {formatDisplayCurrency(testProduct.default_price, testProduct.currency || baseCurrency)} / unit</p>
+                  <p className="text-xs text-slate-500">{meterTypeFor(testProduct)} · {testProduct.unit_label || "unit"} · {formatDisplayCurrency(testProduct.default_price, testProduct.currency || baseCurrency)} / unit</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -505,11 +505,11 @@ export default function UsageBillingPage() {
               {testEvent && (
                 <div className="rounded-xl overflow-hidden border border-slate-200">
                   <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-semibold">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
                       <CheckCircle size={12} /> {testEvent.status}
                     </span>
                     <span className="font-mono">{testEvent.event_id}</span>
-                    <span className="ml-auto font-mono text-slate-400">{new Date(testEvent.timestamp).toLocaleTimeString()}</span>
+                    <span className="ml-auto font-mono text-slate-500">{new Date(testEvent.timestamp).toLocaleTimeString()}</span>
                   </div>
                   <pre className="px-4 py-3 text-xs text-slate-700 bg-white overflow-x-auto font-mono leading-relaxed">
 {JSON.stringify({

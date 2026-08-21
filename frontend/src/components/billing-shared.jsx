@@ -48,7 +48,7 @@ export function SuccessMessage({ message, onDismiss }) {
     <div className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status" aria-live="polite">
       <CheckCircle size={18} className="mt-0.5 shrink-0" />
       <span className="flex-1">{message}</span>
-      {onDismiss && <button type="button" onClick={onDismiss} className="text-emerald-600 hover:text-emerald-800" aria-label="Dismiss success message"><X size={16} /></button>}
+      {onDismiss && <button type="button" onClick={onDismiss} className="text-emerald-700 hover:text-emerald-800" aria-label="Dismiss success message"><X size={16} /></button>}
     </div>
   );
 }
@@ -110,7 +110,7 @@ export function Pagination({ page, totalPages, onPageChange, children }) {
   const safePage = Math.min(Math.max(1, page), totalPages);
   return (
     <div className="flex justify-between items-center px-6 py-4 border-t border-slate-100">
-      <span className="text-xs text-slate-400">{children}</span>
+      <span className="text-xs text-slate-500">{children}</span>
       <div className="flex gap-1">
         <button onClick={() => onPageChange(Math.max(1, safePage - 1))} disabled={safePage <= 1}
           className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition-colors">Prev</button>
@@ -206,7 +206,7 @@ export function DashboardDateRangeFilter({
       >
         <Calendar size={15} className="text-brand-500" />
         <span className="whitespace-nowrap">{selectedLabel}</span>
-        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={15} className={`text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -234,7 +234,7 @@ export function DashboardDateRangeFilter({
                 <input type="date" value={draftStart} max={draftEnd || undefined} onChange={(e) => setDraftStart(e.target.value)}
                   className="w-full min-w-0 rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
                   aria-label="Custom range start date" />
-                <span className="text-xs text-slate-400">to</span>
+                <span className="text-xs text-slate-500">to</span>
                 <input type="date" value={draftEnd} min={draftStart || undefined} onChange={(e) => setDraftEnd(e.target.value)}
                   className="w-full min-w-0 rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
                   aria-label="Custom range end date" />
@@ -264,7 +264,7 @@ export function DashboardHeader({
   title,
   subtitle,
   icon: Icon,
-  iconGradient = "from-[#FF7A00] to-[#FF5500]",
+  iconGradient = "from-[#2563EB] to-[#1D4ED8]",
   crumbs = [],
   primaryAction,
   lastUpdated,
@@ -287,7 +287,7 @@ export function DashboardHeader({
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-400">
+        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
@@ -363,7 +363,7 @@ export function DashboardHeader({
       </div>
 
       {formatLastUpdated(lastUpdated) && (
-        <p className="mt-3 text-xs text-slate-400 no-print">
+        <p className="mt-3 text-xs text-slate-500 no-print">
           <span className="font-medium text-slate-500">Updated:</span> {formatLastUpdated(lastUpdated)}
         </p>
       )}
@@ -385,7 +385,7 @@ export function BusinessInsights({ items = [], title = "Business Insights" }) {
     <section aria-label={title} className="space-y-2">
       <div className="flex items-center gap-2 px-1">
         <Sparkles size={14} className="text-brand-500" />
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</h2>
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600">{title}</h2>
       </div>
       <ExecutiveSummary items={items} />
     </section>
@@ -424,7 +424,7 @@ const ActionCenterRow = memo(function ActionCenterRow({ icon: Icon = AlertTriang
             </span>
           )}
         </p>
-        {description && <p className="truncate text-xs text-slate-400" title={description}>{description}</p>}
+        {description && <p className="truncate text-xs text-slate-500" title={description}>{description}</p>}
       </div>
       {handleClick && (
         <button
@@ -455,7 +455,7 @@ export function ActionCenter({ title = "Action Center", items = [] }) {
     <section aria-label={title} className="space-y-3">
       <div className="flex items-center gap-2 px-1">
         <AlertTriangle size={15} className="text-brand-500" />
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">{title}</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">{title}</h2>
         <span className="h-px flex-1 bg-slate-200/70" />
       </div>
       {items.length > 0 ? (
@@ -466,7 +466,7 @@ export function ActionCenter({ title = "Action Center", items = [] }) {
         </div>
       ) : (
         <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700">
             <CheckCircle size={16} />
           </span>
           <p className="text-sm font-medium text-slate-600">All caught up — nothing needs your attention right now.</p>
@@ -497,7 +497,7 @@ const QuickActionTile = memo(function QuickActionTile({ icon: Icon, label, hint,
       </span>
       <span>
         <span className="block text-sm font-semibold text-slate-700">{label}</span>
-        {hint && <span className="mt-0.5 block text-xs text-slate-400">{hint}</span>}
+        {hint && <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>}
       </span>
     </button>
   );
@@ -508,7 +508,7 @@ export function QuickActions({ title = "Quick Actions", actions = [] }) {
   return (
     <section aria-label={title} className="space-y-3">
       <div className="flex items-center gap-2 px-1">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">{title}</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">{title}</h2>
         <span className="h-px flex-1 bg-slate-200/70" />
       </div>
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
@@ -590,7 +590,7 @@ export function DashboardStatCard({
               <span className="truncate">{trendValue}</span>
             </span>
           ) : subtitle ? (
-            <p className="mt-2 text-xs text-slate-400 truncate">{subtitle}</p>
+            <p className="mt-2 text-xs text-slate-500 truncate">{subtitle}</p>
           ) : null}
         </div>
         <div className={`h-10 w-10 rounded-xl bg-linear-to-r ${color} text-white flex items-center justify-center shrink-0 ml-3 shadow-sm`}>
@@ -607,7 +607,7 @@ export function DashboardStatCard({
                   <stop offset="95%" stopColor="currentColor" stopOpacity={0} className="text-brand-500" />
                 </linearGradient>
               </defs>
-              <Area type="monotone" dataKey="v" stroke="#FF7A00" strokeWidth={1.5} fill={`url(#sparkline-${title})`} isAnimationActive={false} />
+              <Area type="monotone" dataKey="v" stroke="#2563EB" strokeWidth={1.5} fill={`url(#sparkline-${title})`} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -649,7 +649,7 @@ export class DashboardChartErrorBoundary extends Component {
         <div role="alert" aria-live={this.props.ariaLive || "polite"} className="flex flex-col items-center justify-center h-64 bg-slate-50/50 rounded-xl border border-slate-100 p-6 text-center">
           <FileText className="h-8 w-8 text-slate-300 mb-2" />
           <p className="text-slate-500 text-sm font-medium">No chart data available</p>
-          <p className="text-slate-400 text-xs mt-1">Data will populate automatically when available</p>
+          <p className="text-slate-500 text-xs mt-1">Data will populate automatically when available</p>
         </div>
       );
     }
@@ -672,8 +672,8 @@ export function DashboardChartCard({ title, children, className = "", action }) 
 export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, ctaText, onCtaClick, steps = [] }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[220px] py-8 px-4 bg-slate-50/70 rounded-2xl border border-slate-200/80 text-center">
-      <div className="h-12 w-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3 shadow-xs">
-        <Icon className="h-6 w-6 text-slate-400" />
+      <div className="h-12 w-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-3 shadow-xs">
+        <Icon className="h-6 w-6 text-slate-500" />
       </div>
       {title && <p className="text-slate-800 text-base font-bold mb-1">{title}</p>}
       <p className="text-slate-500 text-xs font-normal max-w-xs leading-relaxed mb-4">{message}</p>
@@ -681,7 +681,7 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
         <div className="flex flex-wrap items-center justify-center gap-2">
           {ctaText && onCtaClick && (
             <button onClick={onCtaClick}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#FF7A00] hover:bg-[#FF5500] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
               {ctaText}
             </button>
           )}
@@ -690,7 +690,7 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
             return (
               <button key={step.label} onClick={step.onClick}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-xs font-semibold rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
-                {StepIcon && <StepIcon size={13} className="text-slate-400" />}
+                {StepIcon && <StepIcon size={13} className="text-slate-500" />}
                 {step.label}
               </button>
             );
@@ -809,12 +809,12 @@ const ProductRow = memo(function ProductRow({ rowRef, product, selected, favorit
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-xs font-semibold text-slate-700">{formatPrice(product)}</span>
-          {product.code && <span className="text-[10px] text-slate-400">#{product.code}</span>}
+          {product.code && <span className="text-[10px] text-slate-500">#{product.code}</span>}
         </div>
       </div>
       {multiSelect && showQuantityInput && selected && (
         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <label className="text-[10px] text-slate-400" htmlFor={`qty-${product.id}`}>Qty</label>
+          <label className="text-[10px] text-slate-500" htmlFor={`qty-${product.id}`}>Qty</label>
           <input
             id={`qty-${product.id}`}
             type="number"
@@ -997,7 +997,7 @@ export function ProductSelector({
   const formatPrice = useCallback((p) => {
     if (formatPriceProp) return formatPriceProp(p);
     const price = p.original_price || p.default_price || p.unit_price || 0;
-    const currency = p.currency || invoiceCurrency || "USD";
+    const currency = p.currency || invoiceCurrency;
     return `${currency} ${Number(price).toFixed(2)}`;
   }, [formatPriceProp, invoiceCurrency]);
 
@@ -1086,23 +1086,23 @@ export function ProductSelector({
 
       <div className={isPanel ? "max-h-112 overflow-y-auto" : "max-h-64 overflow-y-auto"} role="listbox" aria-multiselectable={multiSelect}>
         {activeTab === "search" && noQueryYet && (
-          <div className="px-3 py-4 text-center text-xs text-slate-400">Type to search products or select a category above</div>
+          <div className="px-3 py-4 text-center text-xs text-slate-500">Type to search products or select a category above</div>
         )}
         {activeTab === "search" && !noQueryYet && searching && (
-          <div className="px-3 py-4 text-center text-xs text-slate-400">Searching...</div>
+          <div className="px-3 py-4 text-center text-xs text-slate-500">Searching...</div>
         )}
         {activeTab === "search" && !noQueryYet && !searching && results.length === 0 && (
-          <div className="px-3 py-4 text-center text-xs text-slate-400">No products found</div>
+          <div className="px-3 py-4 text-center text-xs text-slate-500">No products found</div>
         )}
         {activeTab === "search" && !searching && results.map((p, i) => renderRow(p, i))}
 
         {activeTab === "favorites" && favoriteProducts.length === 0 && (
-          <div className="px-3 py-4 text-center text-xs text-slate-400">No favorite products yet. Star products to add them here.</div>
+          <div className="px-3 py-4 text-center text-xs text-slate-500">No favorite products yet. Star products to add them here.</div>
         )}
         {activeTab === "favorites" && favoriteProducts.map((p, i) => renderRow(p, i))}
 
         {activeTab === "recent" && recent.length === 0 && (
-          <div className="px-3 py-4 text-center text-xs text-slate-400">No recently used products.</div>
+          <div className="px-3 py-4 text-center text-xs text-slate-500">No recently used products.</div>
         )}
         {activeTab === "recent" && recent.map((p, i) => renderRow(p, i))}
       </div>
@@ -1148,7 +1148,7 @@ export function ProductSelector({
   return (
     <div ref={containerRef} className={isPanel ? "" : "relative"}>
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input ref={inputRef} type="search" value={searchTerm}
           onChange={(e) => { setSearchTerm(e.target.value); setShowDropdown(true); setActiveTab("search"); }}
           onFocus={() => setShowDropdown(true)}
@@ -1162,7 +1162,7 @@ export function ProductSelector({
           aria-label="Search products by name, SKU, code, or category" aria-expanded={showDropdown} aria-controls="product-selector-results" />
         {searching && <RefreshCw size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-500 animate-spin" />}
         {!searching && searchTerm && (
-          <button type="button" onClick={() => { setSearchTerm(""); setResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+          <button type="button" onClick={() => { setSearchTerm(""); setResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search">
             <X size={14} />
           </button>
         )}
@@ -1216,7 +1216,7 @@ export function BulkProductPickerModal({
               {selectedProducts.length > 0 && <span className="ml-1 font-medium text-brand-600">{selectedProducts.length} selected</span>}
             </p>
           </div>
-          <button type="button" onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Close">
+          <button type="button" onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -1386,19 +1386,19 @@ export function DateRangeFilter({ value, onChange, customStart, customEnd, onCus
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
       <div className="relative">
-        <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
         <select value={value} onChange={(e) => onChange(e.target.value)}
           className="appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-8 py-2 text-xs font-medium text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 cursor-pointer"
           aria-label="Date range">
           {DATE_RANGE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
-        <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
       </div>
       {isCustom && (
         <>
           <input type="date" value={customStart || ""} onChange={(e) => onCustomStartChange?.(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" aria-label="Start date" />
-          <span className="text-xs text-slate-400">to</span>
+          <span className="text-xs text-slate-500">to</span>
           <input type="date" value={customEnd || ""} onChange={(e) => onCustomEndChange?.(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" aria-label="End date" />
         </>
@@ -1437,7 +1437,7 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
         <div className="absolute right-0 top-full mt-1 z-40 w-40 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">
           {onExportCSV && (
             <button type="button" onClick={() => { onExportCSV(); setOpen(false); }} className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 text-left flex items-center gap-2">
-              <span className="w-5 h-5 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold">CSV</span> CSV
+              <span className="w-5 h-5 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold">CSV</span> CSV
             </button>
           )}
           {onExportJSON && (

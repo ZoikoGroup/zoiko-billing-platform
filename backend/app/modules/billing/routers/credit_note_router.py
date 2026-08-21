@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services import CreditNoteService
 from app.modules.billing.schemas import (
     CreditNoteCreate,
@@ -188,7 +188,7 @@ def approve_credit_note(
     reason: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-    _admin=Depends(get_current_billing_admin),
+    _approver=Depends(get_current_finance_approver),
 ):
     svc = CreditNoteService(db)
     return svc.approve_credit_note(

@@ -130,17 +130,17 @@ export default function TaxConfigurationPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Jurisdictions</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{jurisdictions.length}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Jurisdictions</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{jurisdictions.length}</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tax Rules</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{jurisdictions.filter((j) => j.tax_rule !== "standard").length + (taxRates.length > 0 ? 1 : 0)}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tax Rules</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{jurisdictions.filter((j) => j.tax_rule !== "standard").length + (taxRates.length > 0 ? 1 : 0)}</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Exemptions</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{exemptions.length}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Exemptions</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{exemptions.length}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 ml-4">
@@ -150,7 +150,7 @@ export default function TaxConfigurationPage() {
             </span>
           )}
           <button onClick={fetchData}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button onClick={handleSave} disabled={saving}
@@ -168,7 +168,7 @@ export default function TaxConfigurationPage() {
       )}
 
       <div className="space-y-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
               <Globe size={20} />
@@ -198,7 +198,7 @@ export default function TaxConfigurationPage() {
           </div>
 
           {jurisdictions.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">No jurisdictions configured. Add one above.</p>
+            <p className="text-sm text-slate-500 text-center py-4">No jurisdictions configured. Add one above.</p>
           ) : (
             <div className="space-y-2">
               {jurisdictions.map((j, i) => (
@@ -206,14 +206,14 @@ export default function TaxConfigurationPage() {
                   <div className="flex items-center gap-3">
                     <Globe size={16} className="text-brand-500" />
                     <span className="text-sm font-medium text-slate-800">{j.name}</span>
-                    <span className="text-xs text-slate-400 capitalize">({j.type})</span>
+                    <span className="text-xs text-slate-500 capitalize">({j.type})</span>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       j.tax_rule === "standard" ? "bg-blue-100 text-blue-700" :
                       j.tax_rule === "reduced" ? "bg-amber-100 text-amber-700" :
-                      j.tax_rule === "zero" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                      j.tax_rule === "zero" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
                     }`}>{j.tax_rule}</span>
                   </div>
-                  <button onClick={() => removeJurisdiction(j.id)} className="p-1 text-slate-400 hover:text-red-600">
+                  <button onClick={() => removeJurisdiction(j.id)} className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -222,7 +222,7 @@ export default function TaxConfigurationPage() {
           )}
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-6">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
               <Shield size={20} />
@@ -254,7 +254,7 @@ export default function TaxConfigurationPage() {
           </div>
 
           {exemptions.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">No exemptions configured. Add one above.</p>
+            <p className="text-sm text-slate-500 text-center py-4">No exemptions configured. Add one above.</p>
           ) : (
             <div className="space-y-2">
               {exemptions.map((e, i) => (
@@ -262,14 +262,14 @@ export default function TaxConfigurationPage() {
                   <div className="flex items-center gap-3">
                     <X size={16} className="text-amber-500" />
                     <span className="text-sm font-medium text-slate-800">{e.name}</span>
-                    {e.description && <span className="text-xs text-slate-400">{e.description}</span>}
+                    {e.description && <span className="text-xs text-slate-500">{e.description}</span>}
                     {e.tax_rate_id && (
                       <span className="text-xs text-brand-600 font-medium">
                         Rate: {taxRates.find((r) => String(r.id) === String(e.tax_rate_id))?.name || `#${e.tax_rate_id}`}
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeExemption(e.id)} className="p-1 text-slate-400 hover:text-red-600">
+                  <button onClick={() => removeExemption(e.id)} className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>

@@ -14,13 +14,13 @@ const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-700",
   pending: "bg-blue-100 text-blue-700",
   active: "bg-emerald-100 text-emerald-700",
-  expired: "bg-gray-100 text-gray-700",
+  expired: "bg-slate-100 text-slate-700",
   terminated: "bg-red-100 text-red-700",
   cancelled: "bg-slate-100 text-slate-500",
 };
 
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || "bg-gray-100 text-gray-600";
+  const s = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
   const icons = { active: Play, pending: Clock, draft: FileTextIcon, expired: Clock, terminated: XCircle, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return (
@@ -45,13 +45,13 @@ const TABS = [
 
 function TabNav({ tabs, active, onChange }) {
   return (
-    <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+    <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
           <button key={tab.key} onClick={() => onChange(tab.key)}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>
             <Icon className="h-4 w-4" /> {tab.label}
           </button>
@@ -78,7 +78,7 @@ function TimelineEvent({ icon: Icon, label, date, color }) {
       </div>
       <div>
         <p className="text-sm font-medium text-slate-800">{label}</p>
-        <p className="text-xs text-slate-400">{formatDisplayDate(date)}</p>
+        <p className="text-xs text-slate-500">{formatDisplayDate(date)}</p>
       </div>
     </div>
   );
@@ -249,8 +249,8 @@ export default function ContractDetailPage() {
     return (
       <HRPage title="Contract Detail" subtitle="Contract not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <FileText className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Contract not found</p>
+          <FileText className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Contract not found</p>
         </div>
       </HRPage>
     );
@@ -276,29 +276,29 @@ export default function ContractDetailPage() {
   const renderOverview = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contract Value</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(contract.total_value ?? contract.value, contract.currency)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Contract Value</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(contract.total_value ?? contract.value, contract.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
           <div className="mt-2"><StatusBadge status={contract.status} /></div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Term</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Term</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
             {formatDisplayDate(contract.start_date)} — {formatDisplayDate(contract.end_date) || "Ongoing"}
           </p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{contract.billing_period?.replace(/_/g, " ")}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 capitalize">{contract.billing_period?.replace(/_/g, " ")}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Contract Information</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Contract Information</h3>
           <div className="space-y-3">
             <InfoRow label="Contract Number" value={contract.contract_number} />
             <InfoRow label="Contract Name" value={contract.contract_name} />
@@ -313,8 +313,8 @@ export default function ContractDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Financial Summary</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Financial Summary</h3>
           <div className="space-y-3">
             <InfoRow label="Contract Value" value={formatDisplayCurrency(contract.total_value ?? contract.value, contract.currency)} />
             <InfoRow label="Total Invoiced" value={formatDisplayCurrency(totalInvoiceValue, contract.currency)} />
@@ -333,10 +333,10 @@ export default function ContractDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Subscriptions</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscriptions</h3>
           {subscriptions.length === 0 ? (
-            <div className="text-center py-4 text-slate-400">
+            <div className="text-center py-4 text-slate-500">
               <CreditCard size={24} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm">No subscriptions linked</p>
             </div>
@@ -367,8 +367,8 @@ export default function ContractDetailPage() {
   );
 
   const renderCustomer = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h3>
       {customer ? (
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
@@ -404,10 +404,10 @@ export default function ContractDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <User size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">{singular} details not available</p>
-          <p className="text-xs text-slate-400 mt-1">{singular} #{contract.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">{singular} #{contract.customer_id}</p>
         </div>
       )}
     </div>
@@ -416,18 +416,18 @@ export default function ContractDetailPage() {
   const renderProducts = () => {
     const products = contractItems;
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({products.length})</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({products.length})</h3>
         {products.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Package size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No products linked to this contract</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-slate-200">
               <thead>
-                <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                   <th className="text-left py-3 px-4">#</th>
                   <th className="text-left py-3 px-4">Description</th>
                   <th className="text-right py-3 px-4">Qty</th>
@@ -437,19 +437,19 @@ export default function ContractDetailPage() {
                   <th className="text-right py-3 px-4">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {products.map((item, i) => (
                   <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
-                    className={`text-sm text-gray-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                    <td className="py-3 px-4 text-gray-400">{item.line_number || i + 1}</td>
+                    className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
+                    <td className="py-3 px-4 text-slate-500">{item.line_number || i + 1}</td>
                     <td className="py-3 px-4">
                       <p className="font-medium text-slate-800">{item.description || "Item"}</p>
                       {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
                     </td>
                     <td className="py-3 px-4 text-right">{parseFloat(item.quantity || 1).toFixed(2)}</td>
                     <td className="py-3 px-4 text-right">{formatDisplayCurrency(item.unit_price, contract.currency)}</td>
-                    <td className="py-3 px-4 text-right text-gray-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
-                    <td className="py-3 px-4 text-right text-gray-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
+                    <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
+                    <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
                     <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(item.total_amount, contract.currency)}</td>
                   </tr>
                 ))}
@@ -469,8 +469,8 @@ export default function ContractDetailPage() {
     const total = subtotal - discAmt + taxAmt;
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Subtotal ({products.length} items)</span>
@@ -490,8 +490,8 @@ export default function ContractDetailPage() {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h3>
           <div className="space-y-3">
             <InfoRow label="Currency" value={contract.currency} />
             <InfoRow label="Billing Period" value={contract.billing_period?.replace(/_/g, " ")} />
@@ -507,32 +507,32 @@ export default function ContractDetailPage() {
   const renderBilling = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Period</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{contract.billing_period?.replace(/_/g, " ")}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Period</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 capitalize">{contract.billing_period?.replace(/_/g, " ")}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Day</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{contract.billing_day ? `Day ${contract.billing_day}` : "—"}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Day</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{contract.billing_day ? `Day ${contract.billing_day}` : "—"}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Next Billing</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{contract.next_billing_date ? formatDisplayDate(contract.next_billing_date) : "—"}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Next Billing</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{contract.next_billing_date ? formatDisplayDate(contract.next_billing_date) : "—"}</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Invoice Schedule</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Invoice Schedule</h3>
         {invoices.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
+          <div className="text-center py-8 text-slate-500">
             <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No invoices generated yet</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-slate-200">
               <thead>
-                <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                   <th className="text-left py-3 px-4">Invoice</th>
                   <th className="text-left py-3 px-4">Issue Date</th>
                   <th className="text-left py-3 px-4">Due Date</th>
@@ -542,14 +542,14 @@ export default function ContractDetailPage() {
                   <th className="text-left py-3 px-4">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {invoices.map((inv) => (
-                  <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-gray-900 hover:bg-slate-50 cursor-pointer">
+                  <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
                     <td className="py-3 px-4 font-medium text-brand-600 hover:underline">{inv.invoice_number || `#${inv.id}`}</td>
                     <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
                     <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.due_date)}</td>
                     <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
-                    <td className="py-3 px-4 text-right text-emerald-600">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
+                    <td className="py-3 px-4 text-right text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
                     <td className="py-3 px-4 text-right text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -557,7 +557,7 @@ export default function ContractDetailPage() {
                         inv.status === "overdue" ? "bg-red-100 text-red-700" :
                         inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" :
                         inv.status === "sent" ? "bg-blue-100 text-blue-700" :
-                        "bg-gray-100 text-gray-600"
+                        "bg-slate-100 text-slate-600"
                       }`}>{inv.status?.replace(/_/g, " ")}</span>
                     </td>
                   </tr>
@@ -582,11 +582,11 @@ export default function ContractDetailPage() {
     }
     if (contract.status === "terminated" && contract.end_date) events.push({ icon: XCircle, label: "Terminated", date: contract.end_date, color: "bg-red-500" });
     if (contract.status === "cancelled" && contract.updated_at) events.push({ icon: Ban, label: "Cancelled", date: contract.updated_at, color: "bg-amber-500" });
-    if (contract.status === "expired" && contract.end_date) events.push({ icon: Clock, label: "Expired", date: contract.end_date, color: "bg-gray-500" });
+    if (contract.status === "expired" && contract.end_date) events.push({ icon: Clock, label: "Expired", date: contract.end_date, color: "bg-slate-500" });
 
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
         <div className="space-y-4">
           {events.map((ev, i) => (
             <TimelineEvent key={i} icon={ev.icon} label={ev.label} date={ev.date} color={ev.color} />
@@ -597,21 +597,21 @@ export default function ContractDetailPage() {
   };
 
   const renderDocuments = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><File size={16} className="text-brand-500" /> Documents</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><File size={16} className="text-brand-500" /> Documents</h3>
       {contract.document_url ? (
         <div className="space-y-3">
           <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
             <FileText className="h-8 w-8 text-brand-500" />
             <div className="flex-1">
               <p className="font-medium text-slate-800">Contract Document</p>
-              <p className="text-xs text-slate-400">Uploaded: {formatDisplayDate(contract.updated_at)}</p>
+              <p className="text-xs text-slate-500">Uploaded: {formatDisplayDate(contract.updated_at)}</p>
             </div>
             <a href={contract.document_url} target="_blank" rel="noopener noreferrer" className="text-sm text-brand-600 hover:text-brand-700 font-medium">View</a>
           </div>
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <File size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No documents uploaded</p>
         </div>
@@ -622,19 +622,19 @@ export default function ContractDetailPage() {
   const renderNotes = () => (
     <div className="space-y-6">
       {contract.notes && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{contract.notes}</p>
         </div>
       )}
       {contract.terms && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2"><FileTextIcon size={16} className="text-brand-500" /> Terms & Conditions</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileTextIcon size={16} className="text-brand-500" /> Terms & Conditions</h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{contract.terms}</p>
         </div>
       )}
       {!contract.notes && !contract.terms && (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes or terms</p>
         </div>
@@ -643,10 +643,10 @@ export default function ContractDetailPage() {
   );
 
   const renderActivity = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
       {auditLogs.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Activity size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No activity recorded</p>
         </div>
@@ -666,7 +666,7 @@ export default function ContractDetailPage() {
                 <p className="text-sm font-medium text-slate-800 capitalize">{log.action || log.event_type || "Activity"}</p>
                 <p className="text-xs text-slate-500">{log.details || log.description || log.message || "—"}</p>
               </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</span>
+              <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</span>
             </div>
           ))}
         </div>
@@ -675,9 +675,9 @@ export default function ContractDetailPage() {
   );
 
   const renderAmendments = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Amendments ({amendments.length})</h3>
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Amendments ({amendments.length})</h3>
         <button 
           onClick={() => setShowAmendmentModal(true)}
           className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors"
@@ -686,7 +686,7 @@ export default function ContractDetailPage() {
         </button>
       </div>
       {amendments.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No amendments recorded</p>
         </div>
@@ -748,13 +748,13 @@ export default function ContractDetailPage() {
       subtitle={
         <span className="flex items-center gap-2">
           <StatusBadge status={contract.status} />
-          {contract.contract_version > 1 && <span className="text-xs text-slate-400">v{contract.contract_version}</span>}
+          {contract.contract_version > 1 && <span className="text-xs text-slate-500">v{contract.contract_version}</span>}
         </span>
       }
       actions={
         <div className="flex items-center gap-2">
           <button onClick={() => navigate("/billing/contracts")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
         </div>
@@ -775,8 +775,8 @@ export default function ContractDetailPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Actions</h3>
             <div className="space-y-3">
               <button onClick={() => navigate(`/billing/contracts/${id}/edit`)}
                 className={`${btnClass} w-full text-slate-700 bg-white border border-slate-300 hover:bg-slate-50`}>
@@ -875,12 +875,12 @@ export default function ContractDetailPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Summary</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Contract Value</span><span className="font-medium">{formatDisplayCurrency(contract.total_value ?? contract.value, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Total Invoiced</span><span className="font-medium">{formatDisplayCurrency(totalInvoiceValue, contract.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Paid</span><span className="font-medium text-emerald-600">{formatDisplayCurrency(paidValue, contract.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Paid</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(paidValue, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Outstanding</span><span className="font-medium text-amber-600">{formatDisplayCurrency(outstandingValue, contract.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Invoices</span><span className="font-medium">{totalInvoices} ({outstandingInvoices.length} outstanding)</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Subscriptions</span><span className="font-medium">{subscriptions.length}</span></div>
@@ -895,14 +895,14 @@ export default function ContractDetailPage() {
       {showRenewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRenewModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Renew Contract</h3>
-            <p className="text-sm text-gray-500 mb-4">Set the new end date for contract renewal.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Renew Contract</h3>
+            <p className="text-sm text-slate-500 mb-4">Set the new end date for contract renewal.</p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">New End Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">New End Date</label>
                 <input type="date" value={renewForm.new_end_date}
                   onChange={(e) => setRenewForm((f) => ({ ...f, new_end_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {renewForm.new_end_date && contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date) && (
                   <p className="text-xs text-red-500 mt-1">New end date must be later than the current end date ({formatDisplayDate(contract.end_date)}).</p>
                 )}
@@ -910,7 +910,7 @@ export default function ContractDetailPage() {
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowRenewModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleRenew} disabled={!renewForm.new_end_date || (contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date)) || isActing("renew")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
                 {isActing("renew") ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Renew
@@ -923,14 +923,14 @@ export default function ContractDetailPage() {
       {showTerminateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTerminateModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Terminate Contract</h3>
-            <p className="text-sm text-gray-500 mb-4">Provide a reason for terminating this contract.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Terminate Contract</h3>
+            <p className="text-sm text-slate-500 mb-4">Provide a reason for terminating this contract.</p>
             <textarea value={terminateReason} onChange={(e) => setTerminateReason(e.target.value)}
               rows={3} placeholder="Reason for termination..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
               <button onClick={() => { setShowTerminateModal(false); setTerminateReason(""); }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleTerminate} disabled={!terminateReason.trim() || isActing("terminate")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
                 {isActing("terminate") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Terminate
@@ -943,25 +943,25 @@ export default function ContractDetailPage() {
       {showAmendmentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAmendmentModal(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Create Amendment</h3>
-            <p className="text-sm text-gray-500 mb-4">Record a new amendment for this contract.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Create Amendment</h3>
+            <p className="text-sm text-slate-500 mb-4">Record a new amendment for this contract.</p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Effective Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
                 <input type="date" value={amendmentForm.effective_date}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Reason</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
                 <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
                   rows={3} placeholder="Reason for amendment..."
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => { setShowAmendmentModal(false); setAmendmentForm({ effective_date: new Date().toISOString().split("T")[0], reason: "" }); }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleCreateAmendment} disabled={!amendmentForm.effective_date || isActing("create amendment")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
                 {isActing("create amendment") ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileEdit className="h-4 w-4" />} Create Amendment

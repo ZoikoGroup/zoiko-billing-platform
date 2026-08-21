@@ -14,7 +14,7 @@ import { PageHeader, Button, DataTable, SearchInput, Select, Modal } from "../..
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "approved", label: "Approved", color: "bg-indigo-100 text-indigo-700" },
   { value: "issued", label: "Issued", color: "bg-blue-100 text-blue-700" },
   { value: "partially_applied", label: "Partially Applied", color: "bg-amber-100 text-amber-700" },
@@ -37,7 +37,7 @@ const TYPE_OPTIONS = [
   { value: "cancellation", label: "Cancellation (legacy)" },
 ];
 
-const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
+const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
 
 export default function CreditNotesPage() {
   const { singular, plural, getLabel } = useTerminology();
@@ -110,7 +110,7 @@ export default function CreditNotesPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter]);
 
   useEffect(() => { fetchCreditNotes(); }, [fetchCreditNotes]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
@@ -149,7 +149,7 @@ export default function CreditNotesPage() {
       total_amount: total ? String(total) : p.total_amount,
       subtotal: total ? String(Math.max(0, total - tax)) : p.subtotal,
       tax_amount: String(tax || 0),
-      currency: inv.currency || p.currency || "USD",
+      currency: inv.currency || p.currency,
       reason: p.reason || `Credit for ${inv.invoice_number || `invoice #${inv.id}`}`,
     }));
   }, []);
@@ -306,7 +306,7 @@ export default function CreditNotesPage() {
     <SharedStatusBadge status={status} options={STATUS_OPTIONS} />
   );
 
-  const actionBtn = "rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40 disabled:cursor-not-allowed";
+  const actionBtn = "rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40 disabled:cursor-not-allowed";
 
   const renderActions = (cn) => (
     <div className="inline-flex items-center justify-end gap-1">
@@ -328,7 +328,7 @@ export default function CreditNotesPage() {
       )}
       {cn.status === "approved" && (
         <button type="button" onClick={(e) => { e.stopPropagation(); handleAction("issue", () => creditNoteApi.issue(cn.id)); }} disabled={actionLoading === "issue"}
-          className={`${actionBtn} hover:text-emerald-600`} title="Issue" aria-label="Issue credit note">
+          className={`${actionBtn} hover:text-emerald-700`} title="Issue" aria-label="Issue credit note">
           <Send size={15} />
         </button>
       )}
@@ -435,7 +435,7 @@ export default function CreditNotesPage() {
                 <span className="text-xs font-semibold text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-3 py-1.5">
                   Outstanding: {formatDisplayCurrency(outstandingTotal)}
                 </span>
-                <span className="text-xs font-medium text-slate-400">{total} credit note(s)</span>
+                <span className="text-xs font-medium text-slate-500">{total} credit note(s)</span>
               </div>
             </div>
 
@@ -527,7 +527,7 @@ export default function CreditNotesPage() {
                 <option value="">No invoice</option>
                 {invoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number || `#${inv.id}`} — {formatDisplayCurrency(inv.total_amount || inv.total, inv.currency)}</option>)}
               </select>
-              {createForm.invoice_id && <p className="mt-1 text-xs text-slate-400">{singular}, amount, tax, and currency are filled from the selected invoice.</p>}
+              {createForm.invoice_id && <p className="mt-1 text-xs text-slate-500">{singular}, amount, tax, and currency are filled from the selected invoice.</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -559,7 +559,7 @@ export default function CreditNotesPage() {
                 <input type="number" min="0" step="0.01" value={createForm.tax_amount} onChange={(e) => setCreateForm((p) => ({ ...p, tax_amount: e.target.value }))} placeholder="0.00" className={inputClass} />
               </div>
             </div>
-            <p className="text-xs text-slate-400">If Subtotal, Discount, or Tax are set, Total Amount must equal Subtotal − Discount + Tax.</p>
+            <p className="text-xs text-slate-500">If Subtotal, Discount, or Tax are set, Total Amount must equal Subtotal − Discount + Tax.</p>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Reason</label>
               <textarea value={createForm.reason} onChange={(e) => setCreateForm((p) => ({ ...p, reason: e.target.value }))} rows={2} placeholder="Reason for credit note" className={inputClass} />

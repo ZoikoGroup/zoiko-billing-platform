@@ -17,6 +17,10 @@ from app.modules.billing.models import (
     DunningStatus,
     InvoiceStatus,
 )
+from app.modules.super_admin.kill_switch_service import (
+    TENANT_BILLING_COMMUNICATIONS,
+    BillingKillSwitchService,
+)
 from app.modules.billing.repositories.collection import (
     DunningCaseRepository,
     DunningCaseStatusHistoryRepository,
@@ -30,9 +34,10 @@ from app.modules.billing.repositories.invoice import InvoiceCommunicationReposit
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 from app.modules.billing.services.customer_service import CustomerService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.services.email_service import send_dunning_reminder_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 LEVEL_ALLOWED_FIELDS = {
     "name", "description", "level_number", "min_days_overdue",
@@ -65,6 +70,14 @@ class DunningService:
         row exists yet (auto_dunning off, wait days 3/30, level-based
         fees, no penalty/interest), so None is safe everywhere it's used."""
         return self.config_repo.get_by_organization(organization_id)
+
+    def _org_currency(self, organization_id: int) -> str:
+        """The org's real configured currency -- used only as a display
+        fallback when an invoice's own `currency` is unexpectedly missing.
+        Never a hardcoded "USD" literal: for an INR/EUR/AED organization
+        that would silently mislabel the reminder email with the wrong
+        currency."""
+        return BillingConfigurationService(self.db).get_default_currency(organization_id)
 
     def _record_status_history(
         self, organization_id: int, case_id: int, from_status: Optional[str], to_status: str,
@@ -261,6 +274,18 @@ class DunningService:
             for l in sorted(levels, key=lambda x: x.level_number)
         ]
 
+    def _require_dunning_enabled(self) -> None:
+        """ZB-SA-CMD-003 §9.2 — 'Suspend dunning/retries' circuit breaker.
+        Gates the AUTOMATED dunning loop only (scheduler-driven case
+        opening/progression/collection sends). Manual operator actions on an
+        existing case are deliberately not gated by this scope."""
+        from app.modules.super_admin.kill_switch_service import TENANT_DUNNING, BillingBlockedError
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_DUNNING)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
+
     def process_dunning(self, organization_id: int) -> List[Dict[str, Any]]:
         """Process dunning for every overdue invoice in the org.
 
@@ -277,6 +302,7 @@ class DunningService:
             is implemented; the toggles decide whether a reminder is sent at
             all on those channels and are surfaced for observability).
         """
+        self._require_dunning_enabled()
         overdue = self.invoice_repo.list_all(organization_id, status=InvoiceStatus.OVERDUE, active_only=True)
         levels = self.level_repo.list_active(organization_id)
         if not levels:
@@ -331,31 +357,43 @@ class DunningService:
                 if applicable_level.action_type and "email" in applicable_level.action_type.lower():
                     email_sent_to = None
                     email_delivered = False
-                    try:
-                        customer = self.customer_service.get_customer(inv.customer_id, organization_id)
-                        if customer and customer.email:
-                            email_sent_to = customer.email
-                            email_delivered = send_dunning_reminder_email(
-                                email=customer.email,
-                                customer_name=customer.display_name or customer.company_name,
-                                invoice_number=inv.invoice_number,
-                                days_overdue=str(days_overdue),
-                                overdue_amount=str(inv.balance_due or 0),
-                                currency=inv.currency or "USD",
-                                late_fee=str(fee["total_fee"]),
-                                organization_id=organization_id,
-                                db=self.db,
-                                custom_body=final_notice_template if is_final_notice else custom_template,
-                                subject_override=(
-                                    f"Final Notice — Invoice {inv.invoice_number} | Zoiko Billing"
-                                    if is_final_notice else None
-                                ),
-                            )
-                    except Exception as e:
-                        logger.warning("Failed to send dunning email for invoice %d: %s", inv.id, e)
+                    # ZB-SA-CMD-003 §9.2 — "Pause customer billing
+                    # communications": the SEND is skipped while the breaker
+                    # is engaged, but the case-state progression above is
+                    # preserved ("while preserving generated artifacts").
+                    comms_paused = not BillingKillSwitchService(self.db).is_enabled(
+                        TENANT_BILLING_COMMUNICATIONS
+                    )
+                    if not comms_paused:
+                        try:
+                            customer = self.customer_service.get_customer(inv.customer_id, organization_id)
+                            if customer and customer.email:
+                                email_sent_to = customer.email
+                                email_delivered = send_dunning_reminder_email(
+                                    email=customer.email,
+                                    customer_name=customer.display_name or customer.company_name,
+                                    invoice_number=inv.invoice_number,
+                                    days_overdue=str(days_overdue),
+                                    overdue_amount=str(inv.balance_due or 0),
+                                    currency=inv.currency or self._org_currency(organization_id),
+                                    late_fee=str(fee["total_fee"]),
+                                    organization_id=organization_id,
+                                    db=self.db,
+                                    custom_body=final_notice_template if is_final_notice else custom_template,
+                                    subject_override=(
+                                        f"Final Notice — Invoice {inv.invoice_number} | Zoiko Billing"
+                                        if is_final_notice else None
+                                    ),
+                                )
+                        except Exception as e:
+                            logger.warning("Failed to send dunning email for invoice %d: %s", inv.id, e)
                     self.audit.log(
                         organization_id, None, BillingAuditAction.SEND, "DunningCase", case.id,
-                        new_values={"email_sent_to": email_sent_to, "email_delivered": email_delivered},
+                        new_values={
+                            "email_sent_to": email_sent_to,
+                            "email_delivered": email_delivered,
+                            **({"communications_paused_by_breaker": True} if comms_paused else {}),
+                        },
                     )
                     comm_status = CommunicationEventStatus.DELIVERED if email_delivered else CommunicationEventStatus.FAILED
                     self.comms_repo.record_event_safe(
@@ -388,6 +426,7 @@ class DunningService:
         existing reminder communication events), so the daily scheduler run
         can never re-email the same invoice for the same 'N days before due'
         window."""
+        self._require_dunning_enabled()
         config = self._get_config(organization_id)
         schedule = getattr(config, "reminder_schedule", None) or {"before_due": [3, 1]}
         before_due = sorted({int(x) for x in (schedule.get("before_due") or [])}, reverse=True)
@@ -413,25 +452,32 @@ class DunningService:
 
             email_sent_to = None
             email_delivered = False
-            try:
-                customer = self.customer_service.get_customer(inv.customer_id, organization_id)
-                if customer and customer.email:
-                    email_sent_to = customer.email
-                    email_delivered = send_dunning_reminder_email(
-                        email=customer.email,
-                        customer_name=customer.display_name or customer.company_name,
-                        invoice_number=inv.invoice_number,
-                        days_overdue="0",
-                        overdue_amount=str(inv.balance_due or 0),
-                        currency=inv.currency or "USD",
-                        late_fee="0",
-                        organization_id=organization_id,
-                        db=self.db,
-                        custom_body=getattr(config, "dunning_email_template", None),
-                        subject_override=f"Upcoming Payment Reminder — Invoice {inv.invoice_number} | Zoiko Billing",
-                    )
-            except Exception as e:
-                logger.warning("Failed to send pre-due reminder for invoice %d: %s", inv.id, e)
+            # ZB-SA-CMD-003 §9.2 — communications breaker pauses the SEND;
+            # the dedup event below still records the attempt so the slot is
+            # not silently re-fired after release (artifact preserved).
+            comms_paused = not BillingKillSwitchService(self.db).is_enabled(
+                TENANT_BILLING_COMMUNICATIONS
+            )
+            if not comms_paused:
+                try:
+                    customer = self.customer_service.get_customer(inv.customer_id, organization_id)
+                    if customer and customer.email:
+                        email_sent_to = customer.email
+                        email_delivered = send_dunning_reminder_email(
+                            email=customer.email,
+                            customer_name=customer.display_name or customer.company_name,
+                            invoice_number=inv.invoice_number,
+                            days_overdue="0",
+                            overdue_amount=str(inv.balance_due or 0),
+                            currency=inv.currency or self._org_currency(organization_id),
+                            late_fee="0",
+                            organization_id=organization_id,
+                            db=self.db,
+                            custom_body=getattr(config, "dunning_email_template", None),
+                            subject_override=f"Upcoming Payment Reminder — Invoice {inv.invoice_number} | Zoiko Billing",
+                        )
+                except Exception as e:
+                    logger.warning("Failed to send pre-due reminder for invoice %d: %s", inv.id, e)
 
             comm_status = CommunicationEventStatus.DELIVERED if email_delivered else CommunicationEventStatus.FAILED
             self.comms_repo.record_event_safe(
@@ -446,6 +492,7 @@ class DunningService:
                     "days_before_due": days_until,
                     "pre_due": True,
                     "email_delivered": email_delivered,
+                    **({"communications_paused_by_breaker": True} if comms_paused else {}),
                 },
             )
             results.append({
@@ -473,6 +520,17 @@ class DunningService:
 
         email_sent_to = None
         email_delivered = False
+        # ZB-SA-CMD-003 §9.2 — "Pause customer billing communications" gates
+        # ALL outbound customer billing emails, manual sends included.
+        comms_paused = not BillingKillSwitchService(self.db).is_enabled(
+            TENANT_BILLING_COMMUNICATIONS
+        )
+        if comms_paused:
+            raise BadRequestException(
+                "Customer billing communications are paused by a platform circuit "
+                "breaker (tenant_billing_communications). The reminder was not sent; "
+                "the dunning case and its artifacts are preserved."
+            )
         try:
             customer = self.customer_service.get_customer(case.customer_id, organization_id)
             if customer and customer.email:
@@ -483,7 +541,7 @@ class DunningService:
                     invoice_number=invoice.invoice_number,
                     days_overdue=str(case.days_overdue or 0),
                     overdue_amount=str(invoice.balance_due or 0),
-                    currency=invoice.currency or "USD",
+                    currency=invoice.currency or self._org_currency(organization_id),
                     late_fee=str(fee["total_fee"]),
                     organization_id=organization_id,
                     db=self.db,
@@ -532,7 +590,7 @@ class DunningService:
             "action_type": level.action_type.value if level and level.action_type else None,
             "days_overdue": case.days_overdue or 0,
             "overdue_amount": float(invoice.balance_due or 0),
-            "currency": invoice.currency or "USD",
+            "currency": invoice.currency or self._org_currency(organization_id),
             "late_fee": float(fee["total_fee"]),
             "subject": f"Payment Reminder — Invoice {invoice.invoice_number} | Zoiko Billing",
             "channels": {

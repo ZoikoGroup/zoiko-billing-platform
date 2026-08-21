@@ -222,11 +222,39 @@ def initialize_database() -> None:
 
 
 def get_db():
-    db = SessionLocal()
+    """Yield a database session per request.
+
+    Hardened against transient connectivity failures (the documented
+    intermittent Neon DNS resolution issue, ISS-012): one short retry rides
+    out a blip, and a persistent failure raises ServiceUnavailableException
+    (503, retryable) instead of an opaque 500 that looks like a code bug."""
+    import time as _time
+
+    from app.core.exceptions import ServiceUnavailableException
+
+    db = None
+    for attempt in range(2):
+        try:
+            db = SessionLocal()
+            # Fail fast if the connection itself is down (e.g. DNS), so the
+            # retry/503 path triggers here rather than mid-query in a router.
+            db.execute(text("SELECT 1"))
+            break
+        except exc.OperationalError:
+            if db is not None:
+                db.close()
+                db = None
+            if attempt == 0:
+                _time.sleep(0.5)
+                continue
+            raise ServiceUnavailableException(
+                "Database temporarily unreachable. Please try again shortly."
+            )
     try:
         yield db
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 def check_connection() -> bool:

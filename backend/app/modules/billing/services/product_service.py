@@ -31,29 +31,28 @@ PRODUCT_NULLABLE_FIELDS = {
 }
 CATEGORY_NULLABLE_FIELDS = {"description", "parent_id", "icon", "color"}
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _resolve_org_currency(db: Session, organization_id: int) -> str:
-    """Return the organization's base currency code (3-char uppercase, default USD)."""
-    from app.modules.organizations.models import Organization
-    org = db.query(Organization).filter(Organization.id == organization_id).first()
-    if org and getattr(org, "currency", None):
-        code = org.currency
-        return code.value if hasattr(code, "value") else str(code).upper().strip()
-    # Fallback: check BillingConfiguration for the authoritative base currency
+    """Return the organization's base currency code.
+
+    Delegates to BillingConfigurationService, the single authoritative
+    source for this lookup (base_currency -> default_currency -> "USD"),
+    instead of reimplementing the same resolution independently. This used
+    to check Organization.currency first and only fall back to
+    BillingConfiguration -- a different precedence than every other caller
+    of "the org's currency" -- but organizations/router.py already keeps
+    Organization.currency and BillingConfiguration.base_currency in
+    lockstep on every change, so the two never actually disagreed in
+    practice; unifying removes a second, independently-diverging
+    implementation without changing the resolved value.
+    """
+    from app.modules.billing.services.settings_service import BillingConfigurationService
     try:
-        from app.modules.billing.repositories.settings import BillingConfigurationRepository
-        cfg_repo = BillingConfigurationRepository(db)
-        config = cfg_repo.get_by_organization(organization_id)
-        if config:
-            if hasattr(config, "base_currency") and config.base_currency:
-                return str(config.base_currency.value if hasattr(config.base_currency, "value") else config.base_currency)
-            if hasattr(config, "default_currency") and config.default_currency:
-                return str(config.default_currency.value if hasattr(config.default_currency, "value") else config.default_currency)
+        return BillingConfigurationService(db).get_default_currency(organization_id)
     except Exception:
-        pass
-    return "USD"
+        return "USD"
 
 
 class ProductService:

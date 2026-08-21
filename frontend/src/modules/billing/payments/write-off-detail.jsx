@@ -6,12 +6,12 @@ import HRPage from "../../../components/HRPage";
 import { writeOffApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+// pdfmake + vfs_fonts are lazy-loaded inside buildWriteOffPdf() so the
+// ~1.74 MB font bundle is only fetched when the user clicks "Download".
 
 const STATUS_STYLES = {
-  draft: "bg-gray-100 text-gray-600",
+  draft: "bg-slate-100 text-slate-600",
   pending_approval: "bg-amber-100 text-amber-700",
   approved: "bg-indigo-100 text-indigo-700",
   executed: "bg-emerald-100 text-emerald-700",
@@ -21,14 +21,20 @@ const STATUS_STYLES = {
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
       {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
     </span>
   );
 }
 
-function buildWriteOffPdf(writeOff, orgSettings = {}) {
-  const currency = writeOff.currency || "USD";
+async function buildWriteOffPdf(writeOff, orgSettings = {}) {
+  const pdfMakeModule = await import("pdfmake/build/pdfmake");
+  const pdfFontsModule = await import("pdfmake/build/vfs_fonts");
+  const pdfMake = pdfMakeModule.default;
+  const pdfFonts = pdfFontsModule.default;
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+  const currency = writeOff.currency;
   const fmt = (v) => {
     if (v == null || v === "") return "—";
     const num = Number(v);
@@ -151,9 +157,10 @@ export default function WriteOffDetailPage() {
     }
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (!writeOff) return;
-    buildWriteOffPdf(writeOff).download(`${(writeOff.write_off_number || `write-off-${writeOff.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
+    const pdf = await buildWriteOffPdf(writeOff, {});
+    pdf.download(`${(writeOff.write_off_number || `write-off-${writeOff.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
   };
 
   if (loading) {
@@ -184,14 +191,14 @@ export default function WriteOffDetailPage() {
     return (
       <HRPage title="Write-off" subtitle="Write-off not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <ScrollText className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Write-off not found</p>
+          <ScrollText className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Write-off not found</p>
         </div>
       </HRPage>
     );
   }
 
-  const currency = writeOff.currency || "USD";
+  const currency = writeOff.currency;
   const isDraft = writeOff.status === "draft";
   const isPendingApproval = writeOff.status === "pending_approval";
   const isApproved = writeOff.status === "approved";
@@ -203,7 +210,7 @@ export default function WriteOffDetailPage() {
       title={`Write-off ${writeOff.write_off_number || `#${id}`}`}
       subtitle={<StatusBadge status={writeOff.status} />}
       actions={
-        <button onClick={() => navigate("/billing/write-offs")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+        <button onClick={() => navigate("/billing/write-offs")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }
@@ -219,12 +226,12 @@ export default function WriteOffDetailPage() {
 
         {/* ── HEADER: Summary + Quick Actions ── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Write-off Summary</p>
-                <h2 className="mt-1 text-xl font-bold text-gray-900">{writeOff.customer_name || `${singular} #${writeOff.customer_id || "—"}`}</h2>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-600">Write-off Summary</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">{writeOff.customer_name || `${singular} #${writeOff.customer_id || "—"}`}</h2>
+                <p className="mt-1 text-sm text-slate-500">
                   {writeOff.write_off_number || `#${id}`} &middot; {currency} &middot; {(writeOff.write_off_type || "").replace(/_/g, " ")} &middot; via {(writeOff.write_off_source || "—").replace(/_/g, " ")}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
@@ -272,13 +279,13 @@ export default function WriteOffDetailPage() {
               </div>
             )}
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Quick Actions</p>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Quick Actions</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
                 <Printer className="h-3.5 w-3.5" /> Print
               </button>
-              <button onClick={handleDownloadPdf} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <button onClick={handleDownloadPdf} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
                 <Download className="h-3.5 w-3.5" /> Download
               </button>
 
@@ -323,29 +330,29 @@ export default function WriteOffDetailPage() {
         </div>
 
         {/* ── AUDIT HISTORY ── */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">Audit History</h4>
+        <div className="rounded-3xl border border-slate-200 bg-white p-6">
+          <h4 className="text-sm font-semibold text-slate-900 mb-3">Audit History</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
             {writeOff.approved_at && (
-              <div className="flex justify-between"><span className="text-gray-500">Approved</span><span className="font-medium">{formatDisplayDate(writeOff.approved_at)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Approved</span><span className="font-medium">{formatDisplayDate(writeOff.approved_at)}</span></div>
             )}
             {writeOff.executed_at && (
-              <div className="flex justify-between"><span className="text-gray-500">Executed</span><span className="font-medium text-emerald-700">{formatDisplayDate(writeOff.executed_at)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Executed</span><span className="font-medium text-emerald-700">{formatDisplayDate(writeOff.executed_at)}</span></div>
             )}
             {writeOff.reversed_at && (
-              <div className="flex justify-between"><span className="text-gray-500">Reversed</span><span className="font-medium text-orange-700">{formatDisplayDate(writeOff.reversed_at)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Reversed</span><span className="font-medium text-orange-700">{formatDisplayDate(writeOff.reversed_at)}</span></div>
             )}
             {writeOff.cancelled_at && (
-              <div className="flex justify-between"><span className="text-gray-500">Cancelled</span><span className="font-medium text-red-600">{formatDisplayDate(writeOff.cancelled_at)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Cancelled</span><span className="font-medium text-red-600">{formatDisplayDate(writeOff.cancelled_at)}</span></div>
             )}
-            <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{formatDisplayDate(writeOff.created_at)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Created</span><span className="font-medium">{formatDisplayDate(writeOff.created_at)}</span></div>
           </div>
         </div>
 
         {/* ── CUSTOMER WRITE-OFF HISTORY ── */}
         {customerSummary && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Write-off History</h3>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Customer Write-off History</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Total Written Off</p>
@@ -372,12 +379,12 @@ export default function WriteOffDetailPage() {
 
         {/* ── ACTIVITY TIMELINE (status history + audit + communications) ── */}
         {timeline.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" /> Write-off Timeline &amp; Audit History
             </h3>
             <div className="relative">
-              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
+              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-slate-200" />
               <div className="space-y-4">
                 {timeline.map((entry, i) => {
                   const dotColor = {
@@ -392,9 +399,9 @@ export default function WriteOffDetailPage() {
                     <div key={i} className="relative flex items-start gap-4 pl-10">
                       <div className={`absolute left-2.5 w-3 h-3 rounded-full border-2 mt-1.5 ${dotColor}`} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-900">{entry.title}</span>
-                        {entry.description && <p className="text-xs text-gray-500 mt-0.5">{entry.description}</p>}
-                        <p className="text-xs text-gray-400 mt-1">
+                        <span className="text-sm font-medium text-slate-900">{entry.title}</span>
+                        {entry.description && <p className="text-xs text-slate-500 mt-0.5">{entry.description}</p>}
+                        <p className="text-xs text-slate-500 mt-1">
                           {formatDisplayDate(entry.timestamp)}
                           {entry.metadata?.recipient ? ` · ${entry.metadata.recipient}` : ""}
                           {entry.metadata?.from_status && entry.metadata?.to_status ? (
@@ -415,13 +422,13 @@ export default function WriteOffDetailPage() {
         <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-white rounded-2xl shadow-2xl border border-emerald-200 p-5">
           <div className="flex items-start gap-3">
             <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-              <CheckCircle className="h-5 w-5 text-emerald-600" />
+              <CheckCircle className="h-5 w-5 text-emerald-700" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-900">Write-off Notice Sent</p>
-              <p className="text-xs text-gray-500 mt-1">{sendResult.message || `Emailed to ${sendResult.email_sent_to || "customer"}`}</p>
+              <p className="text-sm font-semibold text-slate-900">Write-off Notice Sent</p>
+              <p className="text-xs text-slate-500 mt-1">{sendResult.message || `Emailed to ${sendResult.email_sent_to || "customer"}`}</p>
             </div>
-            <button onClick={() => setSendResult(null)} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+            <button onClick={() => setSendResult(null)} className="text-slate-500 hover:text-slate-600 text-xs">✕</button>
           </div>
         </div>
       )}
@@ -433,10 +440,10 @@ export default function WriteOffDetailPage() {
               <AlertCircle className="h-5 w-5 text-red-600" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-900">Failed to Send</p>
-              <p className="text-xs text-gray-500 mt-1">{sendResult.error}</p>
+              <p className="text-sm font-semibold text-slate-900">Failed to Send</p>
+              <p className="text-xs text-slate-500 mt-1">{sendResult.error}</p>
             </div>
-            <button onClick={() => setSendResult(null)} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+            <button onClick={() => setSendResult(null)} className="text-slate-500 hover:text-slate-600 text-xs">✕</button>
           </div>
         </div>
       )}
@@ -444,14 +451,14 @@ export default function WriteOffDetailPage() {
       {showReverseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowReverseModal(false)}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Reverse Write-off</h2>
-            <p className="text-sm text-gray-600 mb-4">
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Reverse Write-off</h2>
+            <p className="text-sm text-slate-600 mb-4">
               Reversing <strong>{writeOff.write_off_number || `#${id}`}</strong> will reopen the outstanding balance it reduced.
             </p>
             <textarea value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} rows={3} placeholder="Reason for reversal (required)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
-              <button onClick={() => setShowReverseModal(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Go Back</button>
+              <button onClick={() => setShowReverseModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
               <button
                 onClick={async () => { setShowReverseModal(false); await handleAction("reverse", () => writeOffApi.reverse(writeOff.id, reverseReason)); }}
                 disabled={actionLoading === "reverse" || !reverseReason.trim()}
@@ -470,15 +477,15 @@ export default function WriteOffDetailPage() {
               <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
                 <Ban className="h-5 w-5 text-red-600" />
               </div>
-              <h2 className="text-lg font-bold text-gray-900">Cancel Write-off</h2>
+              <h2 className="text-lg font-bold text-slate-900">Cancel Write-off</h2>
             </div>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-slate-600 mb-4">
               Are you sure you want to cancel <strong>{writeOff.write_off_number || `#${id}`}</strong>? This action is <span className="font-semibold text-red-600">irreversible</span>.
             </p>
             <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} placeholder="Reason (optional)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
-              <button onClick={() => setShowCancelModal(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Go Back</button>
+              <button onClick={() => setShowCancelModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
               <button
                 onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => writeOffApi.cancel(writeOff.id, cancelReason || undefined)); }}
                 disabled={actionLoading === "cancel"}

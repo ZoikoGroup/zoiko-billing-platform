@@ -1,19 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { auditApi, invoiceApi, settingsApi } from "../../service/billingService";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney } from "./workspace-format";
 import {
   Activity, FileText, CreditCard, Users, Repeat, Package, Settings, Clock,
-  Loader2, Filter,
+  Loader2, Filter, RefreshCw,
 } from "lucide-react";
-
-const INK = "#181433";
-const INK_SOFT = "#4A4566";
-const LINE = "rgba(24,20,51,0.08)";
-const RED_100 = "#FBE6E4";
-const RED = "#D6473C";
-const VIOLET = "#5B3FE0";
 
 const ENTITY_ICONS = {
   invoice: FileText,
@@ -26,13 +19,13 @@ const ENTITY_ICONS = {
 };
 
 const ENTITY_COLORS = {
-  invoice: "#F5A340",
-  payment: "#0F9B8E",
-  customer: "#5B3FE0",
-  subscription: "#7C3AED",
-  product: "#0F9B8E",
-  configuration: "#6B7280",
-  default: "#5B3FE0",
+  invoice: "#7C3AED",
+  payment: "#0891B2",
+  customer: "#059669",
+  subscription: "#2563EB",
+  product: "#D97706",
+  configuration: "#64748B",
+  default: "#64748B",
 };
 
 function normalizeEntry(raw) {
@@ -75,28 +68,28 @@ export default function WorkspaceActivityPage() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [a, ia, c] = await Promise.allSettled([
-          auditApi.list({ page: 1, per_page: 60 }),
-          invoiceApi.getRecentActivity(20),
-          settingsApi.getConfig(),
-        ]);
-        if (cancelled) return;
-        if (a.status === "fulfilled") setAuditLogs(a.value?.items || []);
-        if (ia.status === "fulfilled") setInvoiceActivity(Array.isArray(ia.value) ? ia.value : []);
-        if (c.status === "fulfilled") setConfig(c.value);
-      } catch (err) {
-        if (!cancelled) setError(err?.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [a, ia, c] = await Promise.allSettled([
+        auditApi.list({ page: 1, per_page: 60 }),
+        invoiceApi.getRecentActivity(20),
+        settingsApi.getConfig(),
+      ]);
+      if (a.status === "fulfilled") setAuditLogs(a.value?.items || []);
+      if (ia.status === "fulfilled") setInvoiceActivity(Array.isArray(ia.value) ? ia.value : []);
+      if (c.status === "fulfilled") setConfig(c.value);
+    } catch (err) {
+      setError(err?.message);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const timeline = useMemo(() => {
     const merged = [
@@ -141,34 +134,46 @@ export default function WorkspaceActivityPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-purple-600" /></div>
+      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-brand" /></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="rounded-[14px] border p-4 text-sm" style={{ background: RED_100, borderColor: RED, color: RED }}>{error}</div>
+      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       </div>
     );
   }
 
   return (
-    <div className="font-['Inter',system-ui,sans-serif] p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", color: INK, minHeight: "calc(100vh - 4rem)" }}>
-      <WorkspaceHeader title="Activity Timeline" subtitle="Recent billing activity across your organization" icon={Activity} />
+    <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
+      <WorkspaceHeader
+        title="Activity Timeline"
+        subtitle="Recent billing activity across your organization"
+        icon={Activity}
+        actions={
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+        }
+      />
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
-        <Filter className="w-4 h-4" style={{ color: INK_SOFT }} />
+        <Filter className="w-4 h-4 text-slate-500" />
         {filters.map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors cursor-pointer ${
               filter === f
-                ? "bg-purple-600 text-white border-purple-600"
-                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                ? "border-brand bg-brand text-white"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
             }`}
           >
             {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -178,48 +183,51 @@ export default function WorkspaceActivityPage() {
       </div>
 
       {grouped.length === 0 ? (
-        <div className="rounded-[20px] border bg-white p-10 text-center shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <Activity className="w-8 h-8 text-gray-400" />
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center">
+          <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+            <Activity className="w-8 h-8 text-slate-300" />
           </div>
-          <h3 className="text-lg font-bold mb-2" style={{ color: INK }}>No Recent Activity</h3>
-          <p className="text-[13px]" style={{ color: INK_SOFT }}>Activity will appear here as you create invoices, process payments, and manage customers.</p>
+          <h3 className="text-lg font-bold text-slate-800 mb-2">No Recent Activity</h3>
+          <p className="text-[13px] text-slate-500">Activity will appear here as you create invoices, process payments, and manage customers.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {grouped.map((group, gi) => (
-            <div key={gi}>
-              <div className="flex items-center gap-2 mb-3">
-                <Clock className="w-3.5 h-3.5" style={{ color: INK_SOFT }} />
-                <h3 className="text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: INK_SOFT }}>{group.label}</h3>
-              </div>
-              <div className="space-y-2">
-                {group.items.map((item) => {
-                  const Icon = ENTITY_ICONS[item.entityType] || ENTITY_ICONS.default;
-                  const color = ENTITY_COLORS[item.entityType] || ENTITY_COLORS.default;
-                  return (
-                    <div key={item.id} className="flex items-start gap-3 p-4 rounded-[14px] border bg-white hover:shadow-sm transition-shadow">
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${color}15`, color }}>
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-semibold" style={{ color: INK }}>{item.action}</span>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.entityType}</span>
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+          <div className="space-y-8">
+            {grouped.map((group, gi) => (
+              <div key={gi}>
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap">{group.label}</h3>
+                  <div className="h-px flex-1 bg-slate-100" />
+                  <span className="text-[11px] text-slate-500">{group.items.length}</span>
+                </div>
+                <div className="space-y-4">
+                  {group.items.map((item) => {
+                    const Icon = ENTITY_ICONS[item.entityType] || ENTITY_ICONS.default;
+                    const color = ENTITY_COLORS[item.entityType] || ENTITY_COLORS.default;
+                    return (
+                      <div key={item.id} className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${color}15`, color }}>
+                          <Icon className="w-4 h-4" />
                         </div>
-                        {item.description && <p className="text-[12px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{item.description}</p>}
-                        <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: INK_SOFT }}>
-                          <span>{item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}</span>
-                          {item.entityId && <span className="font-mono">#{item.entityId}</span>}
-                          {item.amount != null && <span className="font-semibold">{formatOrgMoney(item.amount, config)}</span>}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-semibold text-slate-800">{item.action}</span>
+                            <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{item.entityType}</span>
+                          </div>
+                          {item.description && <p className="text-[12px] mt-0.5 truncate text-slate-500">{item.description}</p>}
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
+                            <span>{item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}</span>
+                            {item.entityId && <span className="font-mono">#{item.entityId}</span>}
+                            {item.amount != null && <span className="font-semibold text-slate-600">{formatOrgMoney(item.amount, config)}</span>}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

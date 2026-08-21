@@ -260,7 +260,7 @@ export const priceListApi = {
   create: (data) => api.post(ENDPOINTS.PRICE_LISTS, data),
   update: (id, data) => api.put(ENDPOINTS.PRICE_LIST(id), data),
   deactivate: (id) => api.delete(ENDPOINTS.PRICE_LIST(id)),
-  activate: (id) => api.post(`${ENDPOINTS.PRICE_LIST(id)}/activate`),
+  activate: (id) => api.post(ENDPOINTS.PRICE_LIST_ACTIVATE(id)),
   listItems: (id) => api.get(ENDPOINTS.PRICE_LIST_ITEMS(id)),
   addItem: (id, data) => api.post(ENDPOINTS.PRICE_LIST_ITEMS(id), data),
   updateItem: (pid, iid, data) => api.put(ENDPOINTS.PRICE_LIST_ITEM(pid, iid), data),
@@ -273,7 +273,7 @@ export const pricingRuleApi = {
   create: (data) => api.post(ENDPOINTS.PRICING_RULES, data),
   update: (id, data) => api.put(ENDPOINTS.PRICING_RULE(id), data),
   deactivate: (id) => api.delete(ENDPOINTS.PRICING_RULE(id)),
-  activate: (id) => api.post(`${ENDPOINTS.PRICING_RULE(id)}/activate`),
+  activate: (id) => api.post(ENDPOINTS.PRICING_RULE_ACTIVATE(id)),
   getApplicable: (params) => api.get(buildUrl(ENDPOINTS.PRICING_RULES_APPLICABLE, params)),
   listTiers: (id) => api.get(ENDPOINTS.PRICING_RULE_TIERS(id)),
   addTier: (id, data) => api.post(ENDPOINTS.PRICING_RULE_TIERS(id), data),
@@ -441,6 +441,12 @@ export const invoiceApi = {
   listCommunications: (id) => api.get(ENDPOINTS.INVOICE_COMMUNICATIONS(id)),
   addCommunicationNote: (id, data) => api.post(ENDPOINTS.INVOICE_COMMUNICATIONS(id), data),
   getTimeline: (id) => api.get(ENDPOINTS.INVOICE_TIMELINE(id)),
+};
+
+export const publicInvoiceApi = {
+  getView: (token) => api.get(ENDPOINTS.INVOICE_PUBLIC_VIEW(token), { auth: false }),
+  createCheckout: (token, successUrl, cancelUrl) =>
+    api.post(ENDPOINTS.INVOICE_PUBLIC_CHECKOUT(token), { success_url: successUrl, cancel_url: cancelUrl }, { auth: false }),
 };
 
 export const paymentApi = {
@@ -704,6 +710,7 @@ export default {
   quotes: quoteApi,
   subscriptions: subscriptionApi,
   invoices: invoiceApi,
+  publicInvoices: publicInvoiceApi,
   payments: paymentApi,
   tax: taxApi,
   creditNotes: creditNoteApi,

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    ForbiddenException,
 )
 from app.modules.billing.models import (
     BillingAuditAction,
@@ -39,10 +40,11 @@ from app.modules.billing.models import NumberFormat, SequenceReset
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.services.payment_service import PaymentService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_refund_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 REFUND_ALLOWED_FIELDS = {
     "customer_id", "refund_number", "refund_type", "amount",
@@ -201,9 +203,11 @@ class RefundService:
             from app.modules.billing.services.exchange_rate_service import ExchangeRateService
             config_svc = BillingConfigurationService(self.db)
             org_config = config_svc.get_configuration(organization_id)
+            if not org_config.base_currency:
+                raise ValueError("Base currency is not configured for the organization.")
             base_currency = (
                 org_config.base_currency.value if hasattr(org_config.base_currency, "value")
-                else str(org_config.base_currency or "USD")
+                else str(org_config.base_currency)
             )
             if data["currency"] != base_currency:
                 rate_svc = ExchangeRateService(self.db)
@@ -250,7 +254,7 @@ class RefundService:
         refund = self.repo.create(
             organization_id, customer_id=customer_id,
             refund_number=refund_number, refund_type=refund_type,
-            amount=amount, status=RefundStatus.DRAFT, **data,
+            amount=amount, status=RefundStatus.DRAFT, created_by=created_by, **data,
         )
         self._record_status_history(organization_id, refund.id, None, RefundStatus.DRAFT.value, created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Refund", refund.id, new_values=data)
@@ -300,6 +304,13 @@ class RefundService:
 
     def approve_refund(self, refund_id: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> Refund:
         refund = self.repo.get_by_id(refund_id, organization_id)
+        # §25 SoD: the user who requested/submitted a refund cannot approve
+        # it, even if they hold a role that could approve someone else's.
+        if refund.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot approve a refund you submitted yourself. "
+                "Ask another Finance Approver to review it."
+            )
         self._validate_status_transition(refund.status, RefundStatus.APPROVED)
         old_status = refund.status.value
         refund.status = RefundStatus.APPROVED
@@ -407,7 +418,7 @@ class RefundService:
                 )
             elif source == RefundSource.CUSTOMER_CREDIT_BALANCE:
                 self.customer_service.adjust_credit_balance(
-                    refund.customer_id, organization_id, float(refund.amount), "decrease",
+                    refund.customer_id, organization_id, Decimal(str(refund.amount)), "decrease",
                     reason=f"Refund {refund.refund_number}", updated_by=updated_by,
                 )
         except Exception as e:
@@ -484,7 +495,7 @@ class RefundService:
                 refund_number=refund.refund_number,
                 refund_date=str(refund.completed_at.date()) if refund.completed_at else "",
                 amount=f"{round_money(refund.amount or 0, refund.currency):,.2f}",
-                currency=refund.currency or "USD",
+                currency=refund.currency or BillingConfigurationService(self.db).get_default_currency(organization_id),
                 reason=refund.reason or "",
                 organization_id=organization_id,
                 db=self.db,

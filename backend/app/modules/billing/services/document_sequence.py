@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.modules.billing.models import DocumentSequence
 from app.modules.billing.services.base import render_document_number, sequence_window_start
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class DocumentSequenceService:

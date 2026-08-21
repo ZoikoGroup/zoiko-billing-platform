@@ -24,7 +24,7 @@ from app.modules.billing.utils.date_utils import (  # noqa: F401
     is_daily_granularity,
 )
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class BillingDashboardService:

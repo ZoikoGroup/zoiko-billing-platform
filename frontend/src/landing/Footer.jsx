@@ -2,9 +2,9 @@ import { Link } from "react-router-dom";
 
 const styles = {
   root: {
-    backgroundColor: "#110d2e",
+    backgroundColor: "#0B1220",
     color: "#ffffff",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     width: "100%",
     marginTop: "48px",
   },
@@ -23,20 +23,13 @@ const styles = {
     gap: "10px",
     marginBottom: "14px",
   },
-  logoIcon: {
-    width: "36px",
-    height: "36px",
+  logoBadge: {
+    background: "#ffffff",
     borderRadius: "8px",
-    background: "linear-gradient(135deg, #f97316 40%, #3b82f6 100%)",
-    display: "flex",
+    padding: "6px 10px",
+    display: "inline-flex",
     alignItems: "center",
-    justifyContent: "center",
-    fontSize: "18px",
-    color: "#ffffff",
-    fontWeight: "700",
-    fontStyle: "italic",
   },
-  logoText: { fontSize: "16px", fontWeight: "700", color: "#ffffff" },
   brandDesc: {
     fontSize: "12.5px",
     color: "rgba(255,255,255,0.55)",
@@ -46,7 +39,7 @@ const styles = {
   colTitle: {
     fontSize: "11.5px",
     fontWeight: "700",
-    color: "#f97316",
+    color: "#60A5FA",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     marginBottom: "14px",
@@ -66,7 +59,7 @@ const styles = {
     margin: "0 auto",
     padding: "20px 28px 28px",
     fontSize: "12px",
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(255,255,255,0.72)",
     display: "flex",
     flexWrap: "wrap",
     gap: "6px 20px",
@@ -80,8 +73,9 @@ export default function Footer() {
       <div style={styles.main}>
         <div style={styles.brand}>
           <div style={styles.logoWrap}>
-            <div style={styles.logoIcon}>1</div>
-            <span style={styles.logoText}>Zoiko Billing</span>
+            <div style={styles.logoBadge}>
+              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" style={{ height: "28px", width: "auto", display: "block" }} />
+            </div>
           </div>
           <p style={styles.brandDesc}>
             Invoicing, subscriptions and revenue collection in one platform.

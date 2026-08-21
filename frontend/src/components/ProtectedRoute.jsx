@@ -2,6 +2,29 @@ import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { getAccessToken, getStoredUser } from "../api/client";
+import { ROLE_DEFAULT_REDIRECT } from "../config/roles";
+
+const ROLE_PATH_RULES = {
+  super_admin: () => true,
+  org_admin: (pathname) =>
+    pathname === "/organization-admin" ||
+    pathname.startsWith("/organization-admin/") ||
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
+  billing_admin: (pathname) =>
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
+  // Finance Approver and Auditor are billing-plane roles with no organization
+  // or super-admin surface of their own — server-side dependencies
+  // (get_current_finance_approver / get_current_auditor_or_above) gate the
+  // specific mutations/reads each can perform within /billing/*.
+  finance_approver: (pathname) =>
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
+  auditor: (pathname) =>
+    pathname === "/billing" ||
+    pathname.startsWith("/billing/"),
+};
 
 export default function ProtectedRoute() {
   const location = useLocation();
@@ -9,15 +32,11 @@ export default function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   const user = getStoredUser();
-  if (user?.role && user.role !== "super_admin") {
-    const { pathname } = location;
-    const allowed =
-      pathname === "/portal" ||
-      pathname === "/billing" ||
-      pathname.startsWith("/billing/") ||
-      pathname.startsWith("/organization-admin/");
-    if (!allowed) {
-      return <Navigate to="/portal" replace />;
+  const role = user?.role;
+  if (role && ROLE_PATH_RULES[role]) {
+    const isAllowed = ROLE_PATH_RULES[role](location.pathname);
+    if (!isAllowed) {
+      return <Navigate to={ROLE_DEFAULT_REDIRECT[role] || "/login"} replace />;
     }
   }
   return <Outlet />;

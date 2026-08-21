@@ -19,7 +19,7 @@ from app.modules.billing.models import (
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 # ── Regex Patterns ───────────────────────────────────────────────────────────

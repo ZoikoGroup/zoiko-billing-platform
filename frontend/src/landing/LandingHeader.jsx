@@ -1,42 +1,52 @@
-import { ArrowRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Link } from "react-router-dom";
+
+const NAV_ITEMS = [
+  { label: "Product", hasMenu: true },
+  { label: "Solutions", hasMenu: true },
+  { label: "Global Billing", hasMenu: true },
+  { label: "Integrations", hasMenu: true },
+  { label: "Pricing", hasMenu: false },
+  { label: "Resources", hasMenu: true },
+  { label: "Company", hasMenu: true },
+];
 
 export default function LandingHeader() {
   return (
-    <header className="sticky top-0 z-50 bg-gradient-to-b from-[#F1EEFC] to-white border-b border-[#E2E4EF] rounded-b-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
-        <Link to="/" className="flex items-center gap-2 shrink-0 no-underline">
-          <span
-            style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "8px",
-              background: "linear-gradient(135deg, #f97316 40%, #3b82f6 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "18px",
-              color: "#ffffff",
-              fontWeight: "700",
-              fontStyle: "italic",
-            }}
-          >
-            1
-          </span>
-          <span className="text-[17px] font-bold text-[#1a1a3e] tracking-tight">
-            Zoiko Billing
-          </span>
+    <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div className="flex items-center justify-between px-6 lg:px-10 h-16 gap-6">
+        <Link to="/" className="flex items-center shrink-0 no-underline">
+          <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
         </Link>
 
-        <div className="flex items-center gap-4 text-sm font-semibold">
-          <Link to="/login" className="text-[#1E1B4B] no-underline">
+        <nav className="hidden lg:flex flex-1 items-center justify-center gap-6 text-sm font-medium text-[#374151]">
+          {NAV_ITEMS.map(({ label, hasMenu }) => (
+            <button
+              key={label}
+              type="button"
+              className="flex items-center gap-1 whitespace-nowrap bg-transparent border-none cursor-pointer hover:text-[#0F172A] transition-colors"
+            >
+              {label}
+              {hasMenu && <ChevronDown size={14} />}
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-3 text-sm font-semibold shrink-0">
+          <Link to="/login" className="text-[#0F172A] no-underline">
             Sign In
           </Link>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 bg-white border border-[#0F172A] text-[#0F172A] rounded-full px-5 py-2.5 hover:bg-[#F9FAFB] transition-all duration-200"
+          >
+            Book a Demo
+          </button>
           <Link
             to="/register"
-            className="inline-flex items-center gap-1 bg-[#F97316] hover:bg-[#EA580C] text-white rounded-full px-5 py-2.5 shadow-md shadow-orange-200 transition-all duration-200 no-underline"
+            className="inline-flex items-center gap-1 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full px-5 py-2.5 shadow-md shadow-blue-200 transition-all duration-200 no-underline"
           >
-            Create your account <ArrowRight size={15} />
+            Create Account
           </Link>
         </div>
       </div>

@@ -86,7 +86,7 @@ export default function DunningLevelsPage() {
       title="Dunning Levels"
       subtitle="Configure escalating reminder rules by days overdue"
       actions={
-        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }
@@ -125,7 +125,7 @@ export default function DunningLevelsPage() {
                     <div className="flex flex-col items-center">
                       <Layers size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No dunning levels configured</p>
-                      <p className="text-slate-400 text-sm mt-1">Add levels to enable automated reminder escalation.</p>
+                      <p className="text-slate-500 text-sm mt-1">Add levels to enable automated reminder escalation.</p>
                     </div>
                   </td>
                 </tr>
@@ -142,7 +142,7 @@ export default function DunningLevelsPage() {
                   </td>
                   <td className="px-4 py-4 text-right">
                     <button onClick={() => handleDelete(l.id)} disabled={deleteLoading === l.id}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-40" title="Delete">
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Delete">
                       {deleteLoading === l.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                     </button>
                   </td>
@@ -158,7 +158,7 @@ export default function DunningLevelsPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-800">New Dunning Level</h3>
-              <button onClick={() => setShowModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              <button onClick={() => setShowModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}

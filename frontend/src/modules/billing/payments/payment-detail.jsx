@@ -17,7 +17,7 @@ const STATUS_STYLES = {
 };
 
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || "bg-gray-100 text-gray-600";
+  const s = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return (
@@ -40,13 +40,13 @@ const TABS = [
 
 function TabNav({ tabs, active, onChange }) {
   return (
-    <nav className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+    <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
           <button key={tab.key} onClick={() => onChange(tab.key)}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:ring-inset rounded-t-lg ${
-              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              active === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>
             <Icon className="h-4 w-4" /> {tab.label}
           </button>
@@ -200,7 +200,7 @@ export default function PaymentDetailPage() {
         refund_number: "auto",
         refund_type: refundType === "full" ? "full" : "partial",
         amount: amt,
-        currency: payment.currency || "USD",
+        currency: payment.currency,
         reason: refundReason || undefined,
       });
       // A new refund starts in DRAFT — it must go through the same
@@ -247,8 +247,8 @@ export default function PaymentDetailPage() {
     return (
       <HRPage title="Payment Detail" subtitle="Payment not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <CreditCard className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Payment not found</p>
+          <CreditCard className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Payment not found</p>
         </div>
       </HRPage>
     );
@@ -262,26 +262,26 @@ export default function PaymentDetailPage() {
   const renderOverview = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(payment.amount, payment.currency)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(payment.amount, payment.currency)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Method</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{payment.payment_method_type || payment.payment_type?.replace(/_/g, " ") || "—"}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Method</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1 capitalize">{payment.payment_method_type || payment.payment_type?.replace(/_/g, " ") || "—"}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
           <div className="mt-2"><StatusBadge status={payment.status} /></div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Date</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatDisplayDate(payment.payment_date || payment.created_at)}</p>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Date</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatDisplayDate(payment.payment_date || payment.created_at)}</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Payment Information</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4">Payment Information</h3>
         <div className="grid grid-cols-2 gap-x-8">
           <InfoRow label="Payment Number" value={payment.payment_number || `#${payment.id}`} />
           <InfoRow label="Transaction ID" value={payment.transaction_id || payment.gateway_transaction_id} />
@@ -292,7 +292,7 @@ export default function PaymentDetailPage() {
               </button>
             ) : (payment.customer_name || `Customer #${payment.customer_id}`)
           } />
-          <InfoRow label="Currency" value={payment.currency || "USD"} />
+          <InfoRow label="Currency" value={payment.currency} />
           <InfoRow label="Reference" value={payment.reference_number} />
           <InfoRow label="Gateway" value={payment.gateway} />
           <InfoRow label="Gateway Fee" value={payment.gateway_fee > 0 ? formatDisplayCurrency(payment.gateway_fee) : "—"} />
@@ -313,21 +313,21 @@ export default function PaymentDetailPage() {
       </div>
 
       {refunds.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><RotateCcw size={16} className="text-brand-500" /> Refund History ({refunds.length})</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><RotateCcw size={16} className="text-brand-500" /> Refund History ({refunds.length})</h3>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-slate-200">
               <thead>
-                <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                   <th className="text-left py-3 px-4">Refund</th>
                   <th className="text-left py-3 px-4">Date</th>
                   <th className="text-right py-3 px-4">Amount</th>
                   <th className="text-left py-3 px-4">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {refunds.map((r) => (
-                  <tr key={r.id} onClick={() => navigate(`/billing/refunds/${r.id}`)} className="text-sm text-gray-900 hover:bg-slate-50 cursor-pointer">
+                  <tr key={r.id} onClick={() => navigate(`/billing/refunds/${r.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
                     <td className="py-3 px-4 font-medium">{r.refund_number || `#${r.id}`}</td>
                     <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(r.created_at)}</td>
                     <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(r.amount, r.currency)}</td>
@@ -336,7 +336,7 @@ export default function PaymentDetailPage() {
                         r.status === "completed" || r.status === "processed" ? "bg-emerald-100 text-emerald-700" :
                         r.status === "pending" || r.status === "submitted" ? "bg-amber-100 text-amber-700" :
                         r.status === "failed" || r.status === "rejected" ? "bg-red-100 text-red-700" :
-                        "bg-gray-100 text-gray-600"
+                        "bg-slate-100 text-slate-600"
                       }`}>{r.status || "—"}</span>
                     </td>
                   </tr>
@@ -360,9 +360,9 @@ export default function PaymentDetailPage() {
     const inv = invoice || (payment.invoice_id ? { id: payment.invoice_id, invoice_number: `#${payment.invoice_id}` } : null);
     if (!inv) {
       return (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoice</h3>
-          <div className="text-center py-8 text-slate-400">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoice</h3>
+          <div className="text-center py-8 text-slate-500">
             <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
             <p className="text-sm">No invoice linked to this payment</p>
           </div>
@@ -372,27 +372,27 @@ export default function PaymentDetailPage() {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice</p>
-            <p className="text-lg font-bold text-gray-900 mt-1">{inv.invoice_number}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Invoice</p>
+            <p className="text-lg font-bold text-slate-900 mt-1">{inv.invoice_number}</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(inv.total_amount || inv.amount, inv.currency)}</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total</p>
+            <p className="text-lg font-bold text-slate-900 mt-1 whitespace-nowrap">{formatDisplayCurrency(inv.total_amount || inv.amount, inv.currency)}</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+          <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
             <div className="mt-2">
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
-                inv.status === "paid" ? "bg-emerald-100 text-emerald-700" : inv.status === "overdue" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"
+                inv.status === "paid" ? "bg-emerald-100 text-emerald-700" : inv.status === "overdue" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"
               }`}>{inv.status?.replace(/_/g, " ") || "—"}</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoice Details</h3>
+            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Receipt size={16} className="text-brand-500" /> Invoice Details</h3>
             <button onClick={() => navigate(`/billing/invoices/${inv.id}`)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors">
               <FileText className="h-4 w-4" /> View Full Invoice
@@ -415,9 +415,9 @@ export default function PaymentDetailPage() {
   };
 
   const renderCustomer = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> Customer Details</h3>
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> Customer Details</h3>
         {payment.customer_id && (
           <button onClick={() => navigate(`/billing/customers/${payment.customer_id}`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors">
@@ -453,37 +453,37 @@ export default function PaymentDetailPage() {
           )}
         </div>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <User size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">Customer details not available</p>
-          <p className="text-xs text-slate-400 mt-1">Customer #{payment.customer_id}</p>
+          <p className="text-xs text-slate-500 mt-1">Customer #{payment.customer_id}</p>
         </div>
       )}
     </div>
   );
 
   const renderAllocation = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Layers size={16} className="text-brand-500" /> Allocations ({allocations.length})</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Layers size={16} className="text-brand-500" /> Allocations ({allocations.length})</h3>
       {allocations.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Layers size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No allocations for this payment</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Invoice</th>
                 <th className="text-right py-3 px-4">Amount</th>
                 <th className="text-left py-3 px-4">Date</th>
                 <th className="text-left py-3 px-4">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {allocations.map((alloc, i) => (
-                <tr key={alloc.id || i} className="text-sm text-gray-900 hover:bg-slate-50">
+                <tr key={alloc.id || i} className="text-sm text-slate-900 hover:bg-slate-50">
                   <td className="py-3 px-4 font-medium">{alloc.invoice_number || alloc.invoice_id || "—"}</td>
                   <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(alloc.amount)}</td>
                   <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(alloc.created_at)}</td>
@@ -492,7 +492,7 @@ export default function PaymentDetailPage() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                         alloc.status === "completed" ? "bg-emerald-100 text-emerald-700" :
                         alloc.status === "pending" ? "bg-amber-100 text-amber-700" :
-                        "bg-gray-100 text-gray-600"
+                        "bg-slate-100 text-slate-600"
                       }`}>{alloc.status || "completed"}</span>
                       {payment.status === "cleared" && (
                         <button onClick={() => setConfirmDealloc(alloc.id)}
@@ -520,7 +520,7 @@ export default function PaymentDetailPage() {
         </div>
         <div className="flex justify-between text-sm font-medium border-t border-slate-200 pt-2 mt-1">
           <span>{remaining > 0 ? "Unallocated" : remaining < 0 ? "Over-allocated" : "Balance"}</span>
-          <span className={remaining > 0 ? "text-amber-600" : remaining < 0 ? "text-red-600" : "text-emerald-600"}>
+          <span className={remaining > 0 ? "text-amber-600" : remaining < 0 ? "text-red-600" : "text-emerald-700"}>
             {formatDisplayCurrency(Math.abs(remaining))}
           </span>
         </div>
@@ -528,16 +528,16 @@ export default function PaymentDetailPage() {
 
       {remaining > 0.005 && payment.status === "cleared" && (
         <div className="mt-4 p-4 bg-brand-50/50 border border-brand-200 rounded-xl">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><Plus size={15} className="text-brand-600" /> Allocate Unallocated ({formatDisplayCurrency(remaining)})</h4>
+          <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2"><Plus size={15} className="text-brand-600" /> Allocate Unallocated ({formatDisplayCurrency(remaining)})</h4>
           {openInvoices.length === 0 ? (
             <p className="text-xs text-slate-500">No open invoices available for this customer.</p>
           ) : (
             <>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Invoice</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1.5">Invoice</label>
                   <select value={allocateForm.invoice_id} onChange={(e) => setAllocateForm((p) => ({ ...p, invoice_id: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand/30">
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand/30">
                     <option value="">Select invoice...</option>
                     {openInvoices.map((inv) => (
                       <option key={inv.id} value={inv.id}>
@@ -547,10 +547,10 @@ export default function PaymentDetailPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Amount ({payment.currency || "USD"})</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1.5">Amount ({payment.currency})</label>
                   <input type="number" min="0.01" step="0.01" max={remaining.toFixed(2)} value={allocateForm.amount}
                     onChange={(e) => setAllocateForm((p) => ({ ...p, amount: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand/30" />
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand/30" />
                 </div>
               </div>
               <button onClick={handleAllocate} disabled={allocating || !allocateForm.invoice_id || !allocateForm.amount}
@@ -601,8 +601,8 @@ export default function PaymentDetailPage() {
     }
 
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
+      <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
         <div className="space-y-4">
           {events.map((ev, i) => (
             <div key={i} className="flex gap-3">
@@ -611,7 +611,7 @@ export default function PaymentDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-800">{ev.label}</p>
-                <p className="text-xs text-slate-400">{formatDisplayDate(ev.date)}</p>
+                <p className="text-xs text-slate-500">{formatDisplayDate(ev.date)}</p>
               </div>
             </div>
           ))}
@@ -621,12 +621,12 @@ export default function PaymentDetailPage() {
   };
 
   const renderNotes = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
       {payment.notes ? (
         <p className="text-sm text-slate-700 whitespace-pre-wrap">{payment.notes}</p>
       ) : (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <FileEdit size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No notes for this payment</p>
         </div>
@@ -635,10 +635,10 @@ export default function PaymentDetailPage() {
   );
 
   const renderActivity = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Payment Attempts ({attempts.length})</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Payment Attempts ({attempts.length})</h3>
       {attempts.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Activity size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No payment attempts recorded</p>
         </div>
@@ -647,7 +647,7 @@ export default function PaymentDetailPage() {
           {attempts.map((att, i) => (
             <div key={att.id || i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                att.status === "success" || att.status === "completed" ? "bg-emerald-100 text-emerald-600" :
+                att.status === "success" || att.status === "completed" ? "bg-emerald-100 text-emerald-700" :
                 att.status === "failed" ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"
               }`}>
                 {att.status === "success" || att.status === "completed" ? <CheckCircle size={14} /> :
@@ -658,13 +658,13 @@ export default function PaymentDetailPage() {
                   <p className="text-sm font-medium text-slate-800 capitalize">{att.status || "attempt"}</p>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                     att.status === "success" || att.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                    att.status === "failed" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"
+                    att.status === "failed" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"
                   }`}>{att.status || "—"}</span>
                 </div>
                 {att.message && <p className="text-xs text-slate-500 mt-0.5">{att.message}</p>}
-                {att.gateway_response && <p className="text-xs text-slate-400 mt-0.5">Gateway: {att.gateway_response}</p>}
+                {att.gateway_response && <p className="text-xs text-slate-500 mt-0.5">Gateway: {att.gateway_response}</p>}
               </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">{formatDisplayDate(att.created_at || att.attempted_at)}</span>
+              <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(att.created_at || att.attempted_at)}</span>
             </div>
           ))}
         </div>
@@ -673,38 +673,38 @@ export default function PaymentDetailPage() {
   );
 
   const renderAudit = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Shield size={16} className="text-brand-500" /> Audit Trail</h3>
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Shield size={16} className="text-brand-500" /> Audit Trail</h3>
       {auditLogs.length === 0 ? (
-        <div className="text-center py-8 text-slate-400">
+        <div className="text-center py-8 text-slate-500">
           <Shield size={32} className="mx-auto mb-2 text-slate-300" />
           <p className="text-sm">No audit log entries</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead>
-              <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Action</th>
                 <th className="text-left py-3 px-4">User</th>
                 <th className="text-left py-3 px-4">Details</th>
                 <th className="text-left py-3 px-4">Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {auditLogs.map((log, i) => (
-                <tr key={log.id || i} className="text-sm text-gray-900 hover:bg-slate-50">
+                <tr key={log.id || i} className="text-sm text-slate-900 hover:bg-slate-50">
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
                       log.action === "created" ? "bg-brand-100 text-brand-700" :
                       log.action === "updated" ? "bg-blue-100 text-blue-700" :
                       log.action === "deleted" ? "bg-red-100 text-red-700" :
-                      "bg-gray-100 text-gray-600"
+                      "bg-slate-100 text-slate-600"
                     }`}>{log.action || log.event_type || "—"}</span>
                   </td>
                   <td className="py-3 px-4 text-slate-600">{log.user_name || log.user_id || log.performed_by || "—"}</td>
                   <td className="py-3 px-4 text-slate-500 max-w-xs truncate">{log.details || log.description || log.message || "—"}</td>
-                  <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
+                  <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(log.created_at || log.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -736,7 +736,7 @@ export default function PaymentDetailPage() {
       actions={
         <div className="flex items-center gap-2">
           <button onClick={() => navigate("/billing/payments")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-brand/30">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-brand/30">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
         </div>
@@ -757,8 +757,8 @@ export default function PaymentDetailPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Actions</h3>
             <div className="space-y-3">
               {payment.status === "pending" && (
                 <>
@@ -801,11 +801,11 @@ export default function PaymentDetailPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Summary</h3>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Amount</span><span className="font-medium">{formatDisplayCurrency(payment.amount, payment.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Allocated</span><span className="font-medium text-emerald-600">{formatDisplayCurrency(allocatedTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Allocated</span><span className="font-medium text-emerald-700">{formatDisplayCurrency(allocatedTotal)}</span></div>
               {remaining > 0 && <div className="flex justify-between"><span className="text-slate-500">Unallocated</span><span className="font-medium text-amber-600">{formatDisplayCurrency(remaining)}</span></div>}
               <div className="flex justify-between"><span className="text-slate-500">Fee</span><span className="font-medium">{payment.gateway_fee > 0 ? formatDisplayCurrency(payment.gateway_fee) : "—"}</span></div>
               <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-2 mt-2">
@@ -819,11 +819,11 @@ export default function PaymentDetailPage() {
     {confirmDealloc && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
         <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl mx-4">
-          <h3 className="text-lg font-bold text-gray-900 mb-2">Reverse Allocation</h3>
-          <p className="text-sm text-gray-500 mb-5">This will remove the allocation and restore the invoice balance. This action cannot be undone.</p>
+          <h3 className="text-lg font-bold text-slate-900 mb-2">Reverse Allocation</h3>
+          <p className="text-sm text-slate-500 mb-5">This will remove the allocation and restore the invoice balance. This action cannot be undone.</p>
           <div className="flex justify-end gap-3">
             <button onClick={() => setConfirmDealloc(null)} disabled={isActing("dealloc")}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50">Cancel</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
             <button onClick={() => handleDeallocation(confirmDealloc)} disabled={isActing("dealloc")}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">
               {isActing("dealloc") ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
@@ -836,43 +836,43 @@ export default function PaymentDetailPage() {
     {showRefundModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (actionLoading !== "refund") setShowRefundModal(false); }}>
         <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-gray-900 mb-1">Refund Payment</h3>
-          <p className="text-sm text-gray-500 mb-4">Refundable amount: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Refund Payment</h3>
+          <p className="text-sm text-slate-500 mb-4">Refundable amount: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Refund Type</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">Refund Type</label>
               <div className="flex gap-2">
                 <button onClick={() => { setRefundType("full"); setRefundAmount(String(parseFloat(payment.amount || 0))); }}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${refundType === "full" ? "bg-blue-50 border-blue-300 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${refundType === "full" ? "bg-blue-50 border-blue-300 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                   Full Refund
                 </button>
                 <button onClick={() => { setRefundType("partial"); setRefundAmount(""); }}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${refundType === "partial" ? "bg-blue-50 border-blue-300 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${refundType === "partial" ? "bg-blue-50 border-blue-300 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                   Partial Refund
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Refund Amount ({payment.currency || "USD"}) *</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">Refund Amount ({payment.currency}) *</label>
               <input type="number" min="0.01" step="0.01" max={parseFloat(payment.amount || 0)} value={refundAmount}
                 onChange={(e) => setRefundAmount(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-              <p className="text-xs text-gray-400 mt-1">Max: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+              <p className="text-xs text-slate-500 mt-1">Max: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">Reason</label>
               <textarea value={refundReason} onChange={(e) => setRefundReason(e.target.value)} rows={2}
                 placeholder="Optional reason for refund..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
             </div>
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setShowRefundModal(false)} disabled={actionLoading === "refund"}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50">Cancel</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
             <button onClick={handleRefund} disabled={actionLoading === "refund" || !refundAmount || parseFloat(refundAmount) <= 0}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50">
               {actionLoading === "refund" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}

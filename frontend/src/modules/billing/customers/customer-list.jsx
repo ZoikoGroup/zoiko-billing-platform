@@ -18,7 +18,7 @@ const ITEMS_PER_PAGE = 15;
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  { value: "inactive", label: "Inactive", color: "bg-gray-100 text-gray-700" },
+  { value: "inactive", label: "Inactive", color: "bg-slate-100 text-slate-700" },
   { value: "suspended", label: "Suspended", color: "bg-amber-100 text-amber-700" },
   { value: "closed", label: "Closed", color: "bg-red-100 text-red-700" },
 ];
@@ -198,7 +198,7 @@ export default function CustomerListPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -319,6 +319,7 @@ export default function CustomerListPage() {
       const payload = {
         ...newCustomer,
         customer_code: newCustomer.customer_code || `CUST-${Date.now()}`,
+        display_name: newCustomer.display_name?.trim() || newCustomer.company_name.trim(),
         credit_days: newCustomer.credit_days === "" || newCustomer.credit_days == null ? PAYMENT_TERMS_CREDIT_DAYS[newCustomer.payment_terms] ?? 30 : Math.max(0, parseInt(newCustomer.credit_days, 10) || 0),
         credit_limit: newCustomer.credit_limit === "" || newCustomer.credit_limit == null ? undefined : Math.max(0, parseFloat(newCustomer.credit_limit) || 0),
       };
@@ -352,6 +353,7 @@ export default function CustomerListPage() {
     if (!editCustomer.company_name?.trim()) { setFormError("Company name is required"); setFormLoading(false); return; }
     try {
       const payload = { ...editCustomer };
+      payload.display_name = editCustomer.display_name?.trim() || editCustomer.company_name.trim();
       payload.credit_days = editCustomer.credit_days === "" || editCustomer.credit_days == null ? undefined : Math.max(0, parseInt(editCustomer.credit_days, 10) || 0);
       payload.credit_limit = editCustomer.credit_limit === "" || editCustomer.credit_limit == null ? undefined : Math.max(0, parseFloat(editCustomer.credit_limit) || 0);
       if (payload.credit_days === undefined) delete payload.credit_days;
@@ -414,7 +416,30 @@ export default function CustomerListPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address</label><textarea rows={2} value={newCustomer.billing_address} onChange={(e) => setNewCustomer((p) => ({ ...p, billing_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => { const country = e.target.value; const curInfo = getCurrencyForCountry(country); setNewCustomer((p) => ({ ...p, billing_country: country, shipping_country: p.shipping_same_as_billing ? country : p.shipping_country, currency: p.currency || (curInfo ? curInfo.code : p.currency) })); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => {
+            const country = e.target.value;
+            const curInfo = getCurrencyForCountry(country);
+            const newCurrency = curInfo ? curInfo.code : newCustomer.currency;
+
+            const updateCountry = (confirmCurrencyUpdate) => {
+              setNewCustomer((p) => ({
+                ...p,
+                billing_country: country,
+                shipping_country: p.shipping_same_as_billing ? country : p.shipping_country,
+                currency: confirmCurrencyUpdate ? newCurrency : p.currency
+              }));
+            };
+
+            if (newCustomer.currency && newCustomer.currency !== newCurrency && newCurrency) {
+              if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+                updateCountry(true);
+              } else {
+                updateCountry(false);
+              }
+            } else {
+              updateCountry(true);
+            }
+          }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
 
             <label className="flex items-center gap-2 text-sm text-slate-700 mb-2"><input type="checkbox" checked={newCustomer.shipping_same_as_billing} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_same_as_billing: e.target.checked, shipping_address: e.target.checked ? p.billing_address : "", shipping_country: e.target.checked ? p.billing_country : "" }))} className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" /> Same as billing</label>
             {!newCustomer.shipping_same_as_billing && (<><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={newCustomer.shipping_address} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={newCustomer.shipping_country} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></>)}
@@ -426,7 +451,7 @@ export default function CustomerListPage() {
               <input value={newCustomer[f.key] || ""} onChange={(e) => setNewCustomer((p) => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           ))}
-          {!newCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-400">Select a billing country above to show its relevant tax identifier(s).</p>}
+          {!newCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).</p>}
         </div>
         <div className="mb-4"><label className="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea rows={2} value={newCustomer.notes} onChange={(e) => setNewCustomer((p) => ({ ...p, notes: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
@@ -461,7 +486,29 @@ export default function CustomerListPage() {
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={editCustomer.shipping_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={editCustomer.billing_country || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, billing_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={editCustomer.billing_country || ""} onChange={(e) => {
+              const country = e.target.value;
+              const curInfo = getCurrencyForCountry(country);
+              const newCurrency = curInfo ? curInfo.code : editCustomer.currency;
+
+              const updateCountry = (confirmCurrencyUpdate) => {
+                setEditCustomer((p) => ({
+                  ...p,
+                  billing_country: country,
+                  currency: confirmCurrencyUpdate ? newCurrency : p.currency
+                }));
+              };
+
+              if (editCustomer.currency && editCustomer.currency !== newCurrency && newCurrency) {
+                if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+                  updateCountry(true);
+                } else {
+                  updateCountry(false);
+                }
+              } else {
+                updateCountry(true);
+              }
+            }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={editCustomer.shipping_country || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -471,7 +518,7 @@ export default function CustomerListPage() {
                 <input value={editCustomer[f.key] || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             ))}
-            {!editCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-400">Select a billing country above to show its relevant tax identifier(s).</p>}
+            {!editCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).</p>}
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100"><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button><button onClick={handleUpdate} disabled={formLoading} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Saving..." : "Save Changes"}</button></div>
         </div>
@@ -491,13 +538,13 @@ export default function CustomerListPage() {
     <HRPage title={plural} subtitle={`Manage your ${getLabel("pluralLower")}`}>
       {kpiData && (
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-3 mb-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Total</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.total_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Active</p><p className="text-xl font-bold text-emerald-600 mt-1 whitespace-nowrap">{kpiData.active_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Inactive</p><p className="text-xl font-bold text-slate-500 mt-1 whitespace-nowrap">{kpiData.inactive_customers || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">New (30d)</p><p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{kpiData.new_customers_30d || 0}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Collection</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.avg_collection_time_days || 0}d</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Total</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.total_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Active</p><p className="text-xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{kpiData.active_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Inactive</p><p className="text-xl font-bold text-slate-500 mt-1 whitespace-nowrap">{kpiData.inactive_customers || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">New (30d)</p><p className="text-xl font-bold text-brand-600 mt-1 whitespace-nowrap">{kpiData.new_customers_30d || 0}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Revenue</p><p className="text-xl font-bold text-slate-800 mt-1 truncate" title={formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.total_revenue || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Outstanding</p><p className="text-xl font-bold text-amber-600 mt-1 truncate" title={formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}>{formatDisplayCurrency(kpiData.outstanding_balance || 0, baseCurrency)}</p></div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-4"><p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Collection</p><p className="text-xl font-bold text-slate-800 mt-1 whitespace-nowrap">{kpiData.avg_collection_time_days || 0}d</p></div>
         </div>
       )}
 
@@ -506,11 +553,11 @@ export default function CustomerListPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder={getLabel("searchPlaceholder")} value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
+                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters || hasActiveFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
@@ -594,7 +641,7 @@ export default function CustomerListPage() {
                 <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <span className="text-slate-400 text-sm">-</span>
+              <span className="text-slate-500 text-sm">-</span>
               <div>
                 <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -613,7 +660,7 @@ export default function CustomerListPage() {
             <span className="text-sm font-medium text-brand-700">{selectedIds.size} selected</span>
             <div className="h-4 w-px bg-brand-200" />
             <button onClick={() => handleBulkAction("activate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50"><UserCheck size={14} /> Activate</button>
-            <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700 disabled:opacity-50"><UserX size={14} /> Deactivate</button>
+            <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-medium hover:bg-slate-700 disabled:opacity-50"><UserX size={14} /> Deactivate</button>
             <button onClick={() => handleBulkAction("suspend")} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50"><AlertCircle size={14} /> Suspend</button>
             <button onClick={handleBulkDelete} disabled={bulkActionLoading} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50"><Trash2 size={14} /> Delete</button>
           </div>
@@ -641,7 +688,7 @@ export default function CustomerListPage() {
             <tbody className="divide-y divide-slate-50">
               {customers.length === 0 ? (
                 <tr><td colSpan={13} className="px-4 py-16 text-center">
-                  <div className="flex flex-col items-center"><Users size={40} className="text-slate-300 mb-3" /><p className="text-slate-500 font-medium">{getLabel("emptyState")}</p><p className="text-slate-400 text-sm mt-1">{search || hasActiveFilters ? "Try adjusting your search or filters" : `Add your first ${getLabel("singularLower")} to get started`}</p></div>
+                  <div className="flex flex-col items-center"><Users size={40} className="text-slate-300 mb-3" /><p className="text-slate-500 font-medium">{getLabel("emptyState")}</p><p className="text-slate-500 text-sm mt-1">{search || hasActiveFilters ? "Try adjusting your search or filters" : `Add your first ${getLabel("singularLower")} to get started`}</p></div>
                 </td></tr>
               ) : customers.map((customer) => (
                 <tr key={customer.id} tabIndex={0} role="row"
@@ -658,7 +705,7 @@ export default function CustomerListPage() {
                       </div>
                       <div className="text-left">
                         <p className="font-medium text-slate-800 group-hover:text-brand-600 transition-colors truncate max-w-[180px]">{customer.display_name || customer.company_name || "Unnamed"}</p>
-                        <p className="text-xs text-slate-400">{customer.customer_code || customer.id}</p>
+                        <p className="text-xs text-slate-500">{customer.customer_code || customer.id}</p>
                       </div>
                     </button>
                   </td>
@@ -679,8 +726,8 @@ export default function CustomerListPage() {
                   <td className="px-3 py-3 text-xs text-slate-500">{formatDisplayDate(customer.created_at)}</td>
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => navigate(`/billing/customers/${customer.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View ${customer.display_name || customer.company_name || singular.toLowerCase()}`}><FileText size={15} /></button>
-                      <button onClick={() => { setEditCustomer({ ...customer }); setShowEditModal(true); }} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit" aria-label={`Edit ${customer.display_name || customer.company_name || singular.toLowerCase()}`}>
+                      <button onClick={() => navigate(`/billing/customers/${customer.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View ${customer.display_name || customer.company_name || singular.toLowerCase()}`}><FileText size={15} /></button>
+                      <button onClick={() => { setEditCustomer({ ...customer }); setShowEditModal(true); }} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit" aria-label={`Edit ${customer.display_name || customer.company_name || singular.toLowerCase()}`}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
                       </button>
                     </div>

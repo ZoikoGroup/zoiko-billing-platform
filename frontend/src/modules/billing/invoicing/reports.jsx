@@ -220,7 +220,7 @@ export default function InvoiceReportsPage() {
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Notes</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalCN, baseCurrency)}</p>
-                  <p className="text-xs text-slate-400 mt-1">{fCreditNotes.length} notes</p>
+                  <p className="text-xs text-slate-500 mt-1">{fCreditNotes.length} notes</p>
                 </div>
               </div>
 
@@ -229,7 +229,7 @@ export default function InvoiceReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Invoice Status Distribution</h3>
                     <button onClick={() => downloadJSON(statusData, "invoice-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {statusData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -265,7 +265,7 @@ export default function InvoiceReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Credit Note Status</h3>
                     <button onClick={() => downloadJSON(cnStatusData, "credit-note-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
                   </div>
                   {cnStatusData.length === 0 ? <EmptyState icon={Receipt} title="No credit note data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
@@ -404,7 +404,7 @@ export default function InvoiceReportsPage() {
                   <div key={b.name} className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{b.name}</p>
                     <p className="text-2xl font-bold mt-1" style={{ color: b.color }}>{formatCurrency(b.value, baseCurrency)}</p>
-                    <p className="text-xs text-slate-400 mt-1">{overdueInvoices.filter((i) => { const d = (new Date() - new Date(i.due_date)) / (1000 * 60 * 60 * 24); return d >= agingBuckets.indexOf(b) * 30 + 1 && d <= (agingBuckets.indexOf(b) + 1) * 30; }).length} invoices</p>
+                    <p className="text-xs text-slate-500 mt-1">{overdueInvoices.filter((i) => { const d = (new Date() - new Date(i.due_date)) / (1000 * 60 * 60 * 24); return d >= agingBuckets.indexOf(b) * 30 + 1 && d <= (agingBuckets.indexOf(b) + 1) * 30; }).length} invoices</p>
                   </div>
                 ))}
               </div>
@@ -478,7 +478,7 @@ export default function InvoiceReportsPage() {
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Collection Rate</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1">{totalAmount ? `${((totalPaid / totalAmount) * 100).toFixed(1)}%` : "—"}</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{totalAmount ? `${((totalPaid / totalAmount) * 100).toFixed(1)}%` : "—"}</p>
                 </div>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">

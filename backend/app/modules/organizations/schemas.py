@@ -26,10 +26,27 @@ class OrganizationBase(BaseModel):
     website: Optional[str] = Field(None, max_length=500)
     tax_no: Optional[str] = None
     registration_number: Optional[str] = None
-    currency: str = "USD"
+    # ZB-SA-CMD-003 v3.0: no "USD" default. When omitted, the creation
+    # endpoint derives the currency from the organization's country via
+    # auth/country_currency.resolve_currency — and an unmapped country is an
+    # explicit error, never a silent USD fallback.
+    currency: Optional[str] = None
     timezone: str = "UTC"
     fiscal_year_start: Optional[str] = "01-01"
     fiscal_year_end: Optional[str] = "12-31"
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            v = v.strip().upper()
+            if not re.match(r"^[A-Z]{3}$", v):
+                raise ValueError("currency must be a 3-letter ISO-4217 code")
+            from app.modules.auth.country_currency import is_valid_currency_code
+
+            if not is_valid_currency_code(v):
+                raise ValueError("currency must be a supported ISO-4217 currency code")
+        return v
 
 
 class OrganizationUpdate(BaseModel):
@@ -152,3 +169,22 @@ class OrganizationDetail(BaseModel):
     active_customers: int = 0
     billing_admins: int = 0
     created_at: datetime
+
+
+# ZB-SA-CMD-003 §19/§20 — tenant-visible privileged support-access log.
+# One row per support-access SESSION (grant), not a raw per-event audit
+# replay — reads directly from PrivilegedTenantAccessGrant so reason/
+# ticket_reference are always present without reconstructing them from
+# audit-log metadata.
+class PrivilegedAccessLogEntry(BaseModel):
+    requested_at: datetime
+    status: str  # pending_step_up | active | exited | expired | denied
+    reason: str
+    ticket_reference: str
+    activated_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None  # exited_at, or expires_at if lazily expired
+    correlation_id: str
+
+
+class PrivilegedAccessLogResponse(BaseModel):
+    entries: list[PrivilegedAccessLogEntry]

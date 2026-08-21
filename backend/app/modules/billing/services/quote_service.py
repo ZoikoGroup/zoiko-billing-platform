@@ -42,7 +42,7 @@ from app.modules.billing.services.exchange_rate_service import ExchangeRateServi
 from app.modules.billing.utils.currency_utils import round_money, convert_amount
 from app.services.email_service import send_quote_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 QUOTE_ALLOWED_FIELDS = {
     "customer_id", "quote_number", "valid_until",
@@ -76,9 +76,14 @@ class QuoteService:
         quote_number: str, **data: Any,
     ) -> Quotation:
         data = filter_allowed(data, QUOTE_ALLOWED_FIELDS)
-        self.customer_service.get_customer(customer_id, organization_id)
+        customer = self.customer_service.get_customer(customer_id, organization_id)
         if self.repo.exists(organization_id, quote_number=quote_number):
             raise AlreadyExistsException("Quotation", "quote_number")
+        # Currency: explicit > customer's own currency > org default -- same
+        # precedence already used for invoices/contracts/subscriptions. Never
+        # silently falls through to the Quotation.currency column's own USD
+        # default when the client omits it.
+        data["currency"] = data.get("currency") or customer.currency or self.config_service.get_default_currency(organization_id)
         quote = self.repo.create(
             organization_id,
             customer_id=customer_id, quote_number=quote_number,
@@ -169,8 +174,8 @@ class QuoteService:
                 price_semantics = result.resolved_price_type or "unit"
                 data["resolved_price_type"] = price_semantics
 
-                quote_currency = quote.currency or "USD"
-                product_currency = result.currency or "USD"
+                quote_currency = quote.currency or self.config_service.get_default_currency(organization_id)
+                product_currency = result.currency or self.config_service.get_default_currency(organization_id)
                 if product_currency != quote_currency:
                     data["original_currency"] = product_currency
                     data["original_amount"] = result.resolved_price
@@ -195,7 +200,7 @@ class QuoteService:
         disc_pct = Decimal(str(data.get("discount_percentage", 0)))
         tax_pct = Decimal(str(data.get("tax_percentage", 0)))
         calc = CalculationService.calculate_line_item(qty, price, disc_pct, Decimal("0"), tax_pct, Decimal("1.0"), is_tax_inclusive=data.get("is_tax_inclusive", False), price_semantics=price_semantics)
-        quote_currency = quote.currency or "USD"
+        quote_currency = quote.currency or self.config_service.get_default_currency(organization_id)
         data["discount_amount"] = round_money(calc["original_discount"], quote_currency)
         data["tax_amount"] = round_money(calc["original_tax_amount"], quote_currency)
         data["total_amount"] = round_money(calc["original_line_total"], quote_currency)
@@ -231,7 +236,7 @@ class QuoteService:
         disc_pct = Decimal(str(data.get("discount_percentage", 0)))
         tax_pct = Decimal(str(data.get("tax_percentage", 0)))
         calc = CalculationService.calculate_line_item(qty, price, disc_pct, Decimal("0"), tax_pct, Decimal("1.0"), is_tax_inclusive=data.get("is_tax_inclusive", False), price_semantics=price_semantics)
-        quote_currency = quote.currency or "USD"
+        quote_currency = quote.currency or self.config_service.get_default_currency(organization_id)
         data["discount_amount"] = round_money(calc["original_discount"], quote_currency)
         data["tax_amount"] = round_money(calc["original_tax_amount"], quote_currency)
         data["total_amount"] = round_money(calc["original_line_total"], quote_currency)
@@ -397,7 +402,7 @@ class QuoteService:
                 "Please update the customer profile before sending."
             )
 
-        currency = quote.currency or "USD"
+        currency = quote.currency or self.config_service.get_default_currency(organization_id)
         items = quote.items or []
 
         def _fmt_money(amount) -> str:
@@ -581,7 +586,7 @@ class QuoteService:
             "status": quote.status.value if quote.status else "draft",
             "issue_date": _fmt_date(quote.created_at.date()) if quote.created_at else None,
             "valid_until": _fmt_date(quote.valid_until),
-            "currency": quote.currency or "USD",
+            "currency": quote.currency or self.config_service.get_default_currency(quote.organization_id),
             "subtotal": str(quote.subtotal or 0),
             "discount_percentage": str(quote.discount_percentage or 0),
             "discount_amount": str(quote.discount_amount or 0),
@@ -639,7 +644,7 @@ class QuoteService:
             return 0
         customer = quote.customer
         customer_name = (customer.display_name or customer.company_name) if customer else ""
-        currency = quote.currency or "USD"
+        currency = quote.currency or self.config_service.get_default_currency(quote.organization_id)
         total = f"{round_money(quote.total_amount or 0, currency):,.2f}"
         sent = 0
         for email in emails:

@@ -9,12 +9,12 @@ import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing
 import { useTerminology } from "../utils/TerminologyContext";
 import { StatusBadge } from "../../../components/billing-shared";
 import { PageHeader, Button, Modal, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+// pdfmake + vfs_fonts are lazy-loaded inside buildCreditNotePdf() so the
+// ~1.74 MB font bundle is only fetched when the user clicks "Download".
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "approved", label: "Approved", color: "bg-indigo-100 text-indigo-700" },
   { value: "issued", label: "Issued", color: "bg-blue-100 text-blue-700" },
   { value: "partially_applied", label: "Partially Applied", color: "bg-amber-100 text-amber-700" },
@@ -22,12 +22,18 @@ const STATUS_OPTIONS = [
   { value: "voided", label: "Voided", color: "bg-red-100 text-red-700" },
 ];
 
-const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
+const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
 const cardClass = "rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]";
-const labelClass = "text-xs font-medium uppercase tracking-wider text-slate-500";
+const labelClass = "text-xs font-medium uppercase tracking-wider text-slate-600";
 
-function buildCreditNotePdf(cn, orgSettings = {}) {
-  const currency = cn.currency || "USD";
+async function buildCreditNotePdf(cn, orgSettings = {}) {
+  const pdfMakeModule = await import("pdfmake/build/pdfmake");
+  const pdfFontsModule = await import("pdfmake/build/vfs_fonts");
+  const pdfMake = pdfMakeModule.default;
+  const pdfFonts = pdfFontsModule.default;
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
+
+  const currency = cn.currency;
   const fmt = (v) => {
     if (v == null || v === "") return "—";
     const num = Number(v);
@@ -185,9 +191,10 @@ export default function CreditNoteDetailPage() {
     }
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (!cn) return;
-    buildCreditNotePdf(cn).download(`${(cn.credit_note_number || `credit-note-${cn.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
+    const pdf = await buildCreditNotePdf(cn, {});
+    pdf.download(`${(cn.credit_note_number || `credit-note-${cn.id}`).replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`);
   };
 
   if (loading) {
@@ -243,7 +250,7 @@ export default function CreditNoteDetailPage() {
     );
   }
 
-  const currency = cn.currency || "USD";
+  const currency = cn.currency;
   const isDraft = cn.status === "draft";
   const isApproved = cn.status === "approved";
   const canApply = cn.status === "issued" || cn.status === "partially_applied";
@@ -403,7 +410,7 @@ export default function CreditNoteDetailPage() {
                 <p className="text-sm font-semibold text-emerald-700 mt-0.5">
                   {creditBalance ? formatDisplayCurrency(creditBalance.outstanding_credit_balance, "—", currency) : "—"}
                 </p>
-                {creditBalance && <p className="text-xs text-slate-400">{creditBalance.credit_note_count} credit note(s) total</p>}
+                {creditBalance && <p className="text-xs text-slate-500">{creditBalance.credit_note_count} credit note(s) total</p>}
               </div>
               {!(cn.exchange_rate == null || Number(cn.exchange_rate) === 1) && (
                 <div>
@@ -458,7 +465,7 @@ export default function CreditNoteDetailPage() {
               {cn.voided_at && (
                 <>
                   <div className="flex justify-between"><span className="text-slate-500">Voided</span><span className="font-medium text-red-600">{formatDisplayDate(cn.voided_at)}</span></div>
-                  {cn.voided_reason && <p className="text-xs text-slate-400">Reason: {cn.voided_reason}</p>}
+                  {cn.voided_reason && <p className="text-xs text-slate-500">Reason: {cn.voided_reason}</p>}
                 </>
               )}
             </div>
@@ -486,13 +493,13 @@ export default function CreditNoteDetailPage() {
         <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-white rounded-2xl shadow-2xl border border-emerald-200 p-5">
           <div className="flex items-start gap-3">
             <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-              <CheckCircle className="h-5 w-5 text-emerald-600" />
+              <CheckCircle className="h-5 w-5 text-emerald-700" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">Credit Note Sent</p>
               <p className="text-xs text-slate-500 mt-1">{sendResult.message || `Emailed to ${sendResult.email_sent_to || getLabel("singularLower")}`}</p>
             </div>
-            <button onClick={() => setSendResult(null)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+            <button onClick={() => setSendResult(null)} className="text-slate-500 hover:text-slate-600 text-xs">✕</button>
           </div>
         </div>
       )}
@@ -507,7 +514,7 @@ export default function CreditNoteDetailPage() {
               <p className="text-sm font-semibold text-slate-900">Failed to Send</p>
               <p className="text-xs text-slate-500 mt-1">{sendResult.error}</p>
             </div>
-            <button onClick={() => setSendResult(null)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+            <button onClick={() => setSendResult(null)} className="text-slate-500 hover:text-slate-600 text-xs">✕</button>
           </div>
         </div>
       )}

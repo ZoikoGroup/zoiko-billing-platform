@@ -22,9 +22,10 @@ from app.modules.billing.repositories.customer import (
     CustomerRepository,
 )
 from app.modules.billing.services.audit_service import BillingAuditService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _sanitize_audit_data(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,21 +83,16 @@ class CustomerService:
     def _resolve_org_currency(self, organization_id: int) -> str:
         """Resolve the organization's base/default currency.
 
-        Priority: BillingConfiguration.base_currency → BillingConfiguration.default_currency → "USD"
-        This is the last-resort fallback; callers should prefer customer/document currency.
+        Delegates to BillingConfigurationService, the single authoritative
+        source for this lookup (base_currency -> default_currency -> "USD").
+        This is the last-resort fallback; callers should prefer
+        customer/document currency.
         """
         try:
-            from app.modules.billing.repositories.settings import BillingConfigurationRepository
-            cfg_repo = BillingConfigurationRepository(self.db)
-            config = cfg_repo.get_by_organization(organization_id)
-            if config:
-                if hasattr(config, "base_currency") and config.base_currency:
-                    return config.base_currency.value if hasattr(config.base_currency, "value") else str(config.base_currency)
-                if hasattr(config, "default_currency") and config.default_currency:
-                    return config.default_currency.value if hasattr(config.default_currency, "value") else str(config.default_currency)
+            return BillingConfigurationService(self.db).get_default_currency(organization_id)
         except Exception:
             logger.debug("Could not resolve org currency for org %s, falling back to USD", organization_id)
-        return "USD"
+            return "USD"
 
     def create_customer(
         self, organization_id: int, created_by: int, **data: Any,
@@ -114,12 +110,18 @@ class CustomerService:
             code=data.get("customer_code"),
             company_name=data.get("company_name"),
         )
-        customer = self.repo.create(organization_id, **data)
-        self.audit.log(
+        # create_no_commit + log_no_commit + a single commit below makes the
+        # customer row and its audit entry atomic: previously each was its
+        # own commit, so a failure writing the audit row (e.g. a transient DB
+        # error) still left the customer durably created while the request
+        # itself surfaced as a 500 -- a partial-success/false-failure.
+        customer = self.repo.create_no_commit(organization_id, **data)
+        self.audit.log_no_commit(
             organization_id, created_by, BillingAuditAction.CREATE,
             "BillingCustomer", customer.id,
             new_values=_sanitize_audit_data(data),
         )
+        safe_commit_and_refresh(self.db, customer)
         logger.info(f"[BILLING] Customer created: org={organization_id} id={customer.id}")
         return customer
 
@@ -331,20 +333,10 @@ class CustomerService:
     # ── Analytics ─────────────────────────────────────────────────────────
 
     def get_customer_analytics(self, organization_id: int, customer_id: int) -> Dict[str, Any]:
-        from app.modules.billing.models import Invoice, Payment, Quotation, Contract, Subscription, CreditNote, Refund
+        from app.modules.billing.models import Invoice, Payment, Quotation, Contract, Subscription, CreditNote, Refund, PaymentAllocation
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         customer = self.repo.get_by_id(customer_id, organization_id)
-        
-        invoices = self.db.query(Invoice).filter(
-            Invoice.organization_id == organization_id,
-            Invoice.customer_id == customer_id,
-        ).all()
-        
-        payments = self.db.query(Payment).filter(
-            Payment.organization_id == organization_id,
-            Payment.customer_id == customer_id,
-        ).all()
-        
+
         total_revenue = float(customer.total_revenue or 0)
         # FIX (Issue 1): outstanding must be computed LIVE with the same
         # aggregation as the dashboard aggregate (status filter + is_active +
@@ -353,23 +345,47 @@ class CustomerService:
         svc = BillingDashboardService(self.db)
         by_customer = svc.get_outstanding_by_customer(organization_id)
         outstanding = float(next((r["outstanding"] for r in by_customer if r["customer_id"] == customer_id), 0.0))
-        total_paid = float(sum(p.amount or 0 for p in payments if p.status == "cleared"))
-        
-        paid_invoices = [i for i in invoices if i.status == "paid"]
-        avg_invoice = round(total_revenue / max(len(paid_invoices), 1), 2)
-        
-        avg_payment_time = 0
-        payment_times = []
-        for i in paid_invoices:
-            for p in payments:
-                if p.id in [a.payment_id for a in i.payment_allocations]:
-                    if i.issue_date and p.payment_date:
-                        days = (p.payment_date - i.issue_date).days
-                        if days >= 0:
-                            payment_times.append(days)
-        if payment_times:
-            avg_payment_time = round(sum(payment_times) / len(payment_times), 1)
-        
+
+        # All previously loaded every invoice/payment row for this customer
+        # into Python, then walked a nested loop over `i.payment_allocations`
+        # (an unloaded relationship) per paid invoice -- one extra query per
+        # invoice (N+1) just to compute an average. Replaced with plain SQL
+        # aggregates, matching the org-wide pattern already used in
+        # get_kpi_data's avg_collection_days query.
+        total_invoices = self.db.query(func.count(Invoice.id)).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.customer_id == customer_id,
+        ).scalar() or 0
+
+        paid_invoice_count = self.db.query(func.count(Invoice.id)).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.customer_id == customer_id,
+            Invoice.status == "paid",
+        ).scalar() or 0
+
+        total_paid = float(self.db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+            Payment.organization_id == organization_id,
+            Payment.customer_id == customer_id,
+            Payment.status == "cleared",
+        ).scalar() or 0)
+
+        avg_invoice = round(total_revenue / max(paid_invoice_count, 1), 2)
+
+        avg_payment_time_days = self.db.query(
+            func.coalesce(func.avg(Payment.payment_date - Invoice.issue_date), 0)
+        ).select_from(PaymentAllocation).join(
+            Payment, PaymentAllocation.payment_id == Payment.id
+        ).join(
+            Invoice, PaymentAllocation.invoice_id == Invoice.id
+        ).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.customer_id == customer_id,
+            Payment.status == "cleared",
+            Payment.payment_date.isnot(None),
+            Invoice.issue_date.isnot(None),
+        ).scalar() or 0
+        avg_payment_time = round(float(avg_payment_time_days), 1)
+
         open_quotations = self.db.query(func.count(Quotation.id)).filter(
             Quotation.organization_id == organization_id,
             Quotation.customer_id == customer_id,
@@ -401,7 +417,7 @@ class CustomerService:
         
         return {
             "total_revenue": total_revenue,
-            "total_invoices": len(invoices),
+            "total_invoices": total_invoices,
             "outstanding_balance": outstanding,
             "total_paid": total_paid,
             "avg_invoice_value": avg_invoice,
@@ -651,31 +667,32 @@ class CustomerService:
     # ── Credit Balance ────────────────────────────────────────────────────
 
     def adjust_credit_balance(
-        self, customer_id: int, organization_id: int, amount: float,
+        self, customer_id: int, organization_id: int, amount: Decimal,
         adj_type: str, reason: str, updated_by: int,
     ) -> Dict[str, Any]:
         customer = self.repo.get_by_id(customer_id, organization_id)
-        prev = float(customer.credit_balance or 0)
+        prev = Decimal(str(customer.credit_balance or 0))
+        adj = Decimal(str(amount))
         if adj_type == "increase":
-            customer.credit_balance = prev + amount
+            customer.credit_balance = prev + adj
         elif adj_type == "decrease":
-            new_val = prev - amount
+            new_val = prev - adj
             if new_val < 0:
                 raise BadRequestException("Credit balance cannot be negative")
             customer.credit_balance = new_val
         else:
-            if amount < 0:
+            if adj < 0:
                 raise BadRequestException("Adjusted balance cannot be negative")
-            customer.credit_balance = amount
+            customer.credit_balance = adj
         safe_commit_and_refresh(self.db, customer)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return {
             "customer_id": customer_id,
-            "previous_balance": prev,
+            "previous_balance": float(prev),
             "new_balance": float(customer.credit_balance or 0),
-            "adjustment": amount,
+            "adjustment": float(adj),
             "type": adj_type,
-            "message": f"Credit balance {adj_type} of {amount} completed",
+            "message": f"Credit balance {adj_type} of {adj} completed",
         }
 
     # ── Customer Documents ────────────────────────────────────────────────
@@ -788,7 +805,7 @@ class CustomerService:
             "customer_id": customer_id,
             "customer_name": customer.display_name or customer.company_name,
             "customer_code": customer.customer_code,
-            "currency": customer.currency or "USD",
+            "currency": customer.currency or self._resolve_org_currency(organization_id),
             "date_from": date_from,
             "date_to": date_to,
             "opening_balance": float(customer.outstanding_balance or 0),

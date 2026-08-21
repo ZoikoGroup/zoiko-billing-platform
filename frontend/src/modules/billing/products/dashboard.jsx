@@ -558,18 +558,18 @@ export default function ProductsDashboard() {
       </div>
 
       <div className={DASHBOARD_CHART_GRID}>
-        <DashboardChartCard title="Top Products" action={<span className="text-xs text-slate-400 flex items-center gap-1"><Award size={12} /> By revenue</span>}>
+        <DashboardChartCard title="Top Products" action={<span className="text-xs text-slate-500 flex items-center gap-1"><Award size={12} /> By revenue</span>}>
           <DashboardChartErrorBoundary>
             {topProductsByRevenue.length === 0 ? (
               <DashboardEmptyPanel title={errorLineItems || "No revenue data yet"} message="Ranks products by revenue from recent paid invoices." icon={Award} />
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-400 -mt-1 mb-1">Based on the {TOP_PRODUCTS_INVOICE_SAMPLE_SIZE} most recent paid invoices</p>
+                <p className="text-xs text-slate-500 -mt-1 mb-1">Based on the {TOP_PRODUCTS_INVOICE_SAMPLE_SIZE} most recent paid invoices</p>
                 {topProductsByRevenue.map((p, idx) => {
                   const max = topProductsByRevenue[0].revenue || 1;
                   return (
                     <div key={p.id} className="flex items-center gap-3">
-                      <span className="text-xs font-semibold text-slate-400 w-4 shrink-0">{idx + 1}</span>
+                      <span className="text-xs font-semibold text-slate-500 w-4 shrink-0">{idx + 1}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="text-sm font-medium text-slate-700 truncate">{p.name}</span>
@@ -587,18 +587,18 @@ export default function ProductsDashboard() {
           </DashboardChartErrorBoundary>
         </DashboardChartCard>
 
-        <DashboardChartCard title="Most Used" action={<span className="text-xs text-slate-400 flex items-center gap-1"><Flame size={12} /> By frequency</span>}>
+        <DashboardChartCard title="Most Used" action={<span className="text-xs text-slate-500 flex items-center gap-1"><Flame size={12} /> By frequency</span>}>
           <DashboardChartErrorBoundary>
             {mostUsedProducts.length === 0 ? (
               <DashboardEmptyPanel title={errorLineItems || "No usage data yet"} message="Ranks products by how often they appear on recent paid invoices." icon={Flame} />
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-400 -mt-1 mb-1">Based on the {TOP_PRODUCTS_INVOICE_SAMPLE_SIZE} most recent paid invoices</p>
+                <p className="text-xs text-slate-500 -mt-1 mb-1">Based on the {TOP_PRODUCTS_INVOICE_SAMPLE_SIZE} most recent paid invoices</p>
                 {mostUsedProducts.map((p, idx) => {
                   const max = mostUsedProducts[0].count || 1;
                   return (
                     <div key={p.id} className="flex items-center gap-3">
-                      <span className="text-xs font-semibold text-slate-400 w-4 shrink-0">{idx + 1}</span>
+                      <span className="text-xs font-semibold text-slate-500 w-4 shrink-0">{idx + 1}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="text-sm font-medium text-slate-700 truncate">{p.name}</span>

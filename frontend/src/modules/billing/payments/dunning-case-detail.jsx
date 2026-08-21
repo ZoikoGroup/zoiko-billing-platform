@@ -17,7 +17,7 @@ const STATUS_STYLES = {
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
       {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
     </span>
   );
@@ -116,8 +116,8 @@ export default function DunningCaseDetailPage() {
     return (
       <HRPage title="Dunning Case" subtitle="Not found">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Bell className="h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm font-medium text-gray-500">Dunning case not found</p>
+          <Bell className="h-10 w-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium text-slate-500">Dunning case not found</p>
         </div>
       </HRPage>
     );
@@ -130,7 +130,7 @@ export default function DunningCaseDetailPage() {
       title={`Dunning Case #${dunningCase.id}`}
       subtitle={<StatusBadge status={dunningCase.status} />}
       actions={
-        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }
@@ -145,10 +145,10 @@ export default function DunningCaseDetailPage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Case Summary</p>
-            <h2 className="mt-1 text-xl font-bold text-gray-900">{dunningCase.customer_name || `Customer #${dunningCase.customer_id}`}</h2>
-            <p className="mt-1 text-sm text-gray-500">Invoice {dunningCase.invoice_number || `#${dunningCase.invoice_id}`}</p>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-600">Case Summary</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">{dunningCase.customer_name || `Customer #${dunningCase.customer_id}`}</h2>
+            <p className="mt-1 text-sm text-slate-500">Invoice {dunningCase.invoice_number || `#${dunningCase.invoice_id}`}</p>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Overdue Amount</p>
@@ -175,13 +175,13 @@ export default function DunningCaseDetailPage() {
             )}
             {dunningCase.resolution_note && (
               <div className="mt-3 rounded-lg bg-emerald-50 p-4">
-                <p className="text-xs font-medium text-emerald-600">Resolution</p>
+                <p className="text-xs font-medium text-emerald-700">Resolution</p>
                 <p className="mt-1 text-sm font-medium text-emerald-800">{dunningCase.resolution_note}</p>
               </div>
             )}
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Quick Actions</p>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Quick Actions</p>
             <div className="mt-4 grid grid-cols-1 gap-2">
               {isActive && (
                 <>
@@ -208,8 +208,8 @@ export default function DunningCaseDetailPage() {
         </div>
 
         {promises.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Promise to Pay History</h3>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Promise to Pay History</h3>
             <div className="space-y-2">
               {promises.map((p) => (
                 <div key={p.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm">
@@ -222,20 +222,20 @@ export default function DunningCaseDetailPage() {
         )}
 
         {timeline.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4 text-brand-500" /> Timeline &amp; Audit History
             </h3>
             <div className="relative">
-              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
+              <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-slate-200" />
               <div className="space-y-4">
                 {timeline.map((entry, i) => (
                   <div key={i} className="relative flex items-start gap-4 pl-10">
                     <div className="absolute left-2.5 w-3 h-3 rounded-full border-2 mt-1.5 bg-brand-400 border-brand-400" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-900">{entry.title}</span>
-                      {entry.description && <p className="text-xs text-gray-500 mt-0.5">{entry.description}</p>}
-                      <p className="text-xs text-gray-400 mt-1">{formatDisplayDate(entry.timestamp)}</p>
+                      <span className="text-sm font-medium text-slate-900">{entry.title}</span>
+                      {entry.description && <p className="text-xs text-slate-500 mt-0.5">{entry.description}</p>}
+                      <p className="text-xs text-slate-500 mt-1">{formatDisplayDate(entry.timestamp)}</p>
                     </div>
                   </div>
                 ))}
@@ -248,11 +248,11 @@ export default function DunningCaseDetailPage() {
       {resolveModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setResolveModal({ open: false, note: "" })}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Resolve Dunning Case</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Resolve Dunning Case</h2>
             <textarea value={resolveModal.note} onChange={(e) => setResolveModal((p) => ({ ...p, note: e.target.value }))} rows={3} placeholder="Resolution note (optional)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
-              <button onClick={() => setResolveModal({ open: false, note: "" })} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+              <button onClick={() => setResolveModal({ open: false, note: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
               <button
                 onClick={async () => { const note = resolveModal.note; setResolveModal({ open: false, note: "" }); await handleAction("resolve", () => dunningApi.resolveCase(dunningCase.id, note || undefined)); }}
                 disabled={actionLoading === "resolve"}
@@ -267,7 +267,7 @@ export default function DunningCaseDetailPage() {
       {promiseModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Log a Promise to Pay</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Log a Promise to Pay</h2>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
@@ -286,7 +286,7 @@ export default function DunningCaseDetailPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+              <button onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
               <button onClick={handleCreatePromise} disabled={actionLoading === "promise" || !promiseModal.amount || !promiseModal.date}
                 className="px-6 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 inline-flex items-center gap-2">
                 {actionLoading === "promise" ? <Loader2 className="h-4 w-4 animate-spin" /> : <HandCoins className="h-4 w-4" />} Save

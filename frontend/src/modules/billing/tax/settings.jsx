@@ -5,7 +5,7 @@ import { settingsApi, taxApi } from "../../../service/billingService";
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
@@ -164,7 +164,7 @@ export default function TaxSettingsPage() {
             </span>
           )}
           <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button onClick={handleSave} disabled={!hasChanges || saving}
@@ -188,7 +188,7 @@ export default function TaxSettingsPage() {
             updateField("default_tax_rate_id", e.target.value);
             updateField("default_tax_rate_value", rate ? rate.rate : "");
           }}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="">None</option>
             {activeRates.map((r) => {
               const rateVal = parseFloat(r.rate || 0);
@@ -199,13 +199,13 @@ export default function TaxSettingsPage() {
           {selectedRate && (() => {
             const rateVal = parseFloat(selectedRate.rate || 0);
             const displayRate = rateVal > 0 && rateVal <= 1 ? rateVal * 100 : rateVal;
-            return <p className="mt-1 text-xs text-gray-400">Rate: {displayRate.toFixed(2)}% — {selectedRate.jurisdiction || "No jurisdiction"}</p>;
+            return <p className="mt-1 text-xs text-slate-500">Rate: {displayRate.toFixed(2)}% — {selectedRate.jurisdiction || "No jurisdiction"}</p>;
           })()}
         </SettingsField>
 
         <SettingsField label="Default Jurisdiction" icon={Globe} description="Default jurisdiction/region for tax calculations">
           <select value={form.default_jurisdiction} onChange={(e) => updateField("default_jurisdiction", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="">None</option>
             {[...new Set(taxRates.map((r) => r.jurisdiction).filter(Boolean))].map((j) => (
               <option key={j} value={j}>{j}</option>
@@ -215,7 +215,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Auto Calculation" icon={ToggleLeft} description="Automatically calculate tax on invoices and transactions">
           <select value={form.auto_calculation} onChange={(e) => updateField("auto_calculation", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="enabled">Enabled</option>
             <option value="disabled">Disabled</option>
           </select>
@@ -223,7 +223,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Rounding Rule" icon={DollarSign} description="How tax amounts are rounded during calculation">
           <select value={form.rounding_rule} onChange={(e) => updateField("rounding_rule", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="nearest">Nearest Cent</option>
             <option value="up">Round Up</option>
             <option value="down">Round Down</option>
@@ -234,7 +234,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Tax Inclusive Pricing" icon={DollarSign} description="Whether prices shown include tax by default">
           <select value={form.tax_inclusive_pricing} onChange={(e) => updateField("tax_inclusive_pricing", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="exclusive">Exclusive (tax added at checkout)</option>
             <option value="inclusive">Inclusive (tax included in price)</option>
           </select>
@@ -242,7 +242,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Tax on Shipping" icon={DollarSign} description="Apply tax to shipping charges">
           <select value={form.tax_on_shipping} onChange={(e) => updateField("tax_on_shipping", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Do not tax shipping</option>
             <option value="yes">Tax shipping charges</option>
           </select>
@@ -251,12 +251,12 @@ export default function TaxSettingsPage() {
         <SettingsField label="Tax Number / VAT ID" icon={Receipt} description="Your business tax identification number">
           <input type="text" value={form.tax_number} onChange={(e) => updateField("tax_number", e.target.value)}
             placeholder="e.g. VAT-GB-123456789"
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Fiscal Year Start" icon={Calendar} description="Start month of your fiscal year for tax reporting">
           <select value={form.fiscal_year_start} onChange={(e) => updateField("fiscal_year_start", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="">Select month</option>
             {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m) => (
               <option key={m} value={m.toLowerCase()}>{m}</option>
@@ -266,7 +266,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Filing Frequency" icon={Calendar} description="How often tax returns are filed">
           <select value={form.filing_frequency} onChange={(e) => updateField("filing_frequency", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="monthly">Monthly</option>
             <option value="quarterly">Quarterly</option>
             <option value="semi_annually">Semi-Annually</option>
@@ -277,12 +277,12 @@ export default function TaxSettingsPage() {
         <SettingsField label="Late Filing Penalty" icon={Percent} description="Percentage penalty applied for late tax filings">
           <input type="number" min="0" max="100" step="0.1" value={form.late_filing_penalty} onChange={(e) => updateField("late_filing_penalty", e.target.value)}
             placeholder="e.g. 5 for 5%"
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Require Tax ID on Invoices" icon={Hash} description="Require customers to provide tax ID for invoicing">
           <select value={form.requires_tax_id} onChange={(e) => updateField("requires_tax_id", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Optional</option>
             <option value="yes">Required</option>
           </select>
@@ -290,7 +290,7 @@ export default function TaxSettingsPage() {
 
         <SettingsField label="Exemption Certificate Required" icon={Receipt} description="Require exemption certificate for tax-exempt customers">
           <select value={form.exemption_certificate_required} onChange={(e) => updateField("exemption_certificate_required", e.target.value)}
-            className="block w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Not required</option>
             <option value="yes">Required</option>
           </select>

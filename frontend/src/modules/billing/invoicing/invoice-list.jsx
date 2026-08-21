@@ -17,7 +17,7 @@ import { PageHeader, Button, DataTable, SearchInput, Select } from "../../../com
 const ITEMS_PER_PAGE = 15;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "paid", label: "Paid", color: "bg-green-100 text-green-700" },
   { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-700" },
@@ -99,7 +99,7 @@ export default function InvoicingPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, currencyFilter, dateFrom, dateTo, minAmount, maxAmount, sortField, sortDir, loading]);
+  }, [safePage, debouncedSearch, statusFilter, currencyFilter, dateFrom, dateTo, minAmount, maxAmount, sortField, sortDir]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -130,11 +130,11 @@ export default function InvoicingPage() {
     { key: "issue_date", label: "Invoice Date", sortable: true, render: (r) => <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(r.issue_date)}</span> },
     { key: "due_date", label: "Due Date", sortable: true, render: (r) => <span className="text-xs text-slate-500 whitespace-nowrap">{formatDisplayDate(r.due_date)}</span> },
     { key: "total_amount", label: "Amount", sortable: true, align: "right", render: (r) => <span className="font-semibold text-slate-800 whitespace-nowrap">{formatDisplayCurrency(r.total || r.total_amount, "—", r.currency)}</span> },
-    { key: "paid_amount", label: "Paid", align: "right", render: (r) => <span className="text-sm text-emerald-600 whitespace-nowrap">{formatDisplayCurrency(r.paid_amount, "—", r.currency)}</span> },
+    { key: "paid_amount", label: "Paid", align: "right", render: (r) => <span className="text-sm text-emerald-700 whitespace-nowrap">{formatDisplayCurrency(r.paid_amount, "—", r.currency)}</span> },
     { key: "balance_due", label: "Balance", align: "right", render: (r) => <span className="text-sm text-red-600 whitespace-nowrap">{formatDisplayCurrency(r.balance_due, "—", r.currency)}</span> },
-    { key: "currency", label: "Currency", align: "center", render: (r) => <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{r.currency || "USD"}</span> },
+    { key: "currency", label: "Currency", align: "center", render: (r) => <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{r.currency}</span> },
     { key: "status", label: "Status", sortable: true, render: (r) => <StatusBadge status={r.status} /> },
-    { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-400">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</span> },
+    { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-500">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</span> },
   ];
 
   const toggleSort = (field) => {
@@ -235,7 +235,7 @@ export default function InvoicingPage() {
         {recentInvoices.length > 0 && (
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Recently Created</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Recently Created</p>
               <button onClick={() => { setStatusFilter(""); setCurrentPage(1); }} className="text-xs font-medium text-brand-600 hover:text-brand-hover" aria-label="View all invoices">View all</button>
             </div>
             <div className="grid gap-2 md:grid-cols-3">
@@ -271,7 +271,7 @@ export default function InvoicingPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <span className="text-xs font-medium text-slate-400">{total} invoice(s)</span>
+            <span className="text-xs font-medium text-slate-500">{total} invoice(s)</span>
           </div>
 
           {showFilters && (
@@ -292,18 +292,18 @@ export default function InvoicingPage() {
                   className="w-44"
                 />
                 <div className="flex items-center gap-2">
-                  <Calendar size={14} className="text-slate-400" />
+                  <Calendar size={14} className="text-slate-500" />
                   <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
                     className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300" aria-label="Date from" />
-                  <span className="text-slate-400">to</span>
+                  <span className="text-slate-500">to</span>
                   <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
                     className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300" aria-label="Date to" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <DollarSign size={14} className="text-slate-400" />
+                  <DollarSign size={14} className="text-slate-500" />
                   <input type="number" value={minAmount} onChange={(e) => { setMinAmount(e.target.value); setCurrentPage(1); }}
                     placeholder="Min" className="w-24 sm:w-20 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300" aria-label="Minimum amount" />
-                  <span className="text-slate-400">-</span>
+                  <span className="text-slate-500">-</span>
                   <input type="number" value={maxAmount} onChange={(e) => { setMaxAmount(e.target.value); setCurrentPage(1); }}
                     placeholder="Max" className="w-24 sm:w-20 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300" aria-label="Maximum amount" />
                 </div>
@@ -318,7 +318,7 @@ export default function InvoicingPage() {
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Quick filters</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Quick filters</span>
             {[{ value: "", label: "All" }, ...STATUS_OPTIONS].map((o) => (
               <button key={o.value || "all"} onClick={() => { setStatusFilter(o.value); setCurrentPage(1); }}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${statusFilter === o.value ? "bg-brand text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>

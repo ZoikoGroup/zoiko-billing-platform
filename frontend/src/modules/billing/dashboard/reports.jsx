@@ -12,11 +12,11 @@ import { formatCurrency, formatCompactCurrency } from "../../../utils/locale";
 import { useCurrency } from "../utils/CurrencyContext";
 import { sumInBaseCurrency, convertToBaseCurrency } from "../../../utils/currency-conversion";
 
-const CHART_COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
+const CHART_COLORS = ["#2563EB", "#60A5FA", "#BFDBFE", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
 const STAT_CARD_COLORS = [
-  "from-brand to-brand-hover",
+  "from-blue-600 to-blue-700",
   "from-blue-500 to-cyan-500",
-  "from-amber-500 to-orange-500",
+  "from-indigo-500 to-indigo-600",
   "from-green-500 to-emerald-500",
 ];
 
@@ -39,13 +39,13 @@ function DataTable({ columns, data, maxRows = 10 }) {
     return (
       <div className="flex flex-col items-center justify-center py-10 bg-slate-50/50 rounded-xl border border-slate-100">
         <FileText size={20} className="text-slate-300 mb-2" />
-        <p className="text-slate-400 text-sm">No data available</p>
+        <p className="text-slate-500 text-sm">No data available</p>
       </div>
     );
   }
   const sliced = data.slice(0, maxRows);
   return (
-    <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -69,7 +69,7 @@ function DataTable({ columns, data, maxRows = 10 }) {
         </table>
       </div>
       {data.length > maxRows && (
-        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-400">
+        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-500">
           Showing {maxRows} of {data.length} rows
         </div>
       )}
@@ -161,7 +161,7 @@ export default function ReportsPage() {
     title: "Billing Reports",
     subtitle: "Generate and export billing reports",
     icon: BarChart3,
-    iconGradient: "from-[#FF7A00] to-[#FF5500]",
+    iconGradient: "from-[#2563EB] to-[#1D4ED8]",
     lastUpdated,
     refreshing,
     onRefresh: handleRefresh,
@@ -199,7 +199,7 @@ export default function ReportsPage() {
                 <XAxis dataKey={fRevenue[0]?.month ? "month" : "period"} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <YAxis tickFormatter={(v) => formatCompactCurrency(v, baseCurrency)} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <Tooltip formatter={(v) => formatCurrency(v, baseCurrency)} />
-                <Bar dataKey="revenue" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" fill="#2563EB" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -207,7 +207,7 @@ export default function ReportsPage() {
           )}
         </ChartErrorBoundary>
       </div>
-      <button onClick={() => handleExport("revenue")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+      <button onClick={() => handleExport("revenue")} className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
         <Download size={15} /> Export Revenue Report
       </button>
     </ReportSection>
@@ -268,7 +268,7 @@ export default function ReportsPage() {
           </ChartErrorBoundary>
           <DataTable columns={columns} data={fInvoices.slice(0, 10)} />
         </div>
-        <button onClick={() => handleExport("invoice")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+        <button onClick={() => handleExport("invoice")} className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
           <Download size={15} /> Export Invoice Report
         </button>
       </ReportSection>
@@ -319,7 +319,7 @@ export default function ReportsPage() {
           </ChartErrorBoundary>
           <DataTable columns={columns} data={fPayments.slice(0, 10)} />
         </div>
-        <button onClick={() => handleExport("payment")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+        <button onClick={() => handleExport("payment")} className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
           <Download size={15} /> Export Payment Report
         </button>
       </ReportSection>
@@ -359,7 +359,7 @@ export default function ReportsPage() {
         <div className="mt-6">
           <DataTable columns={columns} data={fTaxData} />
         </div>
-        <button onClick={() => handleExport("tax")} className="mt-4 flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+        <button onClick={() => handleExport("tax")} className="mt-4 flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
           <Download size={15} /> Export Tax Report
         </button>
       </ReportSection>
@@ -416,7 +416,7 @@ export default function ReportsPage() {
           </ChartErrorBoundary>
           <DataTable columns={columns} data={fSubscriptions.slice(0, 10)} />
         </div>
-        <button onClick={() => handleExport("subscription")} className="flex items-center gap-2 px-4 py-2 bg-[#FF7A00] text-white rounded-xl text-xs font-semibold hover:bg-[#FF5500] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+        <button onClick={() => handleExport("subscription")} className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white rounded-xl text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/50">
           <Download size={15} /> Export Subscription Report
         </button>
       </ReportSection>
@@ -429,7 +429,7 @@ export default function ReportsPage() {
         <DashboardHeader {...headerProps} />
         <div className="flex flex-col items-center justify-center py-20">
           <div className="relative">
-            <div className="h-12 w-12 rounded-full border-4 border-slate-200 border-t-[#FF7A00] animate-spin" />
+            <div className="h-12 w-12 rounded-full border-4 border-slate-200 border-t-[#2563EB] animate-spin" />
           </div>
           <p className="mt-4 text-slate-500 text-sm font-medium">Loading reports...</p>
         </div>
@@ -448,7 +448,7 @@ export default function ReportsPage() {
           <h3 className="text-lg font-bold text-slate-800 mb-1">Unable to load reports</h3>
           <p className="text-slate-500 text-sm mb-6 text-center max-w-md">{error}</p>
           <button onClick={handleRefresh}
-            className="px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl text-xs font-semibold hover:shadow-md transition-all flex items-center gap-2">
+            className="px-5 py-2.5 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl text-xs font-semibold hover:shadow-md transition-all flex items-center gap-2">
             <RefreshCw size={14} /> Try Again
           </button>
         </div>
@@ -465,7 +465,7 @@ export default function ReportsPage() {
             {reportTabs.map((tab) => (
               <button key={tab.id} onClick={() => setActiveReport(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  activeReport === tab.id ? "bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  activeReport === tab.id ? "bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
                 }`}>
                 <tab.icon size={15} />
                 {tab.label}

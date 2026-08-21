@@ -608,7 +608,12 @@ class ProductResponse(BaseModel):
     description: Optional[str]
     product_type: ProductType
     unit_label: Optional[str]
-    currency: Optional[str] = "USD"
+    # No "USD" default here: the model column already defaults to "USD" at
+    # insert time (models.py Product.currency), so a genuinely NULL value in
+    # the DB means a pre-existing/legacy row that was never given a currency
+    # -- honestly reporting null lets the client show a "currency not
+    # configured" state instead of a fabricated "USD" that was never set.
+    currency: Optional[str] = None
     default_price: Decimal
     original_price: Optional[Decimal] = None
     cost_price: Optional[Decimal] = None
@@ -694,6 +699,7 @@ class ImportSummaryResult(BaseModel):
     warnings: int
     imported_row_indices: List[int] = []
     skipped_row_indices: List[int] = []
+    skipped_details: List[Dict[str, Any]] = []
     failed_details: List[Dict[str, Any]] = []
     warning_row_indices: List[int] = []
     total_rows: int = 0
@@ -1350,6 +1356,14 @@ class DiscountResponse(BaseModel):
 
 class DiscountListResponse(PaginatedResponse):
     items: List[DiscountResponse]
+
+
+class DiscountApproveRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class DiscountRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3691,6 +3705,7 @@ class BillingConfigurationUpdate(BaseModel):
     tax_calculation_method: Optional[TaxCalculationMethod] = None
     default_tax_rate_id: Optional[int] = None
     tax_label: Optional[str] = None
+    tax_id_label: Optional[str] = None
     tax_number: Optional[str] = None
     tax_profiles: Optional[List[Dict[str, Any]]] = None
     is_tax_inclusive_default: Optional[bool] = None
@@ -3906,6 +3921,7 @@ class BillingConfigurationResponse(BaseModel):
     tax_calculation_method: TaxCalculationMethod
     default_tax_rate_id: Optional[int]
     tax_label: str
+    tax_id_label: Optional[str] = None
     tax_number: Optional[str]
     tax_profiles: List[Dict[str, Any]]
     is_tax_inclusive_default: bool

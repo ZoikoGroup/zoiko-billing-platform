@@ -39,7 +39,7 @@ const OVERALL_VERDICT_BADGE = {
 
 function SectionHeading({ children }) {
   return (
-    <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+    <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
       {children}
     </h2>
   );
@@ -374,7 +374,7 @@ export default function PlatformDashboardPage() {
               role="button"
               tabIndex={0}
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Production Readiness</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Production Readiness</p>
               {sourceErrors.readiness ? (
                 <>
                   <h3 className="mt-2 text-xl font-extrabold leading-tight text-amber-800">Unavailable</h3>

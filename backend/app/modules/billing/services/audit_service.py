@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.modules.billing.models import BillingAuditAction, BillingAuditLog
 from app.modules.billing.repositories.audit import BillingAuditLogRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def _json_safe(value: Any) -> Any:

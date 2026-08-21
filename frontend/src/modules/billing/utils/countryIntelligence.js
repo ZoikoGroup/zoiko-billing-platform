@@ -568,9 +568,9 @@ export function getCustomerTaxFields(country) {
 
 export function getCurrencySymbolForCountry(country) {
   const defaults = COUNTRY_DEFAULTS[country];
-  if (!defaults) return "$";
+  if (!defaults) return "";
   const symbols = { INR: "\u20B9", USD: "$", GBP: "\u00A3", AUD: "A$", AED: "AED", SGD: "S$" };
-  return symbols[defaults.default_currency] || "$";
+  return symbols[defaults.default_currency] || defaults.default_currency || "";
 }
 
 export function getDateFormatForCountry(country) {

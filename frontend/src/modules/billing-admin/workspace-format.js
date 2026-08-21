@@ -7,8 +7,8 @@ const CURRENCY_SYMBOLS = {
 };
 
 export function resolveOrgCurrency(config) {
-  const code = config?.default_currency || config?.base_currency || "USD";
-  if (typeof code !== "string" || code.length !== 3) return "USD";
+  const code = config?.default_currency || config?.base_currency;
+  if (typeof code !== "string" || code.length !== 3) return "";
   return code.toUpperCase();
 }
 

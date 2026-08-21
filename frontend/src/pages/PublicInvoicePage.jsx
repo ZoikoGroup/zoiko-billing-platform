@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { invoiceApi } from "../service/billingService";
+import { publicInvoiceApi } from "../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../utils/billing-helpers";
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 function fmtCcy(v, currency) {
-  return formatDisplayCurrency(v, "—", currency || "USD");
+  return formatDisplayCurrency(v, "—", currency);
 }
 function fmtDate(d) {
   return formatDisplayDate(d);
@@ -106,12 +106,27 @@ function PaymentProgress({ paid, total }) {
 /* ─── main page ──────────────────────────────────────────────────────────── */
 export default function PublicInvoicePage() {
   const { id: rawId } = useParams();
-  const isNumericId = /^\d+$/.test(rawId);
-  const id = isNumericId ? Number(rawId) : rawId;
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [invoice, setInvoice]   = useState(null);
   const [items, setItems]       = useState([]);
+  const [company, setCompany]   = useState(null);
+  const [payment, setPayment]   = useState(null);
+  const handleCheckout = useCallback(async () => {
+    try {
+      const successUrl = `${window.location.origin}/invoice/${rawId}?paid=true`;
+      const cancelUrl = `${window.location.origin}/invoice/${rawId}`;
+      const result = await publicInvoiceApi.createCheckout(rawId, successUrl, cancelUrl);
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
+      } else if (result?.configured === false) {
+        alert(result.message || "Online payments are not enabled yet. Please contact the sender.");
+      }
+    } catch (err) {
+      alert(err?.detail || err?.message || "Unable to initiate checkout. Please try again later.");
+    }
+  }, [rawId]);
+
   const [payMethod, setPayMethod] = useState(null); // "card" | "bank" | "upi"
 
   const loadInvoice = useCallback(async () => {
@@ -123,42 +138,36 @@ export default function PublicInvoicePage() {
     setLoading(true);
     setError(null);
     try {
-      let targetId = id;
-      // If a signed token was passed (e.g. from email), decode the integer invoice ID
-      if (!isNumericId && typeof rawId === "string") {
-        try {
-          const decoded = atob(rawId.replace(/-/g, "+").replace(/_/g, "/"));
-          const parts = decoded.split(".");
-          if (parts[0] && /^\d+$/.test(parts[0])) {
-            targetId = Number(parts[0]);
-          }
-        } catch (e) {
-          // If decoding fails, continue with rawId
-        }
-      }
-
-      const [inv, itms] = await Promise.all([
-        invoiceApi.get(targetId),
-        invoiceApi.listItems(targetId).catch(() => []),
-      ]);
-      setInvoice(inv);
-      setItems(Array.isArray(itms) ? itms : itms?.items || []);
+      const token = rawId;
+      const data = await publicInvoiceApi.getView(token);
+      setInvoice(data);
+      setItems(Array.isArray(data.items) ? data.items : []);
+      setCompany(data.company || null);
+      setPayment(data.payment || null);
     } catch (err) {
-      setError(err?.detail || err?.message || "Unable to load invoice. The link may have expired.");
+      setError(err?.detail || err?.message || "Unable to load invoice. The link may have expired or is invalid.");
     } finally {
       setLoading(false);
     }
-  }, [rawId, id, isNumericId]);
+  }, [rawId]);
 
   useEffect(() => { loadInvoice(); }, [loadInvoice]);
 
-  /* derived values */
-  const currency     = invoice?.currency || "USD";
+  /* derived values — public API returns amounts as formatted strings */
+  const parseMoney = (v) => {
+    if (v == null) return 0;
+    if (typeof v === "number") return v;
+    const s = String(v).replace(/,/g, "").trim();
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  };
+  const customer = invoice?.customer || {};
+  const currency     = invoice?.currency;
   const status       = (invoice?.status || "").toLowerCase();
   const isPaid       = status === "paid";
-  const isCancelled  = ["cancelled", "written_off"].includes(status);
-  const invoiceTotal = Number(invoice?.total_amount ?? invoice?.amount ?? 0);
-  const balanceDue   = Number(invoice?.balance_due ?? invoice?.amount_due ?? invoiceTotal);
+  const isCancelled  = ["cancelled", "void", "written_off"].includes(status);
+  const invoiceTotal = parseMoney(invoice?.total_amount ?? invoice?.amount ?? 0);
+  const balanceDue   = parseMoney(invoice?.balance_due ?? invoice?.amount_due ?? invoiceTotal);
   const paidAmount   = Math.max(0, invoiceTotal - balanceDue);
   const isOverdue    = status === "overdue";
   const canPay       = !isPaid && !isCancelled && balanceDue > 0.005;
@@ -206,12 +215,12 @@ export default function PublicInvoicePage() {
         <div className="pub-hero">
           <div className="pub-hero-left">
             <p className="pub-hero-eyebrow">Tax Invoice</p>
-            <h1 className="pub-hero-number">{invoice.invoice_number || `#${id}`}</h1>
+            <h1 className="pub-hero-number">{invoice.invoice_number || "Invoice"}</h1>
             <p className="pub-hero-customer">
-              {invoice.customer_name || invoice.customer_display_name || "Customer"}
+              {customer.name || "Customer"}
             </p>
-            {invoice.customer_email && (
-              <p className="pub-hero-email">{invoice.customer_email}</p>
+            {customer.email && (
+              <p className="pub-hero-email">{customer.email}</p>
             )}
           </div>
           <div className="pub-hero-right">
@@ -258,13 +267,12 @@ export default function PublicInvoicePage() {
           {/* ─── invoice details ─── */}
           <SectionCard title="Invoice Details" icon="📋">
             <div className="pub-details-grid">
-              <InfoRow label="Invoice #"       value={invoice.invoice_number || `#${id}`} mono />
+              <InfoRow label="Invoice #"       value={invoice.invoice_number || "Invoice"} mono />
               <InfoRow label="Issue Date"      value={fmtDate(invoice.issue_date || invoice.created_at)} />
               <InfoRow label="Due Date"        value={fmtDate(invoice.due_date)} />
               <InfoRow label="Payment Terms"   value={invoice.payment_terms?.replace(/_/g, " ") || "—"} />
               {invoice.po_number && <InfoRow label="PO Number" value={invoice.po_number} mono />}
               <InfoRow label="Currency"        value={currency} />
-              {invoice.sent_at && <InfoRow label="Sent On" value={fmtDate(invoice.sent_at)} />}
             </div>
           </SectionCard>
 
@@ -272,30 +280,25 @@ export default function PublicInvoicePage() {
           <SectionCard title="Billed To" icon="📍">
             <div className="pub-billing-block">
               <p className="pub-billing-name">
-                {invoice.customer_name || invoice.customer_display_name || "—"}
+                {customer.name || "—"}
               </p>
-              {(invoice.customer_first_name || invoice.customer_last_name) && (
-                <p className="pub-billing-contact">
-                  {invoice.customer_first_name} {invoice.customer_last_name}
-                </p>
+              {customer.email && (
+                <p className="pub-billing-detail">✉ {customer.email}</p>
               )}
-              {invoice.customer_email && (
-                <p className="pub-billing-detail">✉ {invoice.customer_email}</p>
+              {(customer.phone || customer.mobile) && (
+                <p className="pub-billing-detail">📞 {customer.phone || customer.mobile}</p>
               )}
-              {(invoice.customer_phone || invoice.customer_mobile) && (
-                <p className="pub-billing-detail">📞 {invoice.customer_phone || invoice.customer_mobile}</p>
+              {customer.billing_address && (
+                <p className="pub-billing-addr">{customer.billing_address}</p>
               )}
-              {invoice.customer_billing_address && (
-                <p className="pub-billing-addr">{invoice.customer_billing_address}</p>
+              {customer.gst_number && (
+                <p className="pub-billing-tax">GST: {customer.gst_number}</p>
               )}
-              {invoice.customer_gst_number && (
-                <p className="pub-billing-tax">GST: {invoice.customer_gst_number}</p>
+              {customer.vat_number && (
+                <p className="pub-billing-tax">VAT: {customer.vat_number}</p>
               )}
-              {invoice.customer_vat_number && (
-                <p className="pub-billing-tax">VAT: {invoice.customer_vat_number}</p>
-              )}
-              {invoice.customer_pan && (
-                <p className="pub-billing-tax">PAN: {invoice.customer_pan}</p>
+              {customer.pan && (
+                <p className="pub-billing-tax">PAN: {customer.pan}</p>
               )}
             </div>
           </SectionCard>
@@ -323,38 +326,23 @@ export default function PublicInvoicePage() {
                   </thead>
                   <tbody>
                     {items.map((item, i) => {
-                      const lineTotal = Number(item.total ?? item.total_price ?? (Number(item.quantity || 0) * Number(item.unit_price || 0)));
-                      const discAmt   = Number(item.unit_price || 0) * Number(item.quantity || 0) * Number(item.discount_percentage || 0) / 100;
+                      const lineTotal = parseMoney(item.total_amount ?? item.total ?? (parseMoney(item.quantity || 0) * parseMoney(item.unit_price || 0)));
+                      const discAmt   = parseMoney(item.unit_price || 0) * parseMoney(item.quantity || 0) * parseMoney(item.discount_percentage || 0) / 100;
                       return (
-                        <tr key={item.id || i} className="pub-tr">
-                          <td className="pub-td pub-td--muted">{i + 1}</td>
+                        <tr key={item.id || item.line_number || i} className="pub-tr">
+                          <td className="pub-td pub-td--muted">{item.line_number || i + 1}</td>
                           <td className="pub-td">
-                            <p className="pub-item-name">{item.description || item.name || "Item"}</p>
-                            {item.product_id && (
-                              <p className="pub-item-sku">Product #{item.product_id}</p>
-                            )}
-                            {item.resolved_price_type && (
-                              <span className="pub-item-tag">{item.resolved_price_type.replace(/_/g, " ")}</span>
-                            )}
-                            {item.notes && (
-                              <p className="pub-item-notes">{item.notes}</p>
-                            )}
+                            <p className="pub-item-name">{item.description || "Item"}</p>
                           </td>
                           <td className="pub-td pub-td--type">
-                            {item.price_source ? (
-                              <span className="pub-type-badge">{item.price_source.replace(/_/g, " ")}</span>
-                            ) : item.pricing_plan_id ? (
-                              <span className="pub-type-badge pub-type-badge--plan">Plan</span>
-                            ) : (
-                              <span className="pub-type-badge pub-type-badge--manual">Manual</span>
-                            )}
+                            <span className="pub-type-badge">{item.item_type || "product"}</span>
                           </td>
-                          <td className="pub-td pub-td--right pub-mono">{Number(item.quantity || 0).toFixed(2)}</td>
-                          <td className="pub-td pub-td--right pub-mono">{fmtCcy(item.unit_price, item.invoice_currency || currency)}</td>
+                          <td className="pub-td pub-td--right pub-mono">{parseMoney(item.quantity || 0).toFixed(2)}</td>
+                          <td className="pub-td pub-td--right pub-mono">{fmtCcy(parseMoney(item.unit_price), currency)}</td>
                           <td className="pub-td pub-td--right">
-                            {Number(item.discount_percentage || 0) > 0 ? (
+                            {parseMoney(item.discount_percentage || 0) > 0 ? (
                               <span className="pub-discount">
-                                -{Number(item.discount_percentage).toFixed(1)}%
+                                -{parseMoney(item.discount_percentage).toFixed(1)}%
                                 <span className="pub-discount-amt">&nbsp;(-{fmtCcy(discAmt, currency)})</span>
                               </span>
                             ) : (
@@ -362,14 +350,14 @@ export default function PublicInvoicePage() {
                             )}
                           </td>
                           <td className="pub-td pub-td--right">
-                            {Number(item.tax_percentage || 0) > 0 ? (
-                              <span className="pub-tax-pct">{Number(item.tax_percentage).toFixed(1)}%</span>
+                            {parseMoney(item.tax_percentage || 0) > 0 ? (
+                              <span className="pub-tax-pct">{parseMoney(item.tax_percentage).toFixed(1)}%</span>
                             ) : (
                               <span className="pub-td--muted">—</span>
                             )}
                           </td>
                           <td className="pub-td pub-td--right pub-td--bold pub-mono">
-                            {fmtCcy(lineTotal, item.invoice_currency || currency)}
+                            {fmtCcy(lineTotal, currency)}
                           </td>
                         </tr>
                       );
@@ -378,22 +366,6 @@ export default function PublicInvoicePage() {
                 </table>
               </div>
 
-              {/* currency conversion note */}
-              {items.some(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency) && (
-                <div className="pub-conversion-note">
-                  <p className="pub-conversion-title">⚠ Currency Conversion Applied</p>
-                  {items
-                    .filter(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency)
-                    .map((item, idx) => (
-                      <p key={idx} className="pub-conversion-row">
-                        <strong>{item.description || `Item ${idx + 1}`}</strong>:&nbsp;
-                        {item.original_currency} {fmtCcy(item.original_amount || item.unit_price, item.original_currency)}
-                        &nbsp;×&nbsp;{Number(item.exchange_rate || 1).toFixed(6)}
-                        &nbsp;=&nbsp;{item.invoice_currency} {fmtCcy(item.converted_amount || item.unit_price, item.invoice_currency)}
-                      </p>
-                    ))}
-                </div>
-              )}
             </>
           )}
         </SectionCard>
@@ -406,30 +378,30 @@ export default function PublicInvoicePage() {
               <div className="pub-fin-rows">
                 <div className="pub-fin-row">
                   <span>Subtotal</span>
-                  <span className="pub-mono">{fmtCcy(invoice.subtotal || 0, currency)}</span>
+                  <span className="pub-mono">{fmtCcy(parseMoney(invoice.subtotal || 0), currency)}</span>
                 </div>
-                {Number(invoice.discount_percentage || 0) > 0 && (
+                {parseMoney(invoice.discount_percentage || 0) > 0 && (
                   <div className="pub-fin-row pub-fin-row--discount">
                     <span>Discount ({invoice.discount_percentage}%)</span>
-                    <span className="pub-mono">-{fmtCcy(invoice.discount_amount || 0, currency)}</span>
+                    <span className="pub-mono">-{fmtCcy(parseMoney(invoice.discount_amount || 0), currency)}</span>
                   </div>
                 )}
-                {Number(invoice.tax_amount || 0) > 0 && (
+                {parseMoney(invoice.tax_amount || 0) > 0 && (
                   <div className="pub-fin-row">
                     <span>Tax</span>
-                    <span className="pub-mono">{fmtCcy(invoice.tax_amount, currency)}</span>
+                    <span className="pub-mono">{fmtCcy(parseMoney(invoice.tax_amount), currency)}</span>
                   </div>
                 )}
-                {Number(invoice.shipping_amount || 0) > 0 && (
+                {parseMoney(invoice.shipping_amount || 0) > 0 && (
                   <div className="pub-fin-row">
                     <span>Shipping</span>
-                    <span className="pub-mono">{fmtCcy(invoice.shipping_amount, currency)}</span>
+                    <span className="pub-mono">{fmtCcy(parseMoney(invoice.shipping_amount), currency)}</span>
                   </div>
                 )}
-                {Number(invoice.round_off || 0) !== 0 && (
+                {parseMoney(invoice.round_off || 0) !== 0 && (
                   <div className="pub-fin-row">
                     <span>Round Off</span>
-                    <span className="pub-mono">{fmtCcy(invoice.round_off, currency)}</span>
+                    <span className="pub-mono">{fmtCcy(parseMoney(invoice.round_off), currency)}</span>
                   </div>
                 )}
                 <div className="pub-fin-row pub-fin-row--total">
@@ -570,7 +542,7 @@ export default function PublicInvoicePage() {
                   <button
                     type="button"
                     className="pub-pay-btn"
-                    onClick={() => alert("Stripe integration coming soon!")}
+                    onClick={handleCheckout}
                   >
                     <span className="pub-pay-btn-icon">🔒</span>
                     Pay {fmtCcy(balanceDue, currency)} Securely
@@ -619,7 +591,7 @@ export default function PublicInvoicePage() {
         {/* ─── footer ─── */}
         <div className="pub-page-footer">
           <p>Generated by <strong>Zoiko Billing Platform</strong></p>
-          <p className="pub-footer-inv">Invoice {invoice.invoice_number || `#${id}`} · {currency}</p>
+          <p className="pub-footer-inv">Invoice {invoice.invoice_number || "Invoice"} · {currency}</p>
         </div>
 
       </div>

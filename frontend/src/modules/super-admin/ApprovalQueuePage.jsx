@@ -132,7 +132,7 @@ export default function ApprovalQueuePage() {
               <Button size="sm" variant="danger" icon={X} onClick={() => setRejectTarget(row)}>Reject</Button>
             </div>
           ) : (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-500">
               {row.approver_email ? `by ${row.approver_email}` : "—"}
             </span>
           ),

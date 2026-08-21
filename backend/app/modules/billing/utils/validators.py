@@ -19,20 +19,28 @@ import re
 from decimal import Decimal
 from typing import Optional, Set
 
+from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES
+
 # Currency codes accepted by the Customer/PriceList/PriceListItem/PricingRule/
-# Discount/CurrencyPricing `currency` field validators. This is intentionally
-# NOT the same set as the `CurrencyCode` enum in models.py (used elsewhere,
-# e.g. BillingConfiguration) — the two have already diverged (this set accepts
-# PLN/CZK/HUF/TRY/VND/TWD which CurrencyCode doesn't, while CurrencyCode
-# accepts SAR/QAR/KWD/NGN/PKR/BDT/LKR/NPR/BHD/OMR which this set doesn't).
-# Left as two separate sets on purpose: unifying them would silently start
-# rejecting (or accepting) currency codes some schemas currently don't.
+# Discount/CurrencyPricing `currency` field validators. This used to be a
+# hand-maintained set that had silently diverged from the `CurrencyCode`
+# enum (models.py) -- e.g. it rejected SAR/QAR/KWD/NGN/PKR/BDT/LKR/NPR/BHD/OMR
+# even though those are fully supported currencies elsewhere (symbol +
+# decimal-digit mapping in currency_utils.py, selectable as an org's base
+# currency). The frontend's currency picker offered those codes, so any
+# customer/product/price-list created with one of them failed validation --
+# a real production bug, not an intentional restriction. Now a strict
+# superset of the extra legacy codes this set has always accepted (PLN/CZK/
+# HUF/RON/BGN/HRK/RUB/TRY/IDR/PHP/VND/TWD) union'd with the canonical
+# CurrencyCode enum, so nothing previously valid stops being valid, and
+# every currency the platform actually supports elsewhere is accepted here
+# too.
 LEGACY_SCHEMA_CURRENCY_CODES = {
     "USD", "EUR", "GBP", "INR", "AED", "SGD", "AUD", "CAD", "CHF", "JPY",
     "CNY", "HKD", "NZD", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON",
     "BGN", "HRK", "RUB", "TRY", "ZAR", "BRL", "MXN", "THB", "MYR", "IDR",
     "PHP", "VND", "KRW", "TWD",
-}
+} | VALID_CURRENCY_CODES
 
 # Ceiling for a single monetary input field. The billing module's money
 # columns are Numeric(14,2) / Numeric(16,4) — both cap the integer part at 12

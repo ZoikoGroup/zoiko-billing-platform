@@ -21,7 +21,7 @@ from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit, safe_commit_and_refresh
 from app.modules.billing.utils.currency_utils import round_money
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SCHEDULE_ALLOWED_FIELDS = {
     "invoice_id", "recognition_method", "total_amount",

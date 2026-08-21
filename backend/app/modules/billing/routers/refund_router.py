@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services import RefundService
 from app.modules.billing.schemas import (
     RefundApproveRequest,
@@ -206,6 +206,7 @@ def submit_refund_for_approval(
     body: RefundApproveRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
 ):
     svc = RefundService(db)
     return svc.submit_for_approval(
@@ -220,7 +221,7 @@ def approve_refund(
     body: RefundApproveRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-    _admin=Depends(get_current_billing_admin),
+    _approver=Depends(get_current_finance_approver),
 ):
     svc = RefundService(db)
     return svc.approve_refund(
@@ -313,6 +314,7 @@ def fail_refund(
 def send_refund_email_endpoint(
     refund_id: int,
     db: Session = Depends(get_db),
+    _admin=Depends(get_current_billing_admin),
     current_user=Depends(get_current_user),
 ):
     svc = RefundService(db)

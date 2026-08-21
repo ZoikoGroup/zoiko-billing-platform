@@ -3,6 +3,8 @@ import { Power, ShieldAlert } from "lucide-react";
 import { getBillingKillSwitch, setBillingKillSwitch } from "../../service/commercialService";
 import { PageHeader, Modal, Field, Button } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage } from "../../components/billing-shared";
+import useIsDesktopViewport from "../../hooks/useIsDesktopViewport";
+import MobileWriteBlock from "./MobileWriteBlock";
 import { formatDateTime } from "./constants";
 
 // Disabling commercial charging is the high-impact direction (it blocks new
@@ -113,6 +115,8 @@ export default function KillSwitchPage() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [modalTarget, setModalTarget] = useState(null); // true | false | null
+  // ZB-SA-CMD-003 §17 — breaker engagement is blocked below 768px.
+  const isDesktop = useIsDesktopViewport();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -154,27 +158,31 @@ export default function KillSwitchPage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Commercial Subscription Charging</p>
-                <p className={`mt-1 text-2xl font-extrabold ${switchState.enabled ? "text-emerald-600" : "text-red-600"}`}>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Commercial Subscription Charging</p>
+                <p className={`mt-1 text-2xl font-extrabold ${switchState.enabled ? "text-emerald-700" : "text-red-600"}`}>
                   {switchState.enabled ? "Enabled" : "Disabled"}
                 </p>
                 {switchState.reason && (
                   <p className="mt-2 text-sm text-slate-500">Last reason: {switchState.reason}</p>
                 )}
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   Last changed {formatDateTime(switchState.changed_at)}
                   {switchState.changed_by_email ? ` by ${switchState.changed_by_email}` : ""}
                 </p>
               </div>
-              <Button
-                variant={switchState.enabled ? "danger" : "primary"}
-                icon={switchState.enabled ? ShieldAlert : Power}
-                onClick={() => setModalTarget(!switchState.enabled)}
-              >
-                {switchState.enabled ? "Disable charging" : "Re-enable charging"}
-              </Button>
+              {isDesktop ? (
+                <Button
+                  variant={switchState.enabled ? "danger" : "primary"}
+                  icon={switchState.enabled ? ShieldAlert : Power}
+                  onClick={() => setModalTarget(!switchState.enabled)}
+                >
+                  {switchState.enabled ? "Disable charging" : "Re-enable charging"}
+                </Button>
+              ) : (
+                <MobileWriteBlock action="toggling the billing kill switch" />
+              )}
             </div>
-            <p className="mt-6 text-xs text-slate-400">
+            <p className="mt-6 text-xs text-slate-500">
               This switch is scoped to the one real charging path that exists today. It does not (and cannot) gate a
               tenant payment webhook or a Plane-1 payment processor, because neither exists yet in this codebase — see
               the Production Acceptance report for what remains unimplemented.
@@ -184,7 +192,7 @@ export default function KillSwitchPage() {
       </div>
 
       <ToggleModal
-        open={modalTarget !== null}
+        open={modalTarget !== null && isDesktop}
         targetEnabled={modalTarget}
         onClose={() => setModalTarget(null)}
         onSaved={handleSave}

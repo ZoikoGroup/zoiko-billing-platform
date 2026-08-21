@@ -17,7 +17,7 @@ function getStatusStyle(status) {
     closed: "bg-slate-100 text-slate-500",
     escalated: "bg-red-100 text-red-700",
   };
-  return map[status] || "bg-gray-100 text-gray-600";
+  return map[status] || "bg-slate-100 text-slate-600";
 }
 
 export default function CollectionsReceivablesPage() {
@@ -118,47 +118,47 @@ export default function CollectionsReceivablesPage() {
             Dashboard
           </button>
           <button onClick={refreshAll} disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
       }
     >
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0 overflow-hidden">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
             <Users className="h-5 w-5 text-brand-500 shrink-0" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider truncate">In Collections</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">In Collections</p>
           </div>
-          <p className="text-xl font-bold text-gray-900 whitespace-nowrap">{totalInCollections}</p>
-          <p className="text-xs text-gray-400 mt-1 whitespace-nowrap" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding</p>
+          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">{totalInCollections}</p>
+          <p className="text-xs text-slate-500 mt-1 whitespace-nowrap" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0 overflow-hidden">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="h-5 w-5 text-emerald-500 shrink-0" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider truncate">Recovery Rate</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Recovery Rate</p>
           </div>
-          <p className="text-xl font-bold text-emerald-600 whitespace-nowrap">{recoveryRate}%</p>
-          <p className="text-xs text-gray-400 mt-1">{resolvedCount} resolved cases</p>
+          <p className="text-xl font-bold text-emerald-700 whitespace-nowrap">{recoveryRate}%</p>
+          <p className="text-xs text-slate-500 mt-1">{resolvedCount} resolved cases</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 min-w-0 overflow-hidden">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="h-5 w-5 text-amber-500 shrink-0" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider truncate">Avg Days Outstanding</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Days Outstanding</p>
           </div>
           <p className="text-xl font-bold text-amber-600 whitespace-nowrap">{avgDaysOutstanding}d</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="border-b border-gray-200">
+      <div className="bg-white rounded-3xl border border-slate-200">
+        <div className="border-b border-slate-200">
           <div className="flex">
             {tabs.map((tab) => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                 className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.key
                     ? "border-brand-600 text-brand-700"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
                 }`}>
                 {tab.label}
               </button>
@@ -169,30 +169,30 @@ export default function CollectionsReceivablesPage() {
         <div className="p-6">
           {activeTab === "overview" && (
             <div className="space-y-6">
-              <h3 className="text-base font-semibold text-gray-900">Active Collections Cases</h3>
+              <h3 className="text-base font-semibold text-slate-900">Active Collections Cases</h3>
               {cases.filter((c) => c.status !== "resolved" && c.status !== "closed").length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500">No active collections cases</p>
+                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500">No active collections cases</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Case</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Customer</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase">Outstanding</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Status</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Actions</th>
+                      <tr className="border-b border-slate-100">
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Case</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Customer</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Outstanding</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Status</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {cases.filter((c) => c.status !== "resolved" && c.status !== "closed").map((c) => (
-                        <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-3 px-4 font-medium text-gray-900">{c.case_number || `#${c.id}`}</td>
-                          <td className="py-3 px-4 text-gray-600">{c.customer_name || `#${c.customer_id}`}</td>
-                          <td className="py-3 px-4 text-right font-medium text-gray-900">{formatDisplayCurrency(c.total_outstanding, c.currency)}</td>
+                        <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-3 px-4 font-medium text-slate-900">{c.case_number || `#${c.id}`}</td>
+                          <td className="py-3 px-4 text-slate-600">{c.customer_name || `#${c.customer_id}`}</td>
+                          <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.total_outstanding, c.currency)}</td>
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
                               {c.status ? c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "Unknown"}
@@ -215,32 +215,32 @@ export default function CollectionsReceivablesPage() {
 
           {activeTab === "queue" && (
             <div className="space-y-4">
-              <h3 className="text-base font-semibold text-gray-900">Collections Queue</h3>
+              <h3 className="text-base font-semibold text-slate-900">Collections Queue</h3>
               {!queueData ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500">Queue data not available</p>
+                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500">Queue data not available</p>
                 </div>
               ) : Array.isArray(queueData) && queueData.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500">Queue is empty</p>
+                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500">Queue is empty</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Priority</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Case</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Customer</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase">Amount</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Days Overdue</th>
+                      <tr className="border-b border-slate-100">
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Priority</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Case</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Customer</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Amount</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Days Overdue</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(Array.isArray(queueData) ? queueData : []).map((item, i) => (
-                        <tr key={item.id || i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <tr key={item.id || i} className="border-b border-slate-50 hover:bg-slate-50">
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               item.priority === "urgent" ? "bg-red-100 text-red-700" :
@@ -250,10 +250,10 @@ export default function CollectionsReceivablesPage() {
                               {item.priority || "Normal"}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-medium text-gray-900">{item.case_number || `#${item.id}`}</td>
-                          <td className="py-3 px-4 text-gray-600">{item.customer_name || `#${item.customer_id}`}</td>
-                          <td className="py-3 px-4 text-right font-medium text-gray-900">{formatDisplayCurrency(item.total_outstanding || item.amount, item.currency)}</td>
-                          <td className="py-3 px-4 text-gray-600">{item.days_overdue || 0}d</td>
+                          <td className="py-3 px-4 font-medium text-slate-900">{item.case_number || `#${item.id}`}</td>
+                          <td className="py-3 px-4 text-slate-600">{item.customer_name || `#${item.customer_id}`}</td>
+                          <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(item.total_outstanding || item.amount, item.currency)}</td>
+                          <td className="py-3 px-4 text-slate-600">{item.days_overdue || 0}d</td>
                         </tr>
                       ))}
                     </tbody>
@@ -265,27 +265,27 @@ export default function CollectionsReceivablesPage() {
 
           {activeTab === "aging" && (
             <div className="space-y-4">
-              <h3 className="text-base font-semibold text-gray-900">Aging Summary</h3>
+              <h3 className="text-base font-semibold text-slate-900">Aging Summary</h3>
               {!agingData ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500">Aging data not available</p>
+                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500">Aging data not available</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase">Bucket</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase">Count</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase">Total Amount</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase">Percentage</th>
+                      <tr className="border-b border-slate-100">
+                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Bucket</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Count</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Total Amount</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Percentage</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Array.isArray(agingData) ? agingData.map((bucket, i) => (
-                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="py-3 px-4 font-medium text-gray-900">
+                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-3 px-4 font-medium text-slate-900">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               bucket.name === "Current" ? "bg-emerald-100 text-emerald-700" :
                               bucket.name?.includes("31") || bucket.name?.includes("61") ? "bg-amber-100 text-amber-700" :
@@ -294,15 +294,15 @@ export default function CollectionsReceivablesPage() {
                               {bucket.name || bucket.bucket || `Bucket ${i + 1}`}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-right text-gray-900 font-medium">{bucket.count || 0}</td>
-                          <td className="py-3 px-4 text-right text-gray-900 font-medium">{formatDisplayCurrency(bucket.total_amount || bucket.amount || 0)}</td>
-                          <td className="py-3 px-4 text-right text-gray-600">{bucket.percentage || 0}%</td>
+                          <td className="py-3 px-4 text-right text-slate-900 font-medium">{bucket.count || 0}</td>
+                          <td className="py-3 px-4 text-right text-slate-900 font-medium">{formatDisplayCurrency(bucket.total_amount || bucket.amount || 0)}</td>
+                          <td className="py-3 px-4 text-right text-slate-600">{bucket.percentage || 0}%</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan={4} className="py-8 text-center text-gray-500">
+                          <td colSpan={4} className="py-8 text-center text-slate-500">
                             <div className="flex flex-col items-center">
-                              <BarChart3 className="h-8 w-8 text-gray-300 mb-2" />
+                              <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
                               <p className="text-sm">No aging data available</p>
                             </div>
                           </td>

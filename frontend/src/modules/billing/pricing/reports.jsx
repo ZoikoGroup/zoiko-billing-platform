@@ -270,7 +270,7 @@ export default function PricingReportsPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {fPlans.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No plans found</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">No plans found</td></tr>
                     ) : fPlans.slice(0, 20).map((p) => (
                       <tr key={p.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>

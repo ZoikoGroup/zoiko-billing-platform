@@ -16,7 +16,7 @@ const STATUS_OPTIONS = [
   { value: "processing", label: "Processing", color: "bg-sky-100 text-sky-700" },
   { value: "failed", label: "Failed", color: "bg-red-100 text-red-700" },
   { value: "refunded", label: "Refunded", color: "bg-blue-100 text-blue-700" },
-  { value: "cancelled", label: "Cancelled", color: "bg-gray-100 text-gray-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-700" },
 ];
 
 // How the customer paid — shown in the "Record Payment" wizard. These map to
@@ -50,7 +50,7 @@ const PAYMENT_TYPE_FILTER_OPTIONS = [
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -64,7 +64,7 @@ function WizardStep({ number, label, active, completed }) {
       }`}>
         {completed ? <CheckCircle size={16} /> : number}
       </div>
-      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-600" : "text-slate-500"}`}>{label}</span>
+      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-700" : "text-slate-500"}`}>{label}</span>
     </div>
   );
 }
@@ -211,7 +211,7 @@ export default function PaymentListPage() {
     const headers = ["Payment #", "Customer", "Amount", "Currency", "Method", "Status", "Date", "Transaction ID"];
     const rows = payments.map((p) => [
       p.payment_number || `#${p.id}`, p.customer_name || p.customer?.name || "",
-      p.amount || 0, p.currency || "USD",
+      p.amount || 0, p.currency,
       p.payment_method_type || p.payment_type || "", p.status || "",
       p.payment_date || "", p.transaction_id || "",
     ]);
@@ -313,7 +313,7 @@ export default function PaymentListPage() {
   };
 
   const selectCustomer = async (c) => {
-    const currency = c.currency || "USD";
+    const currency = c.currency || baseCurrency;
     setWizardData((p) => ({
       ...p, customer_id: c.id,
       customer_name: c.display_name || c.company_name || c.name || `Customer #${c.id}`,
@@ -327,7 +327,7 @@ export default function PaymentListPage() {
     if (inv.customer_id && !wizardData.customer_id) {
       const c = await customerApi.get(inv.customer_id).catch(() => null);
       if (c) {
-        const currency = inv.currency || c.currency || "USD";
+        const currency = inv.currency || c.currency || baseCurrency;
         setWizardData((p) => ({
           ...p,
           customer_id: c.id,
@@ -352,7 +352,7 @@ export default function PaymentListPage() {
       invoice_balance: suggested,
       invoice_status: inv.status, invoice_payment_terms: inv.payment_terms || "",
       amount: suggested,
-      currency: inv.currency || p.currency || "USD",
+      currency: inv.currency || p.currency || baseCurrency,
       reference_number: inv.invoice_number || p.reference_number,
       notes: p.notes || `Payment for ${inv.invoice_number || `invoice #${inv.id}`}`,
       allocations: [{ invoice_id: inv.id, amount: suggested }],
@@ -371,8 +371,8 @@ export default function PaymentListPage() {
           setWizardData((p) => ({
             ...p, customer_id: c.id,
             customer_name: c.display_name || c.company_name || c.name || `Customer #${c.id}`,
-            customer_email: c.email || "", customer_phone: c.phone || "", customer_currency: c.currency || "USD",
-            currency: c.currency || "USD",
+            customer_email: c.email || "", customer_phone: c.phone || "", customer_currency: c.currency || baseCurrency,
+            currency: c.currency || baseCurrency,
           }));
           await loadCustomerData(c.id);
         }
@@ -468,11 +468,11 @@ export default function PaymentListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && payments.length === 0) return <div className="space-y-8"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchPayments(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && payments.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchPayments(true)} /></div>;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
@@ -493,11 +493,11 @@ export default function PaymentListPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search payments..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded"><X size={16} /></button>}
+                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label={showFilters ? "Hide filters" : "Show filters"} aria-pressed={showFilters}
                   className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -515,7 +515,7 @@ export default function PaymentListPage() {
                       <XCircle size={12} /> Fail
                     </button>
                     <button onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }} aria-label="Clear selection"
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={14} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={14} /></button>
                   </div>
                 )}
               </div>
@@ -539,14 +539,14 @@ export default function PaymentListPage() {
                     <option value="">All Statuses</option>
                     {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 <div className="relative">
                   <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
                     className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                     {PAYMENT_TYPE_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 {(statusFilter || typeFilter || dateRange.date_from || dateRange.date_to) && (
                   <button onClick={() => { setStatusFilter(""); setTypeFilter(""); resetDateRange(); setCurrentPage(1); }}
@@ -580,7 +580,7 @@ export default function PaymentListPage() {
                       <div className="flex flex-col items-center">
                         <CreditCard size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No payments found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Record your first payment to get started"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Record your first payment to get started"}</p>
                       </div>
                     </td>
                   </tr>
@@ -593,7 +593,7 @@ export default function PaymentListPage() {
                     <td className="px-4 py-4">
                       <button onClick={() => navigate(`/billing/payments/${pmt.id}`)} className="font-medium text-slate-800 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded">
                         <div className="flex items-center gap-2">
-                          <Receipt size={14} className="text-slate-400" />
+                          <Receipt size={14} className="text-slate-500" />
                           {pmt.payment_number || `#${pmt.id}`}
                         </div>
                       </button>
@@ -605,7 +605,7 @@ export default function PaymentListPage() {
                     <td className="px-4 py-4 text-slate-500 text-xs">{formatDisplayDate(pmt.payment_date)}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => navigate(`/billing/payments/${pmt.id}`)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View payment ${pmt.payment_number || pmt.id}`}>
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View payment ${pmt.payment_number || pmt.id}`}>
                         <Eye size={16} />
                       </button>
                     </td>
@@ -675,7 +675,7 @@ export default function PaymentListPage() {
                                   }`}>
                                   <div>
                                     <span className="font-medium text-slate-700">{inv.invoice_number || `#${inv.id}`}</span>
-                                    <span className="text-xs text-slate-400 ml-2 capitalize">{inv.status?.replace(/_/g, " ")}</span>
+                                    <span className="text-xs text-slate-500 ml-2 capitalize">{inv.status?.replace(/_/g, " ")}</span>
                                   </div>
                                   <span className="font-medium text-slate-800">{formatDisplayCurrency(bal, inv.currency)}</span>
                                 </button>
@@ -690,7 +690,7 @@ export default function PaymentListPage() {
                           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Available Credits</p>
                           <p className="text-sm text-slate-600">
                             {formatDisplayCurrency(sumInBaseCurrency(customerCredits.filter((c) => c.status === "issued" || c.status === "applied"), baseCurrency).total, baseCurrency)}
-                            <span className="text-xs text-slate-400 ml-1">({customerCredits.filter((c) => c.status === "issued").length} issued)</span>
+                            <span className="text-xs text-slate-500 ml-1">({customerCredits.filter((c) => c.status === "issued").length} issued)</span>
                           </p>
                         </div>
                       )}
@@ -709,25 +709,25 @@ export default function PaymentListPage() {
                       )}
 
                       {customerOutstanding.length === 0 && customerCredits.length === 0 && customerRecentPayments.length === 0 && (
-                        <p className="text-xs text-slate-400">No outstanding invoices, credits, or recent payments found.</p>
+                        <p className="text-xs text-slate-500">No outstanding invoices, credits, or recent payments found.</p>
                       )}
                     </div>
                   ) : (
                     <div>
                       <div className="relative mb-3">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                         <input type="text" placeholder="Search customers by name, email, or phone..." value={customerSearch}
                           onChange={(e) => setCustomerSearch(e.target.value)}
                           className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
-                      {customerSearching && <p className="text-sm text-slate-400 text-center py-2">Searching...</p>}
+                      {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
                       {customerResults.length > 0 && (
                         <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
                           {customerResults.map((c) => (
                             <button key={c.id} onClick={() => selectCustomer(c)}
                               className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
                               <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `Customer #${c.id}`}</p>
-                              <p className="text-xs text-slate-400">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
+                              <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
                             </button>
                           ))}
                         </div>
@@ -740,7 +740,7 @@ export default function PaymentListPage() {
                   <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4"><FileText size={20} className="text-brand-500" /> Invoice (Optional)</h3>
                   <div className="flex gap-3">
                     <div className="relative flex-1">
-                      <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                       <input type="text" placeholder="Enter invoice number or ID..." value={customerInvoiceSearch}
                         onChange={(e) => setCustomerInvoiceSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -761,7 +761,7 @@ export default function PaymentListPage() {
                       </div>
                       <div className="grid grid-cols-4 gap-3 text-sm">
                         <div><span className="text-xs text-slate-500">Total</span><p className="font-medium">{formatDisplayCurrency(wizardData.invoice_total, wizardData.currency)}</p></div>
-                        <div><span className="text-xs text-slate-500">Paid</span><p className="font-medium text-emerald-600">{formatDisplayCurrency(wizardData.invoice_paid, wizardData.currency)}</p></div>
+                        <div><span className="text-xs text-slate-500">Paid</span><p className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.invoice_paid, wizardData.currency)}</p></div>
                         <div><span className="text-xs text-slate-500">Balance</span><p className="font-medium text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</p></div>
                         <div><span className="text-xs text-slate-500">Status</span><p className="font-medium capitalize">{wizardData.invoice_status?.replace(/_/g, " ")}</p></div>
                       </div>
@@ -796,7 +796,7 @@ export default function PaymentListPage() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
                     <div className="relative">
-                      <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                       <input type="number" min="0" step="0.01" value={wizardData.amount}
                         onChange={(e) => setWizardData((p) => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
                         className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -826,7 +826,7 @@ export default function PaymentListPage() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <p className="font-medium text-slate-800">{wizardData.invoice_number}</p>
-                        <p className="text-xs text-slate-400 capitalize">Status: {wizardData.invoice_status?.replace(/_/g, " ")}</p>
+                        <p className="text-xs text-slate-500 capitalize">Status: {wizardData.invoice_status?.replace(/_/g, " ")}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm text-slate-500">Balance: <span className="font-semibold text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span></p>
@@ -840,7 +840,7 @@ export default function PaymentListPage() {
                           className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div className="pt-5">
-                        <span className="text-sm text-slate-400">of {formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span>
+                        <span className="text-sm text-slate-500">of {formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span>
                       </div>
                     </div>
                   </div>
@@ -876,35 +876,35 @@ export default function PaymentListPage() {
 
                 <div className="border border-slate-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center gap-3">
-                    <User size={16} className="text-slate-400" />
+                    <User size={16} className="text-slate-500" />
                     <div>
                       <p className="text-xs text-slate-500">Customer</p>
                       <p className="text-sm font-medium text-slate-800">{wizardData.customer_name}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Hash size={16} className="text-slate-400" />
+                    <Hash size={16} className="text-slate-500" />
                     <div>
                       <p className="text-xs text-slate-500">Payment Number</p>
                       <p className="text-sm font-medium text-slate-800">{wizardData.payment_number}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <DollarSign size={16} className="text-slate-400" />
+                    <DollarSign size={16} className="text-slate-500" />
                     <div>
                       <p className="text-xs text-slate-500">Amount</p>
                       <p className="text-sm font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <CreditCard size={16} className="text-slate-400" />
+                    <CreditCard size={16} className="text-slate-500" />
                     <div>
                       <p className="text-xs text-slate-500">Payment Type</p>
                       <p className="text-sm font-medium text-slate-800 capitalize">{wizardData.payment_type?.replace(/_/g, " ")}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Calendar size={16} className="text-slate-400" />
+                    <Calendar size={16} className="text-slate-500" />
                     <div>
                       <p className="text-xs text-slate-500">Payment Date</p>
                       <p className="text-sm font-medium text-slate-800">{formatDisplayDate(wizardData.payment_date)}</p>
@@ -912,7 +912,7 @@ export default function PaymentListPage() {
                   </div>
                   {wizardData.invoice_id && (
                     <div className="flex items-center gap-3">
-                      <FileText size={16} className="text-slate-400" />
+                      <FileText size={16} className="text-slate-500" />
                       <div>
                         <p className="text-xs text-slate-500">Invoice</p>
                         <p className="text-sm font-medium text-slate-800">{wizardData.invoice_number} — {formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)} allocated</p>
@@ -965,7 +965,7 @@ export default function PaymentListPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-slate-500">Date: {formatDisplayDate(wizardData.payment_date)}</p>
-                      <p className="text-xs text-slate-400 mt-1">Status: Pending</p>
+                      <p className="text-xs text-slate-500 mt-1">Status: Pending</p>
                     </div>
                   </div>
                   <div className="mb-6 p-4 bg-slate-50 rounded-xl">
@@ -986,7 +986,7 @@ export default function PaymentListPage() {
                     {wizardData.allocations.length > 0 && wizardData.allocations[0]?.amount > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Allocated to {wizardData.invoice_number}</span>
-                        <span className="font-medium text-emerald-600">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
+                        <span className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
                       </div>
                     )}
                     {calcRemaining() > 0 && (

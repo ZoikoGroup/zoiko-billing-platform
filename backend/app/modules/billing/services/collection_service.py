@@ -32,6 +32,7 @@ from app.modules.billing.repositories.settings import BillingConfigurationReposi
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 from app.modules.billing.services.customer_service import CustomerService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.utils.date_utils import days_overdue as compute_days_overdue
 from app.services.email_service import send_collections_notice_email
 
@@ -41,7 +42,7 @@ COLLECTION_ALLOWED_FIELDS = {
     "notes", "amount_collected", "last_contact_at", "next_action_date",
 }
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 class CollectionService:
@@ -218,7 +219,7 @@ class CollectionService:
                     invoice_number=invoice.invoice_number,
                     days_overdue=str(case.days_overdue or compute_days_overdue(invoice.due_date)),
                     overdue_amount=str(invoice.balance_due or 0),
-                    currency=invoice.currency or "USD",
+                    currency=invoice.currency or BillingConfigurationService(self.db).get_default_currency(organization_id),
                     late_fee="0",
                     organization_id=organization_id,
                     db=self.db,

@@ -88,7 +88,7 @@ function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
 function InfoRow({ label, value, className = "" }) {
   return (
     <div className={`flex items-start justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 ${className}`}>
-      <span className="shrink-0 text-xs font-medium text-slate-400">{label}</span>
+      <span className="shrink-0 text-xs font-medium text-slate-500">{label}</span>
       <span className="text-right text-sm font-medium text-slate-700">{value}</span>
     </div>
   );
@@ -104,7 +104,7 @@ function SectionCard({ icon: Icon, title, subtitle, children, action, className 
           </span>
           <div>
             <h2 className="text-base font-bold text-slate-800">{title}</h2>
-            {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+            {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
           </div>
         </div>
         {action}
@@ -261,7 +261,7 @@ export default function OrganizationDetailPage() {
       render: (row) => (
         <span>
           <span className="block font-semibold text-slate-800">{row.plan_name}</span>
-          <span className="block text-xs text-slate-400">{row.plan_code}</span>
+          <span className="block text-xs text-slate-500">{row.plan_code}</span>
         </span>
       ),
     },
@@ -435,7 +435,7 @@ export default function OrganizationDetailPage() {
                 <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                   <div>
                     <p className="text-base font-bold text-slate-800">{plan.plan_name}</p>
-                    <p className="text-xs text-slate-400">{plan.plan_code}</p>
+                    <p className="text-xs text-slate-500">{plan.plan_code}</p>
                   </div>
                   <StatusBadge status={subscription.status} options={SUBSCRIPTION_STATUS_OPTIONS} />
                 </div>
@@ -443,7 +443,7 @@ export default function OrganizationDetailPage() {
                 <InfoRow label="Default plan" value={plan.is_default ? "Yes" : "No"} />
                 <InfoRow label="Billing interval" value={displayValue(plan.billing_interval)} />
                 <InfoRow label="Currency" value={displayValue(plan.currency)} />
-                <InfoRow label="Price" value={plan.price_amount === null || plan.price_amount === undefined ? "—" : `${plan.currency || "USD"} ${Number(plan.price_amount).toLocaleString()}`} />
+                <InfoRow label="Price" value={plan.price_amount === null || plan.price_amount === undefined ? "—" : `${plan.currency} ${Number(plan.price_amount).toLocaleString()}`} />
                 <InfoRow label="Effective" value={plan.effective_from ? `${formatDateOnly(plan.effective_from)} — ${formatDateOnly(plan.effective_to)}` : "—"} />
                 <InfoRow label="Period" value={`${formatDateOnly(subscription.start_at)} — ${formatDateOnly(subscription.end_at)}`} />
                 <InfoRow label="Current period" value={`${formatDateOnly(subscription.current_period_start)} — ${formatDateOnly(subscription.current_period_end)}`} />
@@ -465,19 +465,19 @@ export default function OrganizationDetailPage() {
           {entitlements.plan ? (
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Limits</p>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">Limits</p>
                 <InfoRow label="Max users" value={displayValue(entitlements.limits?.max_users)} />
                 <InfoRow label="Max storage (GB)" value={displayValue(entitlements.limits?.max_storage_gb)} />
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-xs text-slate-500">
                   Missing (—) values are unset, not unlimited. No limits are enforced until a future phase wires entitlements into tenant modules.
                 </p>
               </div>
               <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Features</p>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">Features</p>
                 {entitlements.features && entitlements.features.length > 0 ? (
                   entitlements.features.map(({ key, value }) => (
                     <div key={key} className="flex items-start justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0">
-                      <span className="text-xs font-medium text-slate-400">{key}</span>
+                      <span className="text-xs font-medium text-slate-500">{key}</span>
                       <span className="text-sm font-medium text-slate-700">{displayValue(value)}</span>
                     </div>
                   ))

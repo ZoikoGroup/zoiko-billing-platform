@@ -17,7 +17,7 @@ from app.modules.billing.repositories.settings import BillingConfigurationReposi
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.utils.currency_utils import get_currency_symbol, validate_currency_code, validate_language_code
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 def validate_email(email: Optional[str]) -> Optional[str]:
@@ -287,6 +287,17 @@ class BillingConfigurationService:
         data["timezone"] = org.timezone or "UTC"
         data["fiscal_year_start"] = org.fiscal_year_start or "01-01"
         data["fiscal_year_end"] = org.fiscal_year_end or "12-31"
+
+        # Country-appropriate date format (e.g. US -> MM-DD-YYYY) instead of
+        # always leaving CONFIGURATION_DEFAULTS' DD-MM-YYYY, which is only
+        # correct for most-but-not-all registration countries.
+        from app.modules.auth.country_currency import get_default_date_format_for_country
+        date_format_str = get_default_date_format_for_country(org.country)
+        if date_format_str:
+            try:
+                data["date_format"] = DateFormat(date_format_str)
+            except ValueError:
+                pass
         # Generic tax number -> generic tax_number field. Organization.tax_no is
         # a single field covering GST/PAN/VAT/TIN with no type semantics, so it
         # must NOT be copied into gst_number/vat_number/pan_number/tin_number.
@@ -318,6 +329,27 @@ class BillingConfigurationService:
                 if currency_str not in supported:
                     supported.append(currency_str)
                     data["supported_currencies"] = supported
+
+                # Derive tax_label/tax_id_label from the registration
+                # country's tax profile (country_tax_profiles.py) when this
+                # country is covered -- this is the precise, country-aware
+                # source ("GST"/"VAT"/"Sales Tax"/"Consumption Tax" plus the
+                # actual tax-identifier name like "GSTIN"), and correctly
+                # distinguishes countries that share a currency (France vs.
+                # Germany, both EUR). Falls back to deriving tax_label from
+                # the starter tax catalogue by currency alone (the older,
+                # coarser behavior) when the country isn't covered yet, and
+                # to CONFIGURATION_DEFAULTS' generic "VAT" when neither is.
+                from app.modules.billing.utils.country_tax_profiles import get_country_tax_profile
+                tax_profile = get_country_tax_profile(org.country)
+                if tax_profile is not None:
+                    data["tax_label"] = tax_profile.tax_system
+                    data["tax_id_label"] = tax_profile.tax_id_label
+                else:
+                    from app.modules.billing.utils.tax_catalogue import get_catalogue_entries_for_currency
+                    catalogue_entries = get_catalogue_entries_for_currency(currency_str)
+                    if catalogue_entries:
+                        data["tax_label"] = catalogue_entries[0].tax_type.value.upper()
 
         config = BillingConfiguration(organization_id=organization_id, **data)
         self.db.add(config)

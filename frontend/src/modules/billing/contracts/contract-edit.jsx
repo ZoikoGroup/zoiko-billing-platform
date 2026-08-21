@@ -425,10 +425,10 @@ export default function ContractEditPage() {
   return (
     <HRPage
       title={`Edit ${form.contract_name || form.contract_number || "Contract"}`}
-      subtitle={<span className="text-slate-400">ID: {id}</span>}
+      subtitle={<span className="text-slate-500">ID: {id}</span>}
       actions={
         <button onClick={() => navigate(`/billing/contracts/${id}`)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       }
@@ -445,8 +445,8 @@ export default function ContractEditPage() {
       )}
 
       <div className="space-y-8">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract Details</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract Details</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className={labelClass}>Contract Name</label>
@@ -465,8 +465,8 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Dates & Schedule</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Dates & Schedule</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className={labelClass}>Start Date</label>
@@ -493,7 +493,7 @@ export default function ContractEditPage() {
               <input type="number" value={form.billing_day} onChange={(e) => setForm((p) => ({ ...p, billing_day: e.target.value }))} className={inputClass} min="1" max="31" />
             </div>
             <div className="flex items-center gap-3 pt-6">
-              <input type="checkbox" id="auto_renew" checked={form.auto_renew} onChange={(e) => setForm((p) => ({ ...p, auto_renew: e.target.checked }))} className="h-4 w-4 text-brand-600 border-gray-300 rounded" />
+              <input type="checkbox" id="auto_renew" checked={form.auto_renew} onChange={(e) => setForm((p) => ({ ...p, auto_renew: e.target.checked }))} className="h-4 w-4 text-brand-600 border-slate-300 rounded" />
               <label htmlFor="auto_renew" className="text-sm text-slate-700">Auto-renew</label>
             </div>
             {form.auto_renew && (
@@ -505,16 +505,16 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({items.length})</h3>
+            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({items.length})</h3>
             <button onClick={addLineItem} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
               <Plus size={12} /> Add Item
             </button>
           </div>
 
           <div className="relative mb-4">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input type="text" placeholder="Search products to add..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className={`${inputClass} pl-9`} />
             {productSearching && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={16} className="animate-spin text-brand-500" /></div>}
             {productResults.length > 0 && (
@@ -530,15 +530,15 @@ export default function ContractEditPage() {
           </div>
 
           {items.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-slate-500">
               <Package size={32} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm">No products. Search above to add.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-slate-200">
                 <thead>
-                  <tr className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                     <th className="text-left py-3 px-3 w-12">#</th>
                     <th className="text-left py-3 px-3">Description</th>
                     <th className="text-right py-3 px-3 w-20">Qty</th>
@@ -549,7 +549,7 @@ export default function ContractEditPage() {
                     <th className="w-10"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {items.map((item) => {
                     const qty = parseFloat(item.quantity || 0);
                     const price = parseFloat(item.unit_price || 0);
@@ -558,8 +558,8 @@ export default function ContractEditPage() {
                     const lineTotal = qty * price * (1 - disc / 100) * (1 + tax / 100);
                     return (
                       <React.Fragment key={item.id}>
-                      <tr className="text-sm text-gray-900 hover:bg-slate-50">
-                        <td className="py-2 px-3 text-gray-400">{item.line_number}</td>
+                      <tr className="text-sm text-slate-900 hover:bg-slate-50">
+                        <td className="py-2 px-3 text-slate-500">{item.line_number}</td>
                         <td className="py-2 px-3">
                           <input type="text" value={item.description} onChange={(e) => updateLineItem(item.id, "description", e.target.value)} className="w-full px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-brand/30" />
                         </td>
@@ -618,8 +618,8 @@ export default function ContractEditPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-50 rounded-xl p-4 text-center">
               <p className="text-xs text-slate-500 uppercase tracking-wider">Subtotal</p>
@@ -640,8 +640,8 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Notes & Terms</h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">Notes & Terms</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Notes</label>
@@ -670,9 +670,9 @@ export default function ContractEditPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle size={20} className="text-amber-500" />
-              <h3 className="text-lg font-semibold text-gray-900">Active Contract Requires Amendment</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Active Contract Requires Amendment</h3>
             </div>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-slate-500 mb-4">
               This contract is <strong>ACTIVE</strong>. Material changes require an amendment record.
               Provide a reason and effective date to create an amendment.
             </p>
@@ -688,21 +688,21 @@ export default function ContractEditPage() {
             )}
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Effective Date</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
                 <input type="date" value={amendmentForm.effective_date}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Amendment Reason</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Amendment Reason</label>
                 <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
                   rows={3} placeholder="Reason for changes..."
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => { setShowAmendmentModal(false); setPendingAmendmentData(null); }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleAmendmentSave} disabled={!amendmentForm.effective_date || saving}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileEdit className="h-4 w-4" />} Save with Amendment

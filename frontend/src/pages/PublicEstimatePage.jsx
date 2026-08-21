@@ -48,7 +48,7 @@ export default function PublicEstimatePage() {
   const quote = state.quote;
   const badge = quote ? STATUS_BADGE[quote.status] || STATUS_BADGE.draft : null;
   const canRespond = quote?.status === "sent";
-  const currency = quote?.currency || "USD";
+  const currency = quote?.currency;
 
   const items = useMemo(() => {
     return (quote?.items || []).filter((i) => i.description || parseFloat(i.total_amount || 0) !== 0);
@@ -107,7 +107,7 @@ export default function PublicEstimatePage() {
           </div>
           <h1 className="mb-2 text-lg font-semibold text-slate-800">Estimate link unavailable</h1>
           <p className="mb-6 text-sm leading-6 text-slate-500">{state.error}</p>
-          <p className="text-xs text-slate-400">If you were sent this link, please ask the sender to re-issue it.</p>
+          <p className="text-xs text-slate-500">If you were sent this link, please ask the sender to re-issue it.</p>
         </div>
       </div>
     );
@@ -184,17 +184,17 @@ export default function PublicEstimatePage() {
             {/* Meta grid */}
             <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Issued</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Issued</p>
                 <p className="mt-1 text-sm font-medium text-slate-700">{quote.issue_date || "—"}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Valid Until</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Valid Until</p>
                 <p className="mt-1 text-sm font-medium text-slate-700">{quote.valid_until || "—"}</p>
               </div>
               <div className="col-span-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Prepared For</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Prepared For</p>
                 <p className="mt-1 text-sm font-medium text-slate-700">{quote.customer.name || "—"}</p>
-                {quote.customer.email && <p className="text-xs text-slate-400">{quote.customer.email}</p>}
+                {quote.customer.email && <p className="text-xs text-slate-500">{quote.customer.email}</p>}
               </div>
             </div>
 
@@ -253,13 +253,13 @@ export default function PublicEstimatePage() {
             {/* Notes / terms */}
             {quote.notes && (
               <div className="mt-6 rounded-xl bg-slate-50 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notes</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Notes</p>
                 <p className="mt-1 text-sm leading-6 text-slate-600 whitespace-pre-wrap">{quote.notes}</p>
               </div>
             )}
             {quote.terms && (
               <div className="mt-3 rounded-xl bg-slate-50 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Terms</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Terms</p>
                 <p className="mt-1 text-sm leading-6 text-slate-600 whitespace-pre-wrap">{quote.terms}</p>
               </div>
             )}
@@ -348,7 +348,7 @@ export default function PublicEstimatePage() {
             )}
 
             {/* Footer */}
-            <p className="mt-8 text-center text-xs leading-5 text-slate-400">
+            <p className="mt-8 text-center text-xs leading-5 text-slate-500">
               This estimate is not an invoice and does not represent a completed charge.
               <br />
               Sent by Zoiko Billing on behalf of {quote.company.name}.

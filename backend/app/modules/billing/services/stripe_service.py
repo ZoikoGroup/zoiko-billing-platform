@@ -55,7 +55,7 @@ from app.modules.billing.services.payment_service import PaymentService
 from app.modules.billing.services.refund_service import RefundService
 from app.modules.billing.services.subscription_service import SubscriptionService
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 SYSTEM_ACTOR = None
 
@@ -152,6 +152,23 @@ class StripeService:
         if balance <= 0:
             raise BadRequestException("Invoice has no outstanding balance")
 
+    def _require_payment_attempts_enabled(self) -> None:
+        """ZB-SA-CMD-003 §9.2 — 'Pause automatic payment attempts' circuit
+        breaker. Gates NEW platform-initiated captures only; the Stripe
+        webhook handlers deliberately do NOT call this, because in-flight
+        processor activity must not be canceled by a breaker."""
+        from app.core.exceptions import BadRequestException
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_PAYMENT_ATTEMPTS,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_PAYMENT_ATTEMPTS)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
+
     def create_checkout_session(
         self,
         organization_id: int,
@@ -160,6 +177,7 @@ class StripeService:
         cancel_url: str,
         created_by: Optional[int] = None,
     ) -> Dict[str, Any]:
+        self._require_payment_attempts_enabled()
         stripe = _stripe_module()
         invoice = self.invoice_service.get_invoice(invoice_id, organization_id)
         self._validate_invoice_payable(invoice)
@@ -229,6 +247,7 @@ class StripeService:
         payment_method_id: Optional[str] = None,
         created_by: Optional[int] = None,
     ) -> Dict[str, Any]:
+        self._require_payment_attempts_enabled()
         stripe = _stripe_module()
         invoice = self.invoice_service.get_invoice(invoice_id, organization_id)
         self._validate_invoice_payable(invoice)
@@ -452,6 +471,13 @@ class StripeService:
             )
         except Exception as e:
             raise BadRequestException(f"Invalid Stripe webhook signature: {e}")
+
+        # stripe>=10 SDK: Event is a StripeObject exposing __getitem__ but
+        # NOT .get() -- converting to a plain dict up front keeps every
+        # downstream .get() call below correct regardless of installed SDK
+        # version (Phase 4.1 remediation: this crashed with AttributeError
+        # on every real webhook call before test coverage caught it).
+        event = event.to_dict() if hasattr(event, "to_dict") else event
 
         event_id = event.get("id")
         event_type = event.get("type")

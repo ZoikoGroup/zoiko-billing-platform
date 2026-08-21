@@ -136,22 +136,22 @@ export default function CustomerProfitabilityReport() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Most Profitable</p>
                 <p className="text-xl font-bold text-slate-900 mt-1 truncate" title={kpis.mostProfitable?.name}>{kpis.mostProfitable?.name || "—"}</p>
-                <p className="text-xs text-emerald-600 font-semibold mt-0.5">{formatCurrency(kpis.mostProfitable?.profit || 0, baseCurrency)}</p>
+                <p className="text-xs text-emerald-700 font-semibold mt-0.5">{formatCurrency(kpis.mostProfitable?.profit || 0, baseCurrency)}</p>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Average Margin</p>
                 <p className="text-xl font-bold text-slate-900 mt-1">{kpis.avgMargin.toFixed(1)}%</p>
-                <p className="text-xs text-slate-400 mt-0.5">Across {profitabilityData.length} customers</p>
+                <p className="text-xs text-slate-500 mt-0.5">Across {profitabilityData.length} customers</p>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
                 <p className="text-xl font-bold text-slate-900 mt-1 truncate" title={formatCurrency(kpis.totalRevenue, baseCurrency)}>{formatCurrency(kpis.totalRevenue, baseCurrency)}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{filteredInvoices.length} invoices</p>
+                <p className="text-xs text-slate-500 mt-0.5">{filteredInvoices.length} invoices</p>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Least Profitable</p>
                 <p className="text-xl font-bold text-slate-900 mt-1 truncate" title={kpis.leastProfitable?.name}>{kpis.leastProfitable?.name || "—"}</p>
                 <p className="text-xs text-red-500 font-semibold mt-0.5">{formatCurrency(kpis.leastProfitable?.profit || 0, baseCurrency)}</p>
@@ -159,7 +159,7 @@ export default function CustomerProfitabilityReport() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
                 <h3 className="text-sm font-semibold text-slate-800 mb-4">Top 10 Customers by Revenue</h3>
                 <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={top10} layout="vertical" margin={{ left: 10 }}>
@@ -172,7 +172,7 @@ export default function CustomerProfitabilityReport() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
                 <h3 className="text-sm font-semibold text-slate-800 mb-4">Revenue Distribution</h3>
                 {pieData.length === 0 ? (
                   <EmptyState icon={PieChartIcon} title="No data" />
@@ -190,7 +190,7 @@ export default function CustomerProfitabilityReport() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-800">Customer Profitability Details</h3>
               </div>

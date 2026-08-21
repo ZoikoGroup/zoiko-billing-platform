@@ -18,17 +18,30 @@ Standard error response format we use everywhere:
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.cors import is_origin_allowed
+
 
 def _cors_headers(request: Request) -> dict:
-    """Return CORS headers that mirror the ForceCORSMiddleware logic."""
+    """CORS headers for error responses (ZoikoException / unhandled 500).
+
+    CORSMiddleware (main.py) only ever ADDS an Access-Control-Allow-Origin
+    header when the origin is allowed -- it never strips one a response
+    already carries. This used to reflect ANY request Origin unconditionally
+    with credentials=true, which meant every error response (400/401/403/
+    404/409/500) bypassed BILLING_CORS_ORIGINS entirely, in both DEBUG and
+    production. Routed through the same is_origin_allowed() check the
+    middleware itself uses, so a disallowed origin gets no CORS header here
+    either (Phase 6 production-readiness finding)."""
     origin = request.headers.get("origin", "")
-    return {
-        "Access-Control-Allow-Origin": origin if origin else "*",
+    headers = {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Expose-Headers": "*",
     }
+    if origin and is_origin_allowed(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+    return headers
 
 
 def _request_id(request: Request):
@@ -89,6 +102,15 @@ class BadRequestException(ZoikoException):
         super().__init__(status_code=400, error_code="BAD_REQUEST", message=message)
 
 
+class ServiceUnavailableException(ZoikoException):
+    """Use when a downstream dependency (e.g. the database) is temporarily
+    unreachable (503). Deliberately distinct from a 500: it tells the caller
+    the failure is transient/environmental and worth retrying, not a bug —
+    e.g. the documented intermittent Neon DNS resolution failures (ISS-012)."""
+    def __init__(self, message: str = "Service temporarily unavailable. Please try again shortly."):
+        super().__init__(status_code=503, error_code="SERVICE_UNAVAILABLE", message=message)
+
+
 # ── Global Exception Handlers ─────────────────────────────────────────────────
 # These are registered in main.py so every error returns our clean JSON format.
 
@@ -111,7 +133,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     """Catches any unexpected server error and returns a clean message."""
     import logging
     request_id = _request_id(request)
-    logging.getLogger("zoiko").error(
+    logging.getLogger("zoiko_billing").error(
         f"Unhandled error on {request.method} {request.url.path} [request_id={request_id}]: {exc}",
         exc_info=True,
     )

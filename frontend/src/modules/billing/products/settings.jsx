@@ -18,7 +18,7 @@ function ToggleSwitch({ checked, onChange, label, description }) {
     <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-white">
       <div>
         <p className="text-sm font-medium text-slate-800">{label}</p>
-        {description && <p className="text-xs text-slate-400 mt-0.5">{description}</p>}
+        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
       </div>
       <button
         type="button"
@@ -56,7 +56,7 @@ function Field({ label, children, hint }) {
     <div>
       <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
       {children}
-      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -227,7 +227,7 @@ export default function ProductSettingsPage() {
             </SettingsField>
             <SettingsField label="Product Numbering Format" icon={Hash} description="Product code format. Use {PREFIX} and {NUMBER} as placeholders">
               <input type="text" value={form.product_numbering_format} onChange={(e) => updateField("product_numbering_format", e.target.value)} className={inputCls} />
-              <p className="mt-1 text-xs text-gray-400">Preview: <code className="font-mono text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{numberingPreview}</code></p>
+              <p className="mt-1 text-xs text-slate-500">Preview: <code className="font-mono text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{numberingPreview}</code></p>
             </SettingsField>
             <SettingsField label="Default Category" icon={Folder} description="Default category assigned to new products">
               <select value={form.default_category_id} onChange={(e) => updateField("default_category_id", e.target.value)} className={inputCls}>
@@ -246,7 +246,7 @@ export default function ProductSettingsPage() {
                 <select value={form.default_product_currency} onChange={(e) => updateField("default_product_currency", e.target.value)} className={inputCls}>
                   {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <p className="mt-1 text-xs text-gray-400">Current: {getCurrencySymbol(form.default_product_currency)} {form.default_product_currency}</p>
+                <p className="mt-1 text-xs text-slate-500">Current: {getCurrencySymbol(form.default_product_currency)} {form.default_product_currency}</p>
               </Field>
             </SettingsField>
             <SettingsField label="Default Tax Rate" icon={Tag} description="Default tax rate applied to new products">
@@ -277,7 +277,7 @@ export default function ProductSettingsPage() {
               <Field label="Archive after (days)">
                 <input type="number" min="1" value={form.auto_archive_days} onChange={(e) => updateField("auto_archive_days", e.target.value)}
                   placeholder="e.g. 90" disabled={!form.auto_archive_enabled}
-                  className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed`} />
+                  className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed`} />
               </Field>
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-700 flex items-start gap-2">
                 <AlertCircle size={14} className="mt-0.5 shrink-0" />
@@ -319,11 +319,11 @@ export default function ProductSettingsPage() {
               <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
                 <ScrollText size={16} className="text-brand" />
                 <h3 className="text-base font-semibold text-slate-800">Configured Meters</h3>
-                <span className="text-xs text-slate-400 ml-auto">{usageProducts.length} meter(s) active</span>
+                <span className="text-xs text-slate-500 ml-auto">{usageProducts.length} meter(s) active</span>
               </div>
               <div className="divide-y divide-slate-50">
                 {usageProducts.length === 0 && (
-                  <p className="px-6 py-8 text-sm text-slate-400 text-center">No meters configured yet. Visit Usage Billing to create one.</p>
+                  <p className="px-6 py-8 text-sm text-slate-500 text-center">No meters configured yet. Visit Usage Billing to create one.</p>
                 )}
                 {usageProducts.map((p) => (
                   <div key={p.id} className="px-6 py-3 flex items-center gap-3 hover:bg-slate-50/70 transition-colors">
@@ -332,10 +332,10 @@ export default function ProductSettingsPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
-                      {p.code && <p className="text-xs text-slate-400 font-mono">{p.code}</p>}
+                      {p.code && <p className="text-xs text-slate-500 font-mono">{p.code}</p>}
                     </div>
                     <span className="text-xs text-slate-500">{p.unit_label || "unit"}</span>
-                    <span className="text-xs font-mono text-slate-400">{p.default_price || 0} {p.currency || baseCurrency}</span>
+                    <span className="text-xs font-mono text-slate-500">{p.default_price || 0} {p.currency || baseCurrency}</span>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${p.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
                       {p.status || "inactive"}
@@ -386,7 +386,7 @@ export default function ProductSettingsPage() {
                 <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" /> You have unsaved changes
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-sm text-slate-400">All changes saved</span>
+              <span className="inline-flex items-center gap-1.5 text-sm text-slate-500">All changes saved</span>
             )}
             {saved && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
@@ -396,7 +396,7 @@ export default function ProductSettingsPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={fetchSettings}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
               <RefreshCw className="h-4 w-4" /> Refresh
             </button>
             <button onClick={discardChanges} disabled={!hasChanges}

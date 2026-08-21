@@ -14,12 +14,12 @@ const STATUS_OPTIONS = [
   { value: "paused", label: "Paused", color: "bg-amber-100 text-amber-700" },
   { value: "past_due", label: "Past Due", color: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-500" },
-  { value: "expired", label: "Expired", color: "bg-gray-100 text-gray-700" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-700" },
 ];
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertCircle, cancelled: XCircle, expired: Clock };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -214,7 +214,7 @@ export default function SubscriptionListPage() {
   }).length;
   const kpiMrr        = summary?.mrr   != null ? parseFloat(summary.mrr)  : 0;
   const kpiArr        = summary?.arr   != null ? parseFloat(summary.arr)  : 0;
-  const reportingCurrency = summary?.reporting_currency || orgCurrency || "USD";
+  const reportingCurrency = summary?.reporting_currency || orgCurrency;
 
   // Next billing estimate: page-derived only (not in summary)
   const nextBillingAmount = subscriptions
@@ -238,11 +238,11 @@ export default function SubscriptionListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && subscriptions.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchSubscriptions(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && subscriptions.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchSubscriptions(true)} /></div>;
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
@@ -263,11 +263,11 @@ export default function SubscriptionListPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search subscriptions..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters"
                   className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -289,7 +289,7 @@ export default function SubscriptionListPage() {
                       <XCircle size={12} /> Cancel
                     </button>
                 <button onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }} aria-label="Clear selection"
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={14} /></button>
               </div>
                 )}
               </div>
@@ -309,7 +309,7 @@ export default function SubscriptionListPage() {
                     <option value="">All Statuses</option>
                     {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 {(statusFilter || dateRange.date_from || dateRange.date_to) && (
                   <button onClick={() => { setStatusFilter(""); resetDateRange(); setCurrentPage(1); }}
@@ -345,7 +345,7 @@ export default function SubscriptionListPage() {
                       <div className="flex flex-col items-center">
                         <Repeat size={40} className="text-slate-300 mb-3" />
                     <p className="text-slate-500 font-medium">No subscriptions found</p>
-                    <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first subscription to get started"}</p>
+                    <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first subscription to get started"}</p>
                     {!search && !statusFilter && (
                       <button onClick={() => navigate("/billing/subscriptions/create")}
                         className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
@@ -364,7 +364,7 @@ export default function SubscriptionListPage() {
                     <td className="px-4 py-4">
                       <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)} className="font-medium text-slate-800 hover:text-brand-600 transition-colors whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <Receipt size={14} className="text-slate-400" />
+                          <Receipt size={14} className="text-slate-500" />
                           {s.subscription_number || `#${s.id}`}
                         </div>
                       </button>
@@ -378,7 +378,7 @@ export default function SubscriptionListPage() {
                     <td className="px-4 py-4 text-slate-500 text-xs capitalize">{s.plan_billing_period || s.billing_period || "—"}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors" title="View">
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View">
                         <Eye size={16} />
                       </button>
                     </td>

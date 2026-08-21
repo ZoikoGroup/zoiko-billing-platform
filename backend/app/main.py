@@ -18,15 +18,22 @@ Router mounting:
 
 import logging
 import re
+import time
 import uuid
+import warnings
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.core.cors import (
+    ALLOWED_ORIGINS as _cors_origins,
+    parse_cors_origins,
+    validate_production_cors,
+)
 from app.core.exceptions import (
     ZoikoException,
     zoiko_exception_handler,
@@ -37,7 +44,10 @@ from app.database import initialize_database
 
 logger = logging.getLogger("zoiko_billing")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+)
 
 # ── Access-log redaction for security tokens in query strings ───────────────
 
@@ -66,9 +76,25 @@ class _RedactSensitiveQueryFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_RedactSensitiveQueryFilter())
 
+# Suppress harmless SQLAlchemy cycle warning from document-conversion FKs
+# (quotations ↔ invoices ↔ contracts ↔ subscriptions ↔ organizations ↔ users).
+# All cross-table FKs are nullable with SET NULL; no INSERT ordering dependency exists.
+warnings.filterwarnings(
+    "ignore",
+    message=".*Cannot correctly sort tables.*",
+    category=Warning,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.DEBUG and settings.BILLING_SECRET_KEY == "change-me-billing-platform-secret":
+        logger.critical(
+            "BILLING_SECRET_KEY is still the default placeholder. "
+            "Set a unique secret in .env before running in production."
+        )
+        raise SystemExit("BILLING_SECRET_KEY must be overridden in production.")
+    validate_production_cors(_cors_origins, settings.DEBUG)
     try:
         initialize_database()
     except Exception as exc:
@@ -93,8 +119,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    docs_url="/docs",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 
@@ -112,27 +139,40 @@ async def request_id_middleware(request: Request, call_next):
     (core/exceptions.py) and echoed back as a response header so a Super
     Admin reporting "something went wrong" can hand an engineer one ID that
     resolves directly to the matching server log line — see Section AD of
-    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added."""
+    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added.
+
+    Also records server-side handling time for /api/super-admin/* into the
+    in-memory sliding window (core/api_metrics.py) — the real measurement
+    behind launch-readiness item PERF-01 (ZB-SA-CMD-003 §18.2)."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
+
+    is_command_center = request.url.path.startswith("/api/super-admin/")
+    started = time.perf_counter() if is_command_center else None
+
     response = await call_next(request)
+
+    if started is not None:
+        try:
+            import app.core.api_metrics as api_metrics
+
+            api_metrics.record((time.perf_counter() - started) * 1000)
+        except Exception:  # noqa: BLE001 - telemetry must never break a request
+            pass
     response.headers["X-Request-ID"] = request_id
     return response
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
+# _cors_origins is computed above (before `lifespan`), which refuses to boot
+# in production if it is empty or contains a wildcard — see lifespan().
 
-_cors_origins = [
-    o.strip()
-    for o in settings.BILLING_CORS_ORIGINS.split(",")
-    if o.strip()
-]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_origin_regex=r".*" if settings.DEBUG else None,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"] if settings.DEBUG else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"] if settings.DEBUG else ["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
@@ -170,12 +210,28 @@ def health_root():
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "ok",
-        "docs": "/docs",
+        **({"docs": "/docs"} if settings.DEBUG else {}),
     }
 
 
 @app.get("/health", tags=["Health"])
 def health_check():
+    """Liveness: is the process up and able to respond at all. Does not
+    imply the database is reachable -- see /ready for that."""
     from app.database import check_connection
 
     return {"status": "ok", "database": "connected" if check_connection() else "unavailable"}
+
+
+@app.get("/ready", tags=["Health"])
+def readiness_check(response: Response):
+    """Readiness: is the app able to serve real billing requests right now.
+    Kept separate from /health (liveness) so an orchestrator restarts the
+    process only when it's truly unresponsive, but pulls it out of the load
+    balancer -- without restarting it -- purely for a transient DB outage.
+    Never leaks connection details (host/credentials/stack traces)."""
+    from app.database import check_connection
+
+    db_ok = check_connection()
+    response.status_code = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"status": "ready" if db_ok else "not_ready", "checks": {"database": "ok" if db_ok else "unavailable"}}

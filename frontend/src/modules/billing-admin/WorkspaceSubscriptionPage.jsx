@@ -6,21 +6,13 @@ import {
 } from "../../service/billingService";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney, resolveOrgCurrency, formatCurrencyChip } from "./workspace-format";
-import { Repeat, CreditCard, FileText, DollarSign, Calendar, Loader2, ArrowRight, AlertTriangle, Coins, Users, Package, Layers } from "lucide-react";
-
-const INK = "#181433";
-const INK_SOFT = "#4A4566";
-const LINE = "rgba(24,20,51,0.08)";
-const RED_100 = "#FBE6E4";
-const RED = "#D6473C";
-const TEAL = "#0F9B8E";
-const TEAL_100 = "#DCF5F2";
+import { Repeat, Loader2, ArrowRight, Coins, Layers } from "lucide-react";
 
 function Field({ label, value }) {
   return (
-    <div className="py-3" style={{ borderBottom: `1px solid ${LINE}` }}>
-      <p className="text-[11px] font-bold uppercase tracking-[0.06em] mb-1" style={{ color: INK_SOFT }}>{label}</p>
-      <p className="text-[14px] font-medium" style={{ color: INK }}>{value || "\u2014"}</p>
+    <div className="py-3 border-b border-slate-100">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">{label}</p>
+      <p className="text-sm font-medium text-slate-700">{value || "—"}</p>
     </div>
   );
 }
@@ -36,6 +28,15 @@ function StatusPill({ status }) {
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium ${map[status] || "bg-gray-50 text-gray-600"}`}>
       {status || "unknown"}
     </span>
+  );
+}
+
+function MiniTile({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{label}</p>
+      <p className="text-lg font-bold text-slate-800 mt-0.5">{value}</p>
+    </div>
   );
 }
 
@@ -97,20 +98,20 @@ export default function WorkspaceSubscriptionPage() {
     return [...activeSubs].sort((a, b) => (Number(b.unit_price) || 0) - (Number(a.unit_price) || 0))[0];
   }, [activeSubs]);
 
-  const currency = reporting?.reporting_currency || config?.default_currency || "USD";
+  const currency = reporting?.reporting_currency || config?.default_currency;
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-purple-600" /></div>
+      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-brand" /></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="rounded-[14px] border p-4 text-sm" style={{ background: RED_100, borderColor: RED, color: RED }}>{error}</div>
+      <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       </div>
     );
   }
@@ -122,7 +123,7 @@ export default function WorkspaceSubscriptionPage() {
   const currencyBreakdown = Array.isArray(reporting?.currency_breakdown) ? reporting.currency_breakdown : [];
 
   return (
-    <div className="font-['Inter',system-ui,sans-serif] p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", color: INK, minHeight: "calc(100vh - 4rem)" }}>
+    <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
       <WorkspaceHeader
         title="Billing Subscription"
         subtitle="Current plan and subscription overview"
@@ -133,8 +134,7 @@ export default function WorkspaceSubscriptionPage() {
         actions={
           <button
             onClick={() => navigate("/billing/subscriptions")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white cursor-pointer"
-            style={{ background: "#7C3AED" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-brand hover:bg-brand-hover transition-colors cursor-pointer"
           >
             Manage in Billing
           </button>
@@ -142,17 +142,17 @@ export default function WorkspaceSubscriptionPage() {
       />
 
       {!primarySub && activeCount === 0 ? (
-        <div className="rounded-[20px] border bg-white p-10 text-center shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <Repeat className="w-8 h-8 text-gray-400" />
+        <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+          <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+            <Repeat className="w-8 h-8 text-slate-500" />
           </div>
-          <h3 className="text-lg font-bold mb-2" style={{ color: INK }}>No Active Subscriptions</h3>
-          <p className="text-[13px] mb-4" style={{ color: INK_SOFT }}>Your organization does not have any active billing subscriptions yet.</p>
+          <h3 className="text-lg font-bold text-slate-800 mb-2">No Active Subscriptions</h3>
+          <p className="text-[13px] text-slate-500 mb-4">Your organization does not have any active billing subscriptions yet.</p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            <button onClick={() => navigate("/billing/subscriptions/create")} className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: "#7C3AED" }}>
+            <button onClick={() => navigate("/billing/subscriptions/create")} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-brand hover:bg-brand-hover transition-colors cursor-pointer">
               Upgrade / Add Subscription
             </button>
-            <button onClick={() => navigate("/billing/pricing")} className="px-4 py-2 rounded-lg text-[13px] font-semibold cursor-pointer" style={{ background: "white", border: `1px solid ${LINE}`, color: INK }}>
+            <button onClick={() => navigate("/billing/pricing")} className="px-4 py-2 rounded-xl text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 cursor-pointer">
               View Pricing Plans
             </button>
           </div>
@@ -160,72 +160,64 @@ export default function WorkspaceSubscriptionPage() {
       ) : (
         <>
           {primarySub && (
-            <div className="rounded-[20px] border bg-white p-6 mb-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: INK }}>{planMap[primarySub.plan_id] || primarySub.plan_name || "Subscription Plan"}</h2>
-                  <StatusPill status={primarySub.status} />
-                </div>
-                {primarySub.next_billing_at && (
-                  <div className="text-right">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: INK_SOFT }}>Next Billing</p>
-                    <p className="text-[14px] font-semibold" style={{ color: INK }}>{new Date(primarySub.next_billing_at).toLocaleDateString()}</p>
+            <div className="rounded-3xl border border-slate-200 bg-white mb-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+              <div className="grid lg:grid-cols-3">
+                <div className="lg:col-span-2 p-6">
+                  <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-800">{planMap[primarySub.plan_id] || primarySub.plan_name || "Subscription Plan"}</h2>
+                      <div className="mt-1"><StatusPill status={primarySub.status} /></div>
+                    </div>
                   </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div className="rounded-lg p-3" style={{ background: TEAL_100 }}>
-                  <p className="text-[11px] font-bold uppercase" style={{ color: TEAL }}>MRR</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{formatOrgMoney(mrr, { default_currency: currency })}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <MiniTile label="Next Renewal" value={primarySub.next_billing_at ? new Date(primarySub.next_billing_at).toLocaleDateString() : "—"} />
+                    <MiniTile label="Active Subscriptions" value={activeCount} />
+                    <MiniTile label="Member Since" value={memberSince ? new Date(memberSince).toLocaleDateString() : "—"} />
+                    <MiniTile label="Unit Price" value={formatOrgMoney(primarySub.unit_price, { default_currency: currency })} />
+                    <MiniTile label="Quantity" value={primarySub.quantity || 1} />
+                  </div>
+                  <div className="flex items-center gap-4 mt-4 pt-4 border-t border-slate-100">
+                    <button onClick={() => navigate("/billing/subscriptions/create")} className="text-[12.5px] font-semibold cursor-pointer flex items-center gap-1 text-brand hover:text-brand-hover">
+                      Upgrade / Add Subscription <ArrowRight className="w-3 h-3" />
+                    </button>
+                    <button onClick={() => navigate("/billing/pricing")} className="text-[12.5px] font-semibold cursor-pointer flex items-center gap-1 text-slate-500 hover:text-slate-700">
+                      View Pricing Plans <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-                <div className="rounded-lg p-3" style={{ background: TEAL_100 }}>
-                  <p className="text-[11px] font-bold uppercase" style={{ color: TEAL }}>ARR</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{formatOrgMoney(arr, { default_currency: currency })}</p>
+                <div className="p-6 border-t lg:border-t-0 lg:border-l border-slate-100">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-3">Recurring Revenue</p>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">MRR</p>
+                    <p className="text-xl font-extrabold text-slate-800">{formatOrgMoney(mrr, { default_currency: currency })}</p>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">ARR</p>
+                    <p className="text-xl font-extrabold text-slate-800">{formatOrgMoney(arr, { default_currency: currency })}</p>
+                  </div>
                 </div>
-                <div className="rounded-lg p-3 bg-purple-50">
-                  <p className="text-[11px] font-bold uppercase text-purple-600">Active Subscriptions</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{activeCount}</p>
-                </div>
-                <div className="rounded-lg p-3 bg-purple-50">
-                  <p className="text-[11px] font-bold uppercase text-purple-600">Member Since</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{memberSince ? new Date(memberSince).toLocaleDateString() : "—"}</p>
-                </div>
-                <div className="rounded-lg p-3 bg-purple-50">
-                  <p className="text-[11px] font-bold uppercase text-purple-600">Unit Price</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{formatOrgMoney(primarySub.unit_price, { default_currency: currency })}</p>
-                </div>
-                <div className="rounded-lg p-3 bg-purple-50">
-                  <p className="text-[11px] font-bold uppercase text-purple-600">Quantity</p>
-                  <p className="text-lg font-bold" style={{ color: INK }}>{primarySub.quantity || 1}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 mt-4 pt-4" style={{ borderTop: `1px solid ${LINE}` }}>
-                <button onClick={() => navigate("/billing/subscriptions/create")} className="text-[12.5px] font-semibold cursor-pointer flex items-center gap-1" style={{ color: "#7C3AED" }}>
-                  Upgrade / Add Subscription <ArrowRight className="w-3 h-3" />
-                </button>
-                <button onClick={() => navigate("/billing/pricing")} className="text-[12.5px] font-semibold cursor-pointer flex items-center gap-1" style={{ color: INK_SOFT }}>
-                  View Pricing Plans <ArrowRight className="w-3 h-3" />
-                </button>
               </div>
             </div>
           )}
 
           {currencyBreakdown.length > 0 && (
-            <div className="rounded-[20px] border bg-white p-6 mb-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 mb-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-2.5 mb-4">
-                <Coins className="w-4 h-4" style={{ color: TEAL }} />
-                <h3 className="text-[14px] font-bold" style={{ color: INK }}>MRR by Currency</h3>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-r from-brand to-brand-hover text-white shadow-sm">
+                  <Coins className="w-4 h-4" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">MRR by Currency</h3>
               </div>
               <div className="flex flex-wrap gap-3">
                 {currencyBreakdown.map((b) => (
-                  <div key={b.currency} className="rounded-lg px-4 py-2.5" style={{ background: TEAL_100 }}>
-                    <p className="text-[11px] font-bold uppercase" style={{ color: TEAL }}>{b.currency}</p>
-                    <p className="text-[15px] font-bold" style={{ color: INK }}>{formatOrgMoney(b.amount, { default_currency: b.currency })}</p>
+                  <div key={b.currency} className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{b.currency}</p>
+                    <p className="text-[15px] font-bold text-slate-800">{formatOrgMoney(b.amount, { default_currency: b.currency })}</p>
                   </div>
                 ))}
               </div>
               {reporting?.excluded_subscriptions > 0 && (
-                <p className="text-[11px] mt-3" style={{ color: INK_SOFT }}>
+                <p className="text-[11px] text-slate-500 mt-3">
                   {reporting.excluded_subscriptions} subscription(s) excluded — currency could not be converted to the reporting currency.
                 </p>
               )}
@@ -233,88 +225,157 @@ export default function WorkspaceSubscriptionPage() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div className="rounded-[20px] border bg-white p-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[14px] font-bold" style={{ color: INK }}>Recent Invoices</h3>
-                <button onClick={() => navigate("/billing/invoices")} className="text-[12px] font-semibold cursor-pointer flex items-center gap-1" style={{ color: TEAL }}>
-                  View all invoices <ArrowRight className="w-3 h-3" />
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+                <h3 className="text-lg font-bold text-slate-800">Recent Invoices</h3>
+                <button onClick={() => navigate("/billing/invoices")} className="text-[12px] font-semibold cursor-pointer flex items-center gap-1 text-brand hover:text-brand-hover">
+                  View all <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
               {recentInvoices.length === 0 ? (
-                <p className="text-[13px] py-4 text-center" style={{ color: INK_SOFT }}>No invoices yet</p>
+                <p className="text-[13px] text-slate-500 pb-6 px-6 text-center">No invoices yet</p>
               ) : (
-                <div className="space-y-2">
-                  {recentInvoices.map((inv) => (
-                    <div key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
-                      <div>
-                        <p className="text-[13px] font-medium" style={{ color: INK }}>{inv.invoice_number || `INV-${inv.id}`}</p>
-                        <StatusPill status={inv.status} />
-                      </div>
-                      <p className="text-[13px] font-semibold" style={{ color: INK }}>{formatOrgMoney(inv.total_amount, { default_currency: currency })}</p>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-y border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wider text-slate-600">
+                        <th className="px-6 py-3 font-semibold">Invoice</th>
+                        <th className="px-6 py-3 font-semibold">Status</th>
+                        <th className="px-6 py-3 font-semibold text-right">Amount</th>
+                        <th className="px-6 py-3 font-semibold">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentInvoices.map((inv) => (
+                        <tr key={inv.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+                          <td className="px-6 py-3.5">
+                            <button onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-[13px] font-semibold text-brand hover:text-brand-hover cursor-pointer">
+                              {inv.invoice_number || `INV-${inv.id}`}
+                            </button>
+                          </td>
+                          <td className="px-6 py-3.5"><StatusPill status={inv.status} /></td>
+                          <td className="px-6 py-3.5 text-right text-[13px] font-semibold text-slate-800">{formatOrgMoney(inv.total_amount, { default_currency: currency })}</td>
+                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(inv.issue_date || inv.created_at) ? new Date(inv.issue_date || inv.created_at).toLocaleDateString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
 
-            <div className="rounded-[20px] border bg-white p-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[14px] font-bold" style={{ color: INK }}>Recent Payments</h3>
-                <button onClick={() => navigate("/billing/payments")} className="text-[12px] font-semibold cursor-pointer flex items-center gap-1" style={{ color: TEAL }}>
-                  View all payments <ArrowRight className="w-3 h-3" />
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+                <h3 className="text-lg font-bold text-slate-800">Recent Payments</h3>
+                <button onClick={() => navigate("/billing/payments")} className="text-[12px] font-semibold cursor-pointer flex items-center gap-1 text-brand hover:text-brand-hover">
+                  View all <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
               {recentPayments.length === 0 ? (
-                <p className="text-[13px] py-4 text-center" style={{ color: INK_SOFT }}>No payments yet</p>
+                <p className="text-[13px] text-slate-500 pb-6 px-6 text-center">No payments yet</p>
               ) : (
-                <div className="space-y-2">
-                  {recentPayments.map((pay) => (
-                    <div key={pay.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
-                      <div>
-                        <p className="text-[13px] font-medium" style={{ color: INK }}>{pay.payment_number || `PAY-${pay.id}`}</p>
-                        <StatusPill status={pay.status} />
-                      </div>
-                      <p className="text-[13px] font-semibold" style={{ color: INK }}>{formatOrgMoney(pay.amount, { default_currency: currency })}</p>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-y border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wider text-slate-600">
+                        <th className="px-6 py-3 font-semibold">Payment</th>
+                        <th className="px-6 py-3 font-semibold">Status</th>
+                        <th className="px-6 py-3 font-semibold text-right">Amount</th>
+                        <th className="px-6 py-3 font-semibold">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentPayments.map((pay) => (
+                        <tr key={pay.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+                          <td className="px-6 py-3.5 text-[13px] font-semibold text-slate-800">{pay.payment_number || `PAY-${pay.id}`}</td>
+                          <td className="px-6 py-3.5"><StatusPill status={pay.status} /></td>
+                          <td className="px-6 py-3.5 text-right text-[13px] font-semibold text-slate-800">{formatOrgMoney(pay.amount, { default_currency: currency })}</td>
+                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(pay.payment_date || pay.created_at) ? new Date(pay.payment_date || pay.created_at).toLocaleDateString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-[20px] border bg-white p-6 mb-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden mb-6">
+            <div className="flex items-center justify-between px-6 pt-6 pb-4">
+              <h3 className="text-lg font-bold text-slate-800">Active Subscriptions</h3>
+              <span className="text-xs text-slate-500">{activeSubs.length} total</span>
+            </div>
+            {activeSubs.length === 0 ? (
+              <p className="text-[13px] text-slate-500 pb-6 px-6 text-center">No active subscriptions</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-y border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wider text-slate-600">
+                      <th className="px-6 py-3 font-semibold">Subscription</th>
+                      <th className="px-6 py-3 font-semibold">Plan</th>
+                      <th className="px-6 py-3 font-semibold">Status</th>
+                      <th className="px-6 py-3 font-semibold text-right">Amount</th>
+                      <th className="px-6 py-3 font-semibold">Renews</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeSubs.map((sub) => (
+                      <tr key={sub.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+                        <td className="px-6 py-4">
+                          <button onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="text-[13px] font-semibold text-brand hover:text-brand-hover cursor-pointer">
+                            {sub.subscription_number || `#${sub.id}`}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 text-[13px] text-slate-600">{planMap[sub.plan_id] || `Plan #${sub.plan_id}`}</td>
+                        <td className="px-6 py-4"><StatusPill status={sub.status} /></td>
+                        <td className="px-6 py-4 text-right text-[13px] font-semibold text-slate-800">
+                          {formatOrgMoney(Number(sub.unit_price || 0) * Number(sub.quantity || 1), { default_currency: currency })}
+                        </td>
+                        <td className="px-6 py-4 text-[13px] text-slate-500">{sub.next_billing_at ? new Date(sub.next_billing_at).toLocaleDateString() : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 mb-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <div className="flex items-center gap-2.5 mb-4">
-              <Layers className="w-4 h-4" style={{ color: TEAL }} />
-              <h3 className="text-[14px] font-bold" style={{ color: INK }}>Usage</h3>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-r from-brand to-brand-hover text-white shadow-sm">
+                <Layers className="w-4 h-4" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">Usage</h3>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: LINE }}>
-                <p className="text-[20px] font-bold" style={{ color: INK }}>{kpis?.active_customers ?? "—"}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: INK_SOFT }}>Customers</p>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                <p className="text-xl font-bold text-slate-800">{kpis?.active_customers ?? "—"}</p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">Customers</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: LINE }}>
-                <p className="text-[20px] font-bold" style={{ color: INK }}>{productCount ?? "—"}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: INK_SOFT }}>Products</p>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                <p className="text-xl font-bold text-slate-800">{productCount ?? "—"}</p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">Products</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: LINE }}>
-                <p className="text-[20px] font-bold" style={{ color: INK }}>{activeCount}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: INK_SOFT }}>Subscriptions</p>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                <p className="text-xl font-bold text-slate-800">{activeCount}</p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">Subscriptions</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: LINE }}>
-                <p className="text-[20px] font-bold" style={{ color: INK }}>{kpis?.total_invoices ?? "—"}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: INK_SOFT }}>Invoices</p>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                <p className="text-xl font-bold text-slate-800">{kpis?.total_invoices ?? "—"}</p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">Invoices</p>
               </div>
             </div>
-            <p className="text-[11px] mt-3" style={{ color: INK_SOFT }}>
+            <p className="text-[11px] text-slate-500 mt-3">
               These reflect current operational usage. No plan limit is configured for this organization.
             </p>
           </div>
 
-          <div className="rounded-[20px] border bg-white p-6 shadow-[0_1px_2px_rgba(24,20,51,0.04),0_8px_24px_-12px_rgba(24,20,51,0.10)]">
-            <h3 className="text-[14px] font-bold mb-4" style={{ color: INK }}>Billing Configuration</h3>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Billing Configuration</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
               <Field label="Default Currency" value={formatCurrencyChip(config)} />
-              <Field label="Payment Terms" value={config?.default_payment_terms || "\u2014"} />
+              <Field label="Payment Terms" value={config?.default_payment_terms || "—"} />
               <Field label="Invoice Prefix" value={config?.invoice_prefix || "INV-"} />
               <Field label="Credit Note Prefix" value={config?.credit_note_prefix || "CN-"} />
             </div>

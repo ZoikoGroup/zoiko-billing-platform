@@ -3,23 +3,24 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-brand-50: #fff4eb;
-  --color-brand-100: #ffe4cc;
-  --color-brand-200: #ffc999;
-  --color-brand-300: #ffad66;
-  --color-brand-400: #ff9433;
-  --color-brand-500: #ff7a00;
-  --color-brand-600: #e86d00;
-  --color-brand-700: #c25c00;
-  --color-brand-800: #9c4a00;
-  --color-brand-900: #7a3a00;
-  --color-brand: #ff7a00;
-  --color-brand-hover: #ff5500;
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
 }
 
 body {
   background-color: #f3f4f6;
   color: #111827;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 :where(.dark) body {

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AlreadyExistsException,
     BadRequestException,
+    ForbiddenException,
 )
 from app.modules.billing.models import (
     BillingAuditAction,
@@ -39,7 +40,7 @@ from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.utils.currency_utils import round_money
 from app.services.email_service import send_write_off_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 WRITE_OFF_ALLOWED_FIELDS = {
     "customer_id", "write_off_number", "write_off_type", "adjustment_type",
@@ -208,7 +209,7 @@ class WriteOffService:
         write_off = self.repo.create(
             organization_id, customer_id=customer_id,
             write_off_number=write_off_number, write_off_type=write_off_type,
-            amount=amount, status=WriteOffStatus.DRAFT, **data,
+            amount=amount, status=WriteOffStatus.DRAFT, created_by=created_by, **data,
         )
         self._record_status_history(organization_id, write_off.id, None, WriteOffStatus.DRAFT.value, created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "WriteOff", write_off.id, new_values=data)
@@ -258,6 +259,14 @@ class WriteOffService:
 
     def approve_write_off(self, write_off_id: int, organization_id: int, updated_by: int, reason: Optional[str] = None) -> WriteOff:
         write_off = self.repo.get_by_id(write_off_id, organization_id)
+        # §25 SoD: the user who requested/submitted a write-off cannot
+        # approve it, even if they hold a role that could approve someone
+        # else's.
+        if write_off.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot approve a write-off you submitted yourself. "
+                "Ask another Finance Approver to review it."
+            )
         self._validate_status_transition(write_off.status, WriteOffStatus.APPROVED)
         old_status = write_off.status.value
         write_off.status = WriteOffStatus.APPROVED

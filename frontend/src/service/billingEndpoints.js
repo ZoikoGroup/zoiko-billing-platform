@@ -67,6 +67,7 @@ export const ENDPOINTS = {
 
   PRICE_LISTS: `${BILLING}/price-lists`,
   PRICE_LIST: (id) => `${BILLING}/price-lists/${id}`,
+  PRICE_LIST_ACTIVATE: (id) => `${BILLING}/price-lists/${id}/activate`,
   PRICE_LIST_DEFAULT: `${BILLING}/price-lists/default`,
   PRICE_LIST_ITEMS: (id) => `${BILLING}/price-lists/${id}/items`,
   PRICE_LIST_ITEM: (pid, iid) => `${BILLING}/price-lists/${pid}/items/${iid}`,
@@ -74,6 +75,7 @@ export const ENDPOINTS = {
   PRICING_RULES: `${BILLING}/pricing-rules`,
   PRICING_RULES_APPLICABLE: `${BILLING}/pricing-rules/applicable`,
   PRICING_RULE: (id) => `${BILLING}/pricing-rules/${id}`,
+  PRICING_RULE_ACTIVATE: (id) => `${BILLING}/pricing-rules/${id}/activate`,
   PRICING_RULE_TIERS: (id) => `${BILLING}/pricing-rules/${id}/tiers`,
   PRICING_RULE_TIER: (pid, tid) => `${BILLING}/pricing-rules/${pid}/tiers/${tid}`,
 
@@ -311,6 +313,10 @@ export const ENDPOINTS = {
   REVENUE_RECOGNIZE_ALL: `${BILLING}/revenue/recognize-all`,
 
   AUDIT_LOGS: `${BILLING}/audit-logs`,
+
+  // ── Public Invoice (no auth required) ─────────────────────────────────────
+  INVOICE_PUBLIC_VIEW: (token) => `${BILLING}/invoices/public/${token}`,
+  INVOICE_PUBLIC_CHECKOUT: (token) => `${BILLING}/invoices/public/${token}/checkout`,
 
   // ── Phase 5C.4: Admin / Diagnostics ──────────────────────────────────────
   SETTINGS_ADMIN_SMTP_TEST: `${BILLING}/settings/smtp/test`,

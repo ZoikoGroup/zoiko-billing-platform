@@ -10,6 +10,8 @@ settings.ENABLE_RECURRING_BILLING_SCHEDULER is true — see app/main.py.
 """
 
 import logging
+from datetime import datetime
+from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -17,6 +19,74 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 logger = logging.getLogger("zoiko_billing")
 
 _scheduler: BackgroundScheduler | None = None
+
+
+def _tracked_job_runner(func_ref: str, job_id: str, display_name: str) -> None:
+    """Wraps a scheduled job with real run-history telemetry (ZB-SA-CMD-003
+    §8, Domain C — 'background job health'). Resolves func_ref lazily (same
+    "import only when the job actually runs" behavior the string-based
+    add_job() call had before this wrapper existed) and records exactly one
+    JobRunLog row per execution: RUNNING at start, then SUCCEEDED/FAILED
+    with timestamps and (on failure only) the error message. Never raises —
+    a job's own failure must not crash the scheduler thread — but always
+    re-logs it, matching the prior bare-call behavior's visibility.
+    """
+    import importlib
+
+    from app.database import SessionLocal
+    from app.modules.super_admin.models import JobRunLog, JobRunStatus
+
+    module_path, func_name = func_ref.split(":")
+    module = importlib.import_module(module_path)
+    target = getattr(module, func_name)
+
+    db = SessionLocal()
+    run = JobRunLog(
+        job_name=job_id,
+        display_name=display_name,
+        status=JobRunStatus.RUNNING,
+        started_at=datetime.utcnow(),
+    )
+    try:
+        db.add(run)
+        db.commit()
+        target()
+        run.status = JobRunStatus.SUCCEEDED
+    except Exception as exc:  # noqa: BLE001 - a job's failure must not crash the scheduler thread
+        run.status = JobRunStatus.FAILED
+        run.error_message = str(exc)[:2000]
+        logger.error("[SCHEDULER] Job %s failed: %s", job_id, exc, exc_info=True)
+    finally:
+        run.finished_at = datetime.utcnow()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # ZB-SA-CMD-003 §10 — real Attention Engine event ingestion. A
+        # separate try/except: a bug in attention bookkeeping must never
+        # mask the job's own real result above, nor crash the scheduler.
+        try:
+            from app.modules.super_admin.attention_service import AttentionService
+            from app.modules.super_admin.models import AttentionSeverity, JobRunStatus as _JRS
+
+            attention = AttentionService(db)
+            if run.status == _JRS.FAILED:
+                attention.report_or_update(
+                    source="job_failure",
+                    source_key=f"job:{job_id}",
+                    title=f"{display_name} failing",
+                    description=run.error_message,
+                    base_severity=AttentionSeverity.P2,
+                )
+            else:
+                attention.auto_resolve(source="job_failure", source_key=f"job:{job_id}")
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("[SCHEDULER] Attention-Engine bookkeeping failed for job %s", job_id)
+        finally:
+            db.close()
 
 
 def get_scheduler() -> BackgroundScheduler | None:
@@ -64,15 +134,14 @@ def shutdown_scheduler() -> None:
         _scheduler = None
 
 
-def _register_billing_jobs(scheduler: BackgroundScheduler) -> None:
-    """Register every recurring billing job.
-
-    Each entry is registered in its own try/except: a bad string reference in
-    one job must not prevent the other jobs from being registered.
-    """
+def get_job_definitions() -> list[tuple[str, int, str, str]]:
+    """(func_ref, interval_minutes, job_id, display_name) for every recurring
+    job. Single source of truth — used both to register the jobs and by
+    TelemetryService to compute each job's expected cadence for freshness
+    (ZB-SA-CMD-003 §10.2), so the two can never silently drift apart."""
     from app.config import settings
 
-    jobs = [
+    return [
         (
             "app.modules.billing.tasks.recurring_billing:run_recurring_billing_job",
             settings.RECURRING_BILLING_INTERVAL_MINUTES,
@@ -103,12 +172,39 @@ def _register_billing_jobs(scheduler: BackgroundScheduler) -> None:
             "promise_to_pay_check_job",
             "Promise-to-Pay Status Check",
         ),
+        (
+            "app.modules.commercial.tasks.dunning_process:run_commercial_dunning_job",
+            settings.COMMERCIAL_DUNNING_INTERVAL_MINUTES,
+            "commercial_dunning_job",
+            "Commercial (Plane-1) Failed-Payment Dunning",
+        ),
+        (
+            "app.modules.super_admin.tasks.financial_consistency:run_financial_consistency_job",
+            settings.FINANCIAL_CONSISTENCY_INTERVAL_MINUTES,
+            "financial_consistency_job",
+            "Financial Integrity Check",
+        ),
     ]
 
-    for func_ref, interval_minutes, job_id, name in jobs:
+
+def get_job_interval_minutes(job_id: str) -> Optional[int]:
+    for _func_ref, interval_minutes, jid, _name in get_job_definitions():
+        if jid == job_id:
+            return interval_minutes
+    return None
+
+
+def _register_billing_jobs(scheduler: BackgroundScheduler) -> None:
+    """Register every recurring billing job.
+
+    Each entry is registered in its own try/except: a bad string reference in
+    one job must not prevent the other jobs from being registered.
+    """
+    for func_ref, interval_minutes, job_id, name in get_job_definitions():
         try:
             scheduler.add_job(
-                func=func_ref,
+                func=_tracked_job_runner,
+                args=[func_ref, job_id, name],
                 trigger="interval",
                 minutes=interval_minutes,
                 id=job_id,

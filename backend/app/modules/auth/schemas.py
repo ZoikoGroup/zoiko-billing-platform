@@ -4,7 +4,7 @@ modules/auth/schemas.py
 """
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -34,11 +34,22 @@ class RegisterRequest(BaseModel):
     website: Optional[str] = Field(None, max_length=500)
     timezone: Optional[str] = "UTC"
     phone: Optional[str] = None
-    currency: Optional[str] = "USD"
+    currency: Optional[str] = None
     tax_no: Optional[str] = Field(None, max_length=50)
     registration_number: Optional[str] = Field(None, max_length=100)
     fiscal_year_start: Optional[str] = "01-01"
     fiscal_year_end: Optional[str] = "12-31"
+    # Enterprise is contract/quote-based only (§2) and must be structurally
+    # unreachable through self-serve registration — excluding it from this
+    # Literal makes an "enterprise" submission a 422 at the schema layer,
+    # before any org/user/account row is created.
+    intended_plan: Literal["essentials", "professional", "business"] = Field(
+        ...,
+        description="Which plan the registrant intends to use. Recorded for "
+        "Sales/onboarding visibility only — it does not provision a "
+        "CommercialSubscription (see CommercialSubscriptionService."
+        "provision_default_subscription).",
+    )
 
     @field_validator("currency")
     @classmethod
@@ -71,10 +82,16 @@ class CountryCurrencyDefault(BaseModel):
     name: str
     code: str
     currency: str
+    timezone: str
+    fiscal_year_start: str
+    fiscal_year_end: str
+    date_format: str
 
 
 class CountryDefaultsResponse(BaseModel):
-    fallback_currency: str
+    # No fallback_currency: the platform has NO silent USD fallback
+    # (ZB-SA-CMD-003 v3.0). Countries absent from this map require an
+    # explicit supported currency at registration or creation time.
     countries: list[CountryCurrencyDefault]
 
 
@@ -107,6 +124,7 @@ class UserResponse(BaseModel):
     phone: Optional[str] = None
     is_active: bool
     created_at: datetime
+    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
 
 
 class TokenResponse(BaseModel):
@@ -120,62 +138,32 @@ class SuccessResponse(BaseModel):
     message: str
 
 
-# ── Super Admin MFA (release-blocker pass, Blocker 4) ───────────────────────
+# ── Super Admin MFA ─────────────────────────────────────────────────────────
+# ZB-SA-CMD-003 v3.0 master directive: normal login NEVER requires MFA (no
+# mfa_status/mfa_token in the login response — /auth/login returns
+# TokenResponse for every role). MFA exists purely as a server-enforced
+# STEP-UP factor for privileged operations, managed from an authenticated
+# session via the endpoints below. There is no fallback that bypasses it.
 
-class LoginResponse(BaseModel):
-    """POST /auth/login's response. For a Super Admin account, password
-    verification alone never yields a real token — mfa_status tells the
-    frontend exactly which restricted follow-up call to make next.
-    mfa_status == "none": access_token/refresh_token/user are populated,
-    login is complete (matches every non-super_admin login exactly as
-    before). mfa_status in {"enrollment_required","challenge_required"}:
-    only mfa_token is populated — it authorizes ONLY the matching
-    /auth/mfa/* follow-up call, nothing else."""
-
-    mfa_status: str  # "none" | "enrollment_required" | "challenge_required"
-    mfa_token: Optional[str] = None
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    token_type: str = "bearer"
-    user: Optional[UserResponse] = None
-
-
-class MFAEnrollStartRequest(BaseModel):
-    mfa_token: str = Field(..., min_length=1)
-
-
-class MFAEnrollStartResponse(BaseModel):
+class MFASetupStartResponse(BaseModel):
     secret: str
     otpauth_url: str
     issuer: str
 
 
-class MFAEnrollVerifyRequest(BaseModel):
-    mfa_token: str = Field(..., min_length=1)
+class MFASetupVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=8)
 
 
-class MFAChallengeRequest(BaseModel):
-    mfa_token: str = Field(..., min_length=1)
-    code: Optional[str] = Field(None, min_length=6, max_length=8)
-    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
-
-    @field_validator("recovery_code")
-    @classmethod
-    def _require_one_factor(cls, value, info):
-        code = info.data.get("code")
-        if not value and not code:
-            raise ValueError("Either code or recovery_code is required.")
-        return value
+class MFASetupVerifyResponse(BaseModel):
+    """Confirmed enrollment: MFA is now enabled for step-up verification.
+    Recovery codes are returned exactly once — only their SHA-256 hashes are
+    stored server-side."""
+    recovery_codes: list[str]
 
 
-class MFACompletedLoginResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    user: UserResponse
-    recovery_codes: Optional[list[str]] = None
-    recovery_codes_remaining: Optional[int] = None
+class MFAStatusResponse(BaseModel):
+    enabled: bool
 
 
 class MFADisableRequest(BaseModel):

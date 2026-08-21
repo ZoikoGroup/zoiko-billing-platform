@@ -13,9 +13,8 @@ const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
-  { value: "pending", label: "Pending", color: "bg-blue-100 text-blue-700" },
   { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
-  { value: "expired", label: "Expired", color: "bg-gray-100 text-gray-700" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-700" },
   { value: "terminated", label: "Terminated", color: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-500" },
 ];
@@ -30,7 +29,7 @@ const BILLING_PERIODS = [
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{status || "unknown"}</span>;
+  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, pending: Clock, draft: FileText, expired: Clock, terminated: XCircle, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
@@ -225,18 +224,18 @@ export default function ContractListPage() {
     onResetDateRange: resetDateRange,
   };
 
-  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
-  if (error && contracts.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchContracts(true)} /></div>;
+  if (loading) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><PageSkeleton rows={6} /></div>;
+  if (error && contracts.length === 0) return <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto"><DashboardHeader {...headerProps} /><ErrorState message={error} onRetry={() => fetchContracts(true)} /></div>;
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
           <DashboardStatCard title="Contracts" value={kpiTotal} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
           <DashboardStatCard title="Active Contracts" value={kpiActive} icon={FileText} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => { setStatusFilter("active"); setCurrentPage(1); }} />
           <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={Clock} color="from-amber-500 to-orange-500" loading={summaryLoading} />
-          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-gray-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("expired"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("expired"); setCurrentPage(1); }} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
           <DashboardStatCard title="Draft" value={kpiDraft} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("draft"); setCurrentPage(1); }} />
@@ -253,12 +252,12 @@ export default function ContractListPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search contracts..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     aria-label="Search contracts"
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>}
+                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
                   className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -280,7 +279,7 @@ export default function ContractListPage() {
                       <Ban size={12} /> Terminate
                     </button>
                     <button onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }} aria-label="Clear selection"
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={14} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={14} /></button>
                   </div>
                 )}
               </div>
@@ -300,14 +299,14 @@ export default function ContractListPage() {
                     <option value="">All Statuses</option>
                     {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 <div className="relative">
                   <select value={billingFilter} onChange={(e) => { setBillingFilter(e.target.value); setCurrentPage(1); }}
                     className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                     {BILLING_PERIODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 {(statusFilter || billingFilter || dateRange.date_from || dateRange.date_to) && (
                   <button onClick={() => { setStatusFilter(""); setBillingFilter(""); resetDateRange(); setCurrentPage(1); }}
@@ -342,7 +341,7 @@ export default function ContractListPage() {
                       <div className="flex flex-col items-center">
                         <FileText size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No contracts found</p>
-                        <p className="text-slate-400 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first contract to get started"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first contract to get started"}</p>
                       </div>
                     </td>
                   </tr>
@@ -355,10 +354,10 @@ export default function ContractListPage() {
                     <td className="px-4 py-4">
                       <button onClick={() => navigate(`/billing/contracts/${c.id}`)} className="font-medium text-slate-800 hover:text-brand-600 transition-colors whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <Receipt size={14} className="text-slate-400" />
+                          <Receipt size={14} className="text-slate-500" />
                           {c.contract_number || `#${c.id}`}
                         </div>
-                        {c.contract_name && <p className="text-xs text-slate-400 mt-0.5">{c.contract_name}</p>}
+                        {c.contract_name && <p className="text-xs text-slate-500 mt-0.5">{c.contract_name}</p>}
                       </button>
                     </td>
                     <td className="px-4 py-4 text-slate-600">{c.customer_name || c.customer?.name || `${singular} #${c.customer_id}`}</td>
@@ -369,7 +368,7 @@ export default function ContractListPage() {
                     <td className="px-4 py-4 text-slate-500 text-xs capitalize">{c.billing_period?.replace(/_/g, " ") || "—"}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => navigate(`/billing/contracts/${c.id}`)} aria-label={`View contract ${c.contract_number || `#${c.id}`}`}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View">
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View">
                         <Eye size={16} />
                       </button>
                     </td>

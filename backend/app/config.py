@@ -35,7 +35,19 @@ class Settings(BaseSettings):
     # ── App Info ──────────────────────────────────────────────────────
     APP_NAME: str = "Zoiko Billing Platform Backend"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    APP_PORT: int = 8001
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
+
+    @field_validator("LOG_LEVEL", mode="before")
+    @classmethod
+    def normalize_log_level(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().upper()
+            valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+            if normalized in valid:
+                return normalized
+        return value
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -44,9 +56,9 @@ class Settings(BaseSettings):
             return value
         if isinstance(value, str):
             normalized = value.strip().lower()
-            if normalized in {"release", "prod", "production"}:
+            if normalized in {"release", "prod", "production", "false", "0", "off", "no"}:
                 return False
-            if normalized in {"dev", "development"}:
+            if normalized in {"dev", "development", "true", "1", "yes", "on"}:
                 return True
         return value
 
@@ -87,6 +99,8 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_CURRENCY_DEFAULT: str = "usd"
+    STRIPE_PAYMENT_METHOD_TYPES: str = "card"
+    STRIPE_BILLING_ADDRESS_COLLECTION: str = "auto"
 
     # ── AI Model Gateway (provider-neutral, Claude default) ───────────
     ANTHROPIC_API_KEY: str = ""
@@ -106,6 +120,11 @@ class Settings(BaseSettings):
     DUNNING_PROCESS_INTERVAL_MINUTES: int = 1440
     ESCALATION_TO_COLLECTIONS_INTERVAL_MINUTES: int = 1440
     PROMISE_TO_PAY_CHECK_INTERVAL_MINUTES: int = 1440
+    # N1: Plane-1 (Zoiko's own subscription) failed-payment dunning sweep —
+    # independent of the Plane-2 jobs above (see commercial/dunning_service.py).
+    COMMERCIAL_DUNNING_INTERVAL_MINUTES: int = 1440
+    # ZB-SA-CMD-003 §8/§15 — internal financial-integrity check cadence.
+    FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
 
 
 settings = Settings()

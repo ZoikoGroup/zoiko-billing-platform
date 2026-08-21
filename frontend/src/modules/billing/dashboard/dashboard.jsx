@@ -42,7 +42,7 @@ class WidgetErrorBoundary extends React.Component {
           <div className="flex flex-col items-center justify-center h-48 text-center">
             <Activity className="h-8 w-8 text-slate-300 mb-2" />
             <p className="text-slate-600 text-sm font-medium">{this.props.title || "Section"} Summary</p>
-            <p className="text-slate-400 text-xs mt-1">No updates recorded for this period</p>
+            <p className="text-slate-500 text-xs mt-1">No updates recorded for this period</p>
           </div>
         </div>
       );
@@ -86,7 +86,7 @@ const formatUpdatedAgo = (date) => {
   return `Updated ${new Date(date).toLocaleDateString()}`;
 };
 
-const CHART_COLORS = ["#FF7A00", "#FB923C", "#FDBA74", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
+const CHART_COLORS = ["#2563EB", "#60A5FA", "#93C5FD", "#f59e0b", "#10b981", "#ef4444", "#1D4ED8", "#ec4899"];
 
 function SkeletonTable({ className }) {
   return (
@@ -111,7 +111,7 @@ function ChartTooltip({ active, payload, label, format }) {
       {label != null && label !== "" && <p className="mb-1.5 text-xs font-semibold text-slate-500">{label}</p>}
       {payload.map((entry, idx) => (
         <p key={idx} className="flex items-center gap-2 text-sm font-bold text-slate-800">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: entry.color || entry.fill || "#FF7A00" }} />
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: entry.color || entry.fill || "#2563EB" }} />
           {fmt(entry.value)}
         </p>
       ))}
@@ -134,10 +134,10 @@ const SecondaryStatCard = React.memo(function SecondaryStatCard({ title, value, 
         <Icon size={15} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</span>
+        <span className="block truncate text-[10px] font-bold uppercase tracking-wider text-slate-600">{title}</span>
         <span className="block truncate text-sm font-bold text-slate-800">{displayValue}</span>
         {trend && (
-          <span className={`block text-[10px] font-semibold ${trend === "up" ? "text-emerald-600" : "text-red-600"}`}>{trendValue}</span>
+          <span className={`block text-[10px] font-semibold ${trend === "up" ? "text-emerald-700" : "text-red-600"}`}>{trendValue}</span>
         )}
       </span>
     </button>
@@ -184,9 +184,6 @@ export default function ZoikoBillingModule() {
     expiringContracts: [],
     agingBuckets: [],
     auditLogs: [],
-    invoiceStats: null,
-    outstandingTotal: null,
-    totalCollected: null,
     paymentTrend: [],
   });
 
@@ -206,19 +203,25 @@ export default function ZoikoBillingModule() {
         return;
       }
 
+      // invoiceApi.getDashboardStats()/getOutstandingTotal() used to be
+      // fetched here too, but everything they returned (paid/overdue/sent/
+      // draft counts+amounts, outstanding_amount) is already present in
+      // dashboardApi.getFull()'s own invoice_summary/outstanding_amount --
+      // those were two extra backend round trips on every load and every
+      // 60s poll purely to duplicate numbers already in `full`. Dropped;
+      // see the `kpis`/`invoiceStatusData` memos below, which now read
+      // straight from `full`. getTotalCollected() is fetched lazily, only
+      // when the user actually clicks "Export CSV" (see handleExport) --
+      // it was previously paid on every load/poll for a feature most page
+      // views never use.
       const results = await Promise.allSettled([
         dashboardApi.getFull(undefined, range),
-        dashboardApi.getKPIs(undefined, range),
-        dashboardApi.getMonthlyRevenue(12, undefined, range),
         dashboardApi.getPaymentTrend(undefined, range),
         invoiceApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
         paymentApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
         customerApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
         subscriptionApi.listActive(),
         contractApi.listActive(),
-        invoiceApi.getDashboardStats(undefined),
-        invoiceApi.getOutstandingTotal(),
-        paymentApi.getTotalCollected(),
         collectionApi.getAgingBuckets(),
         contractApi.listExpiring(30),
         auditApi.list({ per_page: 10 }),
@@ -229,9 +232,9 @@ export default function ZoikoBillingModule() {
 
       if (currentRequestId !== requestIdRef.current) return;
 
-      const [fullResult, kpisResult, revenueResult, paymentTrendResult, invoicesResult, paymentsResult, customersResult,
-        subscriptionsResult, contractsResult, invoiceStatsResult, outstandingResult,
-        totalCollectedResult, agingResult, expiringResult, auditResult, productResult, reportingResult, healthResult] = results;
+      const [fullResult, paymentTrendResult, invoicesResult, paymentsResult, customersResult,
+        subscriptionsResult, contractsResult,
+        agingResult, expiringResult, auditResult, productResult, reportingResult, healthResult] = results;
 
       const safeValue = (result, transform = (v) => v) =>
         result.status === "fulfilled" ? transform(result.value) : null;
@@ -245,8 +248,9 @@ export default function ZoikoBillingModule() {
       setSubscriptionReporting(safeValue(reportingResult));
       setHealthSummary(safeValue(healthResult));
 
-      const kpisData = safeValue(kpisResult);
-      const revData = safeValue(revenueResult, extractArray) || [];
+      const fullData = safeValue(fullResult);
+      const kpisData = fullData?.kpis ?? null;
+      const revData = extractArray(fullData?.monthly_revenue) || [];
       const ptData = safeValue(paymentTrendResult, v => v?.payment_trend) || [];
       if (mountedRef.current) {
         setDashboardData({
@@ -259,9 +263,6 @@ export default function ZoikoBillingModule() {
           customers: safeValue(customersResult, extractArray) || [],
           activeSubscriptions: safeValue(subscriptionsResult, extractArray) || [],
           activeContracts: safeValue(contractsResult, extractArray) || [],
-          invoiceStats: safeValue(invoiceStatsResult),
-          outstandingTotal: safeValue(outstandingResult),
-          totalCollected: safeValue(totalCollectedResult),
           agingBuckets: safeValue(agingResult, extractArray) || [],
           expiringContracts: safeValue(expiringResult, extractArray) || [],
           auditLogs: safeValue(auditResult, extractArray) || [],
@@ -302,14 +303,16 @@ export default function ZoikoBillingModule() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  const handleExport = useCallback((format) => {
+  const handleExport = useCallback(async (format) => {
     const prefix = `billing-dashboard-${new Date().toISOString().split("T")[0]}`;
     if (format === "csv") {
+      // getTotalCollected() is only needed for this export, not for the
+      // dashboard's normal render -- fetched here on demand instead of on
+      // every page load/60s poll.
+      const totalCollected = await paymentApi.getTotalCollected().catch(() => null);
       exportToCsv({
         kpis: dashboardData.kpis,
-        invoiceStats: dashboardData.invoiceStats,
-        outstandingTotal: dashboardData.outstandingTotal,
-        totalCollected: dashboardData.totalCollected,
+        totalCollected,
         date_from: dateRange.date_from,
         date_to: dateRange.date_to,
       }, prefix);
@@ -341,9 +344,16 @@ export default function ZoikoBillingModule() {
   const kpis = useMemo(() => {
     const full = d.full || {};
     const kpi = d.kpis || {};
-    const stats = d.invoiceStats || {};
+    // kpi (= full.kpis, from BillingDashboardService.get_kpis) already
+    // includes paid_amount/overdue_amount/outstanding_amount/total_invoices
+    // directly -- the invoiceApi.getDashboardStats()/getOutstandingTotal()
+    // calls this used to fall back to duplicated the same numbers via two
+    // extra backend round trips. full.invoice_summary (fetched below in
+    // invoiceStatusData) is the remaining fallback source when kpi itself
+    // is unavailable.
+    const invSummary = full.invoice_summary || {};
     const totalRev = kpi.total_revenue ?? full.total_revenue ?? 0;
-    const totalInv = kpi.total_invoices ?? stats.total_invoices ?? full.total_invoices ?? d.invoices.length;
+    const totalInv = kpi.total_invoices ?? invSummary.total_invoices ?? d.invoices.length;
     const collections = kpi.collections ?? 0;
     const revData = d.revenue;
     let monthlyGrowth = kpi.monthly_growth ?? full.monthly_growth ?? 0;
@@ -355,9 +365,9 @@ export default function ZoikoBillingModule() {
     return {
       totalRevenue: totalRev,
       monthlyRevenue: kpi.monthly_revenue ?? full.monthly_revenue ?? 0,
-      outstandingAmount: kpi.outstanding_amount ?? d.outstandingTotal?.total_outstanding ?? full.outstanding_amount ?? 0,
-      paidAmount: kpi.paid_amount ?? stats.paid_amount ?? full.paid_amount ?? 0,
-      overdueAmount: kpi.overdue_amount ?? stats.overdue_amount ?? full.overdue_amount ?? 0,
+      outstandingAmount: kpi.outstanding_amount ?? full.outstanding_amount ?? 0,
+      paidAmount: kpi.paid_amount ?? invSummary.paid_amount ?? 0,
+      overdueAmount: kpi.overdue_amount ?? full.overdue_amount ?? invSummary.overdue_amount ?? 0,
       activeCustomers: kpi.active_customers ?? full.total_customers ?? d.customers.length,
       activeContracts: d.activeContracts.length,
       activeSubscriptions: kpi.active_subscriptions ?? full.active_subscriptions ?? d.activeSubscriptions.length,
@@ -421,7 +431,7 @@ export default function ZoikoBillingModule() {
       <h3 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h3>
       <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
       <button onClick={handleRefresh}
-        className="px-6 py-3 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+        className="px-6 py-3 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
         <RefreshCw size={18} />
         Try Again
       </button>
@@ -430,14 +440,14 @@ export default function ZoikoBillingModule() {
 
   const renderEmptyState = () => (
     <div className="flex flex-col items-center justify-center py-20">
-      <div className="h-16 w-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-4">
+      <div className="h-16 w-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
         <FileText size={32} />
       </div>
       <h3 className="text-xl font-bold text-slate-800 mb-2">No billing data yet</h3>
       <p className="text-slate-600 mb-6 text-center max-w-md">Create an invoice to start billing customers — your revenue, collections, and activity analytics will appear here.</p>
       <div className="flex flex-wrap items-center justify-center gap-3">
         <button onClick={() => navigate("/billing/invoices/create")}
-          className="px-6 py-3 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+          className="px-6 py-3 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
           <PlusCircle size={18} />
           Create Invoice
         </button>
@@ -467,12 +477,11 @@ export default function ZoikoBillingModule() {
   }, [d]);
 
   const invoiceStatusData = useMemo(() => {
-    const stats = d.invoiceStats || {};
     const summary = d.full?.invoice_summary || {};
-    const totalPaid = summary.paid_count ?? stats.paid_count ?? stats.paid ?? 0;
-    const totalSent = summary.sent_count ?? stats.sent_count ?? 0;
-    const totalOverdue = summary.overdue_count ?? stats.overdue_count ?? stats.overdue ?? 0;
-    const totalDraft = summary.draft_count ?? stats.draft_count ?? stats.draft ?? 0;
+    const totalPaid = summary.paid_count ?? 0;
+    const totalSent = summary.sent_count ?? 0;
+    const totalOverdue = summary.overdue_count ?? 0;
+    const totalDraft = summary.draft_count ?? 0;
     return [
       { name: "Paid", value: totalPaid, color: "#10b981" },
       { name: "Sent", value: totalSent, color: "#f59e0b" },
@@ -655,9 +664,9 @@ export default function ZoikoBillingModule() {
       return <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{name}</span>;
     }},
     { key: "created_at", label: "Time", render: (r) => {
-      if (!r.created_at) return <span className="text-slate-400 text-xs">Today</span>;
+      if (!r.created_at) return <span className="text-slate-500 text-xs">Today</span>;
       const date = new Date(r.created_at);
-      if (isNaN(date.getTime())) return <span className="text-slate-400 text-xs">Today</span>;
+      if (isNaN(date.getTime())) return <span className="text-slate-500 text-xs">Today</span>;
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
@@ -761,7 +770,7 @@ export default function ZoikoBillingModule() {
                 </Button>
                 {showExportMenu && (
                   <div className="absolute top-12 right-0 bg-white border border-slate-200 rounded-2xl p-3 shadow-xl z-50 w-44">
-                    <p className="text-xs font-semibold text-slate-400 px-2 py-1 uppercase tracking-wider">Export Format</p>
+                    <p className="text-xs font-semibold text-slate-500 px-2 py-1 uppercase tracking-wider">Export Format</p>
                     <div className="space-y-1 mt-1">
                       <button onClick={() => handleExport("json")} className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors text-xs font-medium text-slate-700">Export as JSON</button>
                       <button onClick={() => handleExport("csv")} className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors text-xs font-medium text-slate-700">Export as CSV</button>
@@ -801,7 +810,7 @@ export default function ZoikoBillingModule() {
           <section aria-label="Secondary metrics" className="space-y-3">
             <div className="flex items-center gap-2 px-1">
               <Users size={15} className="text-brand-500" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Customer & Subscription Metrics</h2>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Customer & Subscription Metrics</h2>
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-4 xl:grid-cols-8">
@@ -833,7 +842,7 @@ export default function ZoikoBillingModule() {
           {healthSummary && (
             <div className="bg-white border border-slate-200 rounded-2xl px-5 py-3 flex flex-wrap items-center gap-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-2">
-                <Activity size={16} className="text-slate-400" />
+                <Activity size={16} className="text-slate-500" />
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">System Health</span>
               </div>
               <div className="flex items-center gap-2">
@@ -870,7 +879,7 @@ export default function ZoikoBillingModule() {
               )}
               <div className="ml-auto">
                 <button onClick={() => navigate("/billing/settings")}
-                  className="text-xs font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1 transition-colors">
+                  className="text-xs font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 transition-colors">
                   <Settings2 size={12} /> Configure
                 </button>
               </div>
@@ -886,15 +895,15 @@ export default function ZoikoBillingModule() {
                       <AreaChart data={revenueChartData}>
                         <defs>
                           <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                            <stop offset="5%" stopColor="#2563EB" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey={revenueChartData[0]?.month ? "month" : "period"} tick={{ fontSize: 12 }} />
                         <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                         <Tooltip content={<ChartTooltip format={(v) => formatDisplayCurrency(v, baseCurrency)} />} />
-                        <Area type="monotone" dataKey="revenue" stroke="#FF7A00" strokeWidth={3} fill="url(#revenueGrad)" dot={{ fill: "#FF7A00", strokeWidth: 2, r: 4 }} />
+                        <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={3} fill="url(#revenueGrad)" dot={{ fill: "#2563EB", strokeWidth: 2, r: 4 }} />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
@@ -1009,7 +1018,7 @@ export default function ZoikoBillingModule() {
                         <Tooltip content={<ChartTooltip format={(v) => formatDisplayCurrency(v, baseCurrency)} />} />
                         <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                           {agingData.map((_, idx) => (
-                            <Cell key={idx} fill={idx === 0 ? "#10b981" : idx === 1 ? "#f59e0b" : idx === 2 ? "#ef4444" : "#FF7A00"} />
+                            <Cell key={idx} fill={idx === 0 ? "#10b981" : idx === 1 ? "#f59e0b" : idx === 2 ? "#ef4444" : "#2563EB"} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -1024,13 +1033,13 @@ export default function ZoikoBillingModule() {
 
           <div className={DASHBOARD_CHART_GRID}>
             <WidgetErrorBoundary title="Recent Invoices">
-              <ChartCard title="Recent Invoices" action={<button onClick={() => navigate("/billing/invoices")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Invoices" action={<button onClick={() => navigate("/billing/invoices")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={invoiceColumns} data={d.invoices.slice(0, 5)} emptyTitle="No invoices yet" emptyMessage={null} emptyIcon={FileText} />
               </ChartCard>
             </WidgetErrorBoundary>
 
             <WidgetErrorBoundary title="Recent Payments">
-              <ChartCard title="Recent Payments" action={<button onClick={() => navigate("/billing/payments")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Payments" action={<button onClick={() => navigate("/billing/payments")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={paymentColumns} data={d.payments.slice(0, 5)} emptyTitle="No payments yet" emptyMessage={null} emptyIcon={Receipt} />
               </ChartCard>
             </WidgetErrorBoundary>
@@ -1038,13 +1047,13 @@ export default function ZoikoBillingModule() {
 
           <div className={DASHBOARD_CHART_GRID}>
             <WidgetErrorBoundary title="Recent Customers">
-              <ChartCard title="Recent Customers" action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Customers" action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={customerColumns} data={d.customers.slice(0, 5)} emptyTitle="No customers yet" emptyMessage={null} emptyIcon={Users} />
               </ChartCard>
             </WidgetErrorBoundary>
 
             <WidgetErrorBoundary title="Upcoming Renewals">
-              <ChartCard title="Upcoming Renewals" action={<button onClick={() => navigate("/billing/contracts")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Upcoming Renewals" action={<button onClick={() => navigate("/billing/contracts")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={renewalColumns} data={d.expiringContracts.slice(0, 5)} emptyTitle="No upcoming renewals" emptyMessage={null} emptyIcon={Clock} />
               </ChartCard>
             </WidgetErrorBoundary>

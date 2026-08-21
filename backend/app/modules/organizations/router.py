@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -34,6 +35,8 @@ from app.modules.organizations.schemas import (
     OrganizationListResponse,
     OrganizationDashboardStats,
     OrganizationDetail,
+    PrivilegedAccessLogEntry,
+    PrivilegedAccessLogResponse,
     RecentCustomer,
 )
 from app.modules.commercial.schemas import (
@@ -134,7 +137,7 @@ def update_my_organization(
         # Idempotent and never overwrites existing/custom tax rates.
         try:
             from app.modules.billing.services.tax_service import TaxService
-            TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=current_user.id)
+            TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=current_user.id, country_code=org.country)
         except Exception as e:
             logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
 
@@ -235,6 +238,49 @@ def get_my_organization_dashboard_stats(
     )
 
 
+@router.get("/me/privileged-access-log", response_model=PrivilegedAccessLogResponse)
+def get_my_privileged_access_log(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-CMD-003 §19/§20 — tenant-visible privileged support-access log
+    (ISS-021). One row per support-access session, read directly from
+    PrivilegedTenantAccessGrant (scoped to THIS org only) rather than
+    replaying raw platform audit-log rows — reason/ticket_reference are
+    always present since they live on the grant itself. Any org-scoped
+    role may read it (transparency feature, not a write path); Super Admin
+    actor identity is intentionally not exposed here, matching the
+    specification's own tenant-context chrome example (which shows
+    reason/ticket/duration, not the operator's identity)."""
+    from app.core.dependencies import get_organization_id
+    from app.modules.super_admin.models import PrivilegedTenantAccessGrant
+
+    org_id = get_organization_id(current_user)
+
+    grants = (
+        db.query(PrivilegedTenantAccessGrant)
+        .filter(PrivilegedTenantAccessGrant.organization_id == org_id)
+        .order_by(PrivilegedTenantAccessGrant.requested_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    entries = [
+        PrivilegedAccessLogEntry(
+            requested_at=g.requested_at,
+            status=g.status.value,
+            reason=g.reason,
+            ticket_reference=g.ticket_reference,
+            activated_at=g.activated_at,
+            ended_at=g.exited_at,
+            correlation_id=g.correlation_id,
+        )
+        for g in grants
+    ]
+    return PrivilegedAccessLogResponse(entries=entries)
+
+
 @router.get("/me/detail", response_model=OrganizationDetail)
 def get_my_organization_detail(
     current_user=Depends(get_current_billing_admin),
@@ -245,9 +291,13 @@ def get_my_organization_detail(
     from app.modules.organizations.models import Organization
     from app.modules.auth.models import User, UserRole
     from app.modules.billing.models import BillingCustomer, CustomerStatus
+    from app.core.exceptions import BadRequestException
 
     org_id = get_organization_id(current_user)
-    org = db.query(Organization).filter(Organization.id == org_id).first()
+    try:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+    except sa_exc.OperationalError:
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if org is None:
         raise NotFoundException("Organization", "id")
 
@@ -475,9 +525,14 @@ def create_organization(
     db: Session = Depends(get_db),
 ):
     from app.core.code_generation import generate_organization_code
+    from app.modules.auth.country_currency import resolve_currency
     from app.modules.organizations.models import Organization
 
     code = generate_organization_code(data.organization_name, db)
+    # ZB-SA-CMD-003 v3.0: currency is ALWAYS derived from the organization's
+    # country unless explicitly supplied — and an unmapped country with no
+    # explicit currency is an explicit 400 error, never a silent USD fallback.
+    currency = resolve_currency(data.currency, data.country)
     org = Organization(
         organization_name=data.organization_name,
         organization_code=code,
@@ -494,7 +549,7 @@ def create_organization(
         website=data.website,
         tax_no=data.tax_no,
         registration_number=data.registration_number,
-        currency=data.currency,
+        currency=currency,
         timezone=data.timezone,
         fiscal_year_start=data.fiscal_year_start or "01-01",
         fiscal_year_end=data.fiscal_year_end or "12-31",
@@ -537,6 +592,17 @@ def create_organization(
     db.commit()
     db.refresh(org)
     logger.info("Super Admin %s created organization %s (%s)", current_user.email, org.organization_name, code)
+
+    # ZB-SA-CMD-003 v3.0: every successful organization creation notifies all
+    # active Super Admins via real email. Fire-and-forget — a transient SMTP
+    # failure never fails the already-committed creation, but it is logged.
+    try:
+        from app.services.email_service import notify_super_admins_org_created
+
+        notify_super_admins_org_created(db=db, organization=org, actor_email=current_user.email)
+    except Exception as exc:
+        logger.warning("[email] Super Admin org-created notification failed for org %s: %s", code, exc)
+
     return org
 
 

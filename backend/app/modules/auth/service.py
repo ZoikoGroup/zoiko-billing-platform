@@ -7,11 +7,11 @@ reset), change password, and org-admin user management.
 
 import hashlib
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import exc as sa_exc, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -25,12 +25,15 @@ from app.core.exceptions import (
 )
 from app.core.security import (
     create_access_token,
-    create_mfa_pending_token,
     create_refresh_token,
     hash_password,
     verify_password,
 )
-from app.modules.auth.country_currency import resolve_currency
+from app.modules.auth.country_currency import (
+    resolve_currency,
+    resolve_fiscal_year,
+    resolve_timezone,
+)
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.commercial.enums import BillingClassification, BillingSource
@@ -49,7 +52,14 @@ def _token_hash(raw_token: str) -> str:
 
 
 def _action_link(purpose: SecurityActionPurpose, raw_token: str) -> str:
-    base = os.environ.get("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    # Phase 6 production-readiness finding: os.environ.get("FRONTEND_URL")
+    # only sees a value if it's a real exported shell/container env var --
+    # pydantic-settings reads .env into its own internal source without
+    # writing it back into os.environ, so a FRONTEND_URL set only in .env
+    # (this app's documented configuration mechanism) was silently ignored
+    # here, and every invite/password-reset email linked to localhost
+    # regardless of the configured production frontend URL.
+    base = settings.FRONTEND_URL.rstrip("/")
     path = "accept-invite" if purpose == SecurityActionPurpose.INVITE else "reset-password"
     return f"{base}/auth/{path}?token={raw_token}"
 
@@ -116,7 +126,7 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
     if consumed is None:
         raise BadRequestException(INVALID_TOKEN_MESSAGE)
 
-    user = db.query(User).filter(User.email == consumed["email"]).first()
+    user = db.query(User).filter(func.lower(User.email) == func.lower(consumed["email"])).first()
     if user is None:
         raise BadRequestException(INVALID_TOKEN_MESSAGE)
 
@@ -131,7 +141,11 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
 # ── Login ───────────────────────────────────────────────────────────────────
 
 def login_user(db: Session, email: str, password: str) -> dict:
-    user = db.query(User).filter(User.email == email).first()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    except sa_exc.OperationalError:
+        logger.error("Database connection failed during login for %s", email)
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None or not verify_password(password, user.hashed_password):
         raise UnauthorizedException("Invalid email or password.")
 
@@ -145,44 +159,24 @@ def login_user(db: Session, email: str, password: str) -> dict:
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
 
-    # Super Admin MFA gate (release-blocker pass, Blocker 4 / SEC-01):
-    # password correctness alone is never sufficient to mint a real,
-    # privileged token for a super_admin. Every super_admin login routes
-    # through mfa_service — see that module's docstring for why this is a
-    # genuine backend enforcement point, not a frontend flag.
-    if user.role == UserRole.SUPER_ADMIN:
-        from app.modules.auth import mfa_service
-
-        token_payload = {
-            "sub": user.email,
-            "role": user.role.value,
-            "user_id": user.id,
-            "organization_id": user.organization_id,
-        }
-        if mfa_service.is_mfa_enabled(db, user.id):
-            logger.info("Super Admin %s password verified; awaiting MFA challenge", user.email)
-            return {
-                "mfa_status": "challenge_required",
-                "mfa_token": create_mfa_pending_token(token_payload, "challenge"),
-            }
-        logger.info("Super Admin %s password verified; MFA enrollment required", user.email)
-        return {
-            "mfa_status": "enrollment_required",
-            "mfa_token": create_mfa_pending_token(token_payload, "enroll"),
-        }
-
     token_payload = {
         "sub": user.email,
         "role": user.role.value,
         "user_id": user.id,
         "organization_id": user.organization_id,
     }
+
+    # ZB-SA-CMD-003 v3.0 master directive: normal Super Admin login is a
+    # plain password check — NO login-time MFA challenge/enrollment gate.
+    # MFA is still enforced server-side at the moment of privileged access
+    # via mfa_service.verify_step_up() (grant activation, circuit-breaker
+    # toggles/proposals/decisions). There is deliberately no fallback that
+    # bypasses that step-up.
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
 
     logger.info("User %s (%s) logged in", user.email, user.role.value)
     return {
-        "mfa_status": "none",
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
@@ -197,7 +191,11 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
     if payload is None:
         raise UnauthorizedException("Invalid or expired refresh token.")
 
-    user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    try:
+        user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    except sa_exc.OperationalError:
+        logger.error("Database connection failed during token refresh")
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None or not user.is_active:
         raise UnauthorizedException("User not found or inactive.")
 
@@ -223,7 +221,7 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
 # ── Registration (public self-serve onboarding) ─────────────────────────────
 
 def register_enterprise(db: Session, data: RegisterRequest) -> dict:
-    existing = db.query(User).filter(User.email == data.email).first()
+    existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")
 
@@ -236,6 +234,16 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     # without an explicit currency correctly derives INR instead of USD.
     explicit_currency = data.currency if "currency" in data.model_fields_set else None
     currency = resolve_currency(explicit_currency, data.country)
+
+    # Same explicit > country-derived > safe-fallback precedence as currency
+    # above, applied to timezone and fiscal year -- so a direct API caller
+    # (bypassing RegisterPage's own client-side country defaults) still gets
+    # a country-appropriate value instead of a hardcoded UTC/Jan-Dec default.
+    explicit_timezone = data.timezone if "timezone" in data.model_fields_set else None
+    timezone = resolve_timezone(explicit_timezone, data.country)
+    explicit_fy_start = data.fiscal_year_start if "fiscal_year_start" in data.model_fields_set else None
+    explicit_fy_end = data.fiscal_year_end if "fiscal_year_end" in data.model_fields_set else None
+    fiscal_year_start, fiscal_year_end = resolve_fiscal_year(explicit_fy_start, explicit_fy_end, data.country)
 
     org = Organization(
         organization_name=data.organization,
@@ -253,9 +261,9 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         tax_no=data.tax_no,
         registration_number=data.registration_number,
         currency=currency,
-        timezone=data.timezone or "UTC",
-        fiscal_year_start=data.fiscal_year_start or "01-01",
-        fiscal_year_end=data.fiscal_year_end or "12-31",
+        timezone=timezone,
+        fiscal_year_start=fiscal_year_start,
+        fiscal_year_end=fiscal_year_end,
         # Stamped server-side — never accepted from the client, so a tenant
         # cannot self-attribute a Zoiko One source to skip a charge.
         billing_classification=BillingClassification.COMMERCIAL_STANDALONE,
@@ -281,6 +289,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         is_verified=True,
     )
     db.add(admin)
+    db.flush()
 
     # CommercialAccount is created inside the same transaction (PHASE 6):
     # organization + user + commercial account + billing configuration commit
@@ -301,6 +310,14 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     # invented merely to satisfy the flow. Same transaction, flush-only.
     CommercialSubscriptionService(db).provision_default_subscription(account.id)
 
+    # Intent capture only (§B3) — provision_default_subscription() already
+    # correctly refuses to invent a subscription when no approved plan
+    # exists. This just records what the registrant said they wanted, for
+    # the eventual checkout/upgrade flow and for Sales follow-up on
+    # Business/Professional leads. Does not create a CommercialSubscription.
+    account.intended_plan_code = data.intended_plan
+    db.add(account)
+
     # BillingConfiguration is initialized inside the same transaction (PHASE 4):
     # organization + user + config commit together, so a failure rolls back the
     # whole registration instead of leaving a partially initialized tenant.
@@ -309,24 +326,59 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     from app.modules.billing.services.settings_service import BillingConfigurationService
     BillingConfigurationService(db).seed_billing_configuration(org.id)
 
+    # Starter tax catalogue seed for the org's billing currency (Phase 5.7),
+    # inside the same transaction as org + user + config: a fresh org's
+    # currency is derived from country (explicit > country-derived > USD
+    # fallback), so a currency with a real catalogue entry (e.g. India → INR)
+    # seeds its starter rates here; a currency without a catalogue entry (e.g.
+    # USD) is a deliberate no-op, not an error. commit=False keeps this
+    # flush-only so a failure here rolls back org+user+config too instead of
+    # leaving a partially initialized tenant -- the same all-or-nothing
+    # guarantee PHASE 4/6 already give BillingConfiguration/CommercialAccount.
+    from app.modules.billing.services.tax_service import TaxService
+    TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id, commit=False, country_code=org.country)
+
     db.commit()
     db.refresh(admin)
     db.refresh(org)
 
-    # Best-effort starter tax catalogue seed for the org's billing currency
-    # (Phase 5.7). Never blocks registration -- a fresh org's currency is now
-    # derived from country (explicit > country-derived > USD fallback), so a
-    # country/currency with a real catalogue entry (e.g. India → INR) seeds its
-    # starter rate here; a currency without a catalogue entry (e.g. USD) is a
-    # deliberate no-op. Same idempotent seed path organizations/router.py's
-    # currency-update flow uses.
-    try:
-        from app.modules.billing.services.tax_service import TaxService
-        TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id)
-    except Exception as e:
-        logger.warning("Could not seed starter tax rates for org %s: %s", org.organization_code, e)
-
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
+
+    # ── ZB-ORG-001 + ZB-ONB-001 email dispatch ────────────────────────────
+    # Fire-and-forget: tenant isolation guardrail and role sanitization run
+    # inside each send function.  Exceptions are caught so a transient SMTP
+    # failure never blocks the registration response.
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        from app.services.email_service import (
+            notify_super_admins_org_created,
+            send_org_created_email,
+            send_product_welcome_email,
+        )
+
+        effective_time = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+        send_org_created_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            recipient_role="Owner",
+            actor_display_name=admin.full_name,
+            effective_time=effective_time,
+            organization_id=org.id,
+        )
+        send_product_welcome_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            organization_id=org.id,
+        )
+        # Master directive (ZB-SA-CMD-003 v3.0): every successful organization
+        # creation notifies all active Super Admins via real email.
+        notify_super_admins_org_created(db=db, organization=org, actor_email=admin.email)
+    except Exception as exc:
+        logger.warning("[email] Org lifecycle emails failed for org %s: %s", org.organization_code, exc)
 
     token_payload = {
         "sub": admin.email,
@@ -345,7 +397,7 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
 # ── Password flows ──────────────────────────────────────────────────────────
 
 def request_password_reset(db: Session, email: str) -> dict:
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
     if user is not None and user.is_active:
         raw_token, _ = _issue_action_token(db, user.email, user.organization_id, SecurityActionPurpose.RESET)
         link = _action_link(SecurityActionPurpose.RESET, raw_token)
@@ -380,7 +432,7 @@ def invite_user(db: Session, actor, data) -> User:
     if actor.organization_id is None:
         raise ForbiddenException("Super Admin must create users via the super-admin API.")
 
-    existing = db.query(User).filter(User.email == data.email).first()
+    existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")
 

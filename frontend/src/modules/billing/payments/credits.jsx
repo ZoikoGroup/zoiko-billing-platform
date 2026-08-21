@@ -46,7 +46,7 @@ function getStatusStyle(status) {
     fully_applied: "bg-emerald-100 text-emerald-700",
     voided: "bg-red-100 text-red-700",
   };
-  return map[status] || "bg-gray-100 text-gray-600";
+  return map[status] || "bg-slate-100 text-slate-600";
 }
 
 export default function CreditsPage() {
@@ -162,46 +162,46 @@ export default function CreditsPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input type="text" placeholder="Search credits..." value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
+              className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-64" />
           </div>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
               showFilters || hasActiveFilters
                 ? "border-brand-200 bg-brand-50 text-brand-700"
-                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50"
             }`}>
             <Filter className="h-4 w-4" /> Filters {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-brand-500" />}
           </button>
           {hasActiveFilters && (
             <button onClick={clearFilters}
-              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-800">
               <X className="h-4 w-4" /> Clear
             </button>
           )}
         </div>
         <button onClick={refreshAll} disabled={refreshing}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
 
       {showFilters && (
-        <div className="mb-6 p-4 bg-white rounded-xl border border-gray-200 space-y-4">
+        <div className="mb-6 p-4 bg-white rounded-3xl border border-slate-200 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Status</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Status</label>
               <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-                className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Type</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Type</label>
               <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-                className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -210,33 +210,33 @@ export default function CreditsPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
             <Receipt className="h-5 w-5 text-brand-500" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Available Credits</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Available Credits</p>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{formatDisplayCurrency(availableTotal, baseCurrency)}</p>
-          <p className="text-xs text-gray-400 mt-1">{availableCredits.length} credit(s) available</p>
+          <p className="text-2xl font-bold text-slate-900">{formatDisplayCurrency(availableTotal, baseCurrency)}</p>
+          <p className="text-xs text-slate-500 mt-1">{availableCredits.length} credit(s) available</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle className="h-5 w-5 text-blue-500" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Issued (MTD)</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Issued (MTD)</p>
           </div>
           <p className="text-2xl font-bold text-blue-600">{formatDisplayCurrency(issuedMtdTotal, baseCurrency)}</p>
-          <p className="text-xs text-gray-400 mt-1">{issuedMtd.length} credit(s)</p>
+          <p className="text-xs text-slate-500 mt-1">{issuedMtd.length} credit(s)</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-3xl border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="h-5 w-5 text-amber-500" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Applied (MTD)</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Applied (MTD)</p>
           </div>
           <p className="text-2xl font-bold text-amber-600">{formatDisplayCurrency(appliedMtdTotal, baseCurrency)}</p>
-          <p className="text-xs text-gray-400 mt-1">{appliedMtd.length} credit(s)</p>
+          <p className="text-xs text-slate-500 mt-1">{appliedMtd.length} credit(s)</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200">
+      <div className="bg-white rounded-3xl border border-slate-200">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
@@ -245,44 +245,44 @@ export default function CreditsPage() {
           <ErrorState message={error} onRetry={fetchCredits} />
         ) : credits.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Receipt className="h-10 w-10 text-gray-300 mb-3" />
-            <p className="text-sm font-medium text-gray-500 mb-1">No credits found</p>
-            <p className="text-xs text-gray-400">{hasActiveFilters ? "Try adjusting your filters." : "No credit notes have been issued yet."}</p>
+            <Receipt className="h-10 w-10 text-slate-300 mb-3" />
+            <p className="text-sm font-medium text-slate-500 mb-1">No credits found</p>
+            <p className="text-xs text-slate-500">{hasActiveFilters ? "Try adjusting your filters." : "No credit notes have been issued yet."}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Credit Note</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Customer</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Type</th>
-                  <th scope="col" className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Total</th>
-                  <th scope="col" className="text-right py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Remaining</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wider">Actions</th>
+                <tr className="border-b border-slate-100">
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Customer</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Type</th>
+                  <th scope="col" className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Total</th>
+                  <th scope="col" className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Remaining</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
+                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {credits.map((c) => (
-                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-900">{c.credit_note_number || `#${c.id}`}</td>
-                    <td className="py-3 px-4 text-gray-600">{c.customer_name || `Customer #${c.customer_id}`}</td>
+                  <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="py-3 px-4 font-medium text-slate-900">{c.credit_note_number || `#${c.id}`}</td>
+                    <td className="py-3 px-4 text-slate-600">{c.customer_name || `Customer #${c.customer_id}`}</td>
                     <td className="py-3 px-4">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
                         {c.credit_note_type ? c.credit_note_type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "—"}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-medium text-gray-900">{formatDisplayCurrency(c.total_amount, c.currency)}</td>
-                    <td className="py-3 px-4 text-right font-medium text-gray-900">{formatDisplayCurrency(c.remaining_amount || 0, c.currency)}</td>
+                    <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.total_amount, c.currency)}</td>
+                    <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.remaining_amount || 0, c.currency)}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
                         {c.status === "issued" ? <CheckCircle size={10} /> : c.status === "voided" ? <XCircle size={10} /> : <Clock size={10} />}
                         {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{formatDisplayDate(c.issue_date || c.created_at)}</td>
+                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(c.issue_date || c.created_at)}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
                         <button onClick={() => navigate(`/billing/credit-notes/${c.id}`)}
@@ -317,13 +317,13 @@ export default function CreditsPage() {
         )}
 
         {!loading && !error && totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+            <p className="text-xs text-slate-500">
               Showing {Math.min((safePage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(safePage * ITEMS_PER_PAGE, total)} of {total}
             </p>
             <div className="flex items-center gap-1">
               <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40">
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-40">
                 Previous
               </button>
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
@@ -333,14 +333,14 @@ export default function CreditsPage() {
                 return (
                   <button key={page} onClick={() => setCurrentPage(page)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
-                      page === safePage ? "bg-brand-600 text-white" : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                      page === safePage ? "bg-brand-600 text-white" : "text-slate-600 bg-slate-100 hover:bg-slate-200"
                     }`}>
                     {page}
                   </button>
                 );
               })}
               <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40">
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-40">
                 Next
               </button>
             </div>
@@ -351,16 +351,16 @@ export default function CreditsPage() {
     {voidModal.open && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (actionLoading !== "void") setVoidModal({ open: false, creditId: null, reason: "" }); }}>
         <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Void Credit Note</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Void Credit Note</h3>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">Reason (optional)</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">Reason (optional)</label>
             <textarea value={voidModal.reason} onChange={(e) => setVoidModal((p) => ({ ...p, reason: e.target.value }))} rows={3}
               placeholder="Enter reason for voiding..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setVoidModal({ open: false, creditId: null, reason: "" })} disabled={actionLoading === "void"}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg">Cancel</button>
             <button onClick={handleVoid} disabled={actionLoading === "void"}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">
               {actionLoading === "void" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}

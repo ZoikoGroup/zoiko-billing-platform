@@ -2,19 +2,31 @@ import { useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { resolveOrgCurrency, formatCurrencyChip, formatFiscalYearLabel, formatOrgMoney, normalizeOrgName } from "./workspace-format";
 
-function Chip({ label, value, tone = "default" }) {
-  const tones = {
-    good: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    attention: "bg-amber-50 text-amber-700 border-amber-200",
-    risk: "bg-red-50 text-red-700 border-red-200",
-    default: "bg-gray-50 text-gray-700 border-gray-200",
-    violet: "bg-purple-50 text-purple-700 border-purple-200",
-  };
+const TONE_TEXT = {
+  good: "text-emerald-700",
+  attention: "text-amber-700",
+  risk: "text-red-700",
+  default: "text-slate-800",
+  violet: "text-purple-700",
+};
+
+const TONE_DOT = {
+  good: "bg-emerald-500",
+  attention: "bg-amber-500",
+  risk: "bg-red-500",
+  default: "bg-slate-400",
+  violet: "bg-purple-500",
+};
+
+function HeaderChip({ label, value, tone = "default", dot = false }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${tones[tone] || tones.default}`}>
-      <span className="text-[10px] uppercase tracking-wider opacity-70">{label}</span>
-      <span className="font-semibold">{value}</span>
-    </span>
+    <div className="flex flex-col gap-1 px-4 py-3">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">{label}</span>
+      <span className={`flex items-center gap-1.5 text-sm font-bold ${TONE_TEXT[tone] || TONE_TEXT.default}`}>
+        {dot && <span className={`h-1.5 w-1.5 rounded-full ${TONE_DOT[tone] || TONE_DOT.default}`} />}
+        {value}
+      </span>
+    </div>
   );
 }
 
@@ -33,7 +45,7 @@ export default function WorkspaceHeader({ title, subtitle, icon: Icon, actions, 
 
   const chips = useMemo(() => {
     const list = [];
-    if (health) list.push({ label: "Health", value: health.label, tone: health.tone || "default" });
+    if (health) list.push({ label: "Health", value: health.label, tone: health.tone || "default", dot: true });
     if (plan) list.push({ label: "Plan", value: plan, tone: "violet" });
     if (outstanding != null && outstanding > 0) {
       list.push({ label: "Outstanding", value: formatOrgMoney(outstanding, { default_currency: currency }), tone: "attention" });
@@ -45,34 +57,43 @@ export default function WorkspaceHeader({ title, subtitle, icon: Icon, actions, 
 
   const displayName = user?.first_name || user?.display_name || user?.full_name || user?.email || "User";
   const orgName = normalizeOrgName(organization?.company_name || organization?.name);
+  const hasOrgName = orgName && orgName !== "—";
 
   return (
-    <div className="mb-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1a0933] to-purple-800 flex items-center justify-center text-white font-bold text-lg shrink-0">
-            {Icon ? <Icon className="w-6 h-6" /> : initialsOf(user)}
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Welcome back, {displayName}</p>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              {title || "My Organization"}
-              {orgName && orgName !== "\u2014" && (
-                <span className="text-sm font-normal text-gray-400">/ {orgName}</span>
+    <div className="mb-6 rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] overflow-hidden">
+      <div className="bg-linear-to-r from-brand/6 via-transparent to-transparent p-6 md:p-8">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-brand to-brand-hover flex items-center justify-center text-white font-bold text-lg shrink-0">
+              {initialsOf(user)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-brand">Billing Administrator</p>
+              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-900">Welcome back, {displayName}</h1>
+              {hasOrgName && (
+                <p className="mt-0.5 truncate text-sm text-slate-500">
+                  Managing <span className="font-semibold text-slate-700">{orgName}</span>
+                </p>
               )}
-            </h1>
-            {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
+              {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
+            </div>
           </div>
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {chips.length > 0 && (
+          <div className="mt-6 grid grid-cols-2 divide-x divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50/50 sm:grid-cols-3 xl:grid-cols-5">
+            {chips.map((c, i) => (
+              <HeaderChip key={i} label={c.label} value={c.value} tone={c.tone} dot={c.dot} />
+            ))}
+          </div>
+        )}
+        {Icon && title && (
+          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+            <Icon size={14} />
+            <span>{title}</span>
+          </div>
+        )}
       </div>
-      {chips.length > 0 && (
-        <div className="flex items-center gap-2 mt-4 flex-wrap">
-          {chips.map((c, i) => (
-            <Chip key={i} label={c.label} value={c.value} tone={c.tone} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

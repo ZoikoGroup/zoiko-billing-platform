@@ -249,7 +249,7 @@ export default function CommercialPlanVersionsPage() {
           if (row.status === "published") {
             return <Button size="sm" variant="danger" icon={Archive} onClick={() => handleArchive(row)}>Archive</Button>;
           }
-          return <span className="text-xs text-slate-400">—</span>;
+          return <span className="text-xs text-slate-500">—</span>;
         },
       },
     ],

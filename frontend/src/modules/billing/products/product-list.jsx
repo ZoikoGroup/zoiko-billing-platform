@@ -13,7 +13,7 @@ import { useConfirmationDialog, PageSkeleton, SuccessMessage, ErrorState, Pagina
 
 const PRODUCT_STATUS_BADGE_OPTIONS = [
   { value: "active", label: "active", color: "bg-green-100 text-green-700" },
-  { value: "inactive", label: "inactive", color: "bg-gray-100 text-gray-700" },
+  { value: "inactive", label: "inactive", color: "bg-slate-100 text-slate-700" },
   { value: "archived", label: "archived", color: "bg-slate-100 text-slate-600" },
 ];
 
@@ -111,7 +111,7 @@ export default function ProductListPage() {
   const [newProduct, setNewProduct] = useState({
     name: "", code: "", default_price: "", description: "", product_type: "service", is_active: true, image_url: "",
     category_id: "", brand: "", billing_frequency: "one_time", default_discount: "", invoice_description: "",
-    currency: baseCurrency || "USD", original_price: "", country: "", gst_vat_group: "",
+    currency: baseCurrency, original_price: "", country: "", gst_vat_group: "",
   });
 
   useEffect(() => {
@@ -334,7 +334,7 @@ export default function ProductListPage() {
         invoice_description: newProduct.invoice_description || undefined,
       });
       setShowCreateModal(false);
-      setNewProduct({ name: "", code: "", default_price: "", description: "", product_type: "service", is_active: true, image_url: "", category_id: "", brand: "", billing_frequency: "one_time", default_discount: "", invoice_description: "", currency: baseCurrency || "USD", original_price: "", country: "", gst_vat_group: "" });
+      setNewProduct({ name: "", code: "", default_price: "", description: "", product_type: "service", is_active: true, image_url: "", category_id: "", brand: "", billing_frequency: "one_time", default_discount: "", invoice_description: "", currency: baseCurrency, original_price: "", country: "", gst_vat_group: "" });
       setCurrentPage(1);
       fetchProducts();
     } catch (err) {
@@ -439,7 +439,7 @@ export default function ProductListPage() {
     <div className="space-y-6">
       {/* ── Basic Information ── */}
       <div>
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <Package size={14} className="text-brand-500" /> Basic Information
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -514,7 +514,7 @@ export default function ProductListPage() {
 
       {/* ── Billing Profile ── */}
       <div className="border-t border-slate-100 pt-5">
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <CreditCard size={14} className="text-brand-500" /> Billing Profile
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -726,7 +726,7 @@ export default function ProductListPage() {
 
   return (
     <HRPage title="Products" subtitle="Manage your products">
-      <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400" aria-label="Breadcrumb">
+      <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-500" aria-label="Breadcrumb">
         <span className="font-medium text-slate-500">Products</span>
         <span>/</span>
         <span className="font-semibold text-brand-700">Product List</span>
@@ -741,17 +741,17 @@ export default function ProductListPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input ref={searchInputRef} type="text" placeholder="Search by name, code..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-14 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {search ? (
                   <button onClick={() => setSearch("")} aria-label="Clear search"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
                     <X size={16} />
                   </button>
                 ) : (
-                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-400 pointer-events-none">⌘K</kbd>
+                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-500 pointer-events-none">⌘K</kbd>
                 )}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
@@ -765,7 +765,7 @@ export default function ProductListPage() {
                 </button>
                 {showColumnMenu && (
                   <div className="absolute left-0 top-full mt-1 z-20 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-2">
-                    <p className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Columns</p>
+                    <p className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Columns</p>
                     {COLUMN_OPTIONS.map((col) => (
                       <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
                         <input type="checkbox" checked={visibleColumns.has(col.key)}
@@ -796,17 +796,17 @@ export default function ProductListPage() {
                 </button>
                 {showExportMenu && (
                   <div className="absolute right-0 top-full mt-1 z-30 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2">
-                    <p className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Format</p>
+                    <p className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Format</p>
                     <button onClick={() => handleExport("all", "csv")} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left">
-                      <Download size={14} className="text-slate-400" /> Export Entire Catalog (CSV)
+                      <Download size={14} className="text-slate-500" /> Export Entire Catalog (CSV)
                     </button>
                     <button onClick={() => handleExport("all", "xlsx")} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left">
-                      <Download size={14} className="text-slate-400" /> Export Entire Catalog (Excel)
+                      <Download size={14} className="text-slate-500" /> Export Entire Catalog (Excel)
                     </button>
                     {selectedIds.size > 0 && (
                       <>
                         <div className="my-1 border-t border-slate-100" />
-                        <p className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Selected Rows</p>
+                        <p className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Selected Rows</p>
                         <button onClick={() => handleExport("selected", "csv")} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-brand-700 hover:bg-brand-50 text-left">
                           <CheckCircle size={14} className="text-brand-300" /> Export {selectedIds.size} Selected (CSV)
                         </button>
@@ -818,7 +818,7 @@ export default function ProductListPage() {
                     {(debouncedSearch || statusFilter || typeFilter || categoryFilter || currencyFilter) && (
                       <>
                         <div className="my-1 border-t border-slate-100" />
-                        <p className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Current Filter</p>
+                        <p className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Current Filter</p>
                         <button onClick={() => handleExport("filtered", "csv")} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 text-left">
                           <Filter size={14} className="text-amber-400" /> Export Filtered (CSV)
                         </button>
@@ -853,7 +853,7 @@ export default function ProductListPage() {
                   <option value="">All Statuses</option>
                   {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={typeFilter}
@@ -862,7 +862,7 @@ export default function ProductListPage() {
                   <option value="">All Types</option>
                   {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={categoryFilter}
@@ -871,7 +871,7 @@ export default function ProductListPage() {
                   <option value="">All Categories</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={currencyFilter}
@@ -880,7 +880,7 @@ export default function ProductListPage() {
                   <option value="">All Currencies</option>
                   {getCurrencySelectOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
                 <select value={sortField}
@@ -888,7 +888,7 @@ export default function ProductListPage() {
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   {SORT_FIELDS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <button onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
                 className="flex items-center gap-1 px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
@@ -907,7 +907,7 @@ export default function ProductListPage() {
               <CheckCircle size={14} /> Activate
             </button>
             <button onClick={() => handleBulkAction("deactivate")} disabled={bulkActionLoading}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-600 text-white rounded-lg text-xs font-medium hover:bg-slate-700 disabled:opacity-50">
               <Clock size={14} /> Deactivate
             </button>
             <button onClick={() => handleBulkAction("archive")} disabled={bulkActionLoading}
@@ -1018,7 +1018,7 @@ export default function ProductListPage() {
                           className="h-10 w-10 rounded-lg object-cover border" />
                       ) : (
                         <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <Image size={16} className="text-slate-400" />
+                          <Image size={16} className="text-slate-500" />
                         </div>
                       )}
                     </td>
@@ -1031,7 +1031,7 @@ export default function ProductListPage() {
                         </div>
                         <div>
                           <p className="font-medium text-slate-800">{product.name || "Unnamed"}</p>
-                          {product.description && <p className="text-xs text-slate-400 line-clamp-1">{product.description}</p>}
+                          {product.description && <p className="text-xs text-slate-500 line-clamp-1">{product.description}</p>}
                         </div>
                       </div>
                     </td>
@@ -1057,21 +1057,21 @@ export default function ProductListPage() {
                   <td className="px-4 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                     {product.status === "archived" ? (
                       <button onClick={() => handleRestoreProduct(product.id)} aria-label={`Restore ${product.name || "product"}`}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Restore">
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Restore">
                         <RotateCcw size={16} />
                       </button>
                     ) : (
                       <>
                         <button onClick={() => { fetchCategories(); setEditProduct({ ...product }); setShowEditModal(true); }} aria-label={`Edit ${product.name || "product"}`}
-                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit">
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit">
                           <Pencil size={16} />
                         </button>
                         <button onClick={() => handleDuplicateProduct(product.id)} disabled={duplicatingId === product.id} aria-label={`Duplicate ${product.name || "product"}`}
-                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:opacity-50 disabled:cursor-not-allowed" title="Duplicate">
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:opacity-50 disabled:cursor-not-allowed" title="Duplicate">
                           {duplicatingId === product.id ? <Loader2 size={16} className="animate-spin" /> : <Copy size={16} />}
                         </button>
                         <button onClick={() => handleDeleteProduct(product.id, product.name)} aria-label={`Delete ${product.name || "product"}`}
-                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-red-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500" title="Delete">
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500" title="Delete">
                           <Trash2 size={16} />
                         </button>
                       </>

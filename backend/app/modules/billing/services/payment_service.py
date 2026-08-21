@@ -33,9 +33,10 @@ from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import safe_commit, safe_commit_and_refresh, filter_allowed
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
+from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.services.email_service import send_payment_receipt_email
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 VALID_PAYMENT_STATUS_TRANSITIONS: Dict[PaymentStatus, set[PaymentStatus]] = {
     PaymentStatus.PENDING: {PaymentStatus.PROCESSING, PaymentStatus.CLEARED, PaymentStatus.FAILED, PaymentStatus.CANCELLED},
@@ -95,6 +96,7 @@ class PaymentService:
         self.attempt_repo = PaymentAttemptRepository(db)
         self.customer_service = CustomerService(db)
         self.invoice_service = InvoiceService(db)
+        self.config_service = BillingConfigurationService(db)
         self.audit = BillingAuditService(db)
 
     # ── Payment Methods ────────────────────────────────────────────────────
@@ -139,7 +141,7 @@ class PaymentService:
         idempotency_key: Optional[str] = None, **data: Any,
     ) -> Payment:
         data = filter_allowed(data, PAYMENT_ALLOWED_FIELDS)
-        self.customer_service.get_customer(customer_id, organization_id)
+        customer = self.customer_service.get_customer(customer_id, organization_id)
         if self.repo.exists(organization_id, payment_number=payment_number):
             raise AlreadyExistsException("Payment", "payment_number")
         # Normalize empty transaction ids to NULL so the unique
@@ -157,10 +159,14 @@ class PaymentService:
                 existing = self.repo.get_first(organization_id, transaction_id=tx_id)
                 if existing:
                     raise AlreadyExistsException("Payment", "transaction_id")
-        # Validate currency
-        currency = data.get("currency")
+        # Currency: explicit > customer's own currency > org default -- same
+        # precedence already used for invoices/contracts/subscriptions.
+        # Never silently falls through to the Payment.currency column's own
+        # USD default when the client omits it.
+        currency = data.get("currency") or customer.currency or self.config_service.get_default_currency(organization_id)
         if currency and currency.upper() not in VALID_CURRENCY_CODES:
             raise BadRequestException(f"Unsupported currency code: {currency}")
+        data["currency"] = currency
         data.pop("transaction_id", None)
         # This method backs the manual "Record Payment" flow, where the funds have
         # already been collected — default to cleared so it can be allocated
@@ -199,7 +205,7 @@ class PaymentService:
                     payment_number=payment_number,
                     payment_date=str(payment_date),
                     amount=str(amount),
-                    currency=data.get("currency", "USD"),
+                    currency=data.get("currency") or self.config_service.get_default_currency(organization_id),
                     payment_method=data.get("payment_method_type", ""),
                     organization_id=organization_id,
                     db=self.db,
@@ -547,6 +553,22 @@ class PaymentService:
     # ── Payment Attempts ───────────────────────────────────────────────────
 
     def record_attempt(self, payment_id: int, organization_id: int, attempt_number: int, status: str, **data: Any) -> PaymentAttempt:
+        # ZB-SA-CMD-003 §9.2 — "Pause automatic payment attempts" breaker:
+        # recording a NEW capture attempt is platform-initiated payment
+        # activity and is gated. Webhook-driven status confirmations for
+        # in-flight processor activity are NOT gated (they only record what
+        # the processor already did).
+        from app.core.exceptions import BadRequestException
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_PAYMENT_ATTEMPTS,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_PAYMENT_ATTEMPTS)
+        except BillingBlockedError as exc:
+            raise BadRequestException(str(exc))
         self.repo.get_by_id(payment_id, organization_id)
         attempt = self.attempt_repo.create(organization_id, payment_id=payment_id, attempt_number=attempt_number, status=status, **data)
         return attempt

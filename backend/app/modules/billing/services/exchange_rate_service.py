@@ -18,7 +18,7 @@ from app.core.exceptions import BadRequestException
 from app.modules.billing.models import BillingConfiguration, ExchangeRateProvider
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 OPEN_ER_API_BASE = "https://open.er-api.com/v6/latest"
 REQUEST_TIMEOUT = 10
@@ -110,7 +110,10 @@ class ExchangeRateService:
         if not config:
             raise BadRequestException("No billing configuration found.")
 
-        base = (base_currency or config.base_currency or "USD").upper()
+        base = base_currency or config.base_currency
+        if not base:
+            raise ValueError("Base currency is not configured for the organization.")
+        base = base.upper()
         rates, metadata = self._fetch_all_rates(base)
 
         if not rates:
@@ -164,11 +167,11 @@ class ExchangeRateService:
             staleness_hours = None
             is_stale = True
 
+        base_currency = config.exchange_rate_base_currency or config.base_currency
+        if not base_currency:
+            raise ValueError("Base currency is not configured for the organization.")
         return {
-            "base_currency": config.exchange_rate_base_currency or (
-                config.base_currency.value if hasattr(config.base_currency, 'value')
-                else str(config.base_currency or "USD")
-            ),
+            "base_currency": base_currency.value if hasattr(base_currency, 'value') else str(base_currency),
             "rates": rates,
             "last_refreshed": (
                 config.exchange_rate_last_refreshed.isoformat()
@@ -224,7 +227,17 @@ class ExchangeRateService:
             return None, None, None
 
         try:
-            base = (config.exchange_rate_base_currency or "USD").upper()
+            # exchange_rate_base_currency is genuinely nullable (no default,
+            # unlike base_currency) -- falling straight to a hardcoded "USD"
+            # here meant an org that never explicitly ran a base-currency
+            # refresh would silently fetch USD-based live rates even though
+            # their real configured currency (config.base_currency, which is
+            # never null) is something else entirely.
+            fallback_base = config.base_currency.value if hasattr(config.base_currency, "value") else config.base_currency
+            base_currency = config.exchange_rate_base_currency or fallback_base
+            if not base_currency:
+                raise ValueError("Base currency is not configured for the organization.")
+            base = str(base_currency).upper()
             url = f"{OPEN_ER_API_BASE}/{base}"
             with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
                 resp = client.get(url)

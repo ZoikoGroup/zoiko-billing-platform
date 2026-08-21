@@ -31,8 +31,9 @@ from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.billing.models import (
     PriceSource, PricingModel, PricingPlan, PlanTier, Product, ResolvedPriceType,
 )
+from app.modules.billing.services.settings_service import BillingConfigurationService
 
-logger = logging.getLogger("zoiko")
+logger = logging.getLogger("zoiko_billing")
 
 
 @dataclass
@@ -94,7 +95,7 @@ class PriceResolver:
         """
         product = self._load_product(organization_id, product_id)
         base_price = Decimal(str(product.default_price or 0))
-        currency = product.currency or "USD"
+        currency = product.currency or BillingConfigurationService(self.db).get_default_currency(organization_id)
 
         if pricing_plan_id is not None:
             return self._resolve_with_plan(
@@ -150,7 +151,7 @@ class PriceResolver:
                 f"PricingPlan {pricing_plan_id} does not belong to Product {product.id}"
             )
 
-        currency = product.currency or "USD"
+        currency = product.currency or BillingConfigurationService(self.db).get_default_currency(organization_id)
         pricing_model = plan.pricing_model.value if plan.pricing_model else PricingModel.FLAT.value
 
         if pricing_model in (

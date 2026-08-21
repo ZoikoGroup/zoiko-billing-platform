@@ -44,6 +44,9 @@ import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import TopBar from "./TopBar";
 import ZoikoMark from "./ZoikoMark";
+import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
+import TriageStrip from "./TriageStrip";
+import CommandPalette from "./CommandPalette";
 
 const NAV_SECTIONS = [
   {
@@ -190,6 +193,8 @@ const NAV_SECTIONS = [
       { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
       { label: "Users", href: "/super-admin/users", icon: UserCog },
       { label: "Settings", href: "/super-admin/settings", icon: Settings },
+      { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
+      { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
     ],
   },
   {
@@ -203,12 +208,23 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Reliability",
+    icon: Activity,
+    superAdminOnly: true,
+    children: [
+      { label: "Triage", href: "/super-admin/triage", icon: ClipboardList },
+      { label: "Reliability Overview", href: "/super-admin/reliability", icon: Activity },
+    ],
+  },
+  {
     label: "Governance",
     icon: ShieldCheck,
     superAdminOnly: true,
     children: [
+      { label: "Governance Overview", href: "/super-admin/governance", icon: ShieldCheck },
       { label: "Audit Logs", href: "/super-admin/audit-logs", icon: ScrollText },
       { label: "Approval Queue", href: "/super-admin/approval-queue", icon: CheckSquare },
+      { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: ClipboardCheck },
       { label: "Production Readiness", href: "/super-admin/production-readiness", icon: ClipboardCheck },
     ],
   },
@@ -225,6 +241,7 @@ const NAV_SECTIONS = [
 const TOP_NAV_ITEMS = [
   { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard, orgAdminOnly: true },
   { label: "My Organization", href: "/organization-admin/organization", icon: Building2, orgAdminOnly: true },
+  { label: "Privileged Access Log", href: "/organization-admin/privileged-access-log", icon: ShieldCheck, orgAdminOnly: true },
 ];
 
 const WORKSPACE_NAV_ITEMS = [
@@ -265,15 +282,15 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           aria-expanded={expanded}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
-              ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
-              : "border-white/10 bg-white/5 text-[#D6D0EF] hover:border-white/20 hover:bg-white/10"
+              ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+              : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
           }`}
         >
           <span className="inline-flex items-center gap-3">
-            <item.icon className={`h-4 w-4 transition duration-200 ${active ? "text-white" : "text-[#B2ACC8]"}`} />
+            <item.icon className={`h-4 w-4 transition duration-200 ${active ? "text-white" : "text-[#94A3B8]"}`} />
             <span>{item.label}</span>
           </span>
-          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180 text-white" : "text-[#9C95BF]"}`} />
+          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180 text-white" : "text-[#94A3B8]"}`} />
         </button>
         {expanded ? (
           <div className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
@@ -295,10 +312,10 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
         sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
       } ${
         isActive(item.href, pathname, search)
-          ? "border-[#7B3AEB]/40 bg-gradient-to-r from-[#4C2CC5] via-[#7B3AEB] to-[#6033D3] text-white shadow-[0_18px_40px_rgba(70,38,156,0.18)]"
+          ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
           : sectionStyle
-            ? "border-white/10 bg-white/5 text-[#D6D0EF] hover:border-white/20 hover:bg-white/10"
-            : "border-transparent text-[#B2ACC8] hover:border-white/10 hover:bg-white/5 hover:text-white"
+            ? "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
+            : "border-transparent text-[#94A3B8] hover:border-white/10 hover:bg-white/5 hover:text-white"
       }`}
     >
       <item.icon className="h-4 w-4 shrink-0" />
@@ -322,7 +339,7 @@ function SidebarContent({ onNavigate, role }) {
   const showWorkspace = role === "billing_admin";
   const showOrgNav = role === "org_admin";
 
-  const visibleFooter = role === "super_admin" ? [] : FOOTER_NAV_ITEMS;
+  const visibleFooter = role === "super_admin" || role === "org_admin" ? FOOTER_NAV_ITEMS : [];
 
   const [openSection, setOpenSection] = useState(null);
 
@@ -331,15 +348,14 @@ function SidebarContent({ onNavigate, role }) {
       <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Link
-            to={role === "super_admin" ? "/super-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
+            to={role === "super_admin" ? "/super-admin/dashboard" : role === "org_admin" ? "/organization-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
             onClick={onNavigate}
-            className="text-[22px] font-extrabold tracking-tight text-white"
+            className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
           >
-            <span>Zoiko</span>
-            <span className="text-[#FC7800]">Billing</span>
+            <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
           </Link>
           {ROLE_LABELS[role] ? (
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#B2ACC8]">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#94A3B8]">
               {ROLE_LABELS[role]}
             </p>
           ) : null}
@@ -371,7 +387,7 @@ function SidebarContent({ onNavigate, role }) {
 
         {showWorkspace ? (
           <div className="mb-6">
-            <p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+            <p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
               My Organization
             </p>
             <div className="space-y-1.5">
@@ -389,7 +405,7 @@ function SidebarContent({ onNavigate, role }) {
         ) : null}
 
         {role === "super_admin" ? null : (
-          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A83B0]">
+          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
             {showWorkspace ? "Billing" : "Navigation"}
           </p>
         )}
@@ -442,7 +458,7 @@ export default function BillingShell({ children }) {
       />
 
       <aside
-        className={`fixed top-[65px] bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#1F0B63] to-[#160845] px-4 py-6 shadow-[0_24px_80px_rgba(8,6,37,0.42)] transition-transform lg:top-0 lg:bottom-0 lg:translate-x-0 ${
+        className={`fixed top-[65px] bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-transform lg:top-0 lg:bottom-0 lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -452,7 +468,15 @@ export default function BillingShell({ children }) {
       <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
       <div className="lg:pl-72">
-        <main className="w-full pt-[65px]">{children}</main>
+        <main className="w-full pt-[65px]">
+          {role === "super_admin" && (
+            <>
+              <PrivilegedSessionBanner />
+              <TriageStrip />
+            </>
+          )}
+          {children}
+        </main>
       </div>
 
       {/* AI Assistant launcher — spec §6 "Assistant Launcher": product-branded
@@ -474,6 +498,8 @@ export default function BillingShell({ children }) {
           onClose={() => setAssistantOpen(false)}
         />
       </Suspense>
+
+      {role === "super_admin" && <CommandPalette />}
     </div>
   );
 }

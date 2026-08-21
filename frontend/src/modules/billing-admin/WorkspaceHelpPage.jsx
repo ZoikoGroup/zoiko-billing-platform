@@ -3,16 +3,11 @@ import { useNavigate } from "react-router-dom";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { HelpCircle, BookOpen, FileText, Headphones, ChevronDown, ChevronRight } from "lucide-react";
 
-const INK = "#181433";
-const INK_SOFT = "#4A4566";
-const LINE = "rgba(24,20,51,0.08)";
-const VIOLET = "#5B3FE0";
-
 const QUICK_LINKS = [
-  { title: "Billing Dashboard", description: "Overview of your billing metrics and KPIs", icon: FileText, path: "/billing", color: "#F5A340" },
-  { title: "Billing Settings", description: "Configure your billing preferences and templates", icon: BookOpen, path: "/billing/settings", color: "#0F9B8E" },
-  { title: "Customers", description: "Manage your customer accounts and contacts", icon: Headphones, path: "/billing/customers", color: "#5B3FE0" },
-  { title: "Invoices", description: "Create and manage invoices, credit notes, and payments", icon: FileText, path: "/billing/invoices", color: "#D6473C" },
+  { title: "Billing Dashboard", description: "Overview of your billing metrics and KPIs", icon: FileText, path: "/billing", color: "#D97706" },
+  { title: "Billing Settings", description: "Configure your billing preferences and templates", icon: BookOpen, path: "/billing/settings", color: "#0891B2" },
+  { title: "Customers", description: "Manage your customer accounts and contacts", icon: Headphones, path: "/billing/customers", color: "#7C3AED" },
+  { title: "Invoices", description: "Create and manage invoices, credit notes, and payments", icon: FileText, path: "/billing/invoices", color: "#DC2626" },
 ];
 
 const FAQ_ITEMS = [
@@ -44,17 +39,17 @@ const FAQ_ITEMS = [
 
 function FaqItem({ item, isOpen, onToggle }) {
   return (
-    <div className="border rounded-[12px] overflow-hidden" style={{ borderColor: LINE }}>
+    <div className="border border-slate-200 rounded-2xl overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between p-4 text-left bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between p-4 text-left bg-white hover:bg-slate-50 transition-colors cursor-pointer"
       >
-        <span className="text-[13px] font-semibold" style={{ color: INK }}>{item.q}</span>
-        {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: INK_SOFT }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: INK_SOFT }} />}
+        <span className="text-[13px] font-semibold text-slate-800">{item.q}</span>
+        {isOpen ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-500" />}
       </button>
       {isOpen && (
         <div className="px-4 pb-4">
-          <p className="text-[13px] leading-relaxed" style={{ color: INK_SOFT }}>{item.a}</p>
+          <p className="text-[13px] leading-relaxed text-slate-500">{item.a}</p>
         </div>
       )}
     </div>
@@ -66,11 +61,11 @@ export default function WorkspaceHelpPage() {
   const [openFaq, setOpenFaq] = useState(null);
 
   return (
-    <div className="font-['Inter',system-ui,sans-serif] p-4 sm:p-6 lg:p-8" style={{ background: "#F8F7F4", color: INK, minHeight: "calc(100vh - 4rem)" }}>
+    <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
       <WorkspaceHeader title="Help & Documentation" subtitle="Billing guides and support" icon={HelpCircle} />
 
       <div className="mb-8">
-        <h2 className="text-[14px] font-bold mb-4" style={{ color: INK }}>Quick Links</h2>
+        <h2 className="text-lg font-bold text-slate-800 mb-4">Quick Links</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {QUICK_LINKS.map((link) => {
             const Icon = link.icon;
@@ -78,14 +73,13 @@ export default function WorkspaceHelpPage() {
               <button
                 key={link.path}
                 onClick={() => navigate(link.path)}
-                className="p-5 rounded-[14px] border bg-white text-left hover:-translate-y-0.5 hover:shadow-md transition-all cursor-pointer"
-                style={{ borderColor: LINE }}
+                className="p-5 rounded-2xl border border-slate-200 bg-white text-left hover:border-brand/40 hover:shadow-lg transition-all cursor-pointer"
               >
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3" style={{ background: `${link.color}15`, color: link.color }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: `${link.color}15`, color: link.color }}>
                   <Icon className="w-5 h-5" />
                 </div>
-                <p className="text-[13px] font-semibold mb-1" style={{ color: INK }}>{link.title}</p>
-                <p className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>{link.description}</p>
+                <p className="text-[13px] font-semibold text-slate-800 mb-1">{link.title}</p>
+                <p className="text-[11px] leading-relaxed text-slate-500">{link.description}</p>
               </button>
             );
           })}
@@ -93,7 +87,7 @@ export default function WorkspaceHelpPage() {
       </div>
 
       <div className="mb-8">
-        <h2 className="text-[14px] font-bold mb-4" style={{ color: INK }}>Frequently Asked Questions</h2>
+        <h2 className="text-lg font-bold text-slate-800 mb-4">Frequently Asked Questions</h2>
         <div className="space-y-2">
           {FAQ_ITEMS.map((item, i) => (
             <FaqItem key={i} item={item} isOpen={openFaq === i} onToggle={() => setOpenFaq(openFaq === i ? null : i)} />
@@ -101,8 +95,8 @@ export default function WorkspaceHelpPage() {
         </div>
       </div>
 
-      <div className="rounded-[14px] border p-5" style={{ borderColor: LINE, background: "white" }}>
-        <p className="text-[12.5px] leading-relaxed" style={{ color: INK_SOFT }}>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <p className="text-[12.5px] leading-relaxed text-slate-500">
           This workspace ("My Organization" in the sidebar) is your
           organization-level control center — identity, billing health,
           subscription, activity, and configuration at a glance. The full

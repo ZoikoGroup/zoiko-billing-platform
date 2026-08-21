@@ -18,6 +18,7 @@ import os
 import re
 import smtplib
 import ssl
+from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -303,6 +304,185 @@ def send_org_admin_password_reset_email(
         "action_url": reset_link,
         "support_email": "",
     }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER)
+
+
+# ── Organization lifecycle emails (ZB-ORG-001, ZB-ONB-001) ──────────────────
+
+# Client-safe role display names — internal enum values and system UUIDs are
+# never exposed in notification emails.  Maps internal UserRole enum values
+# to human-readable labels; any unrecognized role falls back to "Member".
+_ROLE_DISPLAY_MAP = {
+    "super_admin": "Administrator",
+    "org_admin": "Owner",
+    "billing_admin": "Billing Admin",
+    "finance_approver": "Finance Approver",
+    "auditor": "Auditor",
+}
+
+
+def _verify_tenant_boundary(
+    recipient_organization_id,
+    expected_organization_id,
+    recipient_email: str,
+) -> bool:
+    """Tenant isolation guardrail for notification dispatch.
+
+    Before rendering or sending any org-scoped email, this function verifies
+    that the recipient's organization_id matches the expected tenant boundary.
+    Returns True when the boundary is satisfied; False (and logs a warning)
+    when a cross-tenant leak is blocked.
+    """
+    if recipient_organization_id != expected_organization_id:
+        logger.warning(
+            "[email] Tenant boundary violation blocked: recipient %s "
+            "(org_id=%s) does not belong to expected org_id=%s",
+            recipient_email,
+            recipient_organization_id,
+            expected_organization_id,
+        )
+        return False
+    return True
+
+
+def _sanitize_role_display(role_value: str) -> str:
+    """Replace internal role enum values with client-safe display names.
+    System UUIDs or unexpected values are replaced with 'Member'."""
+    if not role_value:
+        return "Member"
+    return _ROLE_DISPLAY_MAP.get(str(role_value).lower().strip(), "Member")
+
+
+def send_org_created_email(
+    email: str,
+    first_name: str,
+    organization_name: str,
+    recipient_role: str,
+    actor_display_name: str,
+    effective_time: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ORG-001: Organization Created notification.
+
+    Triggered immediately after tenant provisioning completes.  Includes a
+    tenant isolation check and role sanitization before dispatch.
+    """
+    if not _verify_tenant_boundary(organization_id, organization_id, email):
+        return False
+
+    safe_role = _sanitize_role_display(recipient_role)
+    safe_actor = _sanitize_role_display(actor_display_name) if actor_display_name else "System"
+
+    from app.config import settings as _settings
+    setup_url = _settings.FRONTEND_URL.rstrip("/") + "/login"
+
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"{organization_name} is ready in Zoiko Billing",
+        "organization_name": organization_name,
+        "recipient_first_name": first_name or "there",
+        "recipient_role": safe_role,
+        "actor_display_name": safe_actor,
+        "effective_time": effective_time,
+        "setup_url": setup_url,
+    }, db=db, organization_id=organization_id)
+
+
+def send_product_welcome_email(
+    email: str,
+    first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ONB-001: Product Welcome / onboarding-started notification.
+
+    Dispatched immediately after ZB-ORG-001 or when the primary user clicks
+    Begin Setup.  Includes tenant isolation check before dispatch.
+    """
+    if not _verify_tenant_boundary(organization_id, organization_id, email):
+        return False
+
+    from app.config import settings as _settings
+    onboarding_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/settings"
+
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Welcome to Zoiko Billing — {organization_name}",
+        "organization_name": organization_name,
+        "recipient_first_name": first_name or "there",
+        "onboarding_url": onboarding_url,
+    }, db=db, organization_id=organization_id)
+
+
+def notify_super_admins_org_created(db=None, organization=None, actor_email: str = None) -> list[str]:
+    """ZB-SA-CMD-003 v3.0 master directive: notify every ACTIVE Super Admin
+    by real email whenever a new organization is created.
+
+    Recipients are resolved server-side from the users table (role ==
+    super_admin AND is_active) — never from client input. The email carries
+    only operational metadata (name, code, country, currency, status,
+    creator, timestamp and a deep link); it contains NO credentials or
+    secrets. Returns the list of recipient addresses that were dispatched
+    (best-effort per recipient; a send failure for one admin does not stop
+    the others). Callers invoke this AFTER their transaction has committed;
+    exceptions bubble to the caller's fire-and-forget guard so a transient
+    SMTP failure never fails an already-committed creation.
+    """
+    if organization is None:
+        return []
+
+    from app.config import settings as _settings
+    from app.modules.auth.models import User, UserRole
+
+    recipients = (
+        db.query(User)
+        .filter(User.role == UserRole.SUPER_ADMIN, User.is_active.is_(True))
+        .all()
+        if db is not None
+        else []
+    )
+    if not recipients:
+        logger.warning(
+            "[email] No active Super Admin found to notify about organization %s creation",
+            getattr(organization, "organization_code", "?"),
+        )
+        return []
+
+    view_url = _settings.FRONTEND_URL.rstrip("/") + "/super-admin/organizations"
+    status = "Active" if getattr(organization, "is_active", True) else "Suspended"
+    created_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    context = {
+        "subject": f"New organization created: {organization.organization_name}",
+        "organization_name": organization.organization_name,
+        "organization_code": organization.organization_code,
+        "country": organization.country or "—",
+        "currency": organization.currency or "—",
+        "status": status,
+        "created_by": actor_email or "System",
+        "created_time": created_time,
+        "view_url": view_url,
+    }
+
+    dispatched: list[str] = []
+    for admin in recipients:
+        try:
+            if send_approval_email(admin.email, "super_admin_org_created.html", context, db=db):
+                dispatched.append(admin.email)
+            else:
+                logger.warning(
+                    "[email] Super Admin org-created notification could not be sent to %s (org %s)",
+                    admin.email, organization.organization_code,
+                )
+        except Exception as exc:
+            logger.warning(
+                "[email] Super Admin org-created notification failed for %s (org %s): %s",
+                admin.email, organization.organization_code, exc,
+            )
+    logger.info(
+        "[email] Super Admin org-created notifications dispatched to %d/%d admins for org %s",
+        len(dispatched), len(recipients), organization.organization_code,
+    )
+    return dispatched
 
 
 # ── Billing module emails ───────────────────────────────────────────────────

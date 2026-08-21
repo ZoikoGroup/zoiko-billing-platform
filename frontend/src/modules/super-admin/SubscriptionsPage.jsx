@@ -22,6 +22,8 @@ const EMPTY_FORM = { organization_id: "", plan_id: "", status: "pending" };
 
 const TRANSITION_LABELS = {
   active: "Activate",
+  past_due: "Mark Past Due",
+  restricted: "Restrict",
   suspended: "Suspend",
   cancelled: "Cancel",
   expired: "Expire",
@@ -146,7 +148,7 @@ export default function SubscriptionsPage() {
             </span>
             <span>
               <span className="block font-semibold text-slate-800">{row.organization_name}</span>
-              <span className="block text-xs text-slate-400">{row.organization_code}</span>
+              <span className="block text-xs text-slate-500">{row.organization_code}</span>
             </span>
           </span>
         ),
@@ -157,7 +159,7 @@ export default function SubscriptionsPage() {
         render: (row) => (
           <span>
             <span className="block font-medium text-slate-700">{row.plan_name}</span>
-            <span className="block text-xs text-slate-400">{row.plan_code}</span>
+            <span className="block text-xs text-slate-500">{row.plan_code}</span>
           </span>
         ),
       },
@@ -195,7 +197,7 @@ export default function SubscriptionsPage() {
         width: 220,
         render: (row) => {
           const allowed = SUBSCRIPTION_TRANSITIONS[row.status] || [];
-          if (allowed.length === 0) return <span className="text-xs text-slate-400">Terminal</span>;
+          if (allowed.length === 0) return <span className="text-xs text-slate-500">Terminal</span>;
           const target = transitionTargets[row.id] || allowed[0];
           return (
             <div className="flex items-center gap-1.5">

@@ -13,7 +13,7 @@ import { useBillingDateRange } from "../utils/DateRangeContext";
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", color: "bg-gray-100 text-gray-600" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
   { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
   { value: "accepted", label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
@@ -36,7 +36,7 @@ function WizardStep({ number, label, active, completed }) {
       }`}>
         {completed ? <CheckCircle size={16} /> : number}
       </div>
-      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-600" : "text-slate-500"}`}>{label}</span>
+      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-700" : "text-slate-500"}`}>{label}</span>
     </div>
   );
 }
@@ -477,12 +477,12 @@ export default function QuotationListPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search quotations..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     aria-label="Search quotations"
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
+                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)}
                   className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
@@ -505,7 +505,7 @@ export default function QuotationListPage() {
                       <Ban size={12} /> Cancel
                     </button>
                     <button onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Clear selection"><X size={14} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" aria-label="Clear selection"><X size={14} /></button>
                   </div>
                 )}
               </div>
@@ -531,7 +531,7 @@ export default function QuotationListPage() {
                     <option value="">All Statuses</option>
                     {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 <DashboardDateRangeFilter range={dateRangeValue} onRangeChange={setDateRangeValue} customStart={customStart} customEnd={customEnd} onApplyCustom={applyCustomRange} onResetCustom={resetDateRange} />
                 {(statusFilter || dateRange.date_from || dateRange.date_to) && (
@@ -584,9 +584,9 @@ export default function QuotationListPage() {
                     <td className="px-4 py-4">
                       <button onClick={() => navigate(`/billing/quotations/${q.id}`)} className="font-medium text-slate-800 hover:text-brand-600 transition-colors whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <FileSignature size={14} className="text-slate-400" />
+                          <FileSignature size={14} className="text-slate-500" />
                           {q.quote_number || `#${q.id}`}
-                          {q.quote_version > 1 && <span className="text-xs text-slate-400">v{q.quote_version}</span>}
+                          {q.quote_version > 1 && <span className="text-xs text-slate-500">v{q.quote_version}</span>}
                         </div>
                       </button>
                     </td>
@@ -597,7 +597,7 @@ export default function QuotationListPage() {
                     <td className="px-4 py-4 text-slate-500 text-xs">{formatDisplayDate(q.created_at)}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => navigate(`/billing/quotations/${q.id}`)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors" title="View" aria-label={`View quotation ${q.quote_number || q.id}`}>
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View" aria-label={`View quotation ${q.quote_number || q.id}`}>
                         <Eye size={16} />
                       </button>
                     </td>
@@ -650,25 +650,25 @@ export default function QuotationListPage() {
                 ) : (
                   <div>
                     <div className="relative mb-3">
-                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                       <input type="text" placeholder={`Search ${singular.toLowerCase()}s by name, email, or phone...`} value={customerSearch}
                         onChange={(e) => setCustomerSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                     </div>
-                    {customerSearching && <p className="text-sm text-slate-400 text-center py-2">Searching...</p>}
+                    {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
                     {customerResults.length > 0 && (
                       <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
                         {customerResults.map((c) => (
                           <button key={c.id} onClick={() => selectCustomer(c)}
                             className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
                             <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `${singular} #${c.id}`}</p>
-                            <p className="text-xs text-slate-400">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
+                            <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
                           </button>
                         ))}
                       </div>
                     )}
                     {customerResults.length === 0 && customerSearch.trim() && !customerSearching && (
-                      <p className="text-sm text-slate-400 text-center py-4">No {singular.toLowerCase()}s found</p>
+                      <p className="text-sm text-slate-500 text-center py-4">No {singular.toLowerCase()}s found</p>
                     )}
                   </div>
                 )}
@@ -705,7 +705,7 @@ export default function QuotationListPage() {
                   <div className="flex items-center justify-center py-8"><Loader2 size={24} className="animate-spin text-brand-600" /></div>
                 ) : (
                   <div className="relative mb-4">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <select value="" onChange={(e) => { if (e.target.value) { addLineItem(e.target.value); e.target.value = ""; } }}
                       className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 appearance-none">
                       <option value="">Add a product or service...</option>
@@ -715,7 +715,7 @@ export default function QuotationListPage() {
                 )}
 
                 {wizardData.items.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
+                  <div className="text-center py-8 text-slate-500">
                     <ShoppingCart size={32} className="mx-auto mb-2 text-slate-300" />
                     <p>No line items yet. Select a product above to add one.</p>
                   </div>
@@ -727,7 +727,7 @@ export default function QuotationListPage() {
                         <div key={item.id} className="p-4">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
-                            <button onClick={() => removeLineItem(item.id)} className="p-1 text-slate-400 hover:text-red-600" aria-label="Remove line item" title="Remove line item"><Trash2 size={14} /></button>
+                            <button onClick={() => removeLineItem(item.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label="Remove line item" title="Remove line item"><Trash2 size={14} /></button>
                           </div>
                           {item.needs_plan_selection && (
                             <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -741,7 +741,7 @@ export default function QuotationListPage() {
                                   <button key={plan.id} onClick={() => handlePlanSelect(item.id, plan.id)}
                                     className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-700 transition-colors">
                                     {plan.name || plan.plan_name || `Plan #${plan.id}`}
-                                    {plan.unit_price != null && <span className="ml-1 text-slate-400">— {formatDisplayCurrency(plan.unit_price, wizardData.currency)}</span>}
+                                    {plan.unit_price != null && <span className="ml-1 text-slate-500">— {formatDisplayCurrency(plan.unit_price, wizardData.currency)}</span>}
                                   </button>
                                 ))}
                               </div>
@@ -796,7 +796,7 @@ export default function QuotationListPage() {
                 <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><DollarSign size={20} className="text-brand-500" /> Pricing Review</h3>
 
                 {wizardData.items.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
+                  <div className="text-center py-8 text-slate-500">
                     <p>No items to review. Add products in the previous step.</p>
                   </div>
                 ) : (
@@ -834,7 +834,7 @@ export default function QuotationListPage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
                   <div className="relative max-w-xs">
-                    <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input type="number" min="0" max="100" step="0.1" value={wizardData.discount_percentage}
                       onChange={(e) => setWizardData((p) => ({ ...p, discount_percentage: parseFloat(e.target.value) || 0 }))}
                       className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -881,7 +881,7 @@ export default function QuotationListPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-slate-500">Valid Until: {formatDisplayDate(wizardData.valid_until)}</p>
-                      <p className="text-xs text-slate-400 mt-1">Status: Draft</p>
+                      <p className="text-xs text-slate-500 mt-1">Status: Draft</p>
                     </div>
                   </div>
 

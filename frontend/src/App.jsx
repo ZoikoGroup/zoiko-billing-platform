@@ -1,6 +1,7 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 
+import { useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import BillingShell from "./components/BillingShell";
 import LoginPage from "./pages/LoginPage";
@@ -11,7 +12,6 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
-import OrgPortalPage from "./pages/OrgPortalPage";
 import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
@@ -125,6 +125,13 @@ const ApprovalQueuePage = lazy(() => import("./modules/super-admin/ApprovalQueue
 const KillSwitchPage = lazy(() => import("./modules/super-admin/KillSwitchPage"));
 const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/ProductionAcceptancePage"));
 const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
+const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccessPage"));
+const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
+const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
+const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
+const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
+const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
+const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
@@ -230,6 +237,12 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
   { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
   { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
+  { path: "/super-admin/support-access", element: <SupportAccessPage /> },
+  { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
+  { path: "/super-admin/governance", element: <GovernancePage /> },
+  { path: "/super-admin/reliability", element: <ReliabilityPage /> },
+  { path: "/super-admin/triage", element: <TriagePage /> },
+  { path: "/super-admin/launch-readiness", element: <LaunchReadinessPage /> },
 ];
 
 // Legacy Super Admin paths that must keep working (bookmarks, old links)
@@ -257,13 +270,16 @@ function ModuleSpinner() {
   );
 }
 
-function LandingRedirect() {
-  const user = JSON.parse(localStorage.getItem("zoiko_billing_user") || "null");
-  if (user?.role && user.role !== "super_admin") {
-    const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/billing";
-    return <Navigate to={target} replace />;
+function LandingRedirectComp() {
+  const { user, isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
   }
-  return <Navigate to="/super-admin/dashboard" replace />;
+  if (user.role === "super_admin") {
+    return <Navigate to="/super-admin/dashboard" replace />;
+  }
+  const target = VALID_ROLES.includes(user.role) ? ROLE_DEFAULT_REDIRECT[user.role] : "/login";
+  return <Navigate to={target} replace />;
 }
 
 // Substitutes any `:param` segments in a legacy redirect target with the
@@ -313,7 +329,6 @@ export default function App() {
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/portal" element={<OrgPortalPage />} />
           {SUPER_ADMIN_LEGACY_REDIRECTS.map(({ from, to }) => (
             <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
           ))}
@@ -344,6 +359,14 @@ export default function App() {
             element={
               <BillingShell>
                 <OrgAdminUserManagementPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/organization-admin/privileged-access-log"
+            element={
+              <BillingShell>
+                <OrgAdminPrivilegedAccessLogPage />
               </BillingShell>
             }
           />
@@ -395,9 +418,9 @@ export default function App() {
               </BillingShell>
             }
           />
-          <Route path="/" element={<LandingRedirect />} />
         </Route>
-        <Route path="*" element={<LandingRedirect />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<LandingRedirectComp />} />
       </Routes>
     </Suspense>
     </ErrorBoundary>

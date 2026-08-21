@@ -215,7 +215,7 @@ export default function ForecastReport() {
     title: "Forecast Report",
     subtitle: "Revenue and MRR forecast projections",
     icon: BarChart3,
-    iconGradient: "from-[#FF7A00] to-[#FF5500]",
+    iconGradient: "from-[#2563EB] to-[#1D4ED8]",
     lastUpdated,
     refreshing,
     onRefresh: () => { setRefreshing(true); fetchData().finally(() => setRefreshing(false)); },
@@ -226,7 +226,7 @@ export default function ForecastReport() {
 
   if (loading) {
     return (
-      <div className="space-y-8">
+      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
         <DashboardHeader {...headerProps} />
         <Spinner />
       </div>
@@ -235,7 +235,7 @@ export default function ForecastReport() {
 
   if (error) {
     return (
-      <div className="space-y-8">
+      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
         <DashboardHeader {...headerProps} />
         <EmptyState icon={BarChart3} title="Unable to load forecast" message={error} actionLabel="Retry" onAction={fetchData} />
       </div>
@@ -243,28 +243,28 @@ export default function ForecastReport() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Forecasted 6-Month Revenue</p>
             <p className="text-xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(forecast.totalForecastRevenue, baseCurrency)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Next 6 months</p>
+            <p className="text-xs text-slate-500 mt-0.5">Next 6 months</p>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Growth Trend</p>
-            <p className={`text-xl font-bold mt-1 ${forecast.avgGrowth >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            <p className={`text-xl font-bold mt-1 ${forecast.avgGrowth >= 0 ? "text-emerald-700" : "text-red-500"}`}>
               {forecast.avgGrowth >= 0 ? "+" : ""}{forecast.avgGrowth.toFixed(1)}%
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">12-month MRR change</p>
+            <p className="text-xs text-slate-500 mt-0.5">12-month MRR change</p>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Expected MRR (6 months)</p>
             <p className="text-xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(forecast.projectedMRR, baseCurrency)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Monthly recurring revenue</p>
+            <p className="text-xs text-slate-500 mt-0.5">Monthly recurring revenue</p>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Confidence</p>
             <p className="text-xl font-bold text-slate-900 mt-1">{forecast.confidence}%</p>
             <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -278,7 +278,7 @@ export default function ForecastReport() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
           <h3 className="text-sm font-semibold text-slate-800 mb-4">Revenue & MRR Forecast</h3>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={forecast.combinedChart} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
@@ -287,41 +287,41 @@ export default function ForecastReport() {
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
               <Tooltip formatter={(v) => v != null ? formatCurrency(v, baseCurrency) : "—"} />
               <Legend />
-              <Line type="monotone" dataKey="Revenue" stroke="#FF7A00" strokeWidth={2} dot={false} connectNulls={false} name="Revenue (Historical)" />
-              <Line type="monotone" dataKey="Forecast" stroke="#FF7A00" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="Revenue (Forecast)" />
+              <Line type="monotone" dataKey="Revenue" stroke="#2563EB" strokeWidth={2} dot={false} connectNulls={false} name="Revenue (Historical)" />
+              <Line type="monotone" dataKey="Forecast" stroke="#2563EB" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="Revenue (Forecast)" />
               <Line type="monotone" dataKey="MRR" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} name="MRR (Historical)" />
               <Line type="monotone" dataKey="MRR Forecast" stroke="#10b981" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} name="MRR (Forecast)" />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
           <h3 className="text-sm font-semibold text-slate-800 mb-4">Monthly Breakdown</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
 <thead>
                 <tr className="border-b border-slate-200">
-                  <th scope="col" className="text-left py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Month</th>
-                  <th scope="col" className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Revenue</th>
-                  <th scope="col" className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">MRR</th>
-                  <th scope="col" className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Expected Collections</th>
+                  <th scope="col" className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Month</th>
+                  <th scope="col" className="text-right py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Revenue</th>
+                  <th scope="col" className="text-right py-3 px-4 text-xs font-semibold text-slate-500 uppercase">MRR</th>
+                  <th scope="col" className="text-right py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Expected Collections</th>
                 </tr>
               </thead>
               <tbody>
                 {monthlyMetrics.map((m) => (
-                  <tr key={m.key} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-3 px-3 font-medium text-slate-800">{m.label}</td>
-                    <td className="py-3 px-3 text-right text-slate-700">{formatCurrency(m.revenue, baseCurrency)}</td>
-                    <td className="py-3 px-3 text-right text-slate-700">{formatCurrency(m.mrr, baseCurrency)}</td>
-                    <td className="py-3 px-3 text-right text-slate-700">{formatCurrency(m.collected, baseCurrency)}</td>
+                  <tr key={m.key} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-3 px-4 font-medium text-slate-800">{m.label}</td>
+                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(m.revenue, baseCurrency)}</td>
+                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(m.mrr, baseCurrency)}</td>
+                    <td className="py-3 px-4 text-right text-slate-700">{formatCurrency(m.collected, baseCurrency)}</td>
                   </tr>
                 ))}
                 {forecast.forecastMonths.map((m, i) => (
-                  <tr key={`f-${i}`} className="border-b border-slate-50 bg-brand-50/30 hover:bg-brand-50/60">
-                    <td className="py-3 px-3 font-medium text-brand-700">{m.month} (est.)</td>
-                    <td className="py-3 px-3 text-right text-brand-700">{formatCurrency(m.revenue, baseCurrency)}</td>
-                    <td className="py-3 px-3 text-right text-brand-700">{formatCurrency(m.mrr, baseCurrency)}</td>
-                    <td className="py-3 px-3 text-right text-brand-700">{formatCurrency(m.collected, baseCurrency)}</td>
+                  <tr key={`f-${i}`} className="border-b border-slate-100 bg-brand-50/30 hover:bg-brand-50/60">
+                    <td className="py-3 px-4 font-medium text-brand-700">{m.month} (est.)</td>
+                    <td className="py-3 px-4 text-right text-brand-700">{formatCurrency(m.revenue, baseCurrency)}</td>
+                    <td className="py-3 px-4 text-right text-brand-700">{formatCurrency(m.mrr, baseCurrency)}</td>
+                    <td className="py-3 px-4 text-right text-brand-700">{formatCurrency(m.collected, baseCurrency)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -266,7 +266,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                 s.id === step ? "bg-brand-600 text-white" :
                 s.id < step ? "bg-brand-100 text-brand-700 hover:bg-brand-200 cursor-pointer" :
-                "bg-slate-100 text-slate-400 cursor-not-allowed"
+                "bg-slate-100 text-slate-500 cursor-not-allowed"
               }`}>
               {s.id < step ? <CheckCircle size={14} /> : <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{s.id}</span>}
               {s.id === 1 ? `${singular} / Source` : s.label}
@@ -334,19 +334,19 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               ) : (
                 <div>
                   <div className="relative mb-3">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input type="text" placeholder="Search active contracts by name or number..." value={contractSearch}
                       onChange={(e) => setContractSearch(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
-                  {contractSearching && <p className="text-sm text-slate-400 text-center py-2">Searching...</p>}
+                  {contractSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
                   {contractResults.length > 0 && (
                     <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-60 overflow-y-auto">
                       {contractResults.map((c) => (
                         <button key={c.id} onClick={() => selectContract(c)}
                           className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${wizardData.contract_id === c.id ? "bg-blue-50 border-l-4 border-l-blue-500" : ""}`}>
                           <p className="font-medium text-slate-800">{c.contract_name}</p>
-                          <p className="text-xs text-slate-400">{c.contract_number} · {formatDisplayCurrency(c.value, c.currency)} · {formatDisplayDate(c.start_date)} — {formatDisplayDate(c.end_date) || "Ongoing"}</p>
+                          <p className="text-xs text-slate-500">{c.contract_number} · {formatDisplayCurrency(c.value, c.currency)} · {formatDisplayDate(c.start_date)} — {formatDisplayDate(c.end_date) || "Ongoing"}</p>
                         </button>
                       ))}
                     </div>
@@ -378,12 +378,12 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               ) : (
                 <div>
                   <div className="relative mb-3">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input type="text" placeholder={`Search ${singular.toLowerCase()}s by name or email...`} value={customerSearch}
                       onChange={(e) => setCustomerSearch(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
-                  {customerSearching && <p className="text-sm text-slate-400 text-center py-2">Searching...</p>}
+                  {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
                   {customerResults.length > 0 && (
                     <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-60 overflow-y-auto">
                       {customerResults.map((cust) => (
@@ -393,7 +393,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                         }}
                           className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
                           <p className="font-medium text-slate-800">{cust.display_name || cust.company_name || cust.name}</p>
-                          <p className="text-xs text-slate-400">{cust.email || "\u2014"} · {cust.currency || "No currency set"}</p>
+                          <p className="text-xs text-slate-500">{cust.email || "\u2014"} · {cust.currency || "No currency set"}</p>
                         </button>
                       ))}
                     </div>
@@ -408,13 +408,13 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               <label className="block text-sm font-medium text-slate-700 mb-1">Subscription Number *</label>
               <input type="text" value={wizardData.subscription_number}
                 onChange={(e) => setWizardData((p) => ({ ...p, subscription_number: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
               <input type="date" value={wizardData.start_date}
                 onChange={(e) => setWizardData((p) => ({ ...p, start_date: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
         </div>
@@ -428,21 +428,21 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
           {creationMode === "contract" && wizardData.contract_id ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Period</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1 capitalize">{wizardData.contract_billing_period?.replace(/_/g, " ")}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Period</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1 capitalize">{wizardData.contract_billing_period?.replace(/_/g, " ")}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Day</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">Day {wizardData.contract_billing_day || 1}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Day</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">Day {wizardData.contract_billing_day || 1}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contract Term</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(wizardData.contract_start_date)} — {formatDisplayDate(wizardData.contract_end_date) || "Ongoing"}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Contract Term</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(wizardData.contract_start_date)} — {formatDisplayDate(wizardData.contract_end_date) || "Ongoing"}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Auto Renew</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">{wizardData.contract_auto_renew ? "Yes" : "No"}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Auto Renew</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">{wizardData.contract_auto_renew ? "Yes" : "No"}</p>
                 </div>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -453,37 +453,37 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                     <label className="block text-sm font-medium text-slate-700 mb-1">First Billing Date</label>
                     <input type="date" value={wizardData.start_date}
                       onChange={(e) => setWizardData((p) => ({ ...p, start_date: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Current Term End</label>
                     <input type="date" value={wizardData.current_term_end || computeCurrentTermEnd(wizardData.start_date, wizardData.contract_billing_period)}
                       onChange={(e) => setWizardData((p) => ({ ...p, current_term_end: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                 </div>
               </div>
               {wizardData.contract_auto_renew && wizardData.contract_renewal_term && (
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
                   <p className="text-sm font-medium text-emerald-800">Contract Auto-Renew Enabled</p>
-                  <p className="text-xs text-emerald-600 mt-1">Subscription will auto-renew every {wizardData.contract_renewal_term} days per contract terms.</p>
+                  <p className="text-xs text-emerald-700 mt-1">Subscription will auto-renew every {wizardData.contract_renewal_term} days per contract terms.</p>
                 </div>
               )}
             </div>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Period</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1 capitalize">{wizardData.plan_billing_period?.replace(/_/g, " ")}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Billing Period</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1 capitalize">{wizardData.plan_billing_period?.replace(/_/g, " ")}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(wizardData.start_date)}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Start Date</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(wizardData.start_date)}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Term End</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">{formatDisplayDate(wizardData.current_term_end || computeCurrentTermEnd(wizardData.start_date, wizardData.plan_billing_period))}</p>
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Term End</p>
+                  <p className="text-lg font-bold text-slate-900 mt-1">{formatDisplayDate(wizardData.current_term_end || computeCurrentTermEnd(wizardData.start_date, wizardData.plan_billing_period))}</p>
                 </div>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -494,13 +494,13 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                     <label className="block text-sm font-medium text-slate-700 mb-1">First Billing Date</label>
                     <input type="date" value={wizardData.start_date}
                       onChange={(e) => setWizardData((p) => ({ ...p, start_date: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Current Term End</label>
                     <input type="date" value={wizardData.current_term_end || computeCurrentTermEnd(wizardData.start_date, wizardData.plan_billing_period)}
                       onChange={(e) => setWizardData((p) => ({ ...p, current_term_end: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                 </div>
               </div>
@@ -516,12 +516,12 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
           </h3>
           <div className="space-y-4">
             <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="text" placeholder="Search plans..." value={planSearch}
                 onChange={(e) => setPlanSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
-            {planSearching && <p className="text-sm text-slate-400 text-center py-2">Searching plans...</p>}
+            {planSearching && <p className="text-sm text-slate-500 text-center py-2">Searching plans...</p>}
             {planResults.length > 0 && (
               <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-60 overflow-y-auto">
                 {planResults.map((plan) => (
@@ -530,7 +530,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-slate-800">{plan.plan_name}</p>
-                        <p className="text-xs text-slate-400">{plan.category || "General"} · {plan.billing_period?.replace(/_/g, " ")} · {formatDisplayCurrency(plan.unit_price || plan.flat_fee, plan.currency)}</p>
+                        <p className="text-xs text-slate-500">{plan.category || "General"} · {plan.billing_period?.replace(/_/g, " ")} · {formatDisplayCurrency(plan.unit_price || plan.flat_fee, plan.currency)}</p>
                       </div>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${plan.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{plan.is_active ? "Active" : "Inactive"}</span>
                     </div>
@@ -564,13 +564,13 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                     <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
                     <input type="number" min="0" max="100" step="0.01" value={wizardData.discount_percentage}
                       onChange={(e) => setWizardData((p) => ({ ...p, discount_percentage: parseFloat(e.target.value) || 0 }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Tax %</label>
                     <input type="number" min="0" max="100" step="0.01" value={wizardData.tax_percentage}
                       onChange={(e) => setWizardData((p) => ({ ...p, tax_percentage: parseFloat(e.target.value) || 0 }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                 </div>
               </div>
@@ -592,7 +592,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               </div>
               <div className="text-right">
                 <p className="text-sm text-slate-500">Date: {formatDisplayDate(wizardData.start_date)}</p>
-                <p className="text-xs text-slate-400 mt-1">Status: Draft</p>
+                <p className="text-xs text-slate-500 mt-1">Status: Draft</p>
               </div>
             </div>
             {wizardData.contract_id && (
@@ -626,7 +626,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
             <textarea value={wizardData.notes} onChange={(e) => setWizardData((p) => ({ ...p, notes: e.target.value }))}
               rows={2} placeholder="Optional notes..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
         </div>
       )}
@@ -635,12 +635,12 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
         <div>
           {step > 1 && (
             <button onClick={handlePrev}
-              className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
+              className="px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Back</button>
           )}
         </div>
         <div className="flex gap-3">
           <button onClick={handleBack}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            className="px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
           {step < 4 ? (
             <button onClick={handleNext}
               disabled={step === 1 && (!creationMode || (creationMode === "contract" && !wizardData.contract_id) || (creationMode === "direct" && !wizardData.customer_id))}
