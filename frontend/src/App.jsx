@@ -250,6 +250,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/financial/usage", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial/tax", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/integrations", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/gateways", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/connectors", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/webhooks", element: <ReliabilityPage /> },

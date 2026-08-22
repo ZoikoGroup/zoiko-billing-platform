@@ -176,6 +176,10 @@ def _add_missing_columns() -> None:
                     default_sql = column.server_default.arg
                     if hasattr(default_sql, "text"):
                         default_sql = default_sql.text
+                    elif isinstance(default_sql, str):
+                        # SQLAlchemy treats plain string server defaults as
+                        # literal values; preserve that meaning in ALTER DDL.
+                        default_sql = "'" + default_sql.replace("'", "''") + "'"
                     ddl += f" DEFAULT {default_sql}"
                 logger.info("Adding missing column: %s", ddl)
                 conn.execute(text(ddl))

@@ -81,7 +81,6 @@ def _register(db, email, organization="Acme Corp"):
             # mandatory (there is no silent USD fallback any more).
             currency="USD",
             intended_plan="essentials",
-            currency="USD",
         ),
     )
 
