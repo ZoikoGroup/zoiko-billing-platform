@@ -284,7 +284,7 @@ export default function CommercialPlanVersionsPage() {
           { label: plan?.plan_code },
         ]}
         title={`Catalog Versions — ${plan?.plan_name}`}
-        description="Every published version is immutable. Correcting a price/limit creates a new version — history is never overwritten (ZB-COM-BILL-001 §T1)."
+        description="PLANE 1 · SaaS catalog governance. Every published version is immutable. Correcting a price/limit creates a new version — history is never overwritten (ZB-COM-BILL-001 §T1)."
         icon={GitBranch}
         actions={<Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>New draft</Button>}
       />

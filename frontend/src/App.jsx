@@ -119,6 +119,7 @@ const CommercialOrganizationDetailPage = lazy(() => import("./modules/super-admi
 const CommercialPlansPage = lazy(() => import("./modules/super-admin/PlansPage"));
 const CommercialSubscriptionsPage = lazy(() => import("./modules/super-admin/SubscriptionsPage"));
 const CommercialEntitlementsPage = lazy(() => import("./modules/super-admin/EntitlementsPage"));
+const Plane1BillingPage = lazy(() => import("./modules/super-admin/Plane1BillingPage"));
 const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
 const CommercialPlanVersionsPage = lazy(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
 const ApprovalQueuePage = lazy(() => import("./modules/super-admin/ApprovalQueuePage"));
@@ -127,10 +128,12 @@ const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/Produc
 const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
 const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccessPage"));
 const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
+const LifecycleOnboardingPage = lazy(() => import("./modules/super-admin/LifecycleOnboardingPage"));
 const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
 const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
 const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
 const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
+const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
 const BILLING_ROUTES = [
@@ -229,18 +232,42 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
   { path: "/super-admin/users", element: <UsersPage /> },
   { path: "/super-admin/settings", element: <SettingsPage /> },
-  { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
-  { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
-  { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
-  { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
-  { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
-  { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
-  { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
-  { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
+  { path: "/super-admin/platform/lifecycle", element: <LifecycleOnboardingPage /> },
   { path: "/super-admin/support-access", element: <SupportAccessPage /> },
   { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
+  { path: "/super-admin/commercial/accounts", element: <CommercialOrganizationsPage /> },
+  { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
+  { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
+  { path: "/super-admin/commercial/offers", element: <CommercialPlansPage /> },
+  { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
+  { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
+  { path: "/super-admin/commercial/invoices", element: <Plane1BillingPage /> },
+  { path: "/super-admin/financial/invoice-engine", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/payments", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/balances", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/reconciliation", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/credits", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/usage", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/tax", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/integrations/gateways", element: <ReliabilityPage /> },
+  { path: "/super-admin/integrations/connectors", element: <ReliabilityPage /> },
+  { path: "/super-admin/integrations/webhooks", element: <ReliabilityPage /> },
+  { path: "/super-admin/integrations/jobs", element: <TenantHealthPage /> },
+  { path: "/super-admin/integrations/imports-exports", element: <ReliabilityPage /> },
+  { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
+  { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance", element: <GovernancePage /> },
+  { path: "/super-admin/governance/roles", element: <UsersPage /> },
+  { path: "/super-admin/governance/privileged-sessions", element: <SupportAccessPage /> },
+  { path: "/super-admin/governance/security-events", element: <CommercialAuditLogsPage /> },
+  { path: "/super-admin/governance/data", element: <GovernancePage /> },
   { path: "/super-admin/reliability", element: <ReliabilityPage /> },
+  { path: "/super-admin/reliability/incidents", element: <TriagePage /> },
+  { path: "/super-admin/reliability/reprocessing", element: <TriagePage /> },
+  { path: "/super-admin/reliability/data-quality", element: <ReliabilityPage /> },
+  { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
+  { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
   { path: "/super-admin/triage", element: <TriagePage /> },
   { path: "/super-admin/launch-readiness", element: <LaunchReadinessPage /> },
 ];

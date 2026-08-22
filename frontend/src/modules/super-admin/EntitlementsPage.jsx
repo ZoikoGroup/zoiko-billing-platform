@@ -130,7 +130,7 @@ export default function EntitlementsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Entitlements"
-        description="Read-only entitlement view: each organization's current plan and its limits. Nothing here is enforced yet."
+        description="PLANE 1 · Read-only entitlement view: each organization's current plan and its limits. Nothing here is enforced yet."
         icon={KeyRound}
         meta={`Showing ${displayValue(rows.length)} organization(s)`}
       />

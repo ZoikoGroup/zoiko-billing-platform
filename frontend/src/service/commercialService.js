@@ -82,6 +82,15 @@ export const createCommercialSubscription = (data) =>
 export const setCommercialSubscriptionStatus = (subscriptionId, status) =>
   api.patch(`/api/super-admin/commercial-subscriptions/${subscriptionId}/status`, { status });
 
+// Phase 3F F5 — plan change supersedes the open subscription with one on the
+// target plan (history preserved, both audit trails written server-side).
+export const changeCommercialSubscriptionPlan = (subscriptionId, data) =>
+  api.post(`/api/super-admin/commercial-subscriptions/${subscriptionId}/change-plan`, data);
+
+// Phase 3F F10 — honest Plane 1 reporting read model (counts + MRR honesty).
+export const getSaasCommercialReporting = () =>
+  api.get("/api/super-admin/commercial-reporting");
+
 // ── Platform audit logs (PHASE 11) ──────────────────────────────────────
 export const listPlatformAuditLogs = (params = {}) =>
   api.get("/api/super-admin/audit-logs", { params });
@@ -135,3 +144,30 @@ export const setBillingKillSwitch = (enabled, reason) =>
 // ── Production Acceptance Center (ZB-COM-BILL-001 §26) ──────────────────
 export const getProductionAcceptanceReport = () =>
   api.get("/api/super-admin/production-acceptance");
+
+// ── Phase 3A organizations workspace ────────────────────────────────────
+// Directory + overview read models: identity, lifecycle and operational
+// counts only — the backend never returns monetary values here, so there
+// is nothing to aggregate or derive client-side.
+export const listOrganizations = (params = {}) =>
+  api.get("/api/super-admin/organizations", { params });
+
+export const getOrganizationOverview = (organizationId) =>
+  api.get(`/api/super-admin/organizations/${organizationId}/overview`);
+
+// ── Phase 3C governed lifecycle transitions ─────────────────────────────
+// The backend validates the transition against its state machine, records
+// the mandatory reason, actor and a correlation id in the platform audit
+// trail, and keeps Organization.is_active in lockstep.
+export const transitionOrganizationLifecycle = (organizationId, target, reason) =>
+  api.post(`/api/super-admin/organizations/${organizationId}/lifecycle-transition`, {
+    target,
+    reason,
+  });
+
+// ── Phase 3C platform lifecycle & onboarding (fleet-wide read model) ────
+// Per-state organization counts, the onboarding pipeline with evidence-based
+// readiness, blocked tenants with their last recorded transition, and recent
+// lifecycle audit events — all composed server-side.
+export const getPlatformLifecycle = () =>
+  api.get("/api/super-admin/platform/lifecycle");

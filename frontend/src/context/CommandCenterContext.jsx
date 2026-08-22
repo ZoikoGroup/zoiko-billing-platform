@@ -5,20 +5,13 @@ import { getAttentionCounts } from "../service/commandCenterService";
 
 /**
  * Persistent Super Admin Command Center shell state (ZB-SA-CMD-003 §8/§9/§19):
- * the active/pending privileged-tenant-access grant and the Attention
- * queue's severity counts, polled so the privileged-session banner and the
- * triage strip stay visible and current across every /super-admin/* route,
- * not just the one page that happens to have fetched them.
+ * 1. Persistent Context Bar scope (Environment, Domain, Legal Entity, Region, Currency, Period)
+ * 2. Active 5-lens selection (Triage [default], Commercial, Financial Ops, Reliability, Governance)
+ * 3. Active/pending privileged-tenant-access grant and countdown
+ * 4. Attention queue severity counts
+ * 5. Worst freshness rollup across background jobs and telemetry
  *
- * Every value here is a read of server-authoritative state — never
- * something this context invents or extends client-side. On every poll a
- * lazily-expired grant server-side simply stops being returned as active;
- * this context has no client-side expiry logic of its own.
- *
- * Clears immediately (not just on next poll) when the signed-in role
- * changes away from super_admin — covers logout, role change, and session
- * invalidation in one check, per the spec's "tenant context clears on
- * logout/timeout/role change/grant expiry" requirement.
+ * Invariant: Clears immediately when role changes away from super_admin.
  */
 
 const CommandCenterContext = createContext(null);
@@ -27,14 +20,34 @@ const POLL_INTERVAL_MS = 20000;
 
 export function CommandCenterProvider({ children }) {
   const { role, isAuthenticated } = useAuth();
+  const isSuperAdmin = isAuthenticated && role === "super_admin";
+
+  // Lens management (Default: "triage", ZB-SA-CMD-003 §11)
+  const [activeLens, setActiveLens] = useState("triage");
+
+  // Persistent Context Bar filters
+  const [contextScope, setContextScope] = useState({
+    environment: "PRODUCTION",
+    domain: "Global Operations",
+    legalEntity: "All Entities",
+    region: "Global",
+    reportingCurrency: "USD (USD)",
+    period: "Last 30 Days",
+  });
+
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(new Date());
   const [activeGrant, setActiveGrant] = useState(null);
   const [attentionCounts, setAttentionCounts] = useState(null);
   const [jobFreshness, setJobFreshness] = useState(null);
-  const isSuperAdmin = isAuthenticated && role === "super_admin";
   const pollRef = useRef(null);
+
+  const updateContextScope = useCallback((field, value) => {
+    setContextScope((prev) => ({ ...prev, [field]: value }));
+  }, []);
 
   const refresh = useCallback(() => {
     if (!isSuperAdmin) return;
+    setLastRefreshedAt(new Date());
     getActivePrivilegedAccess()
       .then((grant) => setActiveGrant(grant && grant.status === "active" ? grant : null))
       .catch(() => setActiveGrant(null));
@@ -63,12 +76,7 @@ export function CommandCenterProvider({ children }) {
 
   const clearActiveGrant = useCallback(() => setActiveGrant(null), []);
 
-  // §10.2 freshness rollup — the WORST state across all tracked jobs, so a
-  // single stale/unknown signal is never hidden by healthy siblings. Values
-  // come straight from the server's per-job freshness computation; this is
-  // only a max() over them, never a client-side re-derivation. When the
-  // scheduler is disabled there are no expected cadences, so the rollup is
-  // null (the strip renders nothing rather than a fake "fresh").
+  // §10.2 freshness rollup — the WORST state across all tracked jobs.
   const worstFreshness = useMemo(() => {
     if (!jobFreshness || !jobFreshness.scheduler_enabled) return null;
     const jobs = jobFreshness.jobs || [];
@@ -78,7 +86,19 @@ export function CommandCenterProvider({ children }) {
     return "fresh";
   }, [jobFreshness]);
 
-  const value = { activeGrant, attentionCounts, worstFreshness, refresh, clearActiveGrant };
+  const value = {
+    activeLens,
+    setActiveLens,
+    contextScope,
+    updateContextScope,
+    lastRefreshedAt,
+    activeGrant,
+    attentionCounts,
+    worstFreshness,
+    refresh,
+    clearActiveGrant,
+  };
+
   return <CommandCenterContext.Provider value={value}>{children}</CommandCenterContext.Provider>;
 }
 

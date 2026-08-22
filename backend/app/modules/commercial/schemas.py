@@ -189,6 +189,18 @@ class CommercialSubscriptionStatusUpdate(BaseModel):
     status: CommercialSubscriptionStatus
 
 
+class CommercialSubscriptionPlanChange(BaseModel):
+    """Phase 3F F5 — plan change request.
+
+    A plan change supersedes the current open subscription with a new one on
+    the target plan (history preserved, both audited). A reason is mandatory
+    for the platform audit trail.
+    """
+
+    new_plan_id: int
+    reason: str = Field(min_length=3, max_length=1000)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 9 — Consolidated Commercial Organization view (Super Admin, read-only)
 # ═══════════════════════════════════════════════════════════════════════════════

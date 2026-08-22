@@ -88,6 +88,12 @@ class PlatformAuditAction(str, enum.Enum):
     ATTENTION_SUPPRESSED = "attention_suppressed"
     ATTENTION_ESCALATED = "attention_escalated"
 
+    # ── ZB-SA-P3 (Phase 3C) — tenant lifecycle state machine transitions ──
+    # One action covers every governed move between PROVISIONING/ONBOARDING/
+    # ACTIVE/SUSPENDED/DEACTIVATING/DEACTIVATED; from/to states live in
+    # metadata so the trail stays queryable without enum churn.
+    LIFECYCLE_TRANSITION = "lifecycle_transition"
+
 
 class PlatformAuditLog(Base):
     """Platform-plane audit trail for Super Admin mutations.

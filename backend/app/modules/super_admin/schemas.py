@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.modules.auth.models import UserRole
 
@@ -86,10 +86,48 @@ class SuperAdminUserResponse(BaseModel):
     mfa_enabled: Optional[bool] = None  # only meaningful for role == super_admin
     platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
 
+    # ── ZB-SA-P3 (Phase 3B) — additive, evidence-based fields ──────────────
+    # derived_status: server-composed account state (active / suspended /
+    # invited / locked). last_login_at: real last successful login; None is
+    # rendered honestly as "never logged in" — never inferred.
+    derived_status: Optional[str] = None
+    last_login_at: Optional[datetime] = None
+
 
 class SuperAdminUserListResponse(BaseModel):
     users: list[SuperAdminUserResponse]
     total: int
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-P3 — Phase 3B Administrators & Users (Super-Admin-scoped mutations)
+# Every mutation requires a documented reason and writes a platform audit
+# event transactionally with the change.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SuperAdminUserInviteRequest(BaseModel):
+    organization_id: int
+    email: EmailStr
+    first_name: str = Field("", max_length=100)
+    last_name: str = Field("", max_length=100)
+    phone: str = Field("", max_length=50)
+    role: UserRole  # must be a TENANT role (org_admin/billing_admin/...) — validated in the service
+    send_invite: bool = True
+
+
+class UserRoleChangeRequest(BaseModel):
+    role: UserRole
+    reason: str = Field(..., min_length=3, description="Mandatory audit justification")
+
+
+class UserMembershipChangeRequest(BaseModel):
+    organization_id: Optional[int] = Field(None, description="Target organization (None removes tenant membership)")
+    reason: str = Field(..., min_length=3)
+
+
+class UserStatusChangeRequest(BaseModel):
+    is_active: bool
+    reason: str = Field(..., min_length=3)
 
 
 class DashboardStats(BaseModel):
@@ -477,6 +515,41 @@ class JobHealthListResponse(BaseModel):
     scheduler_enabled: bool
 
 
+# ZB-SA-P3 Phase 3D — per-tenant operational health (Domain C purity: counts,
+# states and timestamps only; never a monetary value or a derived score).
+class TenantHealthOrganizationRow(BaseModel):
+    id: int
+    organization_code: str
+    organization_name: str
+    lifecycle_state: str
+    total_users: int = 0
+    active_users: int = 0
+    suspended_users: int = 0
+    unverified_users: int = 0
+    org_admins: int = 0
+    open_incident_count: int = 0
+    worst_open_severity: Optional[str] = None
+    last_incident_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
+    plane: str = "TENANT"
+
+
+class TenantHealthSummary(BaseModel):
+    total_organizations: int
+    counts_by_lifecycle_state: dict[str, int]
+    open_incident_total: int
+    jobs_tracked: int
+    jobs_with_failures_24h: int
+    jobs_not_fresh: int
+
+
+class TenantHealthOverviewResponse(BaseModel):
+    summary: TenantHealthSummary
+    organizations: list[TenantHealthOrganizationRow]
+    generated_at: datetime
+    plane: str = "PLATFORM"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ZB-SA-CMD-003 §10/§11 — Attention Engine / incident lifecycle
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -651,3 +724,253 @@ class TriageSummaryResponse(BaseModel):
     scheduler_enabled: bool
     safety_controls: list[TriageSafetyControl]
     critical_events: list[TriageCriticalEvent]
+
+
+
+class FinancialBillingsSummary(BaseModel):
+    total_invoices: int
+    invoiced_amount: str
+    collected_amount: str
+    overdue_count: int
+    overdue_amount: str
+
+
+class FinancialRecoverySummary(BaseModel):
+    failed_payments_count: int
+    dunning_cycle_status: str
+    active_dunning_cases_count: int = 0
+    resolved_dunning_cases_count: int = 0
+
+
+class FinancialLeakageSummary(BaseModel):
+    over_allocated_count: int
+    under_allocated_paid_count: int
+    unbilled_usage_anomalies: int
+    active_credit_notes_count: int
+
+
+class FinancialOperationsSummaryResponse(BaseModel):
+    consistency: FinancialConsistencyResponse
+    billings: FinancialBillingsSummary
+    recovery: FinancialRecoverySummary
+    leakage: FinancialLeakageSummary
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-P3 — Phase 3A Organizations workspace (directory + overview)
+# Identity / lifecycle / operational counts ONLY. No monetary values ever
+# appear in these read models (Domain B stays behind privileged access).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class OrganizationDirectoryItem(BaseModel):
+    id: int
+    organization_code: str
+    organization_name: str
+    country: Optional[str] = None
+    currency: Optional[str] = None
+    is_active: bool
+    lifecycle_state: str
+    billing_classification: Optional[str] = None
+    billing_source: Optional[str] = None
+    commercial_account_status: Optional[str] = None
+    can_charge: bool = False
+    subscription_status: Optional[str] = None
+    subscription_plan_code: Optional[str] = None
+    total_users: int = 0
+    active_users: int = 0
+    org_admins: int = 0
+    unverified_users: int = 0
+    open_incident_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    # Latest real activity evidence (org update / platform audit / incident);
+    # None means "no recorded evidence" and is rendered honestly as UNKNOWN.
+    last_activity_at: Optional[datetime] = None
+    plane: str = "TENANT"
+
+
+class OrganizationDirectoryResponse(BaseModel):
+    total: int
+    organizations: list[OrganizationDirectoryItem]
+
+
+class OrganizationAdministratorItem(BaseModel):
+    id: int
+    email: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    is_active: bool
+    is_verified: bool
+    last_login_at: Optional[datetime] = None
+
+
+class OrganizationUserLoginItem(BaseModel):
+    email: str
+    last_login_at: datetime
+
+
+class OrganizationUserSummary(BaseModel):
+    total_users: int = 0
+    active_users: int = 0
+    suspended_users: int = 0
+    invited_unverified: int = 0
+    by_role: dict[str, int]
+    recent_logins: list[OrganizationUserLoginItem]
+
+
+class OrganizationAuditEventItem(BaseModel):
+    id: int
+    action: Optional[str] = None
+    entity_type: str
+    entity_id: Optional[int] = None
+    actor_role: Optional[str] = None
+    reason: Optional[str] = None
+    correlation_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class OrganizationPrivilegedGrantItem(BaseModel):
+    id: int
+    status: str
+    ticket_reference: str
+    reason: str
+    scope: str
+    requested_minutes: int
+    requested_at: datetime
+    activated_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    exited_at: Optional[datetime] = None
+
+
+class OrganizationOverviewResponse(BaseModel):
+    organization: OrganizationDirectoryItem
+    lifecycle_state: str
+    allowed_transitions: list[str]
+    access_blocked: bool
+    onboarding_readiness: dict[str, str]
+    onboarding_blockers: list[str]
+    administrators: list[OrganizationAdministratorItem]
+    user_summary: OrganizationUserSummary
+    recent_audit_events: list[OrganizationAuditEventItem]
+    recent_privileged_grants: list[OrganizationPrivilegedGrantItem]
+    generated_at: datetime
+    plane: str = "TENANT"
+
+
+class LifecycleTransitionRequest(BaseModel):
+    target: str = Field(..., description="Target TenantLifecycleState value")
+    reason: str = Field(..., min_length=3, description="Mandatory human-readable justification")
+
+
+class LifecycleTransitionResponse(BaseModel):
+    organization_id: int
+    organization_code: str
+    previous_state: str
+    current_state: str
+    is_active: bool
+    allowed_transitions: list[str]
+    correlation_id: str
+    plane: str = "TENANT"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-P3 — Phase 3C Platform Lifecycle & Onboarding (fleet-wide read model)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class OnboardingPipelineItem(BaseModel):
+    id: int
+    organization_code: str
+    organization_name: str
+    state: str
+    registered_at: Optional[datetime] = None
+    onboarding_readiness: dict[str, str]
+    blockers: list[str] = []
+
+
+class BlockedOrganizationItem(BaseModel):
+    id: int
+    organization_code: str
+    organization_name: str
+    lifecycle_state: str
+    last_transition_reason: Optional[str] = None
+    last_transition_at: Optional[datetime] = None
+
+
+class LifecycleTransitionEventItem(BaseModel):
+    id: int
+    organization_id: Optional[int] = None
+    organization_code: Optional[str] = None
+    organization_name: Optional[str] = None
+    from_state: Optional[str] = None
+    to_state: Optional[str] = None
+    reason: Optional[str] = None
+    correlation_id: Optional[str] = None
+    actor_email: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class PlatformLifecycleResponse(BaseModel):
+    total_organizations: int
+    counts_by_state: dict[str, int]
+    onboarding_pipeline: list[OnboardingPipelineItem]
+    blocked_organizations: list[BlockedOrganizationItem]
+    recent_transitions: list[LifecycleTransitionEventItem]
+    generated_at: datetime
+    plane: str = "PLATFORM"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 3F F10 — Plane 1 SaaS reporting (honest read model)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class SaasPlanOpenCount(BaseModel):
+    plan_id: int
+    plan_code: str
+    plan_name: Optional[str] = None
+    open_subscriptions: int
+
+
+class SaasMrrCurrencyItem(BaseModel):
+    currency: str
+    monthly_amount: Decimal
+    subscriptions: int
+
+
+class SaasMrrCoverage(BaseModel):
+    open_subscriptions_total: int
+    open_subscriptions_priced: int
+    plans_with_published_price: int
+
+
+class SaasMrr(BaseModel):
+    """MRR is only ever 'computed' from priced published catalog versions;
+    'unknown' when no open subscription carries a price; per-currency when
+    mixed currencies make a single total meaningless."""
+
+    state: str  # computed | unknown | multi_currency
+    amount: Optional[Decimal] = None
+    currencies: list[SaasMrrCurrencyItem]
+    coverage: SaasMrrCoverage
+    basis: str
+
+
+class SaasAccountsReporting(BaseModel):
+    total: int
+    by_status: dict[str, int]
+
+
+class SaasSubscriptionsReporting(BaseModel):
+    total_ever: int
+    total_open: int
+    by_status: dict[str, int]
+    open_by_plan: list[SaasPlanOpenCount]
+
+
+class SaasReportingResponse(BaseModel):
+    generated_at: datetime
+    accounts: SaasAccountsReporting
+    subscriptions: SaasSubscriptionsReporting
+    mrr: SaasMrr
+    plane: str = "PLATFORM"
+    honesty_notes: list[str]

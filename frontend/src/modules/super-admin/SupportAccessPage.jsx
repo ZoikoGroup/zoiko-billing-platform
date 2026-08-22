@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ShieldAlert, KeyRound, Users, CreditCard, Repeat, History } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { ShieldAlert, KeyRound, Users, CreditCard, Repeat, History, LogOut } from "lucide-react";
 import {
   requestPrivilegedAccess,
   activatePrivilegedAccess,
@@ -7,9 +8,10 @@ import {
   listMyPrivilegedAccess,
   getPrivilegedAccessTenantSummary,
   searchOrganizations,
+  exitPrivilegedAccess,
 } from "../../service/privilegedAccessService";
 import { PageHeader, Modal, Field, Button, SearchInput } from "../../components/billing-ui";
-import { ErrorState, Spinner, SuccessMessage, StatusBadge, EmptyState } from "../../components/billing-shared";
+import { ErrorState, Spinner, SuccessMessage, StatusBadge, EmptyState, useConfirmationDialog } from "../../components/billing-shared";
 import useIsDesktopViewport from "../../hooks/useIsDesktopViewport";
 import MobileWriteBlock from "./MobileWriteBlock";
 import { formatDateTime } from "./constants";
@@ -28,7 +30,7 @@ function GrantStatusBadge({ value }) {
 }
 
 // ── Step 1: request access (select tenant + reason + ticket + duration) ──
-function RequestAccessModal({ open, onClose, onRequested }) {
+function RequestAccessModal({ open, onClose, onRequested, initialOrgCode = "" }) {
   const [query, setQuery] = useState("");
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState(null);
@@ -51,14 +53,26 @@ function RequestAccessModal({ open, onClose, onRequested }) {
     }
   }, [open]);
 
+  // A deep-linked ?organization={code} (e.g. from an organization's Support
+  // Access History card) seeds the search and auto-selects the exact match.
   useEffect(() => {
     if (!open || selectedOrg) return;
+    const effectiveQuery = query || initialOrgCode;
     setSearching(true);
-    searchOrganizations(query)
-      .then((res) => setOrgs(res.organizations || []))
+    searchOrganizations(effectiveQuery)
+      .then((res) => {
+        const list = res.organizations || [];
+        setOrgs(list);
+        if (initialOrgCode && !selectedOrg) {
+          const match = list.find(
+            (o) => (o.organization_code || "").toLowerCase() === initialOrgCode.toLowerCase()
+          );
+          if (match) setSelectedOrg(match);
+        }
+      })
       .catch(() => setOrgs([]))
       .finally(() => setSearching(false));
-  }, [open, query, selectedOrg]);
+  }, [open, query, initialOrgCode, selectedOrg]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -332,12 +346,16 @@ function TenantSummaryPanel({ grant }) {
 
 export default function SupportAccessPage() {
   const { activeGrant, refresh: refreshShell } = useCommandCenter();
+  const [searchParams] = useSearchParams();
+  const deepLinkOrgCode = searchParams.get("organization") || "";
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showRequest, setShowRequest] = useState(false);
   const [pendingGrant, setPendingGrant] = useState(null); // awaiting step-up (page-local: not shell chrome)
+  const [exiting, setExiting] = useState(false);
+  const { confirm, ConfirmationDialog } = useConfirmationDialog();
   // ZB-SA-CMD-003 §17 — privileged-access request/activation are privileged
   // writes and are blocked below the 768px desktop floor.
   const isDesktop = useIsDesktopViewport();
@@ -373,6 +391,31 @@ export default function SupportAccessPage() {
     load();
   }
 
+  async function handleExit() {
+    if (!activeGrant) return;
+    const ok = await confirm({
+      title: "Exit privileged access?",
+      message:
+        `This ends the active read-only session into ${activeGrant.organization_name} immediately. ` +
+        "The exit is recorded in the platform audit trail with a correlation id.",
+      confirmLabel: "Exit now",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setExiting(true);
+    setError(null);
+    try {
+      await exitPrivilegedAccess(activeGrant.id);
+      setNotice(`Privileged access to ${activeGrant.organization_name} has been exited.`);
+      refreshShell();
+      load();
+    } catch (e) {
+      setError(e?.message || "Failed to exit privileged access.");
+    } finally {
+      setExiting(false);
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -380,7 +423,15 @@ export default function SupportAccessPage() {
         description="Just-in-time, tenant-scoped, MFA-protected privileged access to a tenant's read-only billing summary (Domain B). Default off — no standing access exists."
         icon={ShieldAlert}
         actions={
-          !activeGrant && !pendingGrant ? (
+          activeGrant ? (
+            isDesktop ? (
+              <Button variant="secondary" icon={LogOut} loading={exiting} onClick={handleExit}>
+                Exit session
+              </Button>
+            ) : (
+              <MobileWriteBlock action="exiting a privileged access session" />
+            )
+          ) : !pendingGrant ? (
             isDesktop ? (
               <Button variant="danger" icon={ShieldAlert} onClick={() => setShowRequest(true)}>
                 Request tenant support access
@@ -400,7 +451,21 @@ export default function SupportAccessPage() {
         ) : error ? (
           <ErrorState message={error} onRetry={load} title="Unable to load support access" />
         ) : activeGrant ? (
-          <TenantSummaryPanel grant={activeGrant} />
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+              <div>
+                <p className="text-sm font-bold text-slate-800">
+                  Active session · {activeGrant.organization_name}
+                  <span className="ml-2 text-xs font-medium text-slate-500">({activeGrant.organization_code})</span>
+                </p>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  Ticket {activeGrant.ticket_reference} · expires {formatDateTime(activeGrant.expires_at)} · read-only financial summary scope
+                </p>
+              </div>
+              <GrantStatusBadge value={activeGrant.status} />
+            </div>
+            <TenantSummaryPanel grant={activeGrant} />
+          </>
         ) : (
           <EmptyState
             icon={ShieldAlert}
@@ -434,13 +499,19 @@ export default function SupportAccessPage() {
         </div>
       </div>
 
-      <RequestAccessModal open={showRequest} onClose={() => setShowRequest(false)} onRequested={handleRequested} />
+      <RequestAccessModal
+        open={showRequest}
+        onClose={() => setShowRequest(false)}
+        onRequested={handleRequested}
+        initialOrgCode={deepLinkOrgCode}
+      />
       <StepUpModal
         open={!!pendingGrant}
         grant={pendingGrant}
         onClose={() => setPendingGrant(null)}
         onActivated={handleActivated}
       />
+      {ConfirmationDialog}
     </div>
   );
 }

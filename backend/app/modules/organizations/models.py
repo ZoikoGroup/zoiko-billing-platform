@@ -8,6 +8,7 @@ Every billing row is scoped by organization_id; Super Admin is the only
 role that may see across organizations.
 """
 
+import enum
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey
@@ -16,6 +17,36 @@ from sqlalchemy.orm import relationship
 from app.core.db_types import CaseInsensitiveEnum
 from app.database import Base
 from app.modules.commercial.enums import BillingClassification, BillingSource
+
+
+class TenantLifecycleState(str, enum.Enum):
+    """ZB-SA-P3 — tenant lifecycle state machine (Phase 3C).
+
+    Only states supported by the existing business model exist here:
+      PROVISIONING  — row created, tenant not yet usable (reserved; the
+                      current registration flow skips straight to ONBOARDING).
+      ONBOARDING    — registered and active, but setup is incomplete
+                      (no approved subscription assigned yet). Stamped by
+                      register_enterprise; the tenant can already work while
+                      onboarding completes.
+      ACTIVE        — onboarded / activated; fully operational.
+      SUSPENDED     — Super Admin action; access blocked (is_active=False),
+                      records preserved.
+      DEACTIVATING  — controlled wind-down started; access blocked.
+      DEACTIVATED   — terminal; access permanently removed, history retained
+                      (never a hard delete of billing data).
+
+    Kept in lockstep with Organization.is_active by TenantLifecycleService:
+    is_active stays False exactly for SUSPENDED/DEACTIVATING/DEACTIVATED so
+    every existing auth check that reads is_active keeps its meaning.
+    """
+
+    PROVISIONING = "provisioning"
+    ONBOARDING = "onboarding"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    DEACTIVATING = "deactivating"
+    DEACTIVATED = "deactivated"
 
 
 class Organization(Base):
@@ -75,6 +106,18 @@ class Organization(Base):
     # Tenant is onboarded by /auth/register and becomes active immediately.
     # Super Admin may suspend it.
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # ZB-SA-P3 (Phase 3C) — governed lifecycle state. Defaults to ACTIVE so
+    # rows created before this column existed (and any non-registration
+    # factory path) remain valid with no data migration; register_enterprise
+    # stamps ONBOARDING explicitly for new tenants. Mutated ONLY through
+    # TenantLifecycleService.transition (never written directly by routers).
+    lifecycle_state = Column(
+        CaseInsensitiveEnum(TenantLifecycleState),
+        default=TenantLifecycleState.ACTIVE,
+        server_default="ACTIVE",
+        nullable=False,
+    )
 
     created_by_user_id = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True

@@ -350,55 +350,62 @@ export default function AuditLogsPage() {
               </Button>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Search">
+              <Field label="Search" htmlFor="audit-search">
                 <SearchInput
+                  id="audit-search"
                   value={search}
                   onChange={setSearch}
                   placeholder="Entity or action…"
                 />
               </Field>
-              <Field label="Action">
+              <Field label="Action" htmlFor="audit-action">
                 <Select
+                  id="audit-action"
                   value={action}
                   onChange={setAction}
                   options={AUDIT_ACTION_OPTIONS}
                   placeholder="All actions"
                 />
               </Field>
-              <Field label="Entity type">
+              <Field label="Entity type" htmlFor="audit-entity">
                 <Select
+                  id="audit-entity"
                   value={entityType}
                   onChange={setEntityType}
                   options={AUDIT_ENTITY_OPTIONS}
                   placeholder="All entities"
                 />
               </Field>
-              <Field label="Organization">
+              <Field label="Organization" htmlFor="audit-org">
                 <Select
+                  id="audit-org"
                   value={organizationId}
                   onChange={setOrganizationId}
                   options={orgOptions}
                   placeholder="All organizations"
                 />
               </Field>
-              <Field label="Actor">
+              <Field label="Actor" htmlFor="audit-actor">
                 <Select
+                  id="audit-actor"
                   value={actorId}
                   onChange={setActorId}
                   options={actorOptions}
                   placeholder="All actors"
                 />
               </Field>
-              <Field label="From">
+              <Field label="From" htmlFor="audit-date-from">
                 <input
+                  id="audit-date-from"
                   type="date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
                 />
               </Field>
-              <Field label="To">
+              <Field label="To" htmlFor="audit-date-to">
                 <input
+                  id="audit-date-to"
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
@@ -453,39 +460,44 @@ export default function AuditLogsPage() {
               </Button>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Search">
+              <Field label="Search" htmlFor="sub-audit-search">
                 <SearchInput
+                  id="sub-audit-search"
                   value={subSearch}
                   onChange={setSubSearch}
                   placeholder="Organization name or code…"
                 />
               </Field>
-              <Field label="Organization">
+              <Field label="Organization" htmlFor="sub-audit-org">
                 <Select
+                  id="sub-audit-org"
                   value={subOrganizationId}
                   onChange={setSubOrganizationId}
                   options={orgOptions}
                   placeholder="All organizations"
                 />
               </Field>
-              <Field label="Actor">
+              <Field label="Actor" htmlFor="sub-audit-actor">
                 <Select
+                  id="sub-audit-actor"
                   value={subActorId}
                   onChange={setSubActorId}
                   options={actorOptions}
                   placeholder="All actors"
                 />
               </Field>
-              <Field label="From">
+              <Field label="From" htmlFor="sub-audit-date-from">
                 <input
+                  id="sub-audit-date-from"
                   type="date"
                   value={subDateFrom}
                   onChange={(e) => setSubDateFrom(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
                 />
               </Field>
-              <Field label="To">
+              <Field label="To" htmlFor="sub-audit-date-to">
                 <input
+                  id="sub-audit-date-to"
                   type="date"
                   value={subDateTo}
                   onChange={(e) => setSubDateTo(e.target.value)}

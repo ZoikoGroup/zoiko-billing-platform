@@ -178,62 +178,79 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Overview",
-    icon: LayoutDashboard,
-    superAdminOnly: true,
-    children: [
-      { label: "Dashboard", href: "/super-admin/dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
     label: "Platform",
     icon: Building2,
     superAdminOnly: true,
     children: [
       { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
-      { label: "Users", href: "/super-admin/users", icon: UserCog },
-      { label: "Settings", href: "/super-admin/settings", icon: Settings },
+      { label: "Administrators & Users", href: "/super-admin/users", icon: UserCog },
+      { label: "Lifecycle & Onboarding", href: "/super-admin/platform/lifecycle", icon: Layers },
       { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
       { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
     ],
   },
   {
-    label: "Commercial",
+    label: "Platform Commercial",
     icon: Package,
     superAdminOnly: true,
     children: [
-      { label: "Plans", href: "/super-admin/commercial/plans", icon: Package },
-      { label: "Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
+      { label: "Commercial Accounts", href: "/super-admin/commercial/accounts", icon: Building2 },
+      { label: "Products & Price Book", href: "/super-admin/commercial/plans", icon: Package },
+      { label: "Plans, Offers & Trials", href: "/super-admin/commercial/offers", icon: Tags },
+      { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
       { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
+      { label: "Platform Invoices & Collections", href: "/super-admin/commercial/invoices", icon: CreditCard },
     ],
   },
   {
-    label: "Reliability",
-    icon: Activity,
+    label: "Financial Operations",
+    icon: CircleDollarSign,
     superAdminOnly: true,
     children: [
-      { label: "Triage", href: "/super-admin/triage", icon: ClipboardList },
-      { label: "Reliability Overview", href: "/super-admin/reliability", icon: Activity },
+      { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: Receipt },
+      { label: "Payments & Disputes", href: "/super-admin/financial/payments", icon: WalletCards },
+      { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: DollarSign },
+      { label: "Reconciliation", href: "/super-admin/financial/reconciliation", icon: ClipboardCheck },
+      { label: "Credits, Adjustments & Refunds", href: "/super-admin/financial/credits", icon: Undo2 },
+      { label: "Usage & Metering", href: "/super-admin/financial/usage", icon: TrendingUp },
+      { label: "Tax & E-Invoicing", href: "/super-admin/financial/tax", icon: Landmark },
     ],
   },
   {
-    label: "Governance",
+    label: "Integrations & Automation",
+    icon: SlidersHorizontal,
+    superAdminOnly: true,
+    children: [
+      { label: "Payment Gateways", href: "/super-admin/integrations/gateways", icon: CreditCard },
+      { label: "Accounting / ERP / Tax Connectors", href: "/super-admin/integrations/connectors", icon: Landmark },
+      { label: "API & Webhooks", href: "/super-admin/integrations/webhooks", icon: FileText },
+      { label: "Jobs & Queues", href: "/super-admin/integrations/jobs", icon: History },
+      { label: "Imports & Exports", href: "/super-admin/integrations/imports-exports", icon: ScrollText },
+    ],
+  },
+  {
+    label: "Governance & Security",
     icon: ShieldCheck,
     superAdminOnly: true,
     children: [
-      { label: "Governance Overview", href: "/super-admin/governance", icon: ShieldCheck },
-      { label: "Audit Logs", href: "/super-admin/audit-logs", icon: ScrollText },
-      { label: "Approval Queue", href: "/super-admin/approval-queue", icon: CheckSquare },
-      { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: ClipboardCheck },
-      { label: "Production Readiness", href: "/super-admin/production-readiness", icon: ClipboardCheck },
+      { label: "Approval Center", href: "/super-admin/approval-queue", icon: CheckSquare },
+      { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
+      { label: "Roles & Access", href: "/super-admin/governance/roles", icon: UserCog },
+      { label: "Privileged Sessions", href: "/super-admin/governance/privileged-sessions", icon: ShieldCheck },
+      { label: "Security Events", href: "/super-admin/governance/security-events", icon: Bell },
+      { label: "Data Governance", href: "/super-admin/governance/data", icon: ClipboardList },
     ],
   },
   {
-    label: "Operations",
-    icon: Power,
+    label: "Reliability & Operations",
+    icon: Activity,
     superAdminOnly: true,
     children: [
-      { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
+      { label: "System Health", href: "/super-admin/reliability", icon: Activity },
+      { label: "Incidents", href: "/super-admin/reliability/incidents", icon: ClipboardList },
+      { label: "Processing Failures & Reprocessing", href: "/super-admin/reliability/reprocessing", icon: Power },
+      { label: "Data Quality", href: "/super-admin/reliability/data-quality", icon: CheckSquare },
+      { label: "Release Control", href: "/super-admin/production-readiness", icon: ClipboardCheck },
     ],
   },
 ];
@@ -404,6 +421,24 @@ function SidebarContent({ onNavigate, role }) {
           </div>
         ) : null}
 
+        {role === "super_admin" && (
+          <div className="mb-3 space-y-1">
+            <NavLink
+              to="/super-admin/dashboard"
+              end
+              onClick={onNavigate}
+              className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm font-semibold transition duration-200 ${
+                isActive("/super-admin/dashboard", pathname, search)
+                  ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+                  : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
+              }`}
+            >
+              <LayoutDashboard className={`h-4 w-4 shrink-0 transition duration-200 ${isActive("/super-admin/dashboard", pathname, search) ? "text-white" : "text-[#94A3B8]"}`} />
+              <span className="flex-1 truncate">Command Center</span>
+            </NavLink>
+          </div>
+        )}
+
         {role === "super_admin" ? null : (
           <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
             {showWorkspace ? "Billing" : "Navigation"}
@@ -417,8 +452,11 @@ function SidebarContent({ onNavigate, role }) {
             pathname={pathname}
             search={search}
             onNavigate={onNavigate}
-            expanded={openSection === section.label}
-            onToggle={() => setOpenSection(openSection === section.label ? null : section.label)}
+            expanded={openSection === section.label || (openSection === null && section.children?.some(c => isActive(c.href, pathname, search)))}
+            onToggle={() => {
+              const isCurrentlyOpen = openSection === section.label || (openSection === null && section.children?.some(c => isActive(c.href, pathname, search)));
+              setOpenSection(isCurrentlyOpen ? "NONE" : section.label);
+            }}
           />
         ))}
 

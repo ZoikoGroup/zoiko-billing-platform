@@ -37,7 +37,7 @@ from app.modules.auth.country_currency import (
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.commercial.enums import BillingClassification, BillingSource
-from app.modules.organizations.models import Organization
+from app.modules.organizations.models import Organization, TenantLifecycleState
 
 logger = logging.getLogger("zoiko_billing.auth")
 
@@ -159,6 +159,13 @@ def login_user(db: Session, email: str, password: str) -> dict:
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
 
+    # ZB-SA-P3 (Phase 3B): real last-login evidence. Stamped only on a
+    # successful credential check; committed with the request so the
+    # Administrators & Users directory can show genuine recency (NULL =
+    # never logged in, surfaced as UNKNOWN — never inferred).
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
     token_payload = {
         "sub": user.email,
         "role": user.role.value,
@@ -269,6 +276,10 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
         billing_classification=BillingClassification.COMMERCIAL_STANDALONE,
         billing_source=BillingSource.REGISTERED_VIA_STANDALONE,
         is_active=True,
+        # ZB-SA-P3 (Phase 3C): new tenants start ONBOARDING — registered and
+        # usable, but setup (approved subscription, configuration) is not yet
+        # complete. Activation to ACTIVE is a governed lifecycle transition.
+        lifecycle_state=TenantLifecycleState.ONBOARDING,
     )
     db.add(org)
     db.flush()

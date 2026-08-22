@@ -38,14 +38,20 @@ from app.modules.commercial.schemas import (
     CommercialPlanUpdate,
     CommercialSubscriptionCreate,
     CommercialSubscriptionListResponse,
+    CommercialSubscriptionPlanChange,
     CommercialSubscriptionResponse,
     CommercialSubscriptionStatusUpdate,
     CommercialSubscriptionSummary,
 )
-from app.modules.organizations.models import Organization
+from app.modules.organizations.models import Organization, TenantLifecycleState
 from app.modules.super_admin.attention_service import AttentionService
+from app.modules.super_admin.lifecycle_service import TenantLifecycleService
+from app.modules.super_admin.organization_service import OrganizationDirectoryService
 from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+from app.modules.super_admin.saas_reporting_service import SaasReportingService
+from app.modules.super_admin.schemas import SaasReportingResponse
 from app.modules.super_admin.telemetry_service import TelemetryService
+from app.modules.super_admin.user_admin_service import UserAdminService
 from app.modules.super_admin import metric_dictionary
 from app.modules.super_admin.search_service import GlobalSearchService
 from app.modules.super_admin.launch_readiness_service import LaunchReadinessService
@@ -87,7 +93,13 @@ from app.modules.super_admin.schemas import (
     SettingUpdate,
     SubmitForApprovalRequest,
     FinancialConsistencyResponse,
+    FinancialOperationsSummaryResponse,
     LaunchReadinessResponse,
+    LifecycleTransitionRequest,
+    LifecycleTransitionResponse,
+    OrganizationDirectoryResponse,
+    OrganizationOverviewResponse,
+    PlatformLifecycleResponse,
     SearchResponse,
     SubscriptionAuditLogListResponse,
     SubscriptionAuditLogResponse,
@@ -95,10 +107,16 @@ from app.modules.super_admin.schemas import (
     TriageIncidentsSection,
     TriageSafetyControl,
     TriageSummaryResponse,
+    SuperAdminUserInviteRequest,
     SuperAdminUserListResponse,
     SuperAdminUserResponse,
     TenantAccessSummaryResponse,
+    TenantHealthOverviewResponse,
+    UserMembershipChangeRequest,
+    UserRoleChangeRequest,
+    UserStatusChangeRequest,
 )
+
 
 logger = logging.getLogger("zoiko_billing.super_admin")
 
@@ -190,6 +208,9 @@ def list_platform_users(
         mfa_rows = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id.in_(super_admin_ids)).all()
         mfa_enabled_by_user_id = {row.user_id: row.is_enabled for row in mfa_rows}
 
+    # ZB-SA-P3 (Phase 3B): evidence-based derived status for every row.
+    user_admin = UserAdminService(db)
+
     users = [
         SuperAdminUserResponse(
             id=u.id,
@@ -204,6 +225,8 @@ def list_platform_users(
             created_at=u.created_at,
             mfa_enabled=mfa_enabled_by_user_id.get(u.id, False) if u.role == UserRole.SUPER_ADMIN else None,
             platform_role=(u.platform_role.value if u.platform_role else "platform_administrator") if u.role == UserRole.SUPER_ADMIN else None,
+            derived_status=user_admin.derived_status(u),
+            last_login_at=u.last_login_at,
         )
         for u, o in rows
     ]
@@ -213,37 +236,183 @@ def list_platform_users(
 @router.put("/users/{user_id}/status", response_model=SuccessResponse)
 def set_user_status(
     user_id: int,
-    is_active: bool,
+    data: UserStatusChangeRequest,
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """Toggle a platform user's active status.
+    """ZB-SA-P3 (Phase 3B): flip a platform user's active status.
 
-    Safety invariant: a Super Admin can never deactivate their own account
-    (regardless of how many other active Super Admins exist). Because
-    `get_current_super_admin` re-verifies `is_active` from the database on
-    every request (see core/dependencies.py's `get_current_user`), the
-    caller here is always active and — once the self-deactivation check
-    below has passed — always a DIFFERENT user than the target. Since this
-    is the only endpoint that can flip a super_admin's `is_active` flag,
-    this single check is sufficient to guarantee the count of active
-    Super Admins can never be driven to zero: the last remaining active
-    Super Admin cannot deactivate themselves, and there is no one else left
-    to do it. (No email/domain-based bootstrap exists; the only recovery
-    path is scripts/seed_super_admin.py, which requires SETUP_KEY and
-    direct DB/script access — hence why this must never be reachable.)
+    Safety invariants (unchanged from the original endpoint):
+      - a Super Admin can never deactivate their own account;
+      - `get_current_super_admin` re-verifies is_active from the database on
+        every request, so the caller is always active and always a DIFFERENT
+        user than a self-deactivation-target — active-Super-Admin count can
+        never be driven to zero through this endpoint.
+
+    New in Phase 3B: a documented reason is MANDATORY and an audited event
+    (ACTIVATE/DEACTIVATE, actor + reason, transactional with the change) is
+    written to the platform audit trail.
     """
-    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.core.exceptions import NotFoundException
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise NotFoundException("User", "id")
-    if user.id == current_user.id and not is_active:
-        raise BadRequestException("You cannot deactivate your own account.")
-
-    user.is_active = is_active
+    service = UserAdminService(db)
+    user = service.set_status(
+        actor=current_user,
+        user_id=user_id,
+        is_active=data.is_active,
+        reason=data.reason,
+    )
     db.commit()
-    return {"message": "User status updated."}
+    logger.info(
+        "Super admin %s set user %s is_active=%s",
+        current_user.email,
+        user.email,
+        data.is_active,
+    )
+    return {"message": f"User {'activated' if data.is_active else 'deactivated'}."}
+
+
+@router.post("/users/invite", response_model=SuperAdminUserResponse)
+def invite_super_admin_user(
+    data: SuperAdminUserInviteRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-P3 (Phase 3B): invite a tenant administrator/user into any org.
+
+    Segregation of duties is inherited unchanged from core/dependencies.py's
+    ROLE_CREATION_RULES (§25): super admins create ORG ADMINS platform-wide;
+    billing/finance/auditor users remain the tenant org admin's to invite.
+    The invite email/token flow is reused verbatim from auth/service — no
+    parallel invitation system exists.
+    """
+    from app.core.exceptions import BadRequestException
+
+    service = UserAdminService(db)
+    try:
+        user = service.invite_user(
+            actor=current_user,
+            organization_id=data.organization_id,
+            email=str(data.email),
+            role=data.role,
+            first_name=data.first_name,
+            last_name=data.last_name,
+            phone=data.phone,
+            send_invite=data.send_invite,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
+    db.commit()
+    db.refresh(user)
+    logger.info(
+        "Super admin %s invited %s (%s) into org %s",
+        current_user.email,
+        user.email,
+        data.role.value,
+        data.organization_id,
+    )
+    return SuperAdminUserResponse(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        organization_id=user.organization_id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        derived_status=service.derived_status(user),
+        last_login_at=user.last_login_at,
+    )
+
+
+@router.put("/users/{user_id}/role", response_model=SuperAdminUserResponse)
+def change_super_admin_user_role(
+    user_id: int,
+    data: UserRoleChangeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-P3 (Phase 3B): change a TENANT user's role.
+
+    Reason mandatory; old→new recorded; self-role-change and super-admin
+    targets rejected; ROLE_CREATION_RULES still gate which roles may be
+    granted. Platform accounts keep using /users/{id}/platform-role."""
+    from app.core.exceptions import BadRequestException
+
+    service = UserAdminService(db)
+    try:
+        user = service.set_role(
+            actor=current_user, user_id=user_id, new_role=data.role, reason=data.reason
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
+    db.commit()
+    db.refresh(user)
+    logger.info(
+        "Super admin %s changed role of user %s to %s",
+        current_user.email,
+        user.email,
+        data.role.value,
+    )
+    return _super_admin_user_payload(user, service)
+
+
+@router.put("/users/{user_id}/membership", response_model=SuperAdminUserResponse)
+def change_super_admin_user_membership(
+    user_id: int,
+    data: UserMembershipChangeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-P3 (Phase 3B): move a tenant user between organizations (or
+    strip membership with null). Reason mandatory; audited; never allowed on
+    super-admin platform accounts."""
+    from app.core.exceptions import BadRequestException
+
+    service = UserAdminService(db)
+    try:
+        user = service.set_membership(
+            actor=current_user,
+            user_id=user_id,
+            organization_id=data.organization_id,
+            reason=data.reason,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
+    db.commit()
+    db.refresh(user)
+    logger.info(
+        "Super admin %s moved user %s membership to org %s",
+        current_user.email,
+        user.email,
+        data.organization_id,
+    )
+    return _super_admin_user_payload(user, service)
+
+
+def _super_admin_user_payload(user: User, service: UserAdminService) -> SuperAdminUserResponse:
+    """Compose the enriched Phase 3B user payload for mutation responses."""
+    org = (
+        service.db.query(Organization)
+        .filter(Organization.id == user.organization_id)
+        .first()
+        if user.organization_id
+        else None
+    )
+    return SuperAdminUserResponse(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        organization_id=user.organization_id,
+        organization_name=org.organization_name if org else None,
+        organization_code=org.organization_code if org else None,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        derived_status=service.derived_status(user),
+        last_login_at=user.last_login_at,
+    )
 
 
 @router.put("/users/{user_id}/platform-role", response_model=SuccessResponse)
@@ -1852,6 +2021,88 @@ def set_commercial_subscription_status(
     return _subscription_payload(subscription, org, plan)
 
 
+# ── Phase 3F F5: subscription plan change ────────────────────────────────────
+
+
+@router.post(
+    "/commercial-subscriptions/{subscription_id}/change-plan",
+    response_model=CommercialSubscriptionResponse,
+)
+def change_commercial_subscription_plan(
+    subscription_id: int,
+    data: CommercialSubscriptionPlanChange,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Replace an open subscription with one on a different plan.
+
+    The previous subscription is CANCELLED (history preserved) and a
+    replacement is created; if the previous one was ACTIVE the replacement is
+    activated in the same transaction, re-running every real-charging guard.
+    Both the platform audit trail and the org-scoped billing trail are
+    written with the mandatory reason and a shared correlation id.
+    """
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.models import (
+        CommercialAccount,
+        CommercialPlan,
+        CommercialSubscription,
+    )
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    subscription = (
+        db.query(CommercialSubscription)
+        .filter(CommercialSubscription.id == subscription_id)
+        .first()
+    )
+    if subscription is None:
+        raise NotFoundException("Commercial Subscription", "id")
+
+    new_plan = db.query(CommercialPlan).filter(CommercialPlan.id == data.new_plan_id).first()
+    if new_plan is None:
+        raise NotFoundException("Commercial Plan", "id")
+
+    service = CommercialSubscriptionService(db)
+    try:
+        replacement = service.change_plan(
+            subscription,
+            new_plan,
+            actor_id=getattr(current_user, "id", None),
+            reason=data.reason,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+
+    db.commit()
+    db.refresh(replacement)
+
+    account = (
+        db.query(CommercialAccount)
+        .filter(CommercialAccount.id == replacement.commercial_account_id)
+        .first()
+    )
+    org = (
+        db.query(Organization).filter(Organization.id == account.organization_id).first()
+        if account
+        else None
+    )
+    return _subscription_payload(replacement, org, new_plan)
+
+
+# ── Phase 3F F10: honest Plane 1 SaaS reporting read model ──────────────────
+
+
+@router.get("/commercial-reporting", response_model=SaasReportingResponse)
+def get_saas_commercial_reporting(
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Real counts plus MRR computed only from priced published catalog
+    versions. Zero-priced catalogues report MRR as UNKNOWN — never zero,
+    never fabricated (mirrors COM-01 honesty rules)."""
+    return SaasReportingService(db).get_reporting()
+
+
 # ── Platform settings ───────────────────────────────────────────────────────
 
 @router.get("/settings", response_model=list[SettingResponse])
@@ -2268,6 +2519,20 @@ def get_job_telemetry(
     return JobHealthListResponse(jobs=jobs, scheduler_enabled=settings.ENABLE_RECURRING_BILLING_SCHEDULER)
 
 
+@router.get("/telemetry/tenant-health", response_model=TenantHealthOverviewResponse)
+def get_tenant_health_overview(
+    current_user=Depends(require_capability('reliability.read')),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-P3 (Phase 3D): per-tenant operational health — lifecycle states,
+    user counts, open incidents with worst severity and last activity evidence.
+    Domain C purity: counts/states/timestamps only, never money, never a
+    derived health score."""
+    return TenantHealthOverviewResponse.model_validate(
+        TelemetryService(db).get_tenant_health_overview()
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ZB-SA-CMD-003 §10.1 — Metric Dictionary v1 (read-only, code-versioned registry)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2319,6 +2584,30 @@ def get_financial_consistency(
     db: Session = Depends(get_db),
 ):
     return FinancialConsistencyResponse(**FinancialConsistencyService(db).check_allocation_consistency())
+
+
+@router.get("/financial-operations", response_model=FinancialOperationsSummaryResponse)
+def get_financial_operations_summary(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-CMD-003 §15 — Phase 2C Financial Operations aggregate.
+
+    Composes F1 Billings/Collections, F2 Payment Recovery, F3 Reconciliation &
+    Integrity, and F4 Revenue Leakage into a single read-model response.
+    All values are real database aggregates — no client-side math, no fabricated
+    numbers.
+    """
+    summary = FinancialConsistencyService(db).get_financial_operations_summary()
+    from app.modules.super_admin.schemas import (
+        FinancialBillingsSummary, FinancialRecoverySummary, FinancialLeakageSummary,
+    )
+    return FinancialOperationsSummaryResponse(
+        consistency=FinancialConsistencyResponse(**summary["consistency"]),
+        billings=FinancialBillingsSummary(**summary["billings"]),
+        recovery=FinancialRecoverySummary(**summary["recovery"]),
+        leakage=FinancialLeakageSummary(**summary["leakage"]),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2488,3 +2777,143 @@ def get_triage_summary(
         safety_controls=safety_controls,
         critical_events=critical_events,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-P3 — Phase 3A Organizations workspace + Phase 3C lifecycle transitions
+# Directory/overview read models are identity + lifecycle + operational counts
+# (no monetary values). Lifecycle transitions are governed by the state machine
+# in TenantLifecycleService: mandatory reason, actor+correlation_id audited via
+# PlatformAuditAction.LIFECYCLE_TRANSITION, is_active kept in lockstep.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/organizations", response_model=OrganizationDirectoryResponse)
+def list_super_admin_organizations(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    search: str = "",
+    status: str | None = None,
+    lifecycle_state: TenantLifecycleState | None = None,
+    country: str | None = None,
+    currency: str | None = None,
+    billing_classification: str | None = None,
+    billing_source: BillingSource | None = None,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.commercial.enums import BillingClassification
+
+    classification = None
+    if billing_classification:
+        try:
+            classification = BillingClassification(billing_classification.lower())
+        except ValueError as exc:
+            raise BadRequestException(
+                f"Unknown billing_classification '{billing_classification}'."
+            ) from exc
+
+    result = OrganizationDirectoryService(db).list_organizations(
+        skip=skip,
+        limit=limit,
+        search=search or "",
+        status=status,
+        lifecycle_state=lifecycle_state,
+        country=country,
+        currency=currency,
+        billing_classification=classification,
+        billing_source=billing_source,
+    )
+    return OrganizationDirectoryResponse(
+        total=result["total"],
+        organizations=result["organizations"],
+    )
+
+
+@router.get("/organizations/{organization_id}/overview", response_model=OrganizationOverviewResponse)
+def get_super_admin_organization_overview(
+    organization_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    return OrganizationOverviewResponse.model_validate(
+        OrganizationDirectoryService(db).get_organization_overview(organization_id)
+    )
+
+
+@router.post("/organizations/{organization_id}/lifecycle-transition", response_model=LifecycleTransitionResponse)
+def transition_super_admin_organization_lifecycle(
+    organization_id: int,
+    data: LifecycleTransitionRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+
+    try:
+        target = TenantLifecycleState(data.target.strip().lower())
+    except ValueError as exc:
+        valid = [s.value for s in TenantLifecycleState]
+        raise BadRequestException(
+            f"Unknown lifecycle target '{data.target}'. Valid states: {valid}"
+        ) from exc
+
+    service = TenantLifecycleService(db)
+    org = service.get_organization(organization_id)  # 404 when missing
+    _, previous = service.transition(
+        actor=current_user,
+        organization=org,
+        target=target,
+        reason=data.reason,
+    )
+    db.commit()
+
+    current_state = TenantLifecycleService.effective_state(org)
+    logger.info(
+        "Super admin %s transitioned org %s (%s): %s -> %s",
+        getattr(current_user, "email", current_user.id),
+        org.organization_code,
+        organization_id,
+        previous.value,
+        current_state.value,
+    )
+    return LifecycleTransitionResponse(
+        organization_id=org.id,
+        organization_code=org.organization_code,
+        previous_state=previous.value,
+        current_state=current_state.value,
+        is_active=bool(org.is_active),
+        allowed_transitions=[
+            s.value for s in TenantLifecycleService.allowed_transitions(current_state)
+        ],
+        # correlation id of the audit event written inside transition()
+        correlation_id=_latest_lifecycle_correlation_id(db, org.id),
+    )
+
+
+def _latest_lifecycle_correlation_id(db: Session, organization_id: int) -> str:
+    from app.modules.super_admin.models import PlatformAuditAction, PlatformAuditLog
+
+    row = (
+        db.query(PlatformAuditLog.correlation_id)
+        .filter(
+            PlatformAuditLog.organization_id == organization_id,
+            PlatformAuditLog.action == PlatformAuditAction.LIFECYCLE_TRANSITION,
+        )
+        .order_by(PlatformAuditLog.id.desc())
+        .first()
+    )
+    return row[0] if row else ""
+
+
+@router.get("/platform/lifecycle", response_model=PlatformLifecycleResponse)
+def get_super_admin_platform_lifecycle(
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """ZB-SA-P3 (Phase 3C): fleet-wide lifecycle composition — per-state
+    organization counts, the PROVISIONING/ONBOARDING pipeline with evidence-
+    based readiness, access-blocked tenants with their latest recorded
+    transition reason, and the most recent lifecycle transition audit events.
+    A pure read model; no monetary values (Domain B stays gated)."""
+    return PlatformLifecycleResponse.model_validate(TenantLifecycleService(db).platform_overview())

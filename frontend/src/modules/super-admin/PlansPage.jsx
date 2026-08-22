@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Package, Plus, Pencil, Star, StarOff, Power, Archive, Crown, GitBranch } from "lucide-react";
+import { Package, Plus, Pencil, Star, StarOff, Power, Archive, Crown, GitBranch, Tags } from "lucide-react";
 import {
   listCommercialPlans,
   createCommercialPlan,
@@ -461,7 +461,7 @@ export default function PlansPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Commercial Plans"
-        description="Reusable plan templates shared across organizations. The catalogue intentionally stays empty — pricing is never invented."
+        description="PLANE 1 · Reusable plan templates shared across organizations. The catalogue intentionally stays empty — pricing is never invented."
         icon={Package}
         actions={
           <Button variant="primary" icon={Plus} onClick={openCreate}>
@@ -470,6 +470,21 @@ export default function PlansPage() {
         }
         meta={`${displayValue(total)} plan(s)`}
       />
+
+      {/* Phase 3F F4 — honest declaration. No trial/offer model exists in
+          the schema (COM-02), so this surface must never render trial data.
+          The nav item "Plans, Offers & Trials" lands here until offers exist. */}
+      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-4">
+        <Tags size={18} className="mt-0.5 shrink-0 text-slate-400" />
+        <div>
+          <p className="text-sm font-bold text-slate-700">Offers &amp; trials — not configured</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            No evaluation, trial or promotional-offer program exists anywhere in the platform schema
+            (audit finding COM-02). Until a trials model is built and approved, this section will
+            honestly report NOT CONFIGURED rather than render placeholder programs.
+          </p>
+        </div>
+      </div>
 
       <div className="mt-6 space-y-4">
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}

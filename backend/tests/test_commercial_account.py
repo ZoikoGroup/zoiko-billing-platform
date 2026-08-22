@@ -77,6 +77,9 @@ def _register(db, email, organization="Acme Corp"):
             name="Ada Admin",
             email=email,
             password="StrongPass123!",
+            # ZB-SA-CMD-003 v3.0: no country → an explicit currency is
+            # mandatory (there is no silent USD fallback any more).
+            currency="USD",
             intended_plan="essentials",
             currency="USD",
         ),

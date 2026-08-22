@@ -78,6 +78,8 @@ def test_register_enterprise_stamps_commercial_source_server_side(db_session):
         name="Bo Admin",
         email="bo@beta.example",
         password="StrongPass123!",
+        # ZB-SA-CMD-003 v3.0: no country → an explicit currency is mandatory.
+        currency="USD",
         intended_plan="essentials",
         currency="USD",
     )
@@ -219,6 +221,8 @@ def test_intended_plan_stored_without_provisioning_subscription(db_session):
         name="Pat Admin",
         email="pat@planintent.example",
         password="StrongPass123!",
+        # ZB-SA-CMD-003 v3.0: no country → an explicit currency is mandatory.
+        currency="USD",
         intended_plan="professional",
         currency="USD",
     )
