@@ -257,7 +257,12 @@ export function DataTable({
         </div>
       )}
 
-      <div className={`overflow-x-auto ${stickyHeader ? "max-h-[560px] overflow-y-auto" : ""}`}>
+      <div
+        className={`overflow-x-auto ${stickyHeader ? "max-h-[560px] overflow-y-auto" : ""}`}
+        role={stickyHeader ? "region" : undefined}
+        aria-label={stickyHeader ? "Data table, scrollable" : undefined}
+        tabIndex={stickyHeader ? 0 : undefined}
+      >
         <table className="w-full text-left text-sm" aria-busy={loading}>
           <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
             <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wider text-slate-600">

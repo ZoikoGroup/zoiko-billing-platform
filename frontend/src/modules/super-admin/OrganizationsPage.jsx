@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Building2, ChevronRight, Plus } from "lucide-react";
-import { listCommercialAccounts, createOrganization } from "../../service/commercialService";
+import {
+  createOrganization,
+  listOrganizations,
+} from "../../service/commercialService";
 import { PageHeader, DataTable, SearchInput, Modal, Field, Button } from "../../components/billing-ui";
 import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
-  ACCOUNT_STATUS_OPTIONS,
-  SUBSCRIPTION_STATUS_OPTIONS,
+  LIFECYCLE_STATE_BADGES,
   formatDateTime,
   displayValue,
   CommercialSourceBadge,
   CommercialClassificationBadge,
+  LifecycleStateBadge,
 } from "./constants";
 
 const EMPTY_ORG_FORM = {
@@ -23,6 +26,11 @@ const EMPTY_ORG_FORM = {
   tax_no: "",
   registration_number: "",
 };
+
+// Lifecycle filter options mirror the backend enum — labels only.
+const LIFECYCLE_FILTER_OPTIONS = Object.entries(LIFECYCLE_STATE_BADGES).map(
+  ([value, meta]) => ({ value, label: meta.label })
+);
 
 function CreateOrganizationModal({ open, onClose, onCreated }) {
   const [form, setForm] = useState(EMPTY_ORG_FORM);
@@ -134,29 +142,31 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
 export default function OrganizationsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [accounts, setAccounts] = useState([]);
+  const [orgs, setOrgs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState(location.state?.notice || null);
 
-  const load = useCallback(async (pageNum, term) => {
+  const load = useCallback(async (pageNum, term, state) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await listCommercialAccounts({
+      const data = await listOrganizations({
         skip: (pageNum - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         search: term,
+        lifecycle_state: state || undefined,
       });
-      setAccounts(data.accounts || []);
+      setOrgs(data.organizations || []);
       setTotal(data.total || 0);
     } catch (err) {
-      setError(err?.message || "Failed to load commercial accounts.");
-      setAccounts([]);
+      setError(err?.message || "Failed to load organizations.");
+      setOrgs([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -164,8 +174,8 @@ export default function OrganizationsPage() {
   }, []);
 
   useEffect(() => {
-    load(page, search);
-  }, [load, page, search]);
+    load(page, search, lifecycleFilter);
+  }, [load, page, search, lifecycleFilter]);
 
   useEffect(() => {
     if (location.state?.notice) {
@@ -198,47 +208,67 @@ export default function OrganizationsPage() {
         ),
       },
       {
-        key: "status",
-        label: "Account Status",
-        render: (row) => <StatusBadge status={row.status} options={ACCOUNT_STATUS_OPTIONS} />,
+        key: "lifecycle_state",
+        label: "Lifecycle",
+        render: (row) => <LifecycleStateBadge value={row.lifecycle_state} />,
       },
       {
         key: "billing_source",
-        label: "Billing Source",
-        render: (row) => <CommercialSourceBadge value={row.billing_source} />,
+        label: "Source / Class",
+        render: (row) => (
+          <div className="flex flex-col items-start gap-1">
+            <CommercialSourceBadge value={row.billing_source} />
+            <CommercialClassificationBadge value={row.billing_classification} />
+          </div>
+        ),
       },
       {
-        key: "billing_classification",
-        label: "Classification",
-        render: (row) => <CommercialClassificationBadge value={row.billing_classification} />,
-      },
-      {
-        key: "can_charge",
-        label: "Chargeable",
+        key: "subscription_status",
+        label: "Subscription",
         render: (row) =>
-          row.can_charge ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
-              Can charge
+          row.subscription_status ? (
+            <span className="text-xs font-medium text-slate-600">
+              {row.subscription_plan_code ? `${row.subscription_plan_code} · ` : ""}
+              {displayValue(row.subscription_status)}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-              Disabled
-            </span>
+            <span className="text-xs text-slate-400">Not assigned</span>
           ),
       },
       {
-        key: "current_subscription",
-        label: "Current Subscription",
-        render: (row) => {
-          const sub = row.current_subscription;
-          if (!sub) return <span className="text-xs text-slate-500">—</span>;
-          return (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-600">{sub.plan_code}</span>
-              <StatusBadge status={sub.status} options={SUBSCRIPTION_STATUS_OPTIONS} />
-            </div>
-          );
-        },
+        key: "users",
+        label: "Users",
+        render: (row) => (
+          <span className="text-xs text-slate-600">
+            {displayValue(row.active_users)}/{displayValue(row.total_users)} active
+            {row.org_admins > 0 && (
+              <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                {row.org_admins} admin{row.org_admins === 1 ? "" : "s"}
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        key: "open_incident_count",
+        label: "Open Incidents",
+        render: (row) =>
+          row.open_incident_count > 0 ? (
+            <span className="inline-flex min-w-[1.75rem] justify-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+              {row.open_incident_count}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">0</span>
+          ),
+      },
+      {
+        key: "last_activity_at",
+        label: "Last Activity",
+        render: (row) => (
+          <span className="text-xs text-slate-500" title={row.last_activity_at ? undefined : "No recorded evidence"}>
+            {row.last_activity_at ? formatDateTime(row.last_activity_at) : "Unknown"}
+          </span>
+        ),
       },
       {
         key: "created_at",
@@ -261,7 +291,7 @@ export default function OrganizationsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Organizations"
-        description="Commercial accounts across all organizations — billing source, classification, charging readiness, and current subscription."
+        description="Tenant directory — identity, lifecycle state, subscription assignment, operational counts and incident load. Financial records stay behind privileged access."
         icon={Building2}
         meta={`${displayValue(total)} organization(s)`}
         actions={
@@ -278,26 +308,41 @@ export default function OrganizationsPage() {
 
       {notice && <div className="mt-4"><SuccessMessage message={notice} onDismiss={() => setNotice(null)} /></div>}
 
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <SearchInput value={search} onChange={onSearch} placeholder="Search by organization name or code…" className="w-full max-w-sm" />
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <SearchInput value={search} onChange={onSearch} placeholder="Search by name, code or legal name…" className="w-full max-w-sm" />
+        <label htmlFor="lifecycle-filter" className="sr-only">Filter by lifecycle state</label>
+        <select
+          id="lifecycle-filter"
+          value={lifecycleFilter}
+          onChange={(e) => {
+            setLifecycleFilter(e.target.value);
+            setPage(1);
+          }}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+        >
+          <option value="">All lifecycle states</option>
+          {LIFECYCLE_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-4">
         {error ? (
           <div className="rounded-3xl border border-slate-200 bg-white">
-            <ErrorState message={error} onRetry={() => load(page, search)} title="Unable to load organizations" />
+            <ErrorState message={error} onRetry={() => load(page, search, lifecycleFilter)} title="Unable to load organizations" />
           </div>
-        ) : loading && accounts.length === 0 ? (
+        ) : loading && orgs.length === 0 ? (
           <Spinner />
         ) : (
           <DataTable
             columns={columns}
-            data={accounts}
+            data={orgs}
             loading={loading}
-            onRowClick={(row) => navigate(`/super-admin/organizations/${row.organization_id}`)}
+            onRowClick={(row) => navigate(`/super-admin/organizations/${row.id}`)}
             emptyTitle="No organizations found"
-            emptyMessage={search ? "No organizations match your search." : "Organizations will appear here once they are provisioned."}
-            minWidth={900}
+            emptyMessage={search || lifecycleFilter ? "No organizations match your filters." : "Organizations will appear here once they are provisioned."}
+            minWidth={1080}
           />
         )}
       </div>
@@ -317,7 +362,7 @@ export default function OrganizationsPage() {
           setCreating(false);
           setNotice(`Organization "${org.organization_name}" created.`);
           setPage(1);
-          load(1, search);
+          load(1, search, lifecycleFilter);
         }}
       />
     </div>

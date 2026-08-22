@@ -40,3 +40,9 @@ export const getOrganizationTelemetry = () =>
 
 export const getJobTelemetry = () =>
   api.get("/api/super-admin/telemetry/jobs");
+
+export const getTenantHealthOverview = () =>
+  api.get("/api/super-admin/telemetry/tenant-health");
+
+export const getFinancialConsistency = () =>
+  api.get("/api/super-admin/financial-consistency");

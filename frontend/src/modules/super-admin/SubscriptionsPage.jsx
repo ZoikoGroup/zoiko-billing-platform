@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { UserCheck, Plus, Repeat, Building2 } from "lucide-react";
+import { UserCheck, Plus, Repeat, Building2, ArrowLeftRight } from "lucide-react";
 import {
   listCommercialSubscriptions,
   createCommercialSubscription,
   setCommercialSubscriptionStatus,
+  changeCommercialSubscriptionPlan,
   listCommercialAccounts,
   listCommercialPlans,
 } from "../../service/commercialService";
@@ -46,6 +47,12 @@ export default function SubscriptionsPage() {
   const [plans, setPlans] = useState([]);
   const [transitionTargets, setTransitionTargets] = useState({});
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
+
+  // Phase 3F F5 — plan change state (supersede-with-history).
+  const [planChangeSub, setPlanChangeSub] = useState(null);
+  const [planChangeForm, setPlanChangeForm] = useState({ new_plan_id: "", reason: "" });
+  const [planChangeError, setPlanChangeError] = useState(null);
+  const [planChangeSubmitting, setPlanChangeSubmitting] = useState(false);
 
   const load = useCallback(async (pageNum, term) => {
     setLoading(true);
@@ -136,6 +143,51 @@ export default function SubscriptionsPage() {
     }
   };
 
+  const openPlanChange = useCallback(
+    async (subscription) => {
+      setPlanChangeSub(subscription);
+      setPlanChangeForm({ new_plan_id: "", reason: "" });
+      setPlanChangeError(null);
+      if (plans.length === 0) {
+        try {
+          const p = await listCommercialPlans({ limit: 200 });
+          setPlans(p.plans || []);
+        } catch (err) {
+          setPlanChangeError(err?.message || "Failed to load the plan catalog for this form.");
+        }
+      }
+    },
+    [plans]
+  );
+
+  const handlePlanChange = async () => {
+    if (!planChangeForm.new_plan_id || planChangeForm.reason.trim().length < 3) {
+      setPlanChangeError("Pick a target plan and give a reason (min. 3 characters).");
+      return;
+    }
+    if (Number(planChangeForm.new_plan_id) === planChangeSub.commercial_plan_id) {
+      setPlanChangeError("That is already the subscription's current plan.");
+      return;
+    }
+    setPlanChangeSubmitting(true);
+    setPlanChangeError(null);
+    try {
+      const replacement = await changeCommercialSubscriptionPlan(planChangeSub.id, {
+        new_plan_id: Number(planChangeForm.new_plan_id),
+        reason: planChangeForm.reason.trim(),
+      });
+      setSuccess(
+        `Plan changed for ${replacement.organization_code}: now on ${replacement.plan_code} (${replacement.status}); the previous subscription is preserved as history.`
+      );
+      setPlanChangeSub(null);
+      await load(page, search);
+    } catch (err) {
+      setPlanChangeError(err?.message || "Failed to change the subscription's plan.");
+    } finally {
+      setPlanChangeSubmitting(false);
+    }
+  };
+
   const columns = useMemo(
     () => [
       {
@@ -194,7 +246,7 @@ export default function SubscriptionsPage() {
       {
         key: "actions",
         label: "Actions",
-        width: 220,
+        width: 300,
         render: (row) => {
           const allowed = SUBSCRIPTION_TRANSITIONS[row.status] || [];
           if (allowed.length === 0) return <span className="text-xs text-slate-500">Terminal</span>;
@@ -214,12 +266,21 @@ export default function SubscriptionsPage() {
               <Button size="sm" variant="secondary" icon={Repeat} onClick={() => handleTransition(row, target)}>
                 Apply
               </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={ArrowLeftRight}
+                title="Change plan (supersedes this subscription; history preserved)"
+                onClick={() => openPlanChange(row)}
+              >
+                Plan
+              </Button>
             </div>
           );
         },
       },
     ],
-    [transitionTargets]
+    [transitionTargets, openPlanChange]
   );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -228,7 +289,7 @@ export default function SubscriptionsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Commercial Subscriptions"
-        description="Subscription lifecycle across all organizations. Lifecycle changes go through the backend state machine only."
+        description="PLANE 1 · Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only; plan changes supersede the subscription and preserve history."
         icon={UserCheck}
         actions={
           <Button variant="primary" icon={Plus} onClick={openCreate}>
@@ -329,6 +390,65 @@ export default function SubscriptionsPage() {
             <Button variant="primary" onClick={handleCreate} loading={submitting}>Create subscription</Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!planChangeSub}
+        onClose={() => setPlanChangeSub(null)}
+        title="Change subscription plan"
+        description="Phase 3F: the current open subscription is cancelled (preserved as history) and replaced by one on the target plan. If it was ACTIVE, the replacement activates immediately under the same charging guards. A reason is mandatory and audited."
+        icon={ArrowLeftRight}
+        size="md"
+      >
+        {planChangeSub && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              <p><span className="font-semibold text-slate-800">{planChangeSub.organization_name}</span> ({planChangeSub.organization_code})</p>
+              <p className="mt-1">Current plan: {planChangeSub.plan_name} ({planChangeSub.plan_code}) · status {planChangeSub.status}</p>
+            </div>
+            <Field label="Target plan" htmlFor="pc-plan" required>
+              <select
+                id="pc-plan"
+                value={planChangeForm.new_plan_id}
+                onChange={(e) => setPlanChangeForm((prev) => ({ ...prev, new_plan_id: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                <option value="">Select plan…</option>
+                {plans.map((plan) => (
+                  <option
+                    key={plan.id}
+                    value={plan.id}
+                    disabled={plan.status === "archived" || plan.id === planChangeSub.commercial_plan_id}
+                  >
+                    {plan.plan_name} ({plan.plan_code}) — {plan.status}
+                    {plan.id === planChangeSub.commercial_plan_id ? " · current" : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Reason" htmlFor="pc-reason" required hint="Recorded on both the platform audit trail and the org billing audit trail.">
+              <textarea
+                id="pc-reason"
+                rows={3}
+                value={planChangeForm.reason}
+                onChange={(e) => setPlanChangeForm((prev) => ({ ...prev, reason: e.target.value }))}
+                placeholder="Why is this subscription changing plan?"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              />
+            </Field>
+            {planChangeError && (
+              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {planChangeError}
+              </p>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPlanChangeSub(null)}>Cancel</Button>
+              <Button variant="primary" icon={ArrowLeftRight} onClick={handlePlanChange} loading={planChangeSubmitting}>
+                Change plan
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {ConfirmationDialog}

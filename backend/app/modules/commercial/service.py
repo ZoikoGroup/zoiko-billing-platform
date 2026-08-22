@@ -24,6 +24,7 @@ endpoints that persist via the caller).
 """
 
 import logging
+import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -449,17 +450,29 @@ class CommercialPlanService:
 
 
 def _version_snapshot(version: "CommercialPlanVersion") -> dict:
+    """JSON-safe snapshot of a catalog version. Dates and Decimals are
+    stringified because this dict lands directly in JSON columns
+    (ApprovalRequest.proposed_state) as well as audit payloads."""
+    def _safe(value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if hasattr(value, "isoformat"):  # date / datetime
+            return value.isoformat()
+        if hasattr(value, "value"):  # enums
+            return value.value
+        return str(value)
+
     return {
         "plan_name": version.plan_name,
         "description": version.description,
-        "status": version.status.value if hasattr(version.status, "value") else version.status,
-        "billing_interval": (
-            version.billing_interval.value if hasattr(version.billing_interval, "value") else version.billing_interval
+        "status": _safe(getattr(version.status, "value", version.status)),
+        "billing_interval": _safe(
+            getattr(version.billing_interval, "value", version.billing_interval)
         ),
         "currency": version.currency,
-        "price_amount": version.price_amount,
-        "effective_from": version.effective_from,
-        "effective_to": version.effective_to,
+        "price_amount": _safe(version.price_amount),
+        "effective_from": _safe(version.effective_from),
+        "effective_to": _safe(version.effective_to),
         "max_users": version.max_users,
         "max_storage_gb": version.max_storage_gb,
         "features": version.features,
@@ -938,6 +951,166 @@ class CommercialSubscriptionService:
             return None
 
         return self.create_subscription(account_id, default_plan)
+
+    def change_plan(
+        self,
+        subscription: CommercialSubscription,
+        new_plan: CommercialPlan,
+        *,
+        actor_id: int | None = None,
+        reason: str = "",
+    ) -> CommercialSubscription:
+        """Phase 3F F5: replace an open subscription with one on a different
+        plan, preserving history.
+
+        Mechanics (gap analysis 3F/F5 — "plan change (upgrade/downgrade) =
+        new subscription replacing prior (history preserved), audited; reuse
+        existing transitions"):
+          1. Only OPEN subscriptions may change plan; terminal rows are
+             immutable history.
+          2. The current subscription is CANCELLED through the state machine
+             (every open status can reach CANCELLED) — never mutated in place.
+          3. A replacement is created on the target plan. When the previous
+             subscription was ACTIVE the replacement is activated immediately,
+             which re-runs every real-charging guard (_assert_may_charge_commercially
+             + plan-status check) inside this same transaction. Any other
+             previous status yields a PENDING replacement that the operator
+             activates explicitly through the normal transition endpoint.
+          4. Both audit trails are written on the caller's transaction: the
+             platform-plane trail (actor/reason/correlation id per
+             ZB-COM-BILL-001 §R3/§29) and the org-scoped billing trail.
+
+        Raises ValueError for no-op changes, archived targets and terminal
+        sources. Nothing commits here.
+        """
+        if not reason or not reason.strip():
+            raise ValueError("A reason is required to change a subscription's plan.")
+        if subscription.status not in self._OPEN_STATUSES:
+            raise ValueError(
+                f"Subscription {subscription.id} is {subscription.status.name} "
+                "(terminal); its plan can no longer be changed."
+            )
+        if new_plan.status == CommercialPlanStatus.ARCHIVED:
+            raise ValueError(
+                f"Cannot change plan to {new_plan.plan_code}: archived plans "
+                "cannot receive new subscriptions."
+            )
+        if new_plan.id == subscription.commercial_plan_id:
+            raise ValueError(
+                f"Subscription {subscription.id} is already on plan "
+                f"{new_plan.plan_code}; nothing to change."
+            )
+
+        old_plan_id = subscription.commercial_plan_id
+        old_status = subscription.status
+        account_id = subscription.commercial_account_id
+
+        # Fail fast BEFORE mutating anything: an ACTIVE subscription's
+        # replacement will be activated immediately, so the real-charging
+        # preconditions are validated up front (the state machine re-checks
+        # them later as defense in depth).
+        if old_status == CommercialSubscriptionStatus.ACTIVE:
+            from app.modules.organizations.models import Organization
+
+            if new_plan.status != CommercialPlanStatus.ACTIVE:
+                raise ValueError(
+                    f"Cannot change an ACTIVE subscription to plan "
+                    f"{new_plan.plan_code} (status: {new_plan.status.name}): "
+                    "only ACTIVE plans can be newly activated."
+                )
+            account = (
+                self.db.query(CommercialAccount)
+                .filter(CommercialAccount.id == account_id)
+                .first()
+            )
+            org = (
+                self.db.query(Organization)
+                .filter(Organization.id == account.organization_id)
+                .first()
+                if account
+                else None
+            )
+            if not CommercialAccountService(self.db).can_charge(org):
+                raise ValueError(
+                    "Plan change would reactivate charging, but this "
+                    "organization cannot be charged by the standalone platform "
+                    "(ZB-COM-BILL-001 COM-04 double-charge prevention)."
+                )
+
+        correlation_id = f"pc-{uuid.uuid4().hex[:12]}"
+
+        # 1+2: cancel through the state machine (validated transition).
+        cancelled = self.transition(subscription, CommercialSubscriptionStatus.CANCELLED)
+
+        # 3: create + conditionally activate the replacement.
+        replacement_status = (
+            CommercialSubscriptionStatus.ACTIVE
+            if old_status == CommercialSubscriptionStatus.ACTIVE
+            else CommercialSubscriptionStatus.PENDING
+        )
+        replacement = self.create_subscription(
+            account_id, new_plan, status=replacement_status
+        )
+
+        # 4a: platform-plane audit with full provenance.
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        account = (
+            self.db.query(CommercialAccount)
+            .filter(CommercialAccount.id == account_id)
+            .first()
+        )
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            action=PlatformAuditAction.UPDATE,
+            entity_type="CommercialSubscription",
+            entity_id=cancelled.id,
+            organization_id=account.organization_id if account else None,
+            old_values={
+                "status": old_status.value if hasattr(old_status, "value") else str(old_status),
+                "commercial_plan_id": old_plan_id,
+            },
+            new_values={
+                "status": (
+                    cancelled.status.value
+                    if hasattr(cancelled.status, "value")
+                    else str(cancelled.status)
+                ),
+                "replaced_by_subscription_id": replacement.id,
+                "change": "plan_change",
+            },
+            metadata={"plane": "PLATFORM", "change_type": "PLAN_CHANGE"},
+            actor_role="super_admin",
+            reason=reason.strip(),
+            correlation_id=correlation_id,
+        )
+
+        # 4b: org-scoped billing audit (same pattern as creation/status).
+        from app.modules.billing.models import BillingAuditAction
+        from app.modules.billing.services.audit_service import BillingAuditService
+
+        BillingAuditService(self.db).log_no_commit(
+            organization_id=account.organization_id if account else None,
+            actor_id=actor_id,
+            action=BillingAuditAction.UPDATE,
+            entity_type="CommercialSubscription",
+            entity_id=replacement.id,
+            old_values={"commercial_plan_id": old_plan_id},
+            new_values={"commercial_plan_id": new_plan.id},
+            changes={
+                "change": "plan_change",
+                "reason": reason.strip(),
+                "correlation_id": correlation_id,
+            },
+        )
+
+        logger.info(
+            "Plan change on subscription %s (%s -> %s); replacement %s created "
+            "(correlation_id=%s)",
+            cancelled.id, old_plan_id, new_plan.plan_code, replacement.id, correlation_id,
+        )
+        return replacement
 
 
 class CommercialEntitlementService:

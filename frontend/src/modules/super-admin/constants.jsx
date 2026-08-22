@@ -48,6 +48,49 @@ export const ACCOUNT_STATUS_OPTIONS = [
   { value: "suspended", label: "Suspended", color: "bg-amber-100 text-amber-700" },
 ];
 
+// ── Phase 3C tenant lifecycle states ─────────────────────────────────────
+// Mirrors the backend TenantLifecycleState enum — presentation only. The
+// backend state machine is the single source of truth for which transitions
+// are legal; the UI renders what the server returns (allowed_transitions).
+export const LIFECYCLE_STATE_BADGES = {
+  provisioning: { label: "Provisioning", color: "bg-sky-100 text-sky-700" },
+  onboarding: { label: "Onboarding", color: "bg-indigo-100 text-indigo-700" },
+  active: { label: "Active", color: "bg-emerald-100 text-emerald-700" },
+  suspended: { label: "Suspended", color: "bg-amber-100 text-amber-700" },
+  deactivating: { label: "Deactivating", color: "bg-orange-100 text-orange-700" },
+  deactivated: { label: "Deactivated", color: "bg-slate-200 text-slate-600" },
+};
+
+export function LifecycleStateBadge({ value }) {
+  const option = LIFECYCLE_STATE_BADGES[value];
+  return (
+    <StatusBadge
+      status={value}
+      options={[{ value, ...(option || {}) }]}
+      fallbackColor="bg-slate-100 text-slate-600"
+    />
+  );
+}
+
+// Evidence-based onboarding readiness signals (Phase 3C). Values come from
+// the backend as ready/pending/unknown — unknown is rendered honestly, never
+// inferred green.
+export const READINESS_BADGES = {
+  ready: { label: "Ready", color: "bg-emerald-100 text-emerald-700" },
+  pending: { label: "Pending", color: "bg-amber-100 text-amber-700" },
+  unknown: { label: "Unknown", color: "bg-slate-100 text-slate-500" },
+};
+
+export function ReadinessBadge({ value }) {
+  const option = READINESS_BADGES[value] || READINESS_BADGES.unknown;
+  return (
+    <StatusBadge
+      status={value || "unknown"}
+      options={[{ value: value || "unknown", ...option }]}
+    />
+  );
+}
+
 export const PLAN_STATUS_OPTIONS = [
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
   { value: "inactive", label: "Inactive", color: "bg-amber-100 text-amber-700" },

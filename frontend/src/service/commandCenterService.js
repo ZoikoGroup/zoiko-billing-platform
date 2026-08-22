@@ -90,3 +90,12 @@ export const decideApprovalRequest = (requestId, { decision, reason, code, recov
 // controls and critical events from their real upstream sources.
 export const getTriageSummary = () =>
   api.get("/api/super-admin/triage/summary");
+
+export const getFinancialConsistency = () =>
+  api.get("/api/super-admin/financial-consistency");
+
+export const getFinancialOperationsSummary = () =>
+  api.get("/api/super-admin/financial-operations");
+
+export const getLaunchReadiness = () =>
+  api.get("/api/super-admin/launch-readiness");
