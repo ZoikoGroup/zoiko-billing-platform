@@ -113,11 +113,19 @@ class Settings(BaseSettings):
     # OAuth state (CON-2): TTL for the signed, organization-bound state token.
     STRIPE_OAUTH_STATE_TTL_SECONDS: int = 600
 
-    # ── AI Model Gateway (provider-neutral, Claude default) ───────────
+    # ── AI Model Gateway (provider-neutral) ────────────────────────────
+    # Provider selection: "groq" | "anthropic" | "" (auto — first key set).
+    AI_MODEL_PROVIDER: str = ""
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL_DEFAULT: str = "claude-sonnet-4-20250514"
     ANTHROPIC_MAX_TOKENS: int = 4096
     ANTHROPIC_TEMPERATURE: float = 0.1
+    # Groq (OpenAI-compatible chat-completions API; free tier at
+    # console.groq.com). No extra SDK needed — plain httpx.
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL_DEFAULT: str = "llama-3.3-70b-versatile"
+    GROQ_MAX_TOKENS: int = 2048
+    GROQ_TEMPERATURE: float = 0.1
     AI_MODEL_TIMEOUT_SECONDS: int = 30
     AI_SAFE_MODE: bool = False
 

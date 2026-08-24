@@ -24,6 +24,8 @@ logger = logging.getLogger("zoiko_billing.ai.model_gateway")
 class AnthropicModelGateway(ModelGateway):
     """Anthropic Claude provider implementation."""
 
+    provider_name = "anthropic"
+
     def __init__(self):
         self._client = None
 

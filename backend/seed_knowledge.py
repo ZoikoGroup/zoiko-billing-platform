@@ -73,7 +73,15 @@ KB_ENTRIES = [
             "A subscription represents a recurring billing arrangement where a customer is charged at regular intervals (monthly, annually, etc.) for access to a product or service.",
             "Subscription statuses: Active (currently billing), Paused (temporarily suspended), Cancelled (terminated), Past Due (payment failed on renewal), Trial (in free trial period).",
             "A subscription plan defines the pricing, billing interval, and features included. Plans can have tiers (e.g., Basic, Pro, Enterprise) with different pricing.",
+            "Subscription billing cycles define how often a customer is charged: monthly, quarterly, semi-annually, or annually. Each cycle generates an invoice automatically on the renewal date until the subscription is paused or cancelled.",
             "Subscription upgrades and downgrades change the plan mid-cycle. Upgrades typically prorate the remaining billing period. Downgrades apply at the next renewal date.",
+        ],
+    },
+    {
+        "title": "Proration and Multi-Currency Billing",
+        "chunks": [
+            "Proration adjusts charges for partial billing periods. When a subscription starts, upgrades, or downgrades partway through a cycle, Zoiko Billing calculates a prorated amount so the customer only pays for the portion of the billing period they actually use.",
+            "Multi-currency invoicing lets an organization bill customers in different currencies. Exchange rates convert foreign-currency amounts into the organization's base reporting currency, and every invoice records both its original currency and the converted amount.",
         ],
     },
     {

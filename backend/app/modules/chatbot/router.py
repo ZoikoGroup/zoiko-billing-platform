@@ -58,8 +58,11 @@ from .actions.action_engine import ActionEngine, ActionEngineError
 from .knowledge.retrieval import KnowledgeRetriever
 from .model_gateway.base import ModelGateway, ModelGatewayError
 from .model_gateway.anthropic_gateway import AnthropicModelGateway
+from .model_gateway.groq_gateway import GroqModelGateway
 from .guardrails.guardrails import GuardrailEngine, SystemPromptBuilder
 from .audit.middleware import get_metrics
+
+from app.config import settings as app_settings
 
 import uuid
 import logging
@@ -78,12 +81,23 @@ _guardrail = GuardrailEngine()
 _gateway: ModelGateway | None = None
 
 def _get_gateway() -> ModelGateway | None:
+    """Resolve the model gateway per AI_MODEL_PROVIDER, auto-detecting from
+    whichever API key is configured. Returns None when no provider is
+    configured — the engine then runs rules-only (fully deterministic)."""
     global _gateway
     if _gateway is None:
+        preferred = (app_settings.AI_MODEL_PROVIDER or "").strip().lower()
         try:
-            _gateway = AnthropicModelGateway()
+            if preferred == "groq":
+                _gateway = GroqModelGateway()
+            elif preferred == "anthropic":
+                _gateway = AnthropicModelGateway()
+            elif app_settings.GROQ_API_KEY:
+                _gateway = GroqModelGateway()
+            elif app_settings.ANTHROPIC_API_KEY:
+                _gateway = AnthropicModelGateway()
         except Exception:
-            pass
+            _gateway = None
     return _gateway
 
 
@@ -332,5 +346,5 @@ def health():
     gateway = _get_gateway()
     return HealthResponse(
         safe_mode=_guardrail.is_safe_mode,
-        model_gateway="anthropic" if gateway else "unavailable",
+        model_gateway=gateway.provider_name if gateway else "unavailable",
     )
