@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Building2, CheckCircle2, HelpCircle } from "lucide-react";
 import { useCommandCenter } from "../context/CommandCenterContext";
@@ -24,6 +24,22 @@ const FRESHNESS_CHIP = {
 
 export default function TriageStrip() {
   const { attentionCounts, activeGrant, worstFreshness } = useCommandCenter();
+
+  // §15.3 — a NEW P0 must be impossible to miss: the count chip pulses for
+  // two seconds when the observed P0 count rises. The global
+  // prefers-reduced-motion rule in index.css disables the animation for
+  // operators who need stillness; the red chip itself remains.
+  const [pulseP0, setPulseP0] = useState(false);
+  const prevP0Ref = useRef(attentionCounts?.p0 ?? 0);
+  useEffect(() => {
+    const next = attentionCounts?.p0 ?? 0;
+    const grew = next > prevP0Ref.current;
+    prevP0Ref.current = next;
+    if (!grew) return;
+    setPulseP0(true);
+    const t = setTimeout(() => setPulseP0(false), 2000);
+    return () => clearTimeout(t);
+  }, [attentionCounts?.p0]);
 
   if (!attentionCounts) return null;
 
@@ -63,7 +79,13 @@ export default function TriageStrip() {
       <span className="flex items-center gap-1.5">
         <AlertTriangle size={13} /> ATTENTION
       </span>
-      {p0 > 0 && <span className="rounded-full bg-red-600 px-2 py-0.5 text-white">P0 {p0}</span>}
+      {p0 > 0 && (
+        <span
+          className={`rounded-full bg-red-600 px-2 py-0.5 text-white ${pulseP0 ? "animate-pulse" : ""}`}
+        >
+          P0 {p0}
+        </span>
+      )}
       {p1 > 0 && <span className="rounded-full bg-orange-500 px-2 py-0.5 text-white">P1 {p1}</span>}
       {p2 > 0 && <span className="rounded-full bg-amber-400 px-2 py-0.5 text-slate-900">P2 {p2}</span>}
       {p3 > 0 && <span className="rounded-full bg-slate-400 px-2 py-0.5 text-slate-900">P3 {p3}</span>}

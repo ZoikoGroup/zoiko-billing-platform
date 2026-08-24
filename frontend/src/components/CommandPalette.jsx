@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, CornerDownLeft } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  CornerDownLeft,
+  Fingerprint,
+  Lock,
+  ScrollText,
+  Search,
+} from "lucide-react";
 import { createPortal } from "react-dom";
 import { globalSearch } from "../service/commandCenterService";
 
@@ -24,6 +32,15 @@ const STATIC_COMMANDS = [
   { label: "Open Tenant Health", route: "/super-admin/tenant-health", domain: "platform" },
   { label: "Open Audit Logs", route: "/super-admin/audit-logs", domain: "governance" },
 ];
+
+// §13/§14 — entity-type icons mirror the backend search service's four
+// result kinds; anything unrecognized falls back to the plain text badge.
+const ENTITY_ICONS = {
+  Organization: Building2,
+  "Attention Item": AlertTriangle,
+  "Correlation ID": Fingerprint,
+  "Audit Event": ScrollText,
+};
 
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -140,11 +157,16 @@ export default function CommandPalette() {
                 }`}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  {item.kind === "result" && (
-                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
-                      {item.entity_type}
-                    </span>
-                  )}
+                  {item.kind === "result" && (() => {
+                    const EntityIcon = ENTITY_ICONS[item.entity_type];
+                    return EntityIcon ? (
+                      <EntityIcon size={14} className="shrink-0 text-slate-400" aria-hidden="true" />
+                    ) : (
+                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                        {item.entity_type}
+                      </span>
+                    );
+                  })()}
                   <span className="truncate">{item.label}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
@@ -179,6 +201,14 @@ export default function CommandPalette() {
                   {item.kind === "result" && item.plane && (
                     <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
                       {item.plane}
+                    </span>
+                  )}
+                  {item.kind === "result" && item.requires_access && (
+                    <span
+                      className="flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700"
+                      title="Opening this record requires an active privileged tenant-access session"
+                    >
+                      <Lock size={9} aria-hidden="true" /> privileged
                     </span>
                   )}
                 </span>

@@ -10,7 +10,8 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
@@ -61,6 +62,7 @@ from app.modules.super_admin.schemas import (
     ApprovalRequestListResponse,
     ApprovalRequestResponse,
     AttentionAssignRequest,
+    AttentionEscalateRequest,
     AttentionCountsResponse,
     AttentionItemListResponse,
     AttentionItemResponse,
@@ -116,6 +118,20 @@ from app.modules.super_admin.schemas import (
     UserMembershipChangeRequest,
     UserRoleChangeRequest,
     UserStatusChangeRequest,
+    BillingCommandKpis,
+    BillingSparklines,
+    BillingAgingBucket,
+    BillingActionCenter,
+    BillingNextSevenDays,
+    BillingOverviewResponse,
+    BillingTrendPoint,
+    BillingTrendResponse,
+    OverdueInvoiceRow,
+    OverdueInvoiceListResponse,
+    CollectionsRiskRow,
+    CollectionsRiskListResponse,
+    BillingActivityItem,
+    BillingActivityListResponse,
 )
 
 
@@ -1359,7 +1375,7 @@ def set_billing_kill_switch(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §9 — Domain B circuit breakers (generalized, session 7).
 #
 # Every scope below is REAL, server-enforced at its billing code path:
@@ -1383,7 +1399,7 @@ def set_billing_kill_switch(
 #   - Break-glass: PUT /circuit-breakers/{scope} applies directly but demands
 #     fresh MFA step-up AND an incident_reference when engaging.
 # All engaged pauses carry a mandatory bounded auto-expiry (§9.1).
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 def _kill_switch_to_response(switch) -> BillingKillSwitchResponse:
     return BillingKillSwitchResponse(
@@ -2140,9 +2156,11 @@ def get_configuration_inventory(
     imported live from their owning modules (cannot drift from enforcement),
     and environment capability status (presence only — secret values are
     never exposed)."""
-    from app.modules.super_admin.configuration_service import ConfigurationGovernanceService
+    from app.modules.super_admin.configuration_service import ConfigurationGovernanceService, display_entries
 
-    return ConfigurationGovernanceService(db).get_inventory()
+    inventory = ConfigurationGovernanceService(db).get_inventory()
+    inventory["entries"] = display_entries(inventory["entries"])
+    return inventory
 
 
 @router.get("/settings", response_model=list[SettingResponse])
@@ -2430,25 +2448,92 @@ def get_production_acceptance_report(
         evidence="Cross-tenant access, self-approval, illegal state transitions, and double-charge prevention are covered by this pass's test suite. Retry-storm/race-condition/duplicate-webhook-event tests are not present.",
     ))
 
-    # REC-01 — investigated this pass (release-blocker Blocker 5): confirmed
-    # NOT IMPLEMENTED, not merely undocumented. See docs/
-    # SUPER_ADMIN_ENTERPRISE_READINESS_REPORT.md for the full investigation.
-    items.append(ProductionAcceptanceItem(
-        id="REC-01",
-        criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
-        status="FAIL",
-        evidence=(
-            "NOT IMPLEMENTED. No reconciliation engine, reconciliation_record model, scheduled reconciliation job, "
-            "or exception-ownership workflow exists anywhere for Plane 1 (Zoiko's own commercial billing — "
-            "commercial_accounts/commercial_plans/commercial_subscriptions). The only 'reconcile' code in this "
-            "codebase (PaymentService.reconcile_payment, billing/routers/payment_router.py) is an unrelated, "
-            "org-scoped Plane 2 (tenant-to-customer) manual check that a single payment's allocations sum correctly "
-            "-- it is not an automated ledger-vs-processor comparison and is out of scope for this Super-Admin-only "
-            "engagement regardless. Building a real Plane-1 reconciliation engine today would be decorative: there is "
-            "no Plane-1 payment processor integration yet to reconcile against (see PAY-01/PAY-02, also unimplemented). "
-            "This is a genuine, not-yet-built capability, reported honestly rather than as a fabricated PASS."
-        ),
-    ))
+    # REC-01 — the reconciliation engine is now implemented and evaluated
+    # from real artifacts (models + service + endpoints + scheduled job),
+    # never asserted. Status derives from actual ReconciliationRun rows.
+    from app.modules.super_admin.models import (
+        ReconciliationException,
+        ReconciliationExceptionStatus,
+        ReconciliationRun,
+    )
+
+    latest_run = (
+        db.query(ReconciliationRun)
+        .order_by(ReconciliationRun.started_at.desc())
+        .first()
+    )
+    if latest_run is None:
+        items.append(ProductionAcceptanceItem(
+            id="REC-01",
+            criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+            status="WARNING",
+            evidence=(
+                "IMPLEMENTED, NOT YET EXECUTED HERE: engine exists "
+                "(reconciliation_runs/reconciliation_exceptions tables, "
+                "ReconciliationService with invoice-balance-arithmetic and "
+                "payment-allocation-integrity checks, exception "
+                "OPEN->ACKNOWLEDGED->RESOLVED ownership workflow, manual "
+                "POST /super-admin/reconciliation-runs/run endpoint, daily "
+                "'reconciliation_job' in core/scheduler.py) but no run has "
+                "been recorded in this environment yet."
+            ),
+        ))
+    else:
+        open_exceptions = (
+            db.query(ReconciliationException)
+            .filter(
+                ReconciliationException.run_id == latest_run.id,
+                ReconciliationException.status != ReconciliationExceptionStatus.RESOLVED,
+            )
+            .count()
+        )
+        if open_exceptions > 0:
+            items.append(ProductionAcceptanceItem(
+                id="REC-01",
+                criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                status="FAIL",
+                evidence=(
+                    f"Latest reconciliation run #{latest_run.id} is {str(latest_run.state).upper()} "
+                    f"with {open_exceptions} unresolved exception(s). Engine and ownership "
+                    f"workflow are live; resolve or acknowledge the exceptions, then re-run "
+                    f"(POST /super-admin/reconciliation-runs/run)."
+                ),
+            ))
+        elif (latest_run.state.value if hasattr(latest_run.state, "value") else str(latest_run.state)) == "partial":
+            items.append(ProductionAcceptanceItem(
+                id="REC-01",
+                criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                status="WARNING",
+                evidence=(
+                    f"Latest run #{latest_run.id}: all internal ledger invariants verified "
+                    f"({latest_run.checks_total} checks, 0 exceptions), but the processor leg "
+                    f"is not connected yet ({latest_run.processor_note}) - ISS-017. A clean "
+                    f"run without a processor/bank source honestly caps at PARTIAL rather "
+                    f"than claiming full ledger-vs-processor VERIFIED."
+                ),
+            ))
+        elif (latest_run.state.value if hasattr(latest_run.state, "value") else str(latest_run.state)) == "failed":
+            # Defensive: FAILED state should always carry open exceptions.
+            items.append(ProductionAcceptanceItem(
+                id="REC-01",
+                criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                status="FAIL",
+                evidence=(
+                    f"Latest reconciliation run #{latest_run.id} ended FAILED "
+                    f"({latest_run.exceptions_found} exception(s)); see "
+                    f"/super-admin/reconciliation-runs/{latest_run.id}."
+                ),
+            ))
+        else:
+            items.append(ProductionAcceptanceItem(
+                id="REC-01",
+                criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                status="PASS",
+                evidence=(
+                    f"Latest run #{latest_run.id} fully VERIFIED including a connected "
+                    f"processor source ({latest_run.processor_source})."
+                ),
+            ))
 
     # OPS-01 — kill switch is real; the rest of this criterion is not assessed.
     items.append(ProductionAcceptanceItem(
@@ -2471,10 +2556,9 @@ def get_production_acceptance_report(
     ))
 
     # Overall verdict — computed from the actual item statuses above, never
-    # from frontend/UI presence. Any FAIL is a mandatory blocker (this pass
-    # currently has SEC-01 and REC-01 failing); WARNING/NOT_CONFIGURED items
-    # keep the platform out of an unconditional "READY" but do not block a
-    # supervised go-live the way a FAIL does.
+    # from frontend/UI presence. Any FAIL is a mandatory blocker; WARNING/
+    # NOT_CONFIGURED items keep the platform out of an unconditional "READY"
+    # but do not block a supervised go-live the way a FAIL does.
     failed_ids = [item.id for item in items if item.status == "FAIL"]
     attention_ids = [item.id for item in items if item.status in ("WARNING", "NOT_CONFIGURED")]
     if failed_ids:
@@ -2501,14 +2585,14 @@ def get_production_acceptance_report(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §6/§7 — Domain B: privileged tenant support access.
 #
 # Every endpoint below is super_admin-only, and every mutation additionally
 # re-verifies the grant belongs to the calling actor (see
 # PrivilegedAccessService._load_owned_grant) — there is no path for one
 # Super Admin to see or act on another's privileged-access grant.
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 def _grant_to_response(grant) -> PrivilegedAccessGrantResponse:
     data = PrivilegedAccessGrantResponse.model_validate(grant)
@@ -2591,12 +2675,12 @@ def get_privileged_access_tenant_summary(
     return TenantAccessSummaryResponse(**summary)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §8 — Domain C: cross-tenant operational telemetry only.
 # Counts, rates and job-run history — never a monetary figure. See
 # telemetry_service.py's module docstring for what is deliberately NOT
 # reported (queue age / connector state have no real backing data today).
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/telemetry/organizations", response_model=OrganizationHealthResponse)
 def get_organization_telemetry(
@@ -2627,7 +2711,22 @@ def get_api_telemetry(
     zero samples with None rates, never a fabricated healthy 0%."""
     import app.core.api_metrics as api_metrics
 
-    return api_metrics.snapshot()
+    snapshot = dict(api_metrics.snapshot())
+    # §11 Reliability lens — SLOs / error budgets are NOT CONFIGURED on this
+    # platform today: there is no target registry and no burn-rate
+    # computation. The single enforced objective is the §18.2 p95 server
+    # latency budget reported alongside. The absence is surfaced explicitly
+    # instead of implying coverage that does not exist.
+    snapshot["slo"] = {
+        "status": "NOT_CONFIGURED",
+        "reason": (
+            "No SLO targets or error-budget policy are registered for this "
+            "platform. The p95 latency budget reported here is the only "
+            "enforced objective (ZB-SA-CMD-003 §18.2)."
+        ),
+        "p95_budget_ms": api_metrics.P95_BUDGET_MS,
+    }
+    return snapshot
 
 
 @router.get("/telemetry/tenant-health", response_model=TenantHealthOverviewResponse)
@@ -2644,9 +2743,9 @@ def get_tenant_health_overview(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §10.1 — Metric Dictionary v1 (read-only, code-versioned registry)
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/metric-dictionary", response_model=MetricDictionaryResponse)
 def get_metric_dictionary(
@@ -2657,9 +2756,9 @@ def get_metric_dictionary(
     return MetricDictionaryResponse(metrics=metrics)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §13 — global identity-first search (command palette backing)
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/search", response_model=SearchResponse)
 def global_search(
@@ -2671,9 +2770,9 @@ def global_search(
     return SearchResponse(query=q, results=results)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §23 — Launch Readiness (real checks — see launch_readiness_service.py)
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/launch-readiness", response_model=LaunchReadinessResponse)
 def get_launch_readiness(
@@ -2683,11 +2782,11 @@ def get_launch_readiness(
     return LaunchReadinessResponse(**LaunchReadinessService(db).evaluate())
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # Phase 15 — internal financial (allocation) consistency check.
 # NOT reconciliation against a processor/bank — see the service module
 # docstring and ISS-017 for why that remains genuinely blocked.
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/financial-consistency", response_model=FinancialConsistencyResponse)
 def get_financial_consistency(
@@ -2721,7 +2820,224 @@ def get_financial_operations_summary(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# ZB-SA-CMD-003 — Billing Command Center (Domain B read models). Composes the
+# /super-admin/billing-command-center page from real billing tables only.
+# Same currency-honesty rules as /financial-operations: per-currency buckets,
+# scalar totals only when single-currency, primary-currency figures labeled.
+# 
+
+
+def _bcc_service(db: Session) -> "BillingCommandCenterService":
+    from app.modules.super_admin.billing_command_center_service import BillingCommandCenterService
+
+    return BillingCommandCenterService(db)
+
+
+@router.get("/billing-command-center/overview", response_model=BillingOverviewResponse)
+def get_billing_command_overview(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    data = _bcc_service(db).get_overview()
+    return BillingOverviewResponse(
+        generated_at=data["generated_at"],
+        kpis=BillingCommandKpis(**data["kpis"]),
+        sparklines=BillingSparklines(**data["sparklines"]),
+        aging=[BillingAgingBucket(**b) for b in data["aging"]],
+        aging_basis=data["aging_basis"],
+        action_center=BillingActionCenter(**data["action_center"]),
+        next_seven_days=BillingNextSevenDays(**data["next_seven_days"]),
+        customers_at_risk=data["customers_at_risk"],
+    )
+
+
+@router.get("/billing-command-center/trend", response_model=BillingTrendResponse)
+def get_billing_command_trend(
+    granularity: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
+    currency: Optional[str] = Query(None, max_length=3),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    data = _bcc_service(db).get_trend(granularity, currency)
+    return BillingTrendResponse(
+        granularity=data["granularity"],
+        currency=data["currency"],
+        currency_state=data["currency_state"],
+        available_currencies=data["available_currencies"],
+        points=[BillingTrendPoint(**p) for p in data["points"]],
+    )
+
+
+@router.get("/billing-command-center/overdue-invoices", response_model=OverdueInvoiceListResponse)
+def list_billing_command_overdue_invoices(
+    limit: int = Query(10, ge=1, le=100),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    data = _bcc_service(db).list_overdue_invoices(limit)
+    return OverdueInvoiceListResponse(
+        total=data["total"],
+        invoices=[OverdueInvoiceRow(**row) for row in data["invoices"]],
+    )
+
+
+@router.get("/billing-command-center/collections-risk", response_model=CollectionsRiskListResponse)
+def list_billing_command_collections_risk(
+    limit: int = Query(10, ge=1, le=50),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    data = _bcc_service(db).list_collections_risk(limit)
+    return CollectionsRiskListResponse(rows=[CollectionsRiskRow(**row) for row in data["rows"]])
+
+
+@router.get("/billing-command-center/recent-activity", response_model=BillingActivityListResponse)
+def list_billing_command_recent_activity(
+    limit: int = Query(8, ge=1, le=50),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    data = _bcc_service(db).list_recent_activity(limit)
+    return BillingActivityListResponse(items=[BillingActivityItem(**item) for item in data["items"]])
+
+
+# 
+# REC-01 — Ledger reconciliation engine (runs + exception ownership).
+# 
+
+@router.post("/reconciliation-runs/run", response_model=dict)
+def trigger_reconciliation_run(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.reconciliation_service import ReconciliationService
+
+    service = ReconciliationService(db)
+    run = service.run_reconciliation(trigger="manual")
+    service.report_to_attention_engine(run)
+    db.commit()
+    return _serialize_reconciliation_run(run)
+
+
+@router.get("/reconciliation-runs", response_model=dict)
+def list_reconciliation_runs(
+    limit: int = Query(10, ge=1, le=50),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.models import ReconciliationRun
+
+    runs = (
+        db.query(ReconciliationRun)
+        .order_by(ReconciliationRun.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"items": [_serialize_reconciliation_run(r) for r in runs]}
+
+
+@router.get("/reconciliation-runs/{run_id}", response_model=dict)
+def get_reconciliation_run(
+    run_id: int,
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.super_admin.models import ReconciliationRun, ReconciliationException
+
+    run = db.get(ReconciliationRun, run_id)
+    if run is None:
+        raise NotFoundException(f"Reconciliation run {run_id} not found")
+    exceptions = (
+        db.query(ReconciliationException)
+        .filter(ReconciliationException.run_id == run_id)
+        .order_by(ReconciliationException.id.asc())
+        .all()
+    )
+    data = _serialize_reconciliation_run(run)
+    data["exceptions"] = [
+        {
+            "id": e.id,
+            "kind": e.kind,
+            "organization_id": e.organization_id,
+            "entity_type": e.entity_type,
+            "entity_id": e.entity_id,
+            "detail": e.detail,
+            "status": e.status.value if hasattr(e.status, "value") else str(e.status),
+            "owner_user_id": e.owner_user_id,
+            "acknowledged_at": str(e.acknowledged_at) if e.acknowledged_at else None,
+            "resolved_at": str(e.resolved_at) if e.resolved_at else None,
+            "resolution_note": e.resolution_note,
+        }
+        for e in exceptions
+    ]
+    return data
+
+
+class ReconciliationExceptionActionRequest(BaseModel):
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/reconciliation-exceptions/{exception_id}/acknowledge", response_model=dict)
+def acknowledge_reconciliation_exception(
+    exception_id: int,
+    body: ReconciliationExceptionActionRequest = Body(default=None),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.reconciliation_service import ReconciliationService
+
+    exc = ReconciliationService(db).acknowledge_exception(
+        exception_id, owner_user_id=current_user.id
+    )
+    db.commit()
+    return {
+        "id": exc.id,
+        "status": exc.status.value if hasattr(exc.status, "value") else str(exc.status),
+        "owner_user_id": exc.owner_user_id,
+        "acknowledged_at": str(exc.acknowledged_at) if exc.acknowledged_at else None,
+    }
+
+
+@router.post("/reconciliation-exceptions/{exception_id}/resolve", response_model=dict)
+def resolve_reconciliation_exception(
+    exception_id: int,
+    body: ReconciliationExceptionActionRequest,
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.reconciliation_service import ReconciliationService
+
+    try:
+        exc = ReconciliationService(db).resolve_exception(exception_id, note=body.note or "")
+    except ValueError as err:
+        raise BadRequestException(str(err))
+    db.commit()
+    return {
+        "id": exc.id,
+        "status": exc.status.value if hasattr(exc.status, "value") else str(exc.status),
+        "resolved_at": str(exc.resolved_at) if exc.resolved_at else None,
+        "resolution_note": exc.resolution_note,
+    }
+
+
+def _serialize_reconciliation_run(run) -> dict:
+    return {
+        "id": run.id,
+        "state": run.state.value if hasattr(run.state, "value") else str(run.state),
+        "started_at": str(run.started_at),
+        "finished_at": str(run.finished_at) if run.finished_at else None,
+        "trigger": run.trigger,
+        "checks_total": run.checks_total,
+        "exceptions_found": run.exceptions_found,
+        "processor_source": run.processor_source,
+        "processor_note": run.processor_note,
+    }
+
+
+# 
 # ZB-SA-CMD-003 §10/§11 — Attention Engine.
 #
 # Read-only for now to every super_admin (triage visibility is the whole
@@ -2730,15 +3046,33 @@ def get_financial_operations_summary(
 # NO endpoint to fabricate an attention item from the API — every item's
 # `source`/`source_key` traces back to a real signal (see
 # attention_service.py's module docstring).
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/attention", response_model=AttentionItemListResponse)
 def list_attention_items(
     limit: int = Query(50, ge=1, le=200),
+    severity: Optional[str] = Query(None, description="Filter the live queue by severity: P0 | P1 | P2 | P3"),
+    status: Optional[str] = Query(None, description="Exact-status history view (e.g. RESOLVED | CLOSED); omit for the live open queue"),
     current_user=Depends(require_capability('governance.read')),
     db: Session = Depends(get_db),
 ):
-    items = AttentionService(db).list_open(limit=limit)
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.models import AttentionSeverity, AttentionStatus
+
+    severity_filter = None
+    if severity:
+        try:
+            severity_filter = AttentionSeverity(severity.upper())
+        except ValueError:
+            raise BadRequestException(f"Unknown severity filter: {severity}")
+    status_filter = None
+    if status:
+        try:
+            status_filter = AttentionStatus(status.upper())
+        except ValueError:
+            raise BadRequestException(f"Unknown status filter: {status}")
+
+    items = AttentionService(db).list_open(limit=limit, severity=severity_filter, status=status_filter)
     return AttentionItemListResponse(items=items)
 
 
@@ -2769,6 +3103,21 @@ def assign_attention_item(
     db: Session = Depends(get_db),
 ):
     item = AttentionService(db).assign(current_user, item_id, payload.owner_user_id)
+    db.commit()
+    return item
+
+
+@router.post("/attention/{item_id}/escalate", response_model=AttentionItemResponse)
+def escalate_attention_item(
+    item_id: int,
+    payload: AttentionEscalateRequest,
+    current_user=Depends(require_capability('incident.transition')),
+    db: Session = Depends(get_db),
+):
+    """§6.4 — explicit operator escalation (severity bump + SLA re-derivation,
+    audited with the operator's reason). Guarded by the same capability as
+    status transitions: escalation is a lifecycle action on the incident."""
+    item = AttentionService(db).escalate(current_user, item_id, payload.reason)
     db.commit()
     return item
 
@@ -2805,13 +3154,13 @@ def suppress_attention_item(
     return item
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-CMD-003 §11 — Triage lens (single read-only pane).
 # Composes the SAME real sources as the dedicated endpoints above; a
 # triage.read holder sees incident/pipeline/safety state without needing
 # every underlying capability. Critical events are deliberately REDACTED to
 # action/entity/actor/time — no before/after payloads leak through triage.
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/triage/summary", response_model=TriageSummaryResponse)
 def get_triage_summary(
@@ -2890,13 +3239,13 @@ def get_triage_summary(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 # ZB-SA-P3 — Phase 3A Organizations workspace + Phase 3C lifecycle transitions
 # Directory/overview read models are identity + lifecycle + operational counts
 # (no monetary values). Lifecycle transitions are governed by the state machine
 # in TenantLifecycleService: mandatory reason, actor+correlation_id audited via
 # PlatformAuditAction.LIFECYCLE_TRANSITION, is_active kept in lockstep.
-# ═══════════════════════════════════════════════════════════════════════════════
+# 
 
 @router.get("/organizations", response_model=OrganizationDirectoryResponse)
 def list_super_admin_organizations(

@@ -39,6 +39,9 @@ import {
   Bell,
   Activity,
   HelpCircle,
+  Gauge,
+  Crosshair,
+  Rocket,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -178,6 +181,17 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Command Center",
+    icon: Gauge,
+    superAdminOnly: true,
+    children: [
+      { label: "Command Center", href: "/super-admin/command-center", icon: Gauge },
+      { label: "Triage & Attention", href: "/super-admin/triage", icon: Crosshair },
+      { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
+      { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: Rocket },
+    ],
+  },
+  {
     label: "Platform",
     icon: Building2,
     superAdminOnly: true,
@@ -207,6 +221,7 @@ const NAV_SECTIONS = [
     icon: CircleDollarSign,
     superAdminOnly: true,
     children: [
+      { label: "Billing Command Center", href: "/super-admin/billing-command-center", icon: LayoutDashboard },
       { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: Receipt },
       { label: "Payments & Disputes", href: "/super-admin/financial/payments", icon: WalletCards },
       { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: DollarSign },

@@ -253,6 +253,34 @@ class AttentionService:
         self.db.flush()
         return item
 
+    def escalate(self, actor: User, item_id: int, reason: str) -> AttentionItem:
+        """§6.4 explicit operator escalation: raises an open item one severity
+        level (P3→P2→P1→P0), re-derives its SLA deadlines from the new
+        severity, and writes an audited trail. Requires a non-empty reason;
+        a P0 cannot escalate further."""
+        item = self._load(item_id)
+        if item.status not in _OPEN_LIKE_STATUSES:
+            raise BadRequestException(f"Cannot escalate an item in status {item.status.value}.")
+        if not reason or not reason.strip():
+            raise BadRequestException("A reason is required to escalate an attention item.")
+        new_severity = self._escalate(item.severity)
+        if new_severity == item.severity:
+            raise BadRequestException("Item is already at maximum severity (P0).")
+        previous = item.severity
+        item.severity = new_severity
+        self._set_sla_deadlines(item)
+        self.db.flush()
+        self.audit.log_no_commit(
+            actor_id=actor.id, actor_role="super_admin",
+            action=PlatformAuditAction.ATTENTION_ESCALATED,
+            entity_type="AttentionItem", entity_id=item.id,
+            organization_id=item.organization_id, correlation_id=item.correlation_id,
+            reason=reason.strip(),
+            metadata={"from": previous.value, "to": new_severity.value},
+        )
+        self.db.flush()
+        return item
+
     def transition(self, actor: User, item_id: int, to_status: AttentionStatus, resolution_code: Optional[str] = None) -> AttentionItem:
         item = self._load(item_id)
         allowed = _FORWARD_TRANSITIONS.get(item.status, set())
@@ -322,16 +350,29 @@ class AttentionService:
 
     # ── Queries ──────────────────────────────────────────────────────────
 
-    def list_open(self, limit: int = 50) -> list[AttentionItem]:
+    def list_open(
+        self,
+        limit: int = 50,
+        severity: Optional[AttentionSeverity] = None,
+        status: Optional[AttentionStatus] = None,
+    ) -> list[AttentionItem]:
+        """Queue read. Default: all open-like items, severity-ranked. An
+        explicit `severity` narrows the live queue; an explicit `status`
+        switches to a history view of that exact status (e.g. RESOLVED,
+        CLOSED) instead of the default open-like set."""
         self._lift_expired_suppressions()
+        query = self.db.query(AttentionItem)
+        if status is not None:
+            query = query.filter(AttentionItem.status == status)
+        else:
+            query = query.filter(AttentionItem.status.in_(_OPEN_LIKE_STATUSES))
+        if severity is not None:
+            query = query.filter(AttentionItem.severity == severity)
+        if status is not None:
+            return query.order_by(AttentionItem.opened_at.desc()).limit(limit).all()
+
         severity_rank = {AttentionSeverity.P0: 0, AttentionSeverity.P1: 1, AttentionSeverity.P2: 2, AttentionSeverity.P3: 3}
-        items = (
-            self.db.query(AttentionItem)
-            .filter(AttentionItem.status.in_(_OPEN_LIKE_STATUSES))
-            .order_by(AttentionItem.opened_at.desc())
-            .limit(500)
-            .all()
-        )
+        items = query.order_by(AttentionItem.opened_at.desc()).limit(500).all()
         items.sort(key=lambda i: (severity_rank.get(i.severity, 9), i.opened_at))
         return items[:limit]
 

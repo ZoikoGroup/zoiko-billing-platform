@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { formatCompactMoney, formatCompactNumber } from "../utils/billing-helpers";
+// ZB-SA-CMD-003 §17 — Domain B containment: shared export entry points are
+// gated on the privileged-session suppression flag owned by
+// CommandCenterContext (see utils/export-helpers.js).
+import { assertExportsAllowed, getExportSuppression } from "../utils/export-helpers";
 import { ExecutiveSummary } from "./billing-ui";
 
 export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2-digit" }) {
@@ -702,6 +706,7 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
 }
 
 export function exportDashboardToCsv(data, filename) {
+  assertExportsAllowed();
   const flatten = (obj, prefix = "") => {
     let result = {};
     for (const [key, val] of Object.entries(obj)) {
@@ -728,6 +733,7 @@ export function exportDashboardToCsv(data, filename) {
 }
 
 export function exportDashboardToJson(data, filename) {
+  assertExportsAllowed();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -1418,6 +1424,7 @@ export function useDateRange(defaultRange = "all_time") {
 export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className = "" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const suppression = getExportSuppression();
 
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -1430,8 +1437,16 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
 
   return (
     <div className={`relative ${className}`} ref={ref}>
-      <button type="button" onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors" aria-label="Export data">
-        <Download size={14} /> Export
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={Boolean(suppression)}
+        title={suppression ? `Exports disabled: ${suppression}` : undefined}
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="Export data"
+        aria-disabled={Boolean(suppression) || undefined}
+      >
+        <Download size={14} /> Export{suppression ? " (disabled)" : ""}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-40 w-40 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">

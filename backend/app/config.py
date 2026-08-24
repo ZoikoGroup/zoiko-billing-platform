@@ -125,6 +125,8 @@ class Settings(BaseSettings):
     COMMERCIAL_DUNNING_INTERVAL_MINUTES: int = 1440
     # ZB-SA-CMD-003 §8/§15 — internal financial-integrity check cadence.
     FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
+    # REC-01 — ledger reconciliation cadence.
+    RECONCILIATION_INTERVAL_MINUTES: int = 1440
 
 
 settings = Settings()

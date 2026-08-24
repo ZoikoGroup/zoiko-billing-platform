@@ -29,8 +29,30 @@ Read-only: opens no transaction of its own and writes nothing.
 """
 
 import inspect
+import json
 from datetime import datetime
 from typing import Any, Dict, List
+
+
+def display_value(value: Any) -> Any:
+    """Cast a raw entry value to the plain display string the
+    ConfigurationEntry.value field (and every caller comparing/rendering
+    it) expects. str/None pass through unchanged; dicts/lists render as
+    compact JSON rather than Python's repr() so the UI shows real JSON."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value)
+
+
+def display_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Wire-response shape of `entries` — same rows get_inventory() returns,
+    with `value` stringified for the ConfigurationEntry schema. Kept
+    separate from get_inventory() so tests can still assert the raw,
+    byte-for-byte enforced value (dicts/ints/floats) against the live
+    module constants, while the HTTP route gets a schema-valid response."""
+    return [{**entry, "value": display_value(entry["value"])} for entry in entries]
 
 from sqlalchemy.orm import Session
 
@@ -53,8 +75,17 @@ class ConfigurationGovernanceService:
         for entry in entries:
             summary[entry["category"]] = summary.get(entry["category"], 0) + 1
 
+        # §21 — unmistakable environment identity. Derived from the DEBUG
+        # flag: DEBUG=True means the deployment must never be presented as
+        # production to an operator. Surfaced so every Command Center chrome
+        # element can label the environment from one authoritative source.
+        from app.config import settings
+
+        environment = "SANDBOX" if settings.DEBUG else "PRODUCTION"
+
         return {
             "generated_at": datetime.utcnow(),
+            "environment": environment,
             "entries": entries,
             "summary": summary,
             "honesty_notes": [
@@ -66,6 +97,9 @@ class ConfigurationGovernanceService:
                 "values are never exposed.",
                 "UNKNOWN actor/date on a row means no recorded evidence "
                 "exists, not that none was checked.",
+                f"Environment is derived from the DEBUG flag (DEBUG="
+                f"{settings.DEBUG}); SANDBOX deployments are flagged so "
+                "operator actions are never mistaken for production.",
             ],
         }
 
@@ -119,6 +153,14 @@ class ConfigurationGovernanceService:
             description: str,
             scope: str = "platform",
         ) -> Dict[str, Any]:
+            # `value` is kept as the RAW live value on purpose — this dict is
+            # what test_g03_threshold_entries_match_live_enforcement_values
+            # compares byte-for-byte against the enforcing module's actual
+            # constant ("this registry can never drift from the values
+            # actually enforced"). It is NOT the wire-response shape; the
+            # HTTP route stringifies it for ConfigurationEntry.value (a
+            # plain display string, same contract as platform_setting and
+            # environment_capability entries) via display_entries() below.
             return {
                 "name": name,
                 "category": "operational_threshold",

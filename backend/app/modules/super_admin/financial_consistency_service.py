@@ -22,6 +22,8 @@ legitimate explanation in this codebase's model (there is no OVERPAID
 invoice status) and is treated as a real integrity failure.
 """
 
+import uuid
+from datetime import datetime
 from typing import Any, Dict
 
 from sqlalchemy import func
@@ -83,7 +85,31 @@ class FinancialConsistencyService:
         return {
             "state": state,
             "scope": "internal_allocation_consistency",
+            # §12 — run identity + evaluation timestamp so an operator can
+            # always answer "which evaluation is this figure from?". This run
+            # metadata describes the invariant evaluation itself; it does NOT
+            # imply a scheduled reconciliation pipeline exists (it does not —
+            # see ISS-017 note below).
+            "run_id": uuid.uuid4().hex,
+            "evaluated_at": datetime.utcnow(),
             "total_invoices_checked": total_invoices,
+            # §12 coverage honesty: the invariant covers 100% of invoices BY
+            # CONSTRUCTION (the query scans the whole ledger), but ledger-vs-
+            # processor reconciliation coverage is genuinely unmeasurable —
+            # None, never a fabricated percentage.
+            "coverage": {
+                "invariant_coverage_percent": 100.0 if total_invoices > 0 else None,
+                "coverage_basis": (
+                    "allocation invariant evaluated over every invoice in "
+                    "the ledger on each run"
+                ),
+                "reconciliation_coverage_percent": None,
+                "reconciliation_note": (
+                    "No processor/bank statement source exists in this "
+                    "codebase (ISS-017), so reconciliation coverage cannot "
+                    "be measured — reported as unknown, not zero."
+                ),
+            },
             "over_allocated_count": over_allocated_count,
             "over_allocated_examples": [
                 {

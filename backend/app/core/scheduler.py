@@ -184,6 +184,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "financial_consistency_job",
             "Financial Integrity Check",
         ),
+        (
+            "app.modules.super_admin.tasks.reconciliation:run_reconciliation_job",
+            settings.RECONCILIATION_INTERVAL_MINUTES,
+            "reconciliation_job",
+            "Ledger Reconciliation (REC-01)",
+        ),
     ]
 
 
