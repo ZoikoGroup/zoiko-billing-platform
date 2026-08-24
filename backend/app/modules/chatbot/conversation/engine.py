@@ -23,7 +23,7 @@ import logging
 import re
 import traceback
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,8 +33,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.modules.billing.models import (
     BillingCustomer,
     Invoice,
+    InvoiceStatus,
     Payment,
     PaymentAllocation,
+    PaymentType,
     Subscription,
     Contract,
     Product,
@@ -117,12 +119,14 @@ BILLING_DOMAIN_VOCABULARY = frozenset((
     "invoice", "payment", "customer", "client", "subscription", "contract",
     "quotation", "quote", "product", "credit", "refund", "dunning", "bill",
     "chargeback", "receipt", "statement", "reminder", "dispute", "adjustment",
-    "proration", "catalog", "catalogue", "item", "line",
+    "proration", "catalog", "catalogue", "item", "line", "audit",
     # Money / figures
     "revenue", "balance", "amount", "subtotal", "price", "pricing", "cost",
     "fee", "discount", "tax", "vat", "gst", "currency", "money", "total",
     "overdue", "outstanding", "unpaid", "paid", "payable", "receivable",
     "due", "aging", "owe", "charged", "paying", "collection",
+    # Revenue synonyms & trend vocabulary ("Give me income", "MoM growth")
+    "income", "earnings", "collect", "growth", "grow", "trend", "mom", "yoy",
     # Plans / lifecycle
     "plan", "tier", "trial", "coupon", "voucher", "promo", "renewal",
     "cancellation", "upgrade", "downgrade", "seat", "usage", "metered",
@@ -147,6 +151,10 @@ BILLING_DOMAIN_PHRASES = (
     "multi currency", "pro rata", "pro-rated", "bank transfer",
     "wire transfer", "stripe", "invoice status", "aging report",
     "general ledger", "fiscal year", "tax rate",
+    # UI navigation surfaces (dashboard panels/sections)
+    "quick action",
+    # Roles & permissions are first-class billing-product concepts (PRD §05)
+    "super admin", "organization admin", "billing admin", "user management",
 )
 # Words that carry no SUBJECT meaning for the refusal gates. A query whose
 # only non-stopword tokens come from this set has no substantive subject and
@@ -163,7 +171,11 @@ _GATE_SHAPE_RE = re.compile(
     r"\b(explain|describe|define|elaborate|clarify|teach|educate"
     r"|meaning\s+of|definition\s+of|tell\s+me\s+about"
     r"|what\s+is|what\s+are|what's|whats|what\s+does"
-    r"|how\s+does|how\s+do|how\s+to"
+    r"|how\s+does|how\s+do|how\s+to|help\s+me"
+    r"|how\s+(?:tall|far|deep|high|fast|heavy|wide|big|long|old|hot|cold)\b"
+    r"|what\s+(?:color|colour|capital)\b|capital\s+of"
+    r"|who\s+(?:invented|wrote|painted|discovered|founded)\b"
+    r"|recipe\s+for|translate\b|solve\b"
     r"|who\s+(?:is|are|was|were|won)|where\s+(?:is|are|can|do|does)"
     r"|give\s+me)\b"
 )
@@ -205,6 +217,7 @@ COMPOUND_TERM_NORMALIZERS = (
     (re.compile(r"\bwritten[\s-]?off\b", re.IGNORECASE), lambda m: "written off"),
     (re.compile(r"\bwrite[\s-]?offs?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "write off")),
     (re.compile(r"\bcredit[\s-]?notes?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "credit note")),
+    (re.compile(r"\bquick[\s-]?actions?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "quick action")),
 )
 
 
@@ -249,6 +262,17 @@ def _within_edit_distance_1(a: str, b: str) -> bool:
 # a core billing noun, route to that noun's surface instead of risking a
 # loose RAG match. Singular and plural keys both listed (a doubled letter
 # before the plural 's' would be distance 2 from the singular form).
+# Tokens that are billing/metric vocabulary — never customer NAMES even when
+# a "show me X" shape captures them ("show me total revenue").
+_CUSTOMER_NAME_BLOCKLIST = frozenset({
+    "total", "totals", "revenue", "income", "earnings", "mrr", "arr",
+    "quotation", "quotations", "quote", "quotes", "refund", "refunds",
+    "credit", "credits", "catalog", "catalogue", "balance", "balances",
+    "outstanding", "overdue", "draft", "drafts", "report", "reports",
+    "dunning", "expense", "expenses", "invoice", "invoices", "payment",
+    "payments", "subscription", "subscriptions", "contract", "contracts",
+})
+
 FUZZY_INTENT_KEYWORDS = {
     "dashboard": ("dashboard_summary", "dashboard"),
     "dashboards": ("dashboard_summary", "dashboard"),
@@ -260,6 +284,10 @@ FUZZY_INTENT_KEYWORDS = {
     "payments": ("payment_list", "billing"),
     "customer": ("customer_list", "billing"),
     "customers": ("customer_list", "billing"),
+    # Metric nouns: a near-miss token ("revenu total") still deserves the
+    # live figure instead of a loose RAG chunk.
+    "revenue": ("metric_revenue", "dashboard"),
+    "revenues": ("metric_revenue", "dashboard"),
 }
 
 # ── Definitional questions about financial metrics ──────────────────────────
@@ -364,9 +392,44 @@ METRIC_DEFINITIONS = {
         "kpi_key": None,
         "live": False,
     },
+    "readiness_score": {
+        "label": "Readiness score",
+        "definition": (
+            "The readiness score is an internal launch-readiness metric used "
+            "by Zoiko platform administrators to track go-live checks. It is "
+            "not an organization billing metric and is intentionally not "
+            "exposed through this assistant or your billing dashboard."
+        ),
+        "formula": "internal platform checks maintained by super administrators",
+        "kpi_key": None,
+        "live": False,
+    },
+    "avg_invoice": {
+        "label": "Average invoice value",
+        "definition": (
+            "Average invoice value is the mean value of the invoices you "
+            "have issued — total billed revenue divided by the number of "
+            "invoices."
+        ),
+        "formula": "dividing total billed revenue by the number of invoices issued",
+        "kpi_key": None,
+        "live": False,
+    },
 }
 # Ordered subject matchers — first hit wins (checked longest/most-specific first).
 _METRIC_SUBJECT_RULES = (
+    # Owner decision: readiness score is intentionally NOT a supported
+    # Inspect metric (internal platform launch-readiness, super-admin only).
+    # Matching it here routes definition asks to its documented exclusion.
+    ("readiness_score", re.compile(r"\breadiness\s+score\b", re.IGNORECASE)),
+    (
+        "avg_invoice",
+        re.compile(
+            r"\b(?:average|avg\.?|mean)\s+(?:invoice|invoices|bill)\w*\b"
+            r"|\binvoice\s+(?:average|avg)\b",
+            re.IGNORECASE,
+        ),
+    ),
     ("mrr", re.compile(r"\b(?:mrr|monthly\s+recurring\s+revenue)\b", re.IGNORECASE)),
     ("arr", re.compile(r"\b(?:arr|annual\s+recurring\s+revenue)\b", re.IGNORECASE)),
     ("paid_revenue", re.compile(r"\bpaid\s+(?:revenue|amount|invoices?)\b|\bcash\s+collected\b|\bcollections?\b", re.IGNORECASE)),
@@ -392,9 +455,19 @@ def _vocab_match(token: str) -> bool:
         return True
     if token.endswith("s") and len(token) > 1 and token[:-1] in BILLING_DOMAIN_VOCABULARY:
         return True
-    if len(token) >= 5:
+    # Past-tense / participle forms count as domain evidence too: "refunded",
+    # "invoiced", "billed" must screen like their base verbs.
+    for suffix in ("ed", "ing"):
+        if token.endswith(suffix) and len(token) > len(suffix) + 2 \
+                and token[:-len(suffix)] in BILLING_DOMAIN_VOCABULARY:
+            return True
+    # Fuzzy rescue only for longer tokens: at length 5 the one-edit pass
+    # misfires ("mount" ≈ "amount"), hijacking out-of-domain questions into
+    # the domain screen. Real-world billing typos are almost always longer
+    # ("dashbord", "subscribtion", "pyment").
+    if len(token) >= 6:
         return any(
-            len(entry) >= 5 and _within_edit_distance_1(token, entry)
+            len(entry) >= 6 and _within_edit_distance_1(token, entry)
             for entry in BILLING_DOMAIN_VOCABULARY
         )
     return False
@@ -408,6 +481,16 @@ def _gate_substantive_tokens(text: str) -> list[str]:
     ]
 
 
+# Consumer/everyday "plan" compounds: "plan" is billing vocabulary, but these
+# collocations are everyday-life topics that must never screen INTO the domain.
+_TOPIC_VETO_PHRASES = (
+    "phone plan", "cell plan", "mobile plan", "data plan", "internet plan",
+    "meal plan", "diet plan", "workout plan", "fitness plan", "lesson plan",
+    "study plan", "retirement plan", "insurance plan", "travel plan",
+    "business plan for my",
+)
+
+
 def topic_screen(text: str) -> bool:
     """§6.0 positive domain-relevance screen.
 
@@ -419,12 +502,307 @@ def topic_screen(text: str) -> bool:
     normalized = normalize_domain_text(normalized)
     if not normalized:
         return True  # empty/noise: never screened out here
+    for veto in _TOPIC_VETO_PHRASES:
+        if veto in normalized:
+            return False
     if _DOC_REF_RE.search(normalized):
         return True
     for phrase in BILLING_DOMAIN_PHRASES:
         if phrase in normalized:
             return True
     return any(_vocab_match(t) for t in _tokenize(normalized))
+
+
+# ── UI navigation topics ────────────────────────────────────────────────────
+# Named dashboard panels users ask about by name ("what are quick actions?").
+# Canonical spellings first (regex), then a typo rescue: each of the two
+# tokens must be within one edit OR one adjacent transposition of its target
+# ("quik acions", "qick action"). Singular "quick action" is also generic
+# English ("take quick action on INV-12"), so bare forms are ignored unless
+# an ask-frame is present — the pair alone must never hijack.
+_QUICK_ACTIONS_TOPIC_RE = re.compile(r"\bquick[\s-]*actions\b|\bquickactions\b", re.IGNORECASE)
+_QUICK_ACTION_SINGULAR_RE = re.compile(r"\bquick[\s-]*action\b|\bquickaction\b", re.IGNORECASE)
+_QUICK_ACTION_ASK_FRAME_RE = re.compile(
+    r"\b(?:explain|describe|define|elaborate|tell\s+me\s+about"
+    r"|what(?:'s|\s+is|\s+are)|whats|meaning\s+of|definition\s+of"
+    r"|where\s+(?:is|are)|show\s+me)\b",
+    re.IGNORECASE,
+)
+
+
+def _topic_token_matches(token: str, targets: tuple[str, ...]) -> bool:
+    for target in targets:
+        if _within_edit_distance_1(token, target):
+            return True
+        if len(token) == len(target):
+            diff = [i for i, (a, b) in enumerate(zip(token, target)) if a != b]
+            if (len(diff) == 2 and diff[1] == diff[0] + 1
+                    and token[diff[0]] == target[diff[1]]
+                    and token[diff[1]] == target[diff[0]]):
+                return True
+    return False
+
+
+def looks_like_quick_actions_query(text: str) -> bool:
+    """True when the query asks about the dashboard's Quick Actions panel,
+    tolerating spacing variants and close typos in either word."""
+    if not text:
+        return False
+    if _QUICK_ACTIONS_TOPIC_RE.search(text):
+        return True  # plural / fused / hyphenated: the panel's proper name
+    if not _QUICK_ACTION_ASK_FRAME_RE.search(text):
+        return False  # bare mention — likely generic English, not the panel
+    if _QUICK_ACTION_SINGULAR_RE.search(text):
+        return True
+    tokens = _tokenize(text)
+    return any(
+        _topic_token_matches(a, ("quick",)) and _topic_token_matches(b, ("action", "actions"))
+        for a, b in zip(tokens, tokens[1:])
+    )
+
+
+# ── Metric figure lookups (M1 Inspect) ──────────────────────────────────────
+# A query that NAMES a metric must reach live data even when its phrasing
+# drifts toward FAQ/definitional shapes ("What's our collection rate?") —
+# figures always beat glossary chunks, so these routes fire BEFORE both §6.0
+# gates and the definitional-shape guard, and D-11 lets a specific rules hit
+# (≥0.8) outrank any model verdict.
+_COLLECTION_RATE_RE = re.compile(
+    r"\bcollections?\s+rate\b|\brate\s+of\s+collections?\b", re.IGNORECASE,
+)
+_MRR_ARR_RE = re.compile(
+    r"\bmrr\b|\barr\b"
+    r"|\bmonthly\s+recurring\s+revenue\b|\bannual\s+recurring\s+revenue\b",
+    re.IGNORECASE,
+)
+_CUSTOMERS_JOINED_TRIGGER_RE = re.compile(
+    r"\b(?:joined|onboarded|signed[\s-]?up)\b"
+    r"|\bnew\s+customers?\b"
+    r"|\bcustomers?\s+(?:that\s+|which\s+|we\s+|were\s+|have\s+(?:we\s+)?)+(?:been\s+)?added\b"
+    r"|\b(?:added|onboarded)\s+(?:new\s+)?customers?\b",
+    re.IGNORECASE,
+)
+_TIME_WINDOW_RE = re.compile(r"\b(?:(?:this|current|past|last)\s+(?:month|week)|today)\b", re.IGNORECASE)
+# "What does MRR mean?" / "definition of ARR" are DEFINITION questions —
+# never hijack them into live-figure lookups.
+_ASKS_MEANING_RE = re.compile(
+    # Interrogative meaning-asks only: "what does X mean?", "the meaning of
+    # X", "definition of X". A bare "mean" must NOT match — otherwise metric
+    # phrasings like "Mean invoice amount" (average) get misrouted to the
+    # definitional path instead of the Inspect figure.
+    r"\bmeaning\b|\bdefinition\s+of\b|\bstands?\s+for\b"
+    r"|\bwhat\s+(?:does|do|is\s+meant\s+by)\b[\s\S]{0,40}\bmean(?:s|t)?\b",
+    re.IGNORECASE,
+)
+# Single-metric value ask for MRR or ARR alone ("ARR value", "what's our
+# MRR total?") — the pair regex requires BOTH terms within 40 chars.
+_MRR_ARR_SINGLE_VALUE_RE = re.compile(
+    r"\b(?:mrr|arr)\b[\s\S]{0,24}\b(?:value|total|figure|number|amount|calculation)s?\b"
+    r"|\b(?:value|total|figure|number|amount)\s+of\s+(?:our\s+|the\s+)?(?:mrr|arr)\b"
+    # Bare acronym ask ("MRR", "ARR please") wants the live figure; a
+    # definitional phrasing ("What is MRR?") never matches this anchor.
+    r"|^\s*(?:mrr|arr)\b\s*(?:please|pls)?\s*[?!.]*$",
+    re.IGNORECASE,
+)
+# "What does Sent mean?" / "What does the Refunded status mean?" — status
+# adjectives are billing vocabulary the §6.0 gate can't see as domain
+# evidence; route them to RAG explicitly with the word intact.
+_STATUS_MEANING_RE = re.compile(
+    r"\bwhat\s+(?:does|do)\s+(?:a\s+|an\s+|the\s+)?"
+    r"['\"]?(draft|sent|delivered|pending|unpaid|paid|overdue|past[ -]?due|partially[ -]paid"
+    r"|cancelled|canceled|refunded|written[ -]off|active|paused|trial"
+    r"|issued|applied|expired|rejected|open|closed)['\"]?\b"
+    r"[\s\S]{0,40}\bmean\b|\bmeaning\s+of\s+(?:the\s+)?['\"]?(draft|sent|delivered|pending|paid"
+    r"|overdue|partially[ -]paid|cancelled|canceled|refunded|written[ -]off)['\"]?\b",
+    re.IGNORECASE,
+)
+# Internal engineering topics are out of scope by design (billing product
+# assistant, not a codebase/architecture explainer).
+_INTERNAL_TECH_RE = re.compile(
+    r"\b(?:database|db schema|table schema|schema design|sql query|source code"
+    r"|codebase|architecture diagram|system architecture|api endpoint[s]?|rest api"
+    r"|deployment|devops|docker|kubernetes|jwt|encryption key|secret key"
+    r"|tech stack|programming language)\b",
+    re.IGNORECASE,
+)
+# Pure small-talk: greetings/fillers/politeness only. Anything carrying a
+# real request ("Hi, show invoices") must NOT match — every inner token is
+# from the filler vocabulary and the whole string must be consumed.
+_GREETING_RESPONSE_RE = re.compile(
+    r"^(?:\s*(?:hey+|hi+|hiya|heya|hello+|yo+|howdy|greetings|good\s+(?:morning|afternoon|evening|day)"
+    r"|thanks?|thank\s+(?:you|ya)|thx|ty"
+    r"|thanks\s+(?:a\s+lot|so\s+much|very\s+much|a\s+bunch)|many\s+thanks"
+    r"|bye+|(?:good)?bye|see\s+(?:ya|you)(?:\s+later)?|later|cheers"
+    r"|ok(?:ay)?|great|nice|cool|awesome|perfect|alright"
+    r"|there|folks|everyone|team|helpful"
+    # glue words that turn a bare thanks into a sentence without making it a
+    # new topic ("Thanks, that was helpful")
+    r"|that|was|is|really|so|very|indeed)"
+    r"[\s!.?,]*)+$"
+    # Conversational openers with a fixed tail ("How are you doing today?",
+    # "What's up?") — pure small-talk, never a topic to refuse.
+    r"|^\s*how\s+are\s+you\b[\s\S]{0,24}$"
+    r"|^\s*how'?s\s+it\s+going\b[\s\S]{0,24}$"
+    r"|^\s*what'?s\s+up\b[\s!.?]*$",
+    re.IGNORECASE,
+)
+# ── Courtesy/filler framing stripper ─────────────────────────────────────────
+# Politeness wrappers ("Please show invoices", "Could you possibly list
+# payments?", "umm so like... invoices i guess") must not change what the
+# user is asking. Phrase-level heads are removed first, then single courtesy
+# tokens at both ends (word-list based — regex prefix loops could eat the
+# inside of words like "hire"). The ORIGINAL text is returned when stripping
+# would leave nothing (pure-greeting messages keep their smalltalk path).
+_COURTESY_HEAD_PHRASE_RES = tuple(
+    re.compile(p, re.IGNORECASE) for p in (
+        r"^[\s,.!?-]*i\s+was\s+wondering\s+if\s+(?:maybe[\s,.!?]*|perhaps[\s,.!?]*|you\s+could\s+help[.,!?\s]*)*",
+        r"^[\s,.!?-]*when(?:ever)?\s+you\s+(?:have\s+a\s+moment|get\s+a\s+(?:chance|sec|second)|can)\s*,?\s*",
+        r"^[\s,.!?-]*(?:you\s+)?(?:could|would|can)\s+(?:possibly\s+|kindly\s+|please\s+)?",
+        r"^[\s,.!?-]*i\s+(?:would|'d)\s+like\s+to\s+see[:,]?\s*",
+        r"^[\s,.!?-]*i\s+need\s+(?:to\s+(?:see|know)\s+)?",
+        r"^[\s,.!?-]*let'?s\s+",
+        r"^[\s,.!?-]*just\s+",
+    )
+)
+_COURTESY_TAIL_PHRASE_RES = tuple(
+    re.compile(p, re.IGNORECASE) for p in (
+        r"[\s,]*(?:and\s+)?(?:please|pls|plz|thanks|thank\s+you|thx|ty)[\s!.?]*$",
+        r"[\s,]+(?:and|or|then)[\s,.!?]*$",
+    )
+)
+_COURTESY_TOKENS = frozenset((
+    "please", "pls", "plz", "hey", "hi", "hello", "yo", "ok", "okay", "so",
+    "well", "um", "umm", "uh", "uhm", "erm", "ah", "oh", "now", "then",
+    "thanks", "thank", "thx", "ty", "great", "cool", "nice", "alright",
+    "basically", "like", "simply", "just", "quick", "one",
+))
+
+
+def _strip_courtesy_frame(text: str) -> str:
+    """Remove politeness/filler framing from both ends of a message.
+
+    Returns "" when the ENTIRE message was courtesy/filler (pure politeness
+    frame) so the caller can treat it as small-talk."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    # Leading single courtesy tokens first ("Please i was wondering…") so
+    # they cannot block the anchored head phrases.
+    words = t.split()
+    lead = 0
+    while lead < len(words) and lead < 4 \
+            and words[lead].strip(".,!?;:-—\"'()") in _COURTESY_TOKENS:
+        lead += 1
+    if lead:
+        t = " ".join(words[lead:])
+    for _ in range(3):
+        before = t
+        for rex in _COURTESY_HEAD_PHRASE_RES:
+            t = rex.sub("", t, count=1).strip()
+        if t == before:
+            break
+    words = t.split()
+    lead = 0
+    while lead < len(words) and lead < 6 \
+            and words[lead].strip(".,!?;:-—\"'()") in _COURTESY_TOKENS:
+        lead += 1
+    trail_end = len(words)
+    cut = 0
+    while trail_end > lead and cut < 6 \
+            and words[trail_end - 1].strip(".,!?;:-—\"'()") in _COURTESY_TOKENS:
+        trail_end -= 1
+        cut += 1
+    t = " ".join(words[lead:trail_end]).strip(" \t,.!?;:-—\"'()")
+    for _ in range(5):
+        before = t
+        for rex in _COURTESY_TAIL_PHRASE_RES:
+            t = rex.sub("", t).rstrip()
+        if t == before:
+            break
+    t = t.strip(" \t,.!?;:-—\"'()")
+    return t
+# The account-balance route needs a billing anchor: bare "how much does a
+# car repair cost?" must never print the org's outstanding balance.
+_BALANCE_DOMAIN_ANCHOR_RE = re.compile(
+    r"\b(?:invoice|invoices|payment|payments|customer|clients?|outstanding|owe[sd]?"
+    r"|balance|bill(?:ed|ing|s)?|collect(?:ed|ion)?|revenue|due|we|i |my|our|us|them|they)\b",
+    re.IGNORECASE,
+)
+# A value-framed metric ask ("what's OUR MRR?", "HOW MUCH have we…") wants
+# the figure; a bare "What is MRR?" stays with the definitional path.
+_METRIC_VALUE_FRAME_RE = re.compile(
+    r"\b(?:our|current|latest|today's|todays|total)\b"
+    r"|\bhow\s+much\b"
+    r"|^show\s|^get\s|^give\s",
+    re.IGNORECASE,
+)
+# Both recurring-revenue acronyms in one query ("MRR and ARR") is always a
+# combined figure request.
+_MRR_AND_ARR_RE = re.compile(r"\bmrr\b[\s\S]{0,40}\barr\b|\barr\b[\s\S]{0,40}\bmrr\b", re.IGNORECASE)
+
+# ── Inspect-routing extension: aggregate questions & dashboard metrics ──────
+# An interrogative aggregate ask ("What's the refund total?") is a DATA
+# question — never an action-draft request, even when it contains an action
+# object noun like "refund".
+_AGGREGATE_QUESTION_RE = re.compile(
+    r"^(?:what|whats|what's|how\s+(?:much|many)|who|which)\b[\s\S]*\b"
+    r"(?:total|amount|sum|value|count|number|rate|average|avg)\b",
+    re.IGNORECASE,
+)
+_REFUND_AGGREGATE_RE = re.compile(
+    r"\brefund\w*\b[\s\S]{0,30}\b(?:total|amount|sum|value)\b"
+    r"|\b(?:total|sum)\b[\s\S]{0,30}\brefund\w*\b"
+    r"|\bhow\s+(?:much|many)\b[\s\S]{0,30}\brefund\w*\b"
+    # Question forms: "Did we receive any refunds?", "Any refunds?"
+    r"|\bdid\s+we\s+(?:receive|issue|give|process|make)\b[\s\S]{0,20}\brefunds?\b"
+    r"|\bhave\s+we\s+(?:received|issued|processed)\b[\s\S]{0,20}\brefunds?\b"
+    r"|\bany\s+refunds?\b",
+    re.IGNORECASE,
+)
+_AVG_INVOICE_RE = re.compile(
+    r"\b(?:average|avg\.?|mean)\s+(?:invoice|invoices|bill)\b"
+    r"|\binvoice\s+(?:average|avg)\b",
+    re.IGNORECASE,
+)
+_CREDIT_NOTE_COUNT_RE = re.compile(r"\bcredit\s+notes?\b", re.IGNORECASE)
+_PAID_PERIOD_RE = re.compile(
+    r"\b(?:paid|collected)(?:\s+amount)?\s+(?:this|current)\s+(?:month|week|year)\b"
+    r"|\b(?:this|current)\s+(?:month|week|year)'?s?\s+(?:paid|collected)(?:\s+amount)?\b"
+    r"|\b(?:paid|collected)\s+revenue\s+(?:this|current)\s+(?:month|week|year)\b"
+    r"|\brevenue\s+(?:this|current)\s+(?:month|week|year)\b"
+    r"|\bwhat\s+did\s+we\s+bill\s+(?:in|during)\s+"
+    r"(?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
+    r"|\b(?:paid|billed|collected)\s+(?:in|during)\s+"
+    r"(?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
+    # Collection phrasing: "How much did we collect this week?" /
+    # "What did we collect in 2026?"
+    r"|\bhow\s+much\s+(?:did\s+we\s+)?collect(?:ed)?\b"
+    r"|\bwhat\s+(?:did\s+we\s+)?collect(?:ed)?\b"
+    r"|\bdid\s+we\s+collect\b"
+    r"|\b(?:paid|collected|billed|collect)(?:ed)?\s*(?:revenue\s*)?(?:in|during|for)\s+20\d{2}\b"
+    r"|\brevenue\s+(?:in|during|for)\s+20\d{2}\b",
+    re.IGNORECASE,
+)
+_ADMIN_COUNT_RE = re.compile(r"\bbilling\s+admins?\b|\badmins?\b|\bteam\s+members?\b", re.IGNORECASE)
+# Decision (owner): monthly growth rate IS a supported Inspect metric; the
+# "readiness score" is intentionally excluded (see METRIC_DEFINITIONS).
+_GROWTH_RATE_RE = re.compile(
+    r"\bmonthly\s+growth(?:\s+rate)?\b|\bgrowth\s+rate\b"
+    r"|\bgrowth\s+(?:compared|relative|versus|vs\.?)\b"
+    r"|\brevenue\s+by\s+month\b|\bmonthly\s+revenue\s+(?:trend|breakdown)\b"
+    # Bare growth phrasings: "How are we growing?", "MoM growth", "YoY"
+    r"|\bgrow(?:th|ing)\b"
+    r"|\bmom\b|\byoy\b"
+    r"|\bmonth[\s-]over[\s-]month\b|\byear[\s-]over[\s-]year\b",
+    re.IGNORECASE,
+)
+_READINESS_SCORE_RE = re.compile(r"\breadiness\s+score\b", re.IGNORECASE)
+_OVER_CREDIT_LIMIT_RE = re.compile(
+    r"\bover\s+(?:their|the|its)?\s*credit\s+limit\b"
+    r"|\babove\s+(?:their|the|its)?\s*credit\s+limit\b"
+    r"|\bexceeds?\w*\s+(?:their|the|its)?\s*credit\s+limit\b",
+    re.IGNORECASE,
+)
 
 DOMAIN_SUGGESTIONS = {
     "billing": [
@@ -710,8 +1088,29 @@ class ConversationEngine:
         if initial_message:
             if str(conv.title or "").strip().lower() in PLACEHOLDER_CONVERSATION_TITLES:
                 conv.title = derive_conversation_title(initial_message)
+            # Persist the user's opening message BEFORE processing. The
+            # /messages path (send_message) saves both sides of every turn;
+            # this initial-message path previously saved only the assistant
+            # reply, so reopening history showed answers without questions.
+            user_msg = AIConversationMessage(
+                conversation_id=conv.id,
+                message_uid=_uid(),
+                sender_type=SenderType.USER,
+                message_text=initial_message,
+            )
+            self.db.add(user_msg)
+            self._audit(AuditEventType.MESSAGE_SENT, conv, ctx, {
+                "sender": "user", "length": len(initial_message),
+            })
             response = self._process_message(conv, initial_message, ctx)
             messages.append(response)
+
+            # Mirror send_message's conversation bookkeeping so list views
+            # report real counts/risk instead of an empty-looking session.
+            conv.message_count = (conv.message_count or 0) + 2
+            resp_risk = response.get("risk_class", "R0")
+            if RISK_ORDER.get(resp_risk, 0) > RISK_ORDER.get(enum_value(conv.highest_risk_class) or "R0", 0):
+                conv.highest_risk_class = RiskClass(resp_risk)
 
         self.db.commit()
         self.db.refresh(conv)
@@ -1025,7 +1424,7 @@ class ConversationEngine:
                 logger.warning("Model-based intent classification failed, falling back to rules")
 
         # Always compute rules-based result for cross-checking
-        rules_result = self._rules_classify_intent(text, context, page_path=page_path)
+        rules_result = self._rules_classify_intent(text, context, page_path=page_path, ctx=ctx)
         print(f"[INTENT-DBG] input={text!r} gateway={'YES(gateway_exists_but_failed)' if gateway_available else 'NO'} rules_result={rules_result['domain']}/{rules_result['intent']} confidence={rules_result.get('confidence')}")
 
         # If model classified as non-action but rules detected an action intent,
@@ -1140,7 +1539,8 @@ class ConversationEngine:
 
     def _model_classify_intent(self, conv: AIConversation, text: str, ctx: AIContext) -> dict:
         """Use model to classify intent into domain."""
-        config = get_model_config("intent_classification")
+        provider = getattr(self._gateway, "provider_name", "unknown")
+        config = get_model_config("intent_classification", provider=provider)
 
         system_prompt = (
             "Classify the user's billing question into exactly one domain. "
@@ -1171,6 +1571,16 @@ class ConversationEngine:
             "- 'How much revenue do we have?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_revenue\", \"confidence\": 0.95}\n"
             "- 'product Dashboard' -> {\"domain\": \"billing\", \"intent\": \"product_dashboard\", \"confidence\": 0.9}\n"
             "- 'What are the valid invoice statuses?' -> {\"domain\": \"help\", \"intent\": \"explain_statuses\", \"confidence\": 0.95}\n"
+            "- 'What are quick actions?' -> {\"domain\": \"help\", \"intent\": \"ui_quick_actions\", \"confidence\": 0.9}\n"
+            "- 'What's our collection rate?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_collection_rate\", \"confidence\": 0.95}\n"
+            "- 'What's MRR and ARR?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_mrr_arr\", \"confidence\": 0.95}\n"
+            "- 'Who joined this month?' -> {\"domain\": \"billing\", \"intent\": \"customer_joined\", \"confidence\": 0.9}\n"
+            "- 'What's the refund total?' -> {\"domain\": \"billing\", \"intent\": \"metric_refund_total\", \"confidence\": 0.95}\n"
+            "- 'Average invoice amount' -> {\"domain\": \"dashboard\", \"intent\": \"metric_avg_invoice\", \"confidence\": 0.95}\n"
+            "- 'How many credit notes?' -> {\"domain\": \"billing\", \"intent\": \"credit_note_count\", \"confidence\": 0.95}\n"
+            "- 'Paid amount this month' -> {\"domain\": \"dashboard\", \"intent\": \"metric_paid_period\", \"confidence\": 0.95}\n"
+            "- 'How many billing admins do we have?' -> {\"domain\": \"dashboard\", \"intent\": \"admin_count\", \"confidence\": 0.9}\n"
+            "- 'What's our monthly growth rate?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_growth_rate\", \"confidence\": 0.95}\n"
             "- 'How many customers are there?' -> {\"domain\": \"billing\", \"intent\": \"customer_count\", \"confidence\": 0.95}\n"
             "- 'Change the due date to net 30.' -> {\"domain\": \"action\", \"intent\": \"action_draft\", \"confidence\": 0.9}\n"
             "- 'Customer was overcharged.' -> {\"domain\": \"action\", \"intent\": \"correct_request\", \"confidence\": 0.9}\n"
@@ -1187,7 +1597,7 @@ class ConversationEngine:
             conversation_id=conv.id,
             tenant_context_id=ctx.tenant_context_id,
             run_type=ModelRunType.CLASSIFY,
-            provider="anthropic",
+            provider=provider,
             model_name=config.model,
             input_hash=_hash(text),
         )
@@ -1224,7 +1634,7 @@ class ConversationEngine:
             "classified_by": IntentClassifiedBy.MODEL,
         }
 
-    def _rules_classify_intent(self, text: str, context: dict | None = None, page_path: str | None = None) -> dict:
+    def _rules_classify_intent(self, text: str, context: dict | None = None, page_path: str | None = None, ctx: "AIContext | None" = None) -> dict:
         """Rules-based intent classification (fallback).
 
         Understands natural-language variation per the Zoiko Billing Assistant
@@ -1239,6 +1649,25 @@ class ConversationEngine:
         normalized = normalize_domain_text(normalized)
         last_entity = context.get("last_entity")
 
+        # ── Small talk: greetings/fillers get a friendly welcome ─────────
+        # Without this, bare "Hi"/"Thanks" fall through to weak RAG matches
+        # or the §6.0 gate. Anything carrying a real request still passes.
+        if _GREETING_RESPONSE_RE.search(normalized.strip()):
+            return {"intent": "greeting", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # Courtesy/filler framing ("please", "could you possibly…", "umm so
+        # like…") must not change what is being asked: strip it from both
+        # ends so every gate below sees the core request. An empty result
+        # means the whole message was politeness — pure small-talk.
+        framed = _strip_courtesy_frame(normalized)
+        if not framed:
+            return {"intent": "greeting", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+        normalized = framed
+        # Second chance: "Please hi there" becomes pure small-talk once the
+        # politeness wrapper is gone.
+        if _GREETING_RESPONSE_RE.search(normalized.strip()):
+            return {"intent": "greeting", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
         # ── FIX #4: Out-of-scope topics (explicit refusal) ────────────
         out_of_scope_keywords = (
             "payroll", "salary", "hr ", "human resources",
@@ -1248,9 +1677,174 @@ class ConversationEngine:
             "project management", "task management",
             "time tracking", "timesheet",
             "travel", "expense report",
+            # lifestyle/hobby topics that would otherwise ride the generic
+            # vocab token "plan"/"travel" into a billing RAG match
+            "weight loss", "workout", "meal plan", "vacation", "itinerary",
         )
         if any(kw in normalized for kw in out_of_scope_keywords):
             return {"intent": "out_of_scope", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── UI navigation topics: Quick Actions panel ────────────────────
+        # "Explain about me quick actions" names a real dashboard section;
+        # it must describe the panel, not fall through to the §6.0 gate
+        # (whose frame-stripper would read the subject as "me quick
+        # actions" and refuse with an invented topic name).
+        if looks_like_quick_actions_query(normalized):
+            return {"intent": "ui_quick_actions", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Internal engineering topics are out of scope ─────────────────
+        # A billing product assistant must refuse codebase/architecture/
+        # infrastructure asks instead of RAG-surfacing an unrelated doc.
+        if _INTERNAL_TECH_RE.search(normalized):
+            return {"intent": "out_of_scope", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Cross-tenant asks: explicit governance refusal ───────────────
+        if re.search(
+            r"\b(?:different|another|other)\s+(?:tenant|tenant's|organization|org\b|company)"
+            r"|\bcross[- ]?tenant\b|\bother\s+tenants?\b",
+            normalized,
+        ):
+            return {"intent": "cross_tenant", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Status semantics: billing vocabulary the gate can't see ──────
+        # "What does Sent mean?" names an invoice status adjective; route to
+        # RAG before the §6.0 out-of-domain short-circuit can refuse it.
+        if _STATUS_MEANING_RE.search(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Field-inventory asks are knowledge questions ─────────────────
+        # "What details does a customer have?" must describe the record's
+        # fields (RAG), not trigger a live customer lookup.
+        if re.search(
+            r"\bwhat\s+(?:details?|fields?|information|info)\s+(?:does|do)\s+"
+            r"(?:a|an|the|each)?\s*\w*\s*(?:customer|client|invoice|payment|subscription|contract|product|quotation)\b",
+            normalized,
+        ):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Dunning / collections escalation timeline ────────────────────
+        # "What happens after 45 days overdue?" asks about the dunning
+        # ladder (a KB topic) — never an account-balance Inspect lookup.
+        if re.search(
+            r"\bwhat\s+happens?\b[\s\S]{0,40}\b(?:\d+\s+days?|overdue|past\s+due)\b"
+            r"|\bafter\s+\d+\s+days?\b"
+            r"|\bdunn?ings?\b|\bcollections?\s+(?:ladder|escalation|process)\b",
+            normalized,
+        ):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Knowledge-shape questions about billing PROCESSES ────────────
+        # "What happens when a payment is allocated?", "When should I issue
+        # a refund?", "When are renewal invoices generated?", "Where is the
+        # customer's balance shown?" ask HOW THE PRODUCT WORKS — they route
+        # to RAG/knowledge even though they contain live-data entity nouns.
+        # Without these gates the entity rules below turn them into Inspect
+        # listings that ignore the question entirely.
+        if re.search(
+            r"\bwhat\s+happens?\s+(?:when|if|after|during)\b"
+            r"[\s\S]{0,60}\b(?:payment|allocate|allocat|credit|refund|invoice"
+            r"|subscription|cancel|dunn|overdue|dispute|chargeback|trial|renew)\w*\b",
+            normalized,
+        ):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+        if re.search(r"\bwhen\s+should\s+(?:i|we|you)\b", normalized) and topic_screen(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+        if re.search(
+            r"\bwhen\s+(?:are|is|do|does)\b[\s\S]{0,40}"
+            r"\b(?:generated|issued|sent|created|emitted|produced)\b",
+            normalized,
+        ) and not re.search(r"\bhow many|count\b", normalized) and topic_screen(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+        if re.search(
+            r"\bwhere\s+(?:is|are|do|does|can)\b[\s\S]{0,50}"
+            r"\b(?:shown|displayed|configured?|appears?|recorded|visible|found|live|enter(?:ed)?)\b",
+            normalized,
+        ) and topic_screen(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+        # SOP how-to asks ("How do I check overdue invoices?") are knowledge;
+        # create/draft forms keep their guided action-draft flow. Only when
+        # the question shows billing-domain evidence — otherwise it falls
+        # through to §6.0 screening ("How do I bake bread?" is refused, not
+        # answered from a loosely-related KB chunk).
+        if re.search(r"\bhow\s+do\s+i\b", normalized) \
+                and not re.search(r"\b(create|draft|add|new|make|issue|send|write)\b", normalized) \
+                and topic_screen(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Metric figure lookups (M1 Inspect) ───────────────────────────
+        # Named-metric questions ("What's our collection rate?", "What's
+        # MRR and ARR?", "Who joined this month?") are DATA lookups: they
+        # must never fall through to help/RAG glossary answers. Definition
+        # asks ("what does X mean?") keep their definitional route.
+        if not _ASKS_MEANING_RE.search(normalized):
+            if _COLLECTION_RATE_RE.search(normalized):
+                return {"intent": "metric_collection_rate", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _MRR_ARR_RE.search(normalized) and (
+                _MRR_AND_ARR_RE.search(normalized)
+                or _METRIC_VALUE_FRAME_RE.search(normalized)
+                or _MRR_ARR_SINGLE_VALUE_RE.search(normalized)
+            ):
+                return {"intent": "metric_mrr_arr", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+        # Named-customer form first: "When did Micro join?" — the trigger
+        # regex above only covers joined/onboarded/signed-up and windowed
+        # asks, so the bare-verb form gets its own standalone gate.
+        m_join_named = re.search(
+            r"\bwhen\s+did\s+(?:our\s+|the\s+)?(?:customer\s+|client\s+)?"
+            r"([\w][\w .'-]{0,30}?)\s+(?:join|joined|sign[\s-]?up|signed[\s-]?up"
+            r"|onboard|onboards?|onboarded)\b",
+            normalized,
+        )
+        if m_join_named:
+            return {"intent": "customer_joined_when", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "subject": m_join_named.group(1).strip()}
+        if _CUSTOMERS_JOINED_TRIGGER_RE.search(normalized):
+            if _TIME_WINDOW_RE.search(normalized):
+                return {"intent": "customer_joined", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Metric figure lookups, batch 2 (M1 Inspect) ──────────────────
+        # Same doctrine: named dashboard metrics answer from live data
+        # before any FAQ/RAG fallback.
+        # Owner decision: readiness score is intentionally NOT an Inspect
+        # metric (internal platform launch-readiness, super-admin only) —
+        # its asks get the documented exclusion, never a §6.0 refusal.
+        if _READINESS_SCORE_RE.search(normalized):
+            return {"intent": "metric_definition", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "metric": "readiness_score"}
+        if not _ASKS_MEANING_RE.search(normalized):
+            if _AVG_INVOICE_RE.search(normalized):
+                return {"intent": "metric_avg_invoice", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _CREDIT_NOTE_COUNT_RE.search(normalized) and re.search(r"\bhow\s+many\b|\bcount\b|\btotal\b|\bnumber\s+of\b|\bany\s+credit\s+notes?\b", normalized):
+                return {"intent": "credit_note_count", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            # User/team-member census: "user count", "how many users do we
+            # have?" — the admin handler answers with both figures.
+            if re.search(
+                r"\busers?\s+count\b|\bcount\s+(?:of\s+)?(?:all\s+)?users?\b"
+                r"|\bhow\s+many\s+users?\b|\bnumber\s+of\s+users?\b"
+                r"|\bteam\s+(?:size|members?\s+count)\b",
+                normalized,
+            ) and not re.search(r"\bcustomers?|clients?\b", normalized):
+                return {"intent": "admin_count", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _PAID_PERIOD_RE.search(normalized):
+                return {"intent": "metric_paid_period", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _ADMIN_COUNT_RE.search(normalized) and re.search(r"\bhow\s+many\b|\bcount\b|\bnumber\s+of\b|^who\s+are\b", normalized):
+                return {"intent": "admin_count", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _GROWTH_RATE_RE.search(normalized):
+                return {"intent": "metric_growth_rate", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if _REFUND_AGGREGATE_RE.search(normalized):
+                return {"intent": "metric_refund_total", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Unqualified dashboard/summary asks (M1 Inspect) ──────────────
+        # "Dashboard summary", "Show dashboard", bare "Overview", "Summary
+        # please" — the whole message is the financial-summary ask. Must run
+        # BEFORE §6.0 screening, whose vocabulary has no "overview"/"summary"
+        # tokens and would refuse these single-word asks.
+        if re.fullmatch(
+            r"(?:show\s+(?:me\s+)?|open\s+|view\s+|go\s+to\s+(?:the\s+)?|the\s+|my\s+|our\s+)*"
+            r"(?:(?:billing|financial|finance)\s+)?"
+            r"(?:dashboard(?:\s+summary)?|summary|overview"
+            r"|financial\s+summary|billing\s+overview)"
+            r"(?:\s+please)?\s*[?.!]?",
+            normalized.strip(),
+        ):
+            return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
         # ── §6.0 Topic screening: OUT_OF_DOMAIN early gate ──────────────
         # Informational question about a substantive subject with NO billing
@@ -1258,9 +1852,33 @@ class ConversationEngine:
         # (Placed AFTER the explicit blocklist so known off-domain topics
         # keep their exact refusal behavior.)
         if _GATE_SHAPE_RE.search(normalized) and not topic_screen(normalized):
-            if _gate_substantive_tokens(normalized):
+            if _gate_substantive_tokens(normalized) and not (
+                ctx is not None and self._mentions_known_entity(normalized, ctx)
+            ):
                 logger.info("topic_screen: OUT_OF_DOMAIN short-circuit (early gate): %r", text)
                 return {"intent": "out_of_scope", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Bare outstanding-balance asks: Inspect, not concept RAG ──────
+        # "What's outstanding?" reads as a definition ("what is X") and the
+        # metric-subject matcher hijacks it into a credit-note chunk; these
+        # bare forms want the live org balance.
+        # Possessive-name balance ask: "What is Micro's outstanding
+        # balance?" reads as a definition ("what is X") but wants the live
+        # per-customer figure — route to Inspect with the name attached.
+        m_poss_balance = re.fullmatch(
+            r"\s*(?:what'?s|what\s+is)\s+(?:the\s+)?([\w][\w .'-]{0,30}?)'s\s+"
+            r"(?:outstanding\s+|total\s+)*(?:balance|balance\s+due|outstanding(?:\s+balance)?)\s*\??",
+            normalized,
+        )
+        if m_poss_balance:
+            return {"intent": "account_balance", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES, "subject": m_poss_balance.group(1).strip()}
+
+        if re.fullmatch(
+            r"what'?s\s+outstanding\b\??|what\s+is\s+outstanding\b\??"
+            r"|what\s+do\s+we\s+owe\b\??|how\s+much\s+(?:is\s+)?(?:our\s+)?outstanding\b\??",
+            normalized,
+        ):
+            return {"intent": "account_balance", "domain": "billing", "risk_class": "R1", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Definitional sentence-shape guard ────────────────────────────
         # Explanation requests route to the knowledge/EXPLAIN path no matter
@@ -1308,20 +1926,68 @@ class ConversationEngine:
         if re.search(r"\b(export|download|as csv|csv file|excel|xlsx)\b", normalized):
             return {"intent": "export_request", "domain": "action", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── Status-adjective LISTING forms ──────────────────────────────
+        # "refunded invoices?", "Do we have draft invoices?", "any overdue
+        # payments?" — a status adjective on a record noun is a listing
+        # filter, never a draft/create request.
+        # Require a question-like prefix ("any", "are there", "do we have")
+        # to distinguish from bare "overdue invoices" which should route to
+        # the specific invoice_list handler.
+        if re.fullmatch(
+            r"(?:are\s+there\s+|(?:do\s+we\s+have|is\s+there)\s+(?:any\s+)?|any\s+)"
+            r"(?:draft|sent|paid|unpaid|overdue|past[\s-]?due|refunded"
+            r"|cancelled|canceled|partially[\s-]?paid)\s+"
+            r"(?:invoices?|bills?|payments?|credit\s+notes?)\s*\??",
+            normalized.strip(),
+        ):
+            return {"intent": "general_billing_lookup", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+
+        # Bare customer-name search: "customer Micro", "client Acme Corp" —
+        # a singular record noun followed by a name is a lookup, not RAG.
+        # Exclude common list/count words and query words that aren't customer names.
+        m_bare_cust = re.fullmatch(
+            r"(?:the\s+)?(?:customer|client)\s+(?!list\b|all\b|customers?\b|clients?\b|accounts?\b|records?\b|profiles?\b|details?\b|info\b|information\b|overview\b|count\b|total\b|number\b|who\b|which\b|what\b|named\b|called\b|dashboard\b)([\w][\w .'-]{1,30}?)\s*[?.!]?",
+            normalized.strip(),
+        )
+        if m_bare_cust:
+            return {"intent": "customer_details", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "subject": m_bare_cust.group(1).strip()}
+
         # ── FIX #1b: Action intent (draft/create/issue + billing object) ──
+        # An interrogative aggregate ask ("What's the refund total?") is a
+        # data question, never a draft request — the aggregate-question
+        # shape vetoes action classification so it cannot fall into the
+        # invoice/refund drafting flow and get parsed as a customer name.
+        is_aggregate_question = _AGGREGATE_QUESTION_RE.search(normalized)
         action_verbs = ("draft", "create", "issue", "prepare", "send", "raise", "generate", "new", "make", "set up", "setup", "refund")
         action_objects = ("invoice", "payment", "credit note", "credit", "refund", "credit note")
         is_action_verb = any(normalized.startswith(v) or f" {v} " in normalized for v in action_verbs)
         is_action_object = any(o in normalized for o in action_objects)
-        if is_action_verb and is_action_object:
+        # "Show draft invoices" lists records filtered by status — the word
+        # "draft" here is an adjective, never a request to CREATE a draft.
+        # Bare/elliptical forms ("Any draft invoices?", "draft invoices?")
+        # are listings too.
+        is_draft_listing = (
+            bool(re.match(r"^(?:show|list|view|display|find|see|get|open)\b", normalized))
+            and bool(re.search(r"\bdraft\s+(?:invoices?|payments?|credit\s+notes?)\b", normalized))
+        ) or bool(re.fullmatch(
+            r"(?:are\s+there\s+)?(?:any\s+)?drafts?\s+(?:invoices?|payments?|credit\s+notes?)\s*\??"
+            r"|(?:do\s+we\s+have\s+(?:any\s+)?)drafts?\s*\??"
+            r"|list\s+(?:the\s+)?drafts?\s*\??",
+            normalized.strip(),
+        ))
+        if is_action_verb and is_action_object and not is_aggregate_question and not is_draft_listing:
             return {"intent": "action_draft", "domain": "action", "risk_class": "R2", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
         # ── FIX #5: Reconciliation intent ──────────────────────────────
+        # A definitional ask ("What is payment allocation?") is a knowledge
+        # question, not a reconciliation task — let it fall through to RAG.
         reconciliation_keywords = (
             "unmatched", "unallocated", "reconcil", "matching", "bank match",
             "payment match", "allocat", "discrepanc", "variance", "bank statement",
         )
-        if any(kw in normalized for kw in reconciliation_keywords) or re.search(r"\bmatch(?:es|ing)?\b", normalized):
+        if (any(kw in normalized for kw in reconciliation_keywords)
+                and not re.search(r"\bwhat\s+(?:is|are)\b[\s\S]{0,24}\ballocation", normalized)) \
+                or re.search(r"\bmatch(?:es|ing)?\b", normalized):
             return {"intent": "help_reconciliation", "domain": "reconciliation", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # ── D-11: Entity-qualified dashboard/page phrases ────────────────
@@ -1330,6 +1996,14 @@ class ConversationEngine:
         m_qual = re.search(
             r"\b([a-z]+)\s+(?:dashboard|overview|home\s+page)\b", normalized
         ) or re.search(r"\b(?:dashboard|overview)\s+(?:for|of)\s+([a-z]+)\b", normalized)
+        # "Show dashboard" / "open billing overview" — a command VERB before
+        # the noun is not an entity qualifier; treat as unqualified.
+        if m_qual and m_qual.group(1) in (
+            "show", "list", "view", "display", "open", "see", "get", "pull",
+            "bring", "give", "tell", "go", "my", "our", "me", "us", "the",
+            "a", "an", "to", "whole", "full", "entire", "summary",
+        ):
+            m_qual = None
         if m_qual:
             qualifier = m_qual.group(1)
             if qualifier.rstrip("s") == "product":
@@ -1385,7 +2059,10 @@ class ConversationEngine:
             r"total (?:count|number))",
             normalized,
         )
-        if generic_count and not self._entity_from_text(normalized):
+        # Balance vocabulary ("what's the total due?") is an amount ask, not
+        # a record count — never trigger the ambiguous-count clarify.
+        if generic_count and not self._entity_from_text(normalized) \
+                and not re.search(r"\b(?:amount\s+)?due\b|\bbalance\b|outstanding|\bowe\b|revenue", normalized):
             if last_entity:
                 intent_code, domain = self._count_intent_for_entity(last_entity)
                 return {"intent": intent_code, "domain": domain, "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
@@ -1405,7 +2082,6 @@ class ConversationEngine:
             "what is the number of customers", "tell me the number of customers",
             "tell me how many customers", "can you count the customers",
             "are there any customers", "do we have customers", "are there customers",
-            "how many users do we have",
         )
         if any(kw in normalized for kw in customer_count_keywords):
             return {"intent": "customer_count", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
@@ -1479,6 +2155,13 @@ class ConversationEngine:
         if any(kw in normalized for kw in customer_outstanding_keywords) or (
             has_customer_entity and re.search(r"\b(owe|owes|owed|due|dues|outstanding|unpaid|pending amount)\b", normalized)
             and not re.search(r"\bcount|how many|number of\b", normalized)
+        ) or re.search(
+            # Collections phrasing without finance vocabulary: "Who hasn't
+            # paid their invoice?" names people-not-payments, so it must
+            # reach the customer census instead of generic RAG.
+            r"\b(?:who|which\s+(?:customers?|clients?))\b"
+            r"[\s\S]{0,40}\b(?:hasn'?t|haven'?t|has\s+not|have\s+not|did\s+not|didn'?t)\s+(?:paid|pay)\b",
+            normalized,
         ):
             return {"intent": "customer_outstanding", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
@@ -1521,6 +2204,14 @@ class ConversationEngine:
         # "clients?" as bare requests, "show me the customers")
         if re.search(r"\b(customers|clients)\b", normalized) and not re.search(r"\b(count|how many|details?|info|information|profile)\b", normalized):
             return {"intent": "customer_list", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── QUOTATION LIST ──────────────────────────────────────────────
+        # Must precede customer-name search: "quotations" is an entity noun,
+        # never a customer name. Only DEFINITIONAL forms ("what is a
+        # quotation?", "difference between quote and invoice") stay with RAG;
+        # count/list forms ("how many quotations do we have?") get the census.
+        if re.search(r"\bquotations?\b|\bquotes?\b", normalized) and not re.search(r"\b(what\s+(?:is|are)|what'?s|whats\b|\bmean(?:s)?\b|difference)\b", normalized):
+            return {"intent": "quotation_list", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # ── CUSTOMER SEARCH / DETAILS ───────────────────────────────────
         # "find Gok", "do we have a customer named Gok", "look up Gok",
@@ -1759,8 +2450,15 @@ class ConversationEngine:
         # rather than answered with loosely-related knowledge chunks.
         # Filler-only utterances ("hmm interesting") and gibberish without an
         # informational shape still fall through to help_general/abstention.
-        if _GATE_SHAPE_RE.search(normalized) and not topic_screen(normalized):
-            if _gate_substantive_tokens(normalized):
+        # ── Final gate: no billing-domain evidence → refuse ───────────────
+        # Applies to SHAPED informational questions AND plain statements:
+        # without domain evidence, a stray sentence ("my smartphone battery
+        # drains fast") would otherwise be answered from whichever KB chunk
+        # shares a filler word.
+        if not topic_screen(normalized):
+            if _gate_substantive_tokens(normalized) and not (
+                ctx is not None and self._mentions_known_entity(normalized, ctx)
+            ):
                 logger.info("topic_screen: OUT_OF_DOMAIN short-circuit (final gate): %r", text)
                 return {"intent": "out_of_scope", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
@@ -1810,6 +2508,8 @@ class ConversationEngine:
         """True when `token` is (or is within one edit of) a core billing
         surface noun — such words are never customer NAMES ("show me the
         dashboard" must not become a customer search for 'dashboard')."""
+        if token.lower() in _CUSTOMER_NAME_BLOCKLIST:
+            return True
         if len(token) < 5:
             return False
         return any(_within_edit_distance_1(token, term) for term in FUZZY_INTENT_KEYWORDS)
@@ -1966,6 +2666,7 @@ class ConversationEngine:
             "action": self._handle_action,
             "reconciliation": self._handle_reconciliation,
             "out_of_scope": self._handle_out_of_scope,
+            "smalltalk": self._handle_smalltalk,
             "clarify": self._handle_clarify,
         }
         return handlers.get(domain, self._handle_billing)
@@ -2102,6 +2803,36 @@ class ConversationEngine:
         if intent.get("intent") == "metric_definition":
             return self._metric_definition_response(conv, text, ctx, metric_code=intent.get("metric"))
 
+        # UI navigation: describe a named dashboard panel ("what are quick
+        # actions?"). Canned from the product's own dashboard definition —
+        # the KB has no UI-navigation chunks to ground this today.
+        if intent.get("intent") == "ui_quick_actions":
+            return {
+                "answer": (
+                    "**Quick Actions** is the shortcut panel on your billing "
+                    "dashboard — one-click tiles for the most common tasks, so "
+                    "you don't have to dig through menus.\n\n"
+                    "**On the main billing dashboard it includes:**\n"
+                    "- **Create Invoice** — bill a customer\n"
+                    "- **Add Customer** — create a new customer record\n"
+                    "- **New Subscription** — start a recurring plan\n"
+                    "- **New Contract** — draft a contract\n"
+                    "- **Add Product** — add a product or service\n"
+                    "- **Record Payment** — log an incoming payment\n"
+                    "- **Send Quote** — create a quotation\n"
+                    "- **View Reports** — revenue and collections\n\n"
+                    "Each tile opens the relevant page with the creation flow "
+                    "ready to go. Other pages (invoices, subscriptions, "
+                    "payments…) show their own tailored Quick Actions."
+                ),
+                "mode": "M0_EXPLAIN",
+                "risk_class": "R0",
+                "evidence": [{"source": "Zoiko Billing dashboard", "type": "ui_navigation"}],
+                "qualification": "This is product guidance, not tax, legal, or accounting advice.",
+                "next_actions": [],
+                "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "Look up customer details"],
+            }
+
         # Self-identification: "who are you", "what are you", etc.
         normalized = text.strip().lower()
         self_id_keywords = ("who are you", "who are u", "what are you", "what are u",
@@ -2137,9 +2868,16 @@ class ConversationEngine:
         # and citations point at real documents. Only per-status meaning
         # validation stays hardcoded, because "'Delivered' is not a valid
         # status" is a live-enum fact no KB document can state.
-        status_match = self._STATUS_MEANING_RE.search(normalized)
+        # Strict module-level regex: only real status adjectives. (The loose
+        # instance attribute would capture ANY "what does X mean" subject —
+        # "invoice" is not a status.)
+        status_match = _STATUS_MEANING_RE.search(normalized)
         if status_match and any(w in normalized for w in ("invoice", "status", "billing")):
-            asked_status = status_match.group(1).strip("'\"")
+            asked_status = next(
+                (g for g in status_match.groups() if g), ""
+            ).strip("'\"").replace(" ", "_")
+            if asked_status == "past_due":
+                asked_status = "overdue"
             valid_statuses = {
                 "draft": "Draft — Invoice has been created but not yet sent to the customer.",
                 "sent": "Sent — Invoice has been delivered to the customer and is awaiting payment.",
@@ -2348,8 +3086,432 @@ class ConversationEngine:
                 }
         return None
 
+    def _collection_rate_response(self, ctx: AIContext) -> dict:
+        """Collection Rate exactly as the billing dashboard computes it:
+        cleared payments / billed revenue, capped at 100% (dashboard.jsx).
+        Same get_kpis source, so chatbot and dashboard can never disagree."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id)
+        total_revenue = float(kpis.get("total_revenue", 0) or 0)
+        collections = float(kpis.get("collections", 0) or 0)
+        # Mirror the dashboard formula including its zero-billed edge case.
+        if total_revenue > 0:
+            rate = min(100.0, collections / total_revenue * 100.0)
+        else:
+            rate = 100.0 if collections > 0 else 0.0
+        rate_text = f"{round(rate, 1):.1f}".rstrip("0").rstrip(".") + "%"
+        return {
+            "answer": (
+                f"Your collection rate is **{rate_text}**.\n\n"
+                f"- Billed revenue: **{money(total_revenue)}**\n"
+                f"- Collected (cleared payments): **{money(collections)}**\n\n"
+                "Collection rate is the share of billed revenue you have "
+                "actually collected so far."
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Dashboard",
+                "type": "metric_collection_rate",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "value": rate_text,
+                "billed_revenue": str(total_revenue),
+                "collected": str(collections),
+            }],
+            "qualification": "Live aggregate identical to the dashboard's Collection Rate card.",
+            "next_actions": ["Show overdue invoices", "List recent payments"],
+            "suggested_prompts": ["Dashboard summary", "Show outstanding balances"],
+        }
+
+    def _mrr_arr_response(self, ctx: AIContext) -> dict:
+        """MRR/ARR from SubscriptionService.get_subscription_reporting — the
+        same read model behind the dashboard's MRR/ARR cards."""
+        from app.modules.billing.services.subscription_service import SubscriptionService
+        rpt = SubscriptionService(self.db).get_subscription_reporting(
+            organization_id=ctx.organization_id,
+        )
+        mrr = rpt.get("mrr", "0")
+        arr = rpt.get("arr", "0")
+        currency = rpt.get("reporting_currency") or ""
+        active_subs = rpt.get("active_subscriptions", 0) or 0
+        excluded = rpt.get("excluded_subscriptions", 0) or 0
+        answer = (
+            f"**MRR:** {money(mrr, currency)} | **ARR:** {money(arr, currency)}\n\n"
+            f"Based on **{active_subs} active subscription(s)** — each plan price "
+            f"normalized to its monthly value; ARR is MRR × 12. Figures are in your "
+            f"reporting currency ({currency or 'n/a'})."
+        )
+        if excluded:
+            answer += (
+                f"\n\n**{excluded} subscription(s)** were excluded because their "
+                "currency could not be converted to your reporting currency."
+            )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Subscriptions Reporting",
+                "type": "metric_mrr_arr",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "mrr": str(mrr),
+                "arr": str(arr),
+                "reporting_currency": currency,
+            }],
+            "qualification": "Live aggregate identical to the dashboard's MRR/ARR cards.",
+            "next_actions": ["List subscriptions", "Dashboard summary"],
+            "suggested_prompts": ["List subscriptions", "Dashboard summary"],
+        }
+
+    def _customers_joined_response(self, normalized: str, ctx: AIContext) -> dict:
+        """New-customer census for a time window ('who joined this month?')."""
+        today = date.today()
+        window_start = today.replace(day=1)
+        label = "this month"
+        window_end_exclusive = None
+        if re.search(r"\btoday\b", normalized):
+            window_start, label = today, "today"
+        elif re.search(r"\b(?:this|current)\s+week\b", normalized):
+            window_start = today - timedelta(days=today.weekday())
+            label = "this week"
+        elif re.search(r"\blast\s+month\b", normalized):
+            last_day = today.replace(day=1) - timedelta(days=1)
+            window_start = last_day.replace(day=1)
+            window_end_exclusive = today.replace(day=1)
+            label = "last month"
+
+        query = self.db.query(BillingCustomer).filter(
+            BillingCustomer.organization_id == ctx.organization_id,
+            BillingCustomer.deleted_at.is_(None),
+            BillingCustomer.created_at >= datetime(window_start.year, window_start.month, window_start.day),
+        )
+        if window_end_exclusive is not None:
+            query = query.filter(BillingCustomer.created_at < datetime(
+                window_end_exclusive.year, window_end_exclusive.month, window_end_exclusive.day))
+        rows = (
+            query.order_by(BillingCustomer.created_at.desc())
+            .limit(9)
+            .all()
+        )
+        total = query.count()
+
+        if total == 0:
+            answer = f"No customers joined **{label}** yet."
+        else:
+            lines = [
+                f"- **{c.company_name or c.display_name}** ({c.customer_code})"
+                for c in rows[:8]
+            ]
+            if total > len(lines):
+                lines.append(f"- …and {total - len(lines)} more")
+            answer = (
+                f"**{total} customer(s)** joined **{label}**:\n\n" + "\n".join(lines)
+            )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Customers",
+                "type": "customer_joined",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "window": label,
+                "count": total,
+            }],
+            "qualification": "Customer data from authoritative records.",
+            "next_actions": ["Look up customer details", "List all customers"],
+            "suggested_prompts": ["List all customers", "How many customers are there?"],
+        }
+
+    def _refund_total_response(self, ctx: AIContext) -> dict:
+        """Refund figures from the payments ledger — cleared REFUND payments,
+        the same records the dashboard's collections aggregate reads."""
+        refunds = self.db.query(func.count(Payment.id), func.coalesce(func.sum(Payment.amount), 0)).filter(
+            Payment.organization_id == ctx.organization_id,
+            Payment.status == "cleared",
+            Payment.payment_type == PaymentType.REFUND.value,
+        ).one()
+        count, total = int(refunds[0] or 0), float(refunds[1] or 0)
+        if count == 0:
+            answer = "No refunds have been issued for your organization."
+        else:
+            answer = (
+                f"**{count} refund(s)** issued totalling **{money(total)}**.\n\n"
+                "Counts cleared refund payments recorded in your billing ledger."
+            )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Payments",
+                "type": "metric_refund_total",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "count": count,
+                "total": str(total),
+            }],
+            "qualification": "Live aggregate from the payments ledger (cleared refunds only).",
+            "next_actions": ["List recent payments", "Dashboard summary"],
+            "suggested_prompts": ["Show outstanding balances", "Collection rate"],
+        }
+
+    def _avg_invoice_response(self, ctx: AIContext) -> dict:
+        """Average invoice value exactly as the dashboard computes it:
+        total billed revenue / total invoices issued (dashboard.jsx)."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id)
+        total_revenue = float(kpis.get("total_revenue", 0) or 0)
+        total_invoices = int(kpis.get("total_invoices", 0) or 0)
+        if total_invoices == 0:
+            answer = "No invoices have been issued yet, so there is no average invoice value."
+        else:
+            avg = total_revenue / total_invoices
+            answer = (
+                f"Your average invoice value is **{money(avg)}**.\n\n"
+                f"- Total billed revenue: **{money(total_revenue)}**\n"
+                f"- Invoices issued: **{total_invoices}**"
+            )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Dashboard",
+                "type": "metric_avg_invoice",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "average": str(round(total_revenue / total_invoices, 2)) if total_invoices else "0",
+                "billed_revenue": str(total_revenue),
+                "invoice_count": total_invoices,
+            }],
+            "qualification": "Live aggregate identical to the dashboard's Average Invoice card.",
+            "next_actions": ["List invoices", "Dashboard summary"],
+            "suggested_prompts": ["What's our collection rate?", "Dashboard summary"],
+        }
+
+    def _credit_note_count_response(self, ctx: AIContext) -> dict:
+        """Credit-note census from the credit_notes table."""
+        query = self.db.query(CreditNote).filter(
+            CreditNote.organization_id == ctx.organization_id,
+            CreditNote.deleted_at.is_(None),
+        )
+        count = query.count()
+        total_amount = float(
+            self.db.query(func.coalesce(func.sum(CreditNote.total_amount), 0)).filter(
+                CreditNote.organization_id == ctx.organization_id,
+                CreditNote.deleted_at.is_(None),
+            ).scalar() or 0
+        )
+        if count == 0:
+            answer = "No credit notes have been issued for your organization."
+        else:
+            answer = (
+                f"**{count} credit note(s)** issued, totalling **{money(total_amount)}**."
+            )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Credit Notes",
+                "type": "credit_note_count",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "count": count,
+                "total": str(total_amount),
+            }],
+            "qualification": "Live count from authoritative credit-note records.",
+            "next_actions": ["List invoices", "Dashboard summary"],
+            "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
+        }
+
+    def _paid_period_response(self, ctx: AIContext, normalized: str | None = None) -> dict:
+        """Paid revenue for a period — the same get_kpis figure behind the
+        dashboard's Monthly Revenue card (paid invoices issued this month).
+        Week/year and calendar-month asks are computed the same way from
+        paid invoices issued in that window."""
+        text = (normalized or "").lower()
+        now = datetime.now(timezone.utc)
+        period_label = "this month"
+        window_start = None
+        window_end = None
+        month_names = (
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+        )
+        month_m = re.search(
+            r"\b(?:in|during)\s+(" + "|".join(month_names) + r")\b", text, re.IGNORECASE,
+        )
+        if month_m:
+            month_num = month_names.index(month_m.group(1).lower()) + 1
+            year = now.year
+            window_start = datetime(year, month_num, 1, tzinfo=timezone.utc)
+            if month_num == 12:
+                window_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+            else:
+                window_end = datetime(year, month_num + 1, 1, tzinfo=timezone.utc)
+            period_label = f"{month_m.group(1).capitalize()} {year}"
+        elif re.search(r"\b(?:in|during|for)\s+(20\d{2})\b", text):
+            # Explicit calendar year: "What did we collect in 2026?"
+            yr = int(re.search(r"\b(20\d{2})\b", text).group(1))
+            window_start = datetime(yr, 1, 1, tzinfo=timezone.utc)
+            window_end = datetime(yr + 1, 1, 1, tzinfo=timezone.utc)
+            period_label = f"{yr}"
+        elif re.search(r"\b(?:this|current)\s+week\b|\bweek'?s\b", text):
+            window_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            window_end = now
+            period_label = "this week"
+        elif re.search(r"\b(?:this|current)\s+year\b|\byear'?s\b", text):
+            window_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+            window_end = now
+            period_label = f"{now.year}"
+
+        if window_start is not None:
+            from app.modules.billing.models import InvoiceStatus
+            rows = (
+                self.db.query(func.coalesce(func.sum(Invoice.total_amount), 0.0))
+                .filter(
+                    Invoice.organization_id == ctx.organization_id,
+                    Invoice.deleted_at.is_(None),
+                    Invoice.status == InvoiceStatus.PAID,
+                    Invoice.issue_date >= window_start.date(),
+                    Invoice.issue_date < window_end.date(),
+                )
+                .scalar()
+            )
+            amount = float(rows or 0)
+        else:
+            from app.modules.billing.services.dashboard_service import BillingDashboardService
+            kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id)
+            amount = float(kpis.get("monthly_revenue", 0) or 0)
+        answer = (
+            f"Paid revenue this month is **{money(amount)}**.\n\n"
+            if window_start is None
+            else f"Paid revenue for {period_label} is **{money(amount)}**.\n\n"
+        )
+        return {
+            "answer": (
+                answer
+                + "This counts invoices issued "
+                + ("in that period" if window_start is not None else "this calendar month")
+                + " that are fully paid"
+                + (
+                    " — consistent with your dashboard's Monthly Revenue card."
+                    if window_start is None
+                    else "."
+                )
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Dashboard",
+                "type": "metric_paid_period",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "value": str(amount),
+            }],
+            "qualification": "Live aggregate identical to the dashboard's Monthly Revenue card.",
+            "next_actions": ["What's our collection rate?", "Dashboard summary"],
+            "suggested_prompts": ["Total revenue", "Show overdue invoices"],
+        }
+
+    def _admin_count_response(self, ctx: AIContext) -> dict:
+        """Team/admin census from user accounts in the organization."""
+        from app.modules.auth.models import User, UserRole
+        users = self.db.query(User).filter(
+            User.organization_id == ctx.organization_id,
+            User.is_active == True,
+        ).all()
+        admins = [u for u in users if u.role in (UserRole.ORG_ADMIN, UserRole.BILLING_ADMIN)]
+        org_admins = sum(1 for u in admins if u.role == UserRole.ORG_ADMIN)
+        billing_admins = sum(1 for u in admins if u.role == UserRole.BILLING_ADMIN)
+        breakdown = []
+        if org_admins:
+            breakdown.append(f"{org_admins} organization admin(s)")
+        if billing_admins:
+            breakdown.append(f"{billing_admins} billing admin(s)")
+        detail = f" ({', '.join(breakdown)})" if breakdown else ""
+        answer = (
+            f"Your organization has **{len(admins)} admin user(s)**{detail}, "
+            f"out of **{len(users)} active team member(s)** overall."
+        )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Team",
+                "type": "admin_count",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "admins": len(admins),
+                "members": len(users),
+            }],
+            "qualification": "Live count from active user accounts.",
+            "next_actions": ["Invite a team member", "Dashboard summary"],
+            "suggested_prompts": ["How many customers are there?", "Dashboard summary"],
+        }
+
+    def _growth_rate_response(self, ctx: AIContext) -> dict:
+        """Monthly revenue growth from the same monthly-revenue series the
+        dashboard chart uses; growth formula mirrors dashboard.jsx."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        series = BillingDashboardService(self.db).get_monthly_revenue(
+            organization_id=ctx.organization_id,
+        ).get("monthly_revenue") or []
+        if len(series) < 2:
+            answer = "There isn't enough revenue history yet to compute monthly growth."
+        else:
+            last, prev = series[-1], series[-2]
+            last_rev = float(last.get("revenue", 0) or 0)
+            prev_rev = float(prev.get("revenue", 0) or 0)
+            if prev_rev > 0:
+                growth = (last_rev - prev_rev) / prev_rev * 100.0
+                growth_text = f"{round(growth, 1):+.1f}%".replace("+0.0%", "0.0%")
+                answer = (
+                    f"Monthly revenue growth is **{growth_text}** "
+                    f"({money(last_rev)} in {last.get('month')} vs {money(prev_rev)} in {prev.get('month')})."
+                )
+            elif last_rev > 0:
+                answer = (
+                    f"Revenue was **{money(last_rev)}** in {last.get('month')} versus "
+                    f"{money(prev_rev)} in {prev.get('month')} — growth can't be "
+                    "computed against a zero prior month."
+                )
+            else:
+                answer = (
+                    f"No paid revenue in {last.get('month')} or {prev.get('month')}, "
+                    "so there is no growth to report yet."
+                )
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Dashboard",
+                "type": "metric_growth_rate",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "series_months": len(series),
+            }],
+            "qualification": "Computed from the dashboard's monthly paid-revenue series.",
+            "next_actions": ["Paid amount this month", "Dashboard summary"],
+            "suggested_prompts": ["What's our collection rate?", "Dashboard summary"],
+        }
+
     def _handle_dashboard(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
         org_id = ctx.organization_id
+
+        # Named-metric figure lookups (M1 Inspect) — answered before any
+        # overview composition so they return ONLY the requested figures.
+        intent_code = intent.get("intent")
+        if intent_code == "metric_collection_rate":
+            return self._collection_rate_response(ctx)
+        if intent_code == "metric_mrr_arr":
+            return self._mrr_arr_response(ctx)
+        if intent_code == "metric_avg_invoice":
+            return self._avg_invoice_response(ctx)
+        if intent_code == "metric_paid_period":
+            return self._paid_period_response(ctx, normalized=text)
+        if intent_code == "admin_count":
+            return self._admin_count_response(ctx)
+        if intent_code == "metric_growth_rate":
+            return self._growth_rate_response(ctx)
 
         # Use the same BillingDashboardService as the billing page so numbers always match
         from app.modules.billing.services.dashboard_service import BillingDashboardService
@@ -2439,9 +3601,47 @@ class ConversationEngine:
             "suggested_prompts": ["Show overdue invoices", "List recent payments"],
         }
 
+    def _handle_smalltalk(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
+        """Greetings, thanks and farewells get a friendly welcome instead of
+        a weak RAG match or an out-of-scope refusal."""
+        return {
+            "answer": (
+                "Hi! I'm the Zoiko Billing AI Assistant. I can help you with:\n\n"
+                "• **Invoices** — lists, statuses, balances, overdue tracking\n"
+                "• **Payments** — records, allocations, unmatched items\n"
+                "• **Customers** — details, credit limits, outstanding balances\n"
+                "• **Dashboard metrics** — revenue, MRR/ARR, collection rate, growth\n"
+                "• **How things work** — refunds, proration, dunning, billing cycles\n\n"
+                "What would you like to look at?"
+            ),
+            "mode": "M0_EXPLAIN",
+            "risk_class": "R0",
+            "evidence": [],
+            "qualification": None,
+            "next_actions": [],
+            "suggested_prompts": ["Show overdue invoices", "What's our collection rate?", "How do refunds work?"],
+        }
+
     def _handle_out_of_scope(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
         """FIX #4 + §6.0: Explicit out-of-scope refusal."""
         normalized = text.strip().lower()
+
+        if intent.get("intent") == "cross_tenant":
+            return {
+                "answer": (
+                    "I can only access **your own organization's** billing data. "
+                    "Cross-tenant access is blocked by design — tenant isolation "
+                    "means neither I nor anyone in your organization can view or "
+                    "manage another organization's records."
+                ),
+                "mode": "M0_EXPLAIN",
+                "risk_class": "R0",
+                "evidence": [],
+                "qualification": "Tenant isolation is enforced at the data layer.",
+                "next_actions": [],
+                "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
+            }
+
         topic = None
         for kw in ("payroll", "salary", "hr", "human resources", "inventory", "stock",
                      "marketing", "seo", "advertising", "crm", "project management",
@@ -2452,12 +3652,15 @@ class ConversationEngine:
         if not topic:
             # Generic frame-stripping: "What is machine learning?" ->
             # "Machine Learning"; "Explain me about python" -> "Python".
+            # Filler words (me/about/on) are consumed in ANY order so
+            # "explain about me quick actions" strips to "Quick Actions",
+            # not "Me Quick Actions".
             m = re.match(
                 r"^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?"
                 r"(?:explain|describe|define|tell\s+me\s+about|elaborate(?:\s+on)?"
                 r"|what\s+(?:is|are)|what's|whats|how\s+(?:does|do)"
                 r"|give\s+me\s+(?:a|an|the)?)\s+"
-                r"(?:me\s+)?(?:about\s+)?(.+?)[?.!]*$",
+                r"(?:\s*(?:about|on|me)\b)*\s*(.+?)[?.!]*$",
                 normalized,
             )
             if m and m.group(1).strip():
@@ -2794,6 +3997,31 @@ class ConversationEngine:
 
         proposed_params = self._extract_action_params(text, action_type, ctx)
 
+        # Update/modify flow: an existing invoice reference plus change
+        # vocabulary is a MODIFICATION of that record — acknowledge the
+        # reference instead of falling into the create-a-new-draft prompt.
+        _text_l = (text or "").lower()
+        _inv_ref = self._extract_reference(_text_l, prefixes=("inv", "invoice"))
+        if _inv_ref and re.search(
+            r"\b(?:change|update|edit|modif\w*|set|extend|postpone|move|resend|reissue|correct)\w*\b",
+            _text_l,
+        ):
+            return {
+                "answer": (
+                    f"I can prepare an update to invoice **{_inv_ref}**.\n\n"
+                    f"Tell me exactly what should change — for example:\n"
+                    f"  *Change the due date to net 60*\n"
+                    f"  *Update the amount to 450 USD*\n\n"
+                    f"I'll show a preview before anything is saved."
+                ),
+                "mode": "M2_PREPARE",
+                "risk_class": "R2",
+                "evidence": [],
+                "qualification": "Modification drafted only; nothing changes until you confirm.",
+                "next_actions": ["State the change"],
+                "suggested_prompts": [f"Show invoice {_inv_ref}"],
+            }
+
         # Handle customer ambiguity — ask user to clarify which customer
         if proposed_params.get("customer_ambiguous"):
             candidates = proposed_params.get("customer_candidates", [])
@@ -2822,20 +4050,39 @@ class ConversationEngine:
                 ],
             }
 
-        # Handle customer not found — fail before draft creation
+        # Handle customer not found — fail before draft creation.
+        # A missing customer_name means the user never specified one (e.g. a
+        # question that slipped into the draft flow): ask for the customer
+        # instead of echoing the whole utterance back as a "name".
         if action_type in ("invoice_draft", "credit_note", "refund") and not proposed_params.get("customer_id"):
-            customer_name = proposed_params.get("customer_name", text.strip())
+            customer_name = proposed_params.get("customer_name")
+            if customer_name:
+                return {
+                    "answer": (
+                        f"I couldn't find a customer named **\"{customer_name}\"** in your billing records.\n\n"
+                        f"Please check the exact customer name and try again, e.g.:\n"
+                        f"  *Create an invoice for [exact customer name] for [service] at [amount]*"
+                    ),
+                    "mode": "M2_PREPARE",
+                    "risk_class": "R2",
+                    "evidence": [],
+                    "qualification": "Customer not found. Draft cannot be created.",
+                    "next_actions": ["Search customers", "List all customers"],
+                    "suggested_prompts": ["List all customers"],
+                }
+            object_label = {"invoice_draft": "invoice", "credit_note": "credit note", "refund": "refund"}[action_type]
+            _article = "an" if object_label[:1].lower() in ("a", "e", "i", "o", "u") else "a"
             return {
                 "answer": (
-                    f"I couldn't find a customer named **\"{customer_name}\"** in your billing records.\n\n"
-                    f"Please check the exact customer name and try again, e.g.:\n"
-                    f"  *Create an invoice for [exact customer name] for [service] at [amount]*"
+                    f"I can prepare {_article} {object_label} draft for you.\n\n"
+                    f"Which customer should it be for? For example:\n"
+                    f"  *Create an invoice for [customer name] for [service] at [amount]*"
                 ),
                 "mode": "M2_PREPARE",
                 "risk_class": "R2",
                 "evidence": [],
-                "qualification": "Customer not found. Draft cannot be created.",
-                "next_actions": ["Search customers", "List all customers"],
+                "qualification": "Customer required before draft creation.",
+                "next_actions": ["List all customers"],
                 "suggested_prompts": ["List all customers"],
             }
 
@@ -3050,6 +4297,16 @@ class ConversationEngine:
         intent_code = intent.get("intent")
         if intent_code == "customer_list":
             return self._list_customers(normalized, conv, ctx)
+        if intent_code == "customer_joined":
+            return self._customers_joined_response(normalized, ctx)
+        if intent_code == "customer_joined_when":
+            return self._customer_joined_when_response(intent.get("subject") or "", ctx)
+        if intent_code == "metric_refund_total":
+            return self._refund_total_response(ctx)
+        if intent_code == "credit_note_count":
+            return self._credit_note_count_response(ctx)
+        if intent_code == "quotation_list":
+            return self._list_quotations_response(ctx)
         if intent_code == "customer_outstanding":
             return self._list_customers(normalized, conv, ctx, only_outstanding=True)
         if intent_code in ("customer_search", "customer_details"):
@@ -3152,8 +4409,13 @@ class ConversationEngine:
             }
 
         # ── FIX #2: Balance / financial summary queries (M1 Inspect) ──────
+        # The keyword alone isn't enough: "How much does a car repair cost?"
+        # contains "how much" but has no billing anchor — it must fall
+        # through to the honest abstention path, not the org balance.
+        if intent_code == "account_balance" and _BALANCE_DOMAIN_ANCHOR_RE.search(normalized):
+            return self._lookup_account_balance(conv, ctx, subject=intent.get("subject"))
         balance_keywords = ("balance", "how much", "outstanding", "owe", "owed", "due", "total due", "amount due", "what do i owe", "what do we owe")
-        if any(kw in normalized for kw in balance_keywords):
+        if any(kw in normalized for kw in balance_keywords) and _BALANCE_DOMAIN_ANCHOR_RE.search(normalized):
             return self._lookup_account_balance(conv, ctx)
 
         # Try overdue FIRST (before invoice, since "overdue invoices" contains "invoice")
@@ -3225,7 +4487,7 @@ class ConversationEngine:
 
     # ── FIX #2: Account balance lookup ────────────────────────────────
 
-    def _lookup_account_balance(self, conv: AIConversation, ctx: AIContext) -> dict:
+    def _lookup_account_balance(self, conv: AIConversation, ctx: AIContext, subject: str | None = None) -> dict:
         """Return the total outstanding balance across all invoices for the org.
 
         Uses the SAME aggregation as the billing dashboard
@@ -3233,8 +4495,18 @@ class ConversationEngine:
         from the 'Dashboard summary' answer or the dashboard page itself:
         outstanding = sum of balance_due for sent/overdue/partially_paid
         invoices, converted to the org's base currency. Drafts are excluded.
+
+        When `subject` is set (possessive ask — "What is Micro's outstanding
+        balance?"), scope the aggregation to that customer; fall back to the
+        org-wide figure when no such customer exists.
         """
         org_id = ctx.organization_id
+
+        if subject:
+            customer = self._resolve_customer_by_name(subject.strip(), org_id)
+            if customer is not None:
+                return self._customer_balance_response(customer)
+
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         svc = BillingDashboardService(self.db)
         kpis = svc.get_kpis(organization_id=org_id)
@@ -3288,6 +4560,170 @@ class ConversationEngine:
             "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
         }
 
+    def _mentions_known_entity(self, normalized: str, ctx: AIContext) -> bool:
+        """True when the text names an existing customer of this org
+        (company name or customer code) — live-record evidence that must
+        override §6.0 out-of-domain screening, which only knows product
+        vocabulary, not the org's own record names."""
+        t = (normalized or "").strip().lower()
+        if len(t) < 4:
+            return False
+        rows = (
+            self.db.query(BillingCustomer.company_name, BillingCustomer.customer_code)
+            .filter(
+                BillingCustomer.organization_id == ctx.organization_id,
+                BillingCustomer.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for company_name, customer_code in rows:
+            for label in (company_name, customer_code):
+                if not label:
+                    continue
+                lbl = str(label).strip().lower()
+                if len(lbl) >= 3 and lbl in t:
+                    return True
+        return False
+
+    def _resolve_customer_by_name(self, name: str, org_id: int) -> BillingCustomer | None:
+        """Exact (code / company / display name) first, then substring match."""
+        if not name:
+            return None
+        base = self.db.query(BillingCustomer).filter(
+            BillingCustomer.organization_id == org_id,
+            BillingCustomer.deleted_at.is_(None),
+        )
+        cleaned = re.sub(r"^(?:the|our|my)\s+", "", name.strip(), flags=re.IGNORECASE).strip()
+        customer = base.filter(
+            func.lower(BillingCustomer.company_name) == func.lower(cleaned)
+        ).first() or base.filter(
+            func.lower(func.coalesce(BillingCustomer.display_name, "")) == func.lower(cleaned)
+        ).first() or base.filter(
+            func.lower(BillingCustomer.customer_code) == func.lower(cleaned)
+        ).first()
+        if customer is not None:
+            return customer
+        like = f"%{cleaned}%"
+        return base.filter(
+            func.lower(BillingCustomer.company_name).like(func.lower(like))
+            | func.lower(func.coalesce(BillingCustomer.display_name, "")).like(func.lower(like))
+        ).order_by(func.length(BillingCustomer.company_name)).first()
+
+    def _customer_balance_response(self, customer: BillingCustomer) -> dict:
+        """Per-customer outstanding balance from their open invoices."""
+        open_invoices = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.organization_id == customer.organization_id,
+                Invoice.customer_id == customer.id,
+                Invoice.deleted_at.is_(None),
+                Invoice.balance_due > 0,
+                Invoice.status.in_(["sent", "overdue", "partially_paid"]),
+            )
+            .all()
+        )
+        total_outstanding = sum(float(inv.balance_due or 0) for inv in open_invoices)
+        today = date.today()
+        total_overdue = sum(
+            float(inv.balance_due or 0) for inv in open_invoices
+            if inv.due_date and inv.due_date < today
+        )
+        display_name = customer.company_name or customer.display_name or customer.customer_code
+        currency = open_invoices[0].currency if open_invoices else None
+
+        if not open_invoices:
+            answer = f"**{display_name}** has **no outstanding balance** — all invoices are settled."
+        else:
+            answer = (
+                f"**{display_name}'s outstanding balance:** "
+                f"{money(total_outstanding, currency)} across **{len(open_invoices)} invoice(s)**."
+            )
+            if total_overdue:
+                answer += f"\n\n**Overdue:** {money(total_overdue, currency)} — immediate attention recommended."
+            else:
+                answer += "\n\nAll invoices are within their payment terms."
+
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Invoices",
+                "type": "balance_summary",
+                "resource_id": customer.id,
+                "reference": customer.customer_code,
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "outstanding": str(total_outstanding),
+                "overdue": str(total_overdue),
+                "invoice_count": len(open_invoices),
+            }],
+            "qualification": "Financial state from authoritative Zoiko Billing invoice records.",
+            "next_actions": [f"Open customer /billing/customers/{customer.id}", "Show overdue invoices"],
+            "suggested_prompts": ["Show overdue invoices", "List all invoices"],
+        }
+
+    def _customer_joined_when_response(self, subject: str, ctx: AIContext) -> dict:
+        """'When did Micro join?' — the named customer's onboarding date."""
+        customer = self._resolve_customer_by_name(subject, ctx.organization_id)
+        if customer is None:
+            return self._customers_joined_response("new customers this month", ctx)
+
+        display_name = customer.company_name or customer.display_name or customer.customer_code
+        created = customer.created_at
+        joined_label = created.strftime("%d %B %Y") if created is not None else "an unknown date"
+        return {
+            "answer": f"**{display_name}** ({customer.customer_code}) joined on **{joined_label}**.",
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Customers",
+                "type": "customer_profile",
+                "resource_id": customer.id,
+                "reference": customer.customer_code,
+                "joined": created.isoformat() if created is not None else None,
+            }],
+            "qualification": "Customer data from authoritative records.",
+            "next_actions": ["Look up customer details", "List all customers"],
+            "suggested_prompts": ["Show customers", "What is their outstanding balance?"],
+        }
+
+    def _list_quotations_response(self, ctx: AIContext) -> dict:
+        """Quotation census — count plus the most recent quote numbers."""
+        query = self.db.query(Quotation).filter(
+            Quotation.organization_id == ctx.organization_id,
+            Quotation.deleted_at.is_(None) if hasattr(Quotation, "deleted_at") else True,
+        )
+        rows = query.order_by(Quotation.created_at.desc()).limit(8).all()
+        count = query.count()
+
+        if count == 0:
+            answer = "No quotations have been created for your organization."
+        else:
+            lines = [
+                f"- **{q.quote_number}** — {enum_value(q.status)}"
+                + (f" — {money(q.total_amount)}" if q.total_amount is not None else "")
+                for q in rows
+            ]
+            more = count - len(lines)
+            if more > 0:
+                lines.append(f"- …and {more} more")
+            answer = f"Found **{count} quotation(s)**:\n\n" + "\n".join(lines)
+
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Quotations",
+                "type": "quotation_list",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "count": count,
+            }],
+            "qualification": "Live list from authoritative quotation records.",
+            "next_actions": ["Create a quotation", "List invoices"],
+            "suggested_prompts": ["Show customers", "Dashboard summary"],
+        }
+
     # ── FIX #3: List queries ─────────────────────────────────────────
 
     def _list_invoices(self, normalized: str, conv: AIConversation, ctx: AIContext) -> dict:
@@ -3299,10 +4735,43 @@ class ConversationEngine:
             .filter(Invoice.organization_id == org_id, Invoice.deleted_at.is_(None))
         )
 
-        if "outstanding" in normalized or "unpaid" in normalized or "pending" in normalized:
+        # "NOT paid" / "not yet paid" / "other than paid" invert the status
+        # token: they ask for every invoice EXCEPT paid ones. Without this
+        # guard the literal "paid" token filters TO paid invoices.
+        not_paid_ask = bool(re.search(
+            r"\b(?:not|never|hardly)\s+(?:yet\s+)?(?:been\s+)?paid\b"
+            r"|\bother\s+than\s+paid\b|\bapart\s+from\s+paid\b|\bexcept\s+paid\b"
+            r"|^unpaid\b",
+            normalized,
+        ))
+        if "outstanding" in normalized or "unpaid" in normalized or "pending" in normalized or not_paid_ask:
             query = query.filter(Invoice.balance_due > 0)
         elif "overdue" in normalized or "past due" in normalized:
             query = query.filter(Invoice.balance_due > 0, Invoice.due_date < date.today())
+        else:
+            # Explicit status filters: "show paid invoices", "list cancelled
+            # invoices", … must actually filter instead of returning every
+            # invoice regardless of status.
+            status_filters = [entry for entry in (
+                ("partially paid", {InvoiceStatus.PARTIALLY_PAID}),
+                ("partially-paid", {InvoiceStatus.PARTIALLY_PAID}),
+                ("written off", {InvoiceStatus.WRITTEN_OFF}),
+                ("written-off", {InvoiceStatus.WRITTEN_OFF}),
+                (("overpaid", {InvoiceStatus.OVERPAID}) if hasattr(InvoiceStatus, "OVERPAID") else None),
+                ("draft", {InvoiceStatus.DRAFT}),
+                ("sent", {InvoiceStatus.SENT}),
+                ("cancelled", {InvoiceStatus.CANCELLED}),
+                ("canceled", {InvoiceStatus.CANCELLED}),
+                ("refunded", {InvoiceStatus.REFUNDED}),
+                ("paid", {InvoiceStatus.PAID}),
+            ) if entry]
+            statuses = None
+            for token, mapped in status_filters:
+                if token and token in normalized:
+                    statuses = mapped
+                    break
+            if statuses:
+                query = query.filter(Invoice.status.in_(statuses))
 
         invoices = query.order_by(Invoice.created_at.desc()).limit(10).all()
 
@@ -3564,15 +5033,31 @@ class ConversationEngine:
         """Return the list of customers for the org (FIX: 'list customers' /
         'show customers' previously returned 'No customer found' or RAG junk).
         When only_outstanding is True, returns customers with a live positive
-        outstanding balance ('customers who owe money')."""
+        outstanding balance ('customers who owe money'). Honors an explicit
+        active/inactive status filter ('list inactive customers')."""
         org_id = ctx.organization_id
+
+        # Status filter: "inactive" must be tested BEFORE "active" semantics;
+        # word boundaries keep \bactive\b from matching inside "inactive".
+        want_active: bool | None = None
+        if re.search(r"\binactive\b|\bdisabled\b|\bdeactivated\b", normalized):
+            want_active = False
+        elif re.search(r"\bactive\b|\benabled\b", normalized):
+            want_active = True
+        status_label = {True: "active", False: "inactive", None: ""}[want_active]
+
+        # Credit-limit predicate ("show customers over their credit limit"):
+        # same class of filter as the status words — parse it and APPLY it.
+        over_credit_limit = bool(_OVER_CREDIT_LIMIT_RE.search(normalized))
+
+        query = self.db.query(BillingCustomer).filter(
+            BillingCustomer.organization_id == org_id,
+            BillingCustomer.deleted_at.is_(None),
+        )
+        if want_active is not None:
+            query = query.filter(BillingCustomer.is_active == want_active)
         customers = (
-            self.db.query(BillingCustomer)
-            .filter(
-                BillingCustomer.organization_id == org_id,
-                BillingCustomer.deleted_at.is_(None),
-            )
-            .order_by(BillingCustomer.company_name.asc())
+            query.order_by(BillingCustomer.company_name.asc())
             .limit(20)
             .all()
         )
@@ -3582,6 +5067,28 @@ class ConversationEngine:
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         svc = BillingDashboardService(self.db)
         by_customer = {r["customer_id"]: r["outstanding"] for r in svc.get_outstanding_by_customer(org_id)}
+
+        if over_credit_limit:
+            # Mirror the dashboard's over-limit semantics (credit_limit > 0
+            # AND outstanding > credit_limit) but use LIVE outstanding so the
+            # answer matches the outstanding column shown in this very list.
+            customers = [
+                c for c in customers
+                if (c.credit_limit or 0) > 0
+                and by_customer.get(c.id, 0.0) > float(c.credit_limit)
+            ]
+            if not customers:
+                return {
+                    "answer": (
+                        "No customers are currently over their credit limit."
+                    ),
+                    "mode": "M1_INSPECT",
+                    "risk_class": "R1",
+                    "evidence": [],
+                    "qualification": "No guess made.",
+                    "next_actions": ["List all customers", "Show customers with outstanding balances"],
+                    "suggested_prompts": ["List all customers", "Dashboard summary"],
+                }
 
         if only_outstanding:
             customers = [c for c in customers if by_customer.get(c.id, 0.0) > 0]
@@ -3597,8 +5104,13 @@ class ConversationEngine:
                 }
 
         if not customers:
+            answer = (
+                f"No {status_label} customers found in your organization."
+                if want_active is not None
+                else "No customers found in your organization."
+            )
             return {
-                "answer": "No customers found in your organization.",
+                "answer": answer,
                 "mode": "M1_INSPECT",
                 "risk_class": "R1",
                 "evidence": [],
@@ -3610,13 +5122,25 @@ class ConversationEngine:
         lines = []
         for c in customers:
             outstanding = by_customer.get(c.id, 0.0)
+            # Inside a status-filtered list the row marker must reflect the
+            # flag that was filtered on, not the lifecycle enum default.
+            state = enum_value(c.status)
+            if want_active is not None:
+                state = "active" if c.is_active else "inactive"
             lines.append(
                 f"- **{c.company_name}** ({c.customer_code}) — "
-                f"Outstanding: {money(outstanding)} — {enum_value(c.status)}"
+                f"Outstanding: {money(outstanding)} — {state}"
             )
 
         if only_outstanding:
             answer = f"Found **{len(customers)} customer(s) with an outstanding balance**:\n\n" + "\n".join(lines)
+        elif over_credit_limit:
+            answer = (
+                f"Found **{len(customers)} customer(s) over their credit limit**:\n\n"
+                + "\n".join(lines)
+            )
+        elif want_active is not None:
+            answer = f"Found **{len(customers)} {status_label} customer(s)** in your organization:\n\n" + "\n".join(lines)
         else:
             answer = f"Found **{len(customers)} customer(s)** in your organization:\n\n" + "\n".join(lines)
 
@@ -3636,13 +5160,28 @@ class ConversationEngine:
 
     def _lookup_customer(self, text: str, normalized: str, conv: AIConversation, ctx: AIContext) -> dict:
         terms = self._search_terms(text)
+        # Drop leading preposition fillers ("by Acme" → "Acme") that would
+        # poison the substring match.
+        if terms:
+            terms = re.sub(r"^(?:by|for|with|from|of|at|in)\s+", "", terms, flags=re.IGNORECASE).strip() or terms
+        # A code-like token (CUST-123…) or an email address is a precise
+        # identifier per the KB ("search by company name, code, OR email") —
+        # try it alone before the fuzzy name match.
+        ident_m = re.search(r"\bcust(?:omer)?[-_ ]?\d[\w-]*\b", text, flags=re.IGNORECASE)
+        email_m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text)
+        searched = ident_m.group(0) if ident_m else (email_m.group(0) if email_m else terms)
         query = self.db.query(BillingCustomer).filter(
             BillingCustomer.organization_id == ctx.organization_id,
             BillingCustomer.deleted_at.is_(None),
         )
 
         customer = None
-        if terms:
+        if ident_m:
+            pattern = f"%{ident_m.group(0)}%"
+            customer = query.filter(BillingCustomer.customer_code.ilike(pattern)).first()
+        if not customer and email_m:
+            customer = query.filter(BillingCustomer.email.ilike(email_m.group(0))).first()
+        if not customer and terms:
             pattern = f"%{terms}%"
             customer = query.filter(or_(
                 BillingCustomer.display_name.ilike(pattern),
@@ -3695,8 +5234,13 @@ class ConversationEngine:
                     "next_actions": [],
                     "suggested_prompts": ["Show customer GOk", "Find Acme Corp"],
                 }
+            weak = (not searched) or searched.lower() in ("that name", "name", "customer")
             return {
-                "answer": "No customer found matching that name.",
+                "answer": (
+                    "No customer found matching that name."
+                    if weak else
+                    f"I couldn't find a customer matching \"{searched}\" in your organization."
+                ),
                 "mode": "M1_INSPECT",
                 "risk_class": "R1",
                 "evidence": [],
@@ -4078,17 +5622,58 @@ class ConversationEngine:
         )
 
     def _extract_reference(self, text: str, *, prefixes: tuple[str, ...]) -> str | None:
-        prefix_pattern = "|".join(re.escape(p) for p in prefixes)
-        match = re.search(rf"\b({prefix_pattern})[-_ ]?([A-Za-z0-9][-A-Za-z0-9]*)\b", text, flags=re.IGNORECASE)
+        # Longest prefix first: "INVOICE" must be tried before "INV", else the
+        # INV alternative matches INSIDE the word "invoice" ("…will invoice
+        # INV-9999…") and swallows the real reference later in the sentence.
+        ordered = sorted(prefixes, key=len, reverse=True)
+        prefix_pattern = "|".join(re.escape(p) for p in ordered)
+
+        # Pass 1 — whole-token references: a hyphenated/underscored chain that
+        # CONTAINS the prefix as a complete segment. Covers compound systems
+        # like "AI-INV-20260824-0001" (org-generated numbers) as well as
+        # plain "INV-1001" / "CUST-1787545142705", without mangling them.
+        best_prefixed = None
+        best_any = None
+        for cand in re.findall(r"[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+", text):
+            cu = cand.upper()
+            if not any(ch.isdigit() for ch in cu):
+                continue  # "e-invoice", "wire-transfer" — words, not references
+            segments = re.split(r"[-_]", cu)
+            starts = any(cu.startswith(pu + "-") or cu.startswith(pu + "_") for pu in map(str.upper, ordered))
+            contains = any(seg in map(str.upper, ordered) for seg in segments)
+            if starts and best_prefixed is None:
+                best_prefixed = cu
+            elif contains and best_any is None:
+                best_any = cu
+        ref = best_prefixed or best_any
+        if ref:
+            # Normalize verbose aliases to their canonical prefix.
+            if ref.startswith("INVOICE-"):
+                ref = "INV-" + ref[len("INVOICE-"):]
+            elif ref.startswith("PAYMENT-"):
+                ref = "PAY-" + ref[len("PAYMENT-"):]
+            return ref
+
+        # Pass 2 — prefix as its own word followed by a bare value
+        # ("invoice 10428"): keep the alias de-dup + canonicalization.
+        prefix_pattern = "|".join(re.escape(p) for p in ordered)
+        match = re.search(rf"\b({prefix_pattern})[-_ ]?([A-Za-z0-9][-_A-Za-z0-9]*)\b", text, flags=re.IGNORECASE)
         if not match:
             return None
-        raw = match.group(0)
         prefix = match.group(1).upper()
         value = match.group(2).upper()
-        # FIX: reject plural words like "invoices"/"payments" which parse as
-        # prefix+"S" (e.g. "show invoices" must be a LIST, not a reference
-        # "INV-S"). A valid reference carries a digit or a separator.
-        if value.isalpha() and not re.search(r"[-_ ]", raw):
+        # De-duplicate aliased prefixes: "invoice INV-9999" parses as
+        # prefix=INVOICE, value="INV-9999" — strip the repeated alias so the
+        # result stays "INV-9999".
+        for p in ordered:
+            pu = p.upper()
+            m2 = re.match(rf"{re.escape(pu)}[-_ ](.+)$", value)
+            if m2:
+                value = m2.group(1).upper()
+                break
+        # A valid reference carries a digit; this rejects plural words like
+        # "invoices"/"payments" which parse as prefix+"S", and stray words.
+        if not re.search(r"\d", value):
             return None
         if prefix == "INVOICE":
             return f"INV-{value}"
