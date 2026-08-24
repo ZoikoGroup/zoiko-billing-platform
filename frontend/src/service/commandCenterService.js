@@ -138,3 +138,58 @@ export const getConfigurationInventory = () =>
 
 export const getLaunchReadiness = () =>
   api.get("/api/super-admin/launch-readiness");
+
+// ── Financial Operations detail pages — Invoice Engine, Payments &
+// Disputes, Balances & Allocations, Credits/Adjustments/Refunds, Tax.
+// Cross-tenant read models backing the 7 Financial Operations sub-pages.
+
+export const getInvoiceStatusDistribution = () =>
+  api.get("/api/super-admin/financial-operations/invoice-status-distribution");
+
+export const getInvoiceDeliveryDiagnostics = () =>
+  api.get("/api/super-admin/financial-operations/invoice-delivery-diagnostics");
+
+export const listFailedPayments = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/failed-payments", { params: { limit } });
+
+export const listDunningCases = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/dunning-cases", { params: { limit } });
+
+export const listAllocationExceptions = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/allocation-exceptions", { params: { limit } });
+
+export const listCreditApplications = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/credit-applications", { params: { limit } });
+
+export const listCreditNotesAdmin = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/credit-notes", { params: { limit } });
+
+export const listRefundsAdmin = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/refunds", { params: { limit } });
+
+export const listWriteOffsAdmin = (limit = 50) =>
+  api.get("/api/super-admin/financial-operations/write-offs", { params: { limit } });
+
+export const getTaxSummary = (dateFrom, dateTo) =>
+  api.get("/api/super-admin/financial-operations/tax-summary", {
+    params: { date_from: dateFrom || undefined, date_to: dateTo || undefined },
+  });
+
+// ── Reconciliation (REC-01) ─────────────────────────────────────────────
+
+export const triggerReconciliationRun = () =>
+  api.post("/api/super-admin/reconciliation-runs/run", {});
+
+export const listReconciliationRuns = (limit = 10) =>
+  api.get("/api/super-admin/reconciliation-runs", { params: { limit } });
+
+export const getReconciliationRun = (runId) =>
+  api.get(`/api/super-admin/reconciliation-runs/${runId}`);
+
+export const acknowledgeReconciliationException = (exceptionId, note) =>
+  api.post(`/api/super-admin/reconciliation-exceptions/${exceptionId}/acknowledge`, {
+    note: note || undefined,
+  });
+
+export const resolveReconciliationException = (exceptionId, note) =>
+  api.post(`/api/super-admin/reconciliation-exceptions/${exceptionId}/resolve`, { note });

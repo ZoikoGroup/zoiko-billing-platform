@@ -142,6 +142,69 @@ export const BILLING_INTERVAL_OPTIONS = [
   { value: "annual", label: "Annual" },
 ];
 
+// ── Financial Operations detail pages ───────────────────────────────────
+
+export const INVOICE_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "sent", label: "Sent", color: "bg-blue-100 text-blue-700" },
+  { value: "paid", label: "Paid", color: "bg-emerald-100 text-emerald-700" },
+  { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-700" },
+  { value: "partially_paid", label: "Partially Paid", color: "bg-amber-100 text-amber-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
+  { value: "refunded", label: "Refunded", color: "bg-violet-100 text-violet-700" },
+  { value: "written_off", label: "Written Off", color: "bg-rose-100 text-rose-700" },
+];
+
+export const DUNNING_STATUS_OPTIONS = [
+  { value: "active", label: "Active", color: "bg-amber-100 text-amber-700" },
+  { value: "resolved", label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+  { value: "escalated", label: "Escalated", color: "bg-red-100 text-red-700" },
+  { value: "paused", label: "Paused", color: "bg-slate-100 text-slate-600" },
+];
+
+export const CREDIT_NOTE_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "approved", label: "Approved", color: "bg-blue-100 text-blue-700" },
+  { value: "issued", label: "Issued", color: "bg-emerald-100 text-emerald-700" },
+  { value: "partially_applied", label: "Partially Applied", color: "bg-amber-100 text-amber-700" },
+  { value: "fully_applied", label: "Fully Applied", color: "bg-emerald-100 text-emerald-700" },
+  { value: "voided", label: "Voided", color: "bg-red-100 text-red-700" },
+];
+
+export const REFUND_STATUS_OPTIONS = [
+  { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-700" },
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "pending_approval", label: "Pending Approval", color: "bg-amber-100 text-amber-700" },
+  { value: "approved", label: "Approved", color: "bg-blue-100 text-blue-700" },
+  { value: "processing", label: "Processing", color: "bg-blue-100 text-blue-700" },
+  { value: "completed", label: "Completed", color: "bg-emerald-100 text-emerald-700" },
+  { value: "failed", label: "Failed", color: "bg-red-100 text-red-700" },
+  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
+];
+
+export const WRITE_OFF_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "pending_approval", label: "Pending Approval", color: "bg-amber-100 text-amber-700" },
+  { value: "approved", label: "Approved", color: "bg-blue-100 text-blue-700" },
+  { value: "executed", label: "Executed", color: "bg-emerald-100 text-emerald-700" },
+  { value: "reversed", label: "Reversed", color: "bg-violet-100 text-violet-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
+];
+
+export const RECONCILIATION_RUN_STATE_OPTIONS = [
+  { value: "running", label: "Running", color: "bg-blue-100 text-blue-700" },
+  { value: "verified", label: "Verified", color: "bg-emerald-100 text-emerald-700" },
+  { value: "partial", label: "Partial", color: "bg-amber-100 text-amber-700" },
+  { value: "failed", label: "Failed", color: "bg-red-100 text-red-700" },
+];
+
+export const RECONCILIATION_EXCEPTION_STATUS_OPTIONS = [
+  { value: "OPEN", label: "Open", color: "bg-red-100 text-red-700" },
+  { value: "ACKNOWLEDGED", label: "Acknowledged", color: "bg-amber-100 text-amber-700" },
+  { value: "RESOLVED", label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+];
+
 // ── Platform audit log presentation (PHASE 11) ────────────────────────────
 // Mirrors the backend PlatformAuditAction enum — labels/colors only.
 

@@ -97,6 +97,20 @@ from app.modules.super_admin.schemas import (
     SubmitForApprovalRequest,
     FinancialConsistencyResponse,
     FinancialOperationsSummaryResponse,
+    InvoiceStatusDistributionResponse,
+    InvoiceDeliveryDiagnosticsResponse,
+    FailedPaymentListResponse,
+    DunningCaseListResponse,
+    AllocationExceptionListResponse,
+    CreditApplicationListResponse,
+    CreditNoteListResponse,
+    RefundListResponse,
+    WriteOffListResponse,
+    TaxSummaryResponse,
+    ReconciliationRunResponse,
+    ReconciliationRunListResponse,
+    ReconciliationRunDetailResponse,
+    ReconciliationExceptionActionResponse,
     LaunchReadinessResponse,
     LifecycleTransitionRequest,
     LifecycleTransitionResponse,
@@ -2820,7 +2834,111 @@ def get_financial_operations_summary(
     )
 
 
-# 
+#
+# Financial Operations detail pages — cross-tenant read models backing the
+# 7 Financial Operations sidebar sub-pages (Invoice Engine, Payments &
+# Disputes, Balances & Allocations, Credits/Adjustments/Refunds, Tax).
+# Reconciliation's endpoints live further below (REC-01, pre-existing).
+# Usage & Metering and e-invoicing have no endpoints here on purpose — no
+# backing data model exists anywhere in this codebase for either.
+#
+
+def _fo_detail_service(db: Session) -> "FinancialOperationsDetailService":
+    from app.modules.super_admin.financial_operations_detail_service import FinancialOperationsDetailService
+
+    return FinancialOperationsDetailService(db)
+
+
+@router.get("/financial-operations/invoice-status-distribution", response_model=InvoiceStatusDistributionResponse)
+def get_invoice_status_distribution(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).invoice_status_distribution()
+
+
+@router.get("/financial-operations/invoice-delivery-diagnostics", response_model=InvoiceDeliveryDiagnosticsResponse)
+def get_invoice_delivery_diagnostics(
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).invoice_delivery_diagnostics()
+
+
+@router.get("/financial-operations/failed-payments", response_model=FailedPaymentListResponse)
+def list_failed_payments(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_failed_payments(limit)
+
+
+@router.get("/financial-operations/dunning-cases", response_model=DunningCaseListResponse)
+def list_dunning_cases(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_dunning_cases(limit)
+
+
+@router.get("/financial-operations/allocation-exceptions", response_model=AllocationExceptionListResponse)
+def list_allocation_exceptions(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_allocation_exceptions(limit)
+
+
+@router.get("/financial-operations/credit-applications", response_model=CreditApplicationListResponse)
+def list_credit_applications(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_credit_applications(limit)
+
+
+@router.get("/financial-operations/credit-notes", response_model=CreditNoteListResponse)
+def list_credit_notes(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_credit_notes(limit)
+
+
+@router.get("/financial-operations/refunds", response_model=RefundListResponse)
+def list_refunds(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_refunds(limit)
+
+
+@router.get("/financial-operations/write-offs", response_model=WriteOffListResponse)
+def list_write_offs(
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).list_write_offs(limit)
+
+
+@router.get("/financial-operations/tax-summary", response_model=TaxSummaryResponse)
+def get_tax_summary(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    current_user=Depends(require_capability('financial_consistency.read')),
+    db: Session = Depends(get_db),
+):
+    return _fo_detail_service(db).get_tax_summary(date_from, date_to)
+
+
+#
 # ZB-SA-CMD-003 — Billing Command Center (Domain B read models). Composes the
 # /super-admin/billing-command-center page from real billing tables only.
 # Same currency-honesty rules as /financial-operations: per-currency buckets,
@@ -2906,7 +3024,7 @@ def list_billing_command_recent_activity(
 # REC-01 — Ledger reconciliation engine (runs + exception ownership).
 # 
 
-@router.post("/reconciliation-runs/run", response_model=dict)
+@router.post("/reconciliation-runs/run", response_model=ReconciliationRunResponse)
 def trigger_reconciliation_run(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
@@ -2920,7 +3038,7 @@ def trigger_reconciliation_run(
     return _serialize_reconciliation_run(run)
 
 
-@router.get("/reconciliation-runs", response_model=dict)
+@router.get("/reconciliation-runs", response_model=ReconciliationRunListResponse)
 def list_reconciliation_runs(
     limit: int = Query(10, ge=1, le=50),
     current_user=Depends(require_capability('financial_consistency.read')),
@@ -2937,7 +3055,7 @@ def list_reconciliation_runs(
     return {"items": [_serialize_reconciliation_run(r) for r in runs]}
 
 
-@router.get("/reconciliation-runs/{run_id}", response_model=dict)
+@router.get("/reconciliation-runs/{run_id}", response_model=ReconciliationRunDetailResponse)
 def get_reconciliation_run(
     run_id: int,
     current_user=Depends(require_capability('financial_consistency.read')),
@@ -2979,7 +3097,7 @@ class ReconciliationExceptionActionRequest(BaseModel):
     note: Optional[str] = Field(None, max_length=500)
 
 
-@router.post("/reconciliation-exceptions/{exception_id}/acknowledge", response_model=dict)
+@router.post("/reconciliation-exceptions/{exception_id}/acknowledge", response_model=ReconciliationExceptionActionResponse)
 def acknowledge_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest = Body(default=None),
@@ -3000,7 +3118,7 @@ def acknowledge_reconciliation_exception(
     }
 
 
-@router.post("/reconciliation-exceptions/{exception_id}/resolve", response_model=dict)
+@router.post("/reconciliation-exceptions/{exception_id}/resolve", response_model=ReconciliationExceptionActionResponse)
 def resolve_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest,
