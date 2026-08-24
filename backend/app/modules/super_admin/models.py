@@ -472,3 +472,71 @@ class AttentionItem(Base):
 
     def __repr__(self):
         return f"<AttentionItem id={self.id} source={self.source_key!r} severity={self.severity!r} status={self.status!r}>"
+
+
+
+class ReconciliationRunState(str, enum.Enum):
+    RUNNING = "running"
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class ReconciliationExceptionStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+
+
+class ReconciliationRun(Base):
+    """REC-01 - one execution of the ledger reconciliation engine.
+
+    HONEST SCOPE: internal ledger invariants are fully evaluated; the
+    processor leg is recorded as `processor_source` and caps a clean run at
+    PARTIAL until a real processor/bank source is connected (ISS-017).
+    """
+
+    __tablename__ = "reconciliation_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    state = Column(CaseInsensitiveEnum(ReconciliationRunState), nullable=False, default=ReconciliationRunState.RUNNING)
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    trigger = Column(String(20), nullable=False, default="manual")  # manual | scheduled
+    checks_total = Column(Integer, nullable=False, default=0)
+    exceptions_found = Column(Integer, nullable=False, default=0)
+    processor_source = Column(String(20), nullable=False, default="none")  # none | stripe
+    processor_note = Column(String(500), nullable=True)
+
+    exceptions = relationship(
+        "ReconciliationException",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return f"<ReconciliationRun id={self.id} state={self.state} exceptions={self.exceptions_found}>"
+
+
+class ReconciliationException(Base):
+    """A single discrepancy found by a run, with an ownership workflow
+    (OPEN -> ACKNOWLEDGED(owner) -> RESOLVED(note)) - REC-01's 'exception
+    ownership' requirement."""
+
+    __tablename__ = "reconciliation_exceptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("reconciliation_runs.id"), nullable=False, index=True)
+    kind = Column(String(50), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    detail = Column(JSON, nullable=True)
+    status = Column(CaseInsensitiveEnum(ReconciliationExceptionStatus), nullable=False, default=ReconciliationExceptionStatus.OPEN)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolution_note = Column(String(500), nullable=True)
+
+    run = relationship("ReconciliationRun", back_populates="exceptions")
+    owner = relationship("User", foreign_keys=[owner_user_id])

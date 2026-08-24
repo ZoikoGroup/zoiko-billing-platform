@@ -36,7 +36,10 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
         PlatformRole.SUPPORT_OPERATOR, PlatformRole.SECURITY_OPERATOR,
         PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR,
     },
-    "reliability.read": {PlatformRole.RELIABILITY_OPERATOR, PlatformRole.SECURITY_OPERATOR, PlatformRole.AUDITOR},
+    "reliability.read": {
+        PlatformRole.RELIABILITY_OPERATOR, PlatformRole.SECURITY_OPERATOR,
+        PlatformRole.AUDITOR, PlatformRole.SUPPORT_OPERATOR,
+    },
     "governance.read": {
         PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR,
         PlatformRole.AUDITOR, PlatformRole.SUPPORT_OPERATOR,

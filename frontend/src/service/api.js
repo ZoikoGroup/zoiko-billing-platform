@@ -40,6 +40,51 @@ function createApiError(message, status, extra = {}) {
   return error;
 }
 
+// ── Proactive token refresh ───────────────────────────────────────────────
+// The backend signs access tokens with an `exp` claim (60 min default).
+// Instead of letting every parallel call bounce off a 401 first (wasted
+// round trips + noisy access logs), requests proactively refresh via the
+// SAME single-flight promise the reactive 401 path uses whenever the
+// current token is missing its expiry, already expired, or inside the
+// skew window.
+const PROACTIVE_REFRESH_SKEW_MS = 30_000;
+
+export function getTokenExpiryMs(token) {
+  if (!token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))
+    );
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureFreshAccessToken() {
+  const token = getAccessToken();
+  const expiryMs = getTokenExpiryMs(token);
+  // Unparseable/absent expiry: do nothing here — the reactive 401 path
+  // still guarantees exactly one refresh-and-retry.
+  if (expiryMs == null) return;
+  if (expiryMs - Date.now() > PROACTIVE_REFRESH_SKEW_MS) return;
+
+  const result = await tryRefreshToken();
+  if (result.invalidSession) {
+    clearSession();
+    notifySessionInvalid(result.reason);
+    throw createApiError("Your session has expired. Please sign in again.", 401, {
+      authInvalid: true,
+      refreshStatus: result.status,
+    });
+  }
+  // Transient refresh failure: fall through and send the request with the
+  // current token — the server decides; a genuine 401 still hits the
+  // reactive path below.
+}
+
 /**
  * Low level request helper. Talks to the FastAPI backend at VITE_API_BASE_URL.
  * Automatically attaches the bearer token (if present) and JSON headers,
@@ -47,6 +92,10 @@ function createApiError(message, status, extra = {}) {
  * per-request timeout so a hung backend never freezes the UI.
  */
 export async function apiRequest(path, { method = "GET", body, headers = {}, auth = true, retry = true, params, timeout = 30000 } = {}) {
+  if (auth) {
+    await ensureFreshAccessToken();
+  }
+
   let url = path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
   if (params) {
     const query = Object.entries(params)

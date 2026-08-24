@@ -1,4 +1,27 @@
+// ZB-SA-CMD-003 Domain B containment: while a privileged tenant-access
+// session is active, ALL data exports are suppressed app-wide. The flag is
+// owned by CommandCenterContext (the single source of privileged-session
+// truth) and enforced here at the shared download choke point. Page-local
+// ad-hoc blob downloads that bypass these helpers are a known residual gap
+// tracked for the follow-up sweep.
+let _suppressionReason = null;
+
+export function setExportSuppressed(reason) {
+  _suppressionReason = reason || null;
+}
+
+export function getExportSuppression() {
+  return _suppressionReason;
+}
+
+export function assertExportsAllowed() {
+  if (_suppressionReason) {
+    throw new Error(`Exports disabled: ${_suppressionReason}`);
+  }
+}
+
 export function downloadJSON(data, filename) {
+  assertExportsAllowed();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -9,6 +32,7 @@ export function downloadJSON(data, filename) {
 }
 
 export function downloadCSV(rows, headers, filename) {
+  assertExportsAllowed();
   const csv = [
     headers.join(","),
     ...rows.map((r) => r.map((v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`).join(",")),
@@ -23,6 +47,7 @@ export function downloadCSV(rows, headers, filename) {
 }
 
 export async function downloadExcel(rows, headers, filename, sheetName = "Sheet1") {
+  assertExportsAllowed();
   const XLSX = await import("xlsx");
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   const wb = XLSX.utils.book_new();

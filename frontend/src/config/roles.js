@@ -38,7 +38,7 @@ export const PLATFORM_ROLE_LABELS = {
   auditor: "Auditor",
 };
 
-const RELIABILITY_READ_ROLES = ["reliability_operator", "security_operator", "auditor"];
+const RELIABILITY_READ_ROLES = ["reliability_operator", "security_operator", "auditor", "support_operator"];
 
 export function canReadReliabilityTelemetry(platformRole) {
   return NULL_LIKE.includes(platformRole) || RELIABILITY_READ_ROLES.includes(platformRole);

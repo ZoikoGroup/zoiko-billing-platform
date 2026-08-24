@@ -14,7 +14,10 @@ export default function GovernanceLens({ readiness, activity }) {
     listApprovalRequests({ status: "pending", limit: 200 })
       .then((data) => {
         const requests = data.requests || [];
-        setPendingCount(requests.length);
+        // Use the server's authoritative `total`, not requests.length — the
+        // fetch is capped at limit:200, so length alone undercounts once
+        // more than 200 requests are pending.
+        setPendingCount(data.total ?? requests.length);
         const types = {};
         for (const r of requests) {
           types[r.request_type] = (types[r.request_type] || 0) + 1;
@@ -171,7 +174,7 @@ export default function GovernanceLens({ readiness, activity }) {
             </p>
           </div>
           <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-extrabold text-slate-800">
-            {readiness?.items?.length || 18} Criteria
+            {readiness?.items?.length ? `${readiness.items.length} Criteria` : "Criteria count unavailable"}
           </span>
         </div>
         {readiness?.overall_status === "BLOCKED" && (

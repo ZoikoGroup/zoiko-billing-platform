@@ -187,7 +187,7 @@ export default function TriagePage() {
               </div>
 
               <div className="mt-4 space-y-3">
-                {(!incidents || incidents.top_items.length === 0) ? (
+                {(!incidents?.top_items?.length) ? (
                   <div className="py-8 text-center">
                     <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
                     <p className="text-sm font-bold text-slate-800">All services operating normally</p>

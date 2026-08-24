@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw, HelpCircle } from "lucide-react";
 import { getTenantHealthOverview, getJobTelemetry } from "../../service/privilegedAccessService";
 import { PageHeader, DataTable } from "../../components/billing-ui";
 import { ErrorState, EmptyState, StatusBadge } from "../../components/billing-shared";
 import { formatDateTime, displayValue, LIFECYCLE_STATE_BADGES, LifecycleStateBadge } from "./constants";
+import { useAuth } from "../../context/AuthContext";
+import { canReadReliabilityTelemetry } from "../../config/roles";
 
 /**
  * Domain C (Tenant Telemetry) — ZB-SA-P3 Phase 3D.
@@ -54,6 +56,8 @@ function KpiCard({ label, value, tone = "text-slate-900" }) {
 }
 
 export default function TenantHealthPage() {
+  const { user } = useAuth();
+  const canReadTelemetry = canReadReliabilityTelemetry(user?.platform_role);
   const [overview, setOverview] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [schedulerEnabled, setSchedulerEnabled] = useState(false);
@@ -61,6 +65,10 @@ export default function TenantHealthPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
+    if (!canReadTelemetry) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     Promise.all([getTenantHealthOverview(), getJobTelemetry()])
@@ -71,7 +79,7 @@ export default function TenantHealthPage() {
       })
       .catch((e) => setError(e?.message || "Failed to load tenant telemetry."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [canReadTelemetry]);
 
   useEffect(() => {
     load();
@@ -134,7 +142,7 @@ export default function TenantHealthPage() {
           <button
             type="button"
             onClick={load}
-            disabled={loading}
+            disabled={loading || !canReadTelemetry}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
@@ -143,11 +151,19 @@ export default function TenantHealthPage() {
         }
       />
 
-      {error && (
+      {!canReadTelemetry ? (
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm">
+          <HelpCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
+          <p className="text-amber-800">
+            Not available — your platform role does not include the reliability.read capability. Ask a Platform
+            Administrator for access.
+          </p>
+        </div>
+      ) : error ? (
         <div className="mt-6 rounded-2xl border border-red-200 bg-white">
           <ErrorState message={error} onRetry={load} title="Unable to load tenant telemetry" />
         </div>
-      )}
+      ) : null}
 
       {overview && !error && (
         <>

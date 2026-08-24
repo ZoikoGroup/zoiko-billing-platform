@@ -11,7 +11,10 @@ export default function CommercialLens({ commercial }) {
 
   const totalCommercialAccounts = commercial?.accounts?.total ?? accounts.length;
   const totalCommercialSubs = commercial?.subscriptions?.total ?? subscriptions.length;
-  const totalPlans = plans.length;
+  // Use the server's authoritative total, not plans.length — the fetch is
+  // capped at limit:50, so length alone undercounts once the catalog grows
+  // past that page size (this card is labeled as the full catalog count).
+  const totalPlans = commercial?.plans?.total ?? plans.length;
 
   // Phase 3F F10 — MRR comes from the honest server-side read model
   // (priced published catalog versions only). The lens previously

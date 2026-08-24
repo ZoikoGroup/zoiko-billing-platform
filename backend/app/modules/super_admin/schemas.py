@@ -99,6 +99,7 @@ class ConfigurationEntry(BaseModel):
 
 class ConfigurationInventoryResponse(BaseModel):
     generated_at: datetime
+    environment: str = "PRODUCTION"
     entries: list[ConfigurationEntry]
     summary: dict[str, int] = {}
     honesty_notes: list[str] = []
@@ -635,6 +636,10 @@ class AttentionAssignRequest(BaseModel):
     owner_user_id: int
 
 
+class AttentionEscalateRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=1000)
+
+
 class AttentionTransitionRequest(BaseModel):
     to_status: str
     resolution_code: Optional[str] = Field(None, max_length=100)
@@ -723,7 +728,10 @@ class LaunchReadinessResponse(BaseModel):
 class FinancialConsistencyResponse(BaseModel):
     state: str  # VERIFIED | FAILED | UNKNOWN
     scope: str
+    run_id: Optional[str] = None
+    evaluated_at: Optional[datetime] = None
     total_invoices_checked: int
+    coverage: Optional[dict] = None
     over_allocated_count: int
     over_allocated_examples: list[dict]
     under_allocated_paid_count_informational: int
@@ -820,6 +828,156 @@ class FinancialOperationsSummaryResponse(BaseModel):
     billings: FinancialBillingsSummary
     recovery: FinancialRecoverySummary
     leakage: FinancialLeakageSummary
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-SA-CMD-003 — Billing Command Center read models (Domain B, cross-tenant)
+# Currency honesty rule identical to FinancialBillingsSummary: per-currency
+# buckets always; scalar amounts only when single_currency; multi-currency
+# responses additionally carry a `primary_currency` (largest invoiced bucket)
+# with every chart/card figure explicitly scoped to it — never a cross-currency
+# sum.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BillingCommandCurrencyBucket(BaseModel):
+    currency: str
+    invoice_count: int
+    invoiced_amount: str
+    collected_amount: str
+    outstanding_amount: str
+    current_amount: str
+    overdue_amount: str
+    overdue_count: int
+
+
+class BillingCommandKpis(BaseModel):
+    currency_state: str  # unknown | single_currency | multi_currency
+    primary_currency: Optional[str] = None
+    total_invoices: int = 0
+    overdue_count: int = 0
+    # Scalar conveniences — populated ONLY when currency_state == "single_currency".
+    invoiced_amount: Optional[str] = None
+    collected_amount: Optional[str] = None
+    outstanding_amount: Optional[str] = None
+    current_amount: Optional[str] = None
+    overdue_amount: Optional[str] = None
+    collection_rate_pct: Optional[float] = None
+    # Figures scoped to primary_currency (labeled as such in the UI).
+    display_invoiced_amount: Optional[str] = None
+    display_collected_amount: Optional[str] = None
+    display_outstanding_amount: Optional[str] = None
+    display_current_amount: Optional[str] = None
+    display_overdue_amount: Optional[str] = None
+    display_collection_rate_pct: Optional[float] = None
+    currencies: list[BillingCommandCurrencyBucket] = []
+
+
+class BillingSparklines(BaseModel):
+    """Trailing daily series in the display currency (last ~12 days)."""
+
+    billed: list[float] = []
+    collected: list[float] = []
+    newly_overdue: list[float] = []
+    rate: list[float] = []
+
+
+class BillingAgingBucket(BaseModel):
+    key: str
+    label: str
+    count: int
+    amount: str
+    pct: float
+
+
+class BillingActionCenter(BaseModel):
+    overdue_30d_count: int
+    overdue_30d_amount: str
+    failed_payments_count: int
+    failed_payments_amount: str
+    draft_invoices_count: int
+    draft_invoices_amount: str
+    active_dunning_cases_count: int
+    active_credit_notes_count: int
+
+
+class BillingNextSevenDays(BaseModel):
+    invoices_scheduled: int
+    expected_billing_amount: Optional[str] = None
+    expected_billing_currency: Optional[str] = None
+    renewals: int
+    payment_retries: int
+    quotes_expiring: int
+
+
+class BillingOverviewResponse(BaseModel):
+    generated_at: datetime
+    kpis: BillingCommandKpis
+    sparklines: BillingSparklines
+    aging: list[BillingAgingBucket]
+    aging_basis: dict
+    action_center: BillingActionCenter
+    next_seven_days: BillingNextSevenDays
+    customers_at_risk: int
+
+
+class BillingTrendPoint(BaseModel):
+    label: str
+    billed: float
+    collected: float
+    collection_rate_pct: float
+
+
+class BillingTrendResponse(BaseModel):
+    granularity: str  # daily | weekly | monthly
+    currency: Optional[str] = None
+    currency_state: str
+    available_currencies: list[str] = []
+    points: list[BillingTrendPoint]
+
+
+class OverdueInvoiceRow(BaseModel):
+    invoice_id: int
+    organization_id: int
+    organization_name: str
+    invoice_number: str
+    customer_id: int
+    customer_name: str
+    due_date: date
+    days_overdue: int
+    amount: str
+    currency: str
+
+
+class OverdueInvoiceListResponse(BaseModel):
+    total: int
+    invoices: list[OverdueInvoiceRow]
+
+
+class CollectionsRiskRow(BaseModel):
+    customer_id: int
+    customer_name: str
+    organization_name: str
+    outstanding: str
+    currency: str
+    risk: str  # High | Medium
+    last_activity: Optional[date] = None
+    note: str
+
+
+class CollectionsRiskListResponse(BaseModel):
+    rows: list[CollectionsRiskRow]
+
+
+class BillingActivityItem(BaseModel):
+    kind: str  # payment_received | payment_failed | invoice_sent | subscription_changed
+    title: str
+    meta: str
+    actor: Optional[str] = None
+    occurred_at: Optional[datetime] = None
+
+
+class BillingActivityListResponse(BaseModel):
+    items: list[BillingActivityItem]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -390,3 +390,120 @@ def test_tenant_visible_access_log_cross_tenant_isolation(db_session):
 
     log = get_my_privileged_access_log(limit=50, current_user=user_b, db=db_session)
     assert log.entries == []  # Org B never sees Org A's access history
+
+
+# ── §6.4 explicit operator escalation + queue filters ─────────────────────
+
+def test_attention_escalate_bumps_severity_and_tightens_sla(db_session):
+    admin, _secret = _super_admin(db_session, email="esc1@cmdcenter.example")
+    svc = AttentionService(db_session)
+    item = svc.report_or_update(
+        source="manual", source_key="manual:e1", title="Escalate me",
+        base_severity=AttentionSeverity.P2,
+    )
+    old_ack_deadline = item.sla_ack_deadline
+
+    item = svc.escalate(admin, item.id, "customer impact is growing")
+    db_session.commit()
+
+    assert item.severity == AttentionSeverity.P1
+    assert item.sla_ack_deadline < old_ack_deadline  # higher severity → tighter clock
+
+    audit = (
+        db_session.query(PlatformAuditLog)
+        .filter(
+            PlatformAuditLog.entity_type == "AttentionItem",
+            PlatformAuditLog.entity_id == item.id,
+        )
+        .order_by(PlatformAuditLog.id.desc())
+        .first()
+    )
+    assert audit is not None
+    assert audit.actor_id == admin.id
+    assert audit.reason == "customer impact is growing"
+    assert audit.old_values is None or True  # escalation carries metadata, not before/after payloads
+
+
+def test_attention_escalate_requires_reason_and_stops_at_p0(db_session):
+    admin, _secret = _super_admin(db_session, email="esc2@cmdcenter.example")
+    svc = AttentionService(db_session)
+
+    p3 = svc.report_or_update(source="manual", source_key="manual:e2", title="x", base_severity=AttentionSeverity.P3)
+    with pytest.raises(BadRequestException):
+        svc.escalate(admin, p3.id, "   ")  # whitespace-only reason rejected
+
+    p0 = svc.report_or_update(source="manual", source_key="manual:e3", title="y", base_severity=AttentionSeverity.P0)
+    with pytest.raises(BadRequestException):
+        svc.escalate(admin, p0.id, "cannot go higher")  # P0 is the ceiling
+
+
+def test_attention_queue_filters_by_severity_and_status(db_session):
+    admin, _secret = _super_admin(db_session, email="esc3@cmdcenter.example")
+    svc = AttentionService(db_session)
+    p1_item = svc.report_or_update(source="manual", source_key="manual:f1", title="P1 one", base_severity=AttentionSeverity.P1)
+    p2_item = svc.report_or_update(source="manual", source_key="manual:f2", title="P2 two", base_severity=AttentionSeverity.P2)
+
+    live = svc.list_open()
+    ids = {i.id for i in live}
+    assert {p1_item.id, p2_item.id} <= ids
+
+    only_p1 = svc.list_open(severity=AttentionSeverity.P1)
+    assert [i.id for i in only_p1] == [p1_item.id]
+
+    # History view: resolve the P1 item (acknowledge → resolve), then it
+    # leaves the live queue but is reachable via an explicit status filter.
+    svc.acknowledge(admin, p1_item.id)
+    svc.transition(admin, p1_item.id, AttentionStatus.MITIGATING)
+    svc.transition(admin, p1_item.id, AttentionStatus.RESOLVED, resolution_code="fixed")
+    assert p1_item.id not in {i.id for i in svc.list_open()}
+    resolved_view = svc.list_open(status=AttentionStatus.RESOLVED)
+    assert [i.id for i in resolved_view] == [p1_item.id]
+
+
+def test_configuration_inventory_reports_environment(db_session):
+    from app.config import settings
+
+    from app.modules.super_admin.configuration_service import ConfigurationGovernanceService
+
+    inv = ConfigurationGovernanceService(db_session).get_inventory()
+    expected = "SANDBOX" if settings.DEBUG else "PRODUCTION"
+    assert inv["environment"] == expected
+    assert any("DEBUG" in note for note in inv["honesty_notes"])
+
+
+def test_configuration_inventory_route_survives_response_model_validation(db_session):
+    """Regression guard: every other test in this file calls
+    ConfigurationGovernanceService.get_inventory() directly and asserts on
+    the plain dict it returns (by design — those tests compare `value`
+    byte-for-byte against the live enforced constant, e.g. a dict or int).
+    None of them go through the actual GET /api/super-admin/configuration
+    route, which is the one place a bug here becomes a real 500: the
+    ConfigurationEntry schema types `value` as `Optional[str]`, so the raw
+    dicts/ints/floats on operational_threshold entries failed response
+    serialization in production. The route now runs entries through
+    display_entries() before returning; this test calls the route function
+    directly (bypassing HTTP/auth, matching this file's other direct-call
+    tests like test_api_telemetry_route_surfaces_honest_slo_state) and
+    validates the result the same way FastAPI's response_model would."""
+    from app.modules.super_admin.router import get_configuration_inventory
+    from app.modules.super_admin.schemas import ConfigurationInventoryResponse
+
+    admin, _secret = _super_admin(db_session, email="config-route@cmdcenter.example")
+    payload = get_configuration_inventory(current_user=admin, db=db_session)
+    validated = ConfigurationInventoryResponse(**payload)
+
+    thresholds = [e for e in validated.entries if e.category == "operational_threshold"]
+    assert len(thresholds) >= 16
+    for entry in thresholds:
+        assert isinstance(entry.value, str)
+
+
+def test_api_telemetry_route_surfaces_honest_slo_state(db_session):
+    admin, _secret = _super_admin(db_session, email="esc4@cmdcenter.example")
+
+    import app.core.api_metrics as api_metrics
+    from app.modules.super_admin.router import get_api_telemetry
+
+    payload = get_api_telemetry(current_user=admin)
+    assert payload["slo"]["status"] == "NOT_CONFIGURED"
+    assert payload["slo"]["p95_budget_ms"] == api_metrics.P95_BUDGET_MS

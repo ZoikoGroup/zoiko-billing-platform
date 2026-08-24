@@ -5,7 +5,15 @@ import { getAccessToken, getStoredUser } from "../api/client";
 import { ROLE_DEFAULT_REDIRECT } from "../config/roles";
 
 const ROLE_PATH_RULES = {
-  super_admin: () => true,
+  // Super Admin belongs to no single organization. The Organization Admin
+  // surface (/organization-admin/*) assumes exactly one — its endpoints
+  // call get_organization_id(), which rejects a super_admin token outright
+  // ("Super Admin must use get_super_admin_organization_id() to explicitly
+  // select an organization"). Rather than let a super_admin land on a page
+  // that's guaranteed to crash, route them to their own equivalent tooling
+  // (Super Admin → Platform → Administrators & Users, Organizations, etc.).
+  super_admin: (pathname) =>
+    pathname !== "/organization-admin" && !pathname.startsWith("/organization-admin/"),
   org_admin: (pathname) =>
     pathname === "/organization-admin" ||
     pathname.startsWith("/organization-admin/") ||

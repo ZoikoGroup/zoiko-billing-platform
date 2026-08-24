@@ -178,3 +178,20 @@ body {
   border-style: solid;
 }
 
+/* ── Accessibility: reduced motion (ZB-SA-CMD-003 §26) ──────────────────── */
+/* Global, not per-component: any animation/transition (attention-strip P0
+   pulse, spinner spin, palette fade, hover transitions) collapses to its
+   end state for operators who need stillness. Information is never carried
+   by motion alone — the P0 chip stays red at rest. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+

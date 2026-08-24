@@ -134,7 +134,9 @@ const ConfigurationGovernancePage = lazy(() => import("./modules/super-admin/Con
 const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
 const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
 const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
+const CommandCenterHubPage = lazy(() => import("./modules/super-admin/CommandCenterHubPage"));
 const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
+const BillingCommandCenterPage = lazy(() => import("./modules/super-admin/BillingCommandCenterPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
 const BILLING_ROUTES = [
@@ -228,6 +230,7 @@ const BILLING_ROUTES = [
 // pages are registered separately, below, as redirects — never as a second
 // live copy of the page.
 const SUPER_ADMIN_ROUTES = [
+  { path: "/super-admin/command-center", element: <CommandCenterHubPage /> },
   { path: "/super-admin/dashboard", element: <PlatformDashboardPage /> },
   { path: "/super-admin/organizations", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
@@ -251,6 +254,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/financial/usage", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial/tax", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/billing-command-center", element: <BillingCommandCenterPage /> },
   { path: "/super-admin/integrations", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/gateways", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/connectors", element: <ReliabilityPage /> },
@@ -283,6 +287,7 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/users", to: "/super-admin/users" },
   { from: "/settings", to: "/super-admin/settings" },
   { from: "/organizations", to: "/super-admin/organizations" },
+  { from: "/admin/billing", to: "/super-admin/billing-command-center" },
   { from: "/super-admin/commercial/dashboard", to: "/super-admin/dashboard" },
   { from: "/super-admin/commercial/organizations", to: "/super-admin/organizations" },
   { from: "/super-admin/commercial/organizations/:organizationId", to: "/super-admin/organizations/:organizationId" },
@@ -290,6 +295,11 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/commercial/approvals", to: "/super-admin/approval-queue" },
   { from: "/super-admin/commercial/kill-switch", to: "/super-admin/kill-switch" },
   { from: "/super-admin/commercial/production-acceptance", to: "/super-admin/production-readiness" },
+  { from: "/super-admin/command-center/triage", to: "/super-admin/triage" },
+  { from: "/super-admin/command-center/commercial", to: "/super-admin/commercial/accounts" },
+  { from: "/super-admin/command-center/financial", to: "/super-admin/financial-operations" },
+  { from: "/super-admin/command-center/reliability", to: "/super-admin/reliability" },
+  { from: "/super-admin/command-center/governance", to: "/super-admin/governance" },
 ];
 
 function ModuleSpinner() {

@@ -1,6 +1,7 @@
 import { formatCurrency as localeFormatCurrency } from "./locale";
 import { getCurrencySymbol, CURRENCY_MASTER } from "./currency";
 import { getOrgBaseCurrency } from "../modules/billing/utils/CurrencyContext";
+import { assertExportsAllowed } from "./export-helpers";
 
 export function extractArray(data) {
   if (!data) return [];
@@ -115,6 +116,7 @@ export function formatDisplayDate(d) {
 }
 
 export function downloadJSON(data, filename) {
+  assertExportsAllowed();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

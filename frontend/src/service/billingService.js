@@ -1,5 +1,8 @@
 import { api } from "./api";
 import { ENDPOINTS } from "./billingEndpoints";
+// ZB-SA-CMD-003 §17 — Domain B containment: file-download entry points are
+// gated on the privileged-session suppression flag.
+import { assertExportsAllowed } from "../utils/export-helpers";
 
 function buildUrl(base, params = {}) {
   const query = Object.entries(params)
@@ -145,6 +148,7 @@ export const customerApi = {
   importPreview: (formData) => api.post(ENDPOINTS.CUSTOMER_IMPORT_PREVIEW, formData),
   importConfirm: (data) => api.post(ENDPOINTS.CUSTOMER_IMPORT_CONFIRM, data),
   downloadTemplate: async (format = "csv") => {
+    assertExportsAllowed();
     const { apiRequest, getAccessToken, API_BASE_URL } = await import("./api");
     const url = `${API_BASE_URL}${ENDPOINTS.CUSTOMER_IMPORT_TEMPLATE}?format=${format}`;
     const token = getAccessToken();
@@ -188,6 +192,7 @@ export const productApi = {
     api.post(ENDPOINTS.PRODUCT_IMPORT_PREVIEW, formData),
   importConfirm: (data) => api.post(ENDPOINTS.PRODUCT_IMPORT_CONFIRM, data),
   downloadTemplate: async (format = "csv") => {
+    assertExportsAllowed();
     const { apiRequest, getAccessToken, API_BASE_URL } = await import("./api");
     const url = `${API_BASE_URL}${ENDPOINTS.PRODUCT_IMPORT_TEMPLATE}?format=${format}`;
     const token = getAccessToken();
@@ -204,6 +209,7 @@ export const productApi = {
     URL.revokeObjectURL(a.href);
   },
   exportCatalog: async (data) => {
+    assertExportsAllowed();
     const { getAccessToken, API_BASE_URL } = await import("./api");
     const url = `${API_BASE_URL}${ENDPOINTS.PRODUCT_EXPORT}`;
     const token = getAccessToken();

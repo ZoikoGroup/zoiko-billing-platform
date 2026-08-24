@@ -28,6 +28,9 @@ export const transitionAttentionItem = (itemId, toStatus, resolutionCode) =>
 export const suppressAttentionItem = (itemId, reason, minutes) =>
   api.post(`/api/super-admin/attention/${itemId}/suppress`, { reason, minutes });
 
+export const escalateAttentionItem = (itemId, reason) =>
+  api.post(`/api/super-admin/attention/${itemId}/escalate`, { reason });
+
 export const globalSearch = (q) =>
   api.get("/api/super-admin/search", { params: { q } });
 
@@ -96,6 +99,31 @@ export const getFinancialConsistency = () =>
 
 export const getFinancialOperationsSummary = () =>
   api.get("/api/super-admin/financial-operations");
+
+// ZB-SA-CMD-003 — Billing Command Center (Domain B read models) backing the
+// /super-admin/billing-command-center page.
+export const getBillingCommandOverview = () =>
+  api.get("/api/super-admin/billing-command-center/overview");
+
+export const getBillingCommandTrend = (granularity, currency) =>
+  api.get("/api/super-admin/billing-command-center/trend", {
+    params: { granularity, currency: currency || undefined },
+  });
+
+export const listBillingOverdueInvoices = (limit = 10) =>
+  api.get("/api/super-admin/billing-command-center/overdue-invoices", {
+    params: { limit },
+  });
+
+export const listBillingCollectionsRisk = (limit = 10) =>
+  api.get("/api/super-admin/billing-command-center/collections-risk", {
+    params: { limit },
+  });
+
+export const listBillingRecentActivity = (limit = 8) =>
+  api.get("/api/super-admin/billing-command-center/recent-activity", {
+    params: { limit },
+  });
 
 // Phase 4 (G-05) — real server-side latency + error-rate telemetry for
 // /api/super-admin/* (sliding window; single-process, resets on restart).
