@@ -15,6 +15,29 @@
   --color-brand-900: #1e3a8a;
   --color-brand: #2563eb;
   --color-brand-hover: #1d4ed8;
+
+  /* Per-domain accent tokens (see docs/BILLING_UI_UX_REMEDIATION_PLAN.md D1).
+     Each Billing domain owns one accent pair used for icon chips, chart
+     palettes, and focus accents. Never hardcode these hexes in pages — use
+     the utility classes (e.g. `from-accent-refund`) or var() references. */
+  --color-accent-payments: #2563eb;      /* brand blue */
+  --color-accent-payments-hover: #1d4ed8;
+  --color-accent-refund: #0ea5e9;        /* sky */
+  --color-accent-refund-hover: #0284c7;
+  --color-accent-writeoff: #d97706;      /* amber */
+  --color-accent-writeoff-hover: #b45309;
+  --color-accent-invoicing: #ff7a00;     /* orange (legacy identity preserved) */
+  --color-accent-invoicing-hover: #ff5500;
+  --color-accent-collections: #0d9488;   /* teal */
+  --color-accent-collections-hover: #0f766e;
+  --color-accent-tax: #7c3aed;           /* violet */
+  --color-accent-tax-hover: #6d28d9;
+}
+
+/* Shared card elevation — replaces the repeated
+   shadow-[0_4px_20px_rgba(0,0,0,0.02)] literal across Billing pages. */
+.card-shadow {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
 }
 
 body {

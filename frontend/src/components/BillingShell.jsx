@@ -300,7 +300,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           aria-expanded={expanded}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
-              ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+              ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
               : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
           }`}
         >
@@ -330,7 +330,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
         sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
       } ${
         isActive(item.href, pathname, search)
-          ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+          ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
           : sectionStyle
             ? "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
             : "border-transparent text-[#94A3B8] hover:border-white/10 hover:bg-white/5 hover:text-white"
@@ -430,7 +430,7 @@ function SidebarContent({ onNavigate, role }) {
               onClick={onNavigate}
               className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm font-semibold transition duration-200 ${
                 isActive("/super-admin/dashboard", pathname, search)
-                  ? "border-[#2563EB]/40 bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+                  ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
                   : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
               }`}
             >
@@ -523,7 +523,7 @@ export default function BillingShell({ children }) {
           defined hover/focus states and unread-style accent dot */}
       <button
         onClick={() => setAssistantOpen(true)}
-        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a00]"
+        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
         aria-label="Open AI Billing Assistant"
         title="AI Billing Assistant"
       >

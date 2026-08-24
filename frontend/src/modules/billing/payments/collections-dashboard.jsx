@@ -21,7 +21,7 @@ import {
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
 
-const CHART_COLORS = ["#FF7A00", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#06b6d4"];
+const CHART_COLORS = ["var(--color-accent-collections)", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#06b6d4"];
 const CARD_GRADIENTS = [
   "from-brand to-brand-hover",
   "from-emerald-500 to-green-500",
@@ -265,7 +265,7 @@ export default function CollectionsDashboard() {
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="count" name="Cases" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" name="Cases" fill="var(--color-accent-collections)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <EmptyStateWidget message="No active dunning cases" icon={BarChart3} />}
@@ -296,15 +296,15 @@ export default function CollectionsDashboard() {
                 <AreaChart data={dashboard.recoveryTrend}>
                   <defs>
                     <linearGradient id="recoveryTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-accent-collections)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-accent-collections)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Area type="monotone" dataKey="amount_collected" name="Amount Collected" stroke="#FF7A00" strokeWidth={2} fill="url(#recoveryTrendGrad)" />
+                  <Area type="monotone" dataKey="amount_collected" name="Amount Collected" stroke="var(--color-accent-collections)" strokeWidth={2} fill="url(#recoveryTrendGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : <EmptyStateWidget message="No recovery trend data" icon={BarChart3} />}

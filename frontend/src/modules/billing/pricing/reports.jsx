@@ -9,7 +9,7 @@ import { DashboardHeader, useDateRange, DashboardEmptyPanel } from "../../../com
 import { filterByDateRange, downloadExcel, downloadCSV, downloadJSON } from "../../../utils/export-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 
 const TABS = [
   { key: "summary", label: "Pricing Summary", icon: BarChart3 },
@@ -167,7 +167,7 @@ export default function PricingReportsPage() {
     title: "Pricing Reports",
     subtitle: "Analytics and insights for pricing plans, tiers and product coverage",
     icon: BarChart3,
-    iconGradient: "from-[#FF7A00] to-[#FF5500]",
+    iconGradient: "from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]",
     lastUpdated,
     refreshing,
     onRefresh: handleRefresh,
@@ -187,7 +187,7 @@ export default function PricingReportsPage() {
       <div className="space-y-8">
         <DashboardHeader {...headerProps} />
         <div className="flex flex-col items-center justify-center py-20">
-          <div className="h-12 w-12 rounded-full border-4 border-slate-200 border-t-[#FF7A00] animate-spin" />
+          <div className="h-12 w-12 rounded-full border-4 border-slate-200 border-t-[var(--color-accent-invoicing)] animate-spin" />
           <p className="mt-4 text-slate-500 text-sm font-medium">Loading pricing reports...</p>
         </div>
       </div>
@@ -205,7 +205,7 @@ export default function PricingReportsPage() {
           <h3 className="text-lg font-bold text-slate-800 mb-1">Unable to load pricing reports</h3>
           <p className="text-slate-500 text-sm mb-6 text-center max-w-md">{error}</p>
           <button onClick={handleRefresh}
-            className="px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl text-xs font-semibold hover:shadow-md transition-all flex items-center gap-2">
+            className="px-5 py-2.5 bg-gradient-to-r from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)] text-white rounded-xl text-xs font-semibold hover:shadow-md transition-all flex items-center gap-2">
             <RefreshCw size={14} /> Try Again
           </button>
         </div>
@@ -399,8 +399,8 @@ export default function PricingReportsPage() {
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 ${
-              activeTab === tab.key ? "bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-invoicing)]/50 ${
+              activeTab === tab.key ? "bg-gradient-to-r from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)] text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
             }`}
             aria-pressed={activeTab === tab.key}>
             <tab.icon size={15} />

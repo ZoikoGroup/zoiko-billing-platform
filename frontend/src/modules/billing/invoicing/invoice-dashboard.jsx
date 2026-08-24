@@ -23,7 +23,7 @@ import {
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
 
-const CHART_COLORS = ["#FF7A00", "#FB923C", "#FDBA74", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
+const CHART_COLORS = ["var(--color-accent-invoicing)", "#FB923C", "#FDBA74", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
 const CARD_GRADIENTS = [
   "from-brand to-brand-hover",
   "from-emerald-500 to-green-500",
@@ -243,7 +243,7 @@ export default function InvoiceDashboard() {
   if (loading) {
     return (
       <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading invoice dashboard">
-        <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
+        <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
@@ -268,7 +268,7 @@ export default function InvoiceDashboard() {
   if (error && !d.stats) {
     return (
       <div className="space-y-8 px-4 py-6 sm:px-6">
-        <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
+        <DashboardHeader title="Invoice Dashboard" subtitle="Enterprise invoicing overview" icon={FileText} iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]" crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]} />
         <div className="flex flex-col items-center justify-center py-20">
           <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
             <AlertCircle size={32} />
@@ -276,7 +276,7 @@ export default function InvoiceDashboard() {
           <h3 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h3>
           <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
           <button onClick={handleRefresh}
-            className="px-6 py-3 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+            className="px-6 py-3 bg-gradient-to-r from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
             <RefreshCw size={18} /> Try Again
           </button>
         </div>
@@ -297,7 +297,7 @@ export default function InvoiceDashboard() {
         title="Invoice Dashboard"
         subtitle="Track invoices, payments, and collections in real-time."
         icon={FileText}
-        iconGradient="from-[#FF7A00] to-[#FF5500]"
+        iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]"
         crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoicing" }]}
         lastUpdated={lastUpdated}
         onRefresh={handleRefresh}
@@ -356,15 +356,15 @@ export default function InvoiceDashboard() {
                 <AreaChart data={d.invoiceTrend}>
                   <defs>
                     <linearGradient id="invTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Area type="monotone" dataKey="count" name="Invoices" stroke="#FF7A00" strokeWidth={2} fill="url(#invTrendGrad)" />
+                  <Area type="monotone" dataKey="count" name="Invoices" stroke="var(--color-accent-invoicing)" strokeWidth={2} fill="url(#invTrendGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -389,7 +389,7 @@ export default function InvoiceDashboard() {
                   <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(v) => formatDisplayCurrency(v, "\u2014", baseCurrency)} />
                   <Area type="monotone" dataKey="revenue" name="Collected" stroke="#10b981" strokeWidth={2} fill="url(#revGrad)" />
-                  <Line type="monotone" dataKey="invoiced" name="Invoiced" stroke="#FF7A00" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="invoiced" name="Invoiced" stroke="var(--color-accent-invoicing)" strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -448,7 +448,7 @@ export default function InvoiceDashboard() {
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={(v) => formatCompactCurrency(v, baseCurrency)} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => formatDisplayCurrency(v, "\u2014", baseCurrency)} />
-                <Bar dataKey="total" name="Invoiced" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="total" name="Invoiced" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="collected" name="Collected" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

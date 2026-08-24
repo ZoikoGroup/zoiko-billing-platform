@@ -11,7 +11,7 @@ import { formatCurrency } from "../../../utils/locale";
 import { Spinner, EmptyState, ExportMenu, DateRangeFilter, useDateRange } from "../../../components/billing-shared";
 import { downloadCSV, downloadExcel, downloadJSON, filterByDateRange } from "../../../utils/export-helpers";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 const DEFAULT_MARGIN = 0.3;
 
 export default function CustomerProfitabilityReport() {
@@ -167,7 +167,7 @@ export default function CustomerProfitabilityReport() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
                     <Tooltip formatter={(v) => formatCurrency(v, baseCurrency)} />
-                    <Bar dataKey="revenue" fill="#FF7A00" radius={[0, 4, 4, 0]} name="Revenue" />
+                    <Bar dataKey="revenue" fill="var(--color-accent-invoicing)" radius={[0, 4, 4, 0]} name="Revenue" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -42,7 +42,7 @@ export default function CatalogOnboarding({ onAddManually, onImported, onDismiss
     <>
       {/* Onboarding Card */}
       <div className="relative rounded-3xl overflow-hidden shadow-xl mb-6"
-           style={{ background: "linear-gradient(135deg, #FF7A00 0%, #FF5500 40%, #E64500 100%)" }}>
+           style={{ background: "linear-gradient(135deg, var(--color-accent-invoicing) 0%, var(--color-accent-invoicing-hover) 40%, #E64500 100%)" }}>
         {/* Decorative circles */}
         <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10"
              style={{ background: "radial-gradient(circle, #fff 0%, transparent 70%)", transform: "translate(30%, -40%)" }} />

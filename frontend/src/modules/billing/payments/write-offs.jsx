@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ScrollText, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download,
-  Plus, AlertCircle, FileText, Ban, Eye, Send,
+  ScrollText, Send, Ban, Eye, Loader2,
 } from "lucide-react";
-import HRPage from "../../../components/HRPage";
 import { writeOffApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { Pagination } from "../../../components/billing-shared";
-import { useCurrency } from "../utils/CurrencyContext";
-import { useTerminology } from "../utils/TerminologyContext";
+import {
+  Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
+  DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, ErrorState,
+} from "../../../components/billing-shared";
+import {
+  Button, ListToolbar, FormModal, DataTable, Field, Select,
+} from "../../../components/billing-ui";
 
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
+  { value: "", label: "All Statuses" },
   { value: "draft", label: "Draft" },
   { value: "pending_approval", label: "Pending Approval" },
   { value: "approved", label: "Approved" },
@@ -21,15 +24,6 @@ const STATUS_OPTIONS = [
   { value: "reversed", label: "Reversed" },
   { value: "cancelled", label: "Cancelled" },
 ];
-
-const STATUS_STYLES = {
-  draft: "bg-slate-100 text-slate-700",
-  pending_approval: "bg-amber-100 text-amber-700",
-  approved: "bg-indigo-100 text-indigo-700",
-  executed: "bg-emerald-100 text-emerald-700",
-  reversed: "bg-orange-100 text-orange-700",
-  cancelled: "bg-slate-200 text-slate-600",
-};
 
 const TYPE_OPTIONS = [
   { value: "bad_debt", label: "Bad Debt" },
@@ -57,23 +51,13 @@ const SOURCE_OPTIONS = [
   { value: "adjustment_only", label: "Adjustment Only" },
 ];
 
-function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700"}`}>
-      {status?.replace(/_/g, " ") || "unknown"}
-    </span>
-  );
-}
-
 const emptyCreateForm = (currency) => ({
   customer_id: "", write_off_source: "invoice", invoice_id: "",
   write_off_type: "bad_debt", adjustment_type: "", amount: "", currency, reason: "", notes: "",
 });
 
 export default function WriteOffsPage() {
-  const { singular, getLabel } = useTerminology();
   const navigate = useNavigate();
-  const { baseCurrency } = useCurrency();
   const [searchParams] = useSearchParams();
 
   const [writeOffs, setWriteOffs] = useState([]);
@@ -81,6 +65,9 @@ export default function WriteOffsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  const [stats, setStats] = useState(null);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -88,18 +75,18 @@ export default function WriteOffsPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreateForm(baseCurrency));
+  const [createForm, setCreateForm] = useState(emptyCreateForm(""));
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [formError, setFormError] = useState(null);
-
-  const [sortField, setSortField] = useState("created_at");
-  const [sortDir, setSortDir] = useState("desc");
+  const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: "" });
 
   useEffect(() => {
     const timer = setTimeout(() => { setDebouncedSearch(search); setCurrentPage(1); }, 400);
@@ -122,6 +109,7 @@ export default function WriteOffsPage() {
       });
       setWriteOffs(extractArray(data));
       setTotal(data.total || 0);
+      setLastUpdated(new Date());
     } catch (err) {
       setError(err.message || "Failed to load write-offs");
       setWriteOffs([]); setTotal(0);
@@ -133,6 +121,10 @@ export default function WriteOffsPage() {
   useEffect(() => { fetchWriteOffs(); }, [fetchWriteOffs]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
+  useEffect(() => {
+    writeOffApi.getDashboardStats().then((d) => setStats(d || {})).catch(() => {});
+  }, []);
+
   const fetchCustomers = useCallback(async () => {
     try { const data = await customerApi.list({ per_page: 100 }); setCustomers(extractArray(data)); }
     catch (e) { /* silent */ }
@@ -140,11 +132,14 @@ export default function WriteOffsPage() {
 
   useEffect(() => { if (showCreateModal) fetchCustomers(); }, [showCreateModal, fetchCustomers]);
 
-  const handleRefresh = () => { setRefreshing(true); fetchWriteOffs(); };
-  const toggleSort = (field) => { setSortField(field); setSortDir((d) => d === "asc" ? "desc" : "asc"); };
+  const handleSort = (key) => {
+    const serverKey = key === "write_off_number" ? "write_off_number" : key === "amount" ? "amount" : "created_at";
+    setSortField(serverKey);
+    setSortDir((d) => d === "asc" ? "desc" : "asc");
+  };
 
   const openCreateModal = () => {
-    setCreateForm(emptyCreateForm(baseCurrency));
+    setCreateForm(emptyCreateForm(""));
     setSelectedCustomer(null);
     setInvoices([]);
     setFormError(null); setShowCreateModal(true);
@@ -168,7 +163,11 @@ export default function WriteOffsPage() {
     setCreateForm((p) => ({ ...p, write_off_source: source, invoice_id: "" }));
   };
 
+  const canSubmitAmount = createForm.customer_id && createForm.amount &&
+    (createForm.write_off_source !== "invoice" || createForm.invoice_id);
+
   const handleCreate = async () => {
+    if (!canSubmitAmount) return;
     try {
       setSaving(true); setFormError(null);
       const body = {
@@ -191,267 +190,276 @@ export default function WriteOffsPage() {
     } finally { setSaving(false); }
   };
 
-  const handleAction = async (action, actionFn) => {
-    setActionLoading(action);
-    try { await actionFn(); fetchWriteOffs(); }
-    catch (err) { setError(err?.detail || err?.message || `Failed to ${action} write-off`); }
+  const handleSubmitForApproval = async (id) => {
+    setActionLoading(`submit-${id}`);
+    try { await writeOffApi.submit(id); fetchWriteOffs(); }
+    catch (err) { setError(err?.detail || err?.message || "Failed to submit write-off"); }
     finally { setActionLoading(null); }
   };
 
-  const handleExportJSON = () => {
-    const blob = new Blob([JSON.stringify(writeOffs, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "write-offs.json"; a.click();
-    URL.revokeObjectURL(url);
+  const handleCancelConfirm = async () => {
+    const { id, reason } = cancelModal;
+    setCancelModal({ open: false, id: null, reason: "" });
+    setActionLoading(`cancel-${id}`);
+    try { await writeOffApi.cancel(id, reason || "Cancelled by user"); fetchWriteOffs(); }
+    catch (err) { setError(err?.detail || err?.message || "Failed to cancel write-off"); }
+    finally { setActionLoading(null); }
   };
 
-  const handleExportCSV = () => {
-    const headers = ["ID", "Number", "Type", "Source", "Status", `${singular} ID`, "Amount", "Currency", "Created"];
-    const rows = writeOffs.map((w) => [w.id, w.write_off_number, w.write_off_type, w.write_off_source, w.status, w.customer_id, w.amount, w.currency, w.created_at]);
-    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "write-offs.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
+  const hasActiveFilters = debouncedSearch || statusFilter || typeFilter;
 
-  const canSubmitAmount = createForm.customer_id && createForm.amount &&
-    (createForm.write_off_source !== "invoice" || createForm.invoice_id);
-
-  if (loading) {
-    return (
-      <HRPage title="Write-offs" subtitle="Manage write-offs and financial adjustments">
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200 border-t-brand-600" />
-        </div>
-      </HRPage>
-    );
-  }
-
-  if (error && writeOffs.length === 0) {
-    return (
-      <HRPage title="Write-offs" subtitle="Manage write-offs and financial adjustments">
-        <div className="flex flex-col items-center justify-center py-20">
-          <AlertCircle className="h-12 w-12 text-red-400 mb-4" />
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Something went wrong</h3>
-          <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
-          <button onClick={handleRefresh} className="inline-flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl font-medium hover:bg-brand-700">
-            <RefreshCw size={18} /> Try Again
+  const columns = [
+    {
+      key: "write_off_number",
+      label: "Number",
+      sortable: true,
+      render: (w) => <span className="font-medium text-slate-800">{w.write_off_number || `#${w.id}`}</span>,
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      render: (w) => <span>{w.customer_name || `#${w.customer_id}`}</span>,
+    },
+    {
+      key: "write_off_type",
+      label: "Type",
+      render: (w) => <span className="capitalize">{w.write_off_type?.replace(/_/g, " ")}</span>,
+    },
+    {
+      key: "write_off_source",
+      label: "Source",
+      render: (w) => <span className="capitalize">{w.write_off_source?.replace(/_/g, " ") || "—"}</span>,
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (w) => <StatusBadge status={w.status} />,
+    },
+    {
+      key: "amount",
+      label: "Amount",
+      align: "right",
+      sortable: true,
+      render: (w) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(w.amount, w.currency)}</span>,
+    },
+    {
+      key: "created_at",
+      label: "Date",
+      sortable: true,
+      render: (w) => <span className="whitespace-nowrap text-slate-500">{formatDisplayDate(w.created_at)}</span>,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      align: "right",
+      render: (w) => (
+        <div className="inline-flex items-center gap-1">
+          <button type="button" onClick={() => navigate(`/billing/write-offs/${w.id}`)} aria-label={`View write-off ${w.write_off_number || w.id}`}
+            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+            <Eye size={15} />
           </button>
+          {w.status === "draft" && (
+            <button type="button" onClick={() => handleSubmitForApproval(w.id)} disabled={actionLoading === `submit-${w.id}`}
+              aria-label={`Submit write-off ${w.write_off_number || w.id} for approval`}
+              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-amber-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+              {actionLoading === `submit-${w.id}` ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </button>
+          )}
+          {["draft", "pending_approval", "approved"].includes(w.status) && (
+            <button type="button" onClick={() => setCancelModal({ open: true, id: w.id, reason: "" })} disabled={!!actionLoading}
+              aria-label={`Cancel write-off ${w.write_off_number || w.id}`}
+              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+              {actionLoading === `cancel-${w.id}` ? <Loader2 size={15} className="animate-spin" /> : <Ban size={15} />}
+            </button>
+          )}
         </div>
-      </HRPage>
-    );
-  }
+      ),
+    },
+  ];
 
   return (
-    <HRPage title="Write-offs" subtitle="Write off bad debt, adjust balances, and record financial adjustments">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input type="text" placeholder="Search write-offs..." value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
-          </div>
-          <button onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-            <Filter size={18} />
-          </button>
-          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON"><Download size={18} /></button>
-          <button onClick={handleExportCSV} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export CSV"><FileText size={18} /></button>
-          <button onClick={() => navigate("/billing/write-offs/dashboard")} className="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">
-            Dashboard
-          </button>
-          <button onClick={openCreateModal} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
-            <Plus size={16} /> New Write-off
-          </button>
-        </div>
+    <div className="space-y-8">
+      <DashboardHeader
+        title="Write-offs"
+        subtitle="Write off bad debt, adjust balances, and record financial adjustments"
+        icon={ScrollText}
+        iconGradient={DOMAIN_ACCENTS.writeoffs.chip}
+        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments/dashboard" }, {}]}
+        lastUpdated={lastUpdated}
+        onRefresh={() => fetchWriteOffs()}
+        refreshing={refreshing}
+      />
+
+      {/* Server-backed KPIs */}
+      <div className={DASHBOARD_KPI_GRID}>
+        {stats === null ? (
+          Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)
+        ) : (
+          <>
+            <DashboardStatCard title="Total Write-offs" value={(stats.total_count || 0).toLocaleString()} icon={ScrollText} color={DOMAIN_ACCENTS.writeoffs.chip} />
+            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} color="from-amber-500 to-orange-500" />
+            <DashboardStatCard title="Executed Value" value={Number(stats.executed_value || 0)} color="from-emerald-500 to-teal-500" />
+            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} color="from-slate-400 to-slate-500" />
+          </>
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
-        </div>
-      )}
+      <div>
+        <ListToolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search write-offs..."
+          filtersOpen={showFilters || !!hasActiveFilters}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          primaryLabel="New Write-off"
+          onPrimary={openCreateModal}
+        >
+          <Button variant="secondary" onClick={() => navigate("/billing/write-offs/dashboard")}>Dashboard</Button>
+        </ListToolbar>
 
-      {showFilters && (
-        <div className="flex flex-wrap items-center gap-3 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-          <div className="relative">
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-              className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-              <option value="">All Statuses</option>
+        {showFilters && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
+              className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-          </div>
-          <div className="relative">
-            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-              className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by type"
+              className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               <option value="">All Types</option>
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("write_off_number")}>
-                  <span className="inline-flex items-center gap-1">Number <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{singular}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Source</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("amount")}>
-                  <span className="inline-flex items-center gap-1">Amount <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("created_at")}>
-                  <span className="inline-flex items-center gap-1">Date <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {writeOffs.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <ScrollText size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No write-offs found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter || typeFilter ? "Try adjusting your search or filters" : "Create your first write-off"}</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : writeOffs.map((w) => (
-                <tr key={w.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4 font-medium text-slate-800">{w.write_off_number || `#${w.id}`}</td>
-                  <td className="px-4 py-4 text-slate-600">{w.customer_name || `#${w.customer_id}`}</td>
-                  <td className="px-4 py-4"><span className="capitalize text-slate-600">{w.write_off_type?.replace(/_/g, " ")}</span></td>
-                  <td className="px-4 py-4"><span className="capitalize text-slate-600">{w.write_off_source?.replace(/_/g, " ") || "—"}</span></td>
-                  <td className="px-4 py-4"><StatusBadge status={w.status} /></td>
-                  <td className="px-4 py-4 text-right font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(w.amount, w.currency)}</td>
-                  <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(w.created_at)}</td>
-                  <td className="px-4 py-4 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <button onClick={() => navigate(`/billing/write-offs/${w.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="View"><Eye size={15} /></button>
-                      {w.status === "draft" && (
-                        <button onClick={() => handleAction("submit", () => writeOffApi.submit(w.id))} disabled={actionLoading === "submit"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-amber-600 transition-colors disabled:opacity-40" title="Submit for Approval"><Send size={15} /></button>
-                      )}
-                      {["draft", "pending_approval", "approved"].includes(w.status) && (
-                        <button onClick={() => handleAction("cancel", () => writeOffApi.cancel(w.id, "Cancelled by user"))} disabled={actionLoading === "cancel"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Cancel"><Ban size={15} /></button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
-          {total} total write-off(s)
-        </Pagination>
+        {error && writeOffs.length === 0 && !loading ? (
+          <ErrorState message={error} onRetry={() => fetchWriteOffs()} />
+        ) : (
+          <>
+            {error && (
+              <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+            <DataTable
+          columns={columns}
+          data={writeOffs}
+          loading={loading}
+          minWidth={960}
+          sortKey={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          rowKey={(w) => w.id}
+          emptyIcon={ScrollText}
+          emptyTitle={hasActiveFilters ? "No write-offs match your filters" : "No write-offs yet"}
+          emptyMessage={hasActiveFilters
+            ? "Try adjusting your search or filters."
+            : "Create your first write-off."}
+          emptyAction={!hasActiveFilters && !loading ? (
+            <Button variant="primary" onClick={openCreateModal}>New Write-off</Button>
+          ) : undefined}
+          footer={
+            <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
+              {total} total write-off(s)
+            </Pagination>
+          }
+        />
+          </>
+        )}
       </div>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-800">Create Write-off</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{singular} *</label>
-                <select value={createForm.customer_id} onChange={(e) => handleCustomerChange(e.target.value)}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <option value="">Select {getLabel("singularLower")}</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.display_name || c.company_name || `#${c.id}`}</option>)}
-                </select>
-                {selectedCustomer && (
-                  <p className="mt-1 text-xs text-slate-500">Outstanding balance: {formatDisplayCurrency(selectedCustomer.outstanding_balance || 0, "—", selectedCustomer.currency)}</p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Source *</label>
-                  <select value={createForm.write_off_source} onChange={(e) => handleSourceChange(e.target.value)}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Type *</label>
-                  <select value={createForm.write_off_type} onChange={(e) => setCreateForm((p) => ({ ...p, write_off_type: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {createForm.write_off_source === "invoice" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Invoice *</label>
-                  <select value={createForm.invoice_id} onChange={(e) => setCreateForm((p) => ({ ...p, invoice_id: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select invoice</option>
-                    {invoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number || `#${inv.id}`} — balance {formatDisplayCurrency(inv.balance_due, inv.currency)}</option>)}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
-                  <input type="number" min="0" step="0.01" value={createForm.amount} onChange={(e) => setCreateForm((p) => ({ ...p, amount: e.target.value }))}
-                    placeholder="0.00"
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Adjustment Type</label>
-                  <select value={createForm.adjustment_type} onChange={(e) => setCreateForm((p) => ({ ...p, adjustment_type: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">None</option>
-                    {ADJUSTMENT_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Reason</label>
-                <textarea value={createForm.reason} onChange={(e) => setCreateForm((p) => ({ ...p, reason: e.target.value }))}
-                  rows={2} placeholder="Reason for write-off"
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                <textarea value={createForm.notes} onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))}
-                  rows={2} placeholder="Additional internal notes"
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
-              <button onClick={handleCreate} disabled={saving || !canSubmitAmount}
-                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1.5">
-                {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Plus size={16} />} Create
-              </button>
-            </div>
-          </div>
+      {/* Create write-off */}
+      <FormModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={() => handleCreate()}
+        title="Create Write-off"
+        description="Write off bad debt or adjust an outstanding balance."
+        icon={ScrollText}
+        busy={saving}
+        error={formError}
+        submitLabel="Create"
+        size="lg"
+      >
+        <Field label="Customer" htmlFor="wo-customer" required>
+          <Select id="wo-customer" value={createForm.customer_id} onChange={(v) => handleCustomerChange(v)}
+            placeholder="Select customer"
+            options={customers.map((c) => ({ value: String(c.id), label: c.display_name || c.company_name || `#${c.id}` }))} />
+        </Field>
+        {selectedCustomer && (
+          <p className="-mt-2 text-xs text-slate-500">
+            Outstanding balance: {formatDisplayCurrency(selectedCustomer.outstanding_balance || 0, "—", selectedCustomer.currency)}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Source" htmlFor="wo-source" required>
+            <Select id="wo-source" value={createForm.write_off_source} onChange={(v) => handleSourceChange(v)}
+              placeholder={null}
+              options={SOURCE_OPTIONS} />
+          </Field>
+          <Field label="Type" htmlFor="wo-type" required>
+            <Select id="wo-type" value={createForm.write_off_type} onChange={(v) => setCreateForm((p) => ({ ...p, write_off_type: v }))}
+              placeholder={null}
+              options={TYPE_OPTIONS} />
+          </Field>
         </div>
-      )}
-    </HRPage>
+
+        {createForm.write_off_source === "invoice" && (
+          <Field label="Invoice" htmlFor="wo-invoice" required>
+            <Select id="wo-invoice" value={createForm.invoice_id} onChange={(v) => setCreateForm((p) => ({ ...p, invoice_id: v }))}
+              placeholder="Select invoice"
+              options={invoices.map((inv) => ({
+                value: String(inv.id),
+                label: `${inv.invoice_number || `#${inv.id}`} — balance ${formatDisplayCurrency(inv.balance_due, inv.currency)}`,
+              }))} />
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount" htmlFor="wo-amount" required>
+            <input id="wo-amount" type="number" min="0" step="0.01" placeholder="0.00"
+              value={createForm.amount}
+              onChange={(e) => setCreateForm((p) => ({ ...p, amount: e.target.value }))}
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </Field>
+          <Field label="Adjustment Type" htmlFor="wo-adjustment">
+            <Select id="wo-adjustment" value={createForm.adjustment_type} onChange={(v) => setCreateForm((p) => ({ ...p, adjustment_type: v }))}
+              placeholder="None"
+              options={ADJUSTMENT_TYPE_OPTIONS} />
+          </Field>
+        </div>
+        <Field label="Reason" htmlFor="wo-reason">
+          <textarea id="wo-reason" rows={2} placeholder="Reason for write-off"
+            value={createForm.reason}
+            onChange={(e) => setCreateForm((p) => ({ ...p, reason: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+        <Field label="Notes" htmlFor="wo-notes">
+          <textarea id="wo-notes" rows={2} placeholder="Additional internal notes"
+            value={createForm.notes}
+            onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+      </FormModal>
+
+      {/* Cancel write-off — asks for a reason instead of hardcoding one */}
+      <FormModal
+        open={cancelModal.open}
+        onClose={() => setCancelModal({ open: false, id: null, reason: "" })}
+        onSubmit={handleCancelConfirm}
+        title="Cancel Write-off"
+        description="This write-off will be cancelled and no balance changes will occur."
+        icon={Ban}
+        busy={!!actionLoading}
+        submitLabel="Cancel Write-off"
+        size="sm"
+      >
+        <Field label="Reason (optional)" htmlFor="wo-cancel-reason">
+          <textarea id="wo-cancel-reason" rows={2} placeholder="Why is this write-off being cancelled?"
+            value={cancelModal.reason}
+            onChange={(e) => setCancelModal((p) => ({ ...p, reason: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+      </FormModal>
+    </div>
   );
 }

@@ -322,14 +322,14 @@ export default function PaymentReportsPage() {
                 <AreaChart data={monthlyChartData}>
                   <defs>
                     <linearGradient id="colorCollected" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient>
-                    <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} /><stop offset="95%" stopColor="#FF7A00" stopOpacity={0} /></linearGradient>
+                    <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-accent-payments)" stopOpacity={0.3} /><stop offset="95%" stopColor="var(--color-accent-payments)" stopOpacity={0} /></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v, baseCurrency)} />
                   <Tooltip formatter={(v) => [formatCurrency(v, baseCurrency)]} />
                   <Area type="monotone" dataKey="value" stroke="#10b981" fill="url(#colorCollected)" strokeWidth={2} name="Collected" />
-                  <Area type="monotone" dataKey="net" stroke="#FF7A00" fill="url(#colorNet)" strokeWidth={2} name="Net" />
+                  <Area type="monotone" dataKey="net" stroke="var(--color-accent-payments)" fill="url(#colorNet)" strokeWidth={2} name="Net" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -363,7 +363,7 @@ export default function PaymentReportsPage() {
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Bar dataKey="value" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Cases" />
+                    <Bar dataKey="value" fill="var(--color-accent-payments)" radius={[4, 4, 0, 0]} name="Cases" />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -662,7 +662,7 @@ export default function PaymentReportsPage() {
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v, name) => [name === "count" ? v : formatCurrency(v, baseCurrency)]} />
                   <Line yAxisId="left" type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} name="Collected" />
-                  <Line yAxisId="right" type="monotone" dataKey="count" stroke="#FF7A00" strokeWidth={2} dot={{ r: 3 }} name="Count" />
+                  <Line yAxisId="right" type="monotone" dataKey="count" stroke="var(--color-accent-payments)" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                   <Line yAxisId="left" type="monotone" dataKey="net" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="Net" />
                 </LineChart>
               </ResponsiveContainer>

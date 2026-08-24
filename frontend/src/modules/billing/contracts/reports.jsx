@@ -230,14 +230,14 @@ export default function ContractReportsPage() {
                   <ResponsiveContainer width="100%" height={300}>
                     <AreaChart data={monthlyChartData}>
                       <defs>
-                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} /><stop offset="95%" stopColor="#FF7A00" stopOpacity={0} /></linearGradient>
+                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} /><stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} /></linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => formatDisplayCurrency(v, defaultCurrency)} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                       <Tooltip />
-                      <Area yAxisId="left" type="monotone" dataKey="value" stroke="#FF7A00" fill="url(#colorValue)" strokeWidth={2} name="Value" />
+                      <Area yAxisId="left" type="monotone" dataKey="value" stroke="var(--color-accent-invoicing)" fill="url(#colorValue)" strokeWidth={2} name="Value" />
                       <Line yAxisId="right" type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -394,7 +394,7 @@ export default function ContractReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatDisplayCurrency(v, defaultCurrency)} />
                     <Tooltip formatter={(v) => [formatDisplayCurrency(v, defaultCurrency)]} />
-                    <Bar dataKey="value" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Value" />
+                    <Bar dataKey="value" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} name="Value" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -406,7 +406,7 @@ export default function ContractReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#FF7A00" strokeWidth={2} dot={{ r: 3 }} name="Count" />
+                    <Line type="monotone" dataKey="count" stroke="var(--color-accent-invoicing)" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

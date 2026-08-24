@@ -295,7 +295,7 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
 function ModuleSpinner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F8F7F4]">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#FF7A00] border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
     </div>
   );
 }

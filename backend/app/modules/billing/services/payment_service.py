@@ -21,6 +21,8 @@ from app.modules.billing.models import (
     PaymentMethod,
     PaymentStatus,
     PaymentType,
+    Refund,
+    RefundStatus,
 )
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES
 from app.modules.billing.repositories.payment import (
@@ -142,15 +144,16 @@ class PaymentService:
     ) -> Payment:
         data = filter_allowed(data, PAYMENT_ALLOWED_FIELDS)
         customer = self.customer_service.get_customer(customer_id, organization_id)
-        if self.repo.exists(organization_id, payment_number=payment_number):
-            raise AlreadyExistsException("Payment", "payment_number")
-        # Normalize empty transaction ids to NULL so the unique
-        # (organization_id, transaction_id) constraint stays clean.
+        # Idempotent replay check first: a retried request with the same idempotency key
+        # (transaction_id) returns the existing payment row instead of failing.
         idempotency_key = (idempotency_key or "").strip() or None
         if idempotency_key:
             existing = self.repo.get_first(organization_id, transaction_id=idempotency_key)
             if existing:
                 return existing
+
+        if payment_number and self.repo.exists(organization_id, payment_number=payment_number):
+            raise AlreadyExistsException("Payment", "payment_number")
         # Check for duplicate transaction_id when provided in data
         tx_id = data.get("transaction_id")
         if tx_id:
@@ -260,6 +263,86 @@ class PaymentService:
             old_values={"status": old_status.value},
             new_values={"status": status},
         )
+        return payment
+
+    def reverse_allocations_for_refund(
+        self, organization_id: int, payment_id: int, amount: Decimal, updated_by: Optional[int] = None,
+    ) -> Payment:
+        """Reverse up to `amount` of a payment's PaymentAllocation rows,
+        restoring the affected invoices' balance_due/status, and flip the
+        payment to REFUNDED once its completed refunds cover the full
+        payment amount.
+
+        This is the single, shared implementation of "what a completed
+        refund does to allocation/invoice state" — used by both the Stripe
+        refund webhook path (StripeService) and the internal refund
+        approval workflow (RefundService.complete_refund). It deliberately
+        sets payment.status directly rather than going through
+        update_payment_status(): that method blocks any status change while
+        allocations still exist (to stop unrelated edits from desyncing the
+        ledger), but this method is itself the authorized way allocations
+        get removed, so by the time it decides the payment is fully
+        refunded, the allocations it just reversed are already gone.
+        """
+        payment = self.repo.get_by_id(payment_id, organization_id)
+        remaining = amount
+        total_allocated = sum(Decimal(str(a.amount)) for a in payment.allocations)
+        if remaining > total_allocated:
+            logger.warning(
+                "[BILLING] Refund %s exceeds allocated amount %s on payment %s; difference is a customer credit",
+                remaining, total_allocated, payment.id,
+            )
+        allocations = (
+            self.db.query(PaymentAllocation)
+            .filter(
+                PaymentAllocation.payment_id == payment.id,
+                PaymentAllocation.organization_id == organization_id,
+            )
+            .order_by(PaymentAllocation.created_at.desc())
+            .all()
+        )
+        for allocation in allocations:
+            if remaining <= 0:
+                break
+            take = min(remaining, Decimal(str(allocation.amount)))
+            invoice = (
+                self.db.query(Invoice)
+                .filter(
+                    Invoice.id == allocation.invoice_id,
+                    Invoice.organization_id == organization_id,
+                )
+                .with_for_update()
+                .first()
+            )
+            if invoice is None:
+                continue
+            invoice.paid_amount = Decimal(str(invoice.paid_amount or 0)) - take
+            invoice.balance_due = Decimal(str(invoice.total_amount or 0)) - invoice.paid_amount
+            if invoice.paid_amount <= 0:
+                invoice.status = InvoiceStatus.REFUNDED
+            elif invoice.balance_due > 0:
+                invoice.status = InvoiceStatus.PARTIALLY_PAID
+            else:
+                invoice.status = InvoiceStatus.PAID
+            allocation.amount = Decimal(str(allocation.amount)) - take
+            if allocation.amount <= 0:
+                self.db.delete(allocation)
+            remaining -= take
+        if remaining > 0:
+            self.audit.log_no_commit(
+                organization_id, updated_by, BillingAuditAction.REFUND, "Payment", payment.id,
+                new_values={"unallocated_refund_amount": str(remaining), "note": "refund exceeded allocation"},
+            )
+        total_refunded = sum(
+            Decimal(str(r.amount))
+            for r in self.db.query(Refund).filter(
+                Refund.payment_id == payment.id,
+                Refund.status == RefundStatus.COMPLETED,
+            ).all()
+        )
+        if total_refunded >= Decimal(str(payment.amount)):
+            payment.status = PaymentStatus.REFUNDED
+        safe_commit_and_refresh(self.db, payment)
         return payment
 
     def get_payment(self, payment_id: int, organization_id: int) -> Payment:

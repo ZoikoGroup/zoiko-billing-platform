@@ -9,7 +9,7 @@ import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-tax)", "var(--color-accent-tax-hover)", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
 const TABS = [
   { key: "overview", label: "Overview", icon: BarChart3 },
@@ -76,7 +76,7 @@ export default function TaxReportsPage() {
   }));
 
   const typeData = [
-    { name: "Sales Tax", value: fTaxRates.filter((r) => r.tax_type === "sales_tax").length, color: "#FF7A00" },
+    { name: "Sales Tax", value: fTaxRates.filter((r) => r.tax_type === "sales_tax").length, color: "var(--color-accent-tax)" },
     { name: "VAT", value: fTaxRates.filter((r) => r.tax_type === "vat").length, color: "#FF9B4D" },
     { name: "GST", value: fTaxRates.filter((r) => r.tax_type === "gst").length, color: "#f59e0b" },
     { name: "Withholding", value: fTaxRates.filter((r) => r.tax_type === "withholding").length, color: "#ef4444" },

@@ -22,7 +22,7 @@ import { Button, DataTable, StatGroup } from "../../../components/billing-ui";
 // Tax.tax_type is an enum on the backend (see TaxType in models.py); these are
 // the only values getSummary()'s breakdown_by_type can key on.
 const TAX_TYPE_META = {
-  sales_tax: { label: "Sales Tax", color: "#FF7A00" },
+  sales_tax: { label: "Sales Tax", color: "var(--color-accent-tax)" },
   vat: { label: "VAT", color: "#FF9B4D" },
   gst: { label: "GST", color: "#f59e0b" },
   service_tax: { label: "Service Tax", color: "#10b981" },
@@ -30,7 +30,7 @@ const TAX_TYPE_META = {
   customs: { label: "Customs", color: "#3b82f6" },
 };
 
-const CHART_COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
+const CHART_COLORS = ["var(--color-accent-tax)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 
 function buildTrailingMonths(count) {
   const now = new Date();

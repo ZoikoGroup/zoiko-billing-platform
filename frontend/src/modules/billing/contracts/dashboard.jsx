@@ -32,7 +32,7 @@ const STATUS_COLORS = {
   cancelled: "#94a3b8",
 };
 
-const BILLING_PERIOD_COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981"];
+const BILLING_PERIOD_COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981"];
 
 // Converts a contract's face value to a monthly-equivalent figure so contracts on
 // different billing cadences can be summed into one MRR/ARR-style figure. This is
@@ -174,7 +174,7 @@ export default function ContractDashboardPage() {
       counts[s] = (counts[s] || 0) + 1;
     });
     return Object.entries(counts)
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, color: STATUS_COLORS[name] || "#FF7A00" }))
+      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, color: STATUS_COLORS[name] || "var(--color-accent-invoicing)" }))
       .filter((d) => d.value > 0);
   }, [contracts]);
 
@@ -185,7 +185,7 @@ export default function ContractDashboardPage() {
       groups[s] = (groups[s] || 0) + contractValue(c);
     });
     return Object.entries(groups)
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, color: STATUS_COLORS[name] || "#FF7A00" }))
+      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, color: STATUS_COLORS[name] || "var(--color-accent-invoicing)" }))
       .filter((d) => d.value > 0);
   }, [contracts]);
 
@@ -387,8 +387,8 @@ export default function ContractDashboardPage() {
                     <AreaChart data={monthlyTrend}>
                       <defs>
                         <linearGradient id="contractTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                          <stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -397,7 +397,7 @@ export default function ContractDashboardPage() {
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip formatter={(v, name) => (name === "Value" ? formatDisplayCurrency(v, sampleCurrency) : v)} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Area yAxisId="left" type="monotone" dataKey="value" name="Value" stroke="#FF7A00" strokeWidth={2} fill="url(#contractTrendGrad)" />
+                      <Area yAxisId="left" type="monotone" dataKey="value" name="Value" stroke="var(--color-accent-invoicing)" strokeWidth={2} fill="url(#contractTrendGrad)" />
                       <Line yAxisId="right" type="monotone" dataKey="count" name="Count" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -467,7 +467,7 @@ export default function ContractDashboardPage() {
             </DashboardChartCard>
 
             <DashboardChartCard title="Upcoming Expiry" action={
-              <button onClick={() => navigate("/billing/contracts")} className="text-xs font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1 shrink-0">
+              <button onClick={() => navigate("/billing/contracts")} className="text-xs font-medium text-[var(--color-accent-invoicing)] hover:text-[var(--color-accent-invoicing-hover)] flex items-center gap-1 shrink-0">
                 View All <ChevronRight size={14} />
               </button>
             }>
