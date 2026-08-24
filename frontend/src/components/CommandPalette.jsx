@@ -147,7 +147,42 @@ export default function CommandPalette() {
                   )}
                   <span className="truncate">{item.label}</span>
                 </span>
-                {idx === activeIndex && <CornerDownLeft size={13} className="shrink-0 text-slate-500" />}
+                <span className="flex shrink-0 items-center gap-1">
+                  {item.kind === "result" && item.status && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        ["failed", "suspended", "deactivated", "expired", "denied"].includes(
+                          String(item.status).toLowerCase()
+                        )
+                          ? "bg-red-100 text-red-700"
+                          : ["active", "resolved", "closed", "monitoring", "mitigating"].includes(
+                              String(item.status).toLowerCase()
+                            )
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {String(item.status).toUpperCase()}
+                    </span>
+                  )}
+                  {item.kind === "result" && item.severity && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        ["p0", "p1"].includes(String(item.severity).toLowerCase())
+                          ? "bg-red-100 text-red-700"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {String(item.severity).toUpperCase()}
+                    </span>
+                  )}
+                  {item.kind === "result" && item.plane && (
+                    <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
+                      {item.plane}
+                    </span>
+                  )}
+                </span>
+                {idx === activeIndex && <CornerDownLeft size={13} className="ml-2 shrink-0 text-slate-500" />}
               </button>
             ))
           )}

@@ -60,6 +60,10 @@ class SettingResponse(BaseModel):
     # Server-computed (never trust a client-supplied value for this): tells
     # the frontend to render a masked, read-only value with no inline edit.
     is_sensitive: bool = False
+    # Phase 4 (G-02) — evidence of who last changed this setting. None means
+    # no recorded actor exists (row predates audit coverage) and renders as
+    # UNKNOWN, never as a fabricated name.
+    updated_by_email: Optional[str] = None
 
     @model_validator(mode="after")
     def _mask_sensitive_value(self):
@@ -68,6 +72,36 @@ class SettingResponse(BaseModel):
             if self.value:
                 self.value = MASKED_VALUE_PLACEHOLDER
         return self
+
+
+# ── Configuration governance read model (Phase 4, G-03) ────────────────────
+# One inventory composed from three real sources: DB platform settings,
+# code-declared operational thresholds (imported live from their owning
+# modules so this view cannot drift from enforcement), and environment
+# capability status (presence only). See configuration_service.py.
+
+
+class ConfigurationEntry(BaseModel):
+    name: str
+    category: str  # platform_setting | operational_threshold | environment_capability
+    value_kind: str  # value | masked | status
+    value: Optional[str] = None
+    is_sensitive: bool = False
+    source: str  # where the value actually lives ("platform_settings", "code:<module>::<attr>", "environment")
+    scope: str = "platform"
+    mutable: bool = False
+    effective_from: Optional[datetime] = None  # None => UNKNOWN (no recorded evidence)
+    last_updated_at: Optional[datetime] = None
+    updated_by: Optional[str] = None  # email or None => UNKNOWN
+    audit_status: str
+    description: Optional[str] = None
+
+
+class ConfigurationInventoryResponse(BaseModel):
+    generated_at: datetime
+    entries: list[ConfigurationEntry]
+    summary: dict[str, int] = {}
+    honesty_notes: list[str] = []
 
 
 class SuperAdminUserResponse(BaseModel):
@@ -651,6 +685,14 @@ class SearchResultItem(BaseModel):
     label: str
     route: str
     requires_access: bool
+    # Phase 4 (G-06) — status/plane enrichment so a hit can be triaged from
+    # the result list itself. status is the entity's real lifecycle/status
+    # state (UNKNOWN when the row predates governed state); plane labels
+    # which control plane the entity belongs to (TENANT vs PLATFORM) using
+    # the spec's vocabulary, not a new one.
+    status: Optional[str] = None
+    severity: Optional[str] = None
+    plane: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -727,12 +769,36 @@ class TriageSummaryResponse(BaseModel):
 
 
 
-class FinancialBillingsSummary(BaseModel):
-    total_invoices: int
+class FinancialCurrencyBucket(BaseModel):
+    """Per-currency monetary bucket (Phase 4 G-01). Amounts are NEVER summed
+    across currencies at this level or above."""
+
+    currency: str
+    invoice_count: int
     invoiced_amount: str
     collected_amount: str
     overdue_count: int
     overdue_amount: str
+
+
+class FinancialBillingsSummary(BaseModel):
+    """Plane 2 billings summary with currency honesty (Phase 4, G-01).
+
+    Scalar amounts are populated ONLY when every invoice shares one currency
+    (`currency_state == "single_currency"`). Multi-currency platforms carry
+    per-currency buckets with no combined figure; an empty database reports
+    ``unknown`` — never zero. ``overdue_count`` is a count and remains safe
+    to total across currencies.
+    """
+
+    total_invoices: int
+    currency_state: str  # "unknown" | "single_currency" | "multi_currency"
+    currencies: list[FinancialCurrencyBucket] = []
+    overdue_count: int = 0
+    basis: str = ""
+    invoiced_amount: Optional[str] = None
+    collected_amount: Optional[str] = None
+    overdue_amount: Optional[str] = None
 
 
 class FinancialRecoverySummary(BaseModel):
@@ -931,6 +997,24 @@ class SaasPlanOpenCount(BaseModel):
     open_subscriptions: int
 
 
+class SaasPlanPriceCoverage(BaseModel):
+    """Per-plan price-book coverage (Phase 4, G-04): explains WHERE the
+    unpriced open subscriptions named in MRR coverage actually live, so the
+    gap is actionable per plan instead of only visible in aggregate."""
+
+    plan_id: int
+    plan_code: str
+    plan_name: Optional[str] = None
+    open_subscriptions_total: int
+    open_subscriptions_priced: int
+    # unpriced_open_subscriptions == total - priced (denormalized for the UI)
+    unpriced_open_subscriptions: int
+    # True when the plan has at least one PUBLISHED catalog version with a
+    # non-null price_amount — i.e. a usable price book exists.
+    has_published_price_book: bool
+    priced_state: str  # fully_priced | partially_priced | unpriced
+
+
 class SaasMrrCurrencyItem(BaseModel):
     currency: str
     monthly_amount: Decimal
@@ -965,6 +1049,8 @@ class SaasSubscriptionsReporting(BaseModel):
     total_open: int
     by_status: dict[str, int]
     open_by_plan: list[SaasPlanOpenCount]
+    # Phase 4 (G-04) — per-plan price-book coverage explanation.
+    coverage_by_plan: list[SaasPlanPriceCoverage] = []
 
 
 class SaasReportingResponse(BaseModel):

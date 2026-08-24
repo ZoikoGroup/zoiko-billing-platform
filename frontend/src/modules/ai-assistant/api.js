@@ -5,10 +5,12 @@
  * Mirrors the Phase 4 conversation engine and Phase 6 action lifecycle.
  */
 
+import { getAccessToken } from "../../service/sessionStorage";
+
 const API_BASE = "/api/chatbot";
 
 function getToken() {
-  return localStorage.getItem("zoiko_billing_access") || "";
+  return getAccessToken() || "";
 }
 
 function authHeaders() {

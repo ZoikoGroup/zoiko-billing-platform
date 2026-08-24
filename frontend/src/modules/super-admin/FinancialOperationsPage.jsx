@@ -51,10 +51,89 @@ function IntegrityBadge({ state }) {
 
 // ── Individual section cards ──────────────────────────────────────────────────
 
-function F1BillingsCard({ billings }) {
-  const invoiced = parseFloat(billings?.invoiced_amount || "0");
-  const collected = parseFloat(billings?.collected_amount || "0");
-  const collectionRate = invoiced > 0 ? Math.round((collected / invoiced) * 100) : null;
+// ── G-01 currency-honest billings helpers ─────────────────────────────────────
+
+const CURRENCY_STATE_LABELS = {
+  single_currency: "SINGLE CURRENCY",
+  multi_currency: "MULTI-CURRENCY — NO COMBINED TOTAL",
+  unknown: "UNKNOWN — NO INVOICE DATA",
+};
+
+function CollectionRateBadge({ invoiced, collected }) {
+  const inv = parseFloat(invoiced || "0");
+  const col = parseFloat(collected || "0");
+  if (!(inv > 0)) return null;
+  const rate = Math.round((col / inv) * 100);
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+        rate >= 95
+          ? "bg-emerald-100 text-emerald-700"
+          : rate >= 80
+          ? "bg-amber-100 text-amber-700"
+          : "bg-rose-100 text-rose-700"
+      }`}
+    >
+      {rate}% collected
+    </span>
+  );
+}
+
+function CurrencyBucketTable({ currencies }) {
+  return (
+    <div className="mt-5 overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <th className="py-2 pr-4">Currency</th>
+            <th className="py-2 pr-4">Invoices</th>
+            <th className="py-2 pr-4">Invoiced</th>
+            <th className="py-2 pr-4">Collected</th>
+            <th className="py-2">Overdue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(currencies || []).map((c) => (
+            <tr key={c.currency} className="border-b border-slate-100 last:border-0">
+              <td className="py-2.5 pr-4 font-extrabold text-slate-900">{c.currency}</td>
+              <td className="py-2.5 pr-4 font-semibold text-slate-700">{c.invoice_count}</td>
+              <td className="py-2.5 pr-4 font-semibold text-slate-900">
+                {formatCurrency(c.invoiced_amount)}
+              </td>
+              <td className="py-2.5 pr-4 font-semibold text-emerald-800">
+                {formatCurrency(c.collected_amount)}
+              </td>
+              <td
+                className={`py-2.5 font-semibold ${
+                  c.overdue_count > 0 ? "text-red-800" : "text-slate-700"
+                }`}
+              >
+                {formatCurrency(c.overdue_amount)}
+                {c.overdue_count > 0 && (
+                  <span className="ml-1 text-xs text-red-600">({c.overdue_count})</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        Amounts are aggregated per currency and deliberately never summed across currencies — a
+        combined figure would be meaningless without an exchange-rate source. Invoice counts remain
+        safe to total.
+      </p>
+    </div>
+  );
+}
+
+export function F1BillingsCard({ billings }) {
+  const state = billings?.currency_state ?? "unknown";
+  const isSingle = state === "single_currency";
+  const isMulti = state === "multi_currency";
+  const isUnknown = state === "unknown";
+  const currencies = billings?.currencies ?? [];
+  const primaryCurrency = isSingle ? currencies[0]?.currency : null;
+  const overdueCount = billings?.overdue_count ?? 0;
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
@@ -67,71 +146,131 @@ function F1BillingsCard({ billings }) {
             F1 · Billings & Collections
           </h3>
         </div>
-        {collectionRate !== null && (
+        <div className="flex items-center gap-2">
+          {isSingle && (
+            <CollectionRateBadge
+              invoiced={billings?.invoiced_amount}
+              collected={billings?.collected_amount}
+            />
+          )}
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-              collectionRate >= 95
-                ? "bg-emerald-100 text-emerald-700"
-                : collectionRate >= 80
+              state === "multi_currency"
+                ? "bg-blue-100 text-blue-800"
+                : isUnknown
                 ? "bg-amber-100 text-amber-700"
-                : "bg-rose-100 text-rose-700"
+                : "bg-slate-100 text-slate-700"
             }`}
           >
-            {collectionRate}% collected
+            {CURRENCY_STATE_LABELS[state] ?? state}
+            {primaryCurrency ? ` · ${primaryCurrency}` : ""}
           </span>
-        )}
-      </div>
-      <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            Total Invoices
-          </p>
-          <p className="mt-1 text-2xl font-extrabold text-slate-900">
-            {billings?.total_invoices ?? "—"}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            Invoiced
-          </p>
-          <p className="mt-1 text-lg font-extrabold text-slate-900">
-            {formatCurrency(billings?.invoiced_amount)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-emerald-50 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-            Collected
-          </p>
-          <p className="mt-1 text-lg font-extrabold text-emerald-800">
-            {formatCurrency(billings?.collected_amount)}
-          </p>
-        </div>
-        <div
-          className={`rounded-2xl border p-4 ${
-            (billings?.overdue_count ?? 0) > 0
-              ? "border-red-100 bg-red-50"
-              : "border-slate-100 bg-slate-50"
-          }`}
-        >
-          <p
-            className={`text-[10px] font-bold uppercase tracking-wider ${
-              (billings?.overdue_count ?? 0) > 0 ? "text-red-700" : "text-slate-600"
-            }`}
-          >
-            Overdue ({billings?.overdue_count ?? 0})
-          </p>
-          <p
-            className={`mt-1 text-lg font-extrabold ${
-              (billings?.overdue_count ?? 0) > 0 ? "text-red-800" : "text-slate-900"
-            }`}
-          >
-            {formatCurrency(billings?.overdue_amount)}
-          </p>
         </div>
       </div>
+
+      {isMulti ? (
+        <>
+          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                Total Invoices
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                {billings?.total_invoices ?? "—"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                Currencies
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-900">{currencies.length}</p>
+            </div>
+            <div
+              className={`rounded-2xl border p-4 ${
+                overdueCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"
+              }`}
+            >
+              <p
+                className={`text-[10px] font-bold uppercase tracking-wider ${
+                  overdueCount > 0 ? "text-red-700" : "text-slate-600"
+                }`}
+              >
+                Overdue Count
+              </p>
+              <p
+                className={`mt-1 text-2xl font-extrabold ${
+                  overdueCount > 0 ? "text-red-800" : "text-slate-900"
+                }`}
+              >
+                {overdueCount}
+              </p>
+            </div>
+          </div>
+          <CurrencyBucketTable currencies={currencies} />
+        </>
+      ) : isUnknown ? (
+        <div className="mt-5 flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <HelpCircle size={22} className="mt-0.5 shrink-0 text-amber-500" />
+          <div className="text-xs">
+            <p className="font-bold text-slate-900">No invoice data — totals UNKNOWN</p>
+            <p className="mt-1 text-slate-600">
+              An empty platform reports UNKNOWN, never zero: with no invoices there is no monetary
+              figure to report, so none is shown.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              Total Invoices
+            </p>
+            <p className="mt-1 text-2xl font-extrabold text-slate-900">
+              {billings?.total_invoices ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              Invoiced {primaryCurrency ? `(${primaryCurrency})` : ""}
+            </p>
+            <p className="mt-1 text-lg font-extrabold text-slate-900">
+              {formatCurrency(billings?.invoiced_amount)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              Collected {primaryCurrency ? `(${primaryCurrency})` : ""}
+            </p>
+            <p className="mt-1 text-lg font-extrabold text-emerald-800">
+              {formatCurrency(billings?.collected_amount)}
+            </p>
+          </div>
+          <div
+            className={`rounded-2xl border p-4 ${
+              overdueCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"
+            }`}
+          >
+            <p
+              className={`text-[10px] font-bold uppercase tracking-wider ${
+                overdueCount > 0 ? "text-red-700" : "text-slate-600"
+              }`}
+            >
+              Overdue ({overdueCount})
+            </p>
+            <p
+              className={`mt-1 text-lg font-extrabold ${
+                overdueCount > 0 ? "text-red-800" : "text-slate-900"
+              }`}
+            >
+              {formatCurrency(billings?.overdue_amount)}
+            </p>
+          </div>
+        </div>
+      )}
       <p className="mt-4 text-xs text-slate-500">
-        Domain B aggregate across all tenant organizations via authoritative billing read models. Currency
-        amounts are raw database values — no exchange-rate normalization applied.
+        Domain B aggregate across all tenant organizations via authoritative billing read models.
+        Monetary totals are computed per currency and are never summed across different currencies.
+        {billings?.basis ? ` ${billings.basis}` : ""}
       </p>
     </div>
   );

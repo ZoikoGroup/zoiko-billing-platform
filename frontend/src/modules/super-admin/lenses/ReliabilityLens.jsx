@@ -1,37 +1,123 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Clock, HelpCircle, Server, Database, Radio } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { getApiTelemetry, getConfigurationInventory } from "../../../service/commandCenterService";
+import { api } from "../../../service/api";
+import { useAuth } from "../../../context/AuthContext";
+import { canReadReliabilityTelemetry, canReadConfiguration } from "../../../config/roles";
+
+// R1/R2 status → display mapping. Every status value here must trace to a real
+// backend signal or an honest absence-of-signal declaration — never a fabricated
+// "Healthy"/"Configured"/"Connected" default. See
+// docs/SUPER_ADMIN_PHASE3_ARCHITECTURE_REMEDIATION_REPORT.md Mandatory Fix 3.
+const STATUS_STYLE = {
+  HEALTHY: "text-emerald-700",
+  CONFIGURED: "text-emerald-700",
+  DEGRADED: "text-amber-600",
+  FAILED: "text-rose-700",
+  NOT_CONFIGURED: "text-amber-600",
+  NOT_MONITORED: "text-amber-600",
+  UNKNOWN: "text-amber-600",
+  CHECKING: "text-slate-500",
+};
+
+function StatusIcon({ status }) {
+  if (status === "HEALTHY" || status === "CONFIGURED") return <CheckCircle2 size={10} />;
+  if (status === "FAILED") return <AlertTriangle size={10} />;
+  return <HelpCircle size={10} />;
+}
 
 export default function ReliabilityLens({ telemetry, jobs }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canReadTelemetry = canReadReliabilityTelemetry(user?.platform_role);
+  const canReadConfig = canReadConfiguration(user?.platform_role);
+  // Phase 4 (G-05) — the SLO card reads REAL measured server-side latency
+  // and error rates (core/api_metrics.py). No samples since process start =>
+  // UNKNOWN; never a fabricated green number.
+  const [apiStats, setApiStats] = useState(null);
+  // R1 — real DB liveness signal, same /health check ReliabilityPage.jsx uses.
+  const [dbHealth, setDbHealth] = useState({ status: "CHECKING" });
+  // R2 — real environment-capability evidence from ConfigurationGovernanceService.
+  const [configEntries, setConfigEntries] = useState(null);
+
+  useEffect(() => {
+    if (!canReadTelemetry) return undefined;
+    let cancelled = false;
+    getApiTelemetry()
+      .then((res) => { if (!cancelled) setApiStats(res); })
+      .catch(() => { if (!cancelled) setApiStats(null); });
+    return () => { cancelled = true; };
+  }, [canReadTelemetry]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/health", { auth: false })
+      .then((res) => {
+        if (cancelled) return;
+        setDbHealth({ status: res?.database === "connected" ? "HEALTHY" : "FAILED" });
+      })
+      .catch(() => { if (!cancelled) setDbHealth({ status: "UNKNOWN" }); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!canReadConfig) return undefined;
+    let cancelled = false;
+    getConfigurationInventory()
+      .then((res) => { if (!cancelled) setConfigEntries(res?.entries || []); })
+      .catch(() => { if (!cancelled) setConfigEntries([]); }); // settled, but inconclusive => UNKNOWN below, never CHECKING forever
+    return () => { cancelled = true; };
+  }, [canReadConfig]);
+
+  const hasSamples = Boolean(apiStats && apiStats.sample_count > 0);
+  const errorRatePct =
+    apiStats?.error_rate != null ? `${(apiStats.error_rate * 100).toFixed(2)}%` : null;
+  const clientRatePct =
+    apiStats?.client_error_rate != null ? `${(apiStats.client_error_rate * 100).toFixed(2)}%` : null;
 
   const jobList = jobs || [];
   const failingJobs = jobList.filter((j) => j.last_status === "failed" || j.freshness === "unknown");
 
-  // R1: Subsystem Health with honest status reporting (ZB-SA-CMD-003 §12 / Phase 2D)
-  // Monitored via real signals or explicitly UNKNOWN/Not monitored.
+  function configuredCapability(name) {
+    if (configEntries === null) return null; // request still in flight — render CHECKING, not a guess
+    const entry = configEntries.find((e) => e.name === name);
+    if (!entry) return "UNKNOWN"; // settled, but no evidence found for this capability — never fabricated
+    return entry.value === "CONFIGURED" ? "CONFIGURED" : "NOT_CONFIGURED";
+  }
+
+  // R1: Subsystem Health — ZB-SA-CMD-003 §12 / Phase 2D. Only "Database & Core" has
+  // a real backend liveness signal (/health). Every other listed subsystem has no
+  // dedicated health read-model in this codebase today, so it is reported honestly
+  // as NOT_MONITORED rather than a fabricated "Healthy" default.
   const subsystems = [
-    { name: "Database & Core", status: "Healthy", signal: "Liveness Check", monitored: true },
-    { name: "Identity & Auth", status: "Healthy", signal: "Token Validation", monitored: true },
-    { name: "Commercial Plans", status: "Healthy", signal: "Read Model", monitored: true },
-    { name: "Subscriptions", status: "Healthy", signal: "Read Model", monitored: true },
-    { name: "Rating Engine", status: "Unknown", signal: "Job Telemetry", monitored: false },
-    { name: "Invoicing", status: "Healthy", signal: "Allocation Svc", monitored: true },
-    { name: "Payment Allocation", status: "Healthy", signal: "Consistency Check", monitored: true },
-    { name: "Ledger", status: "Unknown", signal: "Not Monitored", monitored: false },
-    { name: "Reconciliation", status: "Unknown", signal: "ISS-017 Blocked", monitored: false },
-    { name: "Notifications", status: "Unknown", signal: "Not Monitored", monitored: false },
-    { name: "Webhooks", status: "Unknown", signal: "Not Monitored", monitored: false },
-    { name: "Reporting", status: "Healthy", signal: "Read Model", monitored: true },
+    { name: "Database & Core", status: dbHealth.status, signal: "Liveness Check (/health)" },
+    { name: "Identity & Auth", status: "NOT_MONITORED", signal: "No dedicated health probe" },
+    { name: "Commercial Plans", status: "NOT_MONITORED", signal: "No dedicated health probe" },
+    { name: "Subscriptions", status: "NOT_MONITORED", signal: "No dedicated health probe" },
+    { name: "Rating Engine", status: "NOT_MONITORED", signal: "Job Telemetry" },
+    { name: "Invoicing", status: "NOT_MONITORED", signal: "No dedicated health probe" },
+    { name: "Payment Allocation", status: "NOT_MONITORED", signal: "No dedicated health probe" },
+    { name: "Ledger", status: "NOT_MONITORED", signal: "Not Monitored" },
+    { name: "Reconciliation", status: "NOT_MONITORED", signal: "ISS-017 Blocked" },
+    { name: "Notifications", status: "NOT_MONITORED", signal: "Not Monitored" },
+    { name: "Webhooks", status: "NOT_MONITORED", signal: "Not Monitored" },
+    { name: "Reporting", status: "NOT_MONITORED", signal: "No dedicated health probe" },
   ];
 
-  // R2: Integration Health with honest status reporting
+  // R2: Integration Health — sourced from ConfigurationGovernanceService's
+  // environment-capability entries (presence-only, real evidence). Integrations
+  // with no backend code path at all (tax providers, ERP sync, webhook relay) have
+  // nothing to be "configured" — reported as NOT_MONITORED, never green.
+  const stripeGateway = canReadConfig ? configuredCapability("stripe.gateway") : null;
+  const smtpProvider = canReadConfig ? configuredCapability("smtp.provider") : null;
   const integrations = [
-    { name: "Stripe Payment Gateway", status: "Configured (Domain B)", monitored: true },
-    { name: "Tax Providers (Avalara/TaxJar)", status: "Not Monitored / Unknown", monitored: false },
-    { name: "Accounting / ERP Sync", status: "Not Integrated / Unknown", monitored: false },
-    { name: "Outbound Webhooks Relay", status: "Not Monitored / Unknown", monitored: false },
-    { name: "SMTP Email Service", status: "Configured via Platform Settings", monitored: true },
+    { name: "Stripe Payment Gateway", status: stripeGateway ?? (canReadConfig ? "CHECKING" : "UNKNOWN") },
+    { name: "Tax Providers (Avalara/TaxJar)", status: "NOT_MONITORED" },
+    { name: "Accounting / ERP Sync", status: "NOT_MONITORED" },
+    { name: "Outbound Webhooks Relay", status: "NOT_MONITORED" },
+    { name: "SMTP Email Service", status: smtpProvider ?? (canReadConfig ? "CHECKING" : "UNKNOWN") },
   ];
 
   return (
@@ -52,14 +138,11 @@ export default function ReliabilityLens({ telemetry, jobs }) {
             <div key={svc.name} className="rounded-xl border border-slate-100 bg-slate-50 p-2 text-center">
               <span className="block font-bold text-slate-800 truncate" title={svc.name}>{svc.name}</span>
               <span
-                className={`mt-1 inline-flex items-center gap-0.5 text-[10px] font-extrabold ${
-                  svc.monitored && svc.status === "Healthy"
-                    ? "text-emerald-700"
-                    : "text-amber-600"
-                }`}
+                className={`mt-1 inline-flex items-center gap-0.5 text-[10px] font-extrabold ${STATUS_STYLE[svc.status] || "text-amber-600"}`}
+                title={svc.signal}
               >
-                {svc.monitored ? <CheckCircle2 size={10} /> : <HelpCircle size={10} />}
-                {svc.status}
+                <StatusIcon status={svc.status} />
+                {svc.status.replace(/_/g, " ")}
               </span>
             </div>
           ))}
@@ -81,13 +164,9 @@ export default function ReliabilityLens({ telemetry, jobs }) {
           {integrations.map((item) => (
             <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <span className="font-semibold text-slate-800">{item.name}</span>
-              <span
-                className={`inline-flex items-center gap-1 font-bold ${
-                  item.monitored ? "text-emerald-700" : "text-amber-600"
-                }`}
-              >
-                {item.monitored ? <CheckCircle2 size={12} /> : <HelpCircle size={12} />}
-                {item.status}
+              <span className={`inline-flex items-center gap-1 font-bold ${STATUS_STYLE[item.status] || "text-amber-600"}`}>
+                <StatusIcon status={item.status} />
+                {item.status.replace(/_/g, " ")}
               </span>
             </div>
           ))}
@@ -125,24 +204,72 @@ export default function ReliabilityLens({ telemetry, jobs }) {
         </div>
       </div>
 
-      {/* R4: SLO / Error Budget */}
+      {/* R4: SLO / Error Budget — real measured telemetry (G-05) */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">R4 · SLO &amp; Error Budget</h3>
-          <span className="text-xs font-semibold text-emerald-700">99.95% Target</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">R4 · API Latency &amp; Errors</h3>
+          <span className="text-xs font-semibold text-slate-600">
+            /api/super-admin/* · last {hasSamples ? Math.round((apiStats.window_seconds || 0) / 60) : 60} min
+          </span>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">p95 Handling Budget</span>
-            <p className="mt-1 text-xl font-extrabold text-emerald-700">&le; 200ms</p>
-            <span className="text-[11px] text-slate-600">Measured via api_metrics</span>
+        {!canReadTelemetry ? (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-xs">
+            <HelpCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
+            <p className="text-amber-800">
+              Not available — your platform role does not include the
+              reliability.read capability. Ask a Platform Administrator for access.
+            </p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Active Incidents</span>
-            <p className="mt-1 text-xl font-extrabold text-slate-800">0 P0</p>
-            <span className="text-[11px] text-slate-600">Error budget intact</span>
+        ) : !hasSamples ? (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs">
+            <HelpCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
+            <p className="text-slate-600">
+              UNKNOWN — fewer than one request recorded since process start (telemetry is
+              single-process and resets on restart). No fabricated figures are shown.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                p95 / p50 handling
+              </span>
+              <p
+                className={`mt-1 text-xl font-extrabold ${
+                  apiStats.p95_ms <= apiStats.p95_budget_ms ? "text-emerald-700" : "text-amber-700"
+                }`}
+              >
+                {apiStats.p95_ms}ms <span className="text-sm font-bold text-slate-500">/ {apiStats.p50_ms}ms</span>
+              </p>
+              <span className="text-[11px] text-slate-600">
+                {apiStats.sample_count} requests · budget {apiStats.p95_budget_ms}ms · max{" "}
+                {apiStats.max_ms}ms
+              </span>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                Error rates
+              </span>
+              <p
+                className={`mt-1 text-xl font-extrabold ${
+                  apiStats.error_count > 0 ? "text-red-700" : "text-emerald-700"
+                }`}
+                title={
+                  errorRatePct == null
+                    ? "No sample carried a known HTTP status — rate not computable."
+                    : `${apiStats.error_count} server error(s) over ${apiStats.sample_count} requests.`
+                }
+              >
+                {errorRatePct ?? "UNKNOWN"}
+              </p>
+              <span className="text-[11px] text-slate-600">
+                {clientRatePct != null ? `${clientRatePct} client errors` : "client rate unknown"}
+                {apiStats.status_unknown_count > 0 &&
+                  ` · ${apiStats.status_unknown_count} sample(s) without status`}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

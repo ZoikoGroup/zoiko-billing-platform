@@ -156,7 +156,9 @@ async def request_id_middleware(request: Request, call_next):
         try:
             import app.core.api_metrics as api_metrics
 
-            api_metrics.record((time.perf_counter() - started) * 1000)
+            api_metrics.record(
+                (time.perf_counter() - started) * 1000, response.status_code
+            )
         except Exception:  # noqa: BLE001 - telemetry must never break a request
             pass
     response.headers["X-Request-ID"] = request_id

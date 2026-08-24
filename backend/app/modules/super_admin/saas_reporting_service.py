@@ -98,6 +98,9 @@ class SaasReportingService:
                 "total_open": sum(i["open_subscriptions"] for i in open_by_plan),
                 "by_status": subs_by_status,
                 "open_by_plan": open_by_plan,
+                # Phase 4 (G-04): explains WHERE unpriced open subscriptions
+                # live, per plan — the aggregate coverage number alone cannot.
+                "coverage_by_plan": self._coverage_by_plan(),
             },
             "mrr": mrr,
             "plane": "PLATFORM",
@@ -157,6 +160,85 @@ class SaasReportingService:
             }
             for plan_id, plan_code, plan_name, open_count in plan_join
         ]
+
+    def _coverage_by_plan(self) -> list[dict]:
+        """Per-plan price-book coverage (Phase 4, G-04).
+
+        For every plan carrying at least one open subscription: how many of
+        those subscriptions reference a PUBLISHED catalog version with a
+        non-null price_amount (i.e. actually contribute to MRR), whether the
+        plan has any usable published price book at all, and where the gap
+        is. Counts are real rows; nothing is estimated.
+        """
+        from app.modules.commercial.models import CommercialPlan
+
+        plan_join = (
+            self.db.query(
+                CommercialPlan.id,
+                CommercialPlan.plan_code,
+                CommercialPlan.plan_name,
+                func.count(CommercialSubscription.id).label("open_count"),
+            ).join(
+                CommercialSubscription,
+                CommercialSubscription.commercial_plan_id == CommercialPlan.id,
+            ).filter(
+                CommercialSubscription.status.in_(list(_OPEN_SUB_STATUSES)),
+            ).group_by(
+                CommercialPlan.id, CommercialPlan.plan_code, CommercialPlan.plan_name,
+            ).order_by(CommercialPlan.plan_code).all()
+        )
+
+        priced_rows = (
+            self.db.query(
+                CommercialSubscription.commercial_plan_id,
+                func.count(CommercialSubscription.id),
+            ).join(
+                CommercialPlanVersion,
+                CommercialSubscription.catalog_version_id == CommercialPlanVersion.id,
+            ).filter(
+                CommercialSubscription.status.in_(list(_OPEN_SUB_STATUSES)),
+                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+                CommercialPlanVersion.price_amount.isnot(None),
+            ).group_by(CommercialSubscription.commercial_plan_id).all()
+        )
+        priced_by_plan = {plan_id: int(count) for plan_id, count in priced_rows}
+
+        plans_with_price_book = {
+            plan_id for (plan_id,) in (
+                self.db.query(func.distinct(CommercialPlanVersion.plan_id))
+                .filter(
+                    CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+                    CommercialPlanVersion.price_amount.isnot(None),
+                )
+                .all()
+            )
+        }
+
+        coverage = []
+        for plan_id, plan_code, plan_name, open_count in plan_join:
+            total_open = int(open_count)
+            priced_open = priced_by_plan.get(plan_id, 0)
+            unpriced_open = total_open - priced_open
+            has_price_book = plan_id in plans_with_price_book
+            if priced_open == 0:
+                state = "unpriced"
+            elif unpriced_open > 0:
+                state = "partially_priced"
+            else:
+                state = "fully_priced"
+            coverage.append(
+                {
+                    "plan_id": plan_id,
+                    "plan_code": plan_code,
+                    "plan_name": plan_name,
+                    "open_subscriptions_total": total_open,
+                    "open_subscriptions_priced": priced_open,
+                    "unpriced_open_subscriptions": unpriced_open,
+                    "has_published_price_book": has_price_book,
+                    "priced_state": state,
+                }
+            )
+        return coverage
 
     def _compute_mrr(self) -> dict:
         """Compute MRR strictly from priced published catalog versions.

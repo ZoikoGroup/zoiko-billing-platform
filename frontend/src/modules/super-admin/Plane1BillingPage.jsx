@@ -94,6 +94,73 @@ export default function Plane1BillingPage() {
     []
   );
 
+  // Phase 4 (G-04) — explains WHERE unpriced open subscriptions live, per
+  // plan, so the MRR coverage gap is actionable instead of only aggregate.
+  const PRICE_STATE_STYLES = {
+    fully_priced: { label: "FULLY PRICED", cls: "bg-emerald-100 text-emerald-700" },
+    partially_priced: { label: "PARTIALLY PRICED", cls: "bg-amber-100 text-amber-800" },
+    unpriced: { label: "UNPRICED", cls: "bg-red-100 text-red-700" },
+  };
+  const coverageColumns = React.useMemo(
+    () => [
+      { key: "plan_code", label: "Plan code", render: (r) => <span className="font-medium text-slate-700">{r.plan_code}</span> },
+      {
+        key: "total",
+        label: "Open subs",
+        align: "right",
+        render: (r) => <span className="tabular-nums font-semibold text-slate-800">{r.open_subscriptions_total}</span>,
+      },
+      {
+        key: "priced",
+        label: "Priced",
+        align: "right",
+        render: (r) => <span className="tabular-nums font-semibold text-emerald-800">{r.open_subscriptions_priced}</span>,
+      },
+      {
+        key: "unpriced_open_subscriptions",
+        label: "Unpriced",
+        align: "right",
+        render: (r) => (
+          <span className={`tabular-nums font-semibold ${r.unpriced_open_subscriptions > 0 ? "text-red-700" : "text-slate-500"}`}>
+            {r.unpriced_open_subscriptions}
+          </span>
+        ),
+      },
+      {
+        key: "price_book",
+        label: "Price book",
+        render: (r) => (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              r.has_published_price_book ? "bg-slate-100 text-slate-600" : "bg-red-100 text-red-700"
+            }`}
+            title={
+              r.has_published_price_book
+                ? "At least one PUBLISHED catalog version carries a non-null price."
+                : "No PUBLISHED catalog version with a non-null price exists for this plan — its open subscriptions can never contribute to MRR until one is published and referenced."
+            }
+          >
+            {r.has_published_price_book ? "PUBLISHED" : "NO PUBLISHED PRICE"}
+          </span>
+        ),
+      },
+      {
+        key: "priced_state",
+        label: "Coverage state",
+        render: (r) => {
+          const style = PRICE_STATE_STYLES[r.priced_state] || PRICE_STATE_STYLES.unpriced;
+          return (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${style.cls}`}>
+              {style.label}
+            </span>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   function mrrValue() {
     if (!mrr) return "—";
     if (mrr.state === "unknown") return "UNKNOWN";
@@ -205,6 +272,25 @@ export default function Plane1BillingPage() {
                   emptyMessage="Open subscriptions appear here grouped by plan with real counts."
                   minWidth={480}
                 />
+              </div>
+
+              <div className="mt-5">
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-800">
+                  Price-book coverage by plan
+                </h3>
+                <DataTable
+                  columns={coverageColumns}
+                  data={report.subscriptions.coverage_by_plan || []}
+                  loading={false}
+                  emptyTitle="No plans with open subscriptions"
+                  emptyMessage="Per-plan coverage appears here once open subscriptions exist."
+                  minWidth={720}
+                />
+                <p className="mt-2 text-xs text-slate-600">
+                  A subscription contributes to MRR only when it references a PUBLISHED catalog
+                  version with a non-null price. This table shows exactly which plans still have
+                  unpriced open subscriptions and whether a usable price book exists for them.
+                </p>
               </div>
 
                       <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-600">

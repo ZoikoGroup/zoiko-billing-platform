@@ -239,6 +239,7 @@ const NAV_SECTIONS = [
       { label: "Privileged Sessions", href: "/super-admin/governance/privileged-sessions", icon: ShieldCheck },
       { label: "Security Events", href: "/super-admin/governance/security-events", icon: Bell },
       { label: "Data Governance", href: "/super-admin/governance/data", icon: ClipboardList },
+      { label: "Configuration Governance", href: "/super-admin/governance/configuration", icon: Settings },
     ],
   },
   {

@@ -1,39 +1,27 @@
+import {
+  getAccessToken,
+  getRefreshToken,
+  getStoredUser,
+  setStoredUser,
+  setStoredSession,
+  clearStoredSession,
+} from "../service/sessionStorage";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
 
-const TOKEN_KEY = "zoiko_billing_access";
-const REFRESH_KEY = "zoiko_billing_refresh";
-const USER_KEY = "zoiko_billing_user";
-
-export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY);
-}
+// Storage is delegated to service/sessionStorage.js (the single source of
+// truth — see that file's header comment / Mandatory Fix 5). This module
+// keeps its own `setSession(data)` argument shape (`{access_token,
+// refresh_token, user}`, matching the raw /api/auth/login response body)
+// since every caller in this codebase already depends on it.
+export { getAccessToken, getRefreshToken, getStoredUser, setStoredUser };
 
 export function setSession(data) {
-  localStorage.setItem(TOKEN_KEY, data.access_token);
-  localStorage.setItem(REFRESH_KEY, data.refresh_token);
-  localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-}
-
-export function getStoredUser() {
-  try {
-    return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredUser(user) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  setStoredSession({ accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user });
 }
 
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  localStorage.removeItem(USER_KEY);
+  clearStoredSession();
 }
 
 async function refreshSession() {

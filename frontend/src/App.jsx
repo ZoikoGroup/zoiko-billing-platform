@@ -130,6 +130,7 @@ const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccess
 const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
 const LifecycleOnboardingPage = lazy(() => import("./modules/super-admin/LifecycleOnboardingPage"));
 const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
+const ConfigurationGovernancePage = lazy(() => import("./modules/super-admin/ConfigurationGovernancePage"));
 const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
 const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
 const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
@@ -250,6 +251,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/financial/usage", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial/tax", element: <FinancialOperationsPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/integrations", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/gateways", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/connectors", element: <ReliabilityPage /> },
   { path: "/super-admin/integrations/webhooks", element: <ReliabilityPage /> },
@@ -262,6 +264,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/governance/privileged-sessions", element: <SupportAccessPage /> },
   { path: "/super-admin/governance/security-events", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance/data", element: <GovernancePage /> },
+{ path: "/super-admin/governance/configuration", element: <ConfigurationGovernancePage /> },
   { path: "/super-admin/reliability", element: <ReliabilityPage /> },
   { path: "/super-admin/reliability/incidents", element: <TriagePage /> },
   { path: "/super-admin/reliability/reprocessing", element: <TriagePage /> },

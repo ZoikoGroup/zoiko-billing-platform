@@ -63,6 +63,15 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
         PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR,
     },
     "circuit_breaker.manage": {PlatformRole.SECURITY_OPERATOR},
+    # ── Phase 4 (G-02/G-03) — configuration governance ────────────────────
+    # Reading the configuration inventory is an operator-level need (every
+    # platform role may need to see what thresholds/integrations exist);
+    # MUTATING platform settings is a security-operator function, audited.
+    "platform_config.read": {
+        PlatformRole.SUPPORT_OPERATOR, PlatformRole.SECURITY_OPERATOR,
+        PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR,
+    },
+    "platform_config.manage": {PlatformRole.SECURITY_OPERATOR},
     "platform_role.manage": set(),  # PLATFORM_ADMINISTRATOR only — see below
 }
 
