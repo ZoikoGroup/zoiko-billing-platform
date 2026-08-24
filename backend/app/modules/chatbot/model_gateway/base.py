@@ -64,6 +64,10 @@ class ModelGateway(ABC):
     No provider SDK is imported outside of concrete implementations.
     """
 
+    #: Short provider identifier ("anthropic", "groq", …) used for audit
+    #: records and health reporting.
+    provider_name: str = "unknown"
+
     @abstractmethod
     def complete(
         self,

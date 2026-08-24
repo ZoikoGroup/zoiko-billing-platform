@@ -137,29 +137,48 @@ def _add_missing_columns() -> None:
       - columns added to models after the initial table creation
       - partial schema drift (e.g. missing catalog_version_id, actor_role)
 
-    Only runs on PostgreSQL (SQLite doesn't need ALTER; create_all recreates).
-    All ALTER statements are ADD COLUMN with nullable columns (safe defaults),
-    so they never fail on existing data.
+    Performance: (PostgreSQL) uses a single information_schema query to fetch
+    ALL existing columns across ALL tables in one round-trip (critical for
+    remote DBs like Neon where per-table introspection is prohibitively slow).
+    (SQLite) reads each table's columns via PRAGMA table_info — SQLite has no
+    information_schema, but the local file makes per-table PRAGMAs cheap.
 
-    Performance: uses a single information_schema query to fetch ALL existing
-    columns across ALL tables in one round-trip (critical for remote DBs like
-    Neon where per-table introspection is prohibitively slow).
+    Runs on both PostgreSQL and SQLite: Base.metadata.create_all only creates
+    MISSING TABLES — it never adds columns to tables that already exist, so
+    without this repair pass every schema drift between the models and an
+    existing database (either dialect) surfaces at runtime as
+    "no such column" OperationalErrors (e.g. users.platform_role breaking
+    POST /auth/register).
     """
-    if engine.dialect.name != "postgresql":
+    if engine.dialect.name not in {"postgresql", "sqlite"}:
         return
     added = 0
     with engine.connect() as conn:
-        # Single query: every (table, column) pair that currently exists.
-        rows = conn.execute(
-            text(
-                "SELECT table_name, column_name "
-                "FROM information_schema.columns "
-                "WHERE table_schema = 'public'"
-            )
-        ).fetchall()
-        existing = {}
-        for table_name, col_name in rows:
-            existing.setdefault(table_name, set()).add(col_name)
+        if engine.dialect.name == "postgresql":
+            # Single query: every (table, column) pair that currently exists.
+            rows = conn.execute(
+                text(
+                    "SELECT table_name, column_name "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = 'public'"
+                )
+            ).fetchall()
+            existing = {}
+            for table_name, col_name in rows:
+                existing.setdefault(table_name, set()).add(col_name)
+        else:
+            # SQLite: no information_schema — enumerate tables from
+            # sqlite_master, then read each table's columns via PRAGMA.
+            live_table_names = [
+                row[0]
+                for row in conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type = 'table'")
+                ).fetchall()
+            ]
+            existing = {}
+            for table_name in live_table_names:
+                rows = conn.execute(text(f'PRAGMA table_info("{table_name}")')).fetchall()
+                existing[table_name] = {row[1] for row in rows}
 
         for table_name, sa_table in Base.metadata.tables.items():
             if table_name not in existing:
