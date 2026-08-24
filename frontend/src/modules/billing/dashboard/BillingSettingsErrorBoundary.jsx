@@ -32,7 +32,7 @@ export default class BillingSettingsErrorBoundary extends React.Component {
         <div className="space-y-8">
           <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white flex items-center justify-center shadow-sm shrink-0">
+              <div className="h-10 w-10 rounded-2xl bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white flex items-center justify-center shadow-sm shrink-0">
                 <Settings2 size={22} />
               </div>
               <div>
@@ -51,18 +51,18 @@ export default class BillingSettingsErrorBoundary extends React.Component {
             </p>
             <div className="flex items-center justify-center gap-3">
               <button onClick={this.handleRetry}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 focus-visible:ring-offset-1">
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
                 <RefreshCw size={16} />
                 Retry
               </button>
               <button onClick={this.handleReload}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-sm font-medium transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50">
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-sm font-medium transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50">
                 <RotateCcw size={16} />
                 Reload
               </button>
             </div>
             <details className="mt-6 text-left max-w-lg mx-auto">
-              <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/50 rounded">View Error Details</summary>
+              <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 rounded">View Error Details</summary>
               <pre className="mt-2 p-3 bg-red-50 rounded-xl text-xs text-red-700 overflow-auto max-h-40">
                 {errorMsg}
                 {this.state.error?.stack ? `\n\n${this.state.error.stack}` : ""}

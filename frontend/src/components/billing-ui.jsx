@@ -3,13 +3,14 @@
  * -------------------------
  * Enterprise UI primitives for the Zoiko Billing product. These are the
  * shared building blocks behind the premium SaaS redesign and implement the
- * design system defined in `index.css` (orange brand tokens, 8pt spacing,
- * consistent radius/shadow). Every Billing page should be composed from
- * these primitives so the whole product renders as one design language.
+ * design system defined in `index.css` (blue brand tokens plus per-domain
+ * accent tokens, 8pt spacing, consistent radius/shadow). Every Billing page
+ * should be composed from these primitives so the whole product renders as
+ * one design language.
  *
  * Exports: Button, PageHeader, ExecutiveSummary, StatGroup, DataTable,
- *          Stepper, StickyFooter, Modal, SearchInput, Field, Select,
- *          ActivityTimeline, CommunicationHistory
+ *          Stepper, StickyFooter, Modal, FormModal, ListToolbar,
+ *          SearchInput, Field, Select, ActivityTimeline, CommunicationHistory
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,11 @@ import {
   RefreshCw,
   Clock,
   Paperclip,
+  Filter,
+  Download,
+  FileText,
+  Plus,
+  AlertCircle,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
@@ -211,6 +217,7 @@ export function DataTable({
   stickyHeader = true,
   striped = false,
   dense = false,
+  footer,
   className = "",
 }) {
   const allSelected = data.length > 0 && data.every((row) => selectedKeys.includes(rowKey(row)));
@@ -364,6 +371,7 @@ export function DataTable({
           </tbody>
         </table>
       </div>
+      {footer && <div className="border-t border-slate-100">{footer}</div>}
     </div>
   );
 }
@@ -570,6 +578,159 @@ export function Modal({
       </div>
     </div>,
     document.body
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * FormModal — opinionated Modal wrapper for create/resolve/cancel
+ * flows. Adds a labelled form body, an error banner slot, and a busy
+ * footer (Cancel + primary submit). Escape and backdrop-close are
+ * suppressed while `busy` so in-flight submissions can't be dismissed.
+ * ------------------------------------------------------------------ */
+
+export function FormModal({
+  open,
+  onClose,
+  onSubmit,
+  title,
+  description,
+  icon,
+  size = "md",
+  busy = false,
+  error = null,
+  submitLabel = "Save",
+  submitIcon: SubmitIcon = Check,
+  cancelLabel = "Cancel",
+  children,
+}) {
+  const guardedClose = busy ? undefined : onClose;
+  return (
+    <Modal
+      open={open}
+      onClose={guardedClose}
+      closeOnBackdrop={!busy}
+      title={title}
+      description={description}
+      icon={icon}
+      size={size}
+      ariaLabel={title}
+    >
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy) onSubmit?.(e);
+        }}
+      >
+        <fieldset disabled={busy} className="space-y-4">
+          {children}
+        </fieldset>
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <Button variant="secondary" onClick={guardedClose} disabled={busy}>
+            {cancelLabel}
+          </Button>
+          <Button variant="primary" type="submit" loading={busy} icon={busy ? undefined : SubmitIcon}>
+            {submitLabel}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * ListToolbar — the standard list-page action bar: search, filter
+ * toggle, refresh on the left; export actions, arbitrary extras, and
+ * one primary CTA on the right. Replaces per-page hand-rolled button
+ * stacks in refunds/write-offs/collections-receivables/promise-to-pay.
+ * ------------------------------------------------------------------ */
+
+export function ListToolbar({
+  search,
+  onSearchChange,
+  searchPlaceholder = "Search…",
+  filtersOpen = false,
+  onToggleFilters,
+  showFilters = true,
+  onRefresh,
+  refreshing = false,
+  onExportCsv,
+  onExportJson,
+  primaryLabel,
+  onPrimary,
+  primaryIcon: PrimaryIcon = Plus,
+  children,
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-1 items-center gap-3">
+        <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} className="max-w-md flex-1" />
+        {showFilters && onToggleFilters && (
+          <button
+            type="button"
+            onClick={onToggleFilters}
+            aria-label={filtersOpen ? "Hide filters" : "Show filters"}
+            aria-expanded={filtersOpen}
+            className={`rounded-xl border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${
+              filtersOpen
+                ? "border-brand-200 bg-brand-50 text-brand-600"
+                : "border-slate-200 text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            <Filter size={18} />
+          </button>
+        )}
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="Refresh"
+            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {onExportJson && (
+          <button
+            type="button"
+            onClick={onExportJson}
+            aria-label="Export as JSON"
+            title="Export JSON"
+            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          >
+            <Download size={18} />
+          </button>
+        )}
+        {onExportCsv && (
+          <button
+            type="button"
+            onClick={onExportCsv}
+            aria-label="Export as CSV"
+            title="Export CSV"
+            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          >
+            <FileText size={18} />
+          </button>
+        )}
+        {children}
+        {primaryLabel && onPrimary && (
+          <Button variant="primary" onClick={onPrimary} icon={PrimaryIcon}>
+            {primaryLabel}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -16,7 +16,6 @@ from app.modules.billing.models import (
     CommunicationEventType,
     CreditNoteStatus,
     InvoiceStatus,
-    PaymentStatus,
     Refund,
     RefundCommunication,
     RefundSource,
@@ -51,7 +50,7 @@ REFUND_ALLOWED_FIELDS = {
     "payment_id", "invoice_id", "credit_note_id",
     "refund_source", "refund_method", "reason", "notes",
     "gateway", "gateway_refund_id", "reference_number",
-    "currency", "exchange_rate",
+    "currency", "exchange_rate", "idempotency_key",
 }
 
 
@@ -144,6 +143,17 @@ class RefundService:
 
         if amount <= 0:
             raise BadRequestException("Refund amount must be greater than zero")
+
+        # Idempotent replay: a retried "create refund" request (e.g. a
+        # network timeout on the original call) with the same caller-
+        # supplied key returns the existing refund instead of creating a
+        # second one — checked before any locking/validation work below.
+        idempotency_key = (data.get("idempotency_key") or "").strip() or None
+        data["idempotency_key"] = idempotency_key
+        if idempotency_key:
+            existing = self.repo.get_first(organization_id, idempotency_key=idempotency_key)
+            if existing:
+                return existing
 
         customer = self.customer_service.get_customer(customer_id, organization_id)
 
@@ -394,13 +404,19 @@ class RefundService:
         try:
             source = refund.refund_source
             if source == RefundSource.PAYMENT and refund.payment_id:
-                payment = self.payment_repo.get_by_id(refund.payment_id, organization_id)
-                already_refunded = self.repo.get_total_refunded_for_payment(organization_id, refund.payment_id)
-                if already_refunded >= Decimal(str(payment.amount)) and payment.status != PaymentStatus.REFUNDED:
-                    self.payment_service.update_payment_status(
-                        payment.id, organization_id, PaymentStatus.REFUNDED, updated_by,
-                    )
-                    logger.info("[BILLING] Payment %d fully refunded (%s), transitioned to REFUNDED", payment.id, already_refunded)
+                # Phase 1 audit BROKEN bug fix: update_payment_status blocks
+                # any status change once a payment has PaymentAllocation rows,
+                # which is always the case for a normal completed refund flow.
+                # reverse_allocations_for_refund is the authorized path: it
+                # removes the allocations, restores invoice balances, and sets
+                # payment.status = REFUNDED when total refunded >= payment.amount.
+                payment = self.payment_service.reverse_allocations_for_refund(
+                    organization_id=organization_id,
+                    payment_id=refund.payment_id,
+                    amount=Decimal(str(refund.amount)),
+                    updated_by=updated_by,
+                )
+                logger.info("[BILLING] Payment %d allocation reversed for refund %d (payment.status=%s)", payment.id, refund_id, payment.status)
             elif source == RefundSource.INVOICE and refund.invoice_id:
                 self.invoice_service.record_refund(refund.invoice_id, organization_id, Decimal(str(refund.amount)), updated_by)
                 invoice = self.invoice_repo.get_by_id(refund.invoice_id, organization_id)

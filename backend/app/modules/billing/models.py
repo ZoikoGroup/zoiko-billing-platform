@@ -282,6 +282,38 @@ class RefundMethod(str, enum.Enum):
     MANUAL_ADJUSTMENT  = "manual_adjustment"
 
 
+class IntegrationEnvironment(str, enum.Enum):
+    TEST = "test"
+    LIVE = "live"
+
+
+class IntegrationConnectionStatus(str, enum.Enum):
+    """Normalized Zoiko-level status for a tenant's Stripe Connect account —
+    derived from the raw charges_enabled/payouts_enabled/requirements fields
+    on the Stripe Account object, so the rest of the platform never has to
+    reason about Stripe's own vocabulary directly."""
+    PENDING_ONBOARDING    = "pending_onboarding"
+    ONBOARDING_INCOMPLETE = "onboarding_incomplete"
+    ACTION_REQUIRED       = "action_required"
+    ACTIVE                = "active"
+    RESTRICTED            = "restricted"
+    DISABLED              = "disabled"
+    DISCONNECTED          = "disconnected"
+
+
+class DisputeStatus(str, enum.Enum):
+    """Mirrors Stripe's own Dispute.status vocabulary directly (unlike
+    PaymentStatus/RefundStatus) since disputes are a Stripe-specific concept
+    with no broader internal lifecycle of their own."""
+    WARNING_NEEDS_RESPONSE = "warning_needs_response"
+    WARNING_UNDER_REVIEW   = "warning_under_review"
+    WARNING_CLOSED         = "warning_closed"
+    NEEDS_RESPONSE         = "needs_response"
+    UNDER_REVIEW           = "under_review"
+    WON                    = "won"
+    LOST                   = "lost"
+
+
 class WriteOffType(str, enum.Enum):
     """Note: distinct from the legacy CreditNoteType.WRITE_OFF value — this is
     a first-class Write-off/Financial-Adjustment entity (RC2 Phase 3), not a
@@ -2129,6 +2161,12 @@ class Refund(Base):
     gateway         = Column(CaseInsensitiveEnum(PaymentGatewayType), nullable=True)
     gateway_refund_id = Column(String(255), nullable=True)
     reference_number = Column(String(100), nullable=True)
+    # Caller-supplied dedup key so a retried "create refund" request (e.g. a
+    # network timeout on the original call) returns the existing refund
+    # instead of creating a second one. NULL for refunds created without a
+    # key (existing behavior, unchanged) — NULLs don't collide under the
+    # unique constraint below on either Postgres or SQLite.
+    idempotency_key = Column(String(255), nullable=True, index=True)
     reason          = Column(Text, nullable=True)
     approved_at     = Column(DateTime, nullable=True)
     approved_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -2155,6 +2193,7 @@ class Refund(Base):
 
     __table_args__ = (
         UniqueConstraint("organization_id", "refund_number", name="uq_refunds_org_number"),
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_refunds_org_idempotency_key"),
         CheckConstraint("amount > 0", name="ck_refunds_amount"),
     )
 
@@ -3210,9 +3249,114 @@ class StripeEvent(Base):
     processed_at    = Column(DateTime(timezone=True), server_default=func.now())
     error           = Column(Text, nullable=True)
 
+    # Connect-era enrichment (additive — existing rows keep these NULL/1).
+    # connected_account_id is how a Connect webhook event is actually scoped
+    # (the event's top-level `account` field), independent of and more
+    # reliable than the organization_id metadata extraction above, which
+    # stays as a secondary/legacy signal for non-Connect event types.
+    connected_account_id = Column(String(255), nullable=True, index=True)
+    environment          = Column(CaseInsensitiveEnum(IntegrationEnvironment), nullable=True)
+    processing_attempts  = Column(Integer, nullable=False, default=1, server_default="1")
+    correlation_id        = Column(String(100), nullable=True, index=True)
+
     __table_args__ = (
         UniqueConstraint("event_id", name="uq_stripe_events_event_id"),
     )
 
     def __repr__(self):
         return f"<StripeEvent id={self.id} event={self.event_id} type={self.event_type}>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TABLE 38: STRIPE CONNECTED ACCOUNTS (Plane 2 tenant Stripe Connect)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class StripeConnectedAccount(Base):
+    """A tenant's Stripe Connect Standard account (Plane 2 only — the tenant
+    is always the merchant of record for direct charges made against this
+    account; Zoiko is never a party to the underlying charge).
+
+    No per-tenant Stripe secret key is ever stored here or anywhere else:
+    every API call against this account is made with Zoiko's own platform
+    STRIPE_SECRET_KEY plus the (non-secret) connected_account_id passed as
+    the Stripe-Account header. connected_account_id is safe to store as a
+    plain column and safe to return to the tenant's own authenticated
+    frontend session.
+    """
+    __tablename__ = "stripe_connected_accounts"
+
+    id                    = Column(Integer, primary_key=True, index=True)
+    organization_id       = Column(Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    provider              = Column(String(30), nullable=False, default="stripe", server_default="stripe")
+    environment           = Column(CaseInsensitiveEnum(IntegrationEnvironment), nullable=False)
+    connected_account_id  = Column(String(255), nullable=False, index=True)
+    account_type          = Column(String(20), nullable=False, default="standard", server_default="standard")
+    country                = Column(String(2), nullable=True)
+    default_currency       = Column(String(3), nullable=True)
+    charges_enabled        = Column(Boolean, nullable=False, default=False, server_default="false")
+    payouts_enabled        = Column(Boolean, nullable=False, default=False, server_default="false")
+    details_submitted      = Column(Boolean, nullable=False, default=False, server_default="false")
+    capabilities            = Column(JSON, nullable=True)
+    requirements_currently_due = Column(JSON, nullable=True)
+    disabled_reason          = Column(String(255), nullable=True)
+    status                   = Column(
+        CaseInsensitiveEnum(IntegrationConnectionStatus),
+        nullable=False,
+        default=IntegrationConnectionStatus.PENDING_ONBOARDING,
+        server_default="PENDING_ONBOARDING",
+    )
+    connected_at             = Column(DateTime(timezone=True), nullable=True)
+    disconnected_at          = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at           = Column(DateTime(timezone=True), nullable=True)
+    created_by               = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at               = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at               = Column(DateTime(timezone=True), onupdate=func.now())
+
+    organization              = relationship("Organization", foreign_keys=[organization_id])
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider", "environment", name="uq_stripe_connected_account_org_env"),
+        UniqueConstraint("connected_account_id", name="uq_stripe_connected_account_id"),
+    )
+
+    def __repr__(self):
+        return f"<StripeConnectedAccount org={self.organization_id} account={self.connected_account_id} status={self.status}>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TABLE 39: DISPUTES (Stripe chargebacks against Plane 2 payments)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class Dispute(Base):
+    """A Stripe dispute/chargeback against a Plane 2 payment. A dispute is a
+    reversal/adjustment layered on top of settled payment history — it never
+    deletes or replaces the original Payment row (see PaymentService for how
+    the affected invoice's balance is recalculated when one is lost)."""
+    __tablename__ = "disputes"
+
+    id                    = Column(Integer, primary_key=True, index=True)
+    organization_id       = Column(Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    payment_id            = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True)
+    connected_account_id  = Column(String(255), nullable=True, index=True)
+    gateway_dispute_id    = Column(String(255), nullable=False, index=True)
+    gateway_charge_id     = Column(String(255), nullable=True)
+    amount                = Column(Numeric(14, 2), nullable=False)
+    currency              = Column(String(3), nullable=False)
+    status                = Column(CaseInsensitiveEnum(DisputeStatus), nullable=False)
+    reason                = Column(String(100), nullable=True)
+    evidence_due_by       = Column(DateTime(timezone=True), nullable=True)
+    is_charge_refundable  = Column(Boolean, nullable=True)
+    closed_at             = Column(DateTime(timezone=True), nullable=True)
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at            = Column(DateTime(timezone=True), onupdate=func.now())
+
+    payment               = relationship("Payment", foreign_keys=[payment_id])
+
+    __table_args__ = (
+        UniqueConstraint("gateway_dispute_id", name="uq_disputes_gateway_dispute_id"),
+    )
+
+    def __repr__(self):
+        return f"<Dispute id={self.id} gateway_id={self.gateway_dispute_id} status={self.status}>"

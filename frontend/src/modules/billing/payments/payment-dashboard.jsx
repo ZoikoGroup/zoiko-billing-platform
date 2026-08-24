@@ -55,7 +55,7 @@ const STATUS_COLORS = {
   cancelled: "#94a3b8",
 };
 
-const CHART_COLORS = ["#FF7A00", "#0EA5E9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#6366f1"];
+const CHART_COLORS = ["var(--color-accent-payments)", "#0EA5E9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#6366f1"];
 
 export default function PaymentDashboardPage() {
   const navigate = useNavigate();
@@ -166,7 +166,7 @@ export default function PaymentDashboardPage() {
     const counts = {};
     payments.forEach((p) => { counts[p.status] = (counts[p.status] || 0) + 1; });
     return Object.entries(counts)
-      .map(([status, value]) => ({ name: STATUS_OPTIONS.find((o) => o.value === status)?.label || status, value, color: STATUS_COLORS[status] || "#FF7A00" }))
+      .map(([status, value]) => ({ name: STATUS_OPTIONS.find((o) => o.value === status)?.label || status, value, color: STATUS_COLORS[status] || "var(--color-accent-payments)" }))
       .filter((d) => d.value > 0);
   }, [payments]);
 
@@ -340,6 +340,9 @@ export default function PaymentDashboardPage() {
         <StatCard title="Pending" value={kpis.pendingCount.toLocaleString()} icon={Clock} color={CARD_GRADIENTS[2]} subtitle={formatDisplayCurrency(kpis.pendingAmount, baseCurrency)} href="/billing/payments?status=pending" />
         <StatCard title="Failed" value={kpis.failedCount.toLocaleString()} icon={XCircle} color={CARD_GRADIENTS[3]} href="/billing/payments?status=failed" />
       </div>
+      <p className="-mt-4 text-xs text-slate-400">
+        Aggregated from the {AGGREGATION_WINDOW} most recent payments.
+      </p>
 
       <StatGroup title="More Metrics">
         <StatCard title="Cleared Amount" value={Number(kpis.clearedAmount)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} />
@@ -375,15 +378,15 @@ export default function PaymentDashboardPage() {
                 <AreaChart data={monthlyTrend}>
                   <defs>
                     <linearGradient id="paymentTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-accent-payments)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-accent-payments)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(v) => formatDisplayCurrency(v, baseCurrency)} />
-                  <Area type="monotone" dataKey="amount" name="Payment Volume" stroke="#FF7A00" strokeWidth={2} fill="url(#paymentTrendGrad)" />
+                  <Area type="monotone" dataKey="amount" name="Payment Volume" stroke="var(--color-accent-payments)" strokeWidth={2} fill="url(#paymentTrendGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (

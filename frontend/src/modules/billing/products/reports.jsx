@@ -10,7 +10,7 @@ import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
 const PRESETS = [
   { id: "this_month", label: "This Month" },
@@ -127,7 +127,7 @@ export default function ProductReportsPage() {
   ].filter((d) => d.value > 0);
 
   const typeData = [
-    { name: "Service", value: fProducts.filter((p) => p.product_type === "service").length, color: "#FF7A00" },
+    { name: "Service", value: fProducts.filter((p) => p.product_type === "service").length, color: "var(--color-accent-invoicing)" },
     { name: "Good", value: fProducts.filter((p) => p.product_type === "good").length, color: "#FF9B4D" },
     { name: "Subscription", value: fProducts.filter((p) => p.product_type === "subscription").length, color: "#10b981" },
     { name: "Usage", value: fProducts.filter((p) => p.product_type === "usage").length, color: "#f59e0b" },
@@ -261,7 +261,7 @@ export default function ProductReportsPage() {
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={(v) => formatCurrency(v, baseCurrency)} />
-                      <Area type="monotone" dataKey="revenue" stroke="#FF7A00" fill="#FFC9A6" strokeWidth={2} name="Revenue" />
+                      <Area type="monotone" dataKey="revenue" stroke="var(--color-accent-invoicing)" fill="#FFC9A6" strokeWidth={2} name="Revenue" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -356,7 +356,7 @@ export default function ProductReportsPage() {
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip />
-                      <Bar dataKey="count" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Products" />
+                      <Bar dataKey="count" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} name="Products" />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

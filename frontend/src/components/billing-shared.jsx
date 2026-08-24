@@ -89,18 +89,105 @@ export function EmptyState({ icon: Icon, title, message, actionLabel, onAction }
 }
 
 /**
+ * Canonical status metadata for every Billing lifecycle enum (payments,
+ * refunds, write-offs, dunning, promise-to-pay, collections, invoices).
+ * One palette per state — replaces the per-page STATUS_STYLES clones that
+ * drifted across refunds/write-offs/dunning/promise-to-pay/collections.
+ * `StatusBadge` falls back to this map when no `options` are supplied;
+ * explicit `options` still win for page-specific vocabularies.
+ */
+export const STATUS_META = {
+  // shared workflow states
+  draft: { label: "Draft", color: "bg-slate-100 text-slate-700" },
+  pending_approval: { label: "Pending Approval", color: "bg-amber-100 text-amber-700" },
+  pending: { label: "Pending", color: "bg-amber-100 text-amber-700" },
+  approved: { label: "Approved", color: "bg-indigo-100 text-indigo-700" },
+  processing: { label: "Processing", color: "bg-blue-100 text-blue-700" },
+  completed: { label: "Completed", color: "bg-emerald-100 text-emerald-700" },
+  cancelled: { label: "Cancelled", color: "bg-slate-200 text-slate-600" },
+  failed: { label: "Failed", color: "bg-red-100 text-red-700" },
+  rejected: { label: "Rejected", color: "bg-red-100 text-red-700" },
+  // payments
+  cleared: { label: "Cleared", color: "bg-emerald-100 text-emerald-700" },
+  partial: { label: "Partial", color: "bg-cyan-100 text-cyan-700" },
+  partially_paid: { label: "Partially Paid", color: "bg-cyan-100 text-cyan-700" },
+  paid: { label: "Paid", color: "bg-emerald-100 text-emerald-700" },
+  overdue: { label: "Overdue", color: "bg-red-100 text-red-700" },
+  sent: { label: "Sent", color: "bg-blue-100 text-blue-700" },
+  // write-offs
+  executed: { label: "Executed", color: "bg-emerald-100 text-emerald-700" },
+  reversed: { label: "Reversed", color: "bg-orange-100 text-orange-700" },
+  // credit notes
+  issued: { label: "Issued", color: "bg-teal-100 text-teal-700" },
+  partially_applied: { label: "Partially Applied", color: "bg-cyan-100 text-cyan-700" },
+  void: { label: "Void", color: "bg-slate-200 text-slate-600" },
+  // dunning / collections / promise-to-pay
+  active: { label: "Active", color: "bg-emerald-100 text-emerald-700" },
+  paused: { label: "Paused", color: "bg-yellow-100 text-yellow-700" },
+  closed: { label: "Closed", color: "bg-slate-200 text-slate-600" },
+  escalated: { label: "Escalated", color: "bg-purple-100 text-purple-700" },
+  open: { label: "Open", color: "bg-blue-100 text-blue-700" },
+  in_progress: { label: "In Progress", color: "bg-amber-100 text-amber-700" },
+  fulfilled: { label: "Fulfilled", color: "bg-emerald-100 text-emerald-700" },
+  broken: { label: "Broken", color: "bg-red-100 text-red-700" },
+};
+
+/** Lookup helper — returns `{ label, color }` or undefined for unknown states. */
+export function statusMeta(status) {
+  return STATUS_META[status];
+}
+
+/**
+ * Per-domain accent tokens mirroring the `--color-accent-*` definitions in
+ * index.css (D1 in docs/BILLING_UI_UX_REMEDIATION_PLAN.md). Use these instead
+ * of hardcoded hexes for header icon chips and chart palettes. Chart colors
+ * reference the CSS variables directly so they stay theme-aware.
+ */
+export const DOMAIN_ACCENTS = {
+  payments: {
+    chip: "from-accent-payments to-accent-payments-hover",
+    chart: ["var(--color-accent-payments)", "#10b981", "#f59e0b", "#6366f1"],
+  },
+  refunds: {
+    chip: "from-accent-refund to-accent-refund-hover",
+    chart: ["var(--color-accent-refund)", "#06b6d4", "#8b5cf6", "#f59e0b"],
+  },
+  writeoffs: {
+    chip: "from-accent-writeoff to-accent-writeoff-hover",
+    chart: ["var(--color-accent-writeoff)", "#f97316", "#64748b", "#0ea5e9"],
+  },
+  invoicing: {
+    chip: "from-accent-invoicing to-accent-invoicing-hover",
+    chart: ["var(--color-accent-invoicing)", "var(--color-accent-invoicing-hover)", "#facc15", "#94a3b8"],
+  },
+  collections: {
+    chip: "from-accent-collections to-accent-collections-hover",
+    chart: ["var(--color-accent-collections)", "#14b8a6", "#f59e0b", "#ef4444"],
+  },
+  tax: {
+    chip: "from-accent-tax to-accent-tax-hover",
+    chart: ["var(--color-accent-tax)", "#a78bfa", "#22d3ee", "#fbbf24"],
+  },
+};
+
+/**
  * Shared status pill — renders a colored badge from a per-page `options`
- * list of `{ value, label, color }`, matching the pattern most Billing list
- * pages already hand-roll locally. `icon` (a component) is optional.
+ * list of `{ value, label, color }`, falling back to the canonical
+ * STATUS_META map. `icon` (a component) is optional.
  */
 export function StatusBadge({ status, options, icon: Icon, fallbackColor = "bg-gray-100 text-gray-700" }) {
-  const option = options?.find((o) => o.value === status);
+  const option = options?.find((o) => o.value === status) ||
+    (status && !options ? STATUS_META[status] : null);
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${option?.color || fallbackColor}`}>
       {Icon && <Icon size={12} />}
-      {option?.label || status || "unknown"}
+      {option?.label || humanizeStatus(status)}
     </span>
   );
+}
+
+function humanizeStatus(status) {
+  return status ? status.replace(/_/g, " ") : "unknown";
 }
 
 /**

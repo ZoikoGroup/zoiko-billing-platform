@@ -19,7 +19,7 @@ import { Button, StatGroup } from "../../../components/billing-ui";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useCurrency } from "../utils/CurrencyContext";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898"];
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -116,7 +116,7 @@ export default function PricingDashboardPage() {
   ].filter((d) => d.value > 0);
 
   const freqData = [
-    { name: "One-Time", value: filteredPlans.filter((p) => p.billing_period === "one_time").length, color: "#FF7A00" },
+    { name: "One-Time", value: filteredPlans.filter((p) => p.billing_period === "one_time").length, color: "var(--color-accent-invoicing)" },
     { name: "Monthly", value: filteredPlans.filter((p) => p.billing_period === "monthly").length, color: "#FF9B4D" },
     { name: "Quarterly", value: filteredPlans.filter((p) => p.billing_period === "quarterly").length, color: "#f59e0b" },
     { name: "Semi-Annual", value: filteredPlans.filter((p) => p.billing_period === "semi_annual").length, color: "#06b6d4" },
@@ -159,7 +159,7 @@ export default function PricingDashboardPage() {
   const revenue = subRevenue;
 
   const modelDistribution = [
-    { name: "Flat Rate", value: filteredPlans.filter((p) => !(p.pricing_model || p.plan_type) || (p.pricing_model || p.plan_type) === "flat").length, color: "#FF7A00" },
+    { name: "Flat Rate", value: filteredPlans.filter((p) => !(p.pricing_model || p.plan_type) || (p.pricing_model || p.plan_type) === "flat").length, color: "var(--color-accent-invoicing)" },
     { name: "Per Unit", value: filteredPlans.filter((p) => (p.pricing_model || p.plan_type) === "per_unit").length, color: "#3b82f6" },
     { name: "Tiered", value: filteredPlans.filter((p) => (p.pricing_model || p.plan_type) === "tiered").length, color: "#f59e0b" },
     { name: "Volume", value: filteredPlans.filter((p) => (p.pricing_model || p.plan_type) === "volume").length, color: "#06b6d4" },

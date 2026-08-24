@@ -1,12 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  HandCoins, Search, Filter, X, AlertCircle, Plus,
-  CheckCircle, XCircle, Ban, Loader2, History,
+  HandCoins, History, CheckCircle, XCircle, Ban, Loader2, AlertTriangle,
 } from "lucide-react";
 import { promiseToPayApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { Pagination, DashboardHeader, exportDashboardToCsv, exportDashboardToJson } from "../../../components/billing-shared";
+import {
+  Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
+  DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS,
+  exportDashboardToCsv, exportDashboardToJson,
+} from "../../../components/billing-shared";
+import {
+  Button, ListToolbar, FormModal, Modal, DataTable, Field, Select,
+} from "../../../components/billing-ui";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -19,21 +25,16 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-const STATUS_STYLES = {
-  pending: "bg-blue-100 text-blue-700",
-  overdue: "bg-amber-100 text-amber-700",
-  fulfilled: "bg-emerald-100 text-emerald-700",
-  broken: "bg-red-100 text-red-700",
-  cancelled: "bg-slate-200 text-slate-600",
+const CONFIRM_ACTIONS = {
+  fulfil: { label: "Mark this promise as fulfilled?", api: promiseToPayApi.markFulfilled },
+  break: { label: "Mark this promise as broken?", api: promiseToPayApi.markBroken },
+  cancel: { label: "Cancel this promise to pay?", api: promiseToPayApi.cancel },
 };
 
-function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700"}`}>
-      {status || "unknown"}
-    </span>
-  );
-}
+const INPUT_CLASS = "block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
+const LABEL_CLASS = "mb-1 block text-xs font-medium text-slate-600";
+
+const money = (v, currency) => formatDisplayCurrency(v, null, currency || undefined);
 
 export default function PromiseToPayPage() {
   const navigate = useNavigate();
@@ -44,6 +45,9 @@ export default function PromiseToPayPage() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  const [stats, setStats] = useState(null);
+  const [statsFailed, setStatsFailed] = useState(false);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -65,20 +69,7 @@ export default function PromiseToPayPage() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState(null);
 
-  const openTimeline = async (p) => {
-    setTimelinePromise(p);
-    setTimelineEntries([]);
-    setTimelineError(null);
-    setTimelineLoading(true);
-    try {
-      const data = await promiseToPayApi.getTimeline(p.id);
-      setTimelineEntries(Array.isArray(data?.entries) ? data.entries : []);
-    } catch (err) {
-      setTimelineError(err?.detail || err?.message || "Failed to load promise history");
-    } finally {
-      setTimelineLoading(false);
-    }
-  };
+  /* ---------------- data ---------------- */
 
   useEffect(() => {
     const timer = setTimeout(() => { setDebouncedSearch(search); setCurrentPage(1); }, 400);
@@ -111,12 +102,22 @@ export default function PromiseToPayPage() {
   useEffect(() => { fetchPromises(); }, [fetchPromises]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
+  useEffect(() => {
+    let cancelled = false;
+    promiseToPayApi.getDashboardStats()
+      .then((data) => { if (!cancelled) setStats(data || {}); })
+      .catch(() => { if (!cancelled) setStatsFailed(true); });
+    return () => { cancelled = true; };
+  }, []);
+
   const fetchCustomers = useCallback(async () => {
     try { const data = await customerApi.list({ per_page: 100 }); setCustomers(extractArray(data)); }
     catch (e) { /* silent */ }
   }, []);
 
   useEffect(() => { if (showCreateModal) fetchCustomers(); }, [showCreateModal, fetchCustomers]);
+
+  /* ---------------- actions ---------------- */
 
   const handleRefresh = () => { setRefreshing(true); fetchPromises(); };
 
@@ -149,15 +150,13 @@ export default function PromiseToPayPage() {
 
   const handleAction = async (id, action, actionFn) => {
     setActionLoading(`${action}-${id}`);
-    try { await actionFn(); fetchPromises(); }
-    catch (err) { setError(err?.detail || err?.message || `Failed to ${action}`); }
-    finally { setActionLoading(null); }
-  };
-
-  const CONFIRM_ACTIONS = {
-    fulfil: { label: "Mark this promise as fulfilled?", api: promiseToPayApi.markFulfilled },
-    break: { label: "Mark this promise as broken?", api: promiseToPayApi.markBroken },
-    cancel: { label: "Cancel this promise to pay?", api: promiseToPayApi.cancel },
+    try {
+      await actionFn();
+      fetchPromises();
+      promiseToPayApi.getDashboardStats().then((d) => setStats(d || {})).catch(() => {});
+    } catch (err) {
+      setError(err?.detail || err?.message || `Failed to ${action}`);
+    } finally { setActionLoading(null); }
   };
 
   const runConfirmedAction = async () => {
@@ -166,7 +165,23 @@ export default function PromiseToPayPage() {
     await handleAction(id, action, () => CONFIRM_ACTIONS[action].api(id, notes || undefined));
   };
 
+  const openTimeline = async (p) => {
+    setTimelinePromise(p);
+    setTimelineEntries([]);
+    setTimelineError(null);
+    setTimelineLoading(true);
+    try {
+      const data = await promiseToPayApi.getTimeline(p.id);
+      setTimelineEntries(Array.isArray(data?.entries) ? data.entries : []);
+    } catch (err) {
+      setTimelineError(err?.detail || err?.message || "Failed to load promise history");
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   const canSubmit = createForm.customer_id && createForm.promise_amount && createForm.promise_date;
+  const hasActiveFilters = Boolean(debouncedSearch || statusFilter);
 
   const handleExport = useCallback((format) => {
     const payload = { promises: promises };
@@ -174,231 +189,262 @@ export default function PromiseToPayPage() {
     else exportDashboardToJson(payload, "promise-to-pay");
   }, [promises]);
 
-  const headerProps = {
-    title: "Promise to Pay",
-    subtitle: "Track customer payment promises and their fulfillment status",
-    icon: HandCoins,
-    iconGradient: "from-emerald-500 to-teal-500",
-    lastUpdated,
-    onRefresh: handleRefresh,
-    refreshing,
-    onExportCSV: () => handleExport("csv"),
-    onExportJSON: () => handleExport("json"),
-  };
+  /* ---------------- derived KPIs (server stats, never page slice) ---------------- */
+
+  const openCount = (stats?.pending_count || 0) + (stats?.overdue_count || 0);
+
+  /* ---------------- table ---------------- */
+
+  const columns = [
+    {
+      key: "customer",
+      label: "Customer",
+      render: (p) => <span className="font-medium text-slate-800">{p.customer_name || `#${p.customer_id}`}</span>,
+    },
+    {
+      key: "promise_amount",
+      label: "Amount",
+      align: "right",
+      render: (p) => <span className="font-medium whitespace-nowrap">{money(p.promise_amount, p.currency)}</span>,
+    },
+    {
+      key: "promise_date",
+      label: "Promise Date",
+      render: (p) => <span className="whitespace-nowrap">{formatDisplayDate(p.promise_date)}</span>,
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (p) => <StatusBadge status={p.status} />,
+    },
+    {
+      key: "notes",
+      label: "Notes",
+      headerClassName: "w-64",
+      render: (p) => <span className="block max-w-xs truncate text-slate-500">{p.notes || "—"}</span>,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      align: "right",
+      render: (p) => (
+        <div className="inline-flex items-center gap-1">
+          <button type="button" onClick={() => openTimeline(p)} disabled={!!actionLoading} aria-label={`View history for promise ${p.id}`}
+            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+            <History size={15} />
+          </button>
+          {["pending", "overdue"].includes(p.status) && (
+            <>
+              <button type="button" onClick={() => setConfirmModal({ open: true, id: p.id, action: "fulfil", notes: "" })} disabled={!!actionLoading}
+                aria-label={`Mark promise ${p.id} fulfilled`}
+                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+                {actionLoading === `fulfil-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
+              </button>
+              <button type="button" onClick={() => setConfirmModal({ open: true, id: p.id, action: "break", notes: "" })} disabled={!!actionLoading}
+                aria-label={`Mark promise ${p.id} broken`}
+                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+                {actionLoading === `break-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <XCircle size={15} />}
+              </button>
+              <button type="button" onClick={() => setConfirmModal({ open: true, id: p.id, action: "cancel", notes: "" })} disabled={!!actionLoading}
+                aria-label={`Cancel promise ${p.id}`}
+                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+                {actionLoading === `cancel-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <Ban size={15} />}
+              </button>
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-8">
-      <DashboardHeader {...headerProps} />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input type="text" placeholder="Search promises..." value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
+      <DashboardHeader
+        title="Promise to Pay"
+        subtitle="Track customer payment promises and their fulfillment status"
+        icon={HandCoins}
+        iconGradient={DOMAIN_ACCENTS.collections.chip}
+        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Collections", href: "/billing/collections/dashboard" }, {}]}
+        lastUpdated={lastUpdated}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        onExportCSV={() => handleExport("csv")}
+        onExportJSON={() => handleExport("json")}
+      />
+
+      {!statsFailed && (
+        <div className={DASHBOARD_KPI_GRID}>
+          {stats === null
+            ? Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)
+            : (
+              <>
+                <DashboardStatCard title="Open Promises" value={openCount.toLocaleString()} icon={HandCoins} color={DOMAIN_ACCENTS.collections.chip} />
+                <DashboardStatCard title="Overdue" value={(stats.overdue_count || 0).toLocaleString()} icon={AlertTriangle} color="from-red-500 to-orange-500" />
+                <DashboardStatCard title="Fulfilled" value={(stats.fulfilled_count || 0).toLocaleString()} icon={CheckCircle} color="from-emerald-500 to-teal-500" />
+                <DashboardStatCard title="Broken" value={(stats.broken_count || 0).toLocaleString()} icon={XCircle} color="from-slate-400 to-slate-500" />
+              </>
+            )}
+        </div>
+      )}
+
+      <div>
+        <ListToolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search promises..."
+          filtersOpen={showFilters}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          primaryLabel="New Promise"
+          onPrimary={() => { setFormError(null); setShowCreateModal(true); }}
+        >
+          <Button variant="secondary" onClick={() => navigate("/billing/collections/dashboard")}>Dashboard</Button>
+        </ListToolbar>
+
+        {showFilters && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              aria-label="Filter by status"
+              className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+            >
+              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
-          <button onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-            <Filter size={18} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigate("/billing/collections/dashboard")} className="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">
-            Dashboard
-          </button>
-          <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
-            <Plus size={16} /> New Promise
-          </button>
-        </div>
+        )}
+
+        {error && (
+          <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+          </div>
+        )}
+
+        <DataTable
+          columns={columns}
+          data={promises}
+          loading={loading}
+          minWidth={860}
+          emptyIcon={HandCoins}
+          emptyTitle={hasActiveFilters ? "No promises match your filters" : "No promises to pay yet"}
+          emptyMessage={hasActiveFilters
+            ? "Try adjusting your search or status filter."
+            : "Log a commitment when a customer promises to pay an outstanding balance."}
+          emptyAction={!hasActiveFilters && !loading ? (
+            <Button variant="primary" onClick={() => { setFormError(null); setShowCreateModal(true); }}>Log a Promise</Button>
+          ) : undefined}
+          footer={
+            <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
+              {total} total promise(s)
+            </Pagination>
+          }
+        />
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
+      {/* Create promise */}
+      <FormModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={() => { if (canSubmit) handleCreate(); }}
+        title="Log a Promise to Pay"
+        description="Record a customer's commitment to pay by a promised date."
+        icon={HandCoins}
+        busy={saving}
+        error={formError}
+        submitLabel="Create"
+        submitIcon={HandCoins}
+      >
+        <Field label="Customer" htmlFor="ptp-customer" required>
+          <Select
+            id="ptp-customer"
+            value={createForm.customer_id}
+            onChange={(v) => handleCustomerChange(v)}
+            placeholder="Select customer"
+            options={customers.map((c) => ({ value: String(c.id), label: c.display_name || c.company_name || `#${c.id}` }))}
+          />
+        </Field>
+        <Field label="Invoice (optional)" htmlFor="ptp-invoice">
+          <Select
+            id="ptp-invoice"
+            value={createForm.invoice_id}
+            onChange={(v) => setCreateForm((p) => ({ ...p, invoice_id: v }))}
+            placeholder="None"
+            options={invoices.map((inv) => ({
+              value: String(inv.id),
+              label: `${inv.invoice_number || `#${inv.id}`} — balance ${money(inv.balance_due, inv.currency)}`,
+            }))}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount" htmlFor="ptp-amount" required>
+            <input id="ptp-amount" type="number" min="0" step="0.01" required
+              value={createForm.promise_amount}
+              onChange={(e) => setCreateForm((p) => ({ ...p, promise_amount: e.target.value }))}
+              className={INPUT_CLASS} />
+          </Field>
+          <Field label="Promise Date" htmlFor="ptp-date" required>
+            <input id="ptp-date" type="date" required
+              value={createForm.promise_date}
+              onChange={(e) => setCreateForm((p) => ({ ...p, promise_date: e.target.value }))}
+              className={INPUT_CLASS} />
+          </Field>
         </div>
-      )}
+        <Field label="Notes" htmlFor="ptp-notes">
+          <textarea id="ptp-notes" rows={2} value={createForm.notes}
+            onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))}
+            className={INPUT_CLASS} />
+        </Field>
+      </FormModal>
 
-      {showFilters && (
-        <div className="flex flex-wrap items-center gap-3 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-            className="appearance-none px-4 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-            {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+      {/* Confirm action (fulfil / break / cancel) */}
+      <FormModal
+        open={confirmModal.open}
+        onClose={() => setConfirmModal({ open: false, id: null, action: null, notes: "" })}
+        onSubmit={runConfirmedAction}
+        title={CONFIRM_ACTIONS[confirmModal.action]?.label || "Confirm"}
+        busy={!!actionLoading}
+        submitLabel="Confirm"
+        size="sm"
+      >
+        <div>
+          <label htmlFor="ptp-action-notes" className={LABEL_CLASS}>Notes (optional)</label>
+          <textarea id="ptp-action-notes" rows={3} value={confirmModal.notes}
+            onChange={(e) => setConfirmModal((p) => ({ ...p, notes: e.target.value }))}
+            className={INPUT_CLASS} />
         </div>
-      )}
+      </FormModal>
 
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Promise Date</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Notes</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr><td colSpan={6} className="px-4 py-16 text-center"><div className="animate-spin rounded-full h-8 w-8 border-4 border-slate-200 border-t-brand-600 mx-auto" /></td></tr>
-              ) : promises.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <HandCoins size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No promises to pay found</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : promises.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4 text-slate-600">{p.customer_name || `#${p.customer_id}`}</td>
-                  <td className="px-4 py-4 text-right font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(p.promise_amount, "—")}</td>
-                  <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(p.promise_date)}</td>
-                  <td className="px-4 py-4"><StatusBadge status={p.status} /></td>
-                  <td className="px-4 py-4 text-slate-500 max-w-xs truncate">{p.notes || "—"}</td>
-                  <td className="px-4 py-4 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <button onClick={() => openTimeline(p)} disabled={!!actionLoading}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors disabled:opacity-40" title="View History">
-                        <History size={15} />
-                      </button>
-                      {["pending", "overdue"].includes(p.status) && (
-                        <>
-                          <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "fulfil", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors disabled:opacity-40" title="Mark Fulfilled">
-                            {actionLoading === `fulfil-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
-                          </button>
-                          <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "break", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Mark Broken">
-                            {actionLoading === `break-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <XCircle size={15} />}
-                          </button>
-                          <button onClick={() => setConfirmModal({ open: true, id: p.id, action: "cancel", notes: "" })} disabled={!!actionLoading}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600 transition-colors disabled:opacity-40" title="Cancel">
-                            {actionLoading === `cancel-${p.id}` ? <Loader2 size={15} className="animate-spin" /> : <Ban size={15} />}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
-          {total} total promise(s)
-        </Pagination>
-      </div>
-
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-800">Log a Promise to Pay</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Customer *</label>
-                <select value={createForm.customer_id} onChange={(e) => handleCustomerChange(e.target.value)}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <option value="">Select customer</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.display_name || c.company_name || `#${c.id}`}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Invoice (optional)</label>
-                <select value={createForm.invoice_id} onChange={(e) => setCreateForm((p) => ({ ...p, invoice_id: e.target.value }))}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <option value="">None</option>
-                  {invoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number || `#${inv.id}`} — balance {formatDisplayCurrency(inv.balance_due, "—")}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
-                  <input type="number" min="0" step="0.01" value={createForm.promise_amount} onChange={(e) => setCreateForm((p) => ({ ...p, promise_amount: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Promise Date *</label>
-                  <input type="date" value={createForm.promise_date} onChange={(e) => setCreateForm((p) => ({ ...p, promise_date: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                <textarea value={createForm.notes} onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))} rows={2}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
-              <button onClick={handleCreate} disabled={saving || !canSubmit}
-                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1.5">
-                {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Plus size={16} />} Create
-              </button>
-            </div>
+      {/* Promise history */}
+      <Modal
+        open={!!timelinePromise}
+        onClose={() => setTimelinePromise(null)}
+        title="Promise History"
+        description={timelinePromise
+          ? `${timelinePromise.customer_name || `Customer #${timelinePromise.customer_id}`} · ${money(timelinePromise.promise_amount, timelinePromise.currency)}`
+          : undefined}
+        icon={History}
+      >
+        {timelineError && (
+          <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {timelineError}
           </div>
-        </div>
-      )}
-
-      {timelinePromise && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setTimelinePromise(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-800">Promise History</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {timelinePromise.customer_name || `Customer #${timelinePromise.customer_id}`} · {formatDisplayCurrency(timelinePromise.promise_amount, "—")}
-                </p>
-              </div>
-              <button onClick={() => setTimelinePromise(null)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="p-6">
-              {timelineError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {timelineError}</div>}
-              {timelineLoading ? (
-                <div className="flex items-center justify-center py-10 text-slate-500"><Loader2 size={20} className="animate-spin" /></div>
-              ) : timelineEntries.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-8">No history yet for this promise.</p>
-              ) : (
-                <ol className="relative border-l-2 border-brand-100 ml-2 space-y-5">
-                  {timelineEntries.map((e, i) => (
-                    <li key={e.metadata?.audit_id || e.metadata?.communication_id || i} className="ml-4">
-                      <span className={`absolute -left-[7px] mt-1 h-3 w-3 rounded-full border-2 border-white ${e.event_type?.includes("fulfilled") ? "bg-emerald-500" : e.event_type?.includes("broken") ? "bg-red-500" : e.event_type?.includes("reminder") ? "bg-sky-500" : "bg-brand-400"}`} />
-                      <div className="text-sm font-medium text-slate-800">{e.title}</div>
-                      {e.description && <div className="text-xs text-slate-500 mt-0.5">{e.description}</div>}
-                      <div className="text-[11px] text-slate-500 mt-0.5">{formatDisplayDate(e.timestamp)}</div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmModal({ open: false, id: null, action: null, notes: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">{CONFIRM_ACTIONS[confirmModal.action]?.label}</h2>
-            <textarea value={confirmModal.notes} onChange={(e) => setConfirmModal((p) => ({ ...p, notes: e.target.value }))} rows={3}
-              placeholder="Notes (optional)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirmModal({ open: false, id: null, action: null, notes: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={runConfirmedAction} className="px-6 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 inline-flex items-center gap-2">
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+        {timelineLoading ? (
+          <div className="flex items-center justify-center py-10 text-slate-500"><Loader2 size={20} className="animate-spin" /></div>
+        ) : timelineEntries.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">No history yet for this promise.</p>
+        ) : (
+          <ol className="relative ml-2 space-y-5 border-l-2 border-brand-100">
+            {timelineEntries.map((e, i) => (
+              <li key={e.metadata?.audit_id || e.metadata?.communication_id || i} className="ml-4">
+                <span className={`absolute -left-[7px] mt-1 h-3 w-3 rounded-full border-2 border-white ${e.event_type?.includes("fulfilled") ? "bg-emerald-500" : e.event_type?.includes("broken") ? "bg-red-500" : e.event_type?.includes("reminder") ? "bg-sky-500" : "bg-brand-400"}`} />
+                <div className="text-sm font-medium text-slate-800">{e.title}</div>
+                {e.description && <div className="mt-0.5 text-xs text-slate-500">{e.description}</div>}
+                <div className="mt-0.5 text-[11px] text-slate-500">{formatDisplayDate(e.timestamp)}</div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Modal>
     </div>
   );
 }

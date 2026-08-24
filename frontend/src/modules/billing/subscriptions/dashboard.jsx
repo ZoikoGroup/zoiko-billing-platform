@@ -38,7 +38,7 @@ const CARD_COLORS = [
 // that's the largest run of this app's brand hues that clears the data-viz
 // accessibility validator (CVD-safe + normal-vision-safe adjacent pairs).
 // Plans beyond the 4th fold into "Other" rather than cycling the palette.
-const PLAN_CHART_COLORS = ["#FF7A00", "#f59e0b", "#10b981", "#3b82f6"];
+const PLAN_CHART_COLORS = ["var(--color-accent-invoicing)", "#f59e0b", "#10b981", "#3b82f6"];
 const MAX_PLAN_SLICES = 4;
 
 // Status colors are semantic (good/warning/critical), matching the exact

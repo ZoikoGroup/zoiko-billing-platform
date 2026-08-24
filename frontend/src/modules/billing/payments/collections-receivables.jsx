@@ -1,24 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, RefreshCw,
-  FileText, TrendingUp, Clock, Users } from "lucide-react"
-import HRPage from "../../../components/HRPage";
+import {
+  BarChart3, RefreshCw, Users, TrendingUp, Clock, FileText,
+} from "lucide-react"
 import { collectionApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
-import { ErrorState } from "../../../components/billing-shared";
-
-function getStatusStyle(status) {
-  const map = {
-    open: "bg-blue-100 text-blue-700",
-    in_progress: "bg-amber-100 text-amber-700",
-    resolved: "bg-emerald-100 text-emerald-700",
-    closed: "bg-slate-100 text-slate-500",
-    escalated: "bg-red-100 text-red-700",
-  };
-  return map[status] || "bg-slate-100 text-slate-600";
-}
+import {
+  ErrorState, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
+  DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS,
+} from "../../../components/billing-shared";
+import { Button, DataTable } from "../../../components/billing-ui";
 
 export default function CollectionsReceivablesPage() {
   const navigate = useNavigate();
@@ -32,16 +25,17 @@ export default function CollectionsReceivablesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
+      if (!loading) setRefreshing(true);
       const [caseData, invData, aging, queue] = await Promise.all([
         collectionApi.listCases({ per_page: 50 }),
         invoiceApi.list({ per_page: 50, status: "sent" }).catch(() => ({ items: [] })),
         collectionApi.getAgingBuckets().catch(() => null),
-        collectionApi.getCollectionsQueue().catch(() => null),
+        collectionApi.getCollectionsQueue().catch(() => undefined),
       ]);
       setCases(extractArray(caseData));
       setInvoices(extractArray(invData));
@@ -51,22 +45,23 @@ export default function CollectionsReceivablesPage() {
       // the whole dict through extractArray (which can't coerce a
       // dict-of-dicts into the array this UI needs).
       setAgingData(aging?.buckets && Array.isArray(aging.buckets) ? aging.buckets : null);
-      setQueueData(extractArray(queue));
+      // undefined sentinel = endpoint failed (→ "not available");
+      // empty array = endpoint succeeded but queue is genuinely empty.
+      setQueueData(queue === undefined ? null : extractArray(queue));
+      setLastUpdated(new Date());
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load data");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  const refreshAll = useCallback(async () => {
-    setRefreshing(true);
-    await fetchData();
-    setRefreshing(false);
-  }, [fetchData]);
-
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  /* Derived summary metrics. Computed over the fetched windows (latest 50
+     cases / latest 50 sent invoices), so they are indicative of recent
+     activity rather than all-time totals — disclosed in the caption below. */
   const totalInCollections = cases.filter((c) => c.status !== "resolved" && c.status !== "closed").length;
   const resolvedCount = cases.filter((c) => c.status === "resolved").length;
   const totalOutstanding = sumInBaseCurrency(invoices, baseCurrency).total;
@@ -85,80 +80,181 @@ export default function CollectionsReceivablesPage() {
     { key: "aging", label: "Aging Summary" },
   ];
 
-  if (loading) {
-    return (
-      <HRPage title="Collections & Receivables" subtitle="Combined collections and receivables management">
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
-        </div>
-      </HRPage>
-    );
-  }
+  const activeCases = cases.filter((c) => c.status !== "resolved" && c.status !== "closed");
 
-  if (error) {
+  const caseColumns = [
+    {
+      key: "case_number",
+      label: "Case",
+      render: (c) => <span className="font-medium text-slate-900">{c.case_number || `#${c.id}`}</span>,
+    },
+    {
+      key: "customer_name",
+      label: "Customer",
+      render: (c) => <span>{c.customer_name || `#${c.customer_id}`}</span>,
+    },
+    {
+      key: "total_outstanding",
+      label: "Outstanding",
+      align: "right",
+      render: (c) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(c.total_outstanding, c.currency)}</span>,
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (c) => <StatusBadge status={c.status} />,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      align: "right",
+      render: (c) => (
+        <button type="button" onClick={() => navigate(`/billing/collections/${c.id}`)} aria-label={`View collections case ${c.case_number || c.id}`}
+          className="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+          <FileText className="h-3.5 w-3.5" /> View
+        </button>
+      ),
+    },
+  ];
+
+  const queueColumns = [
+    {
+      key: "priority",
+      label: "Priority",
+      render: (item) => (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+          item.priority === "urgent" ? "bg-red-100 text-red-700" :
+          item.priority === "high" ? "bg-orange-100 text-orange-700" :
+          "bg-blue-100 text-blue-700"
+        }`}>
+          {item.priority || "Normal"}
+        </span>
+      ),
+    },
+    {
+      key: "case_number",
+      label: "Case",
+      render: (item) => <span className="font-medium text-slate-900">{item.case_number || `#${item.id}`}</span>,
+    },
+    {
+      key: "customer_name",
+      label: "Customer",
+      render: (item) => <span>{item.customer_name || `#${item.customer_id}`}</span>,
+    },
+    {
+      key: "amount",
+      label: "Amount",
+      align: "right",
+      render: (item) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(item.total_outstanding || item.amount, item.currency)}</span>,
+    },
+    {
+      key: "days_overdue",
+      label: "Days Overdue",
+      render: (item) => <span>{item.days_overdue || 0}d</span>,
+    },
+  ];
+
+  const agingColumns = [
+    {
+      key: "bucket",
+      label: "Bucket",
+      render: (bucket, i) => (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+          bucket.name === "Current" ? "bg-emerald-100 text-emerald-700" :
+          bucket.name?.includes("31") || bucket.name?.includes("61") ? "bg-amber-100 text-amber-700" :
+          "bg-red-100 text-red-700"
+        }`}>
+          {bucket.name || bucket.bucket || `Bucket ${i + 1}`}
+        </span>
+      ),
+    },
+    {
+      key: "count",
+      label: "Count",
+      align: "right",
+      render: (bucket) => <span className="font-medium">{bucket.count || 0}</span>,
+    },
+    {
+      key: "total_amount",
+      label: "Total Amount",
+      align: "right",
+      render: (bucket) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(bucket.total_amount || bucket.amount || 0)}</span>,
+    },
+    {
+      key: "percentage",
+      label: "Percentage",
+      align: "right",
+      render: (bucket) => <span>{bucket.percentage || 0}%</span>,
+    },
+  ];
+
+  if (error && !loading && cases.length === 0) {
     return (
-      <HRPage title="Collections & Receivables" subtitle="Error loading data">
+      <div className="space-y-8">
+        <DashboardHeader
+          title="Collections & Receivables"
+          subtitle="Combined collections and receivables management"
+          icon={BarChart3}
+          iconGradient={DOMAIN_ACCENTS.collections.chip}
+          crumbs={[{ label: "Billing", href: "/billing" }, { label: "Collections", href: "/billing/collections/dashboard" }, {}]}
+          lastUpdated={lastUpdated}
+          onRefresh={fetchData}
+          refreshing={refreshing}
+        />
         <ErrorState message={error} onRetry={fetchData} />
-      </HRPage>
+      </div>
     );
   }
 
   return (
-    <HRPage
-      title="Collections & Receivables"
-      subtitle="Monitor and manage collections activities"
-      actions={
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigate("/billing/promise-to-pay")}
-            className="px-3 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
-            Promise to Pay
-          </button>
-          <button onClick={() => navigate("/billing/collections/dashboard")}
-            className="px-3 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
-            Dashboard
-          </button>
-          <button onClick={refreshAll} disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50">
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
-          </button>
+    <div className="space-y-8">
+      <DashboardHeader
+        title="Collections & Receivables"
+        subtitle="Monitor and manage collections activities"
+        icon={BarChart3}
+        iconGradient={DOMAIN_ACCENTS.collections.chip}
+        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Collections", href: "/billing/collections/dashboard" }, {}]}
+        lastUpdated={lastUpdated}
+        onRefresh={fetchData}
+        refreshing={refreshing}
+      />
+
+      {/* Server-backed KPIs */}
+      <div>
+        <div className={DASHBOARD_KPI_GRID}>
+          {loading ? (
+            Array.from({ length: 3 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)
+          ) : (
+            <>
+              <DashboardStatCard title="In Collections" value={totalInCollections.toLocaleString()} subtitle={`${formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding`} icon={Users} color={DOMAIN_ACCENTS.collections.chip} />
+              <DashboardStatCard title="Recovery Rate" value={`${recoveryRate}%`} subtitle={`${resolvedCount} resolved case${resolvedCount === 1 ? "" : "s"}`} icon={TrendingUp} color="from-emerald-500 to-teal-500" />
+              <DashboardStatCard title="Avg Days Outstanding" value={`${avgDaysOutstanding}d`} icon={Clock} color="from-amber-500 to-orange-500" />
+            </>
+          )}
         </div>
-      }
-    >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
-          <div className="flex items-center gap-2 mb-2">
-            <Users className="h-5 w-5 text-brand-500 shrink-0" />
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">In Collections</p>
-          </div>
-          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">{totalInCollections}</p>
-          <p className="text-xs text-slate-500 mt-1 whitespace-nowrap" title={formatDisplayCurrency(totalOutstanding, baseCurrency)}>{formatDisplayCurrency(totalOutstanding, baseCurrency)} outstanding</p>
-        </div>
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="h-5 w-5 text-emerald-500 shrink-0" />
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Recovery Rate</p>
-          </div>
-          <p className="text-xl font-bold text-emerald-700 whitespace-nowrap">{recoveryRate}%</p>
-          <p className="text-xs text-slate-500 mt-1">{resolvedCount} resolved cases</p>
-        </div>
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 min-w-0 overflow-hidden">
-          <div className="flex items-center gap-2 mb-2">
-            <Clock className="h-5 w-5 text-amber-500 shrink-0" />
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider truncate">Avg Days Outstanding</p>
-          </div>
-          <p className="text-xl font-bold text-amber-600 whitespace-nowrap">{avgDaysOutstanding}d</p>
-        </div>
+        {!loading && (
+          <p className="mt-2 text-xs text-slate-400">
+            Based on the latest {cases.length} collection case{cases.length === 1 ? "" : "s"} and {invoices.length} sent invoice{invoices.length === 1 ? "" : "s"}.
+          </p>
+        )}
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200">
+      <div className="-mt-4 flex items-center gap-2">
+        <Button variant="secondary" onClick={() => navigate("/billing/promise-to-pay")}>Promise to Pay</Button>
+        <Button variant="secondary" onClick={() => navigate("/billing/collections/dashboard")}>Dashboard</Button>
+        <Button variant="ghost" onClick={fetchData} loading={refreshing} icon={RefreshCw}>Refresh</Button>
+      </div>
+
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white card-shadow">
         <div className="border-b border-slate-200">
-          <div className="flex">
+          <div className="flex" role="tablist" aria-label="Collections and receivables views">
             {tabs.map((tab) => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} role="tab"
+                aria-selected={activeTab === tab.key}
+                className={`border-b-2 px-5 py-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${
                   activeTab === tab.key
                     ? "border-brand-600 text-brand-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                    : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
                 }`}>
                 {tab.label}
               </button>
@@ -168,154 +264,58 @@ export default function CollectionsReceivablesPage() {
 
         <div className="p-6">
           {activeTab === "overview" && (
-            <div className="space-y-6">
-              <h3 className="text-base font-semibold text-slate-900">Active Collections Cases</h3>
-              {cases.filter((c) => c.status !== "resolved" && c.status !== "closed").length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-sm text-slate-500">No active collections cases</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Case</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Customer</th>
-                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Outstanding</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Status</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cases.filter((c) => c.status !== "resolved" && c.status !== "closed").map((c) => (
-                        <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-4 font-medium text-slate-900">{c.case_number || `#${c.id}`}</td>
-                          <td className="py-3 px-4 text-slate-600">{c.customer_name || `#${c.customer_id}`}</td>
-                          <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.total_outstanding, c.currency)}</td>
-                          <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
-                              {c.status ? c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "Unknown"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button onClick={() => navigate(`/billing/collections/${c.id}`)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100">
-                              <FileText className="h-3.5 w-3.5" /> View
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <DataTable
+              columns={caseColumns}
+              data={activeCases}
+              loading={loading}
+              minWidth={720}
+              stickyHeader={false}
+              emptyIcon={BarChart3}
+              emptyTitle="No active collections cases"
+              emptyMessage="Escalated dunning cases will appear here."
+            />
           )}
 
           {activeTab === "queue" && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-slate-900">Collections Queue</h3>
-              {!queueData ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-sm text-slate-500">Queue data not available</p>
-                </div>
-              ) : Array.isArray(queueData) && queueData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-sm text-slate-500">Queue is empty</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Priority</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Case</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Customer</th>
-                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Amount</th>
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Days Overdue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(Array.isArray(queueData) ? queueData : []).map((item, i) => (
-                        <tr key={item.id || i} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              item.priority === "urgent" ? "bg-red-100 text-red-700" :
-                              item.priority === "high" ? "bg-orange-100 text-orange-700" :
-                              "bg-blue-100 text-blue-700"
-                            }`}>
-                              {item.priority || "Normal"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-medium text-slate-900">{item.case_number || `#${item.id}`}</td>
-                          <td className="py-3 px-4 text-slate-600">{item.customer_name || `#${item.customer_id}`}</td>
-                          <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(item.total_outstanding || item.amount, item.currency)}</td>
-                          <td className="py-3 px-4 text-slate-600">{item.days_overdue || 0}d</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            !queueData ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <BarChart3 className="mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm text-slate-500">Queue data not available</p>
+              </div>
+            ) : (
+              <DataTable
+                columns={queueColumns}
+                data={Array.isArray(queueData) ? queueData : []}
+                loading={loading}
+                minWidth={720}
+                stickyHeader={false}
+                emptyIcon={BarChart3}
+                emptyTitle="Queue is empty"
+                emptyMessage="No receivables are currently prioritized for collections."
+              />
+            )
           )}
 
           {activeTab === "aging" && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-slate-900">Aging Summary</h3>
-              {!agingData ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-sm text-slate-500">Aging data not available</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase">Bucket</th>
-                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Count</th>
-                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Total Amount</th>
-                        <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase">Percentage</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.isArray(agingData) ? agingData.map((bucket, i) => (
-                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-4 font-medium text-slate-900">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              bucket.name === "Current" ? "bg-emerald-100 text-emerald-700" :
-                              bucket.name?.includes("31") || bucket.name?.includes("61") ? "bg-amber-100 text-amber-700" :
-                              "bg-red-100 text-red-700"
-                            }`}>
-                              {bucket.name || bucket.bucket || `Bucket ${i + 1}`}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right text-slate-900 font-medium">{bucket.count || 0}</td>
-                          <td className="py-3 px-4 text-right text-slate-900 font-medium">{formatDisplayCurrency(bucket.total_amount || bucket.amount || 0)}</td>
-                          <td className="py-3 px-4 text-right text-slate-600">{bucket.percentage || 0}%</td>
-                        </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan={4} className="py-8 text-center text-slate-500">
-                            <div className="flex flex-col items-center">
-                              <BarChart3 className="h-8 w-8 text-slate-300 mb-2" />
-                              <p className="text-sm">No aging data available</p>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            !agingData ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <BarChart3 className="mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm text-slate-500">Aging data not available</p>
+              </div>
+            ) : (
+              <DataTable
+                columns={agingColumns}
+                data={agingData}
+                minWidth={640}
+                stickyHeader={false}
+                rowKey={(b, i) => `${b.name || b.bucket || i}`}
+                emptyIcon={BarChart3}
+                emptyTitle="No aging data available"
+              />
+            )
           )}
         </div>
       </div>
-    </HRPage>
+    </div>
   );
 }

@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Undo2, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download,
-  Plus, AlertCircle, FileText, Ban, Eye, Send } from "lucide-react"
-import HRPage from "../../../components/HRPage";
+import {
+  Undo2, Send, Ban, Eye, Loader2,
+} from "lucide-react";
 import { refundApi, customerApi, paymentApi, invoiceApi, creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { Pagination } from "../../../components/billing-shared";
-import { useCurrency } from "../utils/CurrencyContext";
-import { useTerminology } from "../utils/TerminologyContext";
+import {
+  Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
+  DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, ErrorState,
+} from "../../../components/billing-shared";
+import {
+  Button, ListToolbar, FormModal, DataTable, Field, Select,
+} from "../../../components/billing-ui";
 
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
+  { value: "", label: "All Statuses" },
   { value: "draft", label: "Draft" },
   { value: "pending_approval", label: "Pending Approval" },
   { value: "approved", label: "Approved" },
@@ -21,17 +26,6 @@ const STATUS_OPTIONS = [
   { value: "rejected", label: "Rejected" },
   { value: "cancelled", label: "Cancelled" },
 ];
-
-const STATUS_STYLES = {
-  draft: "bg-slate-100 text-slate-700",
-  pending_approval: "bg-amber-100 text-amber-700",
-  approved: "bg-indigo-100 text-indigo-700",
-  processing: "bg-blue-100 text-blue-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-  rejected: "bg-red-100 text-red-700",
-  cancelled: "bg-slate-200 text-slate-600",
-};
 
 const TYPE_OPTIONS = [
   { value: "full", label: "Full Refund" },
@@ -60,23 +54,13 @@ const METHOD_OPTIONS = [
   { value: "manual_adjustment", label: "Manual Adjustment" },
 ];
 
-function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700"}`}>
-      {status?.replace(/_/g, " ") || "unknown"}
-    </span>
-  );
-}
-
 const emptyCreateForm = (currency) => ({
   customer_id: "", refund_source: "payment", payment_id: "", invoice_id: "", credit_note_id: "",
   refund_type: "partial", amount: "", currency, refund_method: "", reference_number: "", reason: "",
 });
 
 export default function RefundsPage() {
-  const { singular, getLabel } = useTerminology();
   const navigate = useNavigate();
-  const { baseCurrency } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [refunds, setRefunds] = useState([]);
@@ -84,6 +68,9 @@ export default function RefundsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  const [stats, setStats] = useState(null);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -91,9 +78,11 @@ export default function RefundsPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreateForm(baseCurrency));
+  const [createForm, setCreateForm] = useState(emptyCreateForm(""));
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -102,9 +91,7 @@ export default function RefundsPage() {
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [formError, setFormError] = useState(null);
-
-  const [sortField, setSortField] = useState("created_at");
-  const [sortDir, setSortDir] = useState("desc");
+  const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: "" });
 
   useEffect(() => {
     const timer = setTimeout(() => { setDebouncedSearch(search); setCurrentPage(1); }, 400);
@@ -113,7 +100,6 @@ export default function RefundsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
-  const sortParam = sortDir === "desc" ? `-${sortField}` : sortField;
 
   const fetchRefunds = useCallback(async () => {
     try {
@@ -128,6 +114,7 @@ export default function RefundsPage() {
       });
       setRefunds(extractArray(data));
       setTotal(data.total || 0);
+      setLastUpdated(new Date());
     } catch (err) {
       setError(err.message || "Failed to load refunds");
       setRefunds([]); setTotal(0);
@@ -139,6 +126,10 @@ export default function RefundsPage() {
   useEffect(() => { fetchRefunds(); }, [fetchRefunds]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
+  useEffect(() => {
+    refundApi.getDashboardStats().then((d) => setStats(d || {})).catch(() => {});
+  }, []);
+
   const fetchCustomers = useCallback(async () => {
     try { const data = await customerApi.list({ per_page: 100 }); setCustomers(extractArray(data)); }
     catch (e) { /* silent */ }
@@ -146,6 +137,7 @@ export default function RefundsPage() {
 
   useEffect(() => { if (showCreateModal) fetchCustomers(); }, [showCreateModal, fetchCustomers]);
 
+  /* Deep-link support: ?create=1 and ?invoice_id=<id> prefill the create form */
   useEffect(() => {
     if (searchParams.get("create") !== "1" || showCreateModal) return;
     openCreateModal();
@@ -186,11 +178,14 @@ export default function RefundsPage() {
     return () => { cancelled = true; };
   }, [searchParams, showCreateModal, createForm.invoice_id, setSearchParams]);
 
-  const handleRefresh = () => { setRefreshing(true); fetchRefunds(); };
-  const toggleSort = (field) => { setSortField(field); setSortDir((d) => d === "asc" ? "desc" : "asc"); };
+  const handleSort = (key) => {
+    const serverKey = key === "refund_number" ? "refund_number" : key === "amount" ? "amount" : "created_at";
+    setSortField(serverKey);
+    setSortDir((d) => d === "asc" ? "desc" : "asc");
+  };
 
   const openCreateModal = () => {
-    setCreateForm(emptyCreateForm(baseCurrency));
+    setCreateForm(emptyCreateForm(""));
     setSelectedCustomer(null);
     setPayments([]); setInvoices([]); setCreditNotes([]);
     setFormError(null); setShowCreateModal(true);
@@ -220,7 +215,13 @@ export default function RefundsPage() {
     setCreateForm((p) => ({ ...p, refund_source: source, payment_id: "", invoice_id: "", credit_note_id: "" }));
   };
 
+  const canSubmitAmount = createForm.customer_id && createForm.amount &&
+    (createForm.refund_source !== "payment" || createForm.payment_id) &&
+    (createForm.refund_source !== "invoice" || createForm.invoice_id) &&
+    (createForm.refund_source !== "credit_note" || createForm.credit_note_id);
+
   const handleCreate = async () => {
+    if (!canSubmitAmount) return;
     try {
       setSaving(true); setFormError(null);
       const body = {
@@ -245,289 +246,296 @@ export default function RefundsPage() {
     } finally { setSaving(false); }
   };
 
-  const handleAction = async (action, actionFn) => {
-    setActionLoading(action);
-    try { await actionFn(); fetchRefunds(); }
-    catch (err) { setError(err?.detail || err?.message || `Failed to ${action} refund`); }
+  const handleSubmitForApproval = async (id) => {
+    setActionLoading(`submit-${id}`);
+    try { await refundApi.submit(id); fetchRefunds(); }
+    catch (err) { setError(err?.detail || err?.message || "Failed to submit refund"); }
     finally { setActionLoading(null); }
   };
 
-  const handleExportJSON = () => {
-    const blob = new Blob([JSON.stringify(refunds, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "refunds.json"; a.click();
-    URL.revokeObjectURL(url);
+  const handleCancelConfirm = async () => {
+    const { id, reason } = cancelModal;
+    setCancelModal({ open: false, id: null, reason: "" });
+    setActionLoading(`cancel-${id}`);
+    try { await refundApi.cancel(id, reason || "Cancelled by user"); fetchRefunds(); }
+    catch (err) { setError(err?.detail || err?.message || "Failed to cancel refund"); }
+    finally { setActionLoading(null); }
   };
 
-  const handleExportCSV = () => {
-    const headers = ["ID", "Number", "Type", "Source", "Status", `${singular} ID`, "Amount", "Currency", "Created"];
-    const rows = refunds.map((r) => [r.id, r.refund_number, r.refund_type, r.refund_source, r.status, r.customer_id, r.amount, r.currency, r.created_at]);
-    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "refunds.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
+  const hasActiveFilters = debouncedSearch || statusFilter || typeFilter;
 
-  const canSubmitAmount = createForm.customer_id && createForm.amount &&
-    (createForm.refund_source !== "payment" || createForm.payment_id) &&
-    (createForm.refund_source !== "invoice" || createForm.invoice_id) &&
-    (createForm.refund_source !== "credit_note" || createForm.credit_note_id);
-
-  if (loading) {
-    return (
-      <HRPage title="Refunds" subtitle="Manage customer refunds">
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200 border-t-brand-600" />
-        </div>
-      </HRPage>
-    );
-  }
-
-  if (error && refunds.length === 0) {
-    return (
-      <HRPage title="Refunds" subtitle="Manage customer refunds">
-        <div className="flex flex-col items-center justify-center py-20">
-          <AlertCircle className="h-12 w-12 text-red-400 mb-4" />
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Something went wrong</h3>
-          <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
-          <button onClick={handleRefresh} className="inline-flex items-center gap-2 px-6 py-3 bg-brand-600 text-white rounded-xl font-medium hover:bg-brand-700">
-            <RefreshCw size={18} /> Try Again
+  const columns = [
+    {
+      key: "refund_number",
+      label: "Number",
+      sortable: true,
+      render: (r) => <span className="font-medium text-slate-800">{r.refund_number || `#${r.id}`}</span>,
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      render: (r) => <span>{r.customer_name || `#${r.customer_id}`}</span>,
+    },
+    {
+      key: "refund_type",
+      label: "Type",
+      render: (r) => <span className="capitalize">{r.refund_type?.replace(/_/g, " ")}</span>,
+    },
+    {
+      key: "refund_source",
+      label: "Source",
+      render: (r) => <span className="capitalize">{r.refund_source?.replace(/_/g, " ") || "—"}</span>,
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (r) => <StatusBadge status={r.status} />,
+    },
+    {
+      key: "amount",
+      label: "Amount",
+      align: "right",
+      sortable: true,
+      render: (r) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(r.amount, r.currency)}</span>,
+    },
+    {
+      key: "created_at",
+      label: "Date",
+      sortable: true,
+      render: (r) => <span className="whitespace-nowrap text-slate-500">{formatDisplayDate(r.created_at)}</span>,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      align: "right",
+      render: (r) => (
+        <div className="inline-flex items-center gap-1">
+          <button type="button" onClick={() => navigate(`/billing/refunds/${r.id}`)} aria-label={`View refund ${r.refund_number || r.id}`}
+            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+            <Eye size={15} />
           </button>
+          {r.status === "draft" && (
+            <button type="button" onClick={() => handleSubmitForApproval(r.id)} disabled={actionLoading === `submit-${r.id}`}
+              aria-label={`Submit refund ${r.refund_number || r.id} for approval`}
+              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-amber-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+              {actionLoading === `submit-${r.id}` ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </button>
+          )}
+          {["draft", "pending_approval", "approved", "failed"].includes(r.status) && (
+            <button type="button" onClick={() => setCancelModal({ open: true, id: r.id, reason: "" })} disabled={!!actionLoading}
+              aria-label={`Cancel refund ${r.refund_number || r.id}`}
+              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40">
+              {actionLoading === `cancel-${r.id}` ? <Loader2 size={15} className="animate-spin" /> : <Ban size={15} />}
+            </button>
+          )}
         </div>
-      </HRPage>
-    );
-  }
+      ),
+    },
+  ];
 
   return (
-    <HRPage title="Refunds" subtitle="Manage customer refunds across payments, invoices, and credit notes">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input type="text" placeholder="Search refunds..." value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
-          </div>
-          <button onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-            <Filter size={18} />
-          </button>
-          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON"><Download size={18} /></button>
-          <button onClick={handleExportCSV} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export CSV"><FileText size={18} /></button>
-          <button onClick={() => navigate("/billing/refunds/dashboard")} className="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">
-            Dashboard
-          </button>
-          <button onClick={openCreateModal} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
-            <Plus size={16} /> New Refund
-          </button>
-        </div>
+    <div className="space-y-8">
+      <DashboardHeader
+        title="Refunds"
+        subtitle="Manage customer refunds across payments, invoices, and credit notes"
+        icon={Undo2}
+        iconGradient={DOMAIN_ACCENTS.refunds.chip}
+        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments/dashboard" }, {}]}
+        lastUpdated={lastUpdated}
+        onRefresh={() => fetchRefunds()}
+        refreshing={refreshing}
+      />
+
+      {/* Server-backed KPIs */}
+      <div className={DASHBOARD_KPI_GRID}>
+        {stats === null ? (
+          Array.from({ length: 4 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)
+        ) : (
+          <>
+            <DashboardStatCard title="Total Refunds" value={(stats.total_count || 0).toLocaleString()} icon={Undo2} color={DOMAIN_ACCENTS.refunds.chip} />
+            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} color="from-amber-500 to-orange-500" />
+            <DashboardStatCard title="Completed Value" value={Number(stats.completed_value || 0)} color="from-emerald-500 to-teal-500" />
+            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} color="from-sky-500 to-cyan-500" />
+          </>
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
-        </div>
-      )}
+      <div>
+        <ListToolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search refunds..."
+          filtersOpen={showFilters || !!hasActiveFilters}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          primaryLabel="New Refund"
+          onPrimary={openCreateModal}
+        >
+          <Button variant="secondary" onClick={() => navigate("/billing/refunds/dashboard")}>Dashboard</Button>
+        </ListToolbar>
 
-      {showFilters && (
-        <div className="flex flex-wrap items-center gap-3 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-          <div className="relative">
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-              className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-              <option value="">All Statuses</option>
+        {showFilters && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
+              className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-          </div>
-          <div className="relative">
-            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-              className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by type"
+              className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               <option value="">All Types</option>
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("refund_number")}>
-                  <span className="inline-flex items-center gap-1">Number <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{singular}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Source</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("amount")}>
-                  <span className="inline-flex items-center gap-1">Amount <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleSort("created_at")}>
-                  <span className="inline-flex items-center gap-1">Date <ArrowUpDown size={12} /></span>
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {refunds.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <Undo2 size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No refunds found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter || typeFilter ? "Try adjusting your search or filters" : "Create your first refund"}</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : refunds.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4 font-medium text-slate-800">{r.refund_number || `#${r.id}`}</td>
-                  <td className="px-4 py-4 text-slate-600">{r.customer_name || `#${r.customer_id}`}</td>
-                  <td className="px-4 py-4"><span className="capitalize text-slate-600">{r.refund_type?.replace(/_/g, " ")}</span></td>
-                  <td className="px-4 py-4"><span className="capitalize text-slate-600">{r.refund_source?.replace(/_/g, " ") || "—"}</span></td>
-                  <td className="px-4 py-4"><StatusBadge status={r.status} /></td>
-                  <td className="px-4 py-4 text-right font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(r.amount, r.currency)}</td>
-                  <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(r.created_at)}</td>
-                  <td className="px-4 py-4 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <button onClick={() => navigate(`/billing/refunds/${r.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="View"><Eye size={15} /></button>
-                      {r.status === "draft" && (
-                        <button onClick={() => handleAction("submit", () => refundApi.submit(r.id))} disabled={actionLoading === "submit"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-amber-600 transition-colors disabled:opacity-40" title="Submit for Approval"><Send size={15} /></button>
-                      )}
-                      {["draft", "pending_approval", "approved", "failed"].includes(r.status) && (
-                        <button onClick={() => handleAction("cancel", () => refundApi.cancel(r.id, "Cancelled by user"))} disabled={actionLoading === "cancel"}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40" title="Cancel"><Ban size={15} /></button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
-          {total} total refund(s)
-        </Pagination>
+        {error && refunds.length === 0 && !loading ? (
+          <ErrorState message={error} onRetry={() => fetchRefunds()} />
+        ) : (
+          <>
+            {error && (
+              <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+            <DataTable
+          columns={columns}
+          data={refunds}
+          loading={loading}
+          minWidth={960}
+          sortKey={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          rowKey={(r) => r.id}
+          emptyIcon={Undo2}
+          emptyTitle={hasActiveFilters ? "No refunds match your filters" : "No refunds yet"}
+          emptyMessage={hasActiveFilters
+            ? "Try adjusting your search or filters."
+            : "Create your first refund."}
+          emptyAction={!hasActiveFilters && !loading ? (
+            <Button variant="primary" onClick={openCreateModal}>New Refund</Button>
+          ) : undefined}
+          footer={
+            <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
+              {total} total refund(s)
+            </Pagination>
+          }
+        />
+          </>
+        )}
       </div>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-800">Create Refund</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{singular} *</label>
-                <select value={createForm.customer_id} onChange={(e) => handleCustomerChange(e.target.value)}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <option value="">Select {getLabel("singularLower")}</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.display_name || c.company_name || `#${c.id}`}</option>)}
-                </select>
-                {selectedCustomer && (
-                  <p className="mt-1 text-xs text-slate-500">Available credit balance: {formatDisplayCurrency(selectedCustomer.credit_balance || 0, "—", selectedCustomer.currency)}</p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Source *</label>
-                  <select value={createForm.refund_source} onChange={(e) => handleSourceChange(e.target.value)}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Type *</label>
-                  <select value={createForm.refund_type} onChange={(e) => setCreateForm((p) => ({ ...p, refund_type: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {createForm.refund_source === "payment" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Payment *</label>
-                  <select value={createForm.payment_id} onChange={(e) => setCreateForm((p) => ({ ...p, payment_id: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select payment</option>
-                    {payments.map((p) => <option key={p.id} value={p.id}>{p.payment_number || `#${p.id}`} — {formatDisplayCurrency(p.amount, p.currency)}</option>)}
-                  </select>
-                </div>
-              )}
-              {createForm.refund_source === "invoice" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Invoice *</label>
-                  <select value={createForm.invoice_id} onChange={(e) => setCreateForm((p) => ({ ...p, invoice_id: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select invoice</option>
-                    {invoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number || `#${inv.id}`} — paid {formatDisplayCurrency(inv.paid_amount, inv.currency)}</option>)}
-                  </select>
-                </div>
-              )}
-              {createForm.refund_source === "credit_note" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Credit Note *</label>
-                  <select value={createForm.credit_note_id} onChange={(e) => setCreateForm((p) => ({ ...p, credit_note_id: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select credit note</option>
-                    {creditNotes.map((cn) => <option key={cn.id} value={cn.id}>{cn.credit_note_number || `#${cn.id}`} — remaining {formatDisplayCurrency(cn.remaining_amount, cn.currency)}</option>)}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
-                  <input type="number" min="0" step="0.01" value={createForm.amount} onChange={(e) => setCreateForm((p) => ({ ...p, amount: e.target.value }))}
-                    placeholder="0.00"
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Method</label>
-                  <select value={createForm.refund_method} onChange={(e) => setCreateForm((p) => ({ ...p, refund_method: e.target.value }))}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select method</option>
-                    {METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Reference Number</label>
-                <input type="text" value={createForm.reference_number} onChange={(e) => setCreateForm((p) => ({ ...p, reference_number: e.target.value }))}
-                  placeholder="Bank ref / UTR / cheque no."
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Reason</label>
-                <textarea value={createForm.reason} onChange={(e) => setCreateForm((p) => ({ ...p, reason: e.target.value }))}
-                  rows={2} placeholder="Reason for refund"
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
-              <button onClick={handleCreate} disabled={saving || !canSubmitAmount}
-                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1.5">
-                {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Plus size={16} />} Create
-              </button>
-            </div>
-          </div>
+      {/* Create refund */}
+      <FormModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={() => handleCreate()}
+        title="Create Refund"
+        description="Return funds to a customer from a payment, invoice balance, or credit note."
+        icon={Undo2}
+        busy={saving}
+        error={formError}
+        submitLabel="Create"
+        size="lg"
+      >
+        <Field label="Customer" htmlFor="refund-customer" required>
+          <Select id="refund-customer" value={createForm.customer_id} onChange={(v) => handleCustomerChange(v)}
+            placeholder="Select customer"
+            options={customers.map((c) => ({ value: String(c.id), label: c.display_name || c.company_name || `#${c.id}` }))} />
+        </Field>
+        {selectedCustomer && (
+          <p className="-mt-2 text-xs text-slate-500">
+            Available credit balance: {formatDisplayCurrency(selectedCustomer.credit_balance || 0, "—", selectedCustomer.currency)}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Source" htmlFor="refund-source" required>
+            <Select id="refund-source" value={createForm.refund_source} onChange={(v) => handleSourceChange(v)}
+              placeholder={null}
+              options={SOURCE_OPTIONS} />
+          </Field>
+          <Field label="Type" htmlFor="refund-type" required>
+            <Select id="refund-type" value={createForm.refund_type} onChange={(v) => setCreateForm((p) => ({ ...p, refund_type: v }))}
+              placeholder={null}
+              options={TYPE_OPTIONS} />
+          </Field>
         </div>
-      )}
-    </HRPage>
+
+        {createForm.refund_source === "payment" && (
+          <Field label="Payment" htmlFor="refund-payment" required>
+            <Select id="refund-payment" value={createForm.payment_id} onChange={(v) => setCreateForm((p) => ({ ...p, payment_id: v }))}
+              placeholder="Select payment"
+              options={payments.map((p) => ({
+                value: String(p.id),
+                label: `${p.payment_number || `#${p.id}`} — ${formatDisplayCurrency(p.amount, p.currency)}`,
+              }))} />
+          </Field>
+        )}
+        {createForm.refund_source === "invoice" && (
+          <Field label="Invoice" htmlFor="refund-invoice" required>
+            <Select id="refund-invoice" value={createForm.invoice_id} onChange={(v) => setCreateForm((p) => ({ ...p, invoice_id: v }))}
+              placeholder="Select invoice"
+              options={invoices.map((inv) => ({
+                value: String(inv.id),
+                label: `${inv.invoice_number || `#${inv.id}`} — paid ${formatDisplayCurrency(inv.paid_amount, inv.currency)}`,
+              }))} />
+          </Field>
+        )}
+        {createForm.refund_source === "credit_note" && (
+          <Field label="Credit Note" htmlFor="refund-cn" required>
+            <Select id="refund-cn" value={createForm.credit_note_id} onChange={(v) => setCreateForm((p) => ({ ...p, credit_note_id: v }))}
+              placeholder="Select credit note"
+              options={creditNotes.map((cn) => ({
+                value: String(cn.id),
+                label: `${cn.credit_note_number || `#${cn.id}`} — remaining ${formatDisplayCurrency(cn.remaining_amount, cn.currency)}`,
+              }))} />
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount" htmlFor="refund-amount" required>
+            <input id="refund-amount" type="number" min="0" step="0.01" placeholder="0.00"
+              value={createForm.amount}
+              onChange={(e) => setCreateForm((p) => ({ ...p, amount: e.target.value }))}
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+          </Field>
+          <Field label="Method" htmlFor="refund-method">
+            <Select id="refund-method" value={createForm.refund_method} onChange={(v) => setCreateForm((p) => ({ ...p, refund_method: v }))}
+              placeholder="Select method"
+              options={METHOD_OPTIONS} />
+          </Field>
+        </div>
+        <Field label="Reference Number" htmlFor="refund-ref">
+          <input id="refund-ref" type="text" placeholder="Bank ref / UTR / cheque no."
+            value={createForm.reference_number}
+            onChange={(e) => setCreateForm((p) => ({ ...p, reference_number: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+        <Field label="Reason" htmlFor="refund-reason">
+          <textarea id="refund-reason" rows={2} placeholder="Reason for refund"
+            value={createForm.reason}
+            onChange={(e) => setCreateForm((p) => ({ ...p, reason: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+      </FormModal>
+
+      {/* Cancel refund — asks for a reason instead of hardcoding one */}
+      <FormModal
+        open={cancelModal.open}
+        onClose={() => setCancelModal({ open: false, id: null, reason: "" })}
+        onSubmit={handleCancelConfirm}
+        title="Cancel Refund"
+        description="This refund will be cancelled and no further processing will occur."
+        icon={Ban}
+        busy={!!actionLoading}
+        submitLabel="Cancel Refund"
+        size="sm"
+      >
+        <Field label="Reason (optional)" htmlFor="cancel-reason">
+          <textarea id="cancel-reason" rows={2} placeholder="Why is this refund being cancelled?"
+            value={cancelModal.reason}
+            onChange={(e) => setCancelModal((p) => ({ ...p, reason: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Field>
+      </FormModal>
+    </div>
   );
 }

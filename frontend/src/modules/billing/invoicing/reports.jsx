@@ -236,7 +236,7 @@ export default function InvoiceReportsPage() {
                       <Receipt className="h-10 w-10 text-slate-300 mb-3" />
                       <p className="text-slate-800 text-base font-bold mb-1">No invoices found</p>
                       <p className="text-slate-500 text-xs font-normal max-w-xs leading-relaxed mb-4">There are no invoices for the selected period.</p>
-                      <button onClick={() => navigate("/billing/invoices/create")} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#FF7A00] hover:bg-[#FF5500] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs">
+                      <button onClick={() => navigate("/billing/invoices/create")} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-accent-invoicing)] hover:bg-[var(--color-accent-invoicing-hover)] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs">
                         Create Invoice
                       </button>
                     </div>
@@ -291,14 +291,14 @@ export default function InvoiceReportsPage() {
                   <ResponsiveContainer width="100%" height={300}>
                     <AreaChart data={monthlyChartData}>
                       <defs>
-                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} /><stop offset="95%" stopColor="#FF7A00" stopOpacity={0} /></linearGradient>
+                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} /><stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} /></linearGradient>
                         <linearGradient id="colorPaid" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${Number(v).toLocaleString()}`} />
                       <Tooltip formatter={(v) => [formatCurrency(v, baseCurrency)]} />
-                      <Area type="monotone" dataKey="total" stroke="#FF7A00" fill="url(#colorTotal)" strokeWidth={2} name="Total" />
+                      <Area type="monotone" dataKey="total" stroke="var(--color-accent-invoicing)" fill="url(#colorTotal)" strokeWidth={2} name="Total" />
                       <Area type="monotone" dataKey="paid" stroke="#10b981" fill="url(#colorPaid)" strokeWidth={2} name="Paid" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -316,7 +316,7 @@ export default function InvoiceReportsPage() {
               <Receipt className="h-10 w-10 text-slate-300 mb-3" />
               <p className="text-slate-800 text-base font-bold mb-1">No invoices found</p>
               <p className="text-slate-500 text-xs font-normal max-w-xs leading-relaxed mb-4">There are no invoices for the selected period.</p>
-              <button onClick={() => navigate("/billing/invoices/create")} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#FF7A00] hover:bg-[#FF5500] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs">
+              <button onClick={() => navigate("/billing/invoices/create")} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-accent-invoicing)] hover:bg-[var(--color-accent-invoicing-hover)] text-white text-xs font-semibold rounded-xl transition-colors shadow-xs">
                 Create Invoice
               </button>
             </div>
@@ -496,7 +496,7 @@ export default function InvoiceReportsPage() {
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${Number(v).toLocaleString()}`} />
                     <Tooltip formatter={(v) => [formatCurrency(v, baseCurrency)]} />
                     <Legend />
-                    <Bar dataKey="total" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Total" />
+                    <Bar dataKey="total" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} name="Total" />
                     <Bar dataKey="paid" fill="#10b981" radius={[4, 4, 0, 0]} name="Paid" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -509,7 +509,7 @@ export default function InvoiceReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#FF7A00" strokeWidth={2} dot={{ r: 3 }} name="Invoice Count" />
+                    <Line type="monotone" dataKey="count" stroke="var(--color-accent-invoicing)" strokeWidth={2} dot={{ r: 3 }} name="Invoice Count" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

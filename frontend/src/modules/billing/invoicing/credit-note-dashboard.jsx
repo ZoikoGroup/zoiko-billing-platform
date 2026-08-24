@@ -27,7 +27,7 @@ const CREDIT_NOTE_CRUMBS = [
   { label: "Credit Notes" },
 ];
 
-const CHART_COLORS = ["#FF7A00", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#FF9B4D", "#06b6d4"];
+const CHART_COLORS = ["var(--color-accent-invoicing)", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#FF9B4D", "#06b6d4"];
 const CARD_GRADIENTS = [
   "from-brand to-brand-hover",
   "from-emerald-500 to-green-500",
@@ -168,7 +168,7 @@ export default function CreditNoteDashboard() {
   if (loading) {
     return (
       <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading credit note dashboard">
-        <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={CREDIT_NOTE_CRUMBS} />
+        <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]" crumbs={CREDIT_NOTE_CRUMBS} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
@@ -183,7 +183,7 @@ export default function CreditNoteDashboard() {
   if (error && !dashboard.stats) {
     return (
       <div className="space-y-8 px-4 py-6 sm:px-6">
-        <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[#FF7A00] to-[#FF5500]" crumbs={CREDIT_NOTE_CRUMBS} />
+        <DashboardHeader title="Credit Note Dashboard" subtitle="Credit note issuance, application, and outstanding balances" icon={Receipt} iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]" crumbs={CREDIT_NOTE_CRUMBS} />
         <div className="flex flex-col items-center justify-center py-20">
           <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
             <AlertCircle size={32} />
@@ -191,7 +191,7 @@ export default function CreditNoteDashboard() {
           <h3 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h3>
           <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
           <button onClick={handleRefresh}
-            className="px-6 py-3 bg-gradient-to-r from-[#FF7A00] to-[#FF5500] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+            className="px-6 py-3 bg-gradient-to-r from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
             <RefreshCw size={18} /> Try Again
           </button>
         </div>
@@ -200,7 +200,7 @@ export default function CreditNoteDashboard() {
   }
 
   const statusData = (dashboard.statusDist.length > 0
-    ? dashboard.statusDist.map((s) => ({ name: (s.status || "").replace(/_/g, " "), value: s.count, color: STATUS_COLORS[s.status] || "#FF7A00" }))
+    ? dashboard.statusDist.map((s) => ({ name: (s.status || "").replace(/_/g, " "), value: s.count, color: STATUS_COLORS[s.status] || "var(--color-accent-invoicing)" }))
     : []
   ).filter((s) => s.value > 0);
 
@@ -276,7 +276,7 @@ export default function CreditNoteDashboard() {
         title="Credit Note Dashboard"
         subtitle="Credit note issuance, application, and outstanding balances."
         icon={Receipt}
-        iconGradient="from-[#FF7A00] to-[#FF5500]"
+        iconGradient="from-[var(--color-accent-invoicing)] to-[var(--color-accent-invoicing-hover)]"
         crumbs={CREDIT_NOTE_CRUMBS}
         lastUpdated={lastUpdated}
         onRefresh={handleRefresh}
@@ -332,7 +332,7 @@ export default function CreditNoteDashboard() {
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="count" name="Count" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" name="Count" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

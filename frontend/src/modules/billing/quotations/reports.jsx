@@ -74,7 +74,7 @@ export default function QuotationReportsPage() {
     { name: "Sent", value: sent.length, color: "#3b82f6" },
     { name: "Accepted", value: accepted.length, color: "#10b981" },
     { name: "Rejected", value: rejected.length, color: "#ef4444" },
-    { name: "Converted", value: converted.length, color: "#FF7A00" },
+    { name: "Converted", value: converted.length, color: "var(--color-accent-invoicing)" },
     { name: "Cancelled", value: cancelled.length, color: "#f59e0b" },
   ].filter((d) => d.value > 0);
 
@@ -83,14 +83,14 @@ export default function QuotationReportsPage() {
     { name: "Sent", value: sent.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0), color: "#3b82f6" },
     { name: "Accepted", value: acceptedValue, color: "#10b981" },
     { name: "Rejected", value: rejected.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0), color: "#ef4444" },
-    { name: "Converted", value: convertedValue, color: "#FF7A00" },
+    { name: "Converted", value: convertedValue, color: "var(--color-accent-invoicing)" },
     { name: "Cancelled", value: cancelled.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0), color: "#f59e0b" },
   ].filter((d) => d.value > 0);
 
   const conversionFunnel = [
     { name: "Sent", value: sent.length, color: "#3b82f6" },
     { name: "Accepted", value: accepted.length, color: "#10b981" },
-    { name: "Converted", value: converted.length, color: "#FF7A00" },
+    { name: "Converted", value: converted.length, color: "var(--color-accent-invoicing)" },
   ].filter((d) => d.value > 0);
 
   const monthlyData = fQuotations.reduce((acc, q) => {
@@ -241,14 +241,14 @@ export default function QuotationReportsPage() {
                   <ResponsiveContainer width="100%" height={300}>
                     <AreaChart data={monthlyChartData}>
                       <defs>
-                        <linearGradient id="colorQuoteValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} /><stop offset="95%" stopColor="#FF7A00" stopOpacity={0} /></linearGradient>
+                        <linearGradient id="colorQuoteValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} /><stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} /></linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v, displayCurrency)} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                       <Tooltip />
-                      <Area yAxisId="left" type="monotone" dataKey="value" stroke="#FF7A00" fill="url(#colorQuoteValue)" strokeWidth={2} name="Value" />
+                      <Area yAxisId="left" type="monotone" dataKey="value" stroke="var(--color-accent-invoicing)" fill="url(#colorQuoteValue)" strokeWidth={2} name="Value" />
                       <Line yAxisId="right" type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -409,7 +409,7 @@ export default function QuotationReportsPage() {
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip />
                       <Bar dataKey="count" stackId="a" fill="#FF9B4D" radius={[4, 4, 0, 0]} name="Total" />
-                      <Bar dataKey="accepted" stackId="a" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Accepted" />
+                      <Bar dataKey="accepted" stackId="a" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} name="Accepted" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -447,7 +447,7 @@ export default function QuotationReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v, displayCurrency)} />
                     <Tooltip formatter={(v) => [formatCurrency(v, displayCurrency)]} />
-                    <Bar dataKey="value" fill="#FF7A00" radius={[4, 4, 0, 0]} name="Value" />
+                    <Bar dataKey="value" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} name="Value" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -459,7 +459,7 @@ export default function QuotationReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#FF7A00" strokeWidth={2} dot={{ r: 3 }} name="Count" />
+                    <Line type="monotone" dataKey="count" stroke="var(--color-accent-invoicing)" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

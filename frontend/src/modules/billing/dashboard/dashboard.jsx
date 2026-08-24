@@ -86,7 +86,7 @@ const formatUpdatedAgo = (date) => {
   return `Updated ${new Date(date).toLocaleDateString()}`;
 };
 
-const CHART_COLORS = ["#2563EB", "#60A5FA", "#93C5FD", "#f59e0b", "#10b981", "#ef4444", "#1D4ED8", "#ec4899"];
+const CHART_COLORS = ["var(--color-brand)", "#60A5FA", "#93C5FD", "#f59e0b", "#10b981", "#ef4444", "var(--color-brand-700)", "#ec4899"];
 
 function SkeletonTable({ className }) {
   return (
@@ -111,7 +111,7 @@ function ChartTooltip({ active, payload, label, format }) {
       {label != null && label !== "" && <p className="mb-1.5 text-xs font-semibold text-slate-500">{label}</p>}
       {payload.map((entry, idx) => (
         <p key={idx} className="flex items-center gap-2 text-sm font-bold text-slate-800">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: entry.color || entry.fill || "#2563EB" }} />
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: entry.color || entry.fill || "var(--color-brand)" }} />
           {fmt(entry.value)}
         </p>
       ))}
@@ -431,7 +431,7 @@ export default function ZoikoBillingModule() {
       <h3 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h3>
       <p className="text-slate-600 mb-6 text-center max-w-md">{error}</p>
       <button onClick={handleRefresh}
-        className="px-6 py-3 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+        className="px-6 py-3 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
         <RefreshCw size={18} />
         Try Again
       </button>
@@ -447,7 +447,7 @@ export default function ZoikoBillingModule() {
       <p className="text-slate-600 mb-6 text-center max-w-md">Create an invoice to start billing customers — your revenue, collections, and activity analytics will appear here.</p>
       <div className="flex flex-wrap items-center justify-center gap-3">
         <button onClick={() => navigate("/billing/invoices/create")}
-          className="px-6 py-3 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
+          className="px-6 py-3 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2">
           <PlusCircle size={18} />
           Create Invoice
         </button>
@@ -879,7 +879,7 @@ export default function ZoikoBillingModule() {
               )}
               <div className="ml-auto">
                 <button onClick={() => navigate("/billing/settings")}
-                  className="text-xs font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 transition-colors">
+                  className="text-xs font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1 transition-colors">
                   <Settings2 size={12} /> Configure
                 </button>
               </div>
@@ -895,15 +895,15 @@ export default function ZoikoBillingModule() {
                       <AreaChart data={revenueChartData}>
                         <defs>
                           <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#2563EB" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                            <stop offset="5%" stopColor="var(--color-brand)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="var(--color-brand)" stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey={revenueChartData[0]?.month ? "month" : "period"} tick={{ fontSize: 12 }} />
                         <YAxis tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                         <Tooltip content={<ChartTooltip format={(v) => formatDisplayCurrency(v, baseCurrency)} />} />
-                        <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={3} fill="url(#revenueGrad)" dot={{ fill: "#2563EB", strokeWidth: 2, r: 4 }} />
+                        <Area type="monotone" dataKey="revenue" stroke="var(--color-brand)" strokeWidth={3} fill="url(#revenueGrad)" dot={{ fill: "var(--color-brand)", strokeWidth: 2, r: 4 }} />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
@@ -975,7 +975,7 @@ export default function ZoikoBillingModule() {
                       message="There are no invoices for the selected period."
                       icon={FileText}
                       ctaText="Create Invoice"
-                      ctaHref="/billing/invoices/create"
+                      onCtaClick={() => navigate("/billing/invoices/create")}
                     />
                   )}
                 </ChartErrorBoundary>
@@ -1018,7 +1018,7 @@ export default function ZoikoBillingModule() {
                         <Tooltip content={<ChartTooltip format={(v) => formatDisplayCurrency(v, baseCurrency)} />} />
                         <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                           {agingData.map((_, idx) => (
-                            <Cell key={idx} fill={idx === 0 ? "#10b981" : idx === 1 ? "#f59e0b" : idx === 2 ? "#ef4444" : "#2563EB"} />
+                            <Cell key={idx} fill={idx === 0 ? "#10b981" : idx === 1 ? "#f59e0b" : idx === 2 ? "#ef4444" : "var(--color-brand)"} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -1033,13 +1033,13 @@ export default function ZoikoBillingModule() {
 
           <div className={DASHBOARD_CHART_GRID}>
             <WidgetErrorBoundary title="Recent Invoices">
-              <ChartCard title="Recent Invoices" action={<button onClick={() => navigate("/billing/invoices")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Invoices" action={<button onClick={() => navigate("/billing/invoices")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={invoiceColumns} data={d.invoices.slice(0, 5)} emptyTitle="No invoices yet" emptyMessage={null} emptyIcon={FileText} />
               </ChartCard>
             </WidgetErrorBoundary>
 
             <WidgetErrorBoundary title="Recent Payments">
-              <ChartCard title="Recent Payments" action={<button onClick={() => navigate("/billing/payments")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Payments" action={<button onClick={() => navigate("/billing/payments")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={paymentColumns} data={d.payments.slice(0, 5)} emptyTitle="No payments yet" emptyMessage={null} emptyIcon={Receipt} />
               </ChartCard>
             </WidgetErrorBoundary>
@@ -1047,13 +1047,13 @@ export default function ZoikoBillingModule() {
 
           <div className={DASHBOARD_CHART_GRID}>
             <WidgetErrorBoundary title="Recent Customers">
-              <ChartCard title="Recent Customers" action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Recent Customers" action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={customerColumns} data={d.customers.slice(0, 5)} emptyTitle="No customers yet" emptyMessage={null} emptyIcon={Users} />
               </ChartCard>
             </WidgetErrorBoundary>
 
             <WidgetErrorBoundary title="Upcoming Renewals">
-              <ChartCard title="Upcoming Renewals" action={<button onClick={() => navigate("/billing/contracts")} className="text-sm font-medium text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+              <ChartCard title="Upcoming Renewals" action={<button onClick={() => navigate("/billing/contracts")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={renewalColumns} data={d.expiringContracts.slice(0, 5)} emptyTitle="No upcoming renewals" emptyMessage={null} emptyIcon={Clock} />
               </ChartCard>
             </WidgetErrorBoundary>

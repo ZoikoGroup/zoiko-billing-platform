@@ -22,7 +22,7 @@ import { useBillingDateRange } from "../utils/DateRangeContext";
 // this is capped to a bounded, recent sample via the existing
 // invoiceApi.list / invoiceApi.listItems endpoints.
 const TOP_PRODUCTS_INVOICE_SAMPLE_SIZE = 15;
-const CHART_COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
+const CHART_COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 
 function filterByCreatedAt(items, dateFrom, dateTo) {
   if (!dateFrom && !dateTo) return items;
@@ -492,15 +492,15 @@ export default function ProductsDashboard() {
                   <AreaChart data={revenueChartData}>
                     <defs>
                       <linearGradient id="revenueTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                        <stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCompactCurrency(v)} />
                     <Tooltip formatter={(v) => [formatDisplayCurrency(v, baseCurrency), "Revenue"]} />
-                    <Area type="monotone" dataKey="revenue" stroke="#FF7A00" strokeWidth={2} fill="url(#revenueTrendGrad)" name="Revenue" />
+                    <Area type="monotone" dataKey="revenue" stroke="var(--color-accent-invoicing)" strokeWidth={2} fill="url(#revenueTrendGrad)" name="Revenue" />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -522,15 +522,15 @@ export default function ProductsDashboard() {
                 <AreaChart data={productGrowthData}>
                   <defs>
                     <linearGradient id="productGrowthGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip formatter={(v) => [`${v} product${v === 1 ? "" : "s"}`, "Added"]} />
-                  <Area type="monotone" dataKey="products" stroke="#FF7A00" strokeWidth={2} fill="url(#productGrowthGrad)" name="New Products" />
+                  <Area type="monotone" dataKey="products" stroke="var(--color-accent-invoicing)" strokeWidth={2} fill="url(#productGrowthGrad)" name="New Products" />
                 </AreaChart>
               </ResponsiveContainer>
             )}

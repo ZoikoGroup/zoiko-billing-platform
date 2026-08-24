@@ -16,7 +16,7 @@ import {
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
 function formatRelativeTime(dateStr) {
   if (!dateStr) return "—";
@@ -117,7 +117,7 @@ export default function CustomerDashboard() {
 
   const categoryData = useMemo(() => {
     const labels = { business: "Business", individual: "Individual", government: "Government", non_profit: "Non-Profit" };
-    const colors = { business: "#FF7A00", individual: "#FF9B4D", government: "#FFC9A6", non_profit: "#f59e0b" };
+    const colors = { business: "var(--color-accent-invoicing)", individual: "#FF9B4D", government: "#FFC9A6", non_profit: "#f59e0b" };
     const counts = {};
     customerSample.forEach((c) => {
       const type = c.customer_type || "business";
@@ -363,7 +363,7 @@ export default function CustomerDashboard() {
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip />
-                  <Area type="monotone" dataKey="cumulative" stroke="#FF7A00" fill="#FFC9A6" strokeWidth={2} name={plural} />
+                  <Area type="monotone" dataKey="cumulative" stroke="var(--color-accent-invoicing)" fill="#FFC9A6" strokeWidth={2} name={plural} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -421,7 +421,7 @@ export default function CustomerDashboard() {
                     tickFormatter={(v) => (v.length > 12 ? `${v.slice(0, 12)}…` : v)} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatDisplayCurrency(v, baseCurrency)} />
                   <Tooltip formatter={(v) => formatDisplayCurrency(v, baseCurrency)} />
-                  <Bar dataKey="revenue" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="revenue" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -489,7 +489,7 @@ export default function CustomerDashboard() {
         </DashboardChartCard>
 
         <DashboardChartCard title={`Top ${plural} by Revenue`}
-          action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+          action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[var(--color-accent-invoicing)] hover:text-[var(--color-accent-invoicing-hover)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
           <DashboardChartErrorBoundary>
             {topCustomersChartData.length === 0 ? (
               <DashboardEmptyPanel title={`No top ${plural.toLowerCase()} data`} message={`Top ${plural.toLowerCase()} by revenue will appear here`} icon={Inbox} />
@@ -501,7 +501,7 @@ export default function CustomerDashboard() {
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90}
                     tickFormatter={(v) => (v.length > 14 ? `${v.slice(0, 14)}…` : v)} />
                   <Tooltip formatter={(v) => formatDisplayCurrency(v, baseCurrency)} />
-                  <Bar dataKey="revenue" fill="#FF7A00" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="revenue" fill="var(--color-accent-invoicing)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -509,7 +509,7 @@ export default function CustomerDashboard() {
         </DashboardChartCard>
 
         <DashboardChartCard title="Recent Activity"
-          action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[#FF7A00] hover:text-[#FF5500] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
+          action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[var(--color-accent-invoicing)] hover:text-[var(--color-accent-invoicing-hover)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
           <DashboardChartErrorBoundary>
             {recentCustomers.length === 0 ? (
               <DashboardEmptyPanel title="No recent activity" message={`Newly added ${plural.toLowerCase()} will appear here`} icon={Activity} ctaText="Add Customer" onCtaClick={() => navigate("/billing/customers")} />

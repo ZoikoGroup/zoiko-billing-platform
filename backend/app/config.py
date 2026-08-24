@@ -101,6 +101,17 @@ class Settings(BaseSettings):
     STRIPE_CURRENCY_DEFAULT: str = "usd"
     STRIPE_PAYMENT_METHOD_TYPES: str = "card"
     STRIPE_BILLING_ADDRESS_COLLECTION: str = "auto"
+    # Plane 2 — Stripe Connect (tenant-as-merchant).
+    # STRIPE_CONNECT_CLIENT_ID is the OAuth client_id for Zoiko's Connect
+    # Platform (non-secret; safe to embed in the onboarding URL).
+    STRIPE_CONNECT_CLIENT_ID: str = ""
+    # Outbound transport hardening (ID-3): bounded automatic retries with
+    # SDK-managed idempotency keys for transport-level retries, plus a bounded
+    # per-attempt HTTP timeout.
+    STRIPE_MAX_NETWORK_RETRIES: int = 2
+    STRIPE_TIMEOUT_SECONDS: int = 25
+    # OAuth state (CON-2): TTL for the signed, organization-bound state token.
+    STRIPE_OAUTH_STATE_TTL_SECONDS: int = 600
 
     # ── AI Model Gateway (provider-neutral, Claude default) ───────────
     ANTHROPIC_API_KEY: str = ""

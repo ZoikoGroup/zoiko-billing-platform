@@ -10,7 +10,7 @@ import { useCurrency } from "../utils/CurrencyContext";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu, DashboardStatCard } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 
-const COLORS = ["#FF7A00", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
+const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
 function StatCard(props) {
   return <DashboardStatCard {...props} />;
@@ -272,7 +272,7 @@ export default function CustomerReportsPage() {
                         <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Area type="monotone" dataKey="cumulative" stroke="#FF7A00" fill="#FFC9A6" strokeWidth={2} name="Total Customers" />
+                        <Area type="monotone" dataKey="cumulative" stroke="var(--color-accent-invoicing)" fill="#FFC9A6" strokeWidth={2} name="Total Customers" />
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
@@ -333,7 +333,7 @@ export default function CustomerReportsPage() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={110} />
                     <Tooltip formatter={(v) => formatCurrency(v, baseCurrency)} />
-                    <Bar dataKey="revenue" fill="#FF7A00" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="revenue" fill="var(--color-accent-invoicing)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -393,7 +393,7 @@ export default function CustomerReportsPage() {
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="cumulative" stroke="#FF7A00" fill="#FFC9A6" strokeWidth={2} name="Total Customers" />
+                      <Area type="monotone" dataKey="cumulative" stroke="var(--color-accent-invoicing)" fill="#FFC9A6" strokeWidth={2} name="Total Customers" />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
@@ -410,7 +410,7 @@ export default function CustomerReportsPage() {
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={(v) => formatCurrency(v, baseCurrency)} />
-                      <Bar dataKey="revenue" fill="#FF7A00" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="revenue" fill="var(--color-accent-invoicing)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

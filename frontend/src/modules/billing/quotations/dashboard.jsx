@@ -43,7 +43,7 @@ const STATUS_OPTIONS = [
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-500" },
 ];
 const STATUS_ICONS = { draft: Clock, sent: Send, accepted: CheckCircle, rejected: XCircle, cancelled: Ban, converted: RefreshCw, expired: Clock };
-const STATUS_COLORS = { draft: "#6b7280", sent: "#3b82f6", accepted: "#10b981", rejected: "#ef4444", cancelled: "#f59e0b", converted: "#FF7A00", expired: "#94a3b8" };
+const STATUS_COLORS = { draft: "#6b7280", sent: "#3b82f6", accepted: "#10b981", rejected: "#ef4444", cancelled: "#f59e0b", converted: "var(--color-accent-invoicing)", expired: "#94a3b8" };
 
 export default function QuotationDashboardPage() {
   const navigate = useNavigate();
@@ -391,8 +391,8 @@ export default function QuotationDashboardPage() {
                     <ComposedChart data={monthlyTrend}>
                       <defs>
                         <linearGradient id="quoteTrendValue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#FF7A00" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#FF7A00" stopOpacity={0} />
+                          <stop offset="5%" stopColor="var(--color-accent-invoicing)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="var(--color-accent-invoicing)" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -400,7 +400,7 @@ export default function QuotationDashboardPage() {
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => formatDisplayCurrency(v, baseCurrency)} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip formatter={(v, name) => name === "value" || name === "Value" ? [formatDisplayCurrency(v, baseCurrency), "Value"] : [v, "Count"]} />
-                      <Area yAxisId="left" type="monotone" dataKey="value" name="Value" stroke="#FF7A00" fill="url(#quoteTrendValue)" strokeWidth={2} />
+                      <Area yAxisId="left" type="monotone" dataKey="value" name="Value" stroke="var(--color-accent-invoicing)" fill="url(#quoteTrendValue)" strokeWidth={2} />
                       <Line yAxisId="right" type="monotone" dataKey="count" name="Count" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
                     </ComposedChart>
                   </ResponsiveContainer>

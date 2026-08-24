@@ -23,6 +23,7 @@ from app.modules.billing.routers.subscription_router import router as subscripti
 from app.modules.billing.routers.invoice_router import router as invoice_router
 from app.modules.billing.routers.payment_router import router as payment_router
 from app.modules.billing.routers.stripe_router import router as stripe_router
+from app.modules.billing.routers.stripe_connect_router import router as stripe_connect_router
 from app.modules.billing.routers.credit_note_router import router as credit_note_router
 from app.modules.billing.routers.refund_router import router as refund_router
 from app.modules.billing.routers.write_off_router import router as write_off_router
@@ -55,6 +56,7 @@ billing_router.include_router(subscription_router)
 billing_router.include_router(invoice_router)
 billing_router.include_router(payment_router)
 billing_router.include_router(stripe_router)
+billing_router.include_router(stripe_connect_router)
 billing_router.include_router(credit_note_router)
 billing_router.include_router(refund_router)
 billing_router.include_router(write_off_router)
