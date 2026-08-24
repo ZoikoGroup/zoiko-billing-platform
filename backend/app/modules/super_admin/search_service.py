@@ -57,6 +57,15 @@ class GlobalSearchService:
                 "label": f"{org.organization_name} ({org.organization_code})",
                 "route": "/super-admin/support-access",
                 "requires_access": True,
+                # G-06 — real lifecycle state; legacy rows without one report
+                # UNKNOWN rather than a guess.
+                "status": (
+                    org.lifecycle_state.value
+                    if getattr(org, "lifecycle_state", None) is not None
+                    else "UNKNOWN"
+                ),
+                "severity": None,
+                "plane": "TENANT",
             }
             for org in rows
         ]
@@ -78,6 +87,10 @@ class GlobalSearchService:
                 "label": f"{item.title} [{item.severity.value.upper()}]",
                 "route": "/super-admin/governance",
                 "requires_access": False,
+                # G-06 — triage state + severity on the hit itself.
+                "status": item.status.value,
+                "severity": item.severity.value,
+                "plane": "PLATFORM",
             }
             for item in rows
         ]
@@ -100,6 +113,9 @@ class GlobalSearchService:
                 "label": f"Correlation {query} — {audit_hit.action.value if hasattr(audit_hit.action, 'value') else audit_hit.action}",
                 "route": "/super-admin/audit-logs",
                 "requires_access": False,
+                "status": None,
+                "severity": None,
+                "plane": "PLATFORM",
             })
         grant_hit = (
             self.db.query(PrivilegedTenantAccessGrant)
@@ -114,6 +130,14 @@ class GlobalSearchService:
                 "label": f"Correlation {query} — privileged access grant",
                 "route": "/super-admin/support-access",
                 "requires_access": False,
+                # G-06 — the grant's real state, not a generic hit.
+                "status": (
+                    grant_hit.status.value
+                    if getattr(grant_hit, "status", None) is not None
+                    else None
+                ),
+                "severity": None,
+                "plane": "PLATFORM",
             })
         return results
 
@@ -134,6 +158,9 @@ class GlobalSearchService:
                 "label": f"{row.entity_type} #{row.entity_id} — {row.action.value if hasattr(row.action, 'value') else row.action}",
                 "route": "/super-admin/audit-logs",
                 "requires_access": False,
+                "status": None,
+                "severity": None,
+                "plane": "PLATFORM",
             }
             for row in rows
         ]

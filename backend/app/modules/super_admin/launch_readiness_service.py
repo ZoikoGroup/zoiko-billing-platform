@@ -252,10 +252,29 @@ class LaunchReadinessService:
         p95 = stats["p95_ms"]
         budget = stats["p95_budget_ms"]
         within = p95 <= budget
+        # G-05 — error-rate observability rides the same window; rates are
+        # None when no sample carried a known HTTP status.
+        error_bits = ""
+        if stats.get("error_rate") is not None:
+            server_errors = stats.get("error_count", 0)
+            client_errors = stats.get("client_error_count", 0)
+            error_bits = (
+                f" Server errors: {server_errors} ({stats['error_rate'] * 100:.2f}%); "
+                f"client errors: {client_errors} "
+                f"({(stats.get('client_error_rate') or 0) * 100:.2f}%)."
+            )
+        elif stats.get("status_unknown_count"):
+            error_bits = (
+                f" Error rates unavailable: {stats['status_unknown_count']} sample(s) "
+                "lack a recorded HTTP status."
+            )
+        else:
+            error_bits = " No errors recorded in the window."
         evidence = (
             f"Measured server-side handling time over the last {stats['window_seconds']}s: "
             f"p50={stats['p50_ms']}ms, p95={p95}ms, max={stats['max_ms']}ms across "
-            f"{stats['sample_count']} /api/super-admin/* requests (budget {budget}ms). "
+            f"{stats['sample_count']} /api/super-admin/* requests (budget {budget}ms)."
+            f"{error_bits} "
             "Browser-side render time is not measured by this check."
         )
         return self._item(

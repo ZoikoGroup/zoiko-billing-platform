@@ -75,6 +75,7 @@ from app.modules.super_admin.schemas import (
     CommercialPlanVersionCreate,
     CommercialPlanVersionListResponse,
     CommercialPlanVersionResponse,
+    ConfigurationInventoryResponse,
     DashboardStats,
     JobHealthListResponse,
     MetricDictionaryResponse,
@@ -2103,58 +2104,155 @@ def get_saas_commercial_reporting(
     return SaasReportingService(db).get_reporting()
 
 
-# ── Platform settings ───────────────────────────────────────────────────────
+# ── Platform settings & configuration governance (Phase 4, G-02/G-03) ───────
+# Reads require the platform_config.read capability; every mutation requires
+# platform_config.manage, stamps the acting user onto the row, and writes a
+# PlatformAudit record in the SAME transaction (log_no_commit + one commit).
+# Sensitive values are never written into audit payloads — only the fact that
+# a value changed.
+
+
+def _setting_audit_values(setting: "PlatformSetting", *, include_value: bool) -> dict:
+    """Audit-safe projection of a setting. Sensitive keys contribute only a
+    change marker, never their raw value."""
+    from app.modules.super_admin.schemas import is_sensitive_setting_key
+
+    payload = {
+        "key": setting.key,
+        "category": setting.category,
+        "is_public": setting.is_public,
+        "description": setting.description,
+    }
+    if include_value:
+        payload["value_changed"] = True if is_sensitive_setting_key(setting.key) else None
+        if not is_sensitive_setting_key(setting.key):
+            payload["value"] = setting.value
+    return {k: v for k, v in payload.items() if v is not None or k != "description"}
+
+
+@router.get("/configuration", response_model=ConfigurationInventoryResponse)
+def get_configuration_inventory(
+    current_user=Depends(require_capability("platform_config.read")),
+    db: Session = Depends(get_db),
+):
+    """Authoritative inventory of the configuration that governs this control
+    plane: DB-backed platform settings, code-declared operational thresholds
+    imported live from their owning modules (cannot drift from enforcement),
+    and environment capability status (presence only — secret values are
+    never exposed)."""
+    from app.modules.super_admin.configuration_service import ConfigurationGovernanceService
+
+    return ConfigurationGovernanceService(db).get_inventory()
+
 
 @router.get("/settings", response_model=list[SettingResponse])
-def list_settings(current_user=Depends(get_current_super_admin), db: Session = Depends(get_db)):
+def list_settings(
+    current_user=Depends(require_capability("platform_config.read")),
+    db: Session = Depends(get_db),
+):
     from app.modules.super_admin.models import PlatformSetting
 
-    return db.query(PlatformSetting).order_by(PlatformSetting.key).all()
+    rows = db.query(PlatformSetting).order_by(PlatformSetting.key).all()
+    responses = [SettingResponse.model_validate(row) for row in rows]
+    for row, response in zip(rows, responses):
+        response.updated_by_email = row.updated_by.email if row.updated_by else None
+    return responses
 
 
 @router.post("/settings", response_model=SettingResponse)
 def create_setting(
     data: SettingCreate,
-    current_user=Depends(get_current_super_admin),
+    current_user=Depends(require_capability("platform_config.manage")),
     db: Session = Depends(get_db),
 ):
+    from uuid import uuid4
+
     from app.core.exceptions import AlreadyExistsException
-    from app.modules.super_admin.models import PlatformSetting
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction, PlatformSetting
 
     existing = db.query(PlatformSetting).filter(PlatformSetting.key == data.key).first()
     if existing:
         raise AlreadyExistsException("Setting", "key")
-    setting = PlatformSetting(**data.model_dump())
+    setting = PlatformSetting(**data.model_dump(), updated_by_user_id=current_user.id)
     db.add(setting)
+    db.flush()  # assign PK before writing the audit row
+    correlation_id = f"cfg-{uuid4().hex[:12]}"
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.CREATE,
+        entity_type="PlatformSetting",
+        entity_id=setting.id,
+        old_values=None,
+        new_values=_setting_audit_values(setting, include_value=True),
+        correlation_id=correlation_id,
+        metadata={"capability": "platform_config.manage"},
+    )
     db.commit()
     db.refresh(setting)
-    return setting
+    response = SettingResponse.model_validate(setting)
+    response.updated_by_email = current_user.email
+    return response
 
 
 @router.put("/settings/{key}", response_model=SettingResponse)
 def update_setting(
     key: str,
     data: SettingUpdate,
-    current_user=Depends(get_current_super_admin),
+    current_user=Depends(require_capability("platform_config.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.modules.super_admin.models import PlatformSetting
+    from uuid import uuid4
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction, PlatformSetting
 
     setting = db.query(PlatformSetting).filter(PlatformSetting.key == key).first()
-    if setting is None:
+    created = setting is None
+    old_values = _setting_audit_values(setting, include_value=True) if setting else None
+    if created:
         setting = PlatformSetting(key=key)
         db.add(setting)
-    if data.value is not None:
+    value_changed = False
+    if data.value is not None and data.value != setting.value:
         setting.value = data.value
-    if data.description is not None:
+        value_changed = True
+    description_changed = False
+    if data.description is not None and data.description != setting.description:
         setting.description = data.description
-    if data.category is not None:
+        description_changed = True
+    category_changed = False
+    if data.category is not None and data.category != setting.category:
         setting.category = data.category
-    if data.is_public is not None:
+        category_changed = True
+    is_public_changed = False
+    if data.is_public is not None and data.is_public != setting.is_public:
         setting.is_public = data.is_public
+        is_public_changed = True
+
+    setting.updated_by_user_id = current_user.id
+    db.flush()
+    # Only write an audit row when something actually changed — a no-op PUT
+    # is still capability-gated but produces no false audit evidence.
+    if created or value_changed or description_changed or category_changed or is_public_changed:
+        correlation_id = f"cfg-{uuid4().hex[:12]}"
+        PlatformAuditService(db).log_no_commit(
+            actor_id=current_user.id,
+            actor_role="super_admin",
+            action=PlatformAuditAction.CREATE if created else PlatformAuditAction.UPDATE,
+            entity_type="PlatformSetting",
+            entity_id=setting.id,
+            old_values=old_values,
+            new_values=_setting_audit_values(setting, include_value=value_changed),
+            correlation_id=correlation_id,
+            metadata={"capability": "platform_config.manage"},
+        )
     db.commit()
     db.refresh(setting)
-    return setting
+    response = SettingResponse.model_validate(setting)
+    response.updated_by_email = current_user.email
+    return response
 
 
 # ── Production Acceptance Center (ZB-COM-BILL-001 §26, Super Admin only) ────
@@ -2517,6 +2615,19 @@ def get_job_telemetry(
 
     jobs = TelemetryService(db).get_job_health()
     return JobHealthListResponse(jobs=jobs, scheduler_enabled=settings.ENABLE_RECURRING_BILLING_SCHEDULER)
+
+
+@router.get("/telemetry/api", response_model=dict)
+def get_api_telemetry(
+    current_user=Depends(require_capability('reliability.read')),
+):
+    """Phase 4 (G-05) — real server-side latency/error telemetry for
+    /api/super-admin/* over the sliding window (core/api_metrics.py).
+    Single-process, in-memory: resets on restart; an empty window reports
+    zero samples with None rates, never a fabricated healthy 0%."""
+    import app.core.api_metrics as api_metrics
+
+    return api_metrics.snapshot()
 
 
 @router.get("/telemetry/tenant-health", response_model=TenantHealthOverviewResponse)

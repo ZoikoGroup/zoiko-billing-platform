@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./AuthContext";
+import { canReadReliabilityTelemetry } from "../config/roles";
 import { getActivePrivilegedAccess, getJobTelemetry } from "../service/privilegedAccessService";
 import { getAttentionCounts } from "../service/commandCenterService";
 
@@ -19,8 +20,9 @@ const CommandCenterContext = createContext(null);
 const POLL_INTERVAL_MS = 20000;
 
 export function CommandCenterProvider({ children }) {
-  const { role, isAuthenticated } = useAuth();
+  const { role, user, isAuthenticated } = useAuth();
   const isSuperAdmin = isAuthenticated && role === "super_admin";
+  const canReadJobs = canReadReliabilityTelemetry(user?.platform_role);
 
   // Lens management (Default: "triage", ZB-SA-CMD-003 §11)
   const [activeLens, setActiveLens] = useState("triage");
@@ -54,10 +56,12 @@ export function CommandCenterProvider({ children }) {
     getAttentionCounts()
       .then(setAttentionCounts)
       .catch(() => setAttentionCounts(null));
-    getJobTelemetry()
-      .then(setJobFreshness)
-      .catch(() => setJobFreshness(null));
-  }, [isSuperAdmin]);
+    if (canReadJobs) {
+      getJobTelemetry()
+        .then(setJobFreshness)
+        .catch(() => setJobFreshness(null));
+    }
+  }, [isSuperAdmin, canReadJobs]);
 
   useEffect(() => {
     if (!isSuperAdmin) {

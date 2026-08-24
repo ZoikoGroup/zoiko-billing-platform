@@ -1,37 +1,28 @@
+import {
+  getAccessToken,
+  getRefreshToken,
+  getStoredUser,
+  setStoredSession,
+  clearStoredSession,
+} from "./sessionStorage";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
-const TOKEN_KEY = "zoiko_billing_access";
-const REFRESH_KEY = "zoiko_billing_refresh";
-const USER_KEY = "zoiko_billing_user";
 const AUTH_INVALID_EVENT = "zoiko-billing-auth-session-invalid";
 
 let refreshPromise = null;
 let sessionInvalidNotified = false;
 
-export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY);
-}
-
-export function getStoredUser() {
-  const raw = localStorage.getItem(USER_KEY);
-  return raw ? JSON.parse(raw) : null;
-}
+// Storage is delegated to service/sessionStorage.js (the single source of
+// truth — see that file's header comment / Mandatory Fix 5).
+export { getAccessToken, getRefreshToken, getStoredUser };
 
 export function setSession({ accessToken, refreshToken, user } = {}) {
-  if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken);
-  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
-  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  setStoredSession({ accessToken, refreshToken, user });
   if (accessToken || refreshToken || user) sessionInvalidNotified = false;
 }
 
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  localStorage.removeItem(USER_KEY);
+  clearStoredSession();
 }
 
 function notifySessionInvalid(reason) {

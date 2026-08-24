@@ -144,7 +144,17 @@ class FinancialConsistencyService:
     def get_financial_operations_summary(self) -> Dict[str, Any]:
         """Provides authoritative Plane 2 financial operations telemetry,
         leakage detection, and integrity composite state. Computed server-side
-        via aggregated queries without client-side math."""
+        via aggregated queries without client-side math.
+
+        Currency honesty (Phase 4, G-01): monetary totals are computed PER
+        CURRENCY and are never summed across different currencies. A scalar
+        total is exposed ONLY when every invoice shares exactly one currency;
+        mixed currencies produce per-currency buckets with no combined amount
+        (mirroring the SaaS MRR read model's multi-currency rule), and an
+        empty database reports UNKNOWN rather than zero.
+        """
+        from decimal import Decimal
+
         from app.modules.billing.models import (
             Invoice,
             InvoiceStatus,
@@ -159,26 +169,95 @@ class FinancialConsistencyService:
 
         consistency = self.check_allocation_consistency()
 
-        # Invoiced aggregates
-        invoiced_count = self.db.query(func.count(Invoice.id)).scalar() or 0
-        invoiced_amount = self.db.query(func.coalesce(func.sum(Invoice.total_amount), 0)).scalar() or 0
-
-        # Paid / Collected
-        paid_amount = (
-            self.db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
+        # ── Per-currency billings aggregation (never cross-currency sums) ──
+        # One grouped query per status dimension; buckets are joined in Python
+        # so each currency carries its own invoiced/collected/overdue figures.
+        invoiced_rows = (
+            self.db.query(
+                Invoice.currency,
+                func.count(Invoice.id),
+                func.coalesce(func.sum(Invoice.total_amount), 0),
+            )
+            .group_by(Invoice.currency)
+            .all()
+        )
+        collected_rows = dict(
+            self.db.query(
+                Invoice.currency,
+                func.coalesce(func.sum(Invoice.total_amount), 0),
+            )
             .filter(Invoice.status == InvoiceStatus.PAID)
-            .scalar()
-            or 0
+            .group_by(Invoice.currency)
+            .all()
         )
-
-        # Overdue
-        overdue_invoices = (
-            self.db.query(func.count(Invoice.id), func.coalesce(func.sum(Invoice.total_amount), 0))
+        overdue_rows = {
+            currency: (count, amount)
+            for currency, count, amount in self.db.query(
+                Invoice.currency,
+                func.count(Invoice.id),
+                func.coalesce(func.sum(Invoice.total_amount), 0),
+            )
             .filter(Invoice.status == InvoiceStatus.OVERDUE)
-            .first()
-        )
-        overdue_count = overdue_invoices[0] if overdue_invoices else 0
-        overdue_amount = overdue_invoices[1] if overdue_invoices else 0
+            .group_by(Invoice.currency)
+            .all()
+        }
+
+        currencies: list[Dict[str, Any]] = []
+        for currency, invoice_count, invoiced_amount in sorted(
+            invoiced_rows, key=lambda r: (r[0] or "")
+        ):
+            currency_code = currency or "UNKNOWN"
+            overdue_count_for_currency, overdue_amount_for_currency = overdue_rows.get(
+                currency, (0, Decimal("0"))
+            )
+            currencies.append(
+                {
+                    "currency": currency_code,
+                    "invoice_count": int(invoice_count or 0),
+                    "invoiced_amount": str(invoiced_amount or Decimal("0")),
+                    "collected_amount": str(collected_rows.get(currency, Decimal("0"))),
+                    "overdue_count": int(overdue_count_for_currency or 0),
+                    "overdue_amount": str(overdue_amount_for_currency or Decimal("0")),
+                }
+            )
+
+        total_invoices = sum(c["invoice_count"] for c in currencies)
+        overdue_count = sum(c["overdue_count"] for c in currencies)
+
+        if total_invoices == 0:
+            currency_state = "unknown"
+            scalar_invoiced: Any = None
+            scalar_collected: Any = None
+            scalar_overdue_amount: Any = None
+        elif len(currencies) == 1:
+            # Same-currency sums are legitimate — expose convenience scalars.
+            currency_state = "single_currency"
+            scalar_invoiced = currencies[0]["invoiced_amount"]
+            scalar_collected = currencies[0]["collected_amount"]
+            scalar_overdue_amount = currencies[0]["overdue_amount"]
+        else:
+            currency_state = "multi_currency"
+            scalar_invoiced = None
+            scalar_collected = None
+            scalar_overdue_amount = None
+
+        billings: Dict[str, Any] = {
+            "total_invoices": total_invoices,
+            "currency_state": currency_state,
+            "currencies": currencies,
+            "overdue_count": overdue_count,
+            "basis": (
+                "Amounts are aggregated per currency. Mixed currencies are "
+                "never summed into a single figure; an empty platform reports "
+                "UNKNOWN, not zero."
+            ),
+        }
+        if scalar_invoiced is not None:
+            billings["invoiced_amount"] = scalar_invoiced
+        if scalar_collected is not None:
+            billings["collected_amount"] = scalar_collected
+        if scalar_overdue_amount is not None:
+            billings["overdue_amount"] = scalar_overdue_amount
 
         # Failed payments
         failed_payments_count = (
@@ -221,13 +300,7 @@ class FinancialConsistencyService:
 
         return {
             "consistency": consistency,
-            "billings": {
-                "total_invoices": invoiced_count,
-                "invoiced_amount": str(invoiced_amount),
-                "collected_amount": str(paid_amount),
-                "overdue_count": overdue_count,
-                "overdue_amount": str(overdue_amount),
-            },
+            "billings": billings,
             "recovery": {
                 "failed_payments_count": failed_payments_count,
                 "dunning_cycle_status": dunning_status,

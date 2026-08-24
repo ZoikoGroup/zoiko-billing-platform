@@ -97,5 +97,16 @@ export const getFinancialConsistency = () =>
 export const getFinancialOperationsSummary = () =>
   api.get("/api/super-admin/financial-operations");
 
+// Phase 4 (G-05) — real server-side latency + error-rate telemetry for
+// /api/super-admin/* (sliding window; single-process, resets on restart).
+export const getApiTelemetry = () =>
+  api.get("/api/super-admin/telemetry/api");
+
+// Phase 4 (G-03) — configuration governance inventory: DB-backed platform
+// settings, code-declared operational thresholds, and environment capability
+// status (presence only). Requires the platform_config.read capability.
+export const getConfigurationInventory = () =>
+  api.get("/api/super-admin/configuration");
+
 export const getLaunchReadiness = () =>
   api.get("/api/super-admin/launch-readiness");

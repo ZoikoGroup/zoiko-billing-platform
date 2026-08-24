@@ -177,6 +177,17 @@ class PlatformSetting(Base):
     is_public = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Phase 4 (G-02/G-03) — real evidence of WHO last changed this setting.
+    # Nullable/additive: rows that predate Phase 4 legitimately have no actor
+    # and are surfaced as UNKNOWN in the configuration governance view rather
+    # than being backfilled with a guess.
+    updated_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    updated_by = relationship("User", foreign_keys=[updated_by_user_id])
 
     def __repr__(self):
         return f"<PlatformSetting key={self.key!r}>"

@@ -3,8 +3,11 @@ import { test, expect } from '@playwright/test';
 // Test configuration
 const BASE_URL = 'http://127.0.0.1:5173';
 const API_BASE_URL = 'http://127.0.0.1:8001';
-const TEST_EMAIL = 'Nikhil@zoikogroup.com';
-const TEST_PASSWORD = 'Admin@123';
+// No real credential may live in source control (Phase 3 architecture
+// remediation, Mandatory Fix 6). Supply a Super Admin QA account via the
+// environment — never commit a .env file containing these values.
+const TEST_EMAIL = process.env.SUPER_ADMIN_QA_EMAIL;
+const TEST_PASSWORD = process.env.SUPER_ADMIN_QA_PASSWORD;
 
 const qaReport = {
   timestamp: new Date().toISOString(),
@@ -31,6 +34,14 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
   let apiRequests = [];
 
   test.beforeAll(async ({ browser }) => {
+    if (!TEST_EMAIL || !TEST_PASSWORD) {
+      throw new Error(
+        'Missing test configuration: SUPER_ADMIN_QA_EMAIL and SUPER_ADMIN_QA_PASSWORD must be ' +
+        'set in the environment before running this spec (e.g. via a local, gitignored .env.test ' +
+        'or your CI secret store). No Super Admin credential is committed to this repository.'
+      );
+    }
+
     page = await browser.newPage();
 
     // Capture console messages

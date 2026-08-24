@@ -404,6 +404,23 @@ export default function SettingsPage() {
           />
         ),
     },
+    {
+      // Phase 4 (G-02) — evidence of who last changed each setting. Rows that
+      // predate audit coverage show UNKNOWN rather than a fabricated name.
+      key: "updated_by",
+      label: "Last Changed By",
+      render: (s) =>
+        s.updated_by_email ? (
+          <span className="text-xs font-medium text-slate-700">{s.updated_by_email}</span>
+        ) : (
+          <span
+            className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500"
+            title="No recorded actor exists — this row's last change predates settings audit coverage."
+          >
+            UNKNOWN
+          </span>
+        ),
+    },
     { key: "is_public", label: "Public", render: (s) => <span className="text-slate-500">{s.is_public ? "Yes" : "No"}</span> },
     {
       key: "actions",
@@ -463,7 +480,7 @@ export default function SettingsPage() {
                   columns={columnsFor(categorySettings)}
                   data={categorySettings}
                   rowKey={(s) => s.key}
-                  minWidth={780}
+                  minWidth={900}
                 />
               </section>
             ))}

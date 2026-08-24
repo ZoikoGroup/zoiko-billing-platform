@@ -3,8 +3,11 @@ import { test, expect, Page } from '@playwright/test';
 // Test configuration
 const BASE_URL = 'http://127.0.0.1:5173';
 const API_BASE_URL = 'http://127.0.0.1:8001';
-const TEST_EMAIL = 'Nikhil@zoikogroup.com';
-const TEST_PASSWORD = 'Admin@123';
+// No real credential may live in source control (Phase 3 architecture
+// remediation, Mandatory Fix 6). Supply a Super Admin QA account via the
+// environment — never commit a .env file containing these values.
+const TEST_EMAIL = process.env.SUPER_ADMIN_QA_EMAIL;
+const TEST_PASSWORD = process.env.SUPER_ADMIN_QA_PASSWORD;
 
 interface TestResult {
   name: string;
@@ -48,6 +51,14 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
   let apiRequests: any[] = [];
 
   test.beforeAll(async ({ browser }) => {
+    if (!TEST_EMAIL || !TEST_PASSWORD) {
+      throw new Error(
+        'Missing test configuration: SUPER_ADMIN_QA_EMAIL and SUPER_ADMIN_QA_PASSWORD must be ' +
+        'set in the environment before running this spec (e.g. via a local, gitignored .env.test ' +
+        'or your CI secret store). No Super Admin credential is committed to this repository.'
+      );
+    }
+
     // Create a new page with all event listeners
     page = await browser.newPage();
 
@@ -110,7 +121,7 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
     try {
       const emailInput = await page.$('input[type="email"], input[name*="email" i]');
       const passwordInput = await page.$('input[type="password"]');
-      const signInButton = await page.$('button:has-text("Sign In"), button:contains("Sign In")');
+      const signInButton = await page.$('button:has-text("Sign In")');
       
       if (emailInput && passwordInput && signInButton) {
         logResult('Login Form Visibility', 'PASS', 'Email, Password, and Sign In button found');
@@ -154,7 +165,7 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
       // Clear previous API requests
       apiRequests = [];
       
-      const signInButton = await page.$('button:has-text("Sign In"), button:contains("Sign In")');
+      const signInButton = await page.$('button:has-text("Sign In")');
       if (!signInButton) {
         logResult('Click Sign In', 'FAIL', 'Sign In button not found');
         return;
@@ -296,8 +307,9 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
           sessionStorage.clear();
         });
         await page.goto(`${BASE_URL}/super-admin/dashboard`);
+        await page.waitForURL('**/login', { timeout: 5000 }).catch(() => {});
         const url = page.url();
-        
+
         if (url.includes('/login')) {
           logResult('LOGOUT', 'PASS', 'Session cleared, protected route blocked');
         } else {
@@ -393,24 +405,29 @@ test.describe('Super Admin Browser Login - Comprehensive QA Test', () => {
 
   // TEST 14: Console Errors Check
   test('Step 14: Console Errors Summary', async () => {
-    const errorCount = qaReport.consoleErrors.length;
-    if (errorCount === 0) {
-      logResult('CONSOLE ERRORS', 'PASS', '0 errors');
+    // Align with .js spec: HTTP 401/403 resource logs are EXPECTED outputs of
+    // the intentional negative-path security checks (e.g. Step 13 invalid
+    // credentials), not application errors.
+    const unhandledErrors = qaReport.consoleErrors.filter(err => !err.includes('403') && !err.includes('401'));
+    if (unhandledErrors.length === 0) {
+      logResult('CONSOLE ERRORS', 'PASS', `0 unhandled application errors (${qaReport.consoleErrors.length} expected HTTP 401/403 security logs)`);
     } else {
-      logResult('CONSOLE ERRORS', 'FAIL', `${errorCount} errors detected`);
-      qaReport.consoleErrors.forEach(err => console.log(`  - ${err}`));
+      logResult('CONSOLE ERRORS', 'FAIL', `${unhandledErrors.length} unhandled application errors detected`);
+      unhandledErrors.forEach(err => console.log(`  - ${err}`));
     }
   });
 
   // TEST 15: Network Failures Check
   test('Step 15: Network Failures Summary', async () => {
-    const failureCount = qaReport.networkFailures.length;
-    if (failureCount === 0) {
-      logResult('NETWORK FAILURES', 'PASS', '0 failures');
+    const unexpectedFailures = qaReport.networkFailures.filter(f => f.status >= 500 || (f.status !== 401 && f.status !== 403));
+    const expectedSecurityResponses = qaReport.networkFailures.filter(f => f.status === 401 || f.status === 403);
+
+    if (unexpectedFailures.length === 0) {
+      logResult('NETWORK FAILURES', 'PASS', `0 unexpected failures (${expectedSecurityResponses.length} expected security 401/403 controls)`);
     } else {
-      logResult('NETWORK FAILURES', 'FAIL', `${failureCount} failures detected`);
-      qaReport.networkFailures.forEach(failure => {
-        console.log(`  - ${failure.method} ${failure.endpoint} → ${failure.status}`);
+      logResult('NETWORK FAILURES', 'FAIL', `${unexpectedFailures.length} unexpected failures detected`);
+      unexpectedFailures.forEach(failure => {
+        console.log(`  - ${failure.method} ${failure.url} → ${failure.status}`);
       });
     }
   });
