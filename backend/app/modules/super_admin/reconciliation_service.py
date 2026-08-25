@@ -109,7 +109,7 @@ class ReconciliationService:
     # Run lifecycle
     # ------------------------------------------------------------------
     def run_reconciliation(self, trigger: str = "manual") -> ReconciliationRun:
-        run = ReconciliationRun(trigger=trigger, state=ReconciliationRunState.RUNNING)
+        run = ReconciliationRun(plane="plane2", trigger=trigger, state=ReconciliationRunState.RUNNING)
         self.db.add(run)
         self.db.flush()
 

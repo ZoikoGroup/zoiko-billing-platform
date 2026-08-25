@@ -12,6 +12,8 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
+import PublicPlatformQuotePage from "./pages/PublicPlatformQuotePage";
+import PublicPlatformInvoicePage from "./pages/PublicPlatformInvoicePage";
 import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
@@ -375,6 +377,8 @@ export default function App() {
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
+        <Route path="/platform-quote/:token" element={<PublicPlatformQuotePage />} />
+        <Route path="/platform-invoice/:token" element={<PublicPlatformInvoicePage />} />
         <Route element={<ProtectedRoute />}>
           {SUPER_ADMIN_LEGACY_REDIRECTS.map(({ from, to }) => (
             <Route key={from} path={from} element={<LegacyRedirect to={to} />} />

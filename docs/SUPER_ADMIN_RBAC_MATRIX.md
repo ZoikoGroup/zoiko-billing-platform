@@ -48,6 +48,10 @@ Source: `backend/app/modules/auth/models.py:PlatformRole`,
 | `circuit_breaker.read` | View circuit breaker state | SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /circuit-breakers`, `GET /circuit-breakers/{scope}` (session 7 catalog; legacy single-scope GET retained) |
 | `circuit_breaker.manage` | Toggle a circuit breaker (directly = break-glass), propose a change, or decide a pending change as the checker | SECURITY_OPERATOR only | `PUT /circuit-breakers/{scope}`, `POST /circuit-breakers/{scope}/approval-request`, `POST /approval-requests/{id}/decision` (all also require fresh MFA step-up; engage additionally requires `incident_reference` + bounded `auto_expire_minutes`; self-approval structurally blocked) |
 | `platform_role.manage` | Assign another super_admin's PlatformRole | **PLATFORM_ADMINISTRATOR only** — no operator role holds it | `PUT /users/{id}/platform-role` |
+| `commercial_quote.write` | Create, send, and convert commercial quotes | SUPPORT_OPERATOR | `POST /commercial-billing/quotes`, `POST .../send`, `POST .../convert` |
+| `commercial_quote.approve` | Approve/reject commercial quotes (enforces approver != creator) | AUDITOR | `POST /commercial-billing/quotes/{id}/approve`, `POST .../reject` |
+| `commercial_payment.write` | Record platform payments, allocate/deallocate | SECURITY_OPERATOR | `POST /commercial-billing/payments`, `POST .../allocate`, `POST .../deallocate` |
+| `commercial_financial.read` | Read platform invoices, payments, reconciliation, quote lists | AUDITOR, FINANCE_READONLY | `GET /commercial-billing/quotes`, `GET .../invoices`, `GET .../payments`, `POST .../finalize`, `POST .../void`, `POST .../reconciliation/run` |
 
 **Deliberately not built**: `tenant_support.break_glass` (privileged access keeps its request→activate flow; there is no bypass), `commercial.read`/`financial_ops.read` (Domain A / not-built lens, out of scope). Session 7 note: the previously-missing breaker maker-checker capabilities now EXIST (`circuit_breaker.manage` covers both direct break-glass engage and proposal; `approval.decide` is the checker role) — the old "single toggle, no workflow" limitation is closed.
 

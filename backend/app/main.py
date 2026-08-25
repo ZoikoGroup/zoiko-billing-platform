@@ -188,11 +188,17 @@ from app.modules.billing.router import billing_router
 from app.modules.billing.routers.quote_router import public_quote_router
 from app.modules.billing.routers.invoice_router import public_invoice_router
 from app.modules.billing.routers.webhook_router import router as stripe_webhook_router
+from app.modules.commercial.commercial_billing_router import (
+    router as commercial_billing_router,
+    public_quote_router as commercial_public_quote_router,
+    public_invoice_router as commercial_public_invoice_router,
+)
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(auth_user_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(super_admin_router, prefix="/api")
+app.include_router(commercial_billing_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
 # Billing is mounted at /billing (root), exactly like the ZoikoOne main
 # platform — the billing frontend (modules/billing) calls /billing/* paths.
@@ -202,6 +208,8 @@ app.include_router(billing_router)
 app.include_router(public_quote_router, prefix="/billing")
 # Public invoice view + payment links, same pattern.
 app.include_router(public_invoice_router, prefix="/billing")
+app.include_router(commercial_public_quote_router, prefix="/billing")
+app.include_router(commercial_public_invoice_router, prefix="/billing")
 app.include_router(stripe_webhook_router, prefix="/api")
 
 # ── Root health ──────────────────────────────────────────────────────────────

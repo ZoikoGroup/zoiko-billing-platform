@@ -2473,6 +2473,7 @@ def get_production_acceptance_report(
 
     latest_run = (
         db.query(ReconciliationRun)
+        .filter(ReconciliationRun.plane == "plane2")
         .order_by(ReconciliationRun.started_at.desc())
         .first()
     )
@@ -3048,6 +3049,7 @@ def list_reconciliation_runs(
 
     runs = (
         db.query(ReconciliationRun)
+        .filter(ReconciliationRun.plane == "plane2")
         .order_by(ReconciliationRun.started_at.desc())
         .limit(limit)
         .all()
@@ -3065,7 +3067,7 @@ def get_reconciliation_run(
     from app.modules.super_admin.models import ReconciliationRun, ReconciliationException
 
     run = db.get(ReconciliationRun, run_id)
-    if run is None:
+    if run is None or run.plane != "plane2":
         raise NotFoundException(f"Reconciliation run {run_id} not found")
     exceptions = (
         db.query(ReconciliationException)
