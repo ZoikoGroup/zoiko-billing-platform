@@ -137,6 +137,13 @@ const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
 const CommandCenterHubPage = lazy(() => import("./modules/super-admin/CommandCenterHubPage"));
 const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
 const BillingCommandCenterPage = lazy(() => import("./modules/super-admin/BillingCommandCenterPage"));
+const InvoiceEnginePage = lazy(() => import("./modules/super-admin/InvoiceEnginePage"));
+const PaymentsDisputesPage = lazy(() => import("./modules/super-admin/PaymentsDisputesPage"));
+const BalancesAllocationsPage = lazy(() => import("./modules/super-admin/BalancesAllocationsPage"));
+const ReconciliationPage = lazy(() => import("./modules/super-admin/ReconciliationPage"));
+const CreditsRefundsPage = lazy(() => import("./modules/super-admin/CreditsRefundsPage"));
+const UsageMeteringPage = lazy(() => import("./modules/super-admin/UsageMeteringPage"));
+const TaxEInvoicingPage = lazy(() => import("./modules/super-admin/TaxEInvoicingPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
 const BILLING_ROUTES = [
@@ -246,13 +253,13 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
   { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
   { path: "/super-admin/commercial/invoices", element: <Plane1BillingPage /> },
-  { path: "/super-admin/financial/invoice-engine", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/payments", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/balances", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/reconciliation", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/credits", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/usage", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/financial/tax", element: <FinancialOperationsPage /> },
+  { path: "/super-admin/financial/invoice-engine", element: <InvoiceEnginePage /> },
+  { path: "/super-admin/financial/payments", element: <PaymentsDisputesPage /> },
+  { path: "/super-admin/financial/balances", element: <BalancesAllocationsPage /> },
+  { path: "/super-admin/financial/reconciliation", element: <ReconciliationPage /> },
+  { path: "/super-admin/financial/credits", element: <CreditsRefundsPage /> },
+  { path: "/super-admin/financial/usage", element: <UsageMeteringPage /> },
+  { path: "/super-admin/financial/tax", element: <TaxEInvoicingPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
   { path: "/super-admin/billing-command-center", element: <BillingCommandCenterPage /> },
   { path: "/super-admin/integrations", element: <ReliabilityPage /> },

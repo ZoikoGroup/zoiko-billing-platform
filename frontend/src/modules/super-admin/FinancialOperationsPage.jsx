@@ -276,7 +276,7 @@ export function F1BillingsCard({ billings }) {
   );
 }
 
-function F2RecoveryCard({ recovery }) {
+export function F2RecoveryCard({ recovery }) {
   const failedCount = recovery?.failed_payments_count ?? 0;
   const dunningStatus = recovery?.dunning_cycle_status ?? "UNKNOWN";
 
@@ -356,7 +356,7 @@ function F2RecoveryCard({ recovery }) {
   );
 }
 
-function F3IntegrityCard({ consistency }) {
+export function F3IntegrityCard({ consistency }) {
   const state = consistency?.state ?? "UNKNOWN";
   const totalInvoices = consistency?.total_invoices_checked ?? 0;
   const overAllocated = consistency?.over_allocated_count ?? 0;
@@ -440,7 +440,7 @@ function F3IntegrityCard({ consistency }) {
   );
 }
 
-function F4LeakageCard({ leakage }) {
+export function F4LeakageCard({ leakage }) {
   const overAllocated = leakage?.over_allocated_count ?? 0;
   const underAllocated = leakage?.under_allocated_paid_count ?? 0;
   const unbilledUsage = leakage?.unbilled_usage_anomalies ?? 0;

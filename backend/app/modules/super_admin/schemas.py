@@ -981,6 +981,229 @@ class BillingActivityListResponse(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Financial Operations detail pages — Invoice Engine, Payments & Disputes,
+# Balances & Allocations, Reconciliation, Credits/Adjustments/Refunds, Tax.
+# Cross-tenant read models backing the split of the former single shared
+# FinancialOperationsPage into its 7 sidebar sub-pages.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class InvoiceStatusBucket(BaseModel):
+    status: str
+    count: int
+    total_amount: str
+
+
+class InvoiceStatusDistributionResponse(BaseModel):
+    buckets: list[InvoiceStatusBucket]
+    total_invoices: int
+
+
+class InvoiceDeliveryDiagnosticsResponse(BaseModel):
+    sent: int
+    delivered: int
+    failed: int
+    bounced: int
+    total: int
+
+
+class FailedPaymentRow(BaseModel):
+    payment_id: int
+    organization_id: int
+    organization_name: str
+    customer_name: str
+    amount: str
+    currency: str
+    failure_code: Optional[str] = None
+    failure_reason: Optional[str] = None
+    payment_date: Optional[date] = None
+    attempt_count: int = 0
+
+
+class FailedPaymentListResponse(BaseModel):
+    total: int
+    items: list[FailedPaymentRow]
+
+
+class DunningCaseRow(BaseModel):
+    dunning_case_id: int
+    organization_id: int
+    organization_name: str
+    customer_name: str
+    invoice_id: Optional[int] = None
+    invoice_number: Optional[str] = None
+    currency: str
+    status: str
+    current_level: int
+    total_overdue_amount: str
+    days_overdue: int
+    last_action_at: Optional[datetime] = None
+    next_action_at: Optional[date] = None
+
+
+class DunningCaseListResponse(BaseModel):
+    total: int
+    items: list[DunningCaseRow]
+
+
+class AllocationExceptionRow(BaseModel):
+    invoice_id: int
+    organization_id: int
+    organization_name: str
+    invoice_number: str
+    currency: str
+    total_amount: str
+    allocated_amount: str
+
+
+class AllocationExceptionListResponse(BaseModel):
+    total: int
+    items: list[AllocationExceptionRow]
+
+
+class CreditApplicationRow(BaseModel):
+    application_id: int
+    organization_id: int
+    organization_name: str
+    credit_note_number: str
+    invoice_number: str
+    amount: str
+    currency: str
+    created_at: Optional[datetime] = None
+
+
+class CreditApplicationListResponse(BaseModel):
+    total: int
+    items: list[CreditApplicationRow]
+
+
+class StatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class CreditNoteRow(BaseModel):
+    credit_note_id: int
+    organization_id: int
+    organization_name: str
+    customer_name: str
+    credit_note_number: str
+    credit_note_type: str
+    status: str
+    total_amount: str
+    remaining_amount: str
+    currency: str
+    issue_date: Optional[date] = None
+
+
+class CreditNoteListResponse(BaseModel):
+    total: int
+    items: list[CreditNoteRow]
+    status_distribution: list[StatusCount]
+
+
+class RefundRow(BaseModel):
+    refund_id: int
+    organization_id: int
+    organization_name: str
+    customer_name: str
+    refund_number: str
+    refund_type: str
+    status: str
+    amount: str
+    currency: str
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class RefundListResponse(BaseModel):
+    total: int
+    items: list[RefundRow]
+    status_distribution: list[StatusCount]
+
+
+class WriteOffRow(BaseModel):
+    write_off_id: int
+    organization_id: int
+    organization_name: str
+    customer_name: str
+    write_off_number: str
+    write_off_type: str
+    status: str
+    amount: str
+    currency: str
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class WriteOffListResponse(BaseModel):
+    total: int
+    items: list[WriteOffRow]
+    status_distribution: list[StatusCount]
+
+
+class TaxSummaryBucket(BaseModel):
+    currency: str
+    jurisdiction: str
+    tax_type: str
+    record_count: int
+    taxable_amount: str
+    tax_amount: str
+
+
+class TaxSummaryResponse(BaseModel):
+    buckets: list[TaxSummaryBucket]
+    total_records: int
+
+
+# ── Reconciliation (REC-01) — typed schemas for the previously dict-typed
+# /reconciliation-runs* endpoints. Shapes match _serialize_reconciliation_run
+# and the inline exception dicts in router.py exactly — no behavior change.
+
+class ReconciliationExceptionResponse(BaseModel):
+    id: int
+    run_id: int
+    kind: str
+    organization_id: Optional[int] = None
+    entity_type: str
+    entity_id: Optional[int] = None
+    detail: Optional[dict] = None
+    status: str
+    owner_user_id: Optional[int] = None
+    acknowledged_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolution_note: Optional[str] = None
+
+
+class ReconciliationRunResponse(BaseModel):
+    id: int
+    state: str
+    started_at: str
+    finished_at: Optional[str] = None
+    trigger: str
+    checks_total: int
+    exceptions_found: int
+    processor_source: str
+    processor_note: Optional[str] = None
+
+
+class ReconciliationRunListResponse(BaseModel):
+    items: list[ReconciliationRunResponse]
+
+
+class ReconciliationRunDetailResponse(ReconciliationRunResponse):
+    exceptions: list[ReconciliationExceptionResponse] = []
+
+
+class ReconciliationExceptionActionResponse(BaseModel):
+    id: int
+    status: str
+    owner_user_id: Optional[int] = None
+    acknowledged_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolution_note: Optional[str] = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ZB-SA-P3 — Phase 3A Organizations workspace (directory + overview)
 # Identity / lifecycle / operational counts ONLY. No monetary values ever
 # appear in these read models (Domain B stays behind privileged access).
