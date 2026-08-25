@@ -617,6 +617,125 @@ def send_invoice_email(
     }, db=db, organization_id=organization_id, attachments=attachments)
 
 
+def _get_platform_commercial_from_email(db=None):
+    """Plane 1 (Zoiko-billing-the-org) from-email override — a separate
+    PlatformSetting category ("email_commercial") from Plane 2's "email"
+    category, so overriding one never touches the other's rows."""
+    try:
+        from app.modules.super_admin.models import PlatformSetting
+
+        own_session = False
+        if db is None:
+            from app.database import SessionLocal
+            db = SessionLocal()
+            own_session = True
+        try:
+            row = (
+                db.query(PlatformSetting)
+                .filter(
+                    PlatformSetting.category == "email_commercial",
+                    PlatformSetting.key == "commercial_smtp_from_email",
+                )
+                .first()
+            )
+            return row.value if row and row.value else None
+        finally:
+            if own_session:
+                db.close()
+    except Exception as e:
+        logger.warning(f"[email] Could not load Plane 1 from-email override: {e}")
+        return None
+
+
+def send_platform_invoice_email(
+    email: str,
+    recipient_org_name: str,
+    invoice_number: str,
+    issue_date: str,
+    due_date: str,
+    total_amount: str,
+    currency: str = "USD",
+    status: str = "Issued",
+    balance_due: str = "",
+    notes: str = "",
+    db=None,
+    recipient_first_name: str = "",
+    line_items: list = None,
+    subtotal: str = "",
+    tax_amount: str = "",
+    amount_paid: str = "",
+    review_url: str = "",
+) -> bool:
+    """Plane 1 (Zoiko-billing-the-org) invoice email — always sent from the
+    fixed "Zoiko Billing Accounts" identity, never the recipient org's own
+    branding (Zoiko is the sender here, not the org). No organization_id/PDF
+    param: no org-branding lookup, no PDF attachment this pass — the public
+    link at review_url carries the full invoice detail."""
+    from app.config import settings as _settings
+    balance_due = balance_due or total_amount
+    cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
+    from_email_override = _get_platform_commercial_from_email(db=db)
+    return send_approval_email(email, "platform_invoice_sent.html", {
+        "subject": f"Invoice {invoice_number} from Zoiko Billing — {currency} {balance_due} due {due_date}",
+        "recipient_org_name": recipient_org_name,
+        "recipient_first_name": recipient_first_name or recipient_org_name,
+        "invoice_number": invoice_number,
+        "issue_date": issue_date,
+        "due_date": due_date,
+        "total_amount": total_amount,
+        "currency": currency,
+        "status": status,
+        "balance_due": balance_due,
+        "amount_paid": amount_paid,
+        "notes": notes,
+        "review_url": review_url,
+        "cta_url": cta_url,
+        "line_items_html": _render_quote_items_html(line_items, currency),
+        "totals_html": _render_invoice_totals_html(subtotal, tax_amount, amount_paid, balance_due, currency),
+    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override)
+
+
+def send_platform_quote_email(
+    email: str,
+    recipient_org_name: str,
+    quote_number: str,
+    total_amount: str,
+    currency: str = "USD",
+    valid_until: str = "",
+    notes: str = "",
+    terms: str = "",
+    db=None,
+    recipient_first_name: str = "",
+    line_items: list = None,
+    subtotal: str = "",
+    discount_amount: str = "",
+    tax_amount: str = "",
+    review_url: str = "",
+) -> bool:
+    """Plane 1 (Zoiko-billing-the-org) quote email — always sent from the
+    fixed "Zoiko Billing Accounts" identity, never the recipient org's own
+    branding. The CTA links to the public quote page where the org accepts
+    or rejects with no login — mirrors send_platform_invoice_email's shape."""
+    from app.config import settings as _settings
+    cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
+    from_email_override = _get_platform_commercial_from_email(db=db)
+    return send_approval_email(email, "platform_quote_sent.html", {
+        "subject": f"Quote {quote_number} from Zoiko Billing — {currency} {total_amount}",
+        "recipient_org_name": recipient_org_name,
+        "recipient_first_name": recipient_first_name or recipient_org_name,
+        "quote_number": quote_number,
+        "total_amount": total_amount,
+        "currency": currency,
+        "valid_until": valid_until,
+        "notes": notes,
+        "terms": terms,
+        "review_url": review_url,
+        "cta_url": cta_url,
+        "line_items_html": _render_quote_items_html(line_items, currency),
+        "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
+    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override)
+
+
 def send_quote_email(
     email: str,
     customer_name: str,

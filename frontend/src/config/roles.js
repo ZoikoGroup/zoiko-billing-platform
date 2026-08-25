@@ -36,6 +36,7 @@ export const PLATFORM_ROLE_LABELS = {
   security_operator: "Security Operator",
   reliability_operator: "Reliability Operator",
   auditor: "Auditor",
+  finance_readonly: "Finance (Read-Only)",
 };
 
 const RELIABILITY_READ_ROLES = ["reliability_operator", "security_operator", "auditor", "support_operator"];
@@ -51,4 +52,32 @@ const CONFIGURATION_READ_ROLES = ["support_operator", "security_operator", "reli
 
 export function canReadConfiguration(platformRole) {
   return NULL_LIKE.includes(platformRole) || CONFIGURATION_READ_ROLES.includes(platformRole);
+}
+
+// Mirrors backend capabilities.py's Plane 1 commercial-billing capability map
+// (commercial_quote.write / commercial_quote.approve / commercial_payment.write /
+// commercial_financial.read) — client-side hint only, the backend's
+// require_capability dependency remains the real gate.
+const COMMERCIAL_QUOTE_WRITE_ROLES = ["support_operator"];
+const COMMERCIAL_QUOTE_APPROVE_ROLES = ["auditor"];
+const COMMERCIAL_PAYMENT_WRITE_ROLES = ["security_operator"];
+const COMMERCIAL_FINANCIAL_READ_ROLES = ["auditor", "finance_readonly"];
+
+export function canWriteCommercialQuote(platformRole) {
+  return NULL_LIKE.includes(platformRole) || COMMERCIAL_QUOTE_WRITE_ROLES.includes(platformRole);
+}
+
+export function canApproveCommercialQuote(platformRole) {
+  return NULL_LIKE.includes(platformRole) || COMMERCIAL_QUOTE_APPROVE_ROLES.includes(platformRole);
+}
+
+export function canWriteCommercialPayment(platformRole) {
+  return NULL_LIKE.includes(platformRole) || COMMERCIAL_PAYMENT_WRITE_ROLES.includes(platformRole);
+}
+
+// NOTE: every mutating Plane 1 invoice route (create/add-item/finalize/void/send)
+// is gated by commercial_financial.read on the backend today, not a .write
+// capability — that's an existing backend quirk this helper mirrors as-is.
+export function canReadCommercialFinancial(platformRole) {
+  return NULL_LIKE.includes(platformRole) || COMMERCIAL_FINANCIAL_READ_ROLES.includes(platformRole);
 }

@@ -76,6 +76,11 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     },
     "platform_config.manage": {PlatformRole.SECURITY_OPERATOR},
     "platform_role.manage": set(),  # PLATFORM_ADMINISTRATOR only — see below
+    # ── Plane 1 Commercial Billing capabilities ─────────────────────────────
+    "commercial_quote.write": {PlatformRole.SUPPORT_OPERATOR},
+    "commercial_quote.approve": {PlatformRole.AUDITOR},
+    "commercial_payment.write": {PlatformRole.SECURITY_OPERATOR},
+    "commercial_financial.read": {PlatformRole.AUDITOR, PlatformRole.FINANCE_READONLY},
 }
 
 CAPABILITIES = set(_CAPABILITY_ROLE_MAP.keys())

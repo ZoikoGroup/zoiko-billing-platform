@@ -213,7 +213,10 @@ const NAV_SECTIONS = [
       { label: "Plans, Offers & Trials", href: "/super-admin/commercial/offers", icon: Tags },
       { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
       { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
-      { label: "Platform Invoices & Collections", href: "/super-admin/commercial/invoices", icon: CreditCard },
+      { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
+      { label: "Invoices", href: "/super-admin/commercial/invoices?tab=invoices", icon: Receipt },
+      { label: "Payments", href: "/super-admin/commercial/invoices?tab=payments", icon: CreditCard },
+      { label: "Reconciliation", href: "/super-admin/commercial/invoices?tab=reconciliation", icon: ClipboardCheck },
     ],
   },
   {

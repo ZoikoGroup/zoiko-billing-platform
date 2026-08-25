@@ -32,6 +32,23 @@ Every backend endpoint reachable only by (or primarily used by) the Super Admin 
 | PATCH | `/commercial-subscriptions/{id}/status` | `setCommercialSubscriptionStatus` (SubscriptionsPage) | super_admin | `commercial_subscriptions`, `billing_kill_switches` | `CommercialSubscriptionResponse` | 400 illegal transition / kill switch disabled, 401/403/404 | Covered |
 | POST | `/commercial-subscriptions/{id}/change-plan` | `changeCommercialSubscriptionPlan` (SubscriptionsPage "Plan" action, Phase 3F F5) | super_admin | `commercial_subscriptions`, `platform_audit_logs`, `billing_audit_logs` | `CommercialSubscriptionResponse` (the replacement) | 400 no-op/archived/terminal/missing reason/double-charge guard, 401/403/404 | Covered — `test_phase3f_saas_plane1.py` |
 | GET | `/commercial-reporting` | `getSaasCommercialReporting` (`Plane1BillingPage.jsx`, `CommercialLens.jsx`, Phase 3F F10) | super_admin | read-only over `commercial_accounts`/`commercial_subscriptions`/`commercial_plan_versions` | `SaasReportingResponse` | 401/403 | Covered — `test_phase3f_saas_plane1.py`; MRR UNKNOWN when zero priced catalogue |
+| GET | `/commercial-billing/quotes` | `listCommercialQuotes` (`Plane1BillingPage.jsx` via `commandCenterService.js`) | `commercial_financial.read` | `commercial_quotes` | `list[CommercialQuote]` | 401/403 | Covered |
+| POST | `/commercial-billing/quotes` | `createCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes` | `CommercialQuote` | 400/401/403 | Covered |
+| POST | `/commercial-billing/quotes/{id}/send` | `sendCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/approve` | `approveCommercialQuote` (`commandCenterService.js`) | `commercial_quote.approve` | `commercial_quotes` | `CommercialQuote` | 400 self-approval, 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/reject` | `rejectCommercialQuote` (`commandCenterService.js`) | `commercial_quote.approve` | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/convert` | `convertCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes`, `platform_invoices` | `PlatformInvoice` | 400 wrong status, 401/403/404 | Covered |
+| GET | `/commercial-billing/invoices` | `listPlatformInvoices` (`Plane1BillingPage.jsx` via `commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `list[PlatformInvoice]` | 401/403 | Covered |
+| POST | `/commercial-billing/invoices` | `createPlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `PlatformInvoice` | 400/401/403 | Covered |
+| POST | `/commercial-billing/invoices/{id}/finalize` | `finalizePlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices`, `platform_invoice_number_sequences` | `PlatformInvoice` | 400 empty items, 401/403/404 | Covered — atomic numbering |
+| POST | `/commercial-billing/invoices/{id}/void` | `voidPlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `PlatformInvoice` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/invoices/{id}/items` | `addPlatformInvoiceItem` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoice_items` | `PlatformInvoiceItem` | 400 not-DRAFT, 401/403/404 | Covered |
+| GET | `/commercial-billing/payments` | `listPlatformPayments` (`Plane1BillingPage.jsx` via `commandCenterService.js`) | `commercial_financial.read` | `platform_payments` | `list[PlatformPayment]` | 401/403 | Covered |
+| POST | `/commercial-billing/payments` | `recordPlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payments` | `PlatformPayment` | 400 amount<=0, 401/403 | Covered |
+| POST | `/commercial-billing/payments/{id}/allocate` | `allocatePlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payment_allocations` | `PlatformPaymentAllocation` | 400 over-allocation, 401/403/404 | Covered |
+| POST | `/commercial-billing/payments/{id}/deallocate` | `deallocatePlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payment_allocations` | `{"status": "deallocated"}` | 400 no allocation, 401/403/404 | Covered |
+| POST | `/commercial-billing/reconciliation/run` | `triggerPlatformReconciliation` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices`, `platform_payments` | `ReconciliationRun` | 401/403 | Covered |
+| GET | `/commercial-billing/reconciliation/runs` | `listPlatformReconciliationRuns` (`commandCenterService.js`) | `commercial_financial.read` | `reconciliation_runs` | `list[ReconciliationRun]` | 401/403 | Covered |
 | GET | `/approval-requests` | `listApprovalRequests` (`ApprovalQueuePage.jsx`, `PlatformDashboardPage.jsx`) | super_admin | `approval_requests` | `ApprovalRequestListResponse` | 401/403 | Covered |
 | GET | `/billing-kill-switch` | `getBillingKillSwitch` (`KillSwitchPage.jsx`) | super_admin | `billing_kill_switches` | `BillingKillSwitchResponse` | 401/403 | Covered |
 | PUT | `/billing-kill-switch` | `setBillingKillSwitch` (`KillSwitchPage.jsx`) | super_admin | `billing_kill_switches` | `BillingKillSwitchResponse` | 400 empty reason, 401/403 | Covered |
@@ -41,6 +58,38 @@ Every backend endpoint reachable only by (or primarily used by) the Super Admin 
 | POST | `/settings` | *(none — see Dead endpoints)* | super_admin | `platform_settings` | `SettingResponse` | 400/401/403 | Covered at the service/route-test level |
 | PUT | `/settings/{key}` | `SettingsPage.jsx` | super_admin | `platform_settings` | `SettingResponse` | 400/401/403/404 | Covered |
 | GET | `/production-acceptance` | `getProductionAcceptanceReport` (`ProductionAcceptancePage.jsx`, `PlatformDashboardPage.jsx`) | super_admin | `organizations` (COM-03 query only) + architectural facts, no other live table dependency | `ProductionAcceptanceReport` (now includes `overall_status`/`summary`, added this pass) | 401/403 | Covered — including the new overall-verdict test |
+
+## `/api/super-admin/commercial-billing/*` (Plane 1 — new)
+
+| Method | Endpoint | Frontend caller | Capability | DB dependency | Expected response | Error behavior | Test status |
+|---|---|---|---|---|---|---|---|
+| POST | `/commercial-billing/quotes` | `createCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes`, `commercial_accounts` | `CommercialQuote` | 400 validation, 401/403 | Covered — `test_commercial_billing.py` |
+| GET | `/commercial-billing/quotes` | `listCommercialQuotes` (`commandCenterService.js`) | `commercial_financial.read` | `commercial_quotes` | `list[CommercialQuote]` | 401/403 | Covered |
+| GET | `/commercial-billing/quotes/{id}` | `getCommercialQuote` (`commandCenterService.js`) | `commercial_financial.read` | `commercial_quotes` | `CommercialQuote` | 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/send` | `sendCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/approve` | `approveCommercialQuote` (`commandCenterService.js`) | `commercial_quote.approve` | `commercial_quotes` | `CommercialQuote` | 400 self-approval, 401/403/404 | Covered — `SelfApprovalError` enforced |
+| POST | `/commercial-billing/quotes/{id}/reject` | `rejectCommercialQuote` (`commandCenterService.js`) | `commercial_quote.approve` | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/quotes/{id}/convert` | `convertCommercialQuote` (`commandCenterService.js`) | `commercial_quote.write` | `commercial_quotes`, `platform_invoices`, `platform_invoice_items` | `PlatformInvoice` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/invoices` | `createPlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices`, `commercial_accounts` | `PlatformInvoice` | 400 validation, 401/403 | Covered |
+| GET | `/commercial-billing/invoices` | `listPlatformInvoices` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `list[PlatformInvoice]` | 401/403 | Covered |
+| GET | `/commercial-billing/invoices/{id}` | `getPlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `PlatformInvoice` | 401/403/404 | Covered |
+| POST | `/commercial-billing/invoices/{id}/finalize` | `finalizePlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices`, `platform_invoice_items`, `platform_invoice_number_sequences` | `PlatformInvoice` | 400 empty items, circuit breaker blocked, 401/403/404 | Covered — atomic numbering via SELECT FOR UPDATE |
+| POST | `/commercial-billing/invoices/{id}/void` | `voidPlatformInvoice` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices` | `PlatformInvoice` | 400 wrong status, 401/403/404 | Covered |
+| POST | `/commercial-billing/invoices/{id}/items` | `addPlatformInvoiceItem` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoice_items` | `PlatformInvoiceItem` | 400 not-DRAFT, 401/403/404 | Covered |
+| POST | `/commercial-billing/payments` | `recordPlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payments`, `commercial_accounts` | `PlatformPayment` | 400 amount<=0, 401/403 | Covered — processor identity asserted |
+| GET | `/commercial-billing/payments` | `listPlatformPayments` (`commandCenterService.js`) | `commercial_financial.read` | `platform_payments` | `list[PlatformPayment]` | 401/403 | Covered |
+| POST | `/commercial-billing/payments/{id}/allocate` | `allocatePlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payment_allocations`, `platform_payments`, `platform_invoices` | `PlatformPaymentAllocation` | 400 over-allocation / account mismatch, 401/403/404 | Covered — SELECT FOR UPDATE |
+| POST | `/commercial-billing/payments/{id}/deallocate` | `deallocatePlatformPayment` (`commandCenterService.js`) | `commercial_payment.write` | `platform_payment_allocations` | `{"status": "deallocated"}` | 400 no allocation, 401/403/404 | Covered |
+| POST | `/commercial-billing/reconciliation/run` | `triggerPlatformReconciliation` (`commandCenterService.js`) | `commercial_financial.read` | `platform_invoices`, `platform_payments`, `platform_payment_allocations` | `ReconciliationRun` | 401/403 | Covered |
+| GET | `/commercial-billing/reconciliation/runs` | `listPlatformReconciliationRuns` (`commandCenterService.js`) | `commercial_financial.read` | `reconciliation_runs` | `list[ReconciliationRun]` | 401/403 | Covered |
+
+## `/billing/commercial-quotes/public/*` (Plane 1 — public, unauthenticated)
+
+| Method | Endpoint | Frontend caller | Capability | DB dependency | Expected response | Error behavior | Test status |
+|---|---|---|---|---|---|---|---|
+| GET | `/billing/commercial-quotes/public/{token}` | *(org-facing page)* | none (public) | `commercial_quotes` | `CommercialQuote` | 404 not found / expired | Covered |
+| POST | `/billing/commercial-quotes/public/{token}/accept` | *(org-facing page)* | none (public) | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 404 | Covered |
+| POST | `/billing/commercial-quotes/public/{token}/reject` | *(org-facing page)* | none (public) | `commercial_quotes` | `CommercialQuote` | 400 wrong status, 404 | Covered |
 
 ## `/api/organizations/*` (Super-Admin-scoped subset)
 
