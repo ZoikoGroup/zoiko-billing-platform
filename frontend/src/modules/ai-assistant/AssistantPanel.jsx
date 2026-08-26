@@ -36,6 +36,10 @@ import {
   listSessions,
   getSession,
   sendMessage,
+  generatePreview,
+  confirmAction,
+  executeAction,
+  cancelAction,
 } from "./api";
 import PreviewCard from "./PreviewCard";
 import ConfirmDialog from "./ConfirmDialog";
@@ -171,19 +175,41 @@ function pickFollowUps(topic, count = 3) {
 function useContextualPrompts(messages) {
   const topic = detectTopic(messages);
   const [followUps, setFollowUps] = useState([]);
+  const prevTopicRef = useRef(null);
 
   useEffect(() => {
-    if (topic) {
+    if (topic && topic !== prevTopicRef.current) {
+      prevTopicRef.current = topic;
       setFollowUps(pickFollowUps(topic, 3));
-    } else {
+    } else if (!topic) {
+      prevTopicRef.current = null;
       setFollowUps([]);
     }
-  }, [topic, messages.length]);
+  }, [topic]);
 
   return { topic, followUps };
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * BUG 2 fix: Scan conversation messages for executed action UIDs.
+ * The M4 execution response includes evidence with type="action_executed"
+ * and action_uid.  We collect these so any draft card with a matching
+ * action_uid renders as a read-only receipt (no active buttons).
+ */
+function scanExecutedActionUids(messages) {
+  const uids = new Set();
+  for (const msg of messages || []) {
+    const evidence = msg.structured_payload?.evidence || [];
+    for (const ev of evidence) {
+      if (ev.type === "action_executed" && ev.action_uid) {
+        uids.add(ev.action_uid);
+      }
+    }
+  }
+  return uids;
+}
 
 const MODE_CONFIG = {
   M0_EXPLAIN: { label: "Explain", icon: Sparkles, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", description: "Product knowledge — no tenant data" },
@@ -232,6 +258,12 @@ export default function AssistantPanel({ isOpen, onClose }) {
   const [initializing, setInitializing] = useState(false);
   const [statusAnnouncement, setStatusAnnouncement] = useState("");
   const [recentOpen, setRecentOpen] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [activeAction, setActiveAction] = useState(null);
+  // BUG 2 fix: Track which action UIDs have been executed so stale
+  // draft cards render as read-only receipts instead of active buttons.
+  const [executedActionUids, setExecutedActionUids] = useState(() => new Set());
   // UX spec §4.1 surface ladder: docked panel defaults to 440 px (within the
   // 420–480 range); the header expand control switches to the expanded
   // workspace width (680 px, within 560–720). Below `sm` the panel is a
@@ -240,6 +272,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recentRef = useRef(null);
+  const sessionsLoadingRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -252,19 +285,45 @@ export default function AssistantPanel({ isOpen, onClose }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // BUG 2 fix: Whenever messages change (load, append), scan for
+  // executed action UIDs and update the tracking set.
+  useEffect(() => {
+    const found = scanExecutedActionUids(messages);
+    if (found.size > 0) {
+      setExecutedActionUids((prev) => {
+        const merged = new Set(prev);
+        for (const uid of found) merged.add(uid);
+        return merged;
+      });
+    }
+  }, [messages]);
+
   const loadSessions = async () => {
+    if (sessionsLoadingRef.current) return;
+    sessionsLoadingRef.current = true;
     try {
       const data = await listSessions();
       setSessions(data);
       if (data.length > 0 && !activeSession) {
-        await selectSession(data[0].conversation_uid);
+        // Pre-fetch first session data in parallel with setting sessions
+        const firstSession = data[0];
+        getSession(firstSession.conversation_uid).then((session) => {
+          setActiveSession(session);
+          setMessages(session.messages || []);
+          setStatusAnnouncement(`Loaded conversation: ${session.title || "Untitled"}`);
+        }).catch((err) => {
+          console.error("Failed to load session:", err);
+        });
       }
     } catch (err) {
       console.error("Failed to load sessions:", err);
+    } finally {
+      sessionsLoadingRef.current = false;
     }
   };
 
   const selectSession = async (uid) => {
+    if (activeSession?.conversation_uid === uid) return;
     try {
       const session = await getSession(uid);
       setActiveSession(session);
@@ -297,7 +356,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
           message_text: initResp?.answer || "",
           mode: initResp?.mode || "M0_EXPLAIN",
           risk_class: initResp?.risk_class || "R0",
-          structured_payload: { evidence: initResp?.evidence || [], next_actions: initResp?.next_actions || [], qualification: initResp?.qualification, suggested_prompts: initResp?.suggested_prompts || [] },
+          structured_payload: { evidence: initResp?.evidence || [], next_actions: initResp?.next_actions || [], qualification: initResp?.qualification, suggested_prompts: initResp?.suggested_prompts || [], actions: initResp?.actions || [], draft_card: initResp?.draft_card, preview_card: initResp?.preview_card, confirm_label: initResp?.confirm_label },
           created_at: new Date().toISOString(),
         };
         setMessages([userMsg, assistantMsg]);
@@ -328,7 +387,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         message_text: response.answer,
         mode: response.mode,
         risk_class: response.risk_class,
-        structured_payload: { evidence: response.evidence, next_actions: response.next_actions, qualification: response.qualification, suggested_prompts: response.suggested_prompts },
+        structured_payload: { evidence: response.evidence, next_actions: response.next_actions, qualification: response.qualification, suggested_prompts: response.suggested_prompts, actions: response.actions, draft_card: response.draft_card, preview_card: response.preview_card, confirm_label: response.confirm_label },
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -337,8 +396,32 @@ export default function AssistantPanel({ isOpen, onClose }) {
     } catch (err) {
       console.error("[CHATBOT-DIAG] handleSend FAILED:", err);
       console.error("[CHATBOT-DIAG] Error name:", err?.name, "message:", err?.message, "stack:", err?.stack);
-      setMessages((prev) => [...prev, { message_uid: `error-${Date.now()}`, sender_type: "system", message_text: "Failed to send message. Please try again.", created_at: new Date().toISOString() }]);
-      setStatusAnnouncement("Error sending message");
+
+      let errorText;
+      let errorStatus;
+
+      if (err?.sessionExpired) {
+        errorText = "Your session has expired. Please sign in again to continue.";
+        errorStatus = "Session expired";
+      } else if (err?.status === 429) {
+        const wait = err?.retryAfter || 10;
+        errorText = `You're sending messages a bit quickly — please wait ${wait}s and try again.`;
+        errorStatus = "Rate limited";
+      } else if (err?.status === 0 || err?.message === "network_failure" || !navigator.onLine) {
+        errorText = "I ran into a temporary issue processing that. Your message wasn't lost — please try sending it again. If this keeps happening, I can connect you to a team member.";
+        errorStatus = "Temporary issue";
+      } else {
+        errorText = "I ran into a temporary issue processing that. Your message wasn't lost — please try sending it again. If this keeps happening, I can connect you to a team member.";
+        errorStatus = "Temporary issue";
+      }
+
+      setMessages((prev) => [...prev, {
+        message_uid: `error-${Date.now()}`,
+        sender_type: "system",
+        message_text: errorText,
+        created_at: new Date().toISOString(),
+      }]);
+      setStatusAnnouncement(errorStatus);
     } finally {
       setLoading(false);
     }
@@ -347,6 +430,153 @@ export default function AssistantPanel({ isOpen, onClose }) {
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
+
+  const handleAction = useCallback(async (actionObj) => {
+    const { action, action_uid } = actionObj;
+    if (action === "preview_draft") {
+      try {
+        setLoading(true);
+        const preview = await generatePreview(action_uid);
+        setPreviewData(preview);
+        setActiveAction(actionObj);
+      } catch (err) {
+        setMessages((prev) => [...prev, {
+          message_uid: `err-${Date.now()}`,
+          sender_type: "system",
+          message_text: `Preview failed: ${err.message}`,
+          created_at: new Date().toISOString(),
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    } else if (action === "confirm_draft") {
+      if (previewData) {
+        setShowConfirmDialog(true);
+        setActiveAction(actionObj);
+      } else {
+        try {
+          setLoading(true);
+          const preview = await generatePreview(action_uid);
+          setPreviewData(preview);
+          setActiveAction(actionObj);
+          setShowConfirmDialog(true);
+        } catch (err) {
+          setMessages((prev) => [...prev, {
+            message_uid: `err-${Date.now()}`,
+            sender_type: "system",
+            message_text: `Preview failed: ${err.message}`,
+            created_at: new Date().toISOString(),
+          }]);
+        } finally {
+          setLoading(false);
+        }
+      }
+    } else if (action === "cancel_draft") {
+      try {
+        setLoading(true);
+        await cancelAction(action_uid);
+        setPreviewData(null);
+        setActiveAction(null);
+        setMessages((prev) => [...prev, {
+          message_uid: `sys-${Date.now()}`,
+          sender_type: "system",
+          message_text: "Draft has been cancelled and discarded.",
+          created_at: new Date().toISOString(),
+        }]);
+      } catch (err) {
+        setMessages((prev) => [...prev, {
+          message_uid: `err-${Date.now()}`,
+          sender_type: "system",
+          message_text: `Cancel failed: ${err.message}`,
+          created_at: new Date().toISOString(),
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [previewData]);
+
+  const handlePreviewConfirm = useCallback(async (preview) => {
+    const uid = preview.action_uid || activeAction?.action_uid;
+    try {
+      setLoading(true);
+      setShowConfirmDialog(false);
+      const idempotencyKey = crypto.randomUUID();
+      await confirmAction(uid, preview.preview_uid, preview.preview_hash);
+      await executeAction(uid, idempotencyKey);
+      // BUG 2 fix: Mark this action as executed so the draft card
+      // renders as a read-only receipt and cannot be tapped again.
+      if (uid) {
+        setExecutedActionUids((prev) => {
+          const next = new Set(prev);
+          next.add(uid);
+          return next;
+        });
+      }
+      setPreviewData(null);
+      setActiveAction(null);
+      setMessages((prev) => [...prev, {
+        message_uid: `exec-${Date.now()}`,
+        sender_type: "assistant",
+        message_text: "**Action executed successfully.** The mutation is now live.",
+        mode: "M4_EXECUTE",
+        risk_class: "R2",
+        structured_payload: {
+          evidence: [{
+            source: "Zoiko Billing Action Engine",
+            type: "action_executed",
+            action_uid: uid,
+          }],
+          next_actions: [],
+          qualification: "Action has been executed. The mutation is now live.",
+          suggested_prompts: ["Create a new draft"],
+          actions: [],
+        },
+        created_at: new Date().toISOString(),
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        message_uid: `err-${Date.now()}`,
+        sender_type: "system",
+        message_text: `Execution failed: ${err.message}`,
+        created_at: new Date().toISOString(),
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeAction]);
+
+  const handlePreviewCancel = useCallback(() => {
+    setShowConfirmDialog(false);
+    setPreviewData(null);
+    setActiveAction(null);
+  }, []);
+
+  // BUG 1 fix: Tapping the confirm button on PreviewCard must open the
+  // ConfirmDialog for an explicit second confirmation step — it must
+  // NOT execute directly.  The ConfirmDialog's onConfirm is the sole
+  // gate to execution (handlePreviewConfirm).
+  const handleShowConfirmDialog = useCallback(() => {
+    setShowConfirmDialog(true);
+  }, []);
+
+  const handlePreviewRefresh = useCallback(async () => {
+    if (!activeAction?.action_uid) return;
+    try {
+      setLoading(true);
+      const preview = await generatePreview(activeAction.action_uid);
+      setPreviewData(preview);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        message_uid: `err-${Date.now()}`,
+        sender_type: "system",
+        message_text: `Preview refresh failed: ${err.message}`,
+        created_at: new Date().toISOString(),
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeAction]);
 
   const handleNewConversation = async () => {
     setInitializing(true);
@@ -389,9 +619,9 @@ export default function AssistantPanel({ isOpen, onClose }) {
       <div
         role="complementary"
         aria-label="AI Billing Assistant"
-        className={`ab-panel fixed right-0 top-0 h-full w-full shadow-2xl z-50 flex flex-col transition-[width] duration-200 ease-out ${
-          isExpanded ? "sm:w-[680px]" : "sm:w-[440px]"
-        }`}
+        className={`ab-panel h-full shrink-0 flex flex-col border-l border-[var(--ab-border)] transition-[width] duration-200 ease-out lg:shadow-2xl ${
+          isExpanded ? "w-[680px]" : "w-[440px]"
+        } max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-50 max-lg:border-0 max-lg:shadow-2xl`}
         style={themeVars}
         data-expanded={isExpanded || undefined}
       >
@@ -507,7 +737,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
             <>
               {/* Welcome message bubble */}
               <div className="flex items-start gap-2">
-                <ZoikoMark size={28} rounded="rounded-full" />
+                <ZoikoMark size={28} rounded="rounded-lg" />
                 <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[85%]">
                   <div className="whitespace-pre-wrap">{WELCOME_MESSAGE}</div>
                 </div>
@@ -554,20 +784,54 @@ export default function AssistantPanel({ isOpen, onClose }) {
           )}
 
           {messages.map((msg) => (
-            <MessageBubble
-              key={msg.message_uid}
-              message={msg}
-              showDisclaimer={
-                msg.sender_type === "assistant" &&
-                msg.message_uid ===
-                  messages.find((m) => m.sender_type === "assistant")?.message_uid
-              }
-            />
+            <div key={msg.message_uid}>
+              <MessageBubble
+                message={msg}
+                showDisclaimer={
+                  msg.sender_type === "assistant" &&
+                  msg.message_uid ===
+                    messages.find((m) => m.sender_type === "assistant")?.message_uid
+                }
+              />
+              {/* §8.1 — M2 Editable Structured Draft Card */}
+              {msg.structured_payload?.draft_card && msg.sender_type === "assistant" && (
+                <div className="pl-9 mt-2">
+                  <DraftCard
+                    draftCard={msg.structured_payload.draft_card}
+                    actions={msg.structured_payload.actions}
+                    onAction={handleAction}
+                    loading={loading}
+                    isExecuted={executedActionUids.has(msg.structured_payload.draft_card.action_uid)}
+                  />
+                </div>
+              )}
+              {/* BUG 2 fix: Only show ActionButtons if the action has NOT been executed */}
+              {msg.structured_payload?.actions?.length > 0 && msg.sender_type === "assistant" && !msg.structured_payload?.draft_card && !msg.structured_payload?.preview_card && !executedActionUids.has(msg.structured_payload.actions?.[0]?.action_uid) && (
+                <div className="pl-9">
+                  <ActionButtons
+                    actions={msg.structured_payload.actions}
+                    onAction={handleAction}
+                    loading={loading}
+                  />
+                </div>
+              )}
+            </div>
           ))}
+
+          {previewData && (
+            <div className="pl-9 mt-2">
+              <PreviewCard
+                preview={previewData}
+                onConfirm={handleShowConfirmDialog}
+                onCancel={handlePreviewCancel}
+                onRefresh={handlePreviewRefresh}
+              />
+            </div>
+          )}
 
           {loading && (
             <div className="flex items-start gap-2">
-              <ZoikoMark size={28} rounded="rounded-full" />
+              <ZoikoMark size={28} rounded="rounded-lg" />
               <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Loader2 size={14} className="text-brand animate-spin" />
@@ -581,13 +845,10 @@ export default function AssistantPanel({ isOpen, onClose }) {
         </div>
 
         {/* Suggested prompts — contextual follow-ups or server-side suggestions.
-            next_actions from the answer payload surface here as chips instead
-            of inline arrow lists in the bubble (deduped/capped by
-            SuggestedPrompts). */}
-        {messages.length > 0 && !loading && (
+            Suppress when action buttons are present on the last assistant message. */}
+        {messages.length > 0 && !loading && !messages[messages.length - 1]?.structured_payload?.actions?.length && !messages[messages.length - 1]?.structured_payload?.draft_card && !messages[messages.length - 1]?.structured_payload?.preview_card && (
           <SuggestedPrompts
             prompts={
-              // Prefer server-provided follow-ups if available
               messages[messages.length - 1]?.sender_type === "assistant"
                 ? [
                     ...(messages[messages.length - 1]?.structured_payload?.suggested_prompts || []),
@@ -598,6 +859,14 @@ export default function AssistantPanel({ isOpen, onClose }) {
             }
             contextualPrompts={contextualFollowUps}
             onSelect={(p) => { setInput(p); setTimeout(() => handleSend(), 100); }}
+          />
+        )}
+
+        {showConfirmDialog && previewData && (
+          <ConfirmDialog
+            preview={previewData}
+            onConfirm={handlePreviewConfirm}
+            onCancel={handlePreviewCancel}
           />
         )}
 
@@ -776,7 +1045,7 @@ function MessageBubble({ message, showDisclaimer = false }) {
             <AlertTriangle size={14} className="text-white" />
           </div>
         ) : (
-          <ZoikoMark size={28} rounded="rounded-full" />
+          <ZoikoMark size={28} rounded="rounded-lg" />
         )
       )}
 
@@ -848,13 +1117,206 @@ function MessageBubble({ message, showDisclaimer = false }) {
   );
 }
 
+function ActionButtons({ actions, onAction, loading }) {
+  if (!actions || actions.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {actions.map((a, i) => (
+        <button
+          key={`${a.action}-${i}`}
+          onClick={() => onAction(a)}
+          disabled={loading}
+          className="ab-action-btn disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * §8.1 — DraftCard: Editable structured draft card for M2 Prepare.
+ * Shows the extracted parameters in a structured format so the user
+ * can review what was captured before generating the authoritative preview.
+ *
+ * BUG 2 fix: When `isExecuted` is true, renders a read-only completed
+ * receipt with no tappable buttons — preventing duplicate execution
+ * of an already-completed action.
+ */
+function DraftCard({ draftCard, actions, onAction, loading, isExecuted }) {
+  if (!draftCard) return null;
+
+  const { action_label, customer_name, line_items, currency, subtotal, tax_rate, tax_amount, total, expires_at } = draftCard;
+
+  function fmtCurrency(val, cur) {
+    if (!val) return "—";
+    try {
+      return `${cur || ""} ${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } catch {
+      return `${cur || ""} ${val}`;
+    }
+  }
+
+  // BUG 2: Read-only receipt when action has been executed
+  if (isExecuted) {
+    return (
+      <div
+        role="article"
+        aria-label={`Completed: ${action_label || "financial action"}`}
+        className="rounded-xl border-2 overflow-hidden"
+        style={{ borderColor: "#16a34a", background: "rgba(22,163,74,0.05)" }}
+      >
+        <div className="px-4 py-3 border-b flex items-center gap-2"
+          style={{ background: "rgba(22,163,74,0.10)", borderColor: "rgba(22,163,74,0.2)" }}>
+          <CheckCircle2 size={16} style={{ color: "#166534" }} />
+          <span className="text-sm font-semibold" style={{ color: "#166534" }}>
+            {action_label || "Financial action"} — Completed
+          </span>
+        </div>
+        <div className="p-4 space-y-2">
+          {customer_name && (
+            <div className="flex items-center gap-2 text-sm">
+              <User size={14} style={{ color: "var(--ab-text-muted)" }} />
+              <span style={{ color: "var(--ab-text-secondary)" }}>Customer:</span>
+              <span className="font-medium" style={{ color: "var(--ab-text)" }}>{customer_name}</span>
+            </div>
+          )}
+          {total && (
+            <div className="text-sm" style={{ color: "var(--ab-text-secondary)" }}>
+              Total: <span className="font-bold" style={{ color: "var(--ab-text)" }}>{fmtCurrency(total, currency)}</span>
+            </div>
+          )}
+          <p className="text-xs" style={{ color: "#166534" }}>
+            This action has been executed. The mutation is live. No further action is possible on this draft.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="article"
+      aria-label={`Draft: ${action_label || "financial action"}`}
+      className="rounded-xl border-2 overflow-hidden"
+      style={{ borderColor: "#d97706", background: "rgba(251,191,36,0.05)" }}
+    >
+      {/* Header */}
+      <div className="px-4 py-3 border-b flex items-center justify-between"
+        style={{ background: "rgba(251,191,36,0.10)", borderColor: "rgba(217,119,6,0.2)" }}>
+        <div className="flex items-center gap-2">
+          <FileText size={16} style={{ color: "#92400e" }} />
+          <span className="text-sm font-semibold" style={{ color: "#92400e" }}>
+            Draft: {action_label || "Financial action"}
+          </span>
+        </div>
+        {expires_at && (
+          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: "#92400e" }}>
+            <Clock size={10} />
+            <span>Expires {new Date(expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="p-4 space-y-3">
+        {/* Customer */}
+        {customer_name && (
+          <div className="flex items-center gap-2 text-sm">
+            <User size={14} style={{ color: "var(--ab-text-muted)" }} />
+            <span style={{ color: "var(--ab-text-secondary)" }}>Customer:</span>
+            <span className="font-medium" style={{ color: "var(--ab-text)" }}>{customer_name}</span>
+          </div>
+        )}
+
+        {/* Line items */}
+        {line_items && line_items.length > 0 && (
+          <div className="space-y-1.5">
+            <h4 className="text-[11px] font-medium uppercase tracking-wide"
+              style={{ color: "var(--ab-text-muted)" }}>
+              Line Items
+            </h4>
+            {line_items.map((item, i) => (
+              <div key={i}
+                className="flex items-center justify-between text-sm rounded-lg px-3 py-2 border"
+                style={{ background: "var(--ab-bg)", borderColor: "var(--ab-border-subtle)" }}>
+                <div className="flex-1">
+                  <span style={{ color: "var(--ab-text)" }}>{item.description}</span>
+                  <span className="ml-2" style={{ color: "var(--ab-text-muted)" }}>
+                    {item.quantity} × {fmtCurrency(item.unit_price, currency)}
+                  </span>
+                </div>
+                <span className="font-medium ml-4" style={{ color: "var(--ab-text)" }}>
+                  {fmtCurrency(item.total, currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Totals */}
+        {total && (
+          <div className="rounded-lg border p-3 space-y-1.5"
+            style={{ background: "var(--ab-bg)", borderColor: "var(--ab-border)" }}>
+            <div className="flex justify-between text-sm" style={{ color: "var(--ab-text-secondary)" }}>
+              <span>Subtotal</span>
+              <span>{fmtCurrency(subtotal, currency)}</span>
+            </div>
+            {tax_amount && tax_amount !== "0" && (
+              <div className="flex justify-between text-sm" style={{ color: "var(--ab-text-secondary)" }}>
+                <span>Tax ({tax_rate}%)</span>
+                <span>{fmtCurrency(tax_amount, currency)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-base font-bold pt-1.5 border-t"
+              style={{ color: "var(--ab-text)", borderColor: "var(--ab-border)" }}>
+              <span>Total</span>
+              <span style={{ color: "var(--ab-accent-text)" }}>
+                {fmtCurrency(total, currency)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs" style={{ color: "var(--ab-text-muted)" }}>
+          This is a draft — no changes have been saved yet. Review the preview before confirming.
+        </p>
+      </div>
+
+      {/* Actions */}
+      {actions && actions.length > 0 && (
+        <div className="px-4 py-3 border-t flex flex-wrap gap-2"
+          style={{ background: "var(--ab-bg)", borderColor: "var(--ab-border)" }}>
+          {actions.map((a, i) => (
+            <button
+              key={`${a.action}-${i}`}
+              onClick={() => onAction(a)}
+              disabled={loading}
+              className="ab-action-btn disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SuggestedPrompts({ prompts, contextualPrompts, onSelect }) {
-  // Merge: server-side prompts first, contextual follow-ups as fallback
+  // Server-side topic-specific follow-ups take full priority.
+  // Contextual (client-side topic detection) chips are only used as
+  // fallback when the server provides no prompts (e.g. out-of-scope
+  // refusal, initial greeting).
+  const hasServerChips = (prompts || []).length > 0;
+  const source = hasServerChips ? prompts : (contextualPrompts || []);
+
   const merged = [];
   const seen = new Set();
 
-  for (const p of [...(prompts || []), ...(contextualPrompts || [])]) {
-    if (merged.length >= 4) break;
+  for (const p of source) {
+    if (merged.length >= 3) break;
     const key = p.toLowerCase().trim();
     if (!seen.has(key)) {
       seen.add(key);

@@ -1,16 +1,16 @@
 /**
  * components/ZoikoMark.jsx
  * ------------------------
- * Canonical Zoiko Billing product mark ("Z" monogram on the same deep-purple
- * gradient as the billing shell sidebar). Per the Chatbot UI/UX design spec
- * (§2 Design Principles, §6 Component Library): the assistant must feel native
- * to Zoiko Billing — "do not create a visually independent AI brand" and "use
- * the Zoiko Billing/product icon family where available; do not introduce a
- * separate AI icon set". Generic bot/robot glyphs must not represent the
- * assistant; this mark does.
+ * Canonical Zoiko Billing product mark — renders ONLY the Z symbol cropped
+ * from the official zoiko-billing-logo.png. No "ZOIKO" text, no "BILLING"
+ * text, no recreation, no approximation.
+ *
+ * Source: zoiko-billing-logo.png cropped at (70, 60, 774, 737) — the exact
+ * pixel region of the Z character. Verified: no oiko/billing content.
+ * Colors: #08233f (navy) + #079add blue gradient — identical to original.
  */
 
-const ZOIKO_GRADIENT = "linear-gradient(135deg, #1F0B63 0%, #160845 100%)";
+const ICON_SRC = "/zoiko-icon.png";
 
 export default function ZoikoMark({
   size = 32,
@@ -20,22 +20,21 @@ export default function ZoikoMark({
 }) {
   return (
     <span
-      className={`relative inline-flex flex-shrink-0 select-none items-center justify-center ${rounded} ${className}`}
-      style={{ width: size, height: size, background: ZOIKO_GRADIENT }}
+      className={`relative inline-flex flex-shrink-0 items-center justify-center overflow-hidden ${rounded} ${className}`}
+      style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <span
+      <img
+        src={ICON_SRC}
+        alt=""
+        draggable={false}
         style={{
-          color: "#ffffff",
-          fontWeight: 800,
-          fontSize: Math.max(10, Math.round(size * 0.52)),
-          lineHeight: 1,
-          letterSpacing: "-0.02em",
-          fontFamily: "inherit",
+          width: size,
+          height: size,
+          display: "block",
+          pointerEvents: "none",
         }}
-      >
-        Z
-      </span>
+      />
       {showAccentDot && (
         <span
           className="absolute border-2 border-white"

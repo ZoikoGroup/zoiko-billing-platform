@@ -34,6 +34,27 @@ class GroqModelGateway(ModelGateway):
     def __init__(self, transport: httpx.BaseTransport | None = None):
         # `transport` is an injection point for tests (httpx.MockTransport).
         self._transport = transport
+        self._client: httpx.Client | None = None
+        # Connection pool limits - reuse connections for better performance
+        self._limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(
+                timeout=settings.AI_MODEL_TIMEOUT_SECONDS,
+                transport=self._transport,
+                limits=self._limits,
+            )
+        return self._client
+
+    def _close_client(self) -> None:
+        """Close the httpx client so the next request gets a fresh connection."""
+        if self._client is not None and not self._client.is_closed:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+        self._client = None
 
     def complete(
         self,
@@ -103,32 +124,80 @@ class GroqModelGateway(ModelGateway):
         }
 
         start_time = time.monotonic()
-        try:
-            with httpx.Client(
-                timeout=settings.AI_MODEL_TIMEOUT_SECONDS,
-                transport=self._transport,
-            ) as client:
+        last_error: Exception | None = None
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                client = self._get_client()
+                req_start = time.monotonic()
                 resp = client.post(GROQ_CHAT_COMPLETIONS_URL, json=payload, headers=headers)
-        except httpx.TimeoutException:
-            latency_ms = int((time.monotonic() - start_time) * 1000)
-            logger.error("Groq API timeout after %dms", latency_ms)
-            raise ModelGatewayError("Model provider timeout.", provider="groq", retryable=True)
-        except httpx.HTTPError as e:
-            logger.error("Groq API connection error: %s", type(e).__name__)
-            raise ModelGatewayError(
-                f"Model provider error: {type(e).__name__}",
-                provider="groq",
-                retryable=True,
-            )
+                req_latency = int((time.monotonic() - req_start) * 1000)
+                last_error = None
+                logger.info(
+                    "Groq API request completed: attempt=%d status=%d latency=%dms model=%s",
+                    attempt + 1, resp.status_code, req_latency, resolved_model,
+                )
+                break
+            except httpx.TimeoutException:
+                last_error = httpx.TimeoutException("timeout")
+                # Close stale client so the next attempt gets a fresh connection
+                self._close_client()
+                if attempt < max_retries:
+                    logger.warning("Groq API timeout on attempt %d, retrying...", attempt + 1)
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                latency_ms = int((time.monotonic() - start_time) * 1000)
+                logger.error("Groq API timeout after %dms (%d attempts)", latency_ms, max_retries + 1)
+                raise ModelGatewayError("Model provider timeout.", provider="groq", retryable=True)
+            except httpx.HTTPError as e:
+                last_error = e
+                # Close stale client so the next attempt gets a fresh connection
+                self._close_client()
+                if attempt < max_retries:
+                    logger.warning("Groq API connection error on attempt %d: %s", attempt + 1, type(e).__name__)
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                latency_ms = int((time.monotonic() - start_time) * 1000)
+                logger.error("Groq API connection error: %s", type(e).__name__)
+                raise ModelGatewayError(
+                    f"Model provider error: {type(e).__name__}",
+                    provider="groq",
+                    retryable=True,
+                )
 
         latency_ms = int((time.monotonic() - start_time) * 1000)
 
+        # Retry on transient server errors (429, 5xx) even after a successful HTTP round-trip
+        if resp.status_code in (429, 500, 502, 503, 504) and (resp.status_code != 429 or attempt < max_retries):
+            if attempt < max_retries:
+                retry_after = float(resp.headers.get("retry-after", "1"))
+                logger.warning("Groq API status %d on attempt %d, retrying in %.1fs...", resp.status_code, attempt + 1, retry_after)
+                time.sleep(min(retry_after, 3.0))
+                try:
+                    client = self._get_client()
+                    resp = client.post(GROQ_CHAT_COMPLETIONS_URL, json=payload, headers=headers)
+                    latency_ms = int((time.monotonic() - start_time) * 1000)
+                except Exception:
+                    pass  # fall through to error handling below
+
         if resp.status_code != 200:
             retryable = resp.status_code in (429, 500, 502, 503, 504)
+            # Log model-specific errors clearly
+            if resp.status_code in (400, 404):
+                try:
+                    error_detail = resp.json()
+                except Exception:
+                    error_detail = resp.text
+                logger.error(
+                    "Groq API model error status=%d model=%s detail=%s",
+                    resp.status_code, resolved_model, error_detail,
+                )
             logger.error(
                 "Groq API error status=%d after %dms (retryable=%s)",
                 resp.status_code, latency_ms, retryable,
             )
+            # Close client on error so the next request gets a fresh connection
+            self._close_client()
             raise ModelGatewayError(
                 f"Model provider HTTP {resp.status_code}",
                 provider="groq",

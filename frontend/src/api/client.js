@@ -24,21 +24,53 @@ export function clearSession() {
   clearStoredSession();
 }
 
+// Pre-session auth endpoints must never go through the silent
+// refresh-and-retry path. A failed /auth/login (401 bad credentials) used to
+// trigger /auth/refresh and then RE-POST the credentials — doubling the
+// rate-limit cost of every wrong password and wiping any stored session via
+// clearSession() inside a mere failed login attempt.
+const AUTH_RETRY_EXEMPT_PATHS = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/refresh",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
+  "/api/auth/accept-invite",
+];
+
+function isAuthRetryExempt(path) {
+  return AUTH_RETRY_EXEMPT_PATHS.some((p) => path === p || path.startsWith(p + "?"));
+}
+
+function networkError(message, aborted = false) {
+  const err = new Error(message);
+  err.status = 0;
+  err.network = true;
+  err.aborted = aborted;
+  return err;
+}
+
 async function refreshSession() {
   const refresh = getRefreshToken();
   if (!refresh) return false;
-  const res = await fetch(`${API_BASE}/api/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refresh }),
-  });
-  if (!res.ok) {
-    clearSession();
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) {
+      clearSession();
+      return false;
+    }
+    const data = await res.json();
+    setSession({ ...data, user: getStoredUser() });
+    return true;
+  } catch {
+    // Refresh itself failing to reach the server is transient — do not wipe
+    // the session for it; let the original request's outcome decide.
     return false;
   }
-  const data = await res.json();
-  setSession({ ...data, user: getStoredUser() });
-  return true;
 }
 
 export async function apiFetch(path, { method = "GET", body, params, timeout = 30000 } = {}) {
@@ -51,12 +83,19 @@ export async function apiFetch(path, { method = "GET", body, params, timeout = 3
     });
   }
 
-  let attempt = true;
-  let res = await rawFetch(url, method, body, timeout);
+  const canAuthRetry = !isAuthRetryExempt(path);
 
-  if (res.status === 401 && attempt && (await refreshSession())) {
-    attempt = false;
+  let res;
+  try {
     res = await rawFetch(url, method, body, timeout);
+    if (res.status === 401 && canAuthRetry && (await refreshSession())) {
+      res = await rawFetch(url, method, body, timeout);
+    }
+  } catch (err) {
+    if (err && (err.name === "AbortError" || err.name === "TimeoutError")) {
+      throw networkError(`Request timed out after ${timeout / 1000}s.`, true);
+    }
+    throw networkError(err?.message || "Network request failed.");
   }
 
   let data = {};
@@ -68,9 +107,22 @@ export async function apiFetch(path, { method = "GET", body, params, timeout = 3
 
   if (!res.ok) {
     const detail = data.detail;
-    const msg = Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : detail;
+    let msg;
+    let fields;
+    if (Array.isArray(detail)) {
+      fields = [...new Set(detail.map((d) => d.loc?.[d.loc.length - 1]).filter(Boolean))];
+      msg = detail.map((d) => d.msg).join("; ");
+    } else if (detail !== undefined && detail !== null && typeof detail !== "object") {
+      msg = String(detail);
+    } else if (typeof data.message === "string") {
+      // ZoikoException bodies carry both `message` and `detail`; slowapi's 429
+      // body carries neither (`{error}` only) — callers map by status instead.
+      msg = data.message;
+    }
     const err = new Error(msg || `Request failed (${res.status})`);
     err.status = res.status;
+    err.serverDetail = typeof msg === "string" ? msg : undefined;
+    if (fields) err.serverFields = fields;
     throw err;
   }
   return data;

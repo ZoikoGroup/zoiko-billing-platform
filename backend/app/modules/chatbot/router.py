@@ -57,8 +57,8 @@ from .conversation.engine import ConversationEngine
 from .actions.action_engine import ActionEngine, ActionEngineError
 from .knowledge.retrieval import KnowledgeRetriever
 from .model_gateway.base import ModelGateway, ModelGatewayError
-from .model_gateway.anthropic_gateway import AnthropicModelGateway
 from .model_gateway.groq_gateway import GroqModelGateway
+from .model_gateway.anthropic_gateway import AnthropicModelGateway
 from .guardrails.guardrails import GuardrailEngine, SystemPromptBuilder
 from .audit.middleware import get_metrics
 
@@ -80,29 +80,42 @@ router = APIRouter(
 _guardrail = GuardrailEngine()
 _gateway: ModelGateway | None = None
 
-def _get_gateway() -> ModelGateway | None:
-    """Resolve the model gateway per AI_MODEL_PROVIDER, auto-detecting from
-    whichever API key is configured. Returns None when no provider is
-    configured — the engine then runs rules-only (fully deterministic)."""
-    global _gateway
-    if _gateway is None:
-        preferred = (app_settings.AI_MODEL_PROVIDER or "").strip().lower()
+_gateway_provider: str | None = None
+
+def _get_gateway(provider: str | None = None) -> ModelGateway | None:
+    """Resolve the model gateway for the requested provider.
+
+    Uses the AI_PROVIDER setting when no explicit provider is given.
+    Returns None when the provider's API key is not configured — the engine
+    then runs rules-only (fully deterministic).
+    """
+    global _gateway, _gateway_provider
+    target = provider or app_settings.AI_PROVIDER
+    # Return cached gateway if provider matches
+    if _gateway is not None and _gateway_provider == target:
+        return _gateway
+    if target == "anthropic" and app_settings.ANTHROPIC_API_KEY:
         try:
-            if preferred == "groq":
-                _gateway = GroqModelGateway()
-            elif preferred == "anthropic":
-                _gateway = AnthropicModelGateway()
-            elif app_settings.GROQ_API_KEY:
-                _gateway = GroqModelGateway()
-            elif app_settings.ANTHROPIC_API_KEY:
-                _gateway = AnthropicModelGateway()
+            _gateway = AnthropicModelGateway()
+            _gateway_provider = "anthropic"
         except Exception:
             _gateway = None
+            _gateway_provider = None
+    elif app_settings.GROQ_API_KEY:
+        try:
+            _gateway = GroqModelGateway()
+            _gateway_provider = "groq"
+        except Exception:
+            _gateway = None
+            _gateway_provider = None
+    else:
+        _gateway = None
+        _gateway_provider = None
     return _gateway
 
 
-def _engine(db: Session) -> ConversationEngine:
-    return ConversationEngine(db, model_gateway=_get_gateway())
+def _engine(db: Session, provider: str | None = None) -> ConversationEngine:
+    return ConversationEngine(db, model_gateway=_get_gateway(provider))
 
 
 def _actions(db: Session) -> ActionEngine:
@@ -198,7 +211,12 @@ def send_message(
         import traceback as _tb
         _logger.error("[CHATBOT-DIAG] UNHANDLED EXCEPTION: %s: %s", type(exc).__name__, exc)
         _logger.error("[CHATBOT-DIAG] TRACEBACK:\n%s", _tb.format_exc())
-        raise
+        return ChatbotResponse(
+            message_uid=str(uuid.uuid4()),
+            answer="I ran into a temporary issue processing that. Your message wasn't lost — please try sending it again. If this keeps happening, I can connect you to a team member.",
+            mode="M0_EXPLAIN",
+            risk_class="R0",
+        )
 
 
 # ── Action Lifecycle Endpoints ───────────────────────────────────────────────
@@ -300,6 +318,19 @@ def execute_action(
             action_uid=action_uid,
             idempotency_key=body.idempotency_key,
         )
+    except ActionEngineError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+@router.post("/actions/{action_uid}/cancel")
+def cancel_action_endpoint(
+    action_uid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: AIContext = Depends(get_ai_context),
+):
+    try:
+        return _actions(db).cancel_action(ctx=ctx, action_uid=action_uid)
     except ActionEngineError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 

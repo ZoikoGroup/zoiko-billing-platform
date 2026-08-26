@@ -506,7 +506,7 @@ export default function BillingShell({ children }) {
   const { role } = useAuth();
 
   return (
-    <div className="min-h-screen bg-[#F8F7F4]">
+    <div className="h-screen overflow-hidden bg-[#F8F7F4]">
       <div
         className={`fixed inset-0 z-30 bg-slate-950/40 transition-opacity lg:hidden ${
           sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -514,18 +514,21 @@ export default function BillingShell({ children }) {
         onClick={() => setSidebarOpen(false)}
       />
 
-      <aside
-        className={`fixed top-[65px] bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-transform lg:top-0 lg:bottom-0 lg:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
-      </aside>
+      {/* Content row: sidebar | main workspace | chatbot panel (when open) */}
+      <div className="flex h-screen">
+        {/* Sidebar — full height, overlaps TopBar */}
+        <aside
+          className={`fixed top-0 bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-transform lg:translate-x-0 ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="max-lg:pt-[65px] h-full">
+            <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
+          </div>
+        </aside>
 
-      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-
-      <div className="lg:pl-72">
-        <main className="w-full pt-[65px]">
+        {/* Main billing workspace — flex-1, scrolls independently */}
+        <main className="flex-1 min-w-0 lg:pl-72 pt-[65px] overflow-y-auto">
           {role === "super_admin" && (
             <>
               <PrivilegedSessionBanner />
@@ -534,27 +537,27 @@ export default function BillingShell({ children }) {
           )}
           {children}
         </main>
+
+        {/* AI Assistant panel — flex child on desktop, full-screen sheet on mobile */}
+        <Suspense fallback={null}>
+          <AssistantPanel
+            isOpen={assistantOpen}
+            onClose={() => setAssistantOpen(false)}
+          />
+        </Suspense>
       </div>
 
-      {/* AI Assistant launcher — spec §6 "Assistant Launcher": product-branded
-          mark (no separate AI icon set), 48 px target (44–56 control scale),
-          defined hover/focus states and unread-style accent dot */}
+      {/* AI Assistant launcher — hidden when panel is open on desktop */}
       <button
         onClick={() => setAssistantOpen(true)}
-        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        className={`fixed bottom-6 right-6 z-40 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 ${
+          assistantOpen ? "hidden" : ""
+        }`}
         aria-label="Open AI Billing Assistant"
         title="AI Billing Assistant"
       >
-        <ZoikoMark size={48} rounded="rounded-full" showAccentDot className="transition-transform" />
+        <ZoikoMark size={56} rounded="rounded-lg" showAccentDot className="transition-transform" />
       </button>
-
-      {/* AI Assistant panel */}
-      <Suspense fallback={null}>
-        <AssistantPanel
-          isOpen={assistantOpen}
-          onClose={() => setAssistantOpen(false)}
-        />
-      </Suspense>
 
       {role === "super_admin" && <CommandPalette />}
     </div>

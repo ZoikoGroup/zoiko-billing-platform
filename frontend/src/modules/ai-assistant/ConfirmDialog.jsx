@@ -3,7 +3,8 @@
  * --------------------------------------
  * Explicit confirmation dialog for governed financial actions.
  * Requires deliberate user action — no accidental execution.
- * Preview hash is echoed back for server-side binding.
+ * §8.3: Confirm button restates action + material value, never bare "Confirm".
+ * §8.3: High-risk actions cannot use generic "Yes" — button restates full intent.
  */
 
 import { useState } from "react";
@@ -14,8 +15,13 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
 
   if (!preview) return null;
 
-  const payload = preview.preview_payload || {};
-  const moneySummary = preview.money_summary || {};
+  const pc = preview.preview_card || {};
+  const money = pc.money || preview.money_summary || {};
+  const customer = pc.customer || {};
+  const actionLabel = pc.action_label || "Financial action";
+  const riskDescription = pc.risk_description || "";
+  const confirmLabel = preview.confirm_label || "Confirm action";
+  const approval = pc.approval || {};
 
   return (
     <div
@@ -33,7 +39,7 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield size={18} />
-            <h3 className="text-sm font-semibold">Confirm Action</h3>
+            <h3 className="text-sm font-semibold">{actionLabel}</h3>
           </div>
           <button
             onClick={onCancel}
@@ -51,27 +57,45 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
             from the chat interface.
           </p>
 
+          {/* Risk description (§8.2 element 2 — text, not colour) */}
+          {riskDescription && (
+            <div className="flex items-start gap-2 text-xs text-slate-500">
+              <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+              <span>{riskDescription}</span>
+            </div>
+          )}
+
           {/* Summary */}
           <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
-            {payload.customer_name && (
+            {customer.name && (
               <div className="flex justify-between">
                 <span className="text-slate-500">Customer</span>
-                <span className="font-medium">{payload.customer_name}</span>
+                <span className="font-medium">{customer.name}</span>
               </div>
             )}
-            {moneySummary.total && (
+            {money.total && (
               <div className="flex justify-between">
                 <span className="text-slate-500">Total</span>
-                <span className="font-bold text-brand text-base">
-                  {moneySummary.currency} {Number(moneySummary.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <span className="font-bold text-base" style={{ color: "var(--ab-accent-text, #F5841F)" }}>
+                  {money.display || `${money.currency || ""} ${Number(money.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                 </span>
               </div>
             )}
             <div className="flex justify-between">
               <span className="text-slate-500">Action</span>
-              <span className="font-medium">{payload.action_type?.replace(/_/g, " ")}</span>
+              <span className="font-medium">{actionLabel}</span>
             </div>
           </div>
+
+          {/* Approval notice */}
+          {approval.required && (
+            <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-orange-50 text-orange-800 border border-orange-200">
+              <AlertTriangle size={12} className="flex-shrink-0" />
+              <span>
+                This action requires approval from <strong>{approval.role || "a manager"}</strong> before execution.
+              </span>
+            </div>
+          )}
 
           {/* Acknowledgment */}
           <label className="flex items-start gap-2 cursor-pointer">
@@ -79,7 +103,8 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
               type="checkbox"
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
-              className="mt-0.5 rounded border-slate-300 text-brand focus:ring-brand"
+              className="mt-0.5 rounded border-slate-300 focus:ring-brand"
+              style={{ accentColor: "var(--ab-accent, #F5841F)" }}
             />
             <span className="text-xs text-slate-600">
               I have reviewed the preview and confirm this action is correct. I understand this
@@ -88,7 +113,7 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
           </label>
         </div>
 
-        {/* Footer */}
+        {/* Footer — §8.3: button restates action + material value */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
           <button
             onClick={onCancel}
@@ -99,9 +124,10 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
           <button
             onClick={() => onConfirm(preview)}
             disabled={!acknowledged}
-            className="px-6 py-2 text-sm font-semibold text-white bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+            className="px-6 py-2 text-sm font-semibold text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: "var(--ab-accent, #F5841F)" }}
           >
-            Execute
+            {confirmLabel}
           </button>
         </div>
       </div>

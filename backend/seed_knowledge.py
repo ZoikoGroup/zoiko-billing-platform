@@ -16,12 +16,13 @@ KB_ENTRIES = [
     {
         "title": "Billing Reports",
         "chunks": [
-            "Zoiko Billing provides five standard billing reports, available on the Reports page: Revenue Report, Invoice Report, Payment Report, Tax Report, and Subscription Report. Each report can be filtered by date range and exported for accounting or review.",
+            "Zoiko Billing provides six billing reports, available on the Reports page and the Forecast Report page: Revenue Report, Invoice Report, Payment Report, Tax Report, Subscription Report, and Forecast Report. Each report can be filtered by date range and exported for accounting or review.",
             "Revenue Report: shows total billed revenue, collected payments, refunds, and net revenue over a chosen period. Use it to track how much money the business earned and spot revenue trends month over month.",
             "Invoice Report: shows every invoice issued in a period with its status (draft, sent, paid, overdue), total value, and aging. Use it for accounts-receivable follow-up and to see which invoices are unpaid or overdue.",
             "Payment Report: shows payments received in a period, broken down by payment method and status (cleared, pending, failed). Use it to reconcile bank deposits against customer payments.",
             "Tax Report: shows tax amounts charged and collected, grouped by tax rate. Use it to prepare tax filings and verify the correct tax was applied to invoices.",
             "Subscription Report: shows active, cancelled, and expiring subscriptions, plan distribution, and recurring revenue trends. Use it to understand subscriber growth and recurring billing performance.",
+            "Forecast Report: projects future revenue, monthly recurring revenue (MRR), and collected cash using simple linear regression on the last 12 months of data. It forecasts 6 months ahead and displays a combined chart of historical and projected values, a monthly breakdown table, and summary KPIs including forecasted 6-month revenue, growth trend, expected MRR, and forecast confidence (R-squared). The report can be exported as CSV, Excel, or JSON.",
         ],
     },
     {
@@ -40,6 +41,10 @@ KB_ENTRIES = [
         "title": "Invoices Overview",
         "chunks": [
             "An invoice is a commercial document issued by a seller to a buyer, indicating the products, quantities, and agreed prices for services or products provided. In Zoiko Billing, invoices track what customers owe.",
+            "How to create an invoice: Go to Invoices, click Create Invoice, select the customer, add line items with descriptions, quantities, and unit prices, set the tax rate and billing period, review the total, and save as Draft.",
+            "How to issue an invoice: Open a Draft invoice, review the details, then click Issue. The invoice status changes to Sent and the customer receives it. Once issued, the invoice cannot be edited.",
+            "How to cancel an invoice: Open a Sent invoice, click Cancel, provide a reason for cancellation. Cancelled invoices reduce the customer balance. Only Sent or Overdue invoices can be cancelled.",
+            "How to write off an invoice: For uncollectible invoices, open the invoice, click Write Off. This marks the remaining balance as written off for accounting purposes.",
             "Invoice statuses in Zoiko Billing: Draft (created but not yet sent), Sent (delivered to customer, awaiting payment), Partially Paid (some payment received), Paid (fully settled), Overdue (past due date with unpaid balance), Cancelled (voided before any collection effort), Refunded (payment returned to customer), Written Off (remaining balance written off as uncollectable).",
             "An invoice balance due is calculated as: Total Amount minus Paid Amount. If the balance due is zero, the invoice is fully paid. If the due date has passed and balance remains, the invoice is overdue.",
             "To check an invoice status, look up the invoice by its number (e.g., INV-1001) or by customer name. The status, amounts, and due date will be shown.",
@@ -50,6 +55,8 @@ KB_ENTRIES = [
         "title": "Payments and Allocations",
         "chunks": [
             "A payment records money received from a customer. Each payment is linked to a customer and may be allocated across one or more invoices.",
+            "How to record a payment: Navigate to the Payments section, click Record Payment, select the customer, enter the payment amount, choose the payment method (bank transfer, credit card, cash, check), enter the transaction reference or reference number, and submit. The payment will be created in Pending status.",
+            "How to allocate a payment to invoices: After recording a payment, click Allocate on the payment record. Select the invoices you want to apply the payment to. You can split a single payment across multiple invoices. The system will show the balance remaining after allocation. Confirm the allocation to reduce the balance due on each selected invoice.",
             "Payment allocation is the process of applying a payment amount to specific invoices. A single payment can be split across multiple invoices. Allocations reduce the balance due on each allocated invoice.",
             "Payment statuses: Pending (initiated but not confirmed), Processing (being processed by payment gateway), Cleared (successfully processed and funds received), Failed (transaction failed), Cancelled (payment cancelled), Refunded (payment returned to customer).",
             "To find a payment, search by payment number (e.g., PAY-1001), transaction ID, or customer name. The payment amount, date, status, and linked invoices will be shown.",
@@ -65,6 +72,8 @@ KB_ENTRIES = [
             "Credit notes in Zoiko Billing are tracked with a credit note number (e.g., CN-1001), linked to the original invoice, and show the credited amount. They go through statuses: Draft, Issued, Applied.",
             "Refunds in Zoiko Billing are tracked with a refund number (e.g., REF-1001), linked to the original payment, and show the refunded amount. They go through statuses: Pending, Completed, Failed.",
             "When a credit note is applied, it reduces the customer's outstanding balance on the original invoice. The invoice's paid amount is effectively increased by the credit note amount.",
+            "How to create a credit note: Go to Credit Notes, click Create Credit Note, select the customer, link it to the original invoice, enter the credit amount and reason, save as Draft, then click Issue to apply it.",
+            "How to issue a refund: Go to Payments, find the payment to refund, click Refund, enter the refund amount, select the refund method (original payment method or bank transfer), provide a reason, and submit. The refund will be processed.",
         ],
     },
     {
@@ -75,6 +84,8 @@ KB_ENTRIES = [
             "A subscription plan defines the pricing, billing interval, and features included. Plans can have tiers (e.g., Basic, Pro, Enterprise) with different pricing.",
             "Subscription billing cycles define how often a customer is charged: monthly, quarterly, semi-annually, or annually. Each cycle generates an invoice automatically on the renewal date until the subscription is paused or cancelled.",
             "Subscription upgrades and downgrades change the plan mid-cycle. Upgrades typically prorate the remaining billing period. Downgrades apply at the next renewal date.",
+            "How to create a subscription: Go to Subscriptions, click Create Subscription, select the customer, choose a plan, set the billing start date, review the prorated charges, and activate.",
+            "How to pause or cancel a subscription: Open the subscription, click Pause to temporarily stop billing, or Cancel to terminate. Paused subscriptions resume automatically. Cancelled subscriptions do not resume.",
         ],
     },
     {
@@ -90,6 +101,8 @@ KB_ENTRIES = [
             "An overdue invoice is one where the due date has passed and the balance remains unpaid. Overdue invoices may trigger dunning processes.",
             "Dunning is the systematic process of communicating with customers to collect overdue payments. It typically involves escalating reminders: friendly reminder, firm notice, final warning, account suspension.",
             "Dunning levels in Zoiko Billing: Level 1 (gentle reminder at 7 days past due), Level 2 (firm notice at 14 days), Level 3 (final warning at 30 days), Level 4 (account suspension at 45+ days).",
+            "How to set up dunning: Go to Billing Settings, open the Dunning tab, configure reminder intervals, email templates, and escalation rules for each dunning level. Dunning runs automatically on overdue invoices.",
+            "How to view overdue invoices: Go to the Dashboard, check the Overdue Invoices widget, or go to Invoices and filter by Overdue status. The aging report shows how long each invoice has been overdue.",
             "To check overdue invoices, ask the assistant to show overdue invoices or check the dashboard for overdue counts and amounts.",
         ],
     },
@@ -116,7 +129,21 @@ KB_ENTRIES = [
             "The standard billing workflow: Create Invoice -> Issue Invoice -> Receive Payment -> Allocate Payment -> Close Invoice. If payment is not received by due date, dunning begins.",
             "Zoiko Billing enforces tenant isolation: each organization can only see and manage its own billing data. No cross-organization data access is permitted.",
             "All billing actions are audit-logged. Every invoice creation, payment allocation, credit note, and refund is tracked with who performed the action, when, and what changed.",
-            "The governed AI assistant operates in read-only modes (M0 Explain, M1 Inspect) for general questions. Write operations (M2-M4) require explicit confirmation and approval workflows.",
+        ],
+    },
+    {
+        "title": "Billing Configuration",
+        "chunks": [
+            "Billing Configuration is the central settings page for the Zoiko Billing module, accessed from the Organization Settings. It contains nine tabs that control every aspect of how billing operates: General, Invoicing, Payments, Tax, Dunning, Revenue, Notifications, Advanced, and Administration.",
+            "General tab: configure organization details (company name, billing email, support email, phone, website, logo), country-specific tax registration fields (GSTIN, VAT, PAN, EIN, ABN), physical address, and regional settings including default currency, supported currencies, timezone, language, date format, and fiscal year. Smart Organization Intelligence auto-applies country-specific defaults for India, US, UK, Australia, UAE, and Singapore.",
+            "Invoicing tab: set document numbering for invoices, quotes, credit notes, and refunds (prefix, format pattern, sequence reset), invoice defaults (due days, payment reminder timing, late fees), PDF templates (standard, modern, professional, minimal, bold), draft behavior (save as draft, auto-finalize, or send for approval), branding, display toggles (auto-generate numbers, show tax/discount/shipping breakdown), and invoice text, footer, terms, and conditions.",
+            "Payments tab: configure default payment terms (net 7 through net 90), rounding method and precision, exchange rate provider and auto-update, grace period and credit limits, auto-send receipts, auto-capture payments, live exchange rate management, and payment gateway toggles (Stripe, Razorpay, PayPal, Cash, Bank Transfer, UPI, Offline).",
+            "Tax tab: set tax calculation method (exclusive vs inclusive), tax label (VAT, GST, Sales Tax), tax registration number, rounding method (per line, per invoice, per line item), and toggles for tax-inclusive defaults, show tax on invoice, and auto-calculate. Configure which tax types are enabled (GST, Sales Tax, Service Tax, Withholding Tax, Reverse Charge, Compound Tax) with country-aware smart defaults.",
+            "Dunning tab: configure debt collection and overdue invoice escalation: number of escalation levels, wait days between levels, grace days before dunning starts, auto-dunning toggle, escalate-to-collections toggle, SMS and WhatsApp reminder channels, auto-suspend on overdue, and penalty and interest settings (penalty type and value, annual interest rate, simple vs compound).",
+            "Revenue tab: set revenue recognition method (immediate, daily or monthly prorated, milestone, manual), deferral days, accounting method (cash, accrual, deferred), recognition frequency (daily through annually), and toggles for revenue recognition and multi-currency support.",
+            "Notifications tab: toggle email and in-app notifications for billing events including Invoice Created, Invoice Sent, Invoice Paid, Invoice Overdue, Subscription Renewed, Subscription Cancelled, Payment Failed, Payment Success, and Customer Created.",
+            "Advanced tab: enable or disable billing module capabilities including approval workflow, credit notes, discounts, retainers, schedule invoicing, partial payments, auto-apply credits, quotes, contracts, usage-based billing, refunds, auto-tax calculation, and audit logs.",
+            "Administration tab: operational and diagnostic tools including System Health dashboard, SMTP Test for email delivery verification, Email Templates browser, Numbering Diagnostics, Tax Diagnostics, Exchange Rate Diagnostics, and Enhanced Validation.",
         ],
     },
 ]
