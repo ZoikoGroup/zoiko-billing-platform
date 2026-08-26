@@ -76,6 +76,26 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     },
     "platform_config.manage": {PlatformRole.SECURITY_OPERATOR},
     "platform_role.manage": set(),  # PLATFORM_ADMINISTRATOR only — see below
+    # ── Plane 1 Commercial Billing capabilities ─────────────────────────────
+    "commercial_quote.write": {PlatformRole.SUPPORT_OPERATOR},
+    "commercial_quote.approve": {PlatformRole.AUDITOR},
+    "commercial_payment.write": {PlatformRole.SECURITY_OPERATOR},
+    "commercial_financial.read": {PlatformRole.AUDITOR, PlatformRole.FINANCE_READONLY},
+    # Deliberately SECURITY_OPERATOR, not AUDITOR: AUDITOR already holds
+    # commercial_quote.approve (independent-review role, §25 maker-checker),
+    # so the same person must not also be the one authoring/finalizing/
+    # sending the Plane 1 invoices those quotes convert into. SECURITY_OPERATOR
+    # already holds commercial_payment.write (the operational money-movement
+    # role) — invoice creation/finalize/void/send is the same class of
+    # operational write the payment side already trusts it with, and every
+    # payment allocation needs a finalized invoice to allocate against, so
+    # splitting invoice-write into a third role would just force two operator
+    # roles to complete one workflow with no separation-of-duties benefit.
+    "commercial_financial.write": {PlatformRole.SECURITY_OPERATOR},
+    # PLATFORM_ADMINISTRATOR only (empty explicit set, same pattern as
+    # platform_role.manage) — activating a trial program is a commercial
+    # policy decision, not a day-to-day operational task.
+    "commercial_evaluation_program.write": set(),
 }
 
 CAPABILITIES = set(_CAPABILITY_ROLE_MAP.keys())

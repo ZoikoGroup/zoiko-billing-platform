@@ -56,6 +56,7 @@ TENANT_INVOICE_FINALIZATION = "tenant_invoice_finalization"
 TENANT_PAYMENT_ATTEMPTS = "tenant_payment_attempts"
 TENANT_DUNNING = "tenant_dunning"
 TENANT_BILLING_COMMUNICATIONS = "tenant_billing_communications"
+PAUSE_PLATFORM_INVOICE_FINALIZATION = "pause_platform_invoice_finalization"
 
 # ZB-SA-CMD-003 §9.2 launch catalog — Domain B entries with a REAL enforced
 # code path in this repository. Each entry carries its blast-radius preview
@@ -118,9 +119,27 @@ DOMAIN_B_BREAKER_CATALOG: dict[str, dict] = {
     },
 }
 
+# ── Platform (Domain A) breaker for Plane 1 invoice finalization ─────────
+DOMAIN_A_BREAKER_CATALOG: dict[str, dict] = {
+    PAUSE_PLATFORM_INVOICE_FINALIZATION: {
+        "display_name": "Pause platform invoice finalization",
+        "domain": "A",
+        "effect": (
+            "Prevents new Platform (Plane 1) invoice finalization. "
+            "Queued drafts are preserved for controlled replay. "
+            "Affects PlatformInvoiceService.finalize only."
+        ),
+        "gated_paths": [
+            "PlatformInvoiceService.finalize",
+            "POST /api/super-admin/commercial-billing/invoices/{id}/finalize",
+        ],
+    },
+}
+
 KNOWN_BREAKER_SCOPES = {
     COMMERCIAL_SUBSCRIPTION_CHARGING,
     *DOMAIN_B_BREAKER_CATALOG.keys(),
+    *DOMAIN_A_BREAKER_CATALOG.keys(),
 }
 
 # §9.1 auto-expiry bounds: a pause must always be time-bound. 14 days is the

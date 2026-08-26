@@ -12,6 +12,10 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicEstimatePage from "./pages/PublicEstimatePage";
 import PublicInvoicePage from "./pages/PublicInvoicePage";
+import PublicPlatformQuotePage from "./pages/PublicPlatformQuotePage";
+import PublicPlatformInvoicePage from "./pages/PublicPlatformInvoicePage";
+import PaymentSuccessPage from "./pages/PaymentSuccessPage";
+import PlatformCheckoutPage from "./pages/PlatformCheckoutPage";
 import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
@@ -20,6 +24,7 @@ import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
 const BillingAdminWorkspaceDashboard = lazy(() => import("./modules/billing-admin/WorkspaceDashboardPage"));
 const BillingAdminWorkspaceOrganization = lazy(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
 const BillingAdminWorkspaceSubscription = lazy(() => import("./modules/billing-admin/WorkspaceSubscriptionPage"));
+const BillingAdminWorkspaceZoikoSubscription = lazy(() => import("./modules/billing-admin/WorkspaceZoikoSubscriptionPage"));
 const BillingAdminWorkspaceActivity = lazy(() => import("./modules/billing-admin/WorkspaceActivityPage"));
 const BillingAdminWorkspaceNotifications = lazy(() => import("./modules/billing-admin/WorkspaceNotificationsPage"));
 const BillingAdminWorkspaceHelp = lazy(() => import("./modules/billing-admin/WorkspaceHelpPage"));
@@ -249,7 +254,6 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/commercial/accounts", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
   { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
-  { path: "/super-admin/commercial/offers", element: <CommercialPlansPage /> },
   { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
   { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
   { path: "/super-admin/commercial/invoices", element: <Plane1BillingPage /> },
@@ -375,6 +379,10 @@ export default function App() {
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/estimate/:token" element={<PublicEstimatePage />} />
         <Route path="/invoice/:id" element={<PublicInvoicePage />} />
+        <Route path="/platform-quote/:token" element={<PublicPlatformQuotePage />} />
+        <Route path="/platform-invoice/:token" element={<PublicPlatformInvoicePage />} />
+        <Route path="/platform-invoice/:token/success" element={<PaymentSuccessPage />} />
+        <Route path="/platform-invoice/:token/checkout" element={<PlatformCheckoutPage />} />
         <Route element={<ProtectedRoute />}>
           {SUPER_ADMIN_LEGACY_REDIRECTS.map(({ from, to }) => (
             <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
@@ -438,6 +446,14 @@ export default function App() {
             element={
               <BillingShell>
                 <BillingAdminWorkspaceSubscription />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/zoiko-subscription"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceZoikoSubscription />
               </BillingShell>
             }
           />

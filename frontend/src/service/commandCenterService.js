@@ -193,3 +193,92 @@ export const acknowledgeReconciliationException = (exceptionId, note) =>
 
 export const resolveReconciliationException = (exceptionId, note) =>
   api.post(`/api/super-admin/reconciliation-exceptions/${exceptionId}/resolve`, { note });
+
+// ── Plane 1 Commercial Billing ─────────────────────────────────────────
+
+// Quotes
+export const createCommercialQuote = (data) =>
+  api.post("/api/super-admin/commercial-billing/quotes", data);
+
+export const listCommercialQuotes = (params = {}) =>
+  api.get("/api/super-admin/commercial-billing/quotes", { params });
+
+export const getCommercialQuote = (quoteId) =>
+  api.get(`/api/super-admin/commercial-billing/quotes/${quoteId}`);
+
+export const sendCommercialQuote = (quoteId) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/send`, {});
+
+export const approveCommercialQuote = (quoteId) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/approve`, {});
+
+export const rejectCommercialQuote = (quoteId, reason) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/reject`, { reason });
+
+export const convertCommercialQuote = (quoteId, dueDate) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/convert`, null, {
+    params: dueDate ? { due_date: dueDate } : {},
+  });
+
+export const addCommercialQuoteItem = (quoteId, data) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/items`, data);
+
+export const setCommercialQuoteDiscount = (quoteId, data) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/discount`, data);
+
+// Platform Invoices
+export const createPlatformInvoice = (data) =>
+  api.post("/api/super-admin/commercial-billing/invoices", data);
+
+export const listPlatformInvoices = (params = {}) =>
+  api.get("/api/super-admin/commercial-billing/invoices", { params });
+
+export const getPlatformInvoice = (invoiceId) =>
+  api.get(`/api/super-admin/commercial-billing/invoices/${invoiceId}`);
+
+export const finalizePlatformInvoice = (invoiceId) =>
+  api.post(`/api/super-admin/commercial-billing/invoices/${invoiceId}/finalize`, {});
+
+export const voidPlatformInvoice = (invoiceId, reason) =>
+  api.post(`/api/super-admin/commercial-billing/invoices/${invoiceId}/void`, { reason });
+
+export const sendPlatformInvoice = (invoiceId) =>
+  api.post(`/api/super-admin/commercial-billing/invoices/${invoiceId}/send`, {});
+
+export const addPlatformInvoiceItem = (invoiceId, data) =>
+  api.post(`/api/super-admin/commercial-billing/invoices/${invoiceId}/items`, data);
+
+// Platform Payments
+export const recordPlatformPayment = (data) =>
+  api.post("/api/super-admin/commercial-billing/payments", data);
+
+export const listPlatformPayments = (params = {}) =>
+  api.get("/api/super-admin/commercial-billing/payments", { params });
+
+export const allocatePlatformPayment = (paymentId, invoiceId, amount) =>
+  api.post(`/api/super-admin/commercial-billing/payments/${paymentId}/allocate`, {
+    invoice_id: invoiceId,
+    amount,
+  });
+
+export const deallocatePlatformPayment = (paymentId, invoiceId) =>
+  api.post(`/api/super-admin/commercial-billing/payments/${paymentId}/deallocate`, null, {
+    params: { invoice_id: invoiceId },
+  });
+
+// Platform Reconciliation
+export const triggerPlatformReconciliation = () =>
+  api.post("/api/super-admin/commercial-billing/reconciliation/run", {});
+
+export const listPlatformReconciliationRuns = (limit = 20) =>
+  api.get("/api/super-admin/commercial-billing/reconciliation/runs", { params: { limit } });
+
+// Evaluation Programs (§B3)
+export const listEvaluationPrograms = () =>
+  api.get("/api/super-admin/commercial-billing/evaluation-programs");
+
+export const createEvaluationProgram = (data) =>
+  api.post("/api/super-admin/commercial-billing/evaluation-programs", data);
+
+export const setEvaluationProgramStatus = (programId, isActive) =>
+  api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });

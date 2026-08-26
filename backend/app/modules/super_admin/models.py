@@ -94,6 +94,29 @@ class PlatformAuditAction(str, enum.Enum):
     # metadata so the trail stays queryable without enum churn.
     LIFECYCLE_TRANSITION = "lifecycle_transition"
 
+    # ── Plane 1 commercial billing lifecycle transitions ────────────────────
+    QUOTE_CREATED = "quote_created"
+    QUOTE_SENT = "quote_sent"
+    QUOTE_ACCEPTED = "quote_accepted"
+    QUOTE_REJECTED = "quote_rejected"
+    QUOTE_EXPIRED = "quote_expired"
+    QUOTE_CONVERTED = "quote_converted"
+    INVOICE_CREATED = "invoice_created"
+    INVOICE_FINALIZED = "invoice_finalized"
+    INVOICE_VOIDED = "invoice_voided"
+    INVOICE_SENT = "invoice_sent"
+    PAYMENT_RECORDED = "payment_recorded"
+    PAYMENT_ALLOCATED = "payment_allocated"
+    PAYMENT_DEALLOCATED = "payment_deallocated"
+    CREDIT_NOTE_CREATED = "credit_note_created"
+    CREDIT_NOTE_APPROVED = "credit_note_approved"
+    CREDIT_NOTE_ISSUED = "credit_note_issued"
+    CREDIT_NOTE_VOIDED = "credit_note_voided"
+    REFUND_CREATED = "refund_created"
+    REFUND_APPROVED = "refund_approved"
+    REFUND_COMPLETED = "refund_completed"
+    REFUND_REJECTED = "refund_rejected"
+
 
 class PlatformAuditLog(Base):
     """Platform-plane audit trail for Super Admin mutations.
@@ -499,6 +522,9 @@ class ReconciliationRun(Base):
     __tablename__ = "reconciliation_runs"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Discriminates Plane 1 (platform/commercial) runs from Plane 2 (tenant
+    # ledger) runs — both use this same table. Never mix the two in a query.
+    plane = Column(String(10), nullable=False, default="plane2", server_default="plane2")
     state = Column(CaseInsensitiveEnum(ReconciliationRunState), nullable=False, default=ReconciliationRunState.RUNNING)
     started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)

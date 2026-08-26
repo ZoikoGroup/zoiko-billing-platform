@@ -40,6 +40,9 @@ function MiniTile({ label, value }) {
   );
 }
 
+// Plane 2 data (subscriptionApi -> /billing/subscriptions*): this org's own
+// customers' subscriptions, not this org's Zoiko Billing subscription
+// (Plane 1). A Plane 1 "your Zoiko subscription" view is not built yet.
 export default function WorkspaceSubscriptionPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -125,8 +128,8 @@ export default function WorkspaceSubscriptionPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
       <WorkspaceHeader
-        title="Billing Subscription"
-        subtitle="Current plan and subscription overview"
+        title="Customer Subscriptions"
+        subtitle="Your customers' active plans and subscription overview — not your own Zoiko Billing subscription"
         icon={Repeat}
         organization={config}
         plan={primarySub ? (planMap[primarySub.plan_id] || "Active Plan") : null}

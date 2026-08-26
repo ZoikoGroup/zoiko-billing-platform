@@ -144,16 +144,6 @@ All six were exercised manually while building this extraction.
 
 ## What was intentionally left out
 
-- **Billing Admin workspace module** (`frontend/src/modules/billing-admin` in
-  the source monorepo, 18 files). It turned out to be a generic org-workspace
-  shell (dashboard, profile, subscription view, notifications, command
-  palette) whose permission policy was derived from the *whole monorepo's*
-  cross-module role matrix (HR/Payroll/Comply/Insights/Time), not billing
-  logic. Its purpose is already covered by this platform's own
-  `frontend/src/modules/organization-admin` + `BillingShell`, built fresh for
-  the simpler 3-role model. Porting the original would have reintroduced
-  exactly the platform-wide coupling this extraction removes, for no net
-  functionality gain.
 - **HR-specific role tiers** (`hr_admin`, `manager`, etc.) — collapsed to
   `super_admin` / `org_admin` / `billing_admin`.
 - **Subscription/entitlement gating** — the monorepo wrapped the entire

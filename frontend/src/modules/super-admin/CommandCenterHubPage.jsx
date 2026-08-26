@@ -2,9 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   Crosshair,
   Gauge,
+  HelpCircle,
+  RefreshCw,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
@@ -144,16 +148,14 @@ export default function CommandCenterHubPage() {
           <Link
             key={lens.lensKey}
             to={lens.href}
-            className={`group flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-500 ${
-              idx === 0 ? "lg:col-span-2 xl:col-span-1" : ""
-            }`}
+            className="group flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <span className="flex items-center gap-2">
-              {React.createElement(lens.icon, { size: 18, className: "text-brand-600", "aria-hidden": "true" })}
-              <span className="text-base font-bold text-slate-900">{lens.name}</span>
+              {React.createElement(lens.icon, { size: 18, className: "text-brand-600 shrink-0", "aria-hidden": "true" })}
+              <span className="flex-1 text-base font-bold text-slate-900">{lens.name}</span>
               <ArrowRight
                 size={16}
-                className="ml-auto text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500"
+                className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500"
                 aria-hidden="true"
               />
             </span>
@@ -226,37 +228,85 @@ function SafetyControlsModule({ summary, failed }) {
 }
 
 function ApiModule({ telemetry, failed }) {
-  let status = "loading";
-  let detail;
+  const MODULE_STATES = {
+    loading: { label: "Loading…", className: "border-slate-200 bg-slate-50 text-slate-600", chipClassName: "bg-slate-100 text-slate-600", Icon: RefreshCw },
+    error:   { label: "Error",     className: "border-red-200 bg-red-50/60 text-red-800",       chipClassName: "bg-red-100 text-red-700",     Icon: AlertTriangle },
+    unknown: { label: "Unknown",   className: "border-indigo-200 bg-indigo-50/50 text-indigo-900", chipClassName: "bg-indigo-100 text-indigo-700", Icon: HelpCircle },
+    stale:   { label: "Stale",     className: "border-amber-300 bg-amber-50/60 text-amber-900", chipClassName: "bg-amber-100 text-amber-800",  Icon: AlertTriangle },
+    fresh:   { label: "Fresh",     className: "border-emerald-200 bg-white text-slate-700",    chipClassName: "bg-emerald-100 text-emerald-700", Icon: CheckCircle2 },
+  };
+
+  let stateKey = "loading";
+  let errorMsg;
   if (failed) {
-    status = "error";
-    detail = "API telemetry could not be loaded.";
+    stateKey = "error";
+    errorMsg = "API telemetry could not be loaded.";
   } else if (telemetry) {
     const p95 = telemetry.p95_ms;
     const budget = telemetry.p95_budget_ms;
     if (p95 == null) {
-      status = "unknown";
-      detail = "No samples in the sliding window yet (single-process telemetry resets on restart).";
+      stateKey = "unknown";
     } else if (budget != null && p95 > budget) {
-      status = "stale";
-      detail = `p95 ${p95} ms exceeds the ${budget} ms server budget.`;
+      stateKey = "stale";
     } else {
-      status = "fresh";
-      detail = `p95 ${p95} ms of ${budget} ms server budget · errors ${fmtPct(telemetry.error_rate)} · ${telemetry.sample_count} samples`;
+      stateKey = "fresh";
     }
   }
+
+  const meta = MODULE_STATES[stateKey];
+  const p95 = telemetry?.p95_ms;
+  const budget = telemetry?.p95_budget_ms;
+  const overBudget = p95 != null && budget != null && p95 > budget;
+  const hasData = p95 != null;
+
+  const detailText =
+    stateKey === "error"
+      ? errorMsg
+      : stateKey === "unknown"
+        ? "No samples in the sliding window yet (single-process telemetry resets on restart)."
+        : null;
+
+  const sloNote = telemetry?.slo?.status === "NOT_CONFIGURED"
+    ? "SLOs/error budgets: NOT CONFIGURED (only the p95 budget is enforced)."
+    : null;
+
   return (
     <Link to="/super-admin/reliability" className="block rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500">
-      <ModuleState
-        status={status}
-        title="API Performance"
-        detail={detail}
-        asOf={
-          telemetry?.slo?.status === "NOT_CONFIGURED"
-            ? "SLOs/error budgets: NOT CONFIGURED (only the p95 budget is enforced)."
-            : undefined
-        }
-      />
+      <div className={`rounded-xl border px-4 py-3 ${meta.className}`}>
+        <div className="flex items-center gap-2">
+          <meta.Icon size={14} aria-hidden="true" />
+          <span className="text-sm font-semibold">API Performance</span>
+          <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chipClassName}`}>
+            {meta.label}
+          </span>
+        </div>
+        {detailText && (
+          <p className="mt-1 text-xs leading-relaxed opacity-80">{detailText}</p>
+        )}
+        {hasData && (
+          <div className={`mt-2 grid grid-cols-3 gap-2 rounded-lg px-3 py-2 text-[11px] ${
+            overBudget ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"
+          }`}>
+            <div>
+              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">p95</span>
+              <span className="font-semibold">{p95.toLocaleString()} ms</span>
+            </div>
+            <div>
+              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">Budget</span>
+              <span className="font-semibold">{budget?.toLocaleString() ?? "—"} ms</span>
+            </div>
+            <div>
+              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">Errors</span>
+              <span className="font-semibold">{fmtPct(telemetry?.error_rate)}</span>
+            </div>
+          </div>
+        )}
+        {sloNote && (
+          <p className="mt-1.5 flex items-center gap-1 text-[10px] leading-snug opacity-60">
+            <HelpCircle size={11} aria-hidden="true" /> {sloNote}
+          </p>
+        )}
+      </div>
     </Link>
   );
 }
