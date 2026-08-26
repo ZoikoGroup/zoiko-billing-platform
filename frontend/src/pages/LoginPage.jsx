@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { apiFetch, setSession } from "../api/client";
@@ -6,6 +6,44 @@ import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "../config/roles";
 import { useAuth } from "../context/AuthContext";
 import LandingHeader from "../landing/LandingHeader";
 import Footer from "../landing/Footer";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const MESSAGES = {
+  invalidEmail: "Enter a valid email address.",
+  missingPassword: "Enter your password.",
+  invalidCredentials: "Invalid email or password.",
+  serverError: "We couldn't sign you in right now. Please try again.",
+  networkError: "Unable to connect. Check your internet connection and try again.",
+  rateLimited: "Too many sign-in attempts. Please wait a minute and try again.",
+};
+
+// Maps a thrown apiFetch error to the correct user-facing message.
+// Only an actual authentication rejection (401/403 from the login endpoint)
+// produces "Invalid email or password." — server outages, rate limiting,
+// malformed responses and network failures each get their own honest copy.
+function messageForAuthError(err) {
+  if (!err || err.network || err.status === 0) return MESSAGES.networkError;
+  const status = err.status;
+  if (status === 401 || status === 403) {
+    // Account-state rejections arrive as our own API's detail text; masking
+    // "organization suspended" as bad credentials would mislead the user.
+    const detail = (err.serverDetail || "").toLowerCase();
+    if (detail.includes("suspended") || detail.includes("deactivated")) {
+      return err.serverDetail;
+    }
+    return MESSAGES.invalidCredentials;
+  }
+  if (status === 422) {
+    const fields = Array.isArray(err.serverFields) ? err.serverFields : [];
+    if (fields.includes("email")) return MESSAGES.invalidEmail;
+    if (fields.includes("password")) return MESSAGES.missingPassword;
+    return MESSAGES.serverError;
+  }
+  if (status === 429) return MESSAGES.rateLimited;
+  if (status >= 500) return MESSAGES.serverError;
+  return err.message || MESSAGES.serverError;
+}
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -42,6 +80,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [oauthNotice, setOauthNotice] = useState(null);
+
+  // Ref-based in-flight guard: the disabled attribute alone leaves a window
+  // between two synchronous clicks before React re-renders with disabled=true.
+  const submittingRef = useRef(false);
 
   function defaultRedirectFor(role) {
     return VALID_ROLES.includes(role)
@@ -58,9 +102,42 @@ export default function LoginPage() {
     });
   }
 
+  function clearStaleErrors(field) {
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+    setLocalError(null);
+    setOauthNotice(null);
+  }
+
+  function handleEmailChange(e) {
+    setEmail(e.target.value);
+    clearStaleErrors("email");
+  }
+
+  function handlePasswordChange(e) {
+    setPassword(e.target.value);
+    clearStaleErrors("password");
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
+    if (submittingRef.current) return;
+
+    const nextFieldErrors = {};
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !EMAIL_PATTERN.test(trimmedEmail)) {
+      nextFieldErrors.email = MESSAGES.invalidEmail;
+    }
+    // Presence only — the password value itself is never trimmed or altered.
+    if (!password) {
+      nextFieldErrors.password = MESSAGES.missingPassword;
+    }
+
+    setFieldErrors(nextFieldErrors);
     setLocalError(null);
+    setOauthNotice(null);
+    if (Object.keys(nextFieldErrors).length > 0) return;
+
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       // ZB-SA-CMD-003 v3.0: a valid password completes the login for EVERY
@@ -68,14 +145,30 @@ export default function LoginPage() {
       // is enforced only as a step-up when a privileged action demands it.
       const data = await apiFetch("/api/auth/login", {
         method: "POST",
-        body: { email, password },
+        body: { email: trimmedEmail, password },
       });
+      if (!data?.access_token || !data?.user) {
+        // A 2xx without a usable session payload is a broken/malformed
+        // response — treat it as a server failure, never as success and
+        // never as bad credentials.
+        throw { status: 502 };
+      }
       completeLogin(data);
     } catch (err) {
-      setLocalError(err.message || "Unable to sign in. Please check your credentials.");
+      setLocalError(messageForAuthError(err));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
+  }
+
+  function handleOAuthProvider(providerLabel) {
+    setLocalError(null);
+    setFieldErrors({});
+    setOauthNotice(
+      `${providerLabel} sign-in is not configured for this environment yet. ` +
+      "Please sign in with your email and password."
+    );
   }
 
   const inputStyle = {
@@ -90,6 +183,13 @@ export default function LoginPage() {
     background: "white",
     fontFamily: "inherit",
   };
+
+  const fieldErrorText = (message, id) =>
+    message ? (
+      <p id={id} role="alert" style={{ margin: "6px 0 0", fontSize: "12px", color: "#DC2626" }}>
+        {message}
+      </p>
+    ) : null;
 
   return (
     <div style={{
@@ -120,30 +220,39 @@ export default function LoginPage() {
               Sign in to Zoiko Billing.
             </h1>
 
-            {(localError) && (
+            {(localError || oauthNotice) && (
               <div style={{
                 display: "flex", alignItems: "flex-start", gap: "8px",
-                background: "#FEF2F2", border: "1px solid #FECACA",
+                background: localError ? "#FEF2F2" : "#EFF6FF",
+                border: localError ? "1px solid #FECACA" : "1px solid #BFDBFE",
                 borderRadius: "8px", padding: "12px 14px", marginBottom: "20px"
-              }}>
-                <AlertCircle size={15} color="#DC2626" style={{ marginTop: "1px", flexShrink: 0 }} />
-                <span style={{ fontSize: "13px", color: "#DC2626" }}>{localError}</span>
+              }} role="alert">
+                <AlertCircle size={15} color={localError ? "#DC2626" : "#2563EB"} style={{ marginTop: "1px", flexShrink: 0 }} />
+                <span style={{ fontSize: "13px", color: localError ? "#DC2626" : "#1D4ED8" }}>
+                  {localError || oauthNotice}
+                </span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
                 <label htmlFor="email" style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "#374151", marginBottom: "6px" }}>
                   Email address
                 </label>
                 <input
-                  id="email" type="email" required autoComplete="email"
-                  value={email} onChange={e => setEmail(e.target.value)}
+                  id="email" type="email" autoComplete="email"
+                  value={email} onChange={handleEmailChange}
                   placeholder="you@company.com"
-                  style={inputStyle}
-                  onFocus={e => e.target.style.borderColor = "#2563EB"}
-                  onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={fieldErrors.email ? "email-error" : undefined}
+                  style={{
+                    ...inputStyle,
+                    borderColor: fieldErrors.email ? "#DC2626" : inputStyle.border,
+                  }}
+                  onFocus={e => e.target.style.borderColor = fieldErrors.email ? "#DC2626" : "#2563EB"}
+                  onBlur={e => e.target.style.borderColor = fieldErrors.email ? "#DC2626" : "#E5E7EB"}
                 />
+                {fieldErrorText(fieldErrors.email, "email-error")}
               </div>
 
               <div>
@@ -152,12 +261,17 @@ export default function LoginPage() {
                 </label>
                 <div style={{ position: "relative" }}>
                   <input
-                    id="password" type={showPassword ? "text" : "password"} required
+                    id="password" type={showPassword ? "text" : "password"}
                     autoComplete="current-password" value={password}
-                    onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-                    style={{ ...inputStyle, paddingRight: "44px" }}
-                    onFocus={e => e.target.style.borderColor = "#2563EB"}
-                    onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+                    onChange={handlePasswordChange} placeholder="••••••••"
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    aria-describedby={fieldErrors.password ? "password-error" : undefined}
+                    style={{
+                      ...inputStyle, paddingRight: "44px",
+                      borderColor: fieldErrors.password ? "#DC2626" : inputStyle.border,
+                    }}
+                    onFocus={e => e.target.style.borderColor = fieldErrors.password ? "#DC2626" : "#2563EB"}
+                    onBlur={e => e.target.style.borderColor = fieldErrors.password ? "#DC2626" : "#E5E7EB"}
                   />
                   <button type="button" onClick={() => setShowPassword(v => !v)}
                     style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6B7280", padding: "6px" }}
@@ -165,9 +279,10 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {fieldErrorText(fieldErrors.password, "password-error")}
               </div>
 
-              <button type="submit" disabled={submitting}
+              <button type="submit" disabled={submitting} aria-busy={submitting}
                 style={{
                   width: "100%", padding: "13px", borderRadius: "50px", border: "none",
                   fontSize: "15px", fontWeight: "600", color: "white",
@@ -201,11 +316,15 @@ export default function LoginPage() {
                 { icon: <MicrosoftIcon />, label: "Continue with Microsoft" },
                 { icon: <SSOIcon />, label: "Continue with SSO" },
               ].map(({ icon, label }) => (
-                <button key={label} type="button"
+                <button key={label} type="button" disabled={submitting}
+                  onClick={() => handleOAuthProvider(label.replace("Continue with ", ""))}
+                  aria-label={`${label} (not configured)`}
+                  title={`${label.replace("Continue with ", "")} sign-in is not configured for this environment yet.`}
                   style={{
                     width: "100%", padding: "11px 16px", borderRadius: "8px",
                     border: "1.5px solid #E5E7EB", background: "white",
-                    fontSize: "14px", color: "#374151", cursor: "pointer",
+                    fontSize: "14px", color: "#374151", cursor: submitting ? "not-allowed" : "pointer",
+                    opacity: submitting ? 0.6 : 1,
                     display: "flex", alignItems: "center", gap: "10px",
                     fontFamily: "inherit", fontWeight: "500",
                     transition: "border-color 0.15s, background 0.15s",
