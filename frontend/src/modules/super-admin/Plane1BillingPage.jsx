@@ -31,6 +31,7 @@ import {
   createCommercialQuote,
   getCommercialQuote,
   addCommercialQuoteItem,
+  setCommercialQuoteDiscount,
   sendCommercialQuote,
   approveCommercialQuote,
   rejectCommercialQuote,
@@ -453,6 +454,23 @@ export default function Plane1BillingPage() {
       .then(refreshQuoteDetail)
       .catch((e) => setQuoteDetailError(errorMessage(e, "Failed to add item.")))
       .finally(() => setQuoteDetailBusy(false));
+  };
+
+  const [discountForm, setDiscountForm] = useState({ discount_amount: "", reason: "", approver_id: "" });
+  const [discountBusy, setDiscountBusy] = useState(false);
+  const [discountError, setDiscountError] = useState(null);
+
+  const submitDiscount = () => {
+    setDiscountBusy(true);
+    setDiscountError(null);
+    setCommercialQuoteDiscount(quoteDetail.id, {
+      discount_amount: discountForm.discount_amount || "0",
+      reason: discountForm.reason || undefined,
+      approver_id: discountForm.approver_id ? Number(discountForm.approver_id) : undefined,
+    })
+      .then(refreshQuoteDetail)
+      .catch((e) => setDiscountError(errorMessage(e, "Failed to set discount.")))
+      .finally(() => setDiscountBusy(false));
   };
 
   const sendQuoteAction = async () => {
@@ -1207,6 +1225,62 @@ export default function Plane1BillingPage() {
               <>
                 <AddItemForm onAdd={addItemToQuote} busy={quoteDetailBusy} disabled={!canQuoteWrite} />
                 {!canQuoteWrite && <CapabilityNotice capability="commercial_quote.write" />}
+
+                <div className="rounded-xl border border-slate-200 p-3.5 space-y-3">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Quote-level discount
+                    {Number(quoteDetail.discount_amount) > 0 && (
+                      <span className="ml-2 font-normal text-slate-500">
+                        Currently {formatCurrency(quoteDetail.discount_amount, quoteDetail.currency)}
+                        {quoteDetail.discount_reason ? ` — ${quoteDetail.discount_reason}` : ""}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    A discount at or above the configured % of subtotal requires a reason and an
+                    approver (a different Super Admin than the quote's creator) before this quote
+                    can be sent.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Discount Amount">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                        value={discountForm.discount_amount}
+                        onChange={(e) => setDiscountForm((f) => ({ ...f, discount_amount: e.target.value }))}
+                      />
+                    </Field>
+                    <Field label="Approver (User ID)" hint="Required above threshold">
+                      <input
+                        type="number"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                        value={discountForm.approver_id}
+                        onChange={(e) => setDiscountForm((f) => ({ ...f, approver_id: e.target.value }))}
+                      />
+                    </Field>
+                    <Field label="Reason" hint="Required above threshold">
+                      <input
+                        type="text"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                        value={discountForm.reason}
+                        onChange={(e) => setDiscountForm((f) => ({ ...f, reason: e.target.value }))}
+                      />
+                    </Field>
+                  </div>
+                  {discountError && (
+                    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+                      {discountError}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <Button variant="secondary" onClick={submitDiscount} disabled={!canQuoteWrite || discountBusy}>
+                      Set Discount
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="flex justify-end">
                   <Button variant="primary" onClick={sendQuoteAction} disabled={!canQuoteWrite || quoteDetailBusy}>
                     Send Quote
@@ -1367,6 +1441,26 @@ export default function Plane1BillingPage() {
             </div>
 
             <ItemsTable items={invoiceDetail.items} currency={invoiceDetail.currency} />
+
+            {invoiceDetail.delivery_attempts?.length > 0 && (
+              <div className="rounded-xl border border-slate-200 p-3.5">
+                <p className="text-sm font-semibold text-slate-800 mb-2">Delivery Attempts</p>
+                <ul className="space-y-1.5">
+                  {invoiceDetail.delivery_attempts.map((a, i) => (
+                    <li key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600">
+                        {a.channel}{a.provider ? ` via ${a.provider}` : ""}
+                        {a.attempted_at ? ` — ${new Date(a.attempted_at).toLocaleString()}` : ""}
+                      </span>
+                      <span className={a.result === "success" ? "font-medium text-emerald-600" : "font-medium text-red-600"}>
+                        {a.result}
+                        {a.error_detail ? `: ${a.error_detail}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {invoiceDetail.status === "draft" && (
               <>

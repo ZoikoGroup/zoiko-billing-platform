@@ -25,7 +25,7 @@ endpoints that persist via the caller).
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,7 @@ def _plan_snapshot(plan: "CommercialPlan") -> dict:
         "description": plan.description,
         "status": plan.status.value if hasattr(plan.status, "value") else plan.status,
         "is_default": plan.is_default,
+        "is_quote_only": plan.is_quote_only,
         "billing_interval": (
             plan.billing_interval.value if hasattr(plan.billing_interval, "value") else plan.billing_interval
         ),
@@ -166,6 +167,7 @@ class CommercialPlanService:
         plan_name: str,
         description: str | None = None,
         is_default: bool = False,
+        is_quote_only: bool = False,
         billing_interval=None,
         currency: str | None = None,
         price_amount=None,
@@ -195,6 +197,9 @@ class CommercialPlanService:
         if existing:
             raise ValueError(f"CommercialPlan plan_code already exists: {plan_code}")
 
+        if is_default and is_quote_only:
+            raise ValueError("A quote-only plan cannot also be the self-serve default")
+
         if is_default:
             self._clear_defaults()
 
@@ -203,6 +208,7 @@ class CommercialPlanService:
             plan_name=plan_name,
             description=description,
             is_default=is_default,
+            is_quote_only=is_quote_only,
             status=CommercialPlanStatus.ACTIVE,
             billing_interval=billing_interval,
             currency=currency,
@@ -706,6 +712,11 @@ class CommercialSubscriptionService:
         CommercialSubscriptionStatus.PENDING: {
             CommercialSubscriptionStatus.ACTIVE,
             CommercialSubscriptionStatus.CANCELLED,
+            # Free-trial expiry (trial_ends_at passed with no payment) — see
+            # commercial/tasks/trial_expiry.py. Distinct from the N1 payment-
+            # failure path (ACTIVE -> ... -> SUSPENDED), which never applies
+            # to a subscription that was never activated in the first place.
+            CommercialSubscriptionStatus.SUSPENDED,
         },
         CommercialSubscriptionStatus.ACTIVE: {
             CommercialSubscriptionStatus.PAST_DUE,
@@ -887,6 +898,51 @@ class CommercialSubscriptionService:
         )
         return subscription
 
+    def resolve_price(self, subscription: CommercialSubscription):
+        """Resolve (price_amount, currency, billing_interval) for a
+        subscription's renewal invoice: prefer the pinned catalog_version_id
+        (reproducible even after the plan's live version changes), falling
+        back to the plan's own fields for legacy rows with no catalog
+        version. Returns None if neither resolves to a real price — a
+        renewal invoice is never generated with an invented amount."""
+        from app.modules.commercial.models import CommercialPlanVersion
+
+        if subscription.catalog_version_id:
+            version = (
+                self.db.query(CommercialPlanVersion)
+                .filter(CommercialPlanVersion.id == subscription.catalog_version_id)
+                .first()
+            )
+            if version and version.price_amount is not None:
+                return (version.price_amount, version.currency, version.billing_interval)
+
+        plan = subscription.plan
+        if plan and plan.price_amount is not None:
+            return (plan.price_amount, plan.currency, plan.billing_interval)
+
+        return None
+
+    def advance_billing_period(self, subscription: CommercialSubscription, interval) -> None:
+        """Advance current_period_start/end by one billing interval
+        (monthly/annual) after a renewal invoice is generated."""
+        from app.modules.commercial.enums import CommercialBillingInterval
+
+        start = subscription.current_period_end or datetime.utcnow()
+        months = 12 if interval == CommercialBillingInterval.ANNUAL else 1
+
+        subscription.current_period_start = start
+        subscription.current_period_end = self._add_months(start, months)
+        self.db.flush()
+
+    @staticmethod
+    def _add_months(start: datetime, months: int) -> datetime:
+        import calendar
+        target_month = start.month + months
+        target_year = start.year + (target_month - 1) // 12
+        target_month = ((target_month - 1) % 12) + 1
+        max_day = calendar.monthrange(target_year, target_month)[1]
+        return start.replace(year=target_year, month=target_month, day=min(start.day, max_day))
+
     def transition(
         self,
         subscription: CommercialSubscription,
@@ -920,37 +976,70 @@ class CommercialSubscriptionService:
         self.db.flush()
         return subscription
 
-    def provision_default_subscription(self, account_id: int) -> CommercialSubscription | None:
+    def provision_default_subscription(
+        self, account_id: int, intended_plan_code: str | None = None,
+    ) -> CommercialSubscription | None:
         """Provisioning path used by registration.
 
-        Assigns the approved default plan when one exists; otherwise leaves the
-        account WITHOUT a subscription (returns None).
+        When intended_plan_code names an ACTIVE, non-quote-only CommercialPlan
+        (the registrant's actual dropdown selection — essentials/professional/
+        business), that plan is provisioned. Otherwise falls back to the
+        approved is_default plan. If neither resolves, leaves the account
+        WITHOUT a subscription (returns None) rather than inventing one.
 
-        Phase 7 seeds NO plans, so no approved default plan exists and the
-        subscription is intentionally absent — a free/paid plan is never
-        invented merely to satisfy the flow. Idempotent: if an open
-        subscription already exists, it is returned untouched.
+        The resulting subscription starts PENDING (CommercialSubscription's
+        default status) — provisioning never auto-charges or auto-activates;
+        entitlement must not race ahead of payment (§B4). Idempotent: if an
+        open subscription already exists, it is returned untouched.
         """
         existing = self.get_active_subscription(account_id)
         if existing is not None:
             return existing
 
-        default_plan = (
-            self.db.query(CommercialPlan)
-            .filter(
-                CommercialPlan.is_default.is_(True),
-                CommercialPlan.status == CommercialPlanStatus.ACTIVE,
+        plan = None
+        if intended_plan_code:
+            plan = (
+                self.db.query(CommercialPlan)
+                .filter(
+                    CommercialPlan.plan_code == intended_plan_code,
+                    CommercialPlan.status == CommercialPlanStatus.ACTIVE,
+                    CommercialPlan.is_quote_only.is_(False),
+                )
+                .first()
             )
-            .first()
-        )
-        if default_plan is None:
+
+        if plan is None:
+            plan = (
+                self.db.query(CommercialPlan)
+                .filter(
+                    CommercialPlan.is_default.is_(True),
+                    CommercialPlan.status == CommercialPlanStatus.ACTIVE,
+                )
+                .first()
+            )
+
+        if plan is None:
             logger.info(
-                "No approved default CommercialPlan — leaving account %s without a subscription.",
-                account_id,
+                "No matching or default CommercialPlan for account %s (intended_plan_code=%r) — "
+                "leaving account without a subscription.",
+                account_id, intended_plan_code,
             )
             return None
 
-        return self.create_subscription(account_id, default_plan)
+        subscription = self.create_subscription(account_id, plan)
+
+        # Free-trial deadline: only stamped here, at self-serve provisioning
+        # — never on subscriptions created some other way (e.g. change_plan's
+        # replacement). NULL trial_ends_at means the trial-expiry sweep
+        # never touches this row.
+        from app.config import settings as _settings
+
+        subscription.trial_ends_at = datetime.utcnow() + timedelta(
+            days=_settings.COMMERCIAL_TRIAL_PERIOD_DAYS
+        )
+        self.db.flush()
+
+        return subscription
 
     def change_plan(
         self,

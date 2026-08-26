@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getOrganizationDashboardStats, getOrganizationDetails } from "../../service/orgAdminService";
-import { Users, Building2, FileText, AlertTriangle, Wallet, TrendingUp, Repeat } from "lucide-react";
+import { platformSelfServiceApi } from "../../service/platformSelfServiceApi";
+import { Users, Building2, FileText, AlertTriangle, Wallet, TrendingUp, Repeat, Clock } from "lucide-react";
 
 // Palette matches the Login page: blue/navy primary, slate ink, emerald success,
 // red danger. See src/pages/LoginPage.jsx.
@@ -48,6 +49,20 @@ function greeting() {
   return "Good evening";
 }
 
+// Free-trial remaining-time (COMMERCIAL_TRIAL_PERIOD_DAYS, see
+// commercial/tasks/trial_expiry.py). null when there's nothing to show —
+// ACTIVE/CANCELLED/etc subscriptions have no trial countdown.
+function trialRemaining(trialEndsAt, status) {
+  if (status === "suspended") return { label: "Your free trial ended without payment", expired: true };
+  if (status !== "pending" || !trialEndsAt) return null;
+  const diffMs = new Date(trialEndsAt).getTime() - Date.now();
+  if (diffMs <= 0) return { label: "Your free trial has ended", expired: true };
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const label = days >= 1 ? `${days} day${days === 1 ? "" : "s"} ${hours}h left in your free trial` : `${hours}h left in your free trial`;
+  return { label, expired: false };
+}
+
 const statusColors = { teal: { bg: SUCCESS, shadow: SUCCESS_100 }, amber: { bg: PRIMARY, shadow: PRIMARY_100 }, off: { bg: INK_FAINT, shadow: "#F3F4F6" } };
 
 const StatCard = React.memo(({ icon: Icon, iconBg, iconColor, label, value, sub, onClick }) => (
@@ -66,6 +81,7 @@ export default function OrgAdminDashboardPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [org, setOrg] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -74,16 +90,20 @@ export default function OrgAdminDashboardPage() {
     Promise.all([
       getOrganizationDashboardStats().catch(() => null),
       getOrganizationDetails().catch(() => null),
+      platformSelfServiceApi.getZoikoSubscription().catch(() => null),
     ])
-      .then(([s, o]) => {
+      .then(([s, o, z]) => {
         if (cancelled) return;
         if (s) setStats(s);
         if (o) setOrg(o);
+        if (z) setSubscription(z.subscription || null);
       })
       .catch(err => { if (!cancelled) setError(err?.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const trial = subscription ? trialRemaining(subscription.trial_ends_at, subscription.status) : null;
 
   const displayName = user?.first_name || user?.name || "there";
   const orgName = org?.name || user?.organization_name || "Your Organization";
@@ -112,6 +132,24 @@ export default function OrgAdminDashboardPage() {
       {error && (
         <div className="mb-4 rounded-[8px] border p-4 text-sm" style={{ background: DANGER_100, borderColor: "#FECACA", color: DANGER }}>
           {error}
+        </div>
+      )}
+
+      {trial && (
+        <div
+          onClick={() => navigate("/billing/workspace/zoiko-subscription")}
+          className="mb-4 flex items-center gap-3 rounded-[14px] border px-4 py-3 cursor-pointer transition-colors"
+          style={trial.expired
+            ? { background: DANGER_100, borderColor: "#FECACA" }
+            : { background: PRIMARY_100, borderColor: "#BFDBFE" }}
+        >
+          <Clock className="w-4 h-4 shrink-0" style={{ color: trial.expired ? DANGER : PRIMARY }} />
+          <p className="text-[13px] font-semibold" style={{ color: trial.expired ? DANGER : PRIMARY_DEEP }}>
+            {trial.label}
+          </p>
+          <span className="ml-auto text-[12px] font-semibold underline" style={{ color: trial.expired ? DANGER : PRIMARY }}>
+            {trial.expired ? "Pay now to restore access →" : "Pay now to activate →"}
+          </span>
         </div>
       )}
 

@@ -13,7 +13,7 @@ Org admin: /auth/admin/users (list/create/update/deactivate/reset)
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -183,8 +183,13 @@ def _require_super_admin(user) -> None:
 
 @router.post("/register", response_model=TokenResponse, summary="Register a new organization")
 @limiter.limit("5/minute")
-def register(request: Request, data: RegisterRequest, db: Session = Depends(get_db)):
-    return service.register_enterprise(db, data)
+def register(
+    request: Request,
+    data: RegisterRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    return service.register_enterprise(db, data, background_tasks=background_tasks)
 
 
 @router.get(

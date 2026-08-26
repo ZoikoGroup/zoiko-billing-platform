@@ -287,7 +287,7 @@ export function SubscriptionLifecycleBadge({ value }) {
  * surfaces its own errors on illegal transitions.
  */
 export const SUBSCRIPTION_TRANSITIONS = {
-  pending: ["active", "cancelled"],
+  pending: ["active", "cancelled", "suspended"],
   active: ["past_due", "suspended", "cancelled", "expired"],
   past_due: ["restricted", "active", "cancelled"],
   restricted: ["suspended", "active", "cancelled"],
@@ -295,6 +295,28 @@ export const SUBSCRIPTION_TRANSITIONS = {
   cancelled: [],
   expired: [],
 };
+
+/**
+ * Free-trial remaining-time helper (COMMERCIAL_TRIAL_PERIOD_DAYS, see
+ * commercial/tasks/trial_expiry.py). Only meaningful while status is
+ * "pending" (trial running) or "suspended" (trial expired unpaid) — ACTIVE/
+ * CANCELLED/etc subscriptions have no trial countdown to show.
+ * Returns null when there's nothing trial-related to display.
+ */
+export function formatTrialRemaining(trialEndsAt, status) {
+  if (status === "suspended") return { label: "Trial expired", tone: "risk" };
+  if (status !== "pending" || !trialEndsAt) return null;
+
+  const end = new Date(trialEndsAt);
+  if (Number.isNaN(end.getTime())) return null;
+  const diffMs = end.getTime() - Date.now();
+  if (diffMs <= 0) return { label: "Trial expired", tone: "risk" };
+
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
+  return { label, tone: days === 0 ? "attention" : "default" };
+}
 
 /**
  * Display helpers

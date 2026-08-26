@@ -223,6 +223,9 @@ export const convertCommercialQuote = (quoteId, dueDate) =>
 export const addCommercialQuoteItem = (quoteId, data) =>
   api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/items`, data);
 
+export const setCommercialQuoteDiscount = (quoteId, data) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/discount`, data);
+
 // Platform Invoices
 export const createPlatformInvoice = (data) =>
   api.post("/api/super-admin/commercial-billing/invoices", data);

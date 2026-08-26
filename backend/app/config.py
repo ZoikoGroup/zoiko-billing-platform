@@ -146,6 +146,36 @@ class Settings(BaseSettings):
     FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
     # REC-01 — ledger reconciliation cadence.
     RECONCILIATION_INTERVAL_MINUTES: int = 1440
+    # Commercial (Plane 1) recurring invoice generation on subscription
+    # renewal — see commercial/tasks/recurring_invoice.py. OFF by default,
+    # independent of ENABLE_RECURRING_BILLING_SCHEDULER's Plane-2 jobs.
+    ENABLE_COMMERCIAL_RECURRING_INVOICING: bool = False
+    COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
+
+    # ── Commercial (Plane 1) free-trial enforcement ─────────────────────
+    # A self-serve subscription is created PENDING with a
+    # COMMERCIAL_TRIAL_PERIOD_DAYS deadline (see provision_default_
+    # subscription). If it hasn't been paid (transitioned to ACTIVE) by
+    # then, commercial/tasks/trial_expiry.py suspends it and
+    # require_active_subscription blocks /billing/* access until a super
+    # admin reactivates it or the org pays. OFF by default — the trial
+    # deadline is stamped regardless, but nothing acts on it until enabled.
+    COMMERCIAL_TRIAL_PERIOD_DAYS: int = 3
+    ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = False
+    COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
+
+    # ── Commercial (Plane 1) quote discount approval (§B7) ──────────────
+    # A quote-level discount at or above this percentage of subtotal requires
+    # discount_reason + a discount_approver_id different from the creator
+    # before the quote may be sent. PLACEHOLDER business rule pending
+    # Finance sign-off — not an approved threshold.
+    COMMERCIAL_QUOTE_DISCOUNT_APPROVAL_THRESHOLD_PERCENT: float = 15.0
+
+    # ── Commercial (Plane 1) Stripe — Zoiko's own Stripe account, entirely
+    # separate from Plane 2's STRIPE_* settings above (never shared). ──────
+    PLATFORM_STRIPE_SECRET_KEY: str = ""
+    PLATFORM_STRIPE_PUBLISHABLE_KEY: str = ""
+    PLATFORM_STRIPE_WEBHOOK_SECRET: str = ""
 
 
 settings = Settings()

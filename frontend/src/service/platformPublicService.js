@@ -21,4 +21,6 @@ export const publicPlatformQuoteApi = {
 export const publicPlatformInvoiceApi = {
   getView: (token) =>
     api.get(`/billing/commercial-invoices/public/${token}`, { auth: false }),
+  checkout: (token) =>
+    api.post(`/billing/commercial-invoices/public/${token}/checkout`, {}, { auth: false }),
 };

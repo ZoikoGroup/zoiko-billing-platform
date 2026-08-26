@@ -179,6 +179,18 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Commercial (Plane-1) Failed-Payment Dunning",
         ),
         (
+            "app.modules.commercial.tasks.recurring_invoice:run_commercial_recurring_invoice_job",
+            settings.COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES,
+            "commercial_recurring_invoice_job",
+            "Commercial (Plane-1) Recurring Invoice Generation",
+        ),
+        (
+            "app.modules.commercial.tasks.trial_expiry:run_commercial_trial_expiry_job",
+            settings.COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES,
+            "commercial_trial_expiry_job",
+            "Commercial (Plane-1) Free-Trial Expiry Sweep",
+        ),
+        (
             "app.modules.super_admin.tasks.financial_consistency:run_financial_consistency_job",
             settings.FINANCIAL_CONSISTENCY_INTERVAL_MINUTES,
             "financial_consistency_job",

@@ -13,7 +13,7 @@ DOCTRINE:
 """
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -77,6 +77,12 @@ class QuoteItemRequest(BaseModel):
 
 class QuoteRejectRequest(BaseModel):
     reason: str = ""
+
+
+class QuoteDiscountRequest(BaseModel):
+    discount_amount: Decimal
+    reason: Optional[str] = None
+    approver_id: Optional[int] = None
 
 
 class InvoiceCreateRequest(BaseModel):
@@ -228,6 +234,29 @@ def add_quote_item(
     )
     db.commit()
     return item
+
+
+@router.post(
+    "/quotes/{quote_id}/discount",
+    summary="Set a quote-level discount (amount + reason + approver, §B7)",
+    dependencies=[Depends(require_capability("commercial_quote.write"))],
+)
+def set_quote_discount(
+    quote_id: int,
+    data: QuoteDiscountRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_super_admin),
+):
+    svc = CommercialQuoteService(db)
+    quote = svc.set_discount(
+        quote_id=quote_id,
+        actor_id=current_user.id,
+        discount_amount=data.discount_amount,
+        reason=data.reason,
+        approver_id=data.approver_id,
+    )
+    db.commit()
+    return quote
 
 
 @router.post(
@@ -668,6 +697,8 @@ def _serialize_quote_detail(quote: CommercialQuote) -> dict:
             "commercial_account_id": quote.commercial_account_id,
             "created_by": quote.created_by,
             "public_token": quote.public_token,
+            "discount_reason": quote.discount_reason,
+            "discount_approver_id": quote.discount_approver_id,
         }
     )
     return data
@@ -685,6 +716,16 @@ def _serialize_invoice_detail(invoice: PlatformInvoice) -> dict:
             "public_token": invoice.public_token,
             "delivery_status": invoice.delivery_status.value,
             "payment_status": invoice.payment_status.value,
+            "delivery_attempts": [
+                {
+                    "channel": a.channel,
+                    "provider": a.provider,
+                    "attempted_at": a.attempted_at.isoformat() if a.attempted_at else None,
+                    "result": a.result,
+                    "error_detail": a.error_detail,
+                }
+                for a in sorted(invoice.delivery_attempts, key=lambda a: a.attempted_at or datetime.min)
+            ],
         }
     )
     return data
