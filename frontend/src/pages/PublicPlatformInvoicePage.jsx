@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { publicPlatformInvoiceApi } from "../service/platformPublicService";
 
 function fmtCcy(v, currency) {
@@ -53,6 +53,7 @@ function SectionCard({ title, icon, children }) {
 
 export default function PublicPlatformInvoicePage() {
   const { token } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [invoice, setInvoice] = useState(null);
@@ -76,6 +77,15 @@ export default function PublicPlatformInvoicePage() {
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Navigates to a dedicated checkout page (rather than calling the
+  // checkout API inline) so clicking "Pay" always opens a real page
+  // immediately — that page starts the Stripe session and forwards the
+  // browser there, or shows a clear "not configured" state of its own.
+  const handlePayNow = useCallback(() => {
+    if (!token) return;
+    navigate(`/platform-invoice/${token}/checkout`);
+  }, [token, navigate]);
 
   if (loading) {
     return (
@@ -207,15 +217,15 @@ export default function PublicPlatformInvoicePage() {
 
         {canPay && (
           <SectionCard title="Pay This Invoice" icon="💳">
-            <div className="pinv-coming-soon">
-              <span className="pinv-coming-soon-icon">🔧</span>
-              <div>
-                <p className="pinv-coming-soon-title">Online payment isn't enabled yet</p>
-                <p className="pinv-coming-soon-msg">
-                  Zoiko Billing Accounts will follow up separately with payment
-                  instructions for this invoice.
-                </p>
-              </div>
+            <div className="pinv-pay-row">
+              <button
+                type="button"
+                className="pinv-pay-btn"
+                onClick={handlePayNow}
+              >
+                {`Pay ${fmtCcy(invoice.balance_due, currency)} Now`}
+              </button>
+              <p className="pinv-pay-hint">Securely processed by Stripe on behalf of Zoiko Billing Accounts.</p>
             </div>
           </SectionCard>
         )}
@@ -293,10 +303,11 @@ const STYLES = `
   .pinv-fin-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #94a3b8; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
   .pinv-fin-row--total { color: #f8fafc; font-weight: 700; font-size: 0.95rem; border-top: 2px solid rgba(255,255,255,0.1); border-bottom: none; padding-top: 0.75rem; margin-top: 0.25rem; }
   .pinv-fin-row--due { color: #f8fafc; font-weight: 700; border-bottom: none; font-size: 1.05rem; }
-  .pinv-coming-soon { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem 1.25rem; border-radius: 0.875rem; background: rgba(99,102,241,0.06); border: 1px dashed rgba(99,102,241,0.3); }
-  .pinv-coming-soon-icon { font-size: 1.5rem; }
-  .pinv-coming-soon-title { font-size: 0.9rem; font-weight: 700; color: #f1f5f9; margin: 0 0 0.25rem; }
-  .pinv-coming-soon-msg { font-size: 0.82rem; color: #94a3b8; margin: 0; line-height: 1.5; }
+  .pinv-pay-row { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+  .pinv-pay-btn { padding: 0.85rem 1.75rem; border-radius: 0.75rem; border: none; font-size: 0.95rem; font-weight: 700; color: #0f172a; cursor: pointer; background: linear-gradient(135deg, #34d399, #10b981); transition: opacity 0.2s; }
+  .pinv-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .pinv-pay-hint { font-size: 0.78rem; color: #64748b; margin: 0; }
+  .pinv-pay-error { font-size: 0.82rem; color: #f87171; margin: 0.75rem 0 0; }
   .pinv-paid-banner { display: flex; align-items: center; gap: 1rem; padding: 1.25rem 1.75rem; border-radius: 1.25rem; background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.08)); border: 1px solid rgba(16,185,129,0.25); }
   .pinv-paid-banner-icon { font-size: 1.75rem; }
   .pinv-paid-banner-title { font-size: 0.95rem; font-weight: 700; color: #34d399; margin: 0; }

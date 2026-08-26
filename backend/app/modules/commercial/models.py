@@ -112,10 +112,16 @@ class CommercialAccount(Base):
     )
 
     # Captured at registration (§B3): which plan the registrant said they
-    # wanted, for Sales/onboarding visibility only. Never used to provision a
-    # CommercialSubscription — Phase 7 seeds no plans, so registration still
-    # leaves the account without one (see provision_default_subscription).
+    # wanted. For essentials/professional/business this is now the plan
+    # provision_default_subscription() actually assigns (falling back to the
+    # is_default plan if it doesn't resolve to an ACTIVE, non-quote-only
+    # plan). Kept on the account regardless, for Sales/onboarding visibility.
     intended_plan_code = Column(String(50), nullable=True)
+
+    # Stripe Customer id under ZOIKO's own Stripe account — never a tenant's
+    # StripeConnectedAccount. One per org, created lazily on first checkout
+    # (PlatformStripeService.get_or_create_customer).
+    stripe_customer_id = Column(String(255), nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -162,6 +168,12 @@ class CommercialPlan(Base):
     # when it exists. Phase 7 seeds NO plans, so registration leaves the
     # subscription absent unless an approved default plan is flagged later.
     is_default = Column(Boolean, default=False, nullable=False)
+
+    # Enterprise-tier marker: price is quote/order-form controlled (§2) — this
+    # plan may never be auto-provisioned by self-serve registration or picked
+    # up by provision_default_subscription's is_default lookup, even if it
+    # were ever mistakenly flagged is_default.
+    is_quote_only = Column(Boolean, default=False, server_default="0", nullable=False)
 
     # ── Pricing (PHASE 7: STRUCTURE ONLY — values NOT invented) ──────────────
     # These stay NULL until an approved catalogue defines them.
@@ -237,6 +249,12 @@ class CommercialPlanVersion(Base):
     max_storage_gb = Column(Integer, nullable=True)
     features = Column(JSON, nullable=True)
 
+    # Seeded pricing that has NOT been through Finance/legal approval yet —
+    # distinguishes a real approved catalog from placeholder numbers so
+    # /production-acceptance's COM-01 check never reports PASS on invented
+    # prices (see scripts/seed_commercial_plans.py).
+    is_placeholder_pricing = Column(Boolean, default=False, server_default="0", nullable=False)
+
     # ── Maker-checker linkage ────────────────────────────────────────────────
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approval_request_id = Column(Integer, ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True)
@@ -298,6 +316,14 @@ class CommercialSubscription(Base):
     # CommercialDunningService's day 0/10/20/45 sweep — entirely independent
     # of Plane-2's tenant-facing dunning (N4).
     payment_failed_at = Column(DateTime, nullable=True)
+
+    # Self-serve free-trial deadline: set only when provision_default_
+    # subscription() creates a new PENDING subscription (settings.
+    # COMMERCIAL_TRIAL_PERIOD_DAYS from creation). NULL for
+    # subscriptions that predate this feature or were created some other
+    # way — those are never auto-suspended by the trial-expiry sweep.
+    # Drives commercial/tasks/trial_expiry.py.
+    trial_ends_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -583,6 +609,39 @@ class PlatformInvoice(Base):
         return (
             f"<PlatformInvoice id={self.id} number={self.invoice_number!r} "
             f"status={self.status!r}>"
+        )
+
+
+class PlatformInvoiceDeliveryAttempt(Base):
+    """Append-only delivery evidence for a PlatformInvoice send (§E5).
+
+    One row per send attempt (success or failure) — never overwritten, unlike
+    the scalar sent_at/delivered_at/delivery_failed_at columns on
+    PlatformInvoice which only capture the latest state. Evidence of delivery
+    only: never records that the recipient read or accepted the invoice.
+    """
+
+    __tablename__ = "platform_invoice_delivery_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    platform_invoice_id = Column(
+        Integer,
+        ForeignKey("platform_invoices.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    channel = Column(String(30), default="email", nullable=False)
+    provider = Column(String(100), nullable=True)
+    attempted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    result = Column(String(20), nullable=False)  # "success" | "failure"
+    error_detail = Column(Text, nullable=True)
+
+    invoice = relationship("PlatformInvoice", backref="delivery_attempts")
+
+    def __repr__(self):
+        return (
+            f"<PlatformInvoiceDeliveryAttempt id={self.id} "
+            f"invoice={self.platform_invoice_id} result={self.result!r}>"
         )
 
 
@@ -905,4 +964,34 @@ class PlatformRefund(Base):
         return (
             f"<PlatformRefund id={self.id} number={self.refund_number!r} "
             f"status={self.status!r}>"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Platform Stripe Event (webhook idempotency)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class PlatformStripeEvent(Base):
+    """One row per Stripe event id processed by the Plane-1 webhook handler
+    (POST /api/commercial/stripe/webhook). Entirely separate from Plane 2's
+    billing_* stripe_events table/webhook/secret — a re-delivered event is
+    skipped and the original outcome returned, same idempotency guarantee as
+    Plane 2's StripeEvent, on an isolated table."""
+
+    __tablename__ = "platform_stripe_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stripe_event_id = Column(String(255), unique=True, index=True, nullable=False)
+    event_type = Column(String(100), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="processed")
+    payload = Column(JSON, nullable=True)
+    error = Column(Text, nullable=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<PlatformStripeEvent id={self.id} "
+            f"stripe_event_id={self.stripe_event_id!r} status={self.status!r}>"
         )

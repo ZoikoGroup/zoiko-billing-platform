@@ -185,7 +185,7 @@ const NAV_SECTIONS = [
     icon: Gauge,
     superAdminOnly: true,
     children: [
-      { label: "Command Center", href: "/super-admin/command-center", icon: Gauge },
+      { label: "Command Center Hub", href: "/super-admin/command-center", icon: Gauge },
       { label: "Triage & Attention", href: "/super-admin/triage", icon: Crosshair },
       { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
       { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: Rocket },
@@ -210,7 +210,6 @@ const NAV_SECTIONS = [
     children: [
       { label: "Commercial Accounts", href: "/super-admin/commercial/accounts", icon: Building2 },
       { label: "Products & Price Book", href: "/super-admin/commercial/plans", icon: Package },
-      { label: "Plans, Offers & Trials", href: "/super-admin/commercial/offers", icon: Tags },
       { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
       { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
       { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
@@ -277,13 +276,14 @@ const NAV_SECTIONS = [
 const TOP_NAV_ITEMS = [
   { label: "Dashboard", href: "/organization-admin/dashboard", icon: LayoutDashboard, orgAdminOnly: true },
   { label: "My Organization", href: "/organization-admin/organization", icon: Building2, orgAdminOnly: true },
-  { label: "Privileged Access Log", href: "/organization-admin/privileged-access-log", icon: ShieldCheck, orgAdminOnly: true },
+  { label: "Zoiko Subscription", href: "/billing/workspace/zoiko-subscription", icon: CreditCard, orgAdminOnly: true },
 ];
 
 const WORKSPACE_NAV_ITEMS = [
   { label: "Overview", href: "/billing/workspace/dashboard", icon: LayoutDashboard },
   { label: "Organization Profile", href: "/billing/workspace/organization", icon: Building2 },
   { label: "Billing Subscription", href: "/billing/workspace/subscription", icon: CreditCard },
+  { label: "Zoiko Subscription", href: "/billing/workspace/zoiko-subscription", icon: CreditCard },
   { label: "Activity Timeline", href: "/billing/workspace/activity", icon: Activity },
   { label: "Notifications", href: "/billing/workspace/notifications", icon: Bell },
   { label: "Help & Documentation", href: "/billing/workspace/help", icon: HelpCircle },

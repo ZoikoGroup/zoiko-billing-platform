@@ -9,7 +9,10 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
 
 from sqlalchemy import exc as sa_exc, func
 from sqlalchemy.orm import Session
@@ -36,7 +39,11 @@ from app.modules.auth.country_currency import (
 )
 from app.modules.auth.models import SecurityActionPurpose, SecurityActionToken, User, UserRole
 from app.modules.auth.schemas import RegisterRequest
-from app.modules.commercial.enums import BillingClassification, BillingSource
+from app.modules.commercial.enums import (
+    BillingClassification,
+    BillingSource,
+    CommercialSubscriptionStatus,
+)
 from app.modules.organizations.models import Organization, TenantLifecycleState
 
 logger = logging.getLogger("zoiko_billing.auth")
@@ -227,7 +234,80 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
 
 # ── Registration (public self-serve onboarding) ─────────────────────────────
 
-def register_enterprise(db: Session, data: RegisterRequest) -> dict:
+def _dispatch_registration_emails(db: Session, org, admin) -> None:
+    """ZB-ORG-001 + ZB-ONB-001 email dispatch — the actual sends, against
+    WHATEVER session/objects the caller gives it. Exceptions are caught: a
+    transient SMTP failure must never surface anywhere the user can see,
+    registration has already succeeded and committed."""
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        from app.services.email_service import (
+            notify_super_admins_org_created,
+            send_org_created_email,
+            send_product_welcome_email,
+        )
+
+        effective_time = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+        send_org_created_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            recipient_role="Owner",
+            actor_display_name=admin.full_name,
+            effective_time=effective_time,
+            organization_id=org.id,
+        )
+        send_product_welcome_email(
+            db=db,
+            email=admin.email,
+            first_name=admin.first_name,
+            organization_name=org.organization_name,
+            organization_id=org.id,
+        )
+        # Master directive (ZB-SA-CMD-003 v3.0): every successful organization
+        # creation notifies all active Super Admins via real email.
+        notify_super_admins_org_created(db=db, organization=org, actor_email=admin.email)
+    except Exception as exc:
+        logger.warning("[email] Org lifecycle emails failed for org %s: %s", getattr(org, "id", None), exc)
+
+
+def _send_registration_emails(org_id: int, admin_id: int) -> None:
+    """FastAPI BackgroundTasks entry point — run OUTSIDE the request/response
+    cycle. Each of the three sends is a real outbound SMTP connection; run
+    inline and sequentially they previously added tens of seconds to the
+    register response, past the frontend's fetch timeout, so the browser
+    reported a failure even though the account was created successfully.
+
+    Opens its OWN DB session: the request's session is already closed by the
+    time a background task runs, and by then org/admin are guaranteed
+    committed (register_enterprise commits before scheduling this) — same
+    pattern as the scheduled job tasks in commercial/tasks/. NOT suitable for
+    a caller with an uncommitted/test-transactional session (e.g. direct
+    calls, tests) — those must go through _dispatch_registration_emails with
+    their own session instead (see register_enterprise's sync fallback).
+    """
+    from app.database import SessionLocal
+    from app.modules.organizations.models import Organization
+
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        admin = db.query(User).filter(User.id == admin_id).first()
+        if org is None or admin is None:
+            logger.warning(
+                "[email] Registration email dispatch skipped — org_id=%s/admin_id=%s not found.",
+                org_id, admin_id,
+            )
+            return
+        _dispatch_registration_emails(db, org, admin)
+    finally:
+        db.close()
+
+
+def register_enterprise(
+    db: Session, data: RegisterRequest, background_tasks: Optional["BackgroundTasks"] = None,
+) -> dict:
     existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")
@@ -315,19 +395,36 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     )
     account = CommercialAccountService(db).ensure_commercial_account(org.id)
 
-    # CommercialSubscription (PHASE 7): provisioned ONLY when an approved
-    # default plan exists. Phase 7 seeds no plans, so this is a safe no-op that
-    # leaves the account without a subscription — a free/paid plan is never
-    # invented merely to satisfy the flow. Same transaction, flush-only.
-    CommercialSubscriptionService(db).provision_default_subscription(account.id)
-
-    # Intent capture only (§B3) — provision_default_subscription() already
-    # correctly refuses to invent a subscription when no approved plan
-    # exists. This just records what the registrant said they wanted, for
-    # the eventual checkout/upgrade flow and for Sales follow-up on
-    # Business/Professional leads. Does not create a CommercialSubscription.
+    # Captured before provisioning so provision_default_subscription() can
+    # resolve it to the matching CommercialPlan (§B3). Recorded regardless of
+    # whether it resolves, for Sales/onboarding visibility.
     account.intended_plan_code = data.intended_plan
     db.add(account)
+
+    # CommercialSubscription (PHASE 7): provisioned against the registrant's
+    # selected plan when it resolves to an ACTIVE, non-quote-only
+    # CommercialPlan; falls back to the approved default plan otherwise; a
+    # safe no-op (account left without a subscription) if neither resolves.
+    # A free/paid plan is never invented merely to satisfy the flow. The
+    # resulting subscription starts PENDING — checkout/payment (not
+    # registration) is what activates it. Same transaction, flush-only.
+    subscription = CommercialSubscriptionService(db).provision_default_subscription(
+        account.id, intended_plan_code=data.intended_plan,
+    )
+
+    # First invoice (§B4/§F1): a PENDING subscription needs something the org
+    # can actually pay to activate it — nothing else in the system invents
+    # one otherwise (renewal invoicing only fires for already-ACTIVE
+    # subscriptions). Generated + finalized (ISSUED) in the same transaction;
+    # never invents a price — a no-op if the plan has none resolvable.
+    initial_invoice_id: Optional[int] = None
+    if subscription is not None and subscription.status == CommercialSubscriptionStatus.PENDING:
+        from app.modules.commercial.platform_invoice_service import (
+            generate_initial_invoice_for_subscription,
+        )
+        initial_invoice = generate_initial_invoice_for_subscription(db, subscription)
+        if initial_invoice is not None:
+            initial_invoice_id = initial_invoice.id
 
     # BillingConfiguration is initialized inside the same transaction (PHASE 4):
     # organization + user + config commit together, so a failure rolls back the
@@ -356,40 +453,32 @@ def register_enterprise(db: Session, data: RegisterRequest) -> dict:
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
 
     # ── ZB-ORG-001 + ZB-ONB-001 email dispatch ────────────────────────────
-    # Fire-and-forget: tenant isolation guardrail and role sanitization run
-    # inside each send function.  Exceptions are caught so a transient SMTP
-    # failure never blocks the registration response.
-    try:
-        from datetime import datetime as _dt, timezone as _tz
-        from app.services.email_service import (
-            notify_super_admins_org_created,
-            send_org_created_email,
-            send_product_welcome_email,
+    # Run OUTSIDE the request/response cycle: three real outbound SMTP sends
+    # run synchronously here used to add tens of seconds to the response
+    # (past the frontend's fetch timeout), reporting failure to the user even
+    # though registration had already succeeded. When called from the HTTP
+    # route, background_tasks is provided and this returns immediately;
+    # direct/test callers with no BackgroundTasks fall back to sending inline.
+    if background_tasks is not None:
+        background_tasks.add_task(_send_registration_emails, org.id, admin.id)
+    else:
+        # Sync fallback (direct/test callers): reuse THIS session/objects —
+        # org.id/admin.id may not be visible to a fresh SessionLocal() yet
+        # (e.g. a test's transactional fixture that never truly commits).
+        _dispatch_registration_emails(db, org, admin)
+
+    # Same rule applies to the initial invoice email (if one was generated
+    # above): a real SMTP send must never run inline in this response.
+    if initial_invoice_id is not None:
+        from app.modules.commercial.platform_invoice_service import (
+            send_invoice_email_with_session,
+            send_invoice_in_background,
         )
 
-        effective_time = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
-        send_org_created_email(
-            db=db,
-            email=admin.email,
-            first_name=admin.first_name,
-            organization_name=org.organization_name,
-            recipient_role="Owner",
-            actor_display_name=admin.full_name,
-            effective_time=effective_time,
-            organization_id=org.id,
-        )
-        send_product_welcome_email(
-            db=db,
-            email=admin.email,
-            first_name=admin.first_name,
-            organization_name=org.organization_name,
-            organization_id=org.id,
-        )
-        # Master directive (ZB-SA-CMD-003 v3.0): every successful organization
-        # creation notifies all active Super Admins via real email.
-        notify_super_admins_org_created(db=db, organization=org, actor_email=admin.email)
-    except Exception as exc:
-        logger.warning("[email] Org lifecycle emails failed for org %s: %s", org.organization_code, exc)
+        if background_tasks is not None:
+            background_tasks.add_task(send_invoice_in_background, initial_invoice_id)
+        else:
+            send_invoice_email_with_session(db, initial_invoice_id)
 
     token_payload = {
         "sub": admin.email,

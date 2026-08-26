@@ -574,6 +574,7 @@ def _commercial_account_payload(account, org, db: Session, active_subs_by_accoun
             plan_name=current.plan.plan_name if current.plan else "",
             start_at=current.start_at,
             end_at=current.end_at,
+            trial_ends_at=current.trial_ends_at,
         )
     return CommercialAccountResponse(
         id=account.id,
@@ -714,6 +715,7 @@ def _subscription_payload(subscription, org, plan):
         end_at=subscription.end_at,
         current_period_start=subscription.current_period_start,
         current_period_end=subscription.current_period_end,
+        trial_ends_at=subscription.trial_ends_at,
         created_at=subscription.created_at,
         updated_at=subscription.updated_at,
     )
@@ -2311,13 +2313,43 @@ def get_production_acceptance_report(
 ):
     items: list[ProductionAcceptanceItem] = []
 
-    # COM-01 — no locked/approved price book exists (confirmed: CommercialPlan
-    # pricing fields stay NULL by design — see CommercialPlanService docstring).
+    # COM-01 — REAL DB query: at least one PUBLISHED, priced CommercialPlanVersion
+    # must exist, and none of the priced ones may still be flagged as
+    # placeholder pricing (seed_commercial_plans.py) for this to be a true PASS.
+    from app.modules.commercial.enums import CommercialPlanVersionStatus
+    from app.modules.commercial.models import CommercialPlanVersion
+
+    priced_versions = (
+        db.query(CommercialPlanVersion)
+        .filter(
+            CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+            CommercialPlanVersion.price_amount.isnot(None),
+        )
+        .all()
+    )
+    placeholder_codes = [
+        v.plan.plan_code for v in priced_versions
+        if v.is_placeholder_pricing and v.plan is not None
+    ]
+    if not priced_versions:
+        com01_status = "NOT_CONFIGURED"
+        com01_evidence = "No published CommercialPlanVersion carries a non-null price_amount yet; no price book exists in this environment (ZB-COM-BILL-001 §B2)."
+    elif placeholder_codes:
+        com01_status = "WARNING"
+        com01_evidence = (
+            f"{len(priced_versions)} published, priced CommercialPlanVersion(s) exist, but "
+            f"{len(placeholder_codes)} of them ({', '.join(sorted(placeholder_codes))}) are still "
+            "flagged is_placeholder_pricing — seeded for structural completeness, not yet an "
+            "approved price list (ZB-COM-BILL-001 §B2)."
+        )
+    else:
+        com01_status = "PASS"
+        com01_evidence = f"{len(priced_versions)} published CommercialPlanVersion(s) carry approved (non-placeholder) pricing."
     items.append(ProductionAcceptanceItem(
         id="COM-01",
         criterion="Four-plan taxonomy matches website/app/processor/contracts; all prices and limits resolve from one APPROVED catalog version.",
-        status="NOT_CONFIGURED",
-        evidence="No published CommercialPlanVersion carries a non-null price_amount yet; no approved price book exists in this environment (ZB-COM-BILL-001 §B2).",
+        status=com01_status,
+        evidence=com01_evidence,
     ))
 
     # COM-02 — no evaluation/trial program is configured anywhere in the schema.

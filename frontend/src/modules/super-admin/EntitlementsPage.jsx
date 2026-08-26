@@ -4,7 +4,7 @@ import { KeyRound, Building2, ChevronRight } from "lucide-react";
 import { listCommercialAccounts, listCommercialPlans } from "../../service/commercialService";
 import { PageHeader, DataTable, SearchInput } from "../../components/billing-ui";
 import { StatusBadge, ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
-import { SUBSCRIPTION_STATUS_OPTIONS, PLAN_STATUS_OPTIONS, displayValue } from "./constants";
+import { SUBSCRIPTION_STATUS_OPTIONS, PLAN_STATUS_OPTIONS, displayValue, formatTrialRemaining } from "./constants";
 
 export default function EntitlementsPage() {
   const navigate = useNavigate();
@@ -85,6 +85,16 @@ export default function EntitlementsPage() {
               <StatusBadge status={row.sub.status} options={SUBSCRIPTION_STATUS_OPTIONS} />
             </span>
           );
+        },
+      },
+      {
+        key: "trial",
+        label: "Trial",
+        render: (row) => {
+          const trial = row.sub ? formatTrialRemaining(row.sub.trial_ends_at, row.sub.status) : null;
+          if (!trial) return <span className="text-xs text-slate-400">—</span>;
+          const toneClass = trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
+          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
         },
       },
       {
