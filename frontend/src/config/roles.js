@@ -56,12 +56,16 @@ export function canReadConfiguration(platformRole) {
 
 // Mirrors backend capabilities.py's Plane 1 commercial-billing capability map
 // (commercial_quote.write / commercial_quote.approve / commercial_payment.write /
-// commercial_financial.read) — client-side hint only, the backend's
+// commercial_financial.read / commercial_financial.write /
+// commercial_evaluation_program.write) — client-side hint only, the backend's
 // require_capability dependency remains the real gate.
 const COMMERCIAL_QUOTE_WRITE_ROLES = ["support_operator"];
 const COMMERCIAL_QUOTE_APPROVE_ROLES = ["auditor"];
 const COMMERCIAL_PAYMENT_WRITE_ROLES = ["security_operator"];
 const COMMERCIAL_FINANCIAL_READ_ROLES = ["auditor", "finance_readonly"];
+const COMMERCIAL_FINANCIAL_WRITE_ROLES = ["security_operator"];
+// commercial_evaluation_program.write has no explicit role set on the
+// backend (platform_administrator only) — NULL_LIKE already covers that.
 
 export function canWriteCommercialQuote(platformRole) {
   return NULL_LIKE.includes(platformRole) || COMMERCIAL_QUOTE_WRITE_ROLES.includes(platformRole);
@@ -75,9 +79,18 @@ export function canWriteCommercialPayment(platformRole) {
   return NULL_LIKE.includes(platformRole) || COMMERCIAL_PAYMENT_WRITE_ROLES.includes(platformRole);
 }
 
-// NOTE: every mutating Plane 1 invoice route (create/add-item/finalize/void/send)
-// is gated by commercial_financial.read on the backend today, not a .write
-// capability — that's an existing backend quirk this helper mirrors as-is.
+// Read-only Plane 1 financial views (invoice/quote/payment lists and detail).
 export function canReadCommercialFinancial(platformRole) {
   return NULL_LIKE.includes(platformRole) || COMMERCIAL_FINANCIAL_READ_ROLES.includes(platformRole);
+}
+
+// Mutating Plane 1 invoice actions (create/add-item/finalize/void/send) —
+// gated by commercial_financial.write on the backend.
+export function canWriteCommercialFinancial(platformRole) {
+  return NULL_LIKE.includes(platformRole) || COMMERCIAL_FINANCIAL_WRITE_ROLES.includes(platformRole);
+}
+
+// Creating/activating a Plane 1 evaluation (trial) program — platform_administrator only.
+export function canWriteEvaluationProgram(platformRole) {
+  return NULL_LIKE.includes(platformRole);
 }

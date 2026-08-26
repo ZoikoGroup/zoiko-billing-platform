@@ -272,3 +272,13 @@ export const triggerPlatformReconciliation = () =>
 
 export const listPlatformReconciliationRuns = (limit = 20) =>
   api.get("/api/super-admin/commercial-billing/reconciliation/runs", { params: { limit } });
+
+// Evaluation Programs (§B3)
+export const listEvaluationPrograms = () =>
+  api.get("/api/super-admin/commercial-billing/evaluation-programs");
+
+export const createEvaluationProgram = (data) =>
+  api.post("/api/super-admin/commercial-billing/evaluation-programs", data);
+
+export const setEvaluationProgramStatus = (programId, isActive) =>
+  api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });

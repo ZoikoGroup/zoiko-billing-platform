@@ -23,9 +23,10 @@ import {
   canWriteCommercialQuote,
   canApproveCommercialQuote,
   canWriteCommercialPayment,
-  canReadCommercialFinancial,
+  canWriteCommercialFinancial,
+  canWriteEvaluationProgram,
 } from "../../config/roles";
-import { getSaasCommercialReporting, listCommercialAccounts } from "../../service/commercialService";
+import { getSaasCommercialReporting, listCommercialAccounts, listCommercialPlans } from "../../service/commercialService";
 import {
   listCommercialQuotes,
   createCommercialQuote,
@@ -49,6 +50,9 @@ import {
   deallocatePlatformPayment,
   triggerPlatformReconciliation,
   listPlatformReconciliationRuns,
+  listEvaluationPrograms,
+  createEvaluationProgram,
+  setEvaluationProgramStatus,
 } from "../../service/commandCenterService";
 import { PageHeader, DataTable, FormModal, Modal, Field, Select, Button } from "../../components/billing-ui";
 import {
@@ -126,6 +130,21 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: "wire_transfer", label: "Wire Transfer" },
   { value: "ach", label: "ACH" },
   { value: "card", label: "Card (recorded manually)" },
+];
+
+const EVALUATION_PAYMENT_REQUIREMENT_OPTIONS = [
+  { value: "none", label: "None" },
+  { value: "card_required_upfront", label: "Card Required Upfront" },
+];
+
+const EVALUATION_CONVERSION_POLICY_OPTIONS = [
+  { value: "manual", label: "Manual" },
+  { value: "auto_charge_on_expiry", label: "Auto-Charge on Expiry (not yet implemented)" },
+];
+
+const EVALUATION_EXPIRY_ACTION_OPTIONS = [
+  { value: "suspend", label: "Suspend" },
+  { value: "downgrade", label: "Downgrade (not yet implemented)" },
 ];
 
 const RECONCILIATION_STATE_OPTIONS = [
@@ -291,11 +310,15 @@ function AddItemForm({ onAdd, busy, disabled }) {
   );
 }
 
-const VALID_TABS = ["quotes", "invoices", "payments", "reconciliation"];
+const VALID_TABS = ["quotes", "invoices", "payments", "reconciliation", "evaluation"];
 
 const EMPTY_QUOTE_FORM = { account_id: "", subject: "", notes: "", terms: "", valid_until: "", currency: "USD" };
 const EMPTY_INVOICE_FORM = { account_id: "", subscription_id: "", issue_date: "", due_date: "", notes: "", currency: "USD" };
 const EMPTY_PAYMENT_FORM = { account_id: "", amount: "", currency: "USD", payment_method: "manual", transaction_id: "", notes: "" };
+const EMPTY_PROGRAM_FORM = {
+  plan_id: "", duration_days: "14", payment_requirement: "none",
+  conversion_policy: "manual", expiry_action: "suspend", approved_by: "",
+};
 
 export default function Plane1BillingPage() {
   const { user } = useAuth();
@@ -303,7 +326,10 @@ export default function Plane1BillingPage() {
   const canQuoteWrite = canWriteCommercialQuote(platformRole);
   const canQuoteApprove = canApproveCommercialQuote(platformRole);
   const canPaymentWrite = canWriteCommercialPayment(platformRole);
-  const canFinancial = canReadCommercialFinancial(platformRole);
+  // All current uses of this are invoice MUTATIONS (create/add-item/finalize/
+  // void/send) — backed by commercial_financial.write, not the read capability.
+  const canFinancial = canWriteCommercialFinancial(platformRole);
+  const canEvaluationProgramWrite = canWriteEvaluationProgram(platformRole);
 
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
@@ -330,6 +356,7 @@ export default function Plane1BillingPage() {
   const [payments, setPayments] = useState([]);
   const [reconciliationRuns, setReconciliationRuns] = useState([]);
   const [runningReconciliation, setRunningReconciliation] = useState(false);
+  const [evaluationPrograms, setEvaluationPrograms] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
 
   // Commercial accounts — for the account picker in every create modal
@@ -342,6 +369,18 @@ export default function Plane1BillingPage() {
   const accountOptions = accounts.map((a) => ({
     value: String(a.id),
     label: `${a.organization_name} (${a.organization_code})`,
+  }));
+
+  // Commercial plans — for the plan picker on the evaluation-program create form
+  const [plans, setPlans] = useState([]);
+  useEffect(() => {
+    listCommercialPlans({ limit: 200 })
+      .then((data) => setPlans(Array.isArray(data?.plans) ? data.plans : []))
+      .catch(() => setPlans([]));
+  }, []);
+  const planOptions = plans.map((p) => ({
+    value: String(p.id),
+    label: `${p.plan_name} (${p.plan_code})`,
   }));
 
   const loadReport = useCallback(() => {
@@ -379,6 +418,11 @@ export default function Plane1BillingPage() {
         .then((data) => setReconciliationRuns(Array.isArray(data) ? data : data.runs || []))
         .catch(() => setReconciliationRuns([]))
         .finally(() => setLoadingData(false));
+    } else if (tab === "evaluation") {
+      listEvaluationPrograms()
+        .then((data) => setEvaluationPrograms(Array.isArray(data) ? data : []))
+        .catch(() => setEvaluationPrograms([]))
+        .finally(() => setLoadingData(false));
     } else {
       setLoadingData(false);
     }
@@ -395,6 +439,45 @@ export default function Plane1BillingPage() {
       .catch(() => {})
       .finally(() => setRunningReconciliation(false));
   }, [loadTabData]);
+
+  // ── Evaluation Programs (§B3) ────────────────────────────────────────────
+  const [createProgramOpen, setCreateProgramOpen] = useState(false);
+  const [createProgramBusy, setCreateProgramBusy] = useState(false);
+  const [createProgramError, setCreateProgramError] = useState(null);
+  const [createProgramForm, setCreateProgramForm] = useState(EMPTY_PROGRAM_FORM);
+  const [toggleProgramBusyId, setToggleProgramBusyId] = useState(null);
+
+  const submitCreateProgram = () => {
+    if (!createProgramForm.plan_id || !createProgramForm.duration_days) {
+      setCreateProgramError("Select a plan and a duration in days.");
+      return;
+    }
+    setCreateProgramBusy(true);
+    setCreateProgramError(null);
+    createEvaluationProgram({
+      plan_id: Number(createProgramForm.plan_id),
+      duration_days: Number(createProgramForm.duration_days),
+      payment_requirement: createProgramForm.payment_requirement,
+      conversion_policy: createProgramForm.conversion_policy,
+      expiry_action: createProgramForm.expiry_action,
+      approved_by: createProgramForm.approved_by ? Number(createProgramForm.approved_by) : undefined,
+    })
+      .then(() => {
+        setCreateProgramOpen(false);
+        setCreateProgramForm(EMPTY_PROGRAM_FORM);
+        loadTabData("evaluation");
+      })
+      .catch((e) => setCreateProgramError(errorMessage(e, "Failed to create evaluation program.")))
+      .finally(() => setCreateProgramBusy(false));
+  };
+
+  const toggleProgramStatus = (program) => {
+    setToggleProgramBusyId(program.id);
+    setEvaluationProgramStatus(program.id, !program.is_active)
+      .then(() => loadTabData("evaluation"))
+      .catch(() => {})
+      .finally(() => setToggleProgramBusyId(null));
+  };
 
   // ── Create Quote ──────────────────────────────────────────────────────
   const [createQuoteOpen, setCreateQuoteOpen] = useState(false);
@@ -891,6 +974,39 @@ export default function Plane1BillingPage() {
     { key: "started_at", label: "Started", render: (r) => formatDateTime(r.started_at) },
   ];
 
+  const evaluationProgramColumns = [
+    { key: "plan_code", label: "Plan", render: (r) => <span className="font-medium text-slate-700">{r.plan_code}</span> },
+    {
+      key: "is_active",
+      label: "Status",
+      render: (r) => (
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${r.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+          {r.is_active ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    { key: "duration_days", label: "Duration", align: "right", render: (r) => `${r.duration_days}d` },
+    { key: "payment_requirement", label: "Payment Requirement", render: (r) => r.payment_requirement },
+    { key: "conversion_policy", label: "Conversion Policy", render: (r) => r.conversion_policy },
+    { key: "expiry_action", label: "Expiry Action", render: (r) => r.expiry_action },
+    { key: "approved_by", label: "Approved By", render: (r) => (r.approved_by ? `User #${r.approved_by}` : <span className="text-red-600">Unapproved</span>) },
+    {
+      key: "actions",
+      label: "",
+      align: "right",
+      render: (r) => (
+        <Button
+          size="sm"
+          variant={r.is_active ? "danger" : "primary"}
+          onClick={() => toggleProgramStatus(r)}
+          disabled={!canEvaluationProgramWrite || toggleProgramBusyId === r.id}
+        >
+          {r.is_active ? "Deactivate" : "Activate"}
+        </Button>
+      ),
+    },
+  ];
+
   function mrrValue() {
     if (!mrr) return "—";
     if (mrr.state === "unknown") return "UNKNOWN";
@@ -904,6 +1020,7 @@ export default function Plane1BillingPage() {
     { key: "invoices", label: "Invoices", icon: Receipt },
     { key: "payments", label: "Payments", icon: CreditCard },
     { key: "reconciliation", label: "Reconciliation", icon: ClipboardCheck },
+    { key: "evaluation", label: "Evaluation Programs", icon: Clock },
   ];
 
   return (
@@ -1059,7 +1176,7 @@ export default function Plane1BillingPage() {
                     <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreateInvoiceOpen(true)} disabled={!canFinancial}>
                       Create Invoice
                     </Button>
-                    {!canFinancial && <CapabilityNotice capability="commercial_financial.read" />}
+                    {!canFinancial && <CapabilityNotice capability="commercial_financial.write" />}
                   </div>
                 )}
                 {activeTab === "payments" && (
@@ -1068,6 +1185,14 @@ export default function Plane1BillingPage() {
                       Record Payment
                     </Button>
                     {!canPaymentWrite && <CapabilityNotice capability="commercial_payment.write" />}
+                  </div>
+                )}
+                {activeTab === "evaluation" && (
+                  <div>
+                    <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreateProgramOpen(true)} disabled={!canEvaluationProgramWrite}>
+                      Create Program
+                    </Button>
+                    {!canEvaluationProgramWrite && <CapabilityNotice capability="commercial_evaluation_program.write" />}
                   </div>
                 )}
               </div>
@@ -1125,6 +1250,21 @@ export default function Plane1BillingPage() {
                     emptyTitle="No reconciliation runs"
                     emptyMessage="Run reconciliation to check Plane 1 ledger integrity."
                     minWidth={640}
+                  />
+                </>
+              ) : activeTab === "evaluation" ? (
+                <>
+                  <p className="mb-4 text-xs text-slate-500">
+                    §B3 — no plan grants a trial unless a program below is created AND activated.
+                    Activating requires a logged approver.
+                  </p>
+                  <DataTable
+                    columns={evaluationProgramColumns}
+                    data={evaluationPrograms}
+                    loading={false}
+                    emptyTitle="No evaluation programs"
+                    emptyMessage="No plan currently grants a trial. Create a program to configure one."
+                    minWidth={880}
                   />
                 </>
               ) : null}
@@ -1465,7 +1605,7 @@ export default function Plane1BillingPage() {
             {invoiceDetail.status === "draft" && (
               <>
                 <AddItemForm onAdd={addItemToInvoice} busy={invoiceDetailBusy} disabled={!canFinancial} />
-                {!canFinancial && <CapabilityNotice capability="commercial_financial.read" />}
+                {!canFinancial && <CapabilityNotice capability="commercial_financial.write" />}
                 <div className="flex justify-end">
                   <Button variant="primary" onClick={finalizeInvoiceAction} disabled={!canFinancial || invoiceDetailBusy}>
                     Finalize
@@ -1484,7 +1624,7 @@ export default function Plane1BillingPage() {
                     Send Invoice
                   </Button>
                 </div>
-                {!canFinancial && <CapabilityNotice capability="commercial_financial.read" />}
+                {!canFinancial && <CapabilityNotice capability="commercial_financial.write" />}
               </div>
             )}
           </div>
@@ -1568,6 +1708,68 @@ export default function Plane1BillingPage() {
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
             value={recordPaymentForm.notes}
             onChange={(e) => setRecordPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+          />
+        </Field>
+      </FormModal>
+
+      {/* ── Create Evaluation Program modal (§B3) ────────────────────────── */}
+      <FormModal
+        open={createProgramOpen}
+        onClose={() => setCreateProgramOpen(false)}
+        onSubmit={submitCreateProgram}
+        title="Create Evaluation Program"
+        description="Starts INACTIVE — creating this grants no trial by itself. Activating it requires a logged approver."
+        busy={createProgramBusy}
+        error={createProgramError}
+        submitLabel="Create Program"
+      >
+        <Field label="Plan" required>
+          <Select
+            value={createProgramForm.plan_id}
+            onChange={(v) => setCreateProgramForm((f) => ({ ...f, plan_id: v }))}
+            options={planOptions}
+            placeholder="Select a plan…"
+          />
+        </Field>
+        <Field label="Duration (days)" required>
+          <input
+            type="number"
+            min="1"
+            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            value={createProgramForm.duration_days}
+            onChange={(e) => setCreateProgramForm((f) => ({ ...f, duration_days: e.target.value }))}
+          />
+        </Field>
+        <Field label="Payment Requirement">
+          <Select
+            value={createProgramForm.payment_requirement}
+            onChange={(v) => setCreateProgramForm((f) => ({ ...f, payment_requirement: v }))}
+            options={EVALUATION_PAYMENT_REQUIREMENT_OPTIONS}
+            placeholder=""
+          />
+        </Field>
+        <Field label="Conversion Policy">
+          <Select
+            value={createProgramForm.conversion_policy}
+            onChange={(v) => setCreateProgramForm((f) => ({ ...f, conversion_policy: v }))}
+            options={EVALUATION_CONVERSION_POLICY_OPTIONS}
+            placeholder=""
+          />
+        </Field>
+        <Field label="Expiry Action">
+          <Select
+            value={createProgramForm.expiry_action}
+            onChange={(v) => setCreateProgramForm((f) => ({ ...f, expiry_action: v }))}
+            options={EVALUATION_EXPIRY_ACTION_OPTIONS}
+            placeholder=""
+          />
+        </Field>
+        <Field label="Approved By (User ID)" hint="Required before this program can be activated (§B3)">
+          <input
+            type="number"
+            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            value={createProgramForm.approved_by}
+            onChange={(e) => setCreateProgramForm((f) => ({ ...f, approved_by: e.target.value }))}
           />
         </Field>
       </FormModal>

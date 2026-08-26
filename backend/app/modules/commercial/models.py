@@ -69,6 +69,9 @@ from app.database import Base
 from app.modules.commercial.enums import (
     CommercialAccountStatus,
     CommercialBillingInterval,
+    CommercialEvaluationConversionPolicy,
+    CommercialEvaluationExpiryAction,
+    CommercialEvaluationPaymentRequirement,
     CommercialPlanStatus,
     CommercialPlanVersionStatus,
     CommercialQuoteStatus,
@@ -272,6 +275,64 @@ class CommercialPlanVersion(Base):
         )
 
 
+class CommercialEvaluationProgram(Base):
+    """§B3 — a bounded, explicitly-activated trial/evaluation configuration
+    for exactly one plan. No program existing (or none with is_active=True)
+    is the default state: self-serve registration then grants NO trial —
+    trial_ends_at stays NULL. Creating a row here is a deliberate future
+    business decision this fix does not make on the codebase's behalf (no
+    row is seeded).
+
+    is_active is the explicit on/off switch, independent of row existence —
+    a program can be configured, reviewed, and left OFF, or deactivated
+    later without deleting its (auditable) history."""
+
+    __tablename__ = "commercial_evaluation_programs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_id = Column(
+        Integer,
+        ForeignKey("commercial_plans.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    is_active = Column(Boolean, default=False, server_default="0", nullable=False)
+    duration_days = Column(Integer, nullable=False)
+    payment_requirement = Column(
+        CaseInsensitiveEnum(CommercialEvaluationPaymentRequirement),
+        default=CommercialEvaluationPaymentRequirement.NONE,
+        server_default="NONE",
+        nullable=False,
+    )
+    conversion_policy = Column(
+        CaseInsensitiveEnum(CommercialEvaluationConversionPolicy),
+        default=CommercialEvaluationConversionPolicy.MANUAL,
+        server_default="MANUAL",
+        nullable=False,
+    )
+    expiry_action = Column(
+        CaseInsensitiveEnum(CommercialEvaluationExpiryAction),
+        default=CommercialEvaluationExpiryAction.SUSPEND,
+        server_default="SUSPEND",
+        nullable=False,
+    )
+
+    # §B3 governance: an active program must be traceable to who configured
+    # it and who signed off — COM-02 (production-acceptance) fails an active
+    # program with no approved_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    plan = relationship("CommercialPlan", backref="evaluation_programs")
+
+    def __repr__(self):
+        return (
+            f"<CommercialEvaluationProgram id={self.id} plan_id={self.plan_id} "
+            f"is_active={self.is_active} duration_days={self.duration_days}>"
+        )
+
+
 class CommercialSubscription(Base):
     __tablename__ = "commercial_subscriptions"
 
@@ -317,13 +378,28 @@ class CommercialSubscription(Base):
     # of Plane-2's tenant-facing dunning (N4).
     payment_failed_at = Column(DateTime, nullable=True)
 
-    # Self-serve free-trial deadline: set only when provision_default_
-    # subscription() creates a new PENDING subscription (settings.
-    # COMMERCIAL_TRIAL_PERIOD_DAYS from creation). NULL for
-    # subscriptions that predate this feature or were created some other
-    # way — those are never auto-suspended by the trial-expiry sweep.
+    # Self-serve free-trial deadline (§B3): set ONLY when
+    # provision_default_subscription() finds an is_active=True
+    # CommercialEvaluationProgram for the resolved plan — NOT unconditional.
+    # NULL is the default/expected value for every subscription unless a
+    # program has been explicitly configured and activated for its plan.
     # Drives commercial/tasks/trial_expiry.py.
     trial_ends_at = Column(DateTime, nullable=True)
+
+    # Snapshot of the CommercialEvaluationProgram's policy fields at the
+    # moment it applied — copied rather than re-resolved via a live FK so a
+    # program that's later edited/deactivated can't retroactively change the
+    # terms a subscription already committed to. NULL together with
+    # trial_ends_at whenever no program applied.
+    evaluation_payment_requirement = Column(
+        CaseInsensitiveEnum(CommercialEvaluationPaymentRequirement), nullable=True,
+    )
+    evaluation_conversion_policy = Column(
+        CaseInsensitiveEnum(CommercialEvaluationConversionPolicy), nullable=True,
+    )
+    evaluation_expiry_action = Column(
+        CaseInsensitiveEnum(CommercialEvaluationExpiryAction), nullable=True,
+    )
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

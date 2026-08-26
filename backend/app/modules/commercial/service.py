@@ -1028,16 +1028,33 @@ class CommercialSubscriptionService:
 
         subscription = self.create_subscription(account_id, plan)
 
-        # Free-trial deadline: only stamped here, at self-serve provisioning
-        # — never on subscriptions created some other way (e.g. change_plan's
-        # replacement). NULL trial_ends_at means the trial-expiry sweep
-        # never touches this row.
-        from app.config import settings as _settings
+        # §B3: a trial is granted ONLY when an explicitly-activated
+        # CommercialEvaluationProgram exists for THIS plan — never an
+        # unconditional stamp. No program (the default, out of the box) ->
+        # trial_ends_at stays NULL and the trial-expiry sweep never touches
+        # this row. The program's policy fields are snapshotted onto the
+        # subscription so a later edit/deactivation of the program can't
+        # retroactively change terms this subscription already committed to.
+        from app.modules.commercial.models import CommercialEvaluationProgram
 
-        subscription.trial_ends_at = datetime.utcnow() + timedelta(
-            days=_settings.COMMERCIAL_TRIAL_PERIOD_DAYS
+        program = (
+            self.db.query(CommercialEvaluationProgram)
+            .filter(
+                CommercialEvaluationProgram.plan_id == plan.id,
+                CommercialEvaluationProgram.is_active.is_(True),
+            )
+            .first()
         )
-        self.db.flush()
+        if program is not None:
+            subscription.trial_ends_at = datetime.utcnow() + timedelta(days=program.duration_days)
+            subscription.evaluation_payment_requirement = program.payment_requirement
+            subscription.evaluation_conversion_policy = program.conversion_policy
+            subscription.evaluation_expiry_action = program.expiry_action
+            self.db.flush()
+            logger.info(
+                "Subscription %s granted a %s-day trial under evaluation program %s (plan %s).",
+                subscription.id, program.duration_days, program.id, plan.plan_code,
+            )
 
         return subscription
 
