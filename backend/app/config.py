@@ -152,15 +152,15 @@ class Settings(BaseSettings):
     ENABLE_COMMERCIAL_RECURRING_INVOICING: bool = False
     COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
 
-    # ── Commercial (Plane 1) free-trial enforcement ─────────────────────
-    # A self-serve subscription is created PENDING with a
-    # COMMERCIAL_TRIAL_PERIOD_DAYS deadline (see provision_default_
-    # subscription). If it hasn't been paid (transitioned to ACTIVE) by
-    # then, commercial/tasks/trial_expiry.py suspends it and
-    # require_active_subscription blocks /billing/* access until a super
-    # admin reactivates it or the org pays. OFF by default — the trial
-    # deadline is stamped regardless, but nothing acts on it until enabled.
-    COMMERCIAL_TRIAL_PERIOD_DAYS: int = 3
+    # ── Commercial (Plane 1) free-trial enforcement (§B3) ───────────────
+    # A self-serve subscription only gets a trial_ends_at deadline when an
+    # is_active=True CommercialEvaluationProgram exists for its plan — the
+    # program's own duration_days sets the length, not a global setting (no
+    # program is seeded, so no plan grants a trial out of the box). If a
+    # granted trial expires unpaid, commercial/tasks/trial_expiry.py acts on
+    # it (per the program's expiry_action) and require_active_subscription
+    # blocks /billing/* access until a super admin reactivates it or the org
+    # pays. OFF by default — nothing acts on an expired trial until enabled.
     ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = False
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
 

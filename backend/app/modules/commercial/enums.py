@@ -271,3 +271,38 @@ class PlatformRefundStatus(str, enum.Enum):
     FAILED = "failed"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Commercial Evaluation Program (§B3 — bounded, explicitly-activated
+# trial configuration; distinct from the ad-hoc trial_ends_at stamp it replaces)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class CommercialEvaluationPaymentRequirement(str, enum.Enum):
+    """Whether a card must be on file before the evaluation period starts."""
+    NONE = "none"
+    CARD_REQUIRED_UPFRONT = "card_required_upfront"
+
+
+class CommercialEvaluationConversionPolicy(str, enum.Enum):
+    """What happens at the end of the evaluation period.
+
+    MANUAL                 — the org must actively pay; nothing happens
+                              automatically.
+    AUTO_CHARGE_ON_EXPIRY  — attempt to charge the card on file at expiry.
+                              NOT YET IMPLEMENTED by trial_expiry.py — a
+                              subscription configured this way is logged/
+                              skipped, never silently treated as MANUAL/
+                              SUSPEND.
+    """
+    MANUAL = "manual"
+    AUTO_CHARGE_ON_EXPIRY = "auto_charge_on_expiry"
+
+
+class CommercialEvaluationExpiryAction(str, enum.Enum):
+    """What trial_expiry.py does to a subscription whose trial_ends_at has
+    passed with no payment (MANUAL conversion_policy) or after a failed
+    auto-charge attempt."""
+    SUSPEND = "suspend"
+    DOWNGRADE = "downgrade"

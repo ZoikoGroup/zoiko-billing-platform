@@ -23,13 +23,19 @@ from sqlalchemy.orm import Session
 
 from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
+from app.core.exceptions import BadRequestException
 from app.database import get_db
 from app.modules.commercial.enums import (
+    CommercialEvaluationConversionPolicy,
+    CommercialEvaluationExpiryAction,
+    CommercialEvaluationPaymentRequirement,
     CommercialQuoteStatus,
     PlatformInvoiceStatus,
     PlatformPaymentStatus,
 )
 from app.modules.commercial.models import (
+    CommercialEvaluationProgram,
+    CommercialPlan,
     CommercialQuote,
     CommercialQuoteItem,
     PlatformCreditNote,
@@ -140,6 +146,19 @@ class RefundCreateRequest(BaseModel):
     amount: Decimal
     currency: str = "USD"
     reason: Optional[str] = None
+
+
+class EvaluationProgramCreateRequest(BaseModel):
+    plan_id: int
+    duration_days: int
+    payment_requirement: CommercialEvaluationPaymentRequirement = CommercialEvaluationPaymentRequirement.NONE
+    conversion_policy: CommercialEvaluationConversionPolicy = CommercialEvaluationConversionPolicy.MANUAL
+    expiry_action: CommercialEvaluationExpiryAction = CommercialEvaluationExpiryAction.SUSPEND
+    approved_by: Optional[int] = None
+
+
+class EvaluationProgramStatusRequest(BaseModel):
+    is_active: bool
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -335,7 +354,7 @@ def convert_quote(
     "/invoices",
     status_code=status.HTTP_201_CREATED,
     summary="Create a platform invoice",
-    dependencies=[Depends(require_capability("commercial_financial.read"))],
+    dependencies=[Depends(require_capability("commercial_financial.write"))],
 )
 def create_invoice(
     data: InvoiceCreateRequest,
@@ -388,7 +407,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
 @router.post(
     "/invoices/{invoice_id}/finalize",
     summary="Finalize a platform invoice (DRAFT → ISSUED)",
-    dependencies=[Depends(require_capability("commercial_financial.read"))],
+    dependencies=[Depends(require_capability("commercial_financial.write"))],
 )
 def finalize_invoice(
     invoice_id: int,
@@ -409,7 +428,7 @@ def finalize_invoice(
 @router.post(
     "/invoices/{invoice_id}/send",
     summary="Send an issued platform invoice to the org's admin by email",
-    dependencies=[Depends(require_capability("commercial_financial.read"))],
+    dependencies=[Depends(require_capability("commercial_financial.write"))],
 )
 def send_invoice(
     invoice_id: int,
@@ -425,7 +444,7 @@ def send_invoice(
 @router.post(
     "/invoices/{invoice_id}/void",
     summary="Void a platform invoice",
-    dependencies=[Depends(require_capability("commercial_financial.read"))],
+    dependencies=[Depends(require_capability("commercial_financial.write"))],
 )
 def void_invoice(
     invoice_id: int,
@@ -445,7 +464,7 @@ def void_invoice(
     "/invoices/{invoice_id}/items",
     status_code=status.HTTP_201_CREATED,
     summary="Add item to a platform invoice (DRAFT only)",
-    dependencies=[Depends(require_capability("commercial_financial.read"))],
+    dependencies=[Depends(require_capability("commercial_financial.write"))],
 )
 def add_invoice_item(
     invoice_id: int,
@@ -591,6 +610,94 @@ def list_reconciliation_runs(
         .limit(limit)
         .all()
     )
+
+
+# ── Evaluation Programs (§B3) ────────────────────────────────────────────────
+# Minimum-viable CRUD: create a program (starts is_active=False — a create
+# does NOT itself grant any trial) and toggle is_active. No program is ever
+# seeded; activating one is a deliberate business decision made here, by a
+# platform_administrator, not by this codebase on anyone's behalf.
+
+def _serialize_evaluation_program(program: CommercialEvaluationProgram) -> dict:
+    return {
+        "id": program.id,
+        "plan_id": program.plan_id,
+        "plan_code": program.plan.plan_code if program.plan else None,
+        "is_active": program.is_active,
+        "duration_days": program.duration_days,
+        "payment_requirement": program.payment_requirement.value,
+        "conversion_policy": program.conversion_policy.value,
+        "expiry_action": program.expiry_action.value,
+        "created_by": program.created_by,
+        "approved_by": program.approved_by,
+        "created_at": program.created_at.isoformat() if program.created_at else None,
+    }
+
+
+@router.post(
+    "/evaluation-programs",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a Plane 1 evaluation/trial program for one plan (§B3) — starts inactive",
+    dependencies=[Depends(require_capability("commercial_evaluation_program.write"))],
+)
+def create_evaluation_program(
+    data: EvaluationProgramCreateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_super_admin),
+):
+    plan = db.query(CommercialPlan).filter(CommercialPlan.id == data.plan_id).first()
+    if plan is None:
+        raise BadRequestException(f"CommercialPlan {data.plan_id} not found")
+    if data.duration_days <= 0:
+        raise BadRequestException("duration_days must be positive")
+
+    program = CommercialEvaluationProgram(
+        plan_id=data.plan_id,
+        is_active=False,
+        duration_days=data.duration_days,
+        payment_requirement=data.payment_requirement,
+        conversion_policy=data.conversion_policy,
+        expiry_action=data.expiry_action,
+        created_by=current_user.id,
+        approved_by=data.approved_by,
+    )
+    db.add(program)
+    db.commit()
+    db.refresh(program)
+    return _serialize_evaluation_program(program)
+
+
+@router.get(
+    "/evaluation-programs",
+    summary="List Plane 1 evaluation/trial programs",
+    dependencies=[Depends(require_capability("commercial_financial.read"))],
+)
+def list_evaluation_programs(db: Session = Depends(get_db)):
+    programs = db.query(CommercialEvaluationProgram).order_by(CommercialEvaluationProgram.id.desc()).all()
+    return [_serialize_evaluation_program(p) for p in programs]
+
+
+@router.patch(
+    "/evaluation-programs/{program_id}/status",
+    summary="Activate or deactivate an evaluation program (§B3 — the explicit on/off switch)",
+    dependencies=[Depends(require_capability("commercial_evaluation_program.write"))],
+)
+def set_evaluation_program_status(
+    program_id: int,
+    data: EvaluationProgramStatusRequest,
+    db: Session = Depends(get_db),
+):
+    program = db.query(CommercialEvaluationProgram).filter(CommercialEvaluationProgram.id == program_id).first()
+    if program is None:
+        raise BadRequestException(f"CommercialEvaluationProgram {program_id} not found")
+    if data.is_active and program.approved_by is None:
+        raise BadRequestException(
+            "Cannot activate an evaluation program with no approved_by — §B3 requires a logged approval."
+        )
+    program.is_active = data.is_active
+    db.commit()
+    db.refresh(program)
+    return _serialize_evaluation_program(program)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

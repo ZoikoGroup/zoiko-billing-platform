@@ -2352,12 +2352,40 @@ def get_production_acceptance_report(
         evidence=com01_evidence,
     ))
 
-    # COM-02 — no evaluation/trial program is configured anywhere in the schema.
+    # COM-02 — REAL DB query against CommercialEvaluationProgram (§B3).
+    from app.modules.commercial.models import CommercialEvaluationProgram
+
+    active_programs = (
+        db.query(CommercialEvaluationProgram)
+        .filter(CommercialEvaluationProgram.is_active.is_(True))
+        .all()
+    )
+    if not active_programs:
+        com02_status = "PASS"
+        com02_evidence = (
+            "No active CommercialEvaluationProgram exists — no plan currently grants a "
+            "trial. Consistent with §B3 (no free offer assumed)."
+        )
+    else:
+        missing_governance = [p for p in active_programs if p.approved_by is None]
+        if missing_governance:
+            com02_status = "FAIL"
+            com02_evidence = (
+                f"{len(missing_governance)} active evaluation program(s) have no approved_by — "
+                "a trial is live without a logged commercial approval."
+            )
+        else:
+            com02_status = "PASS"
+            com02_evidence = (
+                f"{len(active_programs)} active evaluation program(s), each with duration_days, "
+                "payment_requirement, conversion_policy, expiry_action, and a logged approver — "
+                "matches §B3's bounded-configuration requirement."
+            )
     items.append(ProductionAcceptanceItem(
         id="COM-02",
         criterion="Evaluation/trial behavior is explicitly approved; no unintended free-trial copy or auto-conversion path exists.",
-        status="NOT_CONFIGURED",
-        evidence="No EVALUATION/trial program model or configuration exists in this codebase; no public trial claim is made either.",
+        status=com02_status,
+        evidence=com02_evidence,
     ))
 
     # COM-03 — REAL DB query: every org must have a non-null classification/source.

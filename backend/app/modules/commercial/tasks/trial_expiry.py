@@ -1,11 +1,19 @@
 """
 commercial/tasks/trial_expiry.py
 -----------------------------------
-Plane 1 — free-trial expiry sweep. A self-serve CommercialSubscription is
-created PENDING with a trial_ends_at deadline (provision_default_
-subscription). If it hasn't been paid (transitioned to ACTIVE) by then, this
-job suspends it — require_active_subscription then blocks /billing/* access
-until a super admin reactivates it (PATCH .../status) or the org pays.
+Plane 1 — free-trial expiry sweep (§B3). A self-serve CommercialSubscription
+only ever gets a trial_ends_at deadline when provision_default_subscription()
+finds an is_active=True CommercialEvaluationProgram for its plan — no program,
+no trial, by default. If a trial expires unpaid, this job acts according to
+the subscription's snapshotted evaluation_expiry_action:
+  - SUSPEND (default)   — transition to SUSPENDED; require_active_subscription
+                           then blocks /billing/* access until a super admin
+                           reactivates it (PATCH .../status) or the org pays.
+  - DOWNGRADE            — NOT implemented (no downgrade-target plan exists
+                           anywhere in the schema yet); skipped and logged,
+                           never silently suspended instead.
+evaluation_conversion_policy == AUTO_CHARGE_ON_EXPIRY is also NOT
+implemented — skipped and logged, never silently treated as MANUAL/SUSPEND.
 
 Entirely independent of the N1 payment-failure dunning sweep (commercial/
 dunning_service.py) — that path only ever applies to a subscription that was
@@ -13,8 +21,7 @@ ACTIVE and then failed payment; a subscription that was never activated
 never enters that state machine branch at all.
 
 No-ops unless settings.ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT is explicitly
-true — the trial_ends_at deadline is always stamped, but nothing acts on it
-until this is turned on.
+true.
 """
 
 import logging
@@ -36,6 +43,8 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
     summary: Dict[str, Any] = {
         "started_at": datetime.utcnow().isoformat(),
         "suspended": 0,
+        "skipped_auto_charge_unimplemented": 0,
+        "skipped_downgrade_unimplemented": 0,
         "errors": [],
     }
 
@@ -47,7 +56,11 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
-        from app.modules.commercial.enums import CommercialSubscriptionStatus
+        from app.modules.commercial.enums import (
+            CommercialEvaluationConversionPolicy,
+            CommercialEvaluationExpiryAction,
+            CommercialSubscriptionStatus,
+        )
         from app.modules.commercial.models import CommercialSubscription
         from app.modules.commercial.service import CommercialSubscriptionService
         from app.modules.super_admin.audit_service import PlatformAuditService
@@ -68,6 +81,36 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
 
         for subscription in expired:
             try:
+                # AUTO_CHARGE_ON_EXPIRY is NOT implemented — a subscription
+                # configured this way must never be silently treated as
+                # MANUAL/SUSPEND. Skip it, loudly, every sweep, until a real
+                # charge-attempt path exists.
+                if subscription.evaluation_conversion_policy == CommercialEvaluationConversionPolicy.AUTO_CHARGE_ON_EXPIRY:
+                    summary["skipped_auto_charge_unimplemented"] += 1
+                    logger.warning(
+                        "Subscription %s trial expired with conversion_policy=AUTO_CHARGE_ON_EXPIRY, "
+                        "which trial_expiry.py does not yet implement — left untouched (NOT suspended).",
+                        subscription.id,
+                    )
+                    continue
+
+                action = subscription.evaluation_expiry_action or CommercialEvaluationExpiryAction.SUSPEND
+
+                if action == CommercialEvaluationExpiryAction.DOWNGRADE:
+                    # No downgrade-target plan is captured anywhere in the
+                    # current schema (CommercialEvaluationProgram carries no
+                    # target plan reference) — implementing this would mean
+                    # guessing a plan. Skip, loudly, rather than guess or
+                    # silently suspend instead.
+                    summary["skipped_downgrade_unimplemented"] += 1
+                    logger.warning(
+                        "Subscription %s trial expired with expiry_action=DOWNGRADE, which "
+                        "trial_expiry.py does not yet implement (no downgrade-target plan in the "
+                        "schema) — left untouched (NOT suspended).",
+                        subscription.id,
+                    )
+                    continue
+
                 sub_svc.transition(subscription, CommercialSubscriptionStatus.SUSPENDED)
                 audit.log_no_commit(
                     actor_id=None,
@@ -87,7 +130,7 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
                 db.rollback()
                 summary["errors"].append(f"subscription {subscription.id}: {row_exc}")
                 logger.error(
-                    "Failed to suspend subscription %s on trial expiry: %s",
+                    "Failed to process subscription %s on trial expiry: %s",
                     subscription.id, row_exc, exc_info=True,
                 )
     except Exception as exc:
