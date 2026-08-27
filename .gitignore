@@ -13,6 +13,7 @@ node_modules/
 venv/
 dist/
 build/
+.vite/
 *.log
 frontend/playwright-report/
 frontend/test-results/
