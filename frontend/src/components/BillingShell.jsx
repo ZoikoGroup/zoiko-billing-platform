@@ -514,6 +514,8 @@ export default function BillingShell({ children }) {
         onClick={() => setSidebarOpen(false)}
       />
 
+      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen((open) => !open)} />
+
       {/* Content row: sidebar | main workspace | chatbot panel (when open) */}
       <div className="flex h-screen">
         {/* Sidebar — full height, overlaps TopBar */}
