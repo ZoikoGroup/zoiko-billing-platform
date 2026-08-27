@@ -97,18 +97,30 @@ class ApprovalStatus(str, enum.Enum):
 class CommercialSubscriptionStatus(str, enum.Enum):
     """Lifecycle of a commercial subscription (PHASE 7).
 
-    PENDING    — created awaiting activation (no approved default plan at
-                 registration, or awaiting payment confirmation).
-    ACTIVE     — live; the org is entitled to the plan.
-    PAST_DUE   — N1 day 0: a Plane-1 (Zoiko's own subscription) payment
-                 failed. Entitlements unaffected so far.
-    RESTRICTED — N1 day 10: blocks new paid expansion only; existing
-                 entitlements keep working.
-    SUSPENDED  — N1 day 20 (also settable by a Super Admin action directly):
-                 read-only — never deletes records (N2).
-    CANCELLED  — terminal; preserved for audit/history. N1 day 45 (dunning
-                 "termination") lands here, not a hard delete.
-    EXPIRED    — terminal; period ended without renewal; preserved.
+    PENDING              — created awaiting activation (no approved default
+                           plan at registration, or awaiting payment
+                           confirmation).
+    ACTIVE               — live; the org is entitled to the plan.
+    PAST_DUE             — N1 day 0: a Plane-1 (Zoiko's own subscription)
+                           payment failed. Entitlements unaffected so far.
+    RESTRICTED           — N1 day 10: blocks new paid expansion only;
+                           existing entitlements keep working.
+    SUSPENDED            — N1 day 20 (also settable by a Super Admin action
+                           directly): read-only — never deletes records (N2).
+    CANCELLED            — terminal; preserved for audit/history. N1 day 45
+                           (dunning "termination") lands here, not a hard
+                           delete.
+    EXPIRED              — terminal; period ended without renewal; preserved.
+    TRIALING             — trial is active under a CommercialEvaluationProgram;
+                           entitlements sourced from the granted plan's bundle.
+    SCHEDULED_CHANGE     — a plan change (upgrade/downgrade) is pending at the
+                           next period boundary; current entitlements unchanged
+                           until the change takes effect.
+    CANCEL_AT_PERIOD_END — cancellation requested but effective only at the
+                           current period boundary; entitlements remain until
+                           then.
+    ENTERPRISE_PENDING   — enterprise onboarding in progress; awaiting
+                           signed order form / contract before activation.
     """
     PENDING = "pending"
     ACTIVE = "active"
@@ -117,6 +129,10 @@ class CommercialSubscriptionStatus(str, enum.Enum):
     SUSPENDED = "suspended"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+    TRIALING = "trialing"
+    SCHEDULED_CHANGE = "scheduled_change"
+    CANCEL_AT_PERIOD_END = "cancel_at_period_end"
+    ENTERPRISE_PENDING = "enterprise_pending"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -306,3 +322,101 @@ class CommercialEvaluationExpiryAction(str, enum.Enum):
     auto-charge attempt."""
     SUSPEND = "suspend"
     DOWNGRADE = "downgrade"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Entitlement Catalog (§12–§13, ZB-COM-ENT-001)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class EntitlementValueType(str, enum.Enum):
+    """The data type of an entitlement's value column.
+
+    BOOLEAN — true/false feature flag (e.g. billing.invoice.create).
+    INTEGER — numeric limit (e.g. billing.invoice.monthly_limit).
+    ENUM    — single allowed string value.
+    SET     — collection of allowed strings (e.g. currency.enabled.max).
+    """
+    BOOLEAN = "boolean"
+    INTEGER = "integer"
+    ENUM = "enum"
+    SET = "set"
+
+
+class EntitlementRiskClassification(str, enum.Enum):
+    """Risk classification driving approval requirements (§16.1).
+
+    STANDARD    — normal entitlement; single-approval path.
+    HIGH_RISK   — identity/security-adjacent; dual-approval trigger
+                  (security.sso, security.custom_roles, api.write).
+    """
+    STANDARD = "standard"
+    HIGH_RISK = "high_risk"
+
+
+class EntitlementEnforcementType(str, enum.Enum):
+    """How the platform enforces this entitlement at runtime (Part 2).
+
+    INFORMATIONAL    — logged only; no blocking.
+    SOFT_THEN_HARD   — warn first, then enforce after a grace period.
+    THROTTLE         — rate-limit rather than block.
+    HARD             — immediate hard block when exceeded.
+    """
+    INFORMATIONAL = "informational"
+    SOFT_THEN_HARD = "soft_then_hard"
+    THROTTLE = "throttle"
+    HARD = "hard"
+
+
+class CommercialOverrideStatus(str, enum.Enum):
+    """Lifecycle of a CommercialOverride (§16.1, ZB-COM-ENT-001 Part 2).
+
+    DRAFT             — editable, not yet submitted for approval.
+    PENDING_APPROVAL  — submitted; awaiting a different user's approval
+                        (maker-checker, enforced by ApprovalService).
+    APPROVED          — approved and live; the resolver's L3 reads only
+                        APPROVED, unexpired rows.
+    REJECTED          — declined by the approver; terminal.
+    REVOKED           — manually withdrawn after being APPROVED; terminal.
+    EXPIRED           — administrative marker for bookkeeping only; the
+                        resolver already excludes any APPROVED row whose
+                        expires_at has passed without needing this status
+                        to be set (no cleanup job required, AC-10).
+    """
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+
+
+class SubscriptionChangeStatus(str, enum.Enum):
+    """Lifecycle of a SubscriptionChange (ZB-COM-ENT-001 Part 3, §7-§8).
+
+    PENDING    — construction-time-only default; every code path that
+                 creates a row sets its final status before flush, so this
+                 is never actually observed at rest.
+    BLOCKED    — an IMMEDIATE downgrade attempt hit a compatibility
+                 blocker; recorded (not silently rejected) so it's a real,
+                 investigable row in the Super Admin plan-change queue.
+    SCHEDULED  — a downgrade queued for effective_at (the subscription's
+                 next renewal); the subscription's own status mirrors this
+                 via CommercialSubscriptionStatus.SCHEDULED_CHANGE.
+    APPLIED    — the plan swap executed (immediately, or by the scheduled
+                 sweep at effective_at).
+    REVERSED   — a SCHEDULED change was cancelled before effective_at; pure
+                 status flip, since nothing financial/entitlement-affecting
+                 happens while a change is only SCHEDULED.
+    """
+    PENDING = "pending"
+    BLOCKED = "blocked"
+    SCHEDULED = "scheduled"
+    APPLIED = "applied"
+    REVERSED = "reversed"
+
+
+class SubscriptionChangeDirection(str, enum.Enum):
+    UPGRADE = "upgrade"
+    DOWNGRADE = "downgrade"
+    EXPIRED = "expired"

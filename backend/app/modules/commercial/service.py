@@ -572,6 +572,109 @@ class CommercialPlanVersionService:
         )
         return version
 
+    # ── ZB-COM-ENT-001 Part 3 (§16) — draft editing ─────────────────────────
+    # No prior version of this service could edit a version's own fields or
+    # its PlanEntitlement rows after create_draft() — Part 1 only ever
+    # seeded these via a standalone script. Both new methods enforce
+    # "publishing never edits a published version's rows in place" AT THE
+    # SERVICE LAYER (raise, don't just rely on UI convention): editing is
+    # rejected outright once status != DRAFT — publish always means a new
+    # plan_version_id via create_draft(), never a mutation of this one.
+
+    def update_draft(self, version, *, actor_id: int | None = None, **fields):
+        """Update a DRAFT version's own scalar fields. Rejects any version
+        whose status is not DRAFT (already PUBLISHED/PENDING_APPROVAL/etc
+        rows are immutable via this method, full stop)."""
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+
+        if version.status != CommercialPlanVersionStatus.DRAFT:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not DRAFT; cannot edit."
+            )
+        allowed = {
+            "plan_name", "description", "billing_interval", "currency", "price_amount",
+            "effective_from", "effective_to", "max_users", "max_storage_gb", "features",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"Cannot set unknown field(s) on a CommercialPlanVersion: {sorted(unknown)}")
+
+        old_values = _version_snapshot(version)
+        for key, value in fields.items():
+            setattr(version, key, value)
+        self.db.flush()
+
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.UPDATE,
+            entity_type="CommercialPlanVersion",
+            entity_id=version.id,
+            old_values=old_values,
+            new_values=_version_snapshot(version),
+        )
+        return version
+
+    def set_plan_entitlement(
+        self, version, entitlement_definition_id: int, value, *,
+        is_contracted: bool = False, actor_id: int | None = None,
+    ):
+        """Upsert a PlanEntitlement row for a DRAFT version. Same DRAFT-only
+        guard as update_draft() — once published, a version's entitlement
+        rows are as immutable as its scalar fields."""
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.commercial.models import EntitlementDefinition, PlanEntitlement
+
+        if version.status != CommercialPlanVersionStatus.DRAFT:
+            raise ValueError(
+                f"CommercialPlanVersion {version.id} is {version.status.name}, not DRAFT; "
+                "cannot edit its entitlements."
+            )
+        definition = (
+            self.db.query(EntitlementDefinition)
+            .filter(EntitlementDefinition.id == entitlement_definition_id)
+            .first()
+        )
+        if definition is None:
+            raise ValueError(f"No EntitlementDefinition with id={entitlement_definition_id}.")
+
+        row = (
+            self.db.query(PlanEntitlement)
+            .filter(
+                PlanEntitlement.plan_version_id == version.id,
+                PlanEntitlement.entitlement_definition_id == entitlement_definition_id,
+            )
+            .first()
+        )
+        old_value = row.value if row is not None else None
+        if row is None:
+            row = PlanEntitlement(
+                plan_version_id=version.id, entitlement_definition_id=entitlement_definition_id,
+                value=value, is_contracted=is_contracted,
+            )
+            self.db.add(row)
+        else:
+            row.value = value
+            row.is_contracted = is_contracted
+        self.db.flush()
+
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="super_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.UPDATE,
+            entity_type="PlanEntitlement",
+            entity_id=row.id,
+            old_values={"value": old_value},
+            new_values={"value": value, "is_contracted": is_contracted, "key": definition.key},
+        )
+        return row
+
     def submit_for_approval(self, version, *, requested_by_user_id: int, reason: str):
         """DRAFT -> PENDING_APPROVAL. Creates the ApprovalRequest that must be
         approved by a DIFFERENT Super Admin before this version can publish."""
@@ -717,12 +820,16 @@ class CommercialSubscriptionService:
             # failure path (ACTIVE -> ... -> SUSPENDED), which never applies
             # to a subscription that was never activated in the first place.
             CommercialSubscriptionStatus.SUSPENDED,
+            CommercialSubscriptionStatus.TRIALING,
+            CommercialSubscriptionStatus.ENTERPRISE_PENDING,
         },
         CommercialSubscriptionStatus.ACTIVE: {
             CommercialSubscriptionStatus.PAST_DUE,
             CommercialSubscriptionStatus.SUSPENDED,
             CommercialSubscriptionStatus.CANCELLED,
             CommercialSubscriptionStatus.EXPIRED,
+            CommercialSubscriptionStatus.SCHEDULED_CHANGE,
+            CommercialSubscriptionStatus.CANCEL_AT_PERIOD_END,
         },
         CommercialSubscriptionStatus.PAST_DUE: {
             CommercialSubscriptionStatus.RESTRICTED,
@@ -740,6 +847,25 @@ class CommercialSubscriptionService:
         },
         CommercialSubscriptionStatus.CANCELLED: set(),
         CommercialSubscriptionStatus.EXPIRED: set(),
+        CommercialSubscriptionStatus.TRIALING: {
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+            CommercialSubscriptionStatus.SUSPENDED,
+            CommercialSubscriptionStatus.EXPIRED,
+        },
+        CommercialSubscriptionStatus.SCHEDULED_CHANGE: {
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+        },
+        CommercialSubscriptionStatus.CANCEL_AT_PERIOD_END: {
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+        },
+        CommercialSubscriptionStatus.ENTERPRISE_PENDING: {
+            CommercialSubscriptionStatus.PENDING,
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+        },
     }
 
     _OPEN_STATUSES = {
@@ -748,6 +874,16 @@ class CommercialSubscriptionService:
         CommercialSubscriptionStatus.PAST_DUE,
         CommercialSubscriptionStatus.RESTRICTED,
         CommercialSubscriptionStatus.SUSPENDED,
+        CommercialSubscriptionStatus.TRIALING,
+        # ZB-COM-ENT-001 Part 3 fix: SCHEDULED_CHANGE means "a downgrade is
+        # pending at the next period boundary; current entitlements unchanged
+        # until the change takes effect" (enums.py docstring) — omitting it
+        # here made resolve_open_subscription() find "no open subscription"
+        # for a subscription mid-scheduled-change, silently zeroing every
+        # entitlement. Every consumer of _OPEN_STATUSES (the entitlement
+        # resolver, get_active_subscription, provision_default_subscription's
+        # idempotency guard) needs this subscription to still count as open.
+        CommercialSubscriptionStatus.SCHEDULED_CHANGE,
     }
 
     def get_subscription(self, subscription_id: int) -> CommercialSubscription | None:
@@ -896,7 +1032,23 @@ class CommercialSubscriptionService:
             "Created CommercialSubscription for account %s on plan %s (status=%s)",
             account_id, plan.plan_code, status.name,
         )
+        self._recompute_snapshot_for_account(account_id, reason="subscription_created")
         return subscription
+
+    def _organization_id_for_account(self, account_id: int) -> int | None:
+        account = self.db.query(CommercialAccount).filter(CommercialAccount.id == account_id).first()
+        return account.organization_id if account is not None else None
+
+    def _recompute_snapshot_for_account(self, account_id: int, *, reason: str) -> None:
+        """Part 2 (§11.1, §13): a stale EntitlementSnapshot after a known
+        state change is a correctness bug, not just UX lag — recompute
+        synchronously, in the caller's transaction, right after the state
+        change that could affect resolution."""
+        from app.modules.commercial.entitlement_snapshot_service import EntitlementSnapshotService
+
+        organization_id = self._organization_id_for_account(account_id)
+        if organization_id is not None:
+            EntitlementSnapshotService(self.db).recompute_snapshot(organization_id, reason=reason)
 
     def resolve_price(self, subscription: CommercialSubscription):
         """Resolve (price_amount, currency, billing_interval) for a
@@ -974,6 +1126,9 @@ class CommercialSubscriptionService:
             self._assert_may_charge_commercially(subscription.commercial_account_id)
         subscription.status = new_status
         self.db.flush()
+        self._recompute_snapshot_for_account(
+            subscription.commercial_account_id, reason=f"subscription_transition:{new_status.value}",
+        )
         return subscription
 
     def provision_default_subscription(
@@ -991,6 +1146,14 @@ class CommercialSubscriptionService:
         default status) — provisioning never auto-charges or auto-activates;
         entitlement must not race ahead of payment (§B4). Idempotent: if an
         open subscription already exists, it is returned untouched.
+
+        When an active CommercialEvaluationProgram exists for the resolved
+        plan and the org is eligible (§5: one standard trial per verified
+        organization), the subscription starts as TRIALING with:
+          - trial_ends_at computed from the program's duration_days
+          - recovery_ends_at = trial_ends_at + 14 days
+          - trial_granted_entitlements snapshot from granted_plan_id's
+            PlanEntitlement rows (Professional by default, per §5)
         """
         existing = self.get_active_subscription(account_id)
         if existing is not None:
@@ -1028,14 +1191,14 @@ class CommercialSubscriptionService:
 
         subscription = self.create_subscription(account_id, plan)
 
-        # §B3: a trial is granted ONLY when an explicitly-activated
-        # CommercialEvaluationProgram exists for THIS plan — never an
-        # unconditional stamp. No program (the default, out of the box) ->
-        # trial_ends_at stays NULL and the trial-expiry sweep never touches
-        # this row. The program's policy fields are snapshotted onto the
-        # subscription so a later edit/deactivation of the program can't
-        # retroactively change terms this subscription already committed to.
-        from app.modules.commercial.models import CommercialEvaluationProgram
+        # §B3 + §5: a trial is granted ONLY when an explicitly-activated
+        # CommercialEvaluationProgram exists for THIS plan AND the org is
+        # eligible (one standard trial per verified organization).
+        from app.modules.commercial.models import (
+            CommercialEvaluationProgram,
+            EntitlementDefinition,
+            PlanEntitlement,
+        )
 
         program = (
             self.db.query(CommercialEvaluationProgram)
@@ -1046,17 +1209,178 @@ class CommercialSubscriptionService:
             .first()
         )
         if program is not None:
-            subscription.trial_ends_at = datetime.utcnow() + timedelta(days=program.duration_days)
+            # §5 eligibility: one standard trial per verified organization.
+            # Check whether this org (or any prior org on the same account)
+            # has ever previously had trial_ends_at set on any subscription.
+            if not self._is_trial_eligible(account_id):
+                logger.warning(
+                    "Subscription %s: evaluation program %s found but org already "
+                    "had a trial — second trial blocked per §5 (one per org).",
+                    subscription.id, program.id,
+                )
+                return subscription
+
+            now = datetime.utcnow()
+            trial_ends = now + timedelta(days=program.duration_days)
+
+            # Compute recovery window: trial_ends_at + 14 days (§5).
+            recovery_ends = trial_ends + timedelta(days=14)
+
+            # Snapshot entitlements from the granted_plan_id's PlanEntitlement
+            # rows, not the signup plan's own. Per §5, the standard trial
+            # grants Professional's entitlement bundle regardless of signup plan.
+            granted_entitlements = None
+            if program.granted_plan_id is not None:
+                granted_entitlements = self._snapshot_entitlements_for_plan(
+                    program.granted_plan_id, cap_source_program=program,
+                )
+
+            subscription.trial_ends_at = trial_ends
+            subscription.recovery_ends_at = recovery_ends
+            subscription.status = CommercialSubscriptionStatus.TRIALING
             subscription.evaluation_payment_requirement = program.payment_requirement
             subscription.evaluation_conversion_policy = program.conversion_policy
             subscription.evaluation_expiry_action = program.expiry_action
+            subscription.trial_granted_entitlements = granted_entitlements
             self.db.flush()
             logger.info(
-                "Subscription %s granted a %s-day trial under evaluation program %s (plan %s).",
-                subscription.id, program.duration_days, program.id, plan.plan_code,
+                "Subscription %s: TRIALING under program %s (%s-day trial, "
+                "granted_plan_id=%s, recovery_ends_at=%s).",
+                subscription.id, program.id, program.duration_days,
+                program.granted_plan_id, recovery_ends,
             )
 
+        # Recompute once, after any TRIALING branch above has set its final
+        # state — create_subscription() already recomputed against the
+        # pre-trial state, so this second call is what actually captures the
+        # trial grant (or confirms no trial applied).
+        self._recompute_snapshot_for_account(account_id, reason="provisioning")
         return subscription
+
+    def is_trial_eligible(self, account_id: int) -> bool:
+        """Public wrapper around _is_trial_eligible — ZB-COM-ENT-001 Part 3
+        (§16 trial controls) needs a read-only eligibility signal exposed to
+        the Super Admin surface without touching the internal call site's
+        naming."""
+        return self._is_trial_eligible(account_id)
+
+    def _is_trial_eligible(self, account_id: int) -> bool:
+        """§5: one standard trial per verified organization.
+
+        Checks whether this account's organization has ever previously had
+        trial_ends_at set on ANY subscription (active or historical). If so,
+        a second trial is blocked. Uses the organization_id already on the
+        CommercialAccount — no new verification infrastructure invented.
+
+        Returns True if eligible (no prior trial found), False otherwise.
+        """
+        from app.modules.organizations.models import Organization
+
+        account = (
+            self.db.query(CommercialAccount)
+            .filter(CommercialAccount.id == account_id)
+            .first()
+        )
+        if account is None:
+            return True
+
+        org = (
+            self.db.query(Organization)
+            .filter(Organization.id == account.organization_id)
+            .first()
+        )
+        if org is None:
+            return True
+
+        # Check ALL subscriptions for this account (and any other account
+        # that might share the same organization — strictly one account per
+        # org, but defensive).
+        prior_trial = (
+            self.db.query(CommercialSubscription)
+            .filter(
+                CommercialSubscription.commercial_account_id == account_id,
+                CommercialSubscription.trial_ends_at.isnot(None),
+            )
+            .first()
+        )
+        return prior_trial is None
+
+    def _snapshot_entitlements_for_plan(self, plan_id: int, *, cap_source_program=None) -> list[dict]:
+        """Snapshot PlanEntitlement rows for a plan's current PUBLISHED version.
+
+        Returns a list of dicts suitable for JSON storage on
+        CommercialSubscription.trial_granted_entitlements. Each dict contains
+        the entitlement key, value, and value_type for reconstruction. Returns
+        an empty list if no published version or no entitlements exist.
+
+        Part 2 fix: when cap_source_program is supplied, each snapshotted
+        value is clamped against that program's CommercialEvaluationProgramCap
+        rows (matched by entitlement_definition_id) before being frozen.
+        Previously these caps were never applied anywhere — configuration a
+        platform_administrator could set up but that had no live effect.
+        INTEGER values are clamped with min(); BOOLEAN values are AND'd; any
+        other value_type (SET/ENUM) or a cap_value of None passes through
+        unclamped (no defined clamp semantics for those types yet).
+        """
+        from app.modules.commercial.enums import CommercialPlanVersionStatus, EntitlementValueType
+        from app.modules.commercial.models import (
+            CommercialEvaluationProgramCap,
+            CommercialPlanVersion,
+            EntitlementDefinition,
+            PlanEntitlement,
+        )
+
+        latest_published = (
+            self.db.query(CommercialPlanVersion)
+            .filter(
+                CommercialPlanVersion.plan_id == plan_id,
+                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+            )
+            .order_by(CommercialPlanVersion.version_number.desc())
+            .first()
+        )
+        if latest_published is None:
+            return []
+
+        rows = (
+            self.db.query(PlanEntitlement, EntitlementDefinition)
+            .join(
+                EntitlementDefinition,
+                PlanEntitlement.entitlement_definition_id == EntitlementDefinition.id,
+            )
+            .filter(
+                PlanEntitlement.plan_version_id == latest_published.id,
+            )
+            .all()
+        )
+
+        caps_by_definition_id: dict[int, object] = {}
+        if cap_source_program is not None:
+            caps = (
+                self.db.query(CommercialEvaluationProgramCap)
+                .filter(CommercialEvaluationProgramCap.evaluation_program_id == cap_source_program.id)
+                .all()
+            )
+            caps_by_definition_id = {cap.entitlement_definition_id: cap for cap in caps}
+
+        snapshot = []
+        for pe, ed in rows:
+            value = pe.value
+            cap = caps_by_definition_id.get(ed.id)
+            if cap is not None and cap.cap_value is not None and value is not None:
+                if ed.value_type == EntitlementValueType.INTEGER:
+                    try:
+                        value = min(value, cap.cap_value)
+                    except TypeError:
+                        pass
+                elif ed.value_type == EntitlementValueType.BOOLEAN:
+                    value = bool(value) and bool(cap.cap_value)
+            snapshot.append({
+                "key": ed.key,
+                "value": value,
+                "value_type": ed.value_type.value if hasattr(ed.value_type, "value") else ed.value_type,
+            })
+        return snapshot
 
     def change_plan(
         self,
@@ -1218,11 +1542,170 @@ class CommercialSubscriptionService:
         )
         return replacement
 
+    # ── ZB-COM-ENT-001 Part 3 (§6.1, §7, §8) — in-place plan-change ─────────
+    # Deliberately NOT built on change_plan()/create_subscription(): those
+    # cancel-then-recreate the subscription (a new row, new id), and
+    # create_subscription() never sets current_period_start/end — a
+    # downgrade scheduled against the replacement's (NULL) current_period_end
+    # would be broken. apply_plan_change() mutates the SAME subscription row
+    # in place, preserving period fields, so "subscription update, not
+    # replace" (the spec's own wording) is literally true, not just in intent.
+
+    def _resolve_default_catalog_version_id(self, plan_id: int) -> int | None:
+        """Latest PUBLISHED CommercialPlanVersion for a plan, or None. Same
+        fallback used inline by create_subscription/resolve_price/
+        EntitlementSnapshotService — factored out here for the new plan-
+        change methods rather than duplicated a fourth time."""
+        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.commercial.models import CommercialPlanVersion
+
+        latest_published = (
+            self.db.query(CommercialPlanVersion)
+            .filter(
+                CommercialPlanVersion.plan_id == plan_id,
+                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+            )
+            .order_by(CommercialPlanVersion.version_number.desc())
+            .first()
+        )
+        return latest_published.id if latest_published is not None else None
+
+    def _set_plan_fields(
+        self, subscription: CommercialSubscription, target_plan: CommercialPlan,
+        target_catalog_version_id: int | None = None,
+    ) -> None:
+        """The recompute-free half of apply_plan_change: mutates only the
+        plan/version columns. Factored out so the scheduled job (Part 3's
+        apply_scheduled_change task) can call this, then transition() the
+        subscription itself (SCHEDULED_CHANGE -> ACTIVE), which gets the
+        snapshot recompute for free via transition()'s own hook — avoiding a
+        double recompute in that path."""
+        subscription.commercial_plan_id = target_plan.id
+        subscription.catalog_version_id = (
+            target_catalog_version_id or self._resolve_default_catalog_version_id(target_plan.id)
+        )
+        self.db.flush()
+
+    def apply_plan_change(
+        self,
+        subscription: CommercialSubscription,
+        target_plan: CommercialPlan,
+        target_catalog_version_id: int | None = None,
+        *,
+        actor_id: int | None = None,
+        reason: str = "",
+    ) -> CommercialSubscription:
+        """Immediate, in-place plan swap — used directly by an upgrade
+        commit, an immediate (zero-blocker, confirmed) downgrade commit, and
+        nowhere else. Mutation + EntitlementSnapshot recompute happen in the
+        SAME uncommitted transaction as the caller's; if recompute fails, the
+        whole transaction (including the plan-field mutation) rolls back
+        atomically on the caller's exception handling — there is no partial-
+        applied state to retry, and no async job queue exists in this
+        codebase to invent one for.
+
+        No invoice/charge is generated here — that is the concrete answer to
+        "never double-charge": the new price only takes effect at the next
+        normal renewal-invoice cycle, which reads resolve_price() against the
+        now-mutated plan fields naturally.
+        """
+        if subscription.status != CommercialSubscriptionStatus.ACTIVE:
+            raise ValueError(
+                f"Subscription {subscription.id} is {subscription.status.name}, not ACTIVE; "
+                "only an ACTIVE subscription is upgrade/downgrade-eligible."
+            )
+        if target_plan.status != CommercialPlanStatus.ACTIVE:
+            raise ValueError(
+                f"Cannot change to plan {target_plan.plan_code} (status: {target_plan.status.name}): "
+                "only ACTIVE plans can be newly activated."
+            )
+        if target_plan.id == subscription.commercial_plan_id:
+            raise ValueError(f"Subscription {subscription.id} is already on plan {target_plan.plan_code}.")
+
+        # Bypassing transition() means the charging guard it normally runs
+        # automatically must be re-run explicitly here.
+        self._assert_may_charge_commercially(subscription.commercial_account_id)
+
+        old_plan_id = subscription.commercial_plan_id
+        old_version_id = subscription.catalog_version_id
+        self._set_plan_fields(subscription, target_plan, target_catalog_version_id)
+
+        self._recompute_snapshot_for_account(
+            subscription.commercial_account_id, reason="plan_change_applied",
+        )
+
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        account = (
+            self.db.query(CommercialAccount)
+            .filter(CommercialAccount.id == subscription.commercial_account_id)
+            .first()
+        )
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="org_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.SUBSCRIPTION_PLAN_CHANGE_APPLIED,
+            entity_type="CommercialSubscription",
+            entity_id=subscription.id,
+            organization_id=account.organization_id if account else None,
+            old_values={"commercial_plan_id": old_plan_id, "catalog_version_id": old_version_id},
+            new_values={
+                "commercial_plan_id": target_plan.id,
+                "catalog_version_id": subscription.catalog_version_id,
+            },
+            reason=reason,
+        )
+        logger.info(
+            "Applied in-place plan change on subscription %s: plan %s -> %s",
+            subscription.id, old_plan_id, target_plan.plan_code,
+        )
+        return subscription
+
+    def reverse_scheduled_change(self, change, *, actor_id: int | None = None, reason: str = ""):
+        """SCHEDULED -> REVERSED. Pure status flip: nothing financial or
+        entitlement-affecting has happened while a change is only SCHEDULED
+        (the subscription has been resolving entitlements off its CURRENT
+        plan the whole time, per SCHEDULED_CHANGE's semantics) — so there is
+        no compensating transaction to run, only a status update."""
+        from app.modules.commercial.enums import SubscriptionChangeStatus
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if change.status != SubscriptionChangeStatus.SCHEDULED:
+            raise ValueError(
+                f"SubscriptionChange {change.id} is {change.status.name}, not SCHEDULED; cannot reverse."
+            )
+        change.status = SubscriptionChangeStatus.REVERSED
+        change.reversed_at = datetime.utcnow()
+        change.reversed_by_user_id = actor_id
+        self.db.flush()
+
+        subscription = change.subscription
+        self.transition(subscription, CommercialSubscriptionStatus.ACTIVE)
+
+        account = (
+            self.db.query(CommercialAccount)
+            .filter(CommercialAccount.id == subscription.commercial_account_id)
+            .first()
+        )
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="org_admin" if actor_id is not None else None,
+            action=PlatformAuditAction.SUBSCRIPTION_PLAN_CHANGE_REVERSED,
+            entity_type="SubscriptionChange",
+            entity_id=change.id,
+            organization_id=account.organization_id if account else None,
+            reason=reason,
+        )
+        logger.info("SubscriptionChange %s reversed by %s", change.id, actor_id)
+        return change
+
 
 class CommercialEntitlementService:
-    """PHASE 8 entitlement FOUNDATION (read-only; NOT enforced anywhere yet).
+    """Entitlement read API (Part 1 foundation + Part 2 resolution engine).
 
-    Answers the two future questions:
+    Answers the two questions:
 
       "Is this organization entitled to use feature X?"
         -> is_entitled(organization_id, feature)
@@ -1230,22 +1713,22 @@ class CommercialEntitlementService:
       "What limit applies to this organization?"
         -> get_limit(organization_id, "max_users" | "max_storage_gb" | ...)
 
-    Resolution chain:  Organization -> CommercialAccount (1:1)
-                       -> open CommercialSubscription -> CommercialPlan
-                       -> plan.features (feature flags) / max_users /
-                          max_storage_gb (limits).
+    Part 2: when `feature`/`limit_key` names one of the 19 typed catalog
+    keys (entitlement_catalog_spec.KNOWN_ENTITLEMENT_KEYS), resolution goes
+    through entitlement_resolver.resolve_entitlement — the full
+    precedence-ordered engine (overrides, trial grants, snapshot, live plan
+    entitlement, safe default). For any other key (legacy/ad-hoc feature
+    flags on CommercialPlan.features, e.g. "export"), resolution falls back
+    to the original untyped plan.features / max_users / max_storage_gb
+    lookup unchanged — the typed catalog is a governed subset, not a
+    replacement for arbitrary feature flags other code may already depend on.
 
-    Design note vs Zoiko One: the reference keeps features/limits on the
-    subscription itself (OrgSubscription.max_users/max_storage_gb/features)
-    because it has no reusable plan table. Standalone has a reusable
-    CommercialPlan, so the plan owns the entitlements and every subscription
-    to that plan inherits them (see models.py). Deliberately NOT a copy of
-    Zoiko One.
-
-    SAFETY: every lookup is tolerant of a missing account, missing open
-    subscription, missing plan, or unset entitlement data — it returns None /
-    False / the empty default, never raises. This is the foundation only:
-    nothing here is wired into tenant Billing modules, and nothing is enforced.
+    SAFETY (fail-open reads, §14): every lookup is tolerant of a missing
+    account, missing open subscription, missing plan, unset entitlement
+    data, OR a resolver error — it returns None / False / the safe-allowed
+    default, never raises. A broken resolver must never break an unrelated
+    read. Writes must use EntitlementEnforcementService instead, which does
+    NOT fail open.
     """
 
     _LIMIT_KEYS = {"max_users", "max_storage_gb"}
@@ -1254,26 +1737,9 @@ class CommercialEntitlementService:
         self.db = db
 
     def _open_subscription_for_organization(self, organization_id: int):
-        from app.modules.organizations.models import Organization
+        from app.modules.commercial.entitlement_resolver import resolve_open_subscription
 
-        account = (
-            self.db.query(CommercialAccount)
-            .filter(CommercialAccount.organization_id == organization_id)
-            .first()
-        )
-        if account is None:
-            return None
-        return (
-            self.db.query(CommercialSubscription)
-            .filter(
-                CommercialSubscription.commercial_account_id == account.id,
-                CommercialSubscription.status.in_(
-                    list(CommercialSubscriptionService._OPEN_STATUSES)
-                ),
-            )
-            .order_by(CommercialSubscription.id.desc())
-            .first()
-        )
+        return resolve_open_subscription(self.db, organization_id)
 
     def get_organization_entitlements(self, organization_id: int) -> dict:
         """Entitlement view for an org's CURRENT open subscription.
@@ -1300,14 +1766,33 @@ class CommercialEntitlementService:
         }
 
     def is_entitled(self, organization_id: int, feature: str) -> bool:
-        """Feature entitlement check (foundation only).
+        """Feature entitlement check.
 
-        A feature is enabled when the org has an open subscription whose plan
-        declares the feature key with a truthy value. Missing plan /
-        subscription / feature resolves to False — no exception.
+        For a known catalog key, resolves through the full Part 2 precedence
+        engine — fails open (returns True) on any resolver error, logged.
+        For any other key, falls back to the legacy plan.features lookup:
+        a feature is enabled when the org has an open subscription whose
+        plan declares the feature key with a truthy value. Missing plan /
+        subscription / feature resolves to False in both paths — no
+        exception ever escapes this method.
         """
         if not feature:
             return False
+
+        from app.modules.commercial.entitlement_catalog_spec import KNOWN_ENTITLEMENT_KEYS
+        from app.modules.commercial.entitlement_resolver import resolve_entitlement
+
+        if feature in KNOWN_ENTITLEMENT_KEYS:
+            try:
+                resolved = resolve_entitlement(self.db, organization_id, feature)
+                return bool(resolved.value)
+            except Exception:  # noqa: BLE001 - fail-open read, §14
+                logger.exception(
+                    "is_entitled: resolver failed for org=%s feature=%s; failing open (True).",
+                    organization_id, feature,
+                )
+                return True
+
         subscription = self._open_subscription_for_organization(organization_id)
         if subscription is None or subscription.plan is None:
             return False
@@ -1317,14 +1802,31 @@ class CommercialEntitlementService:
         return bool(features.get(feature))
 
     def get_limit(self, organization_id: int, limit_key: str):
-        """Limit lookup (foundation only).
+        """Limit lookup.
 
-        Returns the numeric limit for max_users / max_storage_gb (or any other
-        named limit present on the plan's features dict). None = no limit set /
-        no active entitlement; never raises.
+        For a known catalog key, resolves through the full Part 2 precedence
+        engine — fails open (returns None, "no limit enforced") on any
+        resolver error, logged. For any other key, falls back to the legacy
+        lookup: max_users / max_storage_gb columns, or the plan's features
+        dict. None = no limit set / no active entitlement; never raises.
         """
         if not limit_key:
             return None
+
+        from app.modules.commercial.entitlement_catalog_spec import KNOWN_ENTITLEMENT_KEYS
+        from app.modules.commercial.entitlement_resolver import resolve_entitlement
+
+        if limit_key in KNOWN_ENTITLEMENT_KEYS:
+            try:
+                resolved = resolve_entitlement(self.db, organization_id, limit_key)
+                return resolved.value
+            except Exception:  # noqa: BLE001 - fail-open read, §14
+                logger.exception(
+                    "get_limit: resolver failed for org=%s limit_key=%s; failing open (None).",
+                    organization_id, limit_key,
+                )
+                return None
+
         subscription = self._open_subscription_for_organization(organization_id)
         if subscription is None or subscription.plan is None:
             return None

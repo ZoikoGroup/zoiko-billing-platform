@@ -109,6 +109,20 @@ class PlatformAuditAction(str, enum.Enum):
     PAYMENT_ALLOCATED = "payment_allocated"
     PAYMENT_DEALLOCATED = "payment_deallocated"
     CREDIT_NOTE_CREATED = "credit_note_created"
+
+    # ── ZB-COM-ENT-001 Part 2 — entitlement overrides / enforcement ────────
+    ENTITLEMENT_OVERRIDE_SUBMITTED = "entitlement_override_submitted"
+    ENTITLEMENT_OVERRIDE_APPROVED = "entitlement_override_approved"
+    ENTITLEMENT_OVERRIDE_REJECTED = "entitlement_override_rejected"
+    ENTITLEMENT_OVERRIDE_REVOKED = "entitlement_override_revoked"
+    ENTITLEMENT_BLOCKED = "entitlement_blocked"
+    ENTITLEMENT_SOFT_LIMIT_BREACHED = "entitlement_soft_limit_breached"
+
+    # ── ZB-COM-ENT-001 Part 3 — plan-change orchestration ───────────────────
+    SUBSCRIPTION_PLAN_CHANGE_SCHEDULED = "subscription_plan_change_scheduled"
+    SUBSCRIPTION_PLAN_CHANGE_APPLIED = "subscription_plan_change_applied"
+    SUBSCRIPTION_PLAN_CHANGE_BLOCKED = "subscription_plan_change_blocked"
+    SUBSCRIPTION_PLAN_CHANGE_REVERSED = "subscription_plan_change_reversed"
     CREDIT_NOTE_APPROVED = "credit_note_approved"
     CREDIT_NOTE_ISSUED = "credit_note_issued"
     CREDIT_NOTE_VOIDED = "credit_note_voided"

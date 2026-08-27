@@ -400,6 +400,17 @@ def update_user(
             from app.core.exceptions import ForbiddenException
             raise ForbiddenException(f"Cannot assign role {data.role.value}.")
 
+        # AC-01 (ZB-COM-ENT-001 Part 2): security.custom_roles (HIGH_RISK) —
+        # gates any role elevation already permitted by can_create_role, on
+        # top of that existing RBAC check. Substituted for the spec's
+        # "SSO configuration" route (no such feature exists in this
+        # codebase) as the highest-leverage real HIGH_RISK write route.
+        from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
+
+        EntitlementEnforcementService(db).assert_boolean(
+            organization_id=org_id, key="security.custom_roles", actor_id=current_user.id,
+        )
+
     for field, value in data.model_dump(exclude_unset=True).items():
         if field == "role" and value is not None:
             user.role = value

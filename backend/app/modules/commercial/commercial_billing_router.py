@@ -35,9 +35,11 @@ from app.modules.commercial.enums import (
 )
 from app.modules.commercial.models import (
     CommercialEvaluationProgram,
+    CommercialEvaluationProgramCap,
     CommercialPlan,
     CommercialQuote,
     CommercialQuoteItem,
+    EntitlementDefinition,
     PlatformCreditNote,
     PlatformInvoice,
     PlatformInvoiceItem,
@@ -155,6 +157,11 @@ class EvaluationProgramCreateRequest(BaseModel):
     conversion_policy: CommercialEvaluationConversionPolicy = CommercialEvaluationConversionPolicy.MANUAL
     expiry_action: CommercialEvaluationExpiryAction = CommercialEvaluationExpiryAction.SUSPEND
     approved_by: Optional[int] = None
+    # §5 — the plan whose entitlement bundle is granted during the trial
+    # (separate from plan_id, the plan whose signup triggers the program).
+    # Per §5, the standard trial grants Professional's bundle regardless of
+    # the signup plan.
+    granted_plan_id: Optional[int] = None
 
 
 class EvaluationProgramStatusRequest(BaseModel):
@@ -619,10 +626,13 @@ def list_reconciliation_runs(
 # platform_administrator, not by this codebase on anyone's behalf.
 
 def _serialize_evaluation_program(program: CommercialEvaluationProgram) -> dict:
+    caps = program.caps or []
     return {
         "id": program.id,
         "plan_id": program.plan_id,
         "plan_code": program.plan.plan_code if program.plan else None,
+        "granted_plan_id": program.granted_plan_id,
+        "granted_plan_code": program.granted_plan.plan_code if program.granted_plan else None,
         "is_active": program.is_active,
         "duration_days": program.duration_days,
         "payment_requirement": program.payment_requirement.value,
@@ -631,6 +641,20 @@ def _serialize_evaluation_program(program: CommercialEvaluationProgram) -> dict:
         "created_by": program.created_by,
         "approved_by": program.approved_by,
         "created_at": program.created_at.isoformat() if program.created_at else None,
+        "caps": [
+            {
+                "id": cap.id,
+                "entitlement_definition_id": cap.entitlement_definition_id,
+                "entitlement_key": cap.entitlement_definition.key
+                if cap.entitlement_definition
+                else None,
+                "value_type": cap.entitlement_definition.value_type.value
+                if cap.entitlement_definition
+                else None,
+                "cap_value": cap.cap_value,
+            }
+            for cap in caps
+        ],
     }
 
 
@@ -650,6 +674,14 @@ def create_evaluation_program(
         raise BadRequestException(f"CommercialPlan {data.plan_id} not found")
     if data.duration_days <= 0:
         raise BadRequestException("duration_days must be positive")
+    if data.granted_plan_id is not None:
+        granted_plan = (
+            db.query(CommercialPlan)
+            .filter(CommercialPlan.id == data.granted_plan_id)
+            .first()
+        )
+        if granted_plan is None:
+            raise BadRequestException(f"granted_plan_id {data.granted_plan_id} not found")
 
     program = CommercialEvaluationProgram(
         plan_id=data.plan_id,
@@ -660,6 +692,7 @@ def create_evaluation_program(
         expiry_action=data.expiry_action,
         created_by=current_user.id,
         approved_by=data.approved_by,
+        granted_plan_id=data.granted_plan_id,
     )
     db.add(program)
     db.commit()

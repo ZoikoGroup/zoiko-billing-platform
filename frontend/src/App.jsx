@@ -124,6 +124,11 @@ const CommercialOrganizationDetailPage = lazy(() => import("./modules/super-admi
 const CommercialPlansPage = lazy(() => import("./modules/super-admin/PlansPage"));
 const CommercialSubscriptionsPage = lazy(() => import("./modules/super-admin/SubscriptionsPage"));
 const CommercialEntitlementsPage = lazy(() => import("./modules/super-admin/EntitlementsPage"));
+const CommercialPlanEntitlementsPage = lazy(() => import("./modules/super-admin/PlanEntitlementsPage"));
+const CommercialOverridesPage = lazy(() => import("./modules/super-admin/OverridesPage"));
+const CommercialUsageDiagnosticsPage = lazy(() => import("./modules/super-admin/UsageDiagnosticsPage"));
+const CommercialPlanChangesPage = lazy(() => import("./modules/super-admin/PlanChangesPage"));
+const CommercialEvaluationProgramsPage = lazy(() => import("./modules/super-admin/EvaluationProgramsPage"));
 const Plane1BillingPage = lazy(() => import("./modules/super-admin/Plane1BillingPage"));
 const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
 const CommercialPlanVersionsPage = lazy(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
@@ -256,6 +261,11 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
   { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
   { path: "/super-admin/commercial/entitlements", element: <CommercialEntitlementsPage /> },
+  { path: "/super-admin/commercial/plan-entitlements", element: <CommercialPlanEntitlementsPage /> },
+  { path: "/super-admin/commercial/overrides", element: <CommercialOverridesPage /> },
+  { path: "/super-admin/commercial/usage-diagnostics", element: <CommercialUsageDiagnosticsPage /> },
+  { path: "/super-admin/commercial/plan-changes", element: <CommercialPlanChangesPage /> },
+  { path: "/super-admin/commercial/evaluation-programs", element: <CommercialEvaluationProgramsPage /> },
   { path: "/super-admin/commercial/invoices", element: <Plane1BillingPage /> },
   { path: "/super-admin/financial/invoice-engine", element: <InvoiceEnginePage /> },
   { path: "/super-admin/financial/payments", element: <PaymentsDisputesPage /> },
