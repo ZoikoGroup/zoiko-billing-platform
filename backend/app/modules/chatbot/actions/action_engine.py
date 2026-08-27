@@ -736,16 +736,22 @@ class ActionEngine:
                 BillingCustomer.organization_id == draft.organization_id,
             ).first()
 
+        # Currency consistency: draft invoices adopt the organization's base
+        # currency (single source of truth, identical to the billing dashboard)
+        # rather than a hardcoded literal.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        base_currency = BillingDashboardService(self.db)._get_base_currency(draft.organization_id)
+
         line_items = params.get("line_items", [])
         # Currency consistency: use the currency extracted at draft creation.
         # Never default — if absent, the extraction step should have set it.
         currency = params.get("currency")
         if not currency:
-            currency = "USD"
+            currency = base_currency
             logger.warning(
                 "Currency not set in proposed_params for draft %s — "
-                "falling back to USD. This indicates a gap in extraction.",
-                draft.action_uid,
+                "falling back to organization base currency %s.",
+                draft.action_uid, currency,
             )
 
         # Calculate totals (deterministic, from params — not from model)
@@ -850,6 +856,13 @@ class ActionEngine:
         params = draft.proposed_params or {}
         preview_payload = preview.preview_payload or {}
 
+        # Currency consistency: draft invoices adopt the organization's base
+        # currency (single source of truth, identical to the billing dashboard)
+        # rather than a hardcoded literal. Falls back to base currency only if
+        # extraction failed to capture one.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        base_currency = BillingDashboardService(self.db)._get_base_currency(draft.organization_id)
+
         customer_id = params.get("customer_id")
         if not customer_id:
             raise ActionEngineError("Cannot create invoice: customer_id is required.", status_code=422)
@@ -879,7 +892,7 @@ class ActionEngine:
             total_amount=total,
             paid_amount=Decimal("0"),
             balance_due=total,
-            currency=preview_payload.get("currency") or params.get("currency") or "USD",
+            currency=preview_payload.get("currency") or params.get("currency") or base_currency,
             exchange_rate=Decimal("1"),
             is_recurring=False,
             is_active=True,

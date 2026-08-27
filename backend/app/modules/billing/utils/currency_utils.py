@@ -107,6 +107,24 @@ def format_currency_display(amount, currency_code: str, position: str = "before"
     return f"{symbol}{formatted}"
 
 
+# Single shared currency formatter for every customer-facing surface (chatbot
+# responses, preview/confirm cards, dashboard summaries, etc.). It renders the
+# currency SYMBOL (e.g. "₹1,800.00") exactly like the billing dashboard.
+#
+# The currency_code MUST always come from an authoritative source — the
+# organization's base currency or the record's own currency field — never a
+# hardcoded literal such as "USD" or "$". Passing no currency returns a bare
+# rounded amount (no symbol) so callers must supply a real code for any
+# customer-facing amount.
+def format_currency(amount, currency_code: str | None = None) -> str:
+    if not currency_code:
+        try:
+            return f"{round_money(amount):.2f}"
+        except (ValueError, TypeError, ArithmeticError):
+            return str(amount)
+    return format_currency_display(amount, currency_code)
+
+
 # The canonical set of currency codes accepted wherever a field is validated
 # against the CurrencyCode enum (models.py) — previously recomputed
 # independently as `{c.value for c in CurrencyCode}` in admin_service.py,

@@ -4,6 +4,7 @@ import { BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts"
 import HRPage from "../../../components/HRPage";
 import { customerApi, invoiceApi, collectionApi, dashboardApi } from "../../../service/billingService";
+import { computeInvoiceTotals } from "./invoiceTotals";
 import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/locale";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -132,19 +133,9 @@ export default function CustomerReportsPage() {
   const paidInvoices = fInvoices.filter((i) => i.status === "paid");
   const unpaidInvoices = fInvoices.filter((i) => i.status === "sent" || i.status === "partially_paid");
   const overdueInvoices = fInvoices.filter((i) => i.status === "overdue");
-  const totalRevenue = paidInvoices.reduce((s, i) => s + parseFloat(i.total || i.amount || 0), 0);
-  const totalOutstanding = unpaidInvoices.reduce((s, i) => s + parseFloat(i.total || i.amount || 0), 0) +
-    overdueInvoices.reduce((s, i) => s + parseFloat(i.total || i.amount || 0), 0);
-
-  const revenueByCustomer = fInvoices.reduce((acc, inv) => {
-    const cid = inv.customer_id || inv.customerId;
-    const cname = inv.customer_name || inv.customerName || `Customer #${cid}`;
-    if (!cid) return acc;
-    if (!acc[cid]) acc[cid] = { name: cname, revenue: 0, count: 0 };
-    acc[cid].revenue += parseFloat(inv.total || inv.amount || 0);
-    acc[cid].count += 1;
-    return acc;
-  }, {});
+  // Delegate the totals to the pure helper so the "₹0.00" regression
+  // (reading the wrong invoice amount field) is covered by a unit test.
+  const { totalRevenue, totalOutstanding, revenueByCustomer } = computeInvoiceTotals(fInvoices);
   const topRevenueCustomers = Object.values(revenueByCustomer)
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
