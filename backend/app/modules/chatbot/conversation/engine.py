@@ -166,6 +166,61 @@ GATE_FILLER_TOKENS = frozenset((
     "hello", "hi", "hey", "thanks", "thank", "bye", "sure", "cool", "nice",
     "great", "good", "well", "hmm", "wow", "really", "maybe", "perhaps",
 ))
+
+# ── Domain typo correction dictionary ────────────────────────────────────────
+# Applied BEFORE normalization so that common misspellings of billing terms
+# resolve to canonical vocabulary and proceed through the normal WHAT_IS / intent
+# pipeline instead of falling into abstention.  Keys are lowercase; the
+# correction is applied whole-word only (bounded by word edges) to avoid
+# corrupting substrings.
+_DOMAIN_TYPO_CORRECTIONS: dict[str, str] = {
+    "duning": "dunning",
+    "dunig": "dunning",
+    "dunningg": "dunning",
+    "reconcilliation": "reconciliation",
+    "reconcilation": "reconciliation",
+    "reconcilliation": "reconciliation",
+    "reconsiliation": "reconciliation",
+    "subscribtion": "subscription",
+    "subsciription": "subscription",
+    "subsciption": "subscription",
+    "dashbord": "dashboard",
+    "dashbaord": "dashboard",
+    "dashboad": "dashboard",
+    "invocie": "invoice",
+    "invioce": "invoice",
+    "invoicce": "invoice",
+    "payemnt": "payment",
+    "paymet": "payment",
+    "paymnet": "payment",
+    "custmer": "customer",
+    "costumer": "customer",
+    "custoemr": "customer",
+    "quotaton": "quotation",
+    "qoutation": "quotation",
+    "quotation": "quotation",
+    "credti": "credit",
+    "creidt": "credit",
+    "refudn": "refund",
+    "refunnd": "refund",
+    "subscripion": "subscription",
+    "contrcat": "contract",
+    "conract": "contract",
+    "alloation": "allocation",
+    "alocation": "allocation",
+    "allovation": "allocation",
+    "proraton": "proration",
+    "prortation": "proration",
+    "overduee": "overdue",
+    "overdeu": "overdue",
+    "taxi": "tax",
+}
+
+def _apply_domain_typos(text: str) -> str:
+    """Replace known billing-term typos with their canonical forms."""
+    for typo, correction in _DOMAIN_TYPO_CORRECTIONS.items():
+        text = re.sub(rf"\b{re.escape(typo)}\b", correction, text)
+    return text
 # Informational question shapes the early gate screens.
 _GATE_SHAPE_RE = re.compile(
     r"\b(explain|describe|define|elaborate|clarify|teach|educate"
@@ -625,6 +680,121 @@ _INTERNAL_TECH_RE = re.compile(
     r"|tech stack|programming language)\b",
     re.IGNORECASE,
 )
+
+# ── Semantic intent signals: WHAT_IS/HOW_TO vs ACCOUNT_SPECIFIC ──────────────
+# These detectors implement the §2.1 doctrine: classify by SEMANTIC INTENT,
+# never by keyword presence alone. A billing term (payment, invoice, etc.)
+# does NOT make a query account-specific — the user's FRAMING determines
+# whether they want a concept explanation or their own data.
+#
+# WHAT_IS/HOW_TO signal phrases — the user asks how something WORKS IN GENERAL.
+# These override any billing-noun presence: "How does payment reconciliation
+# work?" is WHAT_IS even though "payment" and "reconciliation" are also
+# entity names.
+#
+# Rather than enumerating every possible verb+noun combination (which always
+# misses future phrasings), this regex matches on STRUCTURE: any leading
+# signal word followed by optional filler.  The caller pairs this with a
+# domain-vocabulary check so that queries like "why payment report" are
+# caught regardless of which exact verb frame the user chose.
+_WHAT_IS_SIGNAL_RE = re.compile(
+    # "explain [me] [about] [the] …"
+    r"\bexplain(?:\s+(?:me|it|that|this|to\s+me))*(?:\s+about|\s+on)?\b"
+    # "describe …"
+    r"|\bdescribe\b"
+    # "what is / what's / what are / what does … mean"
+    r"|\bwhat(?:'s|\s+(?:is|are|does))\b"
+    # "why [do/does/did/is/are/was/were] …"  (covers "why does dunning happen",
+    # "why is collection rate important", etc.)
+    # Bare "why NOUN" (without a verb) is also a WHAT_IS signal — the user
+    # wants an explanation.  BUT: metric-specific handlers must still fire
+    # first for live-data metrics ("why collection rate" → dashboard, not
+    # help).  This is enforced in the WHAT_IS/HOW_TO handler block, not here.
+    r"|\bwhy\b"
+    # "how to / how do I / how does / how do / how did / how is / how are …"
+    r"|\bhow\s+(?:to|do\s+i|do|does|did|is|are)\b"
+    # "use of / purpose of / function of / benefit of / advantage of / importance of"
+    r"|\b(?:use|purpose|function|benefit|advantage|importance)\s+of\b"
+    # "tell me about …"
+    r"|\btell\s+me\s+about\b"
+    # "what is X for"
+    r"|\bwhat\s+is\b[\s\S]{0,30}\bfor\b"
+    # "meaning of …"
+    r"|\bmeaning\s+of\b"
+    # "why is X important"
+    r"|\bwhy\s+is\b[\s\S]{0,30}\bimportant\b"
+    # "X means" / "X means what"
+    r"|\b[\w\s]{2,40}\bmeans\b"
+    # "how does X work"
+    r"|\bhow\s+(?:do|does|did)\b[\s\S]{0,60}\bworks?\b"
+    # "how is X calculated/computed/defined"
+    r"|\bhow\s+(?:is|are)\b[\s\S]{0,40}\b(?:calculated|computed|derived|defined)\b"
+    # "what does X mean"
+    r"|\bwhat\s+does\b[\s\S]{0,40}\bmean(?:s|t)?\b"
+    # "how many types/kinds/categories/levels/stages of X" — taxonomy enumeration
+    r"|\bhow\s+many\s+(?:types?|kinds?|categories?|varieties|levels?|stages?|tiers?)\s+of\b"
+    # "what are/is the types/kinds/levels/stages of X" — taxonomy enumeration
+    r"|\bwhat\s+(?:are|is)\s+(?:the\s+)?(?:types?|kinds?|categories?|levels?|stages?|tiers?|options?|varieties)\s+of\b"
+    # Bare "types of / kinds of / categories of / levels of / stages of"
+    r"|\b(?:types?|kinds?|categories?|levels?|stages?|tiers?|varieties)\s+of\b"
+    # "dunning levels", "subscription types" — bare NOUN + taxonomy word
+    r"|\w+\s+(?:types?|kinds?|categories?|levels?|stages?|tiers?|varieties)\b"
+    , re.IGNORECASE,
+)
+
+# Action-verb exclusions — "how do I create an invoice" is an action request,
+# not a definitional query.  These MUST NOT be caught by the WHAT_IS/HOW_TO gate.
+_WHAT_IS_EXCLUDE_RE = re.compile(
+    r"\b(?:create|draft|add|new|make|issue|send|write|set\s+up|configure|install)\b",
+    re.IGNORECASE,
+)
+
+def _detect_what_is_how_to(normalized: str) -> bool:
+    """Structural WHAT_IS/HOW_TO detection: signal word present AND domain
+    vocabulary present.  Two-part match covers ALL phrasing styles without
+    enumerating every verb+noun combination.
+
+    Part 1 — signal word: explain, why, what, how, use of, purpose of, …
+    Part 2 — domain term: at least one non-stopword token passes _vocab_match
+              (i.e. it is in BILLING_DOMAIN_VOCABULARY).
+    """
+    if not _WHAT_IS_SIGNAL_RE.search(normalized):
+        return False
+    # Action verbs disqualify: "how do I create an invoice" is an action, not
+    # a definitional query.
+    if _WHAT_IS_EXCLUDE_RE.search(normalized):
+        return False
+    # Domain-vocabulary check: at least one substantive token must be a known
+    # billing term.  This prevents "why is the sky blue" from matching.
+    return topic_screen(normalized)
+
+# ACCOUNT_SPECIFIC signal phrases — the user asks about THEIR OWN data.
+# Possessive/deictic references ("my", "our", "this invoice", specific IDs)
+# indicate account-specific queries that need live data.
+_ACCOUNT_SPECIFIC_RE = re.compile(
+    # Possessive pronouns
+    r"\b(?:my|our|his|her|their|its)\s+(?:invoice|payment|subscription|customer|account|balance|revenue|dunning|refund|credit|contract|order)\b"
+    # "show me" / "show my" / "show our"
+    r"|\bshow\s+(?:me|my|our)\b"
+    # "list my" / "list our"
+    r"|\blist\s+(?:my|our)\b"
+    # Specific document references (INV-123, PAY-456, etc.)
+    r"|\b(?:inv|pay|pmt|cust|ref|cn|sub|con)[-\s]?\d{2,}\b"
+    # "this invoice", "that payment", "the invoice"
+    r"|\b(?:this|that|the)\s+(?:invoice|payment|subscription|customer|account|credit\s*note|refund|contract)\b"
+    # "current" / "now" / "today" / "this month" — temporal specificity
+    r"\b(?:current|right\s+now|today|this\s+(?:month|week|year|quarter))\b"
+    # Deictic: "overdue on invoice INV-123"
+    r"|\boverdue\s+on\s+(?:invoice|inv)\b"
+    # "what's my", "what's our"
+    r"|\bwhat'?s\s+(?:my|our)\b"
+    # "what's the status of" + specific reference
+    r"|\bwhat(?:'s| is| are) the status\b"
+    # "why did my" — account-specific causal
+    r"|\bwhy\s+(?:did|does|is|was)\s+(?:my|our)\b"
+    , re.IGNORECASE,
+)
+
 # Pure small-talk: greetings/fillers/politeness only. Anything carrying a
 # real request ("Hi, show invoices") must NOT match — every inner token is
 # from the filler vocabulary and the whole string must be consumed.
@@ -817,6 +987,292 @@ DOMAIN_SUGGESTIONS = {
     ],
 }
 
+# ── Per-topic dynamic follow-up suggestions ──────────────────────────────
+# After every Explain/Inspect response, 2-3 topically related follow-up
+# chips are injected into the response payload.  Keys match the intent
+# or domain values returned by _rules_classify_intent / _classify_intent.
+# Each list is ordered so the most natural next question comes first.
+TOPIC_FOLLOWUPS: dict[tuple[str, str], list[str]] = {
+    # ── Explain (R0) knowledge topics ──────────────────────────────────
+    ("help_general", "help"): [
+        "Dashboard summary",
+        "Show overdue invoices",
+        "What can this assistant do?",
+    ],
+    ("explain_statuses", "help"): [
+        "Show overdue invoices",
+        "Dashboard summary",
+    ],
+    ("dunning", "help"): [
+        "Show overdue invoices",
+        "How do I set up dunning?",
+        "Dashboard summary",
+    ],
+    ("payment_report", "help"): [
+        "Show recent payments",
+        "What does 'pending' status mean?",
+        "Dashboard summary",
+    ],
+    ("tax_report", "help"): [
+        "How do I configure tax settings?",
+        "Show tax report",
+        "Dashboard summary",
+    ],
+    ("revenue_report", "help"): [
+        "What is our collection rate?",
+        "Dashboard summary",
+        "Show recent payments",
+    ],
+    ("subscription_report", "help"): [
+        "Show active subscriptions",
+        "What is our MRR?",
+        "Dashboard summary",
+    ],
+    ("forecast_report", "help"): [
+        "What is our collection rate?",
+        "Dashboard summary",
+        "Show recent payments",
+    ],
+    ("reconciliation", "help"): [
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+    ("billing_configuration", "help"): [
+        "What is the Dunning tab for?",
+        "What is proration?",
+        "Show billing settings",
+    ],
+    ("credit_note", "help"): [
+        "What is the difference between a credit and a refund?",
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+    ("refund", "help"): [
+        "What is the difference between a credit and a refund?",
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+    ("subscription", "help"): [
+        "Show active subscriptions",
+        "What is our MRR?",
+        "Dashboard summary",
+    ],
+    ("proration", "help"): [
+        "How do subscriptions work?",
+        "Show active subscriptions",
+        "Dashboard summary",
+    ],
+    ("invoice", "help"): [
+        "Show overdue invoices",
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+    ("payment", "help"): [
+        "Show recent payments",
+        "What does 'pending' status mean?",
+        "Dashboard summary",
+    ],
+    ("customer", "help"): [
+        "List all customers",
+        "Dashboard summary",
+        "Show recent payments",
+    ],
+    ("contract", "help"): [
+        "Show active contracts",
+        "List customers",
+        "Dashboard summary",
+    ],
+    ("product", "help"): [
+        "Show the catalog",
+        "Dashboard summary",
+    ],
+    ("quotation", "help"): [
+        "Show customers",
+        "List invoices",
+        "Dashboard summary",
+    ],
+    ("dashboard", "help"): [
+        "Show overdue invoices",
+        "List recent payments",
+        "What is our collection rate?",
+    ],
+    ("overdue", "help"): [
+        "Show overdue invoices",
+        "What is dunning?",
+        "Dashboard summary",
+    ],
+    ("dunning_management", "help"): [
+        "Show overdue invoices",
+        "How do I set up dunning?",
+        "Dashboard summary",
+    ],
+    # ── Metric definitions (R0) ────────────────────────────────────────
+    ("metric_definition", "help"): [
+        "Dashboard summary",
+        "Show overdue invoices",
+    ],
+    # ── Metric lookups (R1) ────────────────────────────────────────────
+    ("metric_collection_rate", "dashboard"): [
+        "Show overdue invoices",
+        "What is dunning?",
+        "Dashboard summary",
+    ],
+    ("metric_mrr_arr", "dashboard"): [
+        "List subscriptions",
+        "What is our collection rate?",
+        "Dashboard summary",
+    ],
+    ("metric_avg_invoice", "dashboard"): [
+        "What's our collection rate?",
+        "Dashboard summary",
+        "List invoices",
+    ],
+    ("metric_refund_total", "dashboard"): [
+        "What is the difference between a credit and a refund?",
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+    ("metric_paid_period", "dashboard"): [
+        "What's our collection rate?",
+        "Dashboard summary",
+        "Show overdue invoices",
+    ],
+    ("metric_growth_rate", "dashboard"): [
+        "What is our MRR?",
+        "Dashboard summary",
+        "List subscriptions",
+    ],
+    # ── Live-data entity lists (R1) ────────────────────────────────────
+    ("invoice_list", "billing"): [
+        "Show overdue invoices",
+        "Draft an invoice",
+        "Dashboard summary",
+    ],
+    ("payment_list", "billing"): [
+        "Show overdue invoices",
+        "Dashboard summary",
+        "Payment report",
+    ],
+    ("customer_list", "billing"): [
+        "Dashboard summary",
+        "Show recent payments",
+    ],
+    ("subscription_list", "billing"): [
+        "Show active subscriptions",
+        "What is our MRR?",
+        "Dashboard summary",
+    ],
+    ("contract_list", "billing"): [
+        "Show active contracts",
+        "List customers",
+        "Dashboard summary",
+    ],
+    ("product_list", "billing"): [
+        "Show the catalog",
+        "Dashboard summary",
+    ],
+    ("quotation_list", "billing"): [
+        "Show customers",
+        "List invoices",
+        "Dashboard summary",
+    ],
+    # ── Account-specific lookups (R1) ──────────────────────────────────
+    ("account_balance", "billing"): [
+        "Show overdue invoices",
+        "Dashboard summary",
+    ],
+    ("customer_balance", "billing"): [
+        "Show overdue invoices",
+        "List all invoices",
+        "Dashboard summary",
+    ],
+    ("invoice_search", "billing"): [
+        "Show overdue invoices",
+        "Look up payment",
+        "Dashboard summary",
+    ],
+    ("payment_search", "billing"): [
+        "Show unapplied payments",
+        "Explain payment allocations",
+        "Dashboard summary",
+    ],
+    ("customer_search", "billing"): [
+        "Show customer invoices",
+        "Show customer payments",
+        "Dashboard summary",
+    ],
+    ("subscription_search", "billing"): [
+        "Show active subscriptions",
+        "Subscription renewal dates",
+        "Dashboard summary",
+    ],
+    # ── Counts ─────────────────────────────────────────────────────────
+    ("invoice_count", "billing"): [
+        "Show invoices",
+        "Show overdue invoices",
+        "Dashboard summary",
+    ],
+    ("payment_count", "billing"): [
+        "Show payments",
+        "Dashboard summary",
+    ],
+    ("customer_count", "billing"): [
+        "List all customers",
+        "Dashboard summary",
+    ],
+    ("subscription_count", "billing"): [
+        "Show subscriptions",
+        "Show active subscriptions",
+    ],
+    ("credit_note_count", "billing"): [
+        "Show invoices",
+        "Dashboard summary",
+    ],
+    ("contract_count", "billing"): [
+        "Show contracts",
+        "Show active contracts",
+    ],
+    ("admin_count", "billing"): [
+        "Invite a team member",
+        "Dashboard summary",
+    ],
+    # ── Dashboard ──────────────────────────────────────────────────────
+    ("dashboard_summary", "dashboard"): [
+        "Show overdue invoices",
+        "List recent payments",
+    ],
+    ("customer_joined", "dashboard"): [
+        "Look up customer details",
+        "List all customers",
+        "Dashboard summary",
+    ],
+    ("metric_revenue", "dashboard"): [
+        "Dashboard summary",
+        "Show outstanding balances",
+    ],
+    # ── Reconciliation ─────────────────────────────────────────────────
+    ("help_reconciliation", "help"): [
+        "Show recent payments",
+        "Dashboard summary",
+    ],
+}
+
+# Default follow-ups when no topic-specific match is found.
+_DEFAULT_FOLLOWUPS = [
+    "Dashboard summary",
+    "Show overdue invoices",
+    "What can this assistant do?",
+]
+
+
+def _followup_prompts(intent: str, domain: str) -> list[str]:
+    """Return 2-3 topically relevant follow-up chips for the given intent.
+
+    Looks up TOPIC_FOLLOWUPS by (intent, domain) key.  Falls back to a
+    generic default when the topic has no dedicated follow-ups.
+    """
+    return TOPIC_FOLLOWUPS.get((intent, domain), _DEFAULT_FOLLOWUPS)
+
 # Human-readable labels used by the D-11 clarification path.
 DOMAIN_LABELS = {
     "billing": "Billing records (invoices, payments, customers)",
@@ -987,7 +1443,7 @@ class ConversationEngine:
                 terms.add(seg.rstrip("s"))
         return [t for t in terms if len(t) >= 4]
 
-    def _retrieve(self, query: str, ctx: AIContext, top_k: int = 3) -> dict:
+    def _retrieve(self, query: str, ctx: AIContext, top_k: int = 5) -> dict:
         """Retrieve knowledge chunks and build a retrieval-backed response dict."""
         logger.info("topic_screen: RAG retrieve called query=%r top_k=%s", query, top_k)
         try:
@@ -1037,6 +1493,14 @@ class ConversationEngine:
             if len(rs) >= len(by_doc[lead_id]) or max(r.score for r in rs) > lead_best:
                 kept.extend(rs)
         kept.sort(key=lambda r: (-r.score, r.rank))
+        logger.info(
+            "CHUNK_RANK_TRACE query=%r kept_ranked=[%s]",
+            query,
+            ", ".join(
+                f"(chunk_id={r.chunk_id}, score={r.score:.4f}, rank={r.rank}, doc={r.source_title})"
+                for r in kept
+            ),
+        )
         chunks_text = "\n\n".join(f"• {r.chunk_text}" for r in kept[:3])
         doc_stats: dict[int, dict] = {}
         for r in kept[:3]:
@@ -1049,7 +1513,7 @@ class ConversationEngine:
             {"source": st["source"], "score": st["score"]}
             for st in sorted(doc_stats.values(), key=lambda s: (-s["chunks"], -s["score"]))
         ]
-        confident = self._retriever.is_confident(results, threshold=0.3)
+        confident = self._retriever.is_confident(results, threshold=0.2)
         return {
             "answer": chunks_text,
             "evidence": evidence,
@@ -1059,6 +1523,184 @@ class ConversationEngine:
             # must ABSTAIN (offer escalation) instead of quoting weak matches.
             "low_confidence": not confident,
         }
+
+    @staticmethod
+    def _sort_chunks_by_type(chunks_text: str) -> str:
+        """Re-order bullet-pointed chunks so definition-type content comes before
+        procedural/how-to content.  Gives the LLM a consistently ordered input
+        so it doesn't need to re-order every time.
+
+        Heuristic: a chunk is "definition" if it starts with a definitional
+        pattern ('A ... is ...', '... refers to ...', '... means ...', etc.)
+        or contains no procedural signal words.  A chunk is "procedural" if it
+        contains setup/step/how-to language.
+        """
+        PROCEDURAL_SIGNALS = (
+            "how to", "how do", "steps:", "step 1", "step 2",
+            "go to", "open the", "configure", "set up", "setup",
+            "navigate to", "click on", "select the", "enter the",
+            "create a new", "run the", "navigate to",
+        )
+        DEFINITION_PREFIXES = (
+            "a ", "an ", "the ", "dunning ", "invoic", "payment",
+            "credit note", "refund", "subscription", "customer",
+            "overdue ", "billing ", "a contract ", "a quotation",
+            "contract ", "quotation ",
+        )
+
+        lines = chunks_text.split("\n")
+        definitions: list[str] = []
+        procedural: list[str] = []
+        other: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or not stripped.startswith("•"):
+                other.append(line)
+                continue
+            content = stripped[1:].strip().lower()
+            is_procedural = any(sig in content for sig in PROCEDURAL_SIGNALS)
+            is_definition = (
+                not is_procedural
+                and any(content.startswith(p) for p in DEFINITION_PREFIXES)
+            )
+            if is_procedural:
+                procedural.append(line)
+            elif is_definition:
+                definitions.append(line)
+            else:
+                other.append(line)
+
+        ordered = definitions + other + procedural
+        return "\n".join(ordered)
+
+    def _generate_llm_answer(self, query: str, chunks_text: str, ctx: AIContext, conv: AIConversation | None = None) -> str | None:
+        """Use the LLM to synthesize a coherent answer from retrieved RAG chunks.
+
+        Returns the synthesized answer text, or None if the LLM is unavailable
+        or fails after retries. The caller falls back to raw chunks on None.
+        """
+        logger.info(
+            "LLM_SYNTH_CALLED query=%r tenant_context_id=%r gateway=%r",
+            query, ctx.tenant_context_id, bool(self._gateway),
+        )
+        if not self._gateway:
+            return None
+
+        provider = getattr(self._gateway, "provider_name", "unknown")
+        config = get_model_config("answer_generation", provider=provider)
+
+        system_prompt = (
+            "You are the Zoiko Billing AI Assistant.\n\n"
+            "## Answer Format (follow this exact structure)\n"
+            "1. DEFINITION FIRST: Start with a single clear sentence defining\n"
+            "   what the concept is. This must always come first, never after\n"
+            "   process/how-to details.\n"
+            "2. Then, on a new line, describe how it works or when it\n"
+            "   triggers, as short separate sentences or a short bullet list\n"
+            "   — not merged into the definition sentence.\n"
+            "3. Then, if setup/procedural steps are relevant, list them as a\n"
+            "   numbered list, each step on its own line.\n"
+            "4. Use a blank line between each section (definition / how it\n"
+            "   works / steps). Do not run sections together in one\n"
+            "   paragraph.\n"
+            "5. Use bold for key terms (level names, statuses, thresholds).\n"
+            "6. Keep total length concise — no repeated restating of the same\n"
+            "   fact across sections.\n\n"
+            "Answer the user's question using ONLY the knowledge chunks provided.\n"
+            "Do NOT fabricate data. Do NOT give tax/legal/accounting advice.\n"
+            "If the chunks don't cover the question, say: "
+            "\"I don't have specific information on that in my knowledge base yet.\"\n"
+        )
+
+        # Build conversation history for follow-up context
+        history_messages: list[ModelMessage] = []
+        if conv:
+            try:
+                prior = (
+                    self.db.query(AIConversationMessage)
+                    .filter(
+                        AIConversationMessage.conversation_id == conv.id,
+                    )
+                    .order_by(AIConversationMessage.id.desc())
+                    .limit(6)
+                    .all()
+                )
+                for msg in reversed(prior):
+                    role = "assistant" if msg.sender_type == SenderType.ASSISTANT else "user"
+                    history_messages.append(ModelMessage(role=role, content=msg.message_text or ""))
+            except Exception:
+                pass
+
+        # Sort chunks: definition-type chunks before procedural/how-to chunks
+        sorted_chunks_text = self._sort_chunks_by_type(chunks_text)
+
+        # Current query with RAG context
+        user_message = (
+            f"User question: {query}\n\n"
+            f"Knowledge chunks:\n{sorted_chunks_text}\n\n"
+            "Answer the question using the knowledge above:"
+        )
+        history_messages.append(ModelMessage(role="user", content=user_message[:5000]))
+
+        # Retry transient errors (429 rate-limit, timeout, connection) with
+        # exponential backoff.  Non-retryable errors (bad request, auth) fail
+        # immediately.
+        max_retries = 2
+        last_error: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._gateway.complete(
+                    messages=history_messages,
+                    system_prompt=system_prompt,
+                    model=config.model,
+                    max_tokens=config.max_tokens,
+                    temperature=config.temperature,
+                )
+                if ctx.tenant_context_id:
+                    try:
+                        model_run = ModelRun(
+                            model_run_uid=_uid(),
+                            conversation_id=None,
+                            tenant_context_id=ctx.tenant_context_id,
+                            run_type=ModelRunType.ANSWER,
+                            provider=provider,
+                            model_name=config.model,
+                            input_hash=_hash(query + chunks_text),
+                            output_hash=response.content_hash(),
+                            latency_ms=response.usage.get("latency_ms", 0),
+                        )
+                        self.db.add(model_run)
+                        self.db.flush()
+                    except Exception as db_exc:
+                        logger.warning("ModelRun write failed (non-fatal): %s", db_exc)
+                return response.content.strip() if response.content else None
+
+            except Exception as e:
+                last_error = e
+                exc_name = type(e).__name__
+                # Determine if retryable: 429, timeout, connection errors
+                is_retryable = (
+                    "429" in str(e) or "rate" in str(e).lower()
+                    or "timeout" in exc_name.lower() or "timeout" in str(e).lower()
+                    or "connect" in exc_name.lower()
+                    or "retryable" in str(getattr(e, "retryable", "")).lower()
+                )
+                if attempt < max_retries and is_retryable:
+                    wait = 0.5 * (2 ** attempt)
+                    logger.warning(
+                        "LLM_SYNTH_RETRY attempt=%d/%d wait=%.1fs query=%r error=%s: %s",
+                        attempt + 1, max_retries, wait, query, exc_name, e,
+                    )
+                    time.sleep(wait)
+                    continue
+                logger.error(
+                    "LLM_SYNTH_FAILED query=%r attempt=%d/%d model=%s error=%s: %s",
+                    query, attempt + 1, max_retries + 1, config.model, exc_name, e,
+                    exc_info=True,
+                )
+                return None
+        return None
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -1371,6 +2013,10 @@ class ConversationEngine:
                 "next_actions": result.get("next_actions", []),
                 "qualification": result.get("qualification"),
                 "suggested_prompts": result.get("suggested_prompts", []),
+                "actions": result.get("actions", []),
+                "draft_card": result.get("draft_card"),
+                "preview_card": result.get("preview_card"),
+                "confirm_label": result.get("confirm_label"),
                 # Pending disambiguation state: lets the NEXT user message be
                 # matched against the options just offered (loop prevention).
                 "clarify": result.get("clarify_state"),
@@ -1404,34 +2050,92 @@ class ConversationEngine:
             "evidence": result.get("evidence", []),
             "next_actions": result.get("next_actions", []),
             "qualification": result.get("qualification"),
-            "suggested_prompts": result.get("suggested_prompts", []),
+            "suggested_prompts": _followup_prompts(intent["intent"], intent["domain"]),
+            "actions": result.get("actions", []),
+            "draft_card": result.get("draft_card"),
+            "preview_card": result.get("preview_card"),
+            "confirm_label": result.get("confirm_label"),
         }
 
     # ── Intent Classification ──────────────────────────────────────────
 
     def _classify_intent(self, conv: AIConversation, text: str, ctx: AIContext, context: dict | None = None, page_path: str | None = None) -> dict:
-        """Classify intent using model gateway with rules-based fallback."""
+        """Classify intent: rules-first fast path, model fallback for uncertain queries.
+
+        Performance optimisation: when the rules engine classifies with high
+        confidence (≥ SPECIFIC_INTENT_CONFIDENCE) into a non-fallback intent,
+        the LLM classification call is skipped entirely.  This saves 200-2000 ms
+        on every trivial / greeting / well-known billing query while preserving
+        the D-11 safe-uncertainty ladder for genuinely ambiguous inputs.
+        """
         if context is None:
             context = self._load_conversation_context(conv, ctx, current_text=text)
-        gateway_available = self._gateway is not None
-        # Try model-based classification if gateway available
+
+        # ── Rules-first fast path ────────────────────────────────────────
+        rules_result = self._rules_classify_intent(text, context, page_path=page_path, ctx=ctx)
+
+        # Fast-path covers two cases:
+        # 1) Non-fallback intent at high confidence (covers greetings,
+        #    small talk, out-of-scope refusals, explicit billing/dashboard/
+        #    action/metric intents, and D-11 clarification routes).
+        # 2) Fallback intent at VERY high confidence (≥0.95) — the rules
+        #    matched a specific billing-domain regex (e.g. dunning timeline,
+        #    status semantics, process questions) and the LLM can only
+        #    introduce confusion by overriding a correct rules match.
+        rules_confidence = rules_result.get("confidence", 0)
+        rules_is_specific = (
+            (rules_result.get("intent") not in FALLBACK_INTENTS
+             or rules_result.get("intent") == "help_general")
+            and rules_confidence >= SPECIFIC_INTENT_CONFIDENCE
+        )
+        rules_is_high_confidence_fallback = (
+            rules_result.get("intent") in FALLBACK_INTENTS
+            and rules_confidence >= 0.95
+        )
+
+        if rules_is_specific or rules_is_high_confidence_fallback:
+            # Rules matched a high-confidence intent — skip the LLM call
+            # entirely.  This covers greetings, small talk, out-of-scope
+            # refusals, all explicit billing/dashboard/action/metric intents,
+            # D-11 clarification routes, AND specific billing-topic knowledge
+            # queries where rules matched a domain regex (dunning, statuses,
+            # process questions) with very high confidence.
+            logger.debug(
+                "classify: rules-fast-path %s/%s (confidence=%.2f) — LLM call skipped",
+                rules_result["domain"], rules_result["intent"],
+                rules_confidence,
+            )
+            return rules_result
+
+        # ── Model classification (only when rules are uncertain) ──────────
         model_result = None
         if self._gateway:
             try:
                 model_result = self._model_classify_intent(conv, text, ctx)
-                print(f"[INTENT-DBG] input={text!r} gateway=YES model_result={model_result['domain']}/{model_result['intent']} confidence={model_result.get('confidence')}")
+                logger.debug(
+                    "INTENT-DBG input=%r gateway=YES model_result=%s/%s confidence=%s",
+                    text, model_result['domain'], model_result['intent'],
+                    model_result.get('confidence'),
+                )
             except ModelGatewayError:
                 logger.warning("Model-based intent classification failed, falling back to rules")
 
-        # Always compute rules-based result for cross-checking
-        rules_result = self._rules_classify_intent(text, context, page_path=page_path, ctx=ctx)
-        print(f"[INTENT-DBG] input={text!r} gateway={'YES(gateway_exists_but_failed)' if gateway_available else 'NO'} rules_result={rules_result['domain']}/{rules_result['intent']} confidence={rules_result.get('confidence')}")
+        logger.debug(
+            "INTENT-DBG input=%r gateway=%s rules_result=%s/%s confidence=%s",
+            text,
+            'YES(gateway_exists_but_failed)' if self._gateway else 'NO',
+            rules_result['domain'], rules_result['intent'],
+            rules_result.get('confidence'),
+        )
+
+        # ── Cross-check: model vs rules ───────────────────────────────────
 
         # If model classified as non-action but rules detected an action intent,
         # override with rules result — model classifiers frequently miss short
         # invoice-creation commands (especially when input contains quote marks).
         if model_result and rules_result.get("intent") == "action_draft" and model_result.get("intent") != "action_draft":
-            print(f"[INTENT-DBG] OVERRIDING model {model_result['domain']}/{model_result['intent']} -> rules action_draft")
+            logger.debug("INTENT-DBG OVERRIDING model %s/%s -> rules action_draft",
+                         model_result['domain'], model_result['intent'])
             return rules_result
 
         # If model classified as help/general but rules detected a specific
@@ -1441,14 +2145,15 @@ class ConversationEngine:
         # snippets (which may contain stale or unrelated figures).
         authoritative_domains = ("billing", "dashboard", "action", "reconciliation")
         if model_result and rules_result.get("domain") in authoritative_domains and model_result.get("domain") == "help":
-            print(f"[INTENT-DBG] OVERRIDING model help -> rules {rules_result['domain']}")
+            logger.debug("INTENT-DBG OVERRIDING model help -> rules %s", rules_result['domain'])
             return rules_result
 
         # Also override when the model returns a non-action domain for a
         # rules-detected action intent (quote-heavy input frequently confuses
         # the model classifier).
         if model_result and rules_result.get("domain") == "action" and model_result.get("domain") != "action":
-            print(f"[INTENT-DBG] OVERRIDING model {model_result['domain']}/{model_result['intent']} -> rules action")
+            logger.debug("INTENT-DBG OVERRIDING model %s/%s -> rules action",
+                         model_result['domain'], model_result['intent'])
             return rules_result
 
         # If the model is confident about a domain but the rules detected a
@@ -1458,32 +2163,28 @@ class ConversationEngine:
         if model_result and rules_result.get("domain") == "billing" and model_result.get("domain") == "billing":
             if rules_result.get("intent") not in ("general_billing_lookup", "help_general"):
                 if rules_result.get("confidence", 0) >= (model_result.get("confidence", 0) - 0.1):
-                    print(f"[INTENT-DBG] OVERRIDING model {model_result['domain']}/{model_result['intent']} -> rules {rules_result['domain']}/{rules_result['intent']}")
+                    logger.debug("INTENT-DBG OVERRIDING model %s/%s -> rules %s/%s",
+                                 model_result['domain'], model_result['intent'],
+                                 rules_result['domain'], rules_result['intent'])
                     return rules_result
 
         # ── D-11 Safe uncertainty ladder ─────────────────────────────────
-        # 1) A SPECIFIC rules match (not a fallback catch-all, confidence at
-        #    or above SPECIFIC_INTENT_CONFIDENCE) always wins over a generic
-        #    or disagreeing model classification. This is what stops
-        #    "How many customers are there?" from being answered with
-        #    unrelated credit-note/audit content when the model misfires.
-        rules_is_specific = (
-            rules_result.get("intent") not in FALLBACK_INTENTS
-            and rules_result.get("confidence", 0) >= SPECIFIC_INTENT_CONFIDENCE
-        )
-        if rules_is_specific:
-            if model_result and model_result.get("domain") != rules_result.get("domain"):
-                print(
-                    f"[INTENT-DBG] D-11 specific-rules-wins: model {model_result['domain']}/{model_result['intent']} "
-                    f"({model_result.get('confidence')}) overridden by rules "
-                    f"{rules_result['domain']}/{rules_result['intent']} ({rules_result.get('confidence')})"
-                )
-            return rules_result
-
         # 2) Both sources produced only fallback-level results and they point
         #    at different domains with no confident winner → ask, don't guess.
+        # SAFETY NET: if rules matched with very high confidence (≥0.95),
+        # the model must not override — rules matched a specific billing
+        # domain regex (dunning, statuses, process questions).
         if model_result and rules_result.get("intent") in FALLBACK_INTENTS \
                 and model_result.get("domain") != rules_result.get("domain"):
+            if float(rules_result.get("confidence", 0) or 0) >= 0.95:
+                logger.debug(
+                    "INTENT-DBG D-11 safety net: rules %.2f ≥ 0.95, "
+                    "keeping rules %s/%s over model %s/%s",
+                    rules_result.get("confidence", 0),
+                    rules_result["domain"], rules_result["intent"],
+                    model_result["domain"], model_result["intent"],
+                )
+                return rules_result
             model_conf = float(model_result.get("confidence", 0) or 0)
             rules_conf = float(rules_result.get("confidence", 0) or 0)
             best = model_result if model_conf >= rules_conf else rules_result
@@ -1546,82 +2247,116 @@ class ConversationEngine:
             "Classify the user's billing question into exactly one domain. "
             "Respond with JSON: {\"domain\": \"<domain>\", \"intent\": \"<intent>\", \"confidence\": <0.0-1.0>}\n"
             "Valid domains: billing, help, dashboard, action, reconciliation, out_of_scope\n"
+            "CRITICAL RULE: Classify by SEMANTIC INTENT, not by keyword presence. "
+            "A billing term (payment, invoice, reconciliation, dunning) does NOT make a query account-specific.\n"
+            "Distinguish:\n"
+            "WHAT_IS/HOW_TO (conceptual) = Asks how a mechanism, process, or concept works in general. "
+            "No possessive/deictic reference to caller's own data. Signal phrases: 'how does X work', "
+            "'what is X', 'explain X', 'X means', 'what does X mean'. Route to: help (KB/R0).\n"
+            "ACCOUNT_SPECIFIC (inspection) = Asks about caller's own current state, a specific record, "
+            "or contains possessive/deictic language. Signal phrases: 'my', 'our', 'this invoice', "
+            "a specific ID, 'show me', 'what's my'. Route to: billing/dashboard (R1+).\n"
             "Examples:\n"
-            "- 'Show overdue invoices' -> {\"domain\": \"billing\", \"intent\": \"invoice_list\", \"confidence\": 0.95}\n"
-            "- 'Who are our customers?' -> {\"domain\": \"billing\", \"intent\": \"customer_list\", \"confidence\": 0.95}\n"
-            "- 'Which customers owe us money?' -> {\"domain\": \"billing\", \"intent\": \"customer_outstanding\", \"confidence\": 0.9}\n"
-            "- 'Show customer GOk' -> {\"domain\": \"billing\", \"intent\": \"customer_search\", \"confidence\": 0.95}\n"
-            "- 'How many invoices are there?' -> {\"domain\": \"billing\", \"intent\": \"invoice_count\", \"confidence\": 0.95}\n"
-            "- 'How many payments?' -> {\"domain\": \"billing\", \"intent\": \"payment_count\", \"confidence\": 0.95}\n"
-            "- 'List subscriptions' -> {\"domain\": \"billing\", \"intent\": \"subscription_list\", \"confidence\": 0.95}\n"
-            "- 'What contracts do we have?' -> {\"domain\": \"billing\", \"intent\": \"contract_list\", \"confidence\": 0.9}\n"
-            "- 'Show the product catalog' -> {\"domain\": \"billing\", \"intent\": \"product_list\", \"confidence\": 0.9}\n"
-            "- 'Show payments made by Gok' -> {\"domain\": \"billing\", \"intent\": \"payment_list\", \"confidence\": 0.9}\n"
-            "- 'What is INV-2024-0001?' -> {\"domain\": \"billing\", \"intent\": \"invoice_search\", \"confidence\": 0.95}\n"
-            "- 'Show me Gok's outstanding balance' -> {\"domain\": \"billing\", \"intent\": \"account_balance\", \"confidence\": 0.9}\n"
-            "- 'What does paid mean?' -> {\"domain\": \"billing\", \"intent\": \"general_billing_lookup\", \"confidence\": 0.9}\n"
-            "- 'How do refunds work?' -> {\"domain\": \"help\", \"intent\": \"help_general\", \"confidence\": 0.9}\n"
-            "- 'Dashboard summary' -> {\"domain\": \"dashboard\", \"intent\": \"dashboard_summary\", \"confidence\": 0.95}\n"
-            "- 'Preview action abc-123' -> {\"domain\": \"action\", \"intent\": \"action_preview\", \"confidence\": 0.95}\n"
-            "- 'Create an invoice for Acme' -> {\"domain\": \"action\", \"intent\": \"action_draft\", \"confidence\": 0.9}\n"
-            "- 'Confirm and execute action abc-123' -> {\"domain\": \"action\", \"intent\": \"action_confirm_execute\", \"confidence\": 0.95}\n"
-            "- 'Do I have any unmatched payments?' -> {\"domain\": \"reconciliation\", \"intent\": \"help_reconciliation\", \"confidence\": 0.9}\n"
-            "- 'Show unallocated payments' -> {\"domain\": \"reconciliation\", \"intent\": \"help_reconciliation\", \"confidence\": 0.9}\n"
-            "- 'Total Revenue' -> {\"domain\": \"dashboard\", \"intent\": \"metric_revenue\", \"confidence\": 0.95}\n"
-            "- 'How much revenue do we have?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_revenue\", \"confidence\": 0.95}\n"
-            "- 'product Dashboard' -> {\"domain\": \"billing\", \"intent\": \"product_dashboard\", \"confidence\": 0.9}\n"
-            "- 'What are the valid invoice statuses?' -> {\"domain\": \"help\", \"intent\": \"explain_statuses\", \"confidence\": 0.95}\n"
-            "- 'What are quick actions?' -> {\"domain\": \"help\", \"intent\": \"ui_quick_actions\", \"confidence\": 0.9}\n"
-            "- 'What's our collection rate?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_collection_rate\", \"confidence\": 0.95}\n"
-            "- 'What's MRR and ARR?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_mrr_arr\", \"confidence\": 0.95}\n"
-            "- 'Who joined this month?' -> {\"domain\": \"billing\", \"intent\": \"customer_joined\", \"confidence\": 0.9}\n"
-            "- 'What's the refund total?' -> {\"domain\": \"billing\", \"intent\": \"metric_refund_total\", \"confidence\": 0.95}\n"
-            "- 'Average invoice amount' -> {\"domain\": \"dashboard\", \"intent\": \"metric_avg_invoice\", \"confidence\": 0.95}\n"
-            "- 'How many credit notes?' -> {\"domain\": \"billing\", \"intent\": \"credit_note_count\", \"confidence\": 0.95}\n"
-            "- 'Paid amount this month' -> {\"domain\": \"dashboard\", \"intent\": \"metric_paid_period\", \"confidence\": 0.95}\n"
-            "- 'How many billing admins do we have?' -> {\"domain\": \"dashboard\", \"intent\": \"admin_count\", \"confidence\": 0.9}\n"
-            "- 'What's our monthly growth rate?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_growth_rate\", \"confidence\": 0.95}\n"
-            "- 'How many customers are there?' -> {\"domain\": \"billing\", \"intent\": \"customer_count\", \"confidence\": 0.95}\n"
-            "- 'Change the due date to net 30.' -> {\"domain\": \"action\", \"intent\": \"action_draft\", \"confidence\": 0.9}\n"
-            "- 'Customer was overcharged.' -> {\"domain\": \"action\", \"intent\": \"correct_request\", \"confidence\": 0.9}\n"
-            "- 'Remind them this is overdue.' -> {\"domain\": \"action\", \"intent\": \"communicate_request\", \"confidence\": 0.9}\n"
-            "- 'Export unpaid invoices for Europe.' -> {\"domain\": \"action\", \"intent\": \"export_request\", \"confidence\": 0.9}\n"
-            "- 'Match this $5,000 payment.' -> {\"domain\": \"reconciliation\", \"intent\": \"help_reconciliation\", \"confidence\": 0.9}\n"
-            "- 'What is payroll?' -> {\"domain\": \"out_of_scope\", \"intent\": \"out_of_scope\", \"confidence\": 0.9}\n"
-            "- 'Explain me about python.' -> {\"domain\": \"out_of_scope\", \"intent\": \"out_of_scope\", \"confidence\": 0.95}\n"
+            "- 'How does payment reconciliation work?' -> {\"domain\": \"help\", \"intent\": \"help_general\", \"confidence\": 0.95} (WHAT_IS)\n"
+            "- 'Why did my reconciliation fail?' -> {\"domain\": \"reconciliation\", \"intent\": \"help_reconciliation\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'What is dunning?' -> {\"domain\": \"help\", \"intent\": \"help_general\", \"confidence\": 0.95} (WHAT_IS)\n"
+            "- 'Show my dunning cases' -> {\"domain\": \"billing\", \"intent\": \"general_billing_lookup\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'Dunning means' -> {\"domain\": \"help\", \"intent\": \"help_general\", \"confidence\": 0.9} (WHAT_IS)\n"
+            "- 'How do refunds work?' -> {\"domain\": \"help\", \"intent\": \"help_general\", \"confidence\": 0.9} (WHAT_IS)\n"
+            "- 'Who are our customers?' -> {\"domain\": \"billing\", \"intent\": \"customer_list\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'How many invoices?' -> {\"domain\": \"billing\", \"intent\": \"invoice_count\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'List subscriptions' -> {\"domain\": \"billing\", \"intent\": \"subscription_list\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'What is INV-2024-0001?' -> {\"domain\": \"billing\", \"intent\": \"invoice_search\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'Show payments made by Gok' -> {\"domain\": \"billing\", \"intent\": \"payment_list\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'Show me Gok's outstanding balance' -> {\"domain\": \"billing\", \"intent\": \"account_balance\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'What's overdue on invoice INV-123?' -> {\"domain\": \"billing\", \"intent\": \"invoice_search\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'Dashboard summary' -> {\"domain\": \"dashboard\", \"intent\": \"dashboard_summary\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'Create an invoice for Acme' -> {\"domain\": \"action\", \"intent\": \"action_draft\", \"confidence\": 0.9} (ACTION)\n"
+            "- 'Total Revenue' -> {\"domain\": \"dashboard\", \"intent\": \"metric_revenue\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'What are quick actions?' -> {\"domain\": \"help\", \"intent\": \"ui_quick_actions\", \"confidence\": 0.9} (WHAT_IS)\n"
+            "- 'What's MRR and ARR?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_mrr_arr\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'Paid amount this month' -> {\"domain\": \"dashboard\", \"intent\": \"metric_paid_period\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'What's our monthly growth rate?' -> {\"domain\": \"dashboard\", \"intent\": \"metric_growth_rate\", \"confidence\": 0.95} (ACCOUNT_SPECIFIC)\n"
+            "- 'Do we have unmatched payments?' -> {\"domain\": \"reconciliation\", \"intent\": \"help_reconciliation\", \"confidence\": 0.9} (ACCOUNT_SPECIFIC)\n"
+            "- 'What is payroll?' -> {\"domain\": \"out_of_scope\", \"intent\": \"out_of_scope\", \"confidence\": 0.9} (OUT_OF_SCOPE)\n"
+            "When ambiguous between WHAT_IS and ACCOUNT_SPECIFIC, ask one short clarifying question."
         )
 
-        model_run_uid = _uid()
-        model_run = ModelRun(
-            model_run_uid=model_run_uid,
-            conversation_id=conv.id,
-            tenant_context_id=ctx.tenant_context_id,
-            run_type=ModelRunType.CLASSIFY,
-            provider=provider,
-            model_name=config.model,
-            input_hash=_hash(text),
-        )
-        self.db.add(model_run)
-        self.db.flush()
+        model_run = None
+        if ctx.tenant_context_id:
+            model_run_uid = _uid()
+            model_run = ModelRun(
+                model_run_uid=model_run_uid,
+                conversation_id=conv.id,
+                tenant_context_id=ctx.tenant_context_id,
+                run_type=ModelRunType.CLASSIFY,
+                provider=provider,
+                model_name=config.model,
+                input_hash=_hash(text),
+            )
+            self.db.add(model_run)
+            self.db.flush()
+
+        # Include last 2 turns of conversation history for context
+        history_messages: list[ModelMessage] = []
+        try:
+            prior = (
+                self.db.query(AIConversationMessage)
+                .filter(
+                    AIConversationMessage.conversation_id == conv.id,
+                )
+                .order_by(AIConversationMessage.id.desc())
+                .limit(4)
+                .all()
+            )
+            for msg in reversed(prior):
+                role = "assistant" if msg.sender_type == SenderType.ASSISTANT else "user"
+                history_messages.append(ModelMessage(role=role, content=msg.message_text or ""))
+        except Exception:
+            pass
+        history_messages.append(ModelMessage(role="user", content=text[:1000]))
 
         response = self._gateway.complete(
-            messages=[ModelMessage(role="user", content=text[:1000])],
+            messages=history_messages,
             system_prompt=system_prompt,
             model=config.model,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            response_format=config.response_format,
         )
 
-        model_run.output_hash = response.content_hash()
-        model_run.latency_ms = response.usage.get("latency_ms", 0)
+        if model_run:
+            model_run.output_hash = response.content_hash()
+            model_run.latency_ms = response.usage.get("latency_ms", 0)
 
-        # Parse JSON response
+        # Parse JSON response — Llama/Groq often wraps JSON in markdown
+        # code fences or adds explanation text, so strip those first.
+        raw_content = response.content or ""
+        parsed = None
         try:
-            parsed = json.loads(response.content)
+            parsed = json.loads(raw_content)
+        except (json.JSONDecodeError, ValueError):
+            # Strip ```json ... ``` or ``` ... ``` fences
+            fenced = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw_content, re.DOTALL)
+            if fenced:
+                try:
+                    parsed = json.loads(fenced.group(1).strip())
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            if parsed is None:
+                # Try to find a bare JSON object in the text
+                brace_match = re.search(r"\{[^{}]*\}", raw_content)
+                if brace_match:
+                    try:
+                        parsed = json.loads(brace_match.group(0))
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
+        if parsed and isinstance(parsed, dict):
             domain = parsed.get("domain", "billing")
             intent_code = parsed.get("intent", "general_lookup")
             confidence = parsed.get("confidence", 0.8)
-        except (json.JSONDecodeError, KeyError):
+        else:
             domain = "billing"
             intent_code = "general_lookup"
             confidence = 0.5
@@ -1647,6 +2382,10 @@ class ConversationEngine:
         # Tokenization-drift repair: "dash board" → "dashboard", "creditnote"
         # → "credit note", so every keyword check below sees canonical terms.
         normalized = normalize_domain_text(normalized)
+        # Domain typo correction: "duning" → "dunning", "subscribtion" →
+        # "subscription", etc.  Applied AFTER compound-term normalization so
+        # that the canonical forms exist for whole-word matching.
+        normalized = _apply_domain_typos(normalized)
         last_entity = context.get("last_entity")
 
         # ── Small talk: greetings/fillers get a friendly welcome ─────────
@@ -1706,6 +2445,151 @@ class ConversationEngine:
         ):
             return {"intent": "cross_tenant", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── Protected: invoice status vocabulary question ─────────────────
+        # "What are the valid invoice statuses?" is a deterministic help
+        # answer — must fire BEFORE the WHAT_IS/HOW_TO gate so that
+        # status-vocabulary questions get their specific handler, not the
+        # generic help_general route.
+        if re.search(r"\b(valid|possible|allowed|available|supported|all)\s+(invoice\s+)?statuses\b", normalized) or \
+                (re.search(r"\bstatuses\b", normalized) and re.search(r"\b(what|which|list|name|tell|explain|are)\b", normalized)):
+            return {"intent": "explain_statuses", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── §2.1 Semantic intent gate: WHAT_IS/HOW_TO vs ACCOUNT_SPECIFIC ──
+        # Classify by FRAMING, not by keyword presence. A billing noun alone
+        # does not make a query account-specific. Signal phrases determine
+        # whether the user wants a concept explanation or their own data.
+        _has_what_is_how_to = _detect_what_is_how_to(normalized)
+        _has_account_specific = bool(_ACCOUNT_SPECIFIC_RE.search(normalized))
+        # Possessive/deictic signals ("my", "our", "this invoice") override
+        # the WHAT_IS/HOW_TO flag: "what is my outstanding balance?" is a
+        # live-data ask, not a KB glossary query.  Suppress the WHAT_IS flag
+        # whenever account-specific signals are present so that downstream
+        # handlers (balance, invoice status, etc.) can fire.
+        if _has_account_specific and _has_what_is_how_to:
+            _has_what_is_how_to = False
+        # Broader possessive check: "my outstanding balance", "our total
+        # revenue" — _ACCOUNT_SPECIFIC_RE requires `my` directly before a
+        # domain noun, but users often insert adjectives.  Any possessive
+        # pronoun (my/our/his/her/their) followed within 5 words by a domain
+        # vocabulary token means the user asks about THEIR data, not a
+        # concept definition.
+        if not _has_account_specific:
+            _possessive_match = re.search(
+                r"\b(?:my|our|his|her|their)\b", normalized
+            )
+            if _possessive_match:
+                _after_possessive = normalized[_possessive_match.end():]
+                _poss_tokens = _tokenize(_after_possessive)[:5]
+                if any(_vocab_match(t) for t in _poss_tokens):
+                    _has_account_specific = True
+                    # A possessive + domain noun means "show MY data" —
+                    # suppress the WHAT_IS/HOW_TO flag so downstream handlers
+                    # (balance, invoice status, etc.) can fire.
+                    _has_what_is_how_to = False
+
+        # If the user asks HOW something works or WHAT something is, AND
+        # there is NO possessive/deictic signal → route to KB/help (R0).
+        # "How does payment reconciliation work?" → help, even though
+        # "payment" and "reconciliation" are entity names.
+        # §2.1: ALL branches require topic_screen — non-billing topics
+        # ("Explain about me python") must still be refused by §6.0.
+        if _has_what_is_how_to and not _has_account_specific:
+            # ── Metric-value queries bypass WHAT_IS/HOW_TO ────────────────
+            # "What's the refund total?" / "What's our collection rate?" —
+            # these have a WHAT_IS signal ("what's") + domain vocab, but the
+            # user wants the LIVE FIGURE, not a KB glossary definition.
+            # Skip the help_general returns when a metric-specific regex
+            # matches AND the phrasing is a value-seeking shape (not a
+            # definition-seeking shape like "explain", "describe", "tell me
+            # about", "use of", "purpose of").
+            _metric_bypass = False
+            _is_definitional_signal = bool(re.search(
+                r"\b(?:explain|describe|tell\s+me\s+about"
+                r"|(?:use|purpose|function|benefit|advantage|importance)\s+of"
+                r"|meaning\s+of"
+                r"|\bhow\s+(?:do|does|did)\b[\s\S]{0,60}\bworks?\b"
+                r"|\bwhat\s+does\b[\s\S]{0,40}\bmean(?:s|t)?\b"
+                r"|\bmeans?\b"
+                r"|\b(?:types?|kinds?|categories?|levels?|stages?|tiers?)\s+of\b"
+                r"|\w+\s+(?:types?|kinds?|categories?|levels?|stages?|tiers?)\b"
+                r")\b",
+                normalized,
+            ))
+            if not _is_definitional_signal and not _ASKS_MEANING_RE.search(normalized):
+                # Metric bypass: let metric handlers fire when the query is a
+                # data-value ask (not a definitional question).  Cases:
+                # 1. Refund aggregate ("What's the refund total?")
+                # 2. MRR/ARR pair or value ("What's MRR and ARR?")
+                # 3. Bare "why NOUN" + metric name ("why collection rate")
+                #    — ambiguous but the metric handler returns the live value
+                _bare_why_metric = bool(
+                    re.match(r"^why\s+\w", normalized)
+                    and not re.search(r"\bwhy\s+(?:is|are|do|does|did|was|were)\b", normalized)
+                )
+                if ((_REFUND_AGGREGATE_RE.search(normalized))
+                    or (_MRR_ARR_RE.search(normalized)
+                        and (_MRR_AND_ARR_RE.search(normalized)
+                             or _METRIC_VALUE_FRAME_RE.search(normalized)
+                             or _MRR_ARR_SINGLE_VALUE_RE.search(normalized)))
+                    or (_bare_why_metric
+                        and (_COLLECTION_RATE_RE.search(normalized)
+                             or _MRR_ARR_RE.search(normalized)
+                             or _REFUND_AGGREGATE_RE.search(normalized)
+                             or _AVG_INVOICE_RE.search(normalized)
+                             or _PAID_PERIOD_RE.search(normalized)
+                             or _GROWTH_RATE_RE.search(normalized)))):
+                    _metric_bypass = True
+                    # Clear the WHAT_IS flag so the metric lookups below
+                    # (which check `not _has_what_is_how_to`) can fire.
+                    _has_what_is_how_to = False
+            if not _metric_bypass:
+                # SOP how-to: "How do I record a payment?" — route to RAG
+                if re.search(r"\bhow\s+do\s+i\b", normalized) and topic_screen(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+                # "How does X work?", "What is dunning?", "Explain refunds"
+                # §2.1: Let metric definitions fall through to metric_definition handler
+                # ("explain me about Revenue" → metric_definition, not help_general)
+                if re.search(r"\b(?:explain|describe|what\s+(?:is|are|does)|how\s+(?:do|does|did|is|are))\b", normalized) and topic_screen(normalized) and not self._match_definitional_metric(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+                # "Why does dunning happen?" — causal/conceptual, not account-specific
+                if re.search(r"\bwhy\s+(?:do|does|did)\b", normalized) and topic_screen(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+                # "X means" / "X means what" — definitional
+                # §2.1: Let metric definitions fall through to metric_definition handler
+                if re.search(r"\bmeans?\b", normalized) and topic_screen(normalized) and not self._match_definitional_metric(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+                # "What's the dunning process?" / "What's the refund workflow?"
+                if re.search(r"\b(?:process|workflow|procedure|steps|mechanism|lifecycle)\b", normalized) and topic_screen(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+                # Catch-all for any WHAT_IS/HOW_TO query that passes topic_screen
+                # but doesn't match the specific patterns above.  Enumeration
+                # queries ("how many types of credit notes", "what are the levels
+                # of dunning") land here — they want a conceptual breakdown, not
+                # a live-data count.
+                if topic_screen(normalized) and not self._match_definitional_metric(normalized):
+                    return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Conversation-history domain inheritance (same-topic follow-ups) ──
+        # If the previous turn was classified as help_general with high
+        # confidence, and the current query is a same-topic follow-up
+        # (contains domain vocabulary, no possessive/deictic signals), inherit
+        # the help domain.  This prevents short follow-ups like "types of
+        # dunning" (after "what is dunning?") from falling into the ambiguous
+        # model-classifier band.
+        prev_domain = context.get("prev_intent_domain")
+        prev_code = context.get("prev_intent_code")
+        prev_conf = context.get("prev_intent_confidence") or 0
+        if (prev_domain == "help" and prev_code == "help_general"
+                and prev_conf >= 0.85
+                and not _has_account_specific
+                and topic_screen(normalized)):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        # If BOTH signals present (e.g., "How does dunning work on my account?")
+        # → route to the account-specific handler, NOT help.
+        # Fall through to the rules below which will pick up the account-specific
+        # signal and route accordingly.
+
         # ── Status semantics: billing vocabulary the gate can't see ──────
         # "What does Sent mean?" names an invoice status adjective; route to
         # RAG before the §6.0 out-of-domain short-circuit can refuse it.
@@ -1725,12 +2609,21 @@ class ConversationEngine:
         # ── Dunning / collections escalation timeline ────────────────────
         # "What happens after 45 days overdue?" asks about the dunning
         # ladder (a KB topic) — never an account-balance Inspect lookup.
-        if re.search(
+        # §2.1: Bare "dunning" alone must NOT match listing queries like
+        # "Show my dunning cases" — only match in knowledge-seeking shapes.
+        _dunning_knowledge_shape = re.search(
             r"\bwhat\s+happens?\b[\s\S]{0,40}\b(?:\d+\s+days?|overdue|past\s+due)\b"
             r"|\bafter\s+\d+\s+days?\b"
-            r"|\bdunn?ings?\b|\bcollections?\s+(?:ladder|escalation|process)\b",
+            r"|\bcollections?\s+(?:ladder|escalation|process)\b"
+            r"|\b(?:explain|describe|what\s+(?:is|are|does)|how\s+(?:do|does))\b[\s\S]{0,30}\bdunn",
             normalized,
-        ):
+        )
+        _is_listing_or_possessive = bool(re.search(
+            r"\b(?:show|list|view|display|find|get|search)\b"
+            r"|\b(?:my|our|his|her|their)\s+dunning",
+            normalized,
+        ))
+        if _dunning_knowledge_shape and not _is_listing_or_possessive:
             return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Knowledge-shape questions about billing PROCESSES ────────────
@@ -1767,7 +2660,7 @@ class ConversationEngine:
         # through to §6.0 screening ("How do I bake bread?" is refused, not
         # answered from a loosely-related KB chunk).
         if re.search(r"\bhow\s+do\s+i\b", normalized) \
-                and not re.search(r"\b(create|draft|add|new|make|issue|send|write)\b", normalized) \
+                and not re.search(r"\b(create|draft|add|new|make|issue|send|write|cancel|delete|update|modify|record|apply|renew|close|void|retry)\b", normalized) \
                 and topic_screen(normalized):
             return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
@@ -1775,8 +2668,16 @@ class ConversationEngine:
         # Named-metric questions ("What's our collection rate?", "What's
         # MRR and ARR?", "Who joined this month?") are DATA lookups: they
         # must never fall through to help/RAG glossary answers. Definition
-        # asks ("what does X mean?") keep their definitional route.
-        if not _ASKS_MEANING_RE.search(normalized):
+        # Metric figure lookups (batch 1): named dashboard metrics answer
+        # from live data before any FAQ/RAG fallback.
+        # Guard: _ASKS_MEANING_RE filters out definitional phrasings
+        # ("What does refund mean?") so they keep their definitional route.
+        # _has_what_is_how_to: when set, conceptual queries ("What is dunning?")
+        # route to KB explanation, not live data.  Exception: when
+        # _metric_bypass is True, the WHAT_IS block explicitly skipped its
+        # returns so the metric handlers below can fire — we detect this by
+        # checking if _has_what_is_how_to was cleared.
+        if not _ASKS_MEANING_RE.search(normalized) and not _has_what_is_how_to:
             if _COLLECTION_RATE_RE.search(normalized):
                 return {"intent": "metric_collection_rate", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
             if _MRR_ARR_RE.search(normalized) and (
@@ -1808,7 +2709,7 @@ class ConversationEngine:
         # its asks get the documented exclusion, never a §6.0 refusal.
         if _READINESS_SCORE_RE.search(normalized):
             return {"intent": "metric_definition", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "metric": "readiness_score"}
-        if not _ASKS_MEANING_RE.search(normalized):
+        if not _ASKS_MEANING_RE.search(normalized) and not _has_what_is_how_to:
             if _AVG_INVOICE_RE.search(normalized):
                 return {"intent": "metric_avg_invoice", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
             if _CREDIT_NOTE_COUNT_RE.search(normalized) and re.search(r"\bhow\s+many\b|\bcount\b|\btotal\b|\bnumber\s+of\b|\bany\s+credit\s+notes?\b", normalized):
@@ -1958,8 +2859,8 @@ class ConversationEngine:
         # shape vetoes action classification so it cannot fall into the
         # invoice/refund drafting flow and get parsed as a customer name.
         is_aggregate_question = _AGGREGATE_QUESTION_RE.search(normalized)
-        action_verbs = ("draft", "create", "issue", "prepare", "send", "raise", "generate", "new", "make", "set up", "setup", "refund")
-        action_objects = ("invoice", "payment", "credit note", "credit", "refund", "credit note")
+        action_verbs = ("draft", "create", "issue", "prepare", "send", "raise", "generate", "new", "make", "set up", "setup", "refund", "cancel", "delete", "update", "modify", "record", "apply", "renew", "close", "void", "retry")
+        action_objects = ("invoice", "payment", "credit note", "credit", "refund", "subscription", "contract", "quotation", "product", "customer")
         is_action_verb = any(normalized.startswith(v) or f" {v} " in normalized for v in action_verbs)
         is_action_object = any(o in normalized for o in action_objects)
         # "Show draft invoices" lists records filtered by status — the word
@@ -1975,19 +2876,24 @@ class ConversationEngine:
             r"|list\s+(?:the\s+)?drafts?\s*\??",
             normalized.strip(),
         ))
-        if is_action_verb and is_action_object and not is_aggregate_question and not is_draft_listing:
+        if is_action_verb and is_action_object and not is_aggregate_question and not is_draft_listing and not _has_what_is_how_to:
             return {"intent": "action_draft", "domain": "action", "risk_class": "R2", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
         # ── FIX #5: Reconciliation intent ──────────────────────────────
         # A definitional ask ("What is payment allocation?") is a knowledge
         # question, not a reconciliation task — let it fall through to RAG.
+        # §2.1: Skip only when WHAT_IS/HOW_TO is the sole signal. If
+        # ACCOUNT_SPECIFIC is also present ("Why did my reconciliation fail?"),
+        # the account-specific signal wins → route to live data.
         reconciliation_keywords = (
             "unmatched", "unallocated", "reconcil", "matching", "bank match",
             "payment match", "allocat", "discrepanc", "variance", "bank statement",
         )
+        _reconcil_concept_only = _has_what_is_how_to and not _has_account_specific
         if (any(kw in normalized for kw in reconciliation_keywords)
-                and not re.search(r"\bwhat\s+(?:is|are)\b[\s\S]{0,24}\ballocation", normalized)) \
-                or re.search(r"\bmatch(?:es|ing)?\b", normalized):
+                and not re.search(r"\bwhat\s+(?:is|are)\b[\s\S]{0,24}\ballocation", normalized)
+                and not _reconcil_concept_only) \
+                or (re.search(r"\bmatch(?:es|ing)?\b", normalized) and not _reconcil_concept_only):
             return {"intent": "help_reconciliation", "domain": "reconciliation", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # ── D-11: Entity-qualified dashboard/page phrases ────────────────
@@ -2313,6 +3219,9 @@ class ConversationEngine:
         if any(p in normalized for p in payment_list_patterns):
             return {"intent": "payment_list", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
+        if re.search(r"\bpayments?\b", normalized) and not re.search(r"\b(count|how many|details?|info|information)\b", normalized):
+            return {"intent": "payment_list", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
+
         payment_ref = self._extract_reference(text, prefixes=("PAY", "PMT", "PAYMENT"))
         if payment_ref:
             return {"intent": "payment_search", "domain": "billing", "risk_class": "R1", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
@@ -2378,25 +3287,22 @@ class ConversationEngine:
         # not the full dashboard dump. Checked BEFORE balance keywords
         # ("how much revenue" contains "how much") and before the generic
         # dashboard keyword list.
+        # §2.1: Skip if WHAT_IS/HOW_TO signal detected — "What is revenue?"
+        # must route to KB, not live data.
         revenue_terms = ("revenue", "income", "earnings", "top line", "topline", "sales figure")
         summary_terms = (
             "summary", "overview", "report", "breakdown", "dashboard",
             "everything", "full", "detail", "kpi", "metric", "trend",
             "history", "by month", "monthly report", "how are we doing",
         )
-        if any(t in normalized for t in revenue_terms) and not any(s in normalized for s in summary_terms):
+        if any(t in normalized for t in revenue_terms) and not any(s in normalized for s in summary_terms) and not _has_what_is_how_to:
             return {"intent": "metric_revenue", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
-        # ── Protected: invoice status vocabulary question ─────────────────
-        # "What are the valid invoice statuses?" is a deterministic help
-        # answer — never let a model hijack route it to audit logs.
-        if re.search(r"\b(valid|possible|allowed|available|supported|all)\s+(invoice\s+)?statuses\b", normalized) or \
-                (re.search(r"\bstatuses\b", normalized) and re.search(r"\b(what|which|list|name|tell|explain|are)\b", normalized)):
-            return {"intent": "explain_statuses", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
-
         # ── FIX #2: Balance / financial summary queries (M1 Inspect) ─────
+        # §2.1: Skip if WHAT_IS/HOW_TO signal detected — "What is the
+        # outstanding balance concept?" must route to KB, not live data.
         balance_keywords = ("balance", "how much", "owe", "owed", "total due", "amount due", "what do i owe", "what do we owe", "outstanding amount", "unpaid amount", "amount outstanding", "money owed", "pending amount")
-        if any(kw in normalized for kw in balance_keywords):
+        if any(kw in normalized for kw in balance_keywords) and not _has_what_is_how_to:
             return {"intent": "account_balance", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Context fallbacks ───────────────────────────────────────────
@@ -2435,8 +3341,9 @@ class ConversationEngine:
             return {"intent": "general_billing_lookup", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Dashboard / revenue summary queries (M1 Inspect) ────────────
+        # §2.1: Skip if WHAT_IS/HOW_TO signal detected.
         dashboard_keywords = ("dashboard", "revenue", "financial overview", "financial summary", "total revenue", "monthly revenue", "yearly revenue", "earnings", "income summary", "billing overview")
-        if any(kw in normalized for kw in dashboard_keywords):
+        if any(kw in normalized for kw in dashboard_keywords) and not _has_what_is_how_to:
             return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # Help/capabilities keywords
@@ -2599,6 +3506,10 @@ class ConversationEngine:
             "last_invoice_ref": None,
             "last_payment_ref": None,
             "last_entity_text": None,
+            "prev_intent_domain": None,
+            "prev_intent_code": None,
+            "prev_intent_confidence": None,
+            "prev_user_text": None,
         }
         for t in reversed(user_texts):
             entity = self._entity_from_text(t)
@@ -2613,6 +3524,36 @@ class ConversationEngine:
                 context["last_payment_ref"] = self._extract_reference(t, prefixes=("PAY", "PMT", "PAYMENT"))
             if context["last_entity"] and (context["last_customer_name"] or context["last_invoice_ref"] or context["last_payment_ref"]):
                 break
+
+        # ── Conversation-history domain inheritance ────────────────────────
+        # Load the most recent intent classification so same-topic follow-ups
+        # ("types of dunning" after "what is dunning?") can inherit the
+        # resolved domain instead of falling into the ambiguous band.
+        if user_texts:
+            context["prev_user_text"] = user_texts[-1] if user_texts else None
+        try:
+            last_assistant = (
+                self.db.query(AIConversationMessage)
+                .filter(
+                    AIConversationMessage.conversation_id == conv.id,
+                    AIConversationMessage.sender_type == SenderType.ASSISTANT,
+                )
+                .order_by(AIConversationMessage.id.desc())
+                .first()
+            )
+            if last_assistant:
+                last_ic = (
+                    self.db.query(IntentClassification)
+                    .filter(IntentClassification.message_id == last_assistant.id)
+                    .first()
+                )
+                if last_ic:
+                    context["prev_intent_domain"] = last_ic.intent_domain
+                    context["prev_intent_code"] = last_ic.intent_code
+                    context["prev_intent_confidence"] = last_ic.confidence
+        except Exception:
+            pass
+
         return context
 
     def _resolve_references(self, text: str, conv: AIConversation, ctx: AIContext, context: dict | None = None) -> str:
@@ -2909,15 +3850,25 @@ class ConversationEngine:
         # Try retrieval first — but only answer from CONFIDENT matches. Weak
         # matches must abstain, never quote loosely-related chunks (this is
         # what previously served invoice content for a permissions question).
-        retrieval = self._retrieve(text, ctx, top_k=3)
+        retrieval = self._retrieve(text, ctx, top_k=5)
         if retrieval.get("low_confidence"):
             floor = self._fuzzy_domain_suggestion(normalized)
             if floor:
                 return floor
             return self._abstention_response()
         if retrieval["answer"]:
+            # Synthesize a coherent answer via LLM instead of returning raw chunks
+            llm_answer = self._generate_llm_answer(text, retrieval["answer"], ctx, conv=conv)
+            # Always sort chunks for the fallback path too — definition
+            # content before procedural so the answer reads top-down.
+            fallback_answer = self._sort_chunks_by_type(retrieval["answer"])
+            if not llm_answer:
+                logger.warning(
+                    "LLM_SYNTH_FALLBACK query=%r gateway=%s chunks_len=%d",
+                    text[:120], bool(self._gateway), len(retrieval["answer"]),
+                )
             return {
-                "answer": retrieval["answer"],
+                "answer": llm_answer or fallback_answer,
                 "mode": "M0_EXPLAIN",
                 "risk_class": "R0",
                 "evidence": retrieval["evidence"],
@@ -3188,12 +4139,15 @@ class ConversationEngine:
         if window_end_exclusive is not None:
             query = query.filter(BillingCustomer.created_at < datetime(
                 window_end_exclusive.year, window_end_exclusive.month, window_end_exclusive.day))
-        rows = (
-            query.order_by(BillingCustomer.created_at.desc())
-            .limit(9)
-            .all()
-        )
         total = query.count()
+        if total == 0:
+            rows = []
+        else:
+            rows = (
+                query.order_by(BillingCustomer.created_at.desc())
+                .limit(9)
+                .all()
+            )
 
         if total == 0:
             answer = f"No customers joined **{label}** yet."
@@ -3290,17 +4244,15 @@ class ConversationEngine:
 
     def _credit_note_count_response(self, ctx: AIContext) -> dict:
         """Credit-note census from the credit_notes table."""
-        query = self.db.query(CreditNote).filter(
+        row = self.db.query(
+            func.count(CreditNote.id),
+            func.coalesce(func.sum(CreditNote.total_amount), 0),
+        ).filter(
             CreditNote.organization_id == ctx.organization_id,
             CreditNote.deleted_at.is_(None),
-        )
-        count = query.count()
-        total_amount = float(
-            self.db.query(func.coalesce(func.sum(CreditNote.total_amount), 0)).filter(
-                CreditNote.organization_id == ctx.organization_id,
-                CreditNote.deleted_at.is_(None),
-            ).scalar() or 0
-        )
+        ).one()
+        count = row[0]
+        total_amount = float(row[1] or 0)
         if count == 0:
             answer = "No credit notes have been issued for your organization."
         else:
@@ -3690,6 +4642,7 @@ class ConversationEngine:
         # Inspect mode: query real payment/allocation data
         unmatched_payments = (
             self.db.query(Payment)
+            .options(selectinload(Payment.allocations))
             .filter(
                 Payment.organization_id == org_id,
                 Payment.is_active == True,
@@ -3806,6 +4759,8 @@ class ConversationEngine:
             payload = preview_result.get("preview_payload", {})
             money = preview_result.get("money_summary", {})
             warnings = preview_result.get("warnings", [])
+            policy_result = preview_result.get("policy_result", {})
+            draft = engine._get_draft(action_uid, ctx)
 
             answer_parts = [
                 f"**Preview — {payload.get('action_type', 'action').replace('_', ' ').title()}**\n",
@@ -3830,6 +4785,24 @@ class ConversationEngine:
                 f"Use **Confirm and execute** to finalize this action."
             )
 
+            # Build §8.2 preview_card — structured deterministic card
+            proposed_params = (draft.proposed_params if draft else {})
+            preview_card = self._build_preview_card(
+                payload=payload,
+                money=money,
+                warnings=warnings,
+                preview_result=preview_result,
+                proposed_params=proposed_params,
+                policy_result=policy_result,
+            )
+
+            # Build §8.3 restated-value confirm label
+            confirm_label = self._build_confirm_label(
+                payload.get("action_type", "invoice_draft"),
+                proposed_params,
+                money,
+            )
+
             return {
                 "answer": "\n".join(answer_parts),
                 "mode": "M3_PREVIEW",
@@ -3843,14 +4816,14 @@ class ConversationEngine:
                     "expires_at": preview_result.get("expires_at"),
                 }],
                 "qualification": "Deterministic preview — no mutation has occurred.",
-                "next_actions": [
-                    f"Confirm and execute action {action_uid}",
-                    f"Cancel action {action_uid}",
+                "preview_card": preview_card,
+                "confirm_label": confirm_label,
+                "actions": [
+                    {"label": confirm_label, "action": "confirm_draft", "action_uid": action_uid},
+                    {"label": "Cancel", "action": "cancel_draft", "action_uid": action_uid},
                 ],
-                "suggested_prompts": [
-                    f"Confirm and execute action {action_uid}",
-                    f"Cancel action {action_uid}",
-                ],
+                "next_actions": [],
+                "suggested_prompts": [],
             }
 
         # ── M4 Confirm+Execute: "Confirm and execute action {uid}" ─────────
@@ -3902,8 +4875,8 @@ class ConversationEngine:
                     "risk_class": "R2",
                     "evidence": [],
                     "qualification": "Preview required before execution.",
-                    "next_actions": [f"Preview action {action_uid}"],
-                    "suggested_prompts": [f"Preview action {action_uid}"],
+                    "next_actions": [],
+                    "suggested_prompts": [],
                 }
 
             # Confirm the action (binds to preview hash)
@@ -3925,8 +4898,8 @@ class ConversationEngine:
                     "risk_class": "R2",
                     "evidence": [],
                     "qualification": "Confirmation failed.",
-                    "next_actions": [f"Preview action {action_uid}"],
-                    "suggested_prompts": [f"Preview action {action_uid}"],
+                    "next_actions": [],
+                    "suggested_prompts": [],
                 }
 
             logger.error("[CHATBOT-DIAG] confirm OK: %s", confirm_result)
@@ -3946,8 +4919,8 @@ class ConversationEngine:
                     "risk_class": "R2",
                     "evidence": [],
                     "qualification": "Action execution failed after confirmation.",
-                    "next_actions": [f"Preview action {action_uid}"],
-                    "suggested_prompts": [f"Preview action {action_uid}"],
+                    "next_actions": [],
+                    "suggested_prompts": [],
                 }
 
             # Build success response with created resource details
@@ -3978,12 +4951,8 @@ class ConversationEngine:
                     "executed_at": exec_result.get("completed_at"),
                 }],
                 "qualification": "Action has been executed. The mutation is now live.",
-                "next_actions": [
-                    f"Preview action {action_uid}" if invoice_id else "Create a new draft",
-                ],
-                "suggested_prompts": [
-                    f"Preview action {action_uid}" if invoice_id else "Create a new draft",
-                ],
+                "next_actions": [],
+                "suggested_prompts": ["Create a new draft"],
             }
 
         # ── M2 Draft: create a new action draft ───────────────────────────
@@ -4155,13 +5124,15 @@ class ConversationEngine:
                 "suggested_prompts": [],
             }
 
+        # Build structured draft card (§8.1 — editable structured draft card)
+        draft_card = self._build_draft_card(proposed_params, action_type, draft_result)
+
         return {
             "answer": (
                 f"I've prepared a **{action_type.replace('_', ' ').title()}** draft for your review.\n\n"
                 f"**Action UID:** {draft_result['action_uid']}\n"
                 f"**Status:** {draft_result['status']}\n"
-                f"**Expires:** {draft_result['expires_at']}\n\n"
-                f"Use the **Preview** button to see the full preview before confirming."
+                f"**Expires:** {draft_result['expires_at']}"
             ),
             "mode": "M2_PREPARE",
             "risk_class": "R2",
@@ -4175,11 +5146,184 @@ class ConversationEngine:
                 "expires_at": draft_result.get("expires_at"),
             }],
             "qualification": "Draft created. No mutation has occurred yet.",
-            "next_actions": [
-                f"Preview action {draft_result['action_uid']}",
-                "Confirm and execute after preview",
+            "draft_card": draft_card,
+            "actions": [
+                {"label": "Preview", "action": "preview_draft", "action_uid": draft_result["action_uid"]},
+                {"label": "Cancel", "action": "cancel_draft", "action_uid": draft_result["action_uid"]},
             ],
-            "suggested_prompts": [f"Preview action {draft_result['action_uid']}", "Cancel draft"],
+            "next_actions": [],
+            "suggested_prompts": [],
+        }
+
+    def _build_draft_card(self, params: dict, action_type: str, draft_result: dict) -> dict:
+        """Build structured draft card for §8.1 editable structured draft card."""
+        from decimal import Decimal, InvalidOperation
+        currency = params.get("currency")
+        line_items = params.get("line_items", [])
+
+        items = []
+        subtotal = Decimal("0")
+        for item in line_items:
+            qty = Decimal(str(item.get("quantity", 1)))
+            price = Decimal(str(item.get("unit_price", 0)))
+            line_total = qty * price
+            subtotal += line_total
+            items.append({
+                "description": item.get("description", ""),
+                "quantity": int(qty),
+                "unit_price": str(price),
+                "total": str(line_total),
+            })
+
+        tax_rate = Decimal(str(params.get("tax_rate", 0)))
+        tax_amount = subtotal * tax_rate / Decimal("100")
+        total = subtotal + tax_amount
+
+        return {
+            "action_type": action_type,
+            "action_label": action_type.replace("_", " ").title(),
+            "customer_name": params.get("customer_name"),
+            "customer_id": params.get("customer_id"),
+            "line_items": items,
+            "currency": currency,
+            "subtotal": str(subtotal),
+            "tax_rate": str(tax_rate),
+            "tax_amount": str(tax_amount),
+            "total": str(total),
+            "status": draft_result.get("status", "validated"),
+            "action_uid": draft_result.get("action_uid"),
+            "expires_at": draft_result.get("expires_at"),
+        }
+
+    def _build_confirm_label(self, action_type: str, params: dict, money_summary: dict) -> str:
+        """Build §8.3 restated-value confirm label: [Verb] + [material value] + [recipient].
+
+        e.g. "Confirm ₹500.00 INR invoice for TOM"
+        """
+        verbs = {
+            "invoice_draft": "Confirm",
+            "credit_note": "Confirm",
+            "refund": "Confirm",
+            "payment_allocation": "Confirm",
+        }
+        verb = verbs.get(action_type, "Confirm")
+
+        currency = money_summary.get("currency") or params.get("currency") or "INR"
+        total = money_summary.get("total", "0")
+        try:
+            amount_str = f"{currency} {float(total):,.2f}"
+        except (TypeError, ValueError):
+            amount_str = f"{currency} {total}"
+
+        objects = {
+            "invoice_draft": "invoice",
+            "credit_note": "credit note",
+            "refund": "refund",
+            "payment_allocation": "payment",
+        }
+        obj = objects.get(action_type, "action")
+
+        customer = params.get("customer_name", "")
+        if customer:
+            return f"{verb} {amount_str} {obj} for {customer}"
+        return f"{verb} {amount_str} {obj}"
+
+    def _build_preview_card(self, payload: dict, money: dict, warnings: list,
+                            preview_result: dict, proposed_params: dict,
+                            policy_result: dict) -> dict:
+        """Build §8.2 structured preview card with all 10 required elements.
+
+        §8.2 checklist:
+        1. Action label in human language
+        2. Risk level via copy/iconography (not colour alone)
+        3. Affected customer/account + immutable reference
+        4. Legal entity / tenant context
+        5. Money values with ISO currency
+        6. Fields that will change (before/after where applicable)
+        7. Side effects (communications, ledger entries, etc.)
+        8. Approval requirement + approver role
+        9. Preview generated timestamp + expiry
+        10. Primary Continue/Confirm + secondary Edit/Cancel actions
+        """
+        action_type = payload.get("action_type", "invoice_draft")
+        action_label_map = {
+            "invoice_draft": "Issue invoice",
+            "credit_note": "Issue credit note",
+            "refund": "Issue refund",
+            "payment_allocation": "Allocate payment",
+        }
+        action_label = action_label_map.get(action_type, action_type.replace("_", " ").title())
+
+        currency = money.get("currency") or proposed_params.get("currency") or "INR"
+        total = money.get("total", "0")
+
+        # Risk description (§8.2 element 2 — copy, not colour alone)
+        policy_result_code = policy_result.get("result", "READY_TO_EXECUTE")
+        risk_descriptions = {
+            "APPROVAL_REQUIRED": "High-value action — requires manager approval before execution.",
+            "CONFIRMATION_REQUIRED": "Medium-risk action — explicit confirmation required.",
+            "READY_TO_EXECUTE": "Low-risk action — ready to execute after confirmation.",
+        }
+        risk_description = risk_descriptions.get(policy_result_code, "Requires confirmation.")
+
+        # Side effects (§8.2 element 7)
+        side_effects = []
+        if action_type == "invoice_draft":
+            side_effects = [
+                "Invoice will be created in DRAFT status.",
+                "Customer notification will be sent upon finalization.",
+                "Ledger entry will be posted to accounts receivable.",
+            ]
+        elif action_type == "credit_note":
+            side_effects = [
+                "Credit note will be created and applied to the customer account.",
+                "Customer notification will be sent.",
+            ]
+        elif action_type == "refund":
+            side_effects = [
+                "Refund will be processed through the payment gateway.",
+                "Customer notification will be sent.",
+            ]
+
+        # Approval requirement (§8.2 element 8)
+        approval = {
+            "required": policy_result_code == "APPROVAL_REQUIRED",
+            "role": "Billing Manager" if policy_result_code == "APPROVAL_REQUIRED" else None,
+        }
+
+        return {
+            "action_label": action_label,
+            "action_type": action_type,
+            "risk_description": risk_description,
+            "customer": {
+                "name": payload.get("customer_name"),
+                "id": proposed_params.get("customer_id"),
+            },
+            "legal_entity": {
+                "tenant_context_id": proposed_params.get("tenant_context_id"),
+            },
+            "money": {
+                "currency": currency,
+                "subtotal": money.get("subtotal", "0"),
+                "tax": money.get("tax", "0"),
+                "total": total,
+                "display": f"{currency} {float(total):,.2f}" if total else None,
+            },
+            "line_items": payload.get("line_items", []),
+            "changes": {
+                "before": None,
+                "after": {
+                    "status": "DRAFT",
+                    "total": total,
+                },
+            },
+            "side_effects": side_effects,
+            "approval": approval,
+            "generated_at": preview_result.get("created_at"),
+            "expires_at": preview_result.get("expires_at"),
+            "warnings": warnings,
+            "preview_hash": preview_result.get("preview_hash"),
+            "preview_uid": preview_result.get("preview_uid"),
         }
 
     def _extract_action_params(self, text: str, action_type: str, ctx: AIContext) -> dict:
@@ -4228,12 +5372,27 @@ class ConversationEngine:
                     else:
                         params["customer_name"] = raw_name
 
-        # Try to extract an amount
-        amount_match = re.search(r'[\$₹]\s*(\d[\d,]*\.?\d*)', text)
+        # Try to extract an amount — capture currency symbol simultaneously.
+        # Currency is set ONCE here and carried forward unchanged through
+        # draft → preview → confirmation → execution (currency consistency rule).
+        amount_match = re.search(r'(₹|USD|\$)\s*(\d[\d,]*\.?\d*)', text, re.IGNORECASE)
         if not amount_match:
-            amount_match = re.search(r'(\d[\d,]*\.?\d*)\s*(?:rs|inr|usd)?', text, flags=re.IGNORECASE)
+            amount_match = re.search(r'(\d[\d,]*\.?\d*)\s*(₹|rs\.?|inr|usd|\$)', text, re.IGNORECASE)
         if amount_match:
-            params["amount"] = amount_match.group(1).replace(",", "")
+            # Group layout differs between the two patterns:
+            #   Pattern 1: (symbol)(amount)  — ₹500
+            #   Pattern 2: (amount)(symbol)  — 500 INR
+            g1, g2 = amount_match.group(1), amount_match.group(2)
+            if g1 and re.match(r'[₹$]|usd|inr|rs', g1, re.IGNORECASE):
+                symbol, amount_str = g1, g2
+            else:
+                symbol, amount_str = g2, g1
+            params["amount"] = amount_str.replace(",", "")
+            # Normalize currency symbol → ISO code
+            _sym = symbol.strip().lower().replace(".", "")
+            _CURRENCY_MAP = {"₹": "INR", "rs": "INR", "rs.": "INR", "inr": "INR",
+                             "$": "USD", "usd": "USD"}
+            params["currency"] = _CURRENCY_MAP.get(_sym, "USD")
 
         # Build line_items (required by validation)
         if action_type in ("invoice_draft", "credit_note", "refund"):
@@ -4462,12 +5621,14 @@ class ConversationEngine:
 
         # Fallback: try knowledge retrieval for general billing questions —
         # confident matches only; weak matches abstain (see _handle_help).
-        retrieval = self._retrieve(text, ctx, top_k=3)
+        retrieval = self._retrieve(text, ctx, top_k=5)
         if retrieval.get("low_confidence"):
             return self._abstention_response()
         if retrieval["answer"]:
+            llm_answer = self._generate_llm_answer(text, retrieval["answer"], ctx, conv=conv)
+            fallback_answer = self._sort_chunks_by_type(retrieval["answer"])
             return {
-                "answer": retrieval["answer"],
+                "answer": llm_answer or fallback_answer,
                 "mode": "M0_EXPLAIN",
                 "risk_class": "R0",
                 "evidence": retrieval["evidence"],
@@ -4693,8 +5854,11 @@ class ConversationEngine:
             Quotation.organization_id == ctx.organization_id,
             Quotation.deleted_at.is_(None) if hasattr(Quotation, "deleted_at") else True,
         )
-        rows = query.order_by(Quotation.created_at.desc()).limit(8).all()
         count = query.count()
+        if count == 0:
+            rows = []
+        else:
+            rows = query.order_by(Quotation.created_at.desc()).limit(8).all()
 
         if count == 0:
             answer = "No quotations have been created for your organization."
@@ -5369,10 +6533,6 @@ class ConversationEngine:
         """Entity-qualified dashboard request ("product Dashboard"): summarize
         the product catalog instead of silently returning the generic billing
         financial summary (PRD §09 — Find/lookup family)."""
-        total = self.db.query(func.count(Product.id)).filter(
-            Product.organization_id == ctx.organization_id,
-            Product.deleted_at.is_(None),
-        ).scalar() or 0
         products = (
             self.db.query(Product)
             .filter(Product.organization_id == ctx.organization_id, Product.deleted_at.is_(None))
@@ -5380,6 +6540,10 @@ class ConversationEngine:
             .limit(10)
             .all()
         )
+        total = self.db.query(func.count(Product.id)).filter(
+            Product.organization_id == ctx.organization_id,
+            Product.deleted_at.is_(None),
+        ).scalar() or 0
         lines = []
         for p in products:
             price = money(p.unit_price, p.currency) if p.unit_price is not None else "—"

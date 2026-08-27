@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.modules.billing.models import (
@@ -171,23 +171,37 @@ class CreditNoteRepository(BaseRepository[CreditNote]):
         ]
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(CreditNote).filter(
+        """Single grouped-aggregate query instead of 6 separate round trips
+        (1 count + 1 sum + 1 outstanding-sum + 4 status-filtered counts) —
+        each round trip costs real, measurable network latency in this
+        environment. get_outstanding_total() itself is left unchanged
+        (still callable standalone — credit_note_service.py uses it
+        independently), just no longer called from inside this method."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        outstanding_condition = CreditNote.status.in_(["issued", "partially_applied"])
+
+        row = self.db.query(
+            func.count(CreditNote.id),
+            func.coalesce(func.sum(CreditNote.total_amount), 0),
+            func.coalesce(func.sum(case((outstanding_condition, CreditNote.remaining_amount), else_=0)), 0),
+            _count_if(CreditNote.status == "draft"),
+            _count_if(outstanding_condition),
+            _count_if(CreditNote.status == "fully_applied"),
+            _count_if(CreditNote.status == "voided"),
+        ).filter(
             CreditNote.organization_id == organization_id,
             CreditNote.is_active == True,
-        )
-        total_count = base.count()
-        total_value = self.db.query(func.coalesce(func.sum(CreditNote.total_amount), 0)).filter(
-            CreditNote.organization_id == organization_id, CreditNote.is_active == True,
-        ).scalar()
-        outstanding = self.get_outstanding_total(organization_id)
-        draft_count = base.filter(CreditNote.status == "draft").count()
-        issued_count = base.filter(CreditNote.status.in_(["issued", "partially_applied"])).count()
-        applied_count = base.filter(CreditNote.status == "fully_applied").count()
-        voided_count = base.filter(CreditNote.status == "voided").count()
+        ).one()
+
+        (total_count, total_value, outstanding, draft_count,
+         issued_count, applied_count, voided_count) = row
+
         return {
             "total_count": total_count,
             "total_value": float(total_value),
-            "outstanding_credits": outstanding,
+            "outstanding_credits": float(outstanding),
             "draft_count": draft_count,
             "issued_count": issued_count,
             "fully_applied_count": applied_count,
@@ -487,29 +501,41 @@ class RefundRepository(BaseRepository[Refund]):
         ]
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(Refund).filter(
+        """Single grouped-aggregate query instead of 9 separate round trips
+        (1 count + 2 sums + 1 outstanding-sum + 6 status-filtered counts) —
+        each round trip costs real, measurable network latency in this
+        environment. get_outstanding_total() itself is left unchanged (still
+        callable standalone), just no longer called from inside this
+        method."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        outstanding_condition = Refund.status.in_(["draft", "pending_approval", "approved", "processing", "pending"])
+
+        row = self.db.query(
+            func.count(Refund.id),
+            func.coalesce(func.sum(Refund.amount), 0),
+            func.coalesce(func.sum(case((Refund.status == "completed", Refund.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((outstanding_condition, Refund.amount), else_=0)), 0),
+            _count_if(Refund.status == "pending_approval"),
+            _count_if(Refund.status == "approved"),
+            _count_if(Refund.status == "processing"),
+            _count_if(Refund.status == "completed"),
+            _count_if(Refund.status == "failed"),
+            _count_if(Refund.status.in_(["cancelled", "rejected"])),
+        ).filter(
             Refund.organization_id == organization_id,
             Refund.is_active == True,
-        )
-        total_count = base.count()
-        total_value = self.db.query(func.coalesce(func.sum(Refund.amount), 0)).filter(
-            Refund.organization_id == organization_id, Refund.is_active == True,
-        ).scalar()
-        completed_value = self.db.query(func.coalesce(func.sum(Refund.amount), 0)).filter(
-            Refund.organization_id == organization_id, Refund.is_active == True,
-            Refund.status == "completed",
-        ).scalar()
-        pending_approval_count = base.filter(Refund.status == "pending_approval").count()
-        approved_count = base.filter(Refund.status == "approved").count()
-        processing_count = base.filter(Refund.status == "processing").count()
-        completed_count = base.filter(Refund.status == "completed").count()
-        failed_count = base.filter(Refund.status == "failed").count()
-        cancelled_count = base.filter(Refund.status.in_(["cancelled", "rejected"])).count()
+        ).one()
+
+        (total_count, total_value, completed_value, outstanding_value, pending_approval_count,
+         approved_count, processing_count, completed_count, failed_count, cancelled_count) = row
+
         return {
             "total_count": total_count,
             "total_value": float(total_value),
             "completed_value": float(completed_value),
-            "outstanding_value": self.get_outstanding_total(organization_id),
+            "outstanding_value": float(outstanding_value),
             "pending_approval_count": pending_approval_count,
             "approved_count": approved_count,
             "processing_count": processing_count,

@@ -9,13 +9,24 @@ CORS origins and its own token namespace. Nothing here is shared with the
 old repo's app.config.
 """
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchored to THIS file's directory (backend/.env), not the process CWD.
+# With a bare ".env", launching uvicorn from any other working directory
+# (repo root, an IDE launcher, a service manager) silently skipped the file,
+# left BILLING_DATABASE_URL empty and — under DEBUG — fell back to the local
+# SQLite dev database. Registrations then landed in a different database than
+# the one the properly-launched server reads, surfacing as
+# "Invalid email or password." for accounts that genuinely exist.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -113,21 +124,20 @@ class Settings(BaseSettings):
     # OAuth state (CON-2): TTL for the signed, organization-bound state token.
     STRIPE_OAUTH_STATE_TTL_SECONDS: int = 600
 
-    # ── AI Model Gateway (provider-neutral) ────────────────────────────
-    # Provider selection: "groq" | "anthropic" | "" (auto — first key set).
-    AI_MODEL_PROVIDER: str = ""
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL_DEFAULT: str = "claude-sonnet-4-20250514"
-    ANTHROPIC_MAX_TOKENS: int = 4096
-    ANTHROPIC_TEMPERATURE: float = 0.1
-    # Groq (OpenAI-compatible chat-completions API; free tier at
-    # console.groq.com). No extra SDK needed — plain httpx.
+    # ── AI Model Gateway (Groq) ────────────────────────────────────────
     GROQ_API_KEY: str = ""
-    GROQ_MODEL_DEFAULT: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL_DEFAULT: str = "openai/gpt-oss-20b"
     GROQ_MAX_TOKENS: int = 2048
     GROQ_TEMPERATURE: float = 0.1
     AI_MODEL_TIMEOUT_SECONDS: int = 30
     AI_SAFE_MODE: bool = False
+    AI_PROVIDER: str = "groq"
+
+    # ── AI Model Gateway (Anthropic) ──────────────────────────────────
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL_DEFAULT: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_MAX_TOKENS: int = 2048
+    ANTHROPIC_TEMPERATURE: float = 0.1
 
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this

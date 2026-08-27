@@ -371,7 +371,7 @@ export default function ProductsDashboard() {
 
   if (loadingProducts && products.length === 0) {
     return (
-      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label="Loading products dashboard">
+      <div className="space-y-8" aria-label="Loading products dashboard">
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 5 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -389,7 +389,7 @@ export default function ProductsDashboard() {
   }
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8">
       <DashboardHeader {...headerProps} />
 
       {errorProducts && (

@@ -1,12 +1,10 @@
 """
 model_gateway/router_config.py
 -------------------------------
-Task-class to model routing configuration.
+Task-class to model routing configuration for Groq and Anthropic.
 
-Routing decisions are policy, not hardcoded per action type.
 Each task class maps to a model configuration that can be changed
-without code modifications. Tables are per provider: every configured
-provider must define a row for each supported task class.
+without code modifications.
 """
 
 from __future__ import annotations
@@ -22,100 +20,99 @@ class ModelConfig:
     response_format: dict | None = None
 
 
-# Default task-class routing — policy-driven, not hardcoded per action.
-# Override via environment or database config as needed.
-TASK_MODEL_ROUTING: dict[str, ModelConfig] = {
-    "intent_classification": ModelConfig(
-        model="claude-haiku-4-20250414",
-        max_tokens=256,
-        temperature=0.0,
-    ),
-    "answer_generation": ModelConfig(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        temperature=0.1,
-    ),
-    "drafting": ModelConfig(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        temperature=0.0,
-        response_format={"type": "json_object"},
-    ),
-    "explanation": ModelConfig(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        temperature=0.1,
-    ),
-    "summarization": ModelConfig(
-        model="claude-haiku-4-20250414",
-        max_tokens=1024,
-        temperature=0.0,
-    ),
-    "policy_evaluation": ModelConfig(
-        model="claude-haiku-4-20250414",
-        max_tokens=512,
-        temperature=0.0,
-    ),
-    "retrieval_rerank": ModelConfig(
-        model="claude-haiku-4-20250414",
-        max_tokens=512,
-        temperature=0.0,
-    ),
-}
-
-# Groq routing (OpenAI-compatible; free tier). One fast general model covers
-# all task classes — llama-3.3-70b is Groq's production-recommended workhorse.
+# Groq task-class routing — models verified live against Groq API
+# Fast tasks use the lightweight model; quality tasks use mid-tier.
 GROQ_TASK_MODEL_ROUTING: dict[str, ModelConfig] = {
     "intent_classification": ModelConfig(
-        model="llama-3.3-70b-versatile",
+        model="allam-2-7b",
         max_tokens=256,
         temperature=0.0,
     ),
     "answer_generation": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=4096,
+        model="openai/gpt-oss-20b",
+        max_tokens=1024,
         temperature=0.1,
     ),
     "drafting": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=4096,
+        model="allam-2-7b",
+        max_tokens=1024,
         temperature=0.0,
         response_format={"type": "json_object"},
     ),
     "explanation": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=4096,
+        model="openai/gpt-oss-20b",
+        max_tokens=1024,
         temperature=0.1,
     ),
     "summarization": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=1024,
+        model="openai/gpt-oss-20b",
+        max_tokens=1536,
         temperature=0.0,
     ),
     "policy_evaluation": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=512,
+        model="openai/gpt-oss-20b",
+        max_tokens=1024,
         temperature=0.0,
     ),
     "retrieval_rerank": ModelConfig(
-        model="llama-3.3-70b-versatile",
-        max_tokens=512,
+        model="openai/gpt-oss-20b",
+        max_tokens=1024,
         temperature=0.0,
     ),
 }
 
-_PROVIDER_TABLES = {
-    "anthropic": TASK_MODEL_ROUTING,
+# Anthropic task-class routing
+ANTHROPIC_TASK_MODEL_ROUTING: dict[str, ModelConfig] = {
+    "intent_classification": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=256,
+        temperature=0.0,
+    ),
+    "answer_generation": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.1,
+    ),
+    "drafting": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.0,
+    ),
+    "explanation": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.1,
+    ),
+    "summarization": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.0,
+    ),
+    "policy_evaluation": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.0,
+    ),
+    "retrieval_rerank": ModelConfig(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        temperature=0.0,
+    ),
+}
+
+# Backward-compatible alias
+TASK_MODEL_ROUTING = GROQ_TASK_MODEL_ROUTING
+
+_PROVIDER_ROUTING: dict[str, dict[str, ModelConfig]] = {
     "groq": GROQ_TASK_MODEL_ROUTING,
+    "anthropic": ANTHROPIC_TASK_MODEL_ROUTING,
 }
 
 
-def get_model_config(task_class: str, provider: str = "anthropic") -> ModelConfig:
-    """Resolve model config for a task class on the given provider.
+def get_model_config(task_class: str, provider: str = "groq") -> ModelConfig:
+    """Resolve model config for a task class and provider.
 
-    Falls back to that provider's answer_generation config for unknown task
-    classes, and to the Anthropic table for unknown providers (the original
-    default).
+    Falls back to answer_generation config for unknown task classes.
     """
-    table = _PROVIDER_TABLES.get(provider, TASK_MODEL_ROUTING)
-    return table.get(task_class, table["answer_generation"])
+    routing = _PROVIDER_ROUTING.get(provider, GROQ_TASK_MODEL_ROUTING)
+    return routing.get(task_class, routing["answer_generation"])

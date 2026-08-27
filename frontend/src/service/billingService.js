@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { getAccessToken } from "./sessionStorage";
 import { ENDPOINTS } from "./billingEndpoints";
 // ZB-SA-CMD-003 §17 — Domain B containment: file-download entry points are
 // gated on the privileged-session suppression flag.
@@ -69,12 +70,53 @@ function normalizePricingPlanList(data) {
   return data;
 }
 
+// Org config (currency, decimal places, terminology-adjacent settings) is
+// stable reference data fetched independently by ~18 call sites across the
+// app — including CurrencyContext and TerminologyContext, which both mount
+// on every billing page — so a single navigation could fire the identical
+// GET /billing/settings/config 2-3+ times. This coalesces simultaneous
+// callers into one in-flight request and serves a short-TTL cache after
+// that, cutting real duplicate round trips without changing any call site's
+// signature or return shape. Keyed by the current access token so a
+// login/logout (even client-side, without a full page reload) can never
+// serve one org's cached config to another session. Mutations invalidate
+// the cache immediately so an edit is reflected on the very next read
+// instead of waiting out the TTL.
+const CONFIG_CACHE_TTL_MS = 60_000;
+let _configCache = null; // { token, data, fetchedAt }
+let _configInFlight = null; // { token, promise }
+
+function invalidateConfigCache() {
+  _configCache = null;
+  _configInFlight = null;
+}
+
+function getConfigCached() {
+  const token = getAccessToken();
+  if (_configCache && _configCache.token === token && Date.now() - _configCache.fetchedAt < CONFIG_CACHE_TTL_MS) {
+    return Promise.resolve({ ..._configCache.data });
+  }
+  if (_configInFlight && _configInFlight.token === token) {
+    return _configInFlight.promise.then((data) => ({ ...data }));
+  }
+  const promise = api.get(ENDPOINTS.SETTINGS_CONFIG).then((data) => {
+    _configCache = { token, data, fetchedAt: Date.now() };
+    _configInFlight = null;
+    return data;
+  }).catch((err) => {
+    _configInFlight = null;
+    throw err;
+  });
+  _configInFlight = { token, promise };
+  return promise.then((data) => ({ ...data }));
+}
+
 export const settingsApi = {
   get: () => api.get(ENDPOINTS.SETTINGS),
   update: (data) => api.put(ENDPOINTS.SETTINGS, data),
-  getConfig: () => api.get(ENDPOINTS.SETTINGS_CONFIG),
-  updateConfig: (data) => api.put(ENDPOINTS.SETTINGS_CONFIG, data),
-  resetConfig: () => api.post(ENDPOINTS.SETTINGS_CONFIG_RESET),
+  getConfig: () => getConfigCached(),
+  updateConfig: (data) => api.put(ENDPOINTS.SETTINGS_CONFIG, data).then((res) => { invalidateConfigCache(); return res; }),
+  resetConfig: () => api.post(ENDPOINTS.SETTINGS_CONFIG_RESET).then((res) => { invalidateConfigCache(); return res; }),
   validateConfig: () => api.get(ENDPOINTS.SETTINGS_CONFIG_VALIDATE),
   getExchangeRates: () => api.get(ENDPOINTS.SETTINGS_EXCHANGE_RATES),
   refreshExchangeRates: (baseCurrency) => {
@@ -491,6 +533,8 @@ export const taxApi = {
     api.get(
       buildUrl(ENDPOINTS.TAX_RATES_SUMMARY, { date_from: dateFrom, date_to: dateTo })
     ),
+  getMonthlyTrend: (months = 6) =>
+    api.get(buildUrl(ENDPOINTS.TAX_RATES_SUMMARY_TREND, { months })),
   calculate: (taxableAmount, jurisdiction, taxTypeFilter) =>
     api.post(
       buildUrl(ENDPOINTS.TAX_RATES_CALCULATE, {
@@ -499,6 +543,26 @@ export const taxApi = {
         tax_type_filter: taxTypeFilter,
       }), {}
     ),
+  // ── Import ────────────────────────────────────────────────────────────
+  importPreview: (formData) => api.post(ENDPOINTS.TAX_RATES_IMPORT_PREVIEW, formData),
+  importConfirm: (data) => api.post(ENDPOINTS.TAX_RATES_IMPORT_CONFIRM, data),
+  downloadTemplate: async (format = "csv") => {
+    assertExportsAllowed();
+    const { getAccessToken, API_BASE_URL } = await import("./api");
+    const url = `${API_BASE_URL}${ENDPOINTS.TAX_RATES_IMPORT_TEMPLATE}?format=${format}`;
+    const token = getAccessToken();
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Template download failed");
+    const blob = await res.blob();
+    const ext = format === "xlsx" ? "xlsx" : "csv";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `tax_rate_import_template.${ext}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
 };
 
 export const creditNoteApi = {

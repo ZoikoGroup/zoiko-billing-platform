@@ -175,7 +175,7 @@ const [original, setOriginal] = useState({});
 
   if (loading) {
     return (
-      <div className="space-y-6 px-4 py-6 sm:px-6">
+      <div className="space-y-6">
         <PageHeader
           icon={Settings}
           title="Invoice Settings"

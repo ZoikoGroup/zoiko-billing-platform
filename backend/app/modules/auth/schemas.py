@@ -18,6 +18,14 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email_whitespace(cls, v):
+        # Autofill/password managers can deliver a padded email; strip it so
+        # the credential check sees the address the user meant. The password
+        # is deliberately NOT normalized — its exact bytes are the credential.
+        return v.strip() if isinstance(v, str) else v
+
 
 class RegisterRequest(BaseModel):
     organization: str = Field(..., min_length=1, max_length=200)
@@ -123,6 +131,8 @@ class UserResponse(BaseModel):
     last_name: str
     phone: Optional[str] = None
     is_active: bool
+    is_verified: bool = False
+    last_login_at: Optional[datetime] = None
     created_at: datetime
     platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
 
@@ -192,3 +202,11 @@ class UserUpdateRequest(BaseModel):
 class UserListResponse(BaseModel):
     users: list[UserResponse]
     total: int
+
+
+class UserSummaryResponse(BaseModel):
+    total: int = 0
+    active: int = 0
+    pending: int = 0
+    suspended: int = 0
+    invited: int = 0

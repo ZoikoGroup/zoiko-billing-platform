@@ -58,15 +58,33 @@ export async function closeSession(conversationUid) {
 export async function sendMessage(conversationUid, message, page) {
   const url = `${API_BASE}/sessions/${conversationUid}/messages`;
   console.log("[CHATBOT-DIAG] sendMessage() → POST", url, "body:", { message, page });
-  const res = await fetch(url, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ message, page: page || window.location.pathname }),
-  });
-  const body = await res.text();
-  console.log("[CHATBOT-DIAG] sendMessage() ← status:", res.status, "body:", body.slice(0, 500));
-  if (!res.ok) throw new Error(`Send message failed: ${res.status} — ${body.slice(0, 300)}`);
-  return JSON.parse(body);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ message, page: page || window.location.pathname }),
+    });
+  } catch (networkErr) {
+    const err = new Error("network_failure");
+    err.cause = networkErr;
+    err.status = 0;
+    throw err;
+  }
+  console.log("[CHATBOT-DIAG] sendMessage() ← status:", res.status);
+  if (!res.ok) {
+    const err = new Error(`Send message failed: ${res.status}`);
+    err.status = res.status;
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      err.retryAfter = retryAfter ? parseInt(retryAfter, 10) || 10 : 10;
+    }
+    if (res.status === 401 || res.status === 403) {
+      err.sessionExpired = true;
+    }
+    throw err;
+  }
+  return res.json();
 }
 
 export async function getCapabilities() {
@@ -117,5 +135,14 @@ export async function executeAction(actionUid, idempotencyKey) {
     body: JSON.stringify({ idempotency_key: idempotencyKey }),
   });
   if (!res.ok) throw new Error(`Execute action failed: ${res.status}`);
+  return res.json();
+}
+
+export async function cancelAction(actionUid) {
+  const res = await fetch(`${ACTION_BASE}/${actionUid}/cancel`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Cancel action failed: ${res.status}`);
   return res.json();
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Receipt, Filter, X, RefreshCw,
@@ -71,6 +71,13 @@ export default function InvoicingPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // The "Recent Invoices" widget below needs the same top-N-by-created_at-desc
+  // set the very first (unfiltered, page 1, default-sorted) fetchInvoices()
+  // call already returns — captured once here instead of firing a second,
+  // near-identical GET /billing/invoices request on mount.
+  const recentCapturedRef = useRef(false);
+  const [recentInvoices, setRecentInvoices] = useState([]);
+
   const fetchInvoices = useCallback(async () => {
     try {
       setError(null);
@@ -91,6 +98,10 @@ export default function InvoicingPage() {
       const items = data.items || data.data || data || [];
       setInvoices(Array.isArray(items) ? items : []);
       setTotal(data.total || items.length || 0);
+      if (!recentCapturedRef.current) {
+        recentCapturedRef.current = true;
+        setRecentInvoices(Array.isArray(items) ? items.slice(0, 3) : []);
+      }
     } catch (err) {
       setError(err.message || "Failed to load invoices");
       setInvoices([]);
@@ -142,13 +153,6 @@ export default function InvoicingPage() {
     setSortDir((d) => (field === sortField ? (d === "asc" ? "desc" : "asc") : "asc"));
   };
 
-  const [recentInvoices, setRecentInvoices] = useState([]);
-  useEffect(() => {
-    invoiceApi.list({ page: 1, per_page: 3, sort_by: "created_at", sort_order: "desc" })
-      .then((res) => setRecentInvoices(res.items || res.data || res || []))
-      .catch((err) => console.error("Failed to load recent invoices:", err));
-  }, []);
-
   const runBulkInvoiceAction = async (action) => {
     if (selectedInvoices.length === 0) return;
     try {
@@ -187,7 +191,7 @@ export default function InvoicingPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 px-4 py-6 sm:px-6">
+      <div className="space-y-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"
@@ -201,7 +205,7 @@ export default function InvoicingPage() {
 
   if (error && invoices.length === 0) {
     return (
-      <div className="space-y-6 px-4 py-6 sm:px-6">
+      <div className="space-y-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"
@@ -214,7 +218,7 @@ export default function InvoicingPage() {
   }
 
   return (
-      <div className="space-y-6 px-4 py-6 sm:px-6">
+      <div className="space-y-6">
         <PageHeader
           crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices" }]}
           title="Invoices"

@@ -203,8 +203,10 @@ class TestStateMachineTransitions:
             )
 
     def test_idempotent_replay_prevents_double_execute(self):
-        """Replaying execute with same idempotency key returns existing result."""
-        from app.modules.chatbot.actions.action_engine import ActionEngine
+        """BUG 2: After a SUCCEEDED execution, a second call — even with
+        the same idempotency key — must be rejected with 409, not
+        silently return an idempotent replay."""
+        from app.modules.chatbot.actions.action_engine import ActionEngine, ActionEngineError
 
         db = MagicMock()
         engine = ActionEngine(db)
@@ -238,16 +240,19 @@ class TestStateMachineTransitions:
         db.query.return_value.filter.return_value.first.side_effect = [
             draft, preview,  # draft lookup + preview lookup
             confirmation,  # confirmation check
-            existing_execution,  # idempotency check
+            # idempotency check is NOT reached — the prior-succeeded
+            # guard fires first via the .join() chain.
         ]
+
+        # The prior-succeeded guard uses .join().filter().first() and
+        # finds the existing SUCCEEDED execution → triggers 409.
+        db.query.return_value.join.return_value.filter.return_value.first.return_value = existing_execution
 
         ctx = MagicMock(organization_id=1, user_id=1, tenant_context_id=1, request_id="test")
 
-        result = engine.execute_action(
-            ctx=ctx,
-            action_uid="test-draft-1",
-            idempotency_key="test-key-1",
-        )
-
-        assert result["idempotent_replay"] is True
-        assert result["execution_uid"] == "existing-exec-1"
+        with pytest.raises(ActionEngineError, match="already been executed"):
+            engine.execute_action(
+                ctx=ctx,
+                action_uid="test-draft-1",
+                idempotency_key="test-key-1",
+            )

@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func, case, extract, or_
+from sqlalchemy import and_, func, case, extract, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.exceptions import BadRequestException
@@ -270,7 +270,38 @@ class InvoiceRepository(BaseRepository[Invoice]):
         return self.list_all(organization_id, active_only=active_only, status=status)
 
     def list_overdue(self, organization_id: int) -> List[Invoice]:
-        return self.list_all(organization_id, active_only=True, status="overdue")
+        return self.list_effectively_overdue(organization_id)
+
+    def list_effectively_overdue(self, organization_id: int, with_customer: bool = False) -> List[Invoice]:
+        """Invoices that are functionally overdue by due_date, regardless of
+        whether the OVERDUE status flag has actually been set on the row yet.
+
+        The OVERDUE status transition only happens via
+        tasks/overdue_invoices.py's scheduled job (ENABLE_RECURRING_BILLING_
+        SCHEDULER, off by default) or the manual /invoices/process-overdue
+        trigger — nothing else ever flips SENT/PARTIALLY_PAID -> OVERDUE. A
+        read path that filtered strictly on `status == OVERDUE` (the
+        pre-existing behavior of this method, and of get_collections_queue /
+        DunningService.process_dunning) would silently show nothing for a
+        real, materially overdue invoice whenever neither of those has run
+        yet -- this is the single source of truth every "which invoices are
+        overdue" read path should use instead, matching the due-date-based
+        condition get_aging_buckets() already used (the one read path that
+        was never affected by this gap).
+        """
+        from sqlalchemy.orm import joinedload
+
+        today = date.today()
+        query = self.db.query(Invoice).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.is_active == True,
+            Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID]),
+            Invoice.due_date.isnot(None),
+            Invoice.due_date < today,
+        )
+        if with_customer:
+            query = query.options(joinedload(Invoice.customer))
+        return query.all()
 
     def list_due_between(
         self,
@@ -363,7 +394,11 @@ class InvoiceRepository(BaseRepository[Invoice]):
                 Invoice.is_active == True,
                 Invoice.status.in_(["sent", "overdue", "partially_paid"]),
                 Invoice.due_date.isnot(None),
-                Invoice.due_date <= today,
+                # An invoice due today is not yet overdue -- same boundary
+                # InvoiceRepository.list_effectively_overdue and the
+                # scheduled overdue-invoice job both use (DEF-06: this used
+                # to be `<= today`, one day out of step with those two).
+                Invoice.due_date < today,
             )
             .group_by(Invoice.currency, "bucket")
             .all()
@@ -398,21 +433,11 @@ class InvoiceRepository(BaseRepository[Invoice]):
         return result
 
     def list_overdue_with_customer(self, organization_id: int) -> List[Invoice]:
-        """OVERDUE invoices with the customer relationship eager-loaded —
-        the collections queue reads inv.customer per row, so a plain
-        list_all() triggers an N+1 query for every invoice."""
-        from sqlalchemy.orm import joinedload
-
-        return (
-            self.db.query(Invoice)
-            .filter(
-                Invoice.organization_id == organization_id,
-                Invoice.is_active == True,
-                Invoice.status == InvoiceStatus.OVERDUE,
-            )
-            .options(joinedload(Invoice.customer))
-            .all()
-        )
+        """Effectively-overdue invoices (see list_effectively_overdue) with
+        the customer relationship eager-loaded — the collections queue reads
+        inv.customer per row, so a plain query would trigger an N+1 query
+        for every invoice."""
+        return self.list_effectively_overdue(organization_id, with_customer=True)
 
     def get_outstanding_total(self, organization_id: int, currency_rates: Optional[Dict[str, float]] = None) -> float:
         rate = self._rate_case(Invoice.currency, currency_rates)
@@ -454,17 +479,15 @@ class InvoiceRepository(BaseRepository[Invoice]):
             period_start, period_end = get_period_dates(period)
             filters.append(Invoice.issue_date >= period_start)
             filters.append(Invoice.issue_date <= period_end)
-        base = self.db.query(Invoice).filter(*filters)
-        total_invoices = base.count()
-        total_amount = base.with_entities(
-            func.coalesce(func.sum(Invoice.total_amount * rate), 0)
-        ).scalar()
-        paid_amount = base.filter(Invoice.status == "paid").with_entities(
-            func.coalesce(func.sum(Invoice.total_amount * rate), 0)
-        ).scalar()
-        overdue_amount = base.filter(Invoice.status == "overdue").with_entities(
-            func.coalesce(func.sum(Invoice.balance_due * rate), 0)
-        ).scalar()
+        # Single grouped-aggregate query instead of 4 separate round trips
+        # (1 count + 3 conditional sums) -- each round trip costs real,
+        # measurable network latency in this environment.
+        total_invoices, total_amount, paid_amount, overdue_amount = self.db.query(
+            func.count(Invoice.id),
+            func.coalesce(func.sum(Invoice.total_amount * rate), 0),
+            func.coalesce(func.sum(case((Invoice.status == "paid", Invoice.total_amount * rate), else_=0)), 0),
+            func.coalesce(func.sum(case((Invoice.status == "overdue", Invoice.balance_due * rate), else_=0)), 0),
+        ).filter(*filters).one()
         return {
             "total_invoices": total_invoices,
             "total_amount": float(total_amount),
@@ -480,21 +503,44 @@ class InvoiceRepository(BaseRepository[Invoice]):
         currency_rates: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         rate = self._rate_case(Invoice.currency, currency_rates)
-        base = self.db.query(Invoice).filter(
+        base_filters = [
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
             Invoice.status != "draft",
-        )
+        ]
         if date_from:
-            base = base.filter(Invoice.issue_date >= date_from)
+            base_filters.append(Invoice.issue_date >= date_from)
         if date_to:
-            base = base.filter(Invoice.issue_date <= date_to)
+            base_filters.append(Invoice.issue_date <= date_to)
 
-        total_invoices = base.count()
-        total_amount = float(base.with_entities(func.coalesce(func.sum(Invoice.total_amount * rate), 0)).scalar() or 0)
-        paid_amount = float(base.filter(Invoice.status == "paid").with_entities(func.coalesce(func.sum(Invoice.total_amount * rate), 0)).scalar() or 0)
-        outstanding_amount = float(base.filter(Invoice.status.in_(["sent", "overdue", "partially_paid"])).with_entities(func.coalesce(func.sum(Invoice.balance_due * rate), 0)).scalar() or 0)
-        overdue_amount = float(base.filter(Invoice.status == "overdue").with_entities(func.coalesce(func.sum(Invoice.balance_due * rate), 0)).scalar() or 0)
+        now = datetime.utcnow()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        outstanding_cond = Invoice.status.in_(["sent", "overdue", "partially_paid"])
+        paid_cond = Invoice.status == "paid"
+        overdue_cond = Invoice.status == "overdue"
+        this_month_cond = and_(paid_cond, Invoice.paid_at >= month_start)
+
+        # Single grouped-aggregate query instead of 7 separate round trips
+        # (1 count + 6 conditional sums) -- each round trip costs real,
+        # measurable network latency in this environment. this_month_revenue
+        # is computed here too, before month_start was previously used
+        # further down -- moved up so it's available for this same query.
+        (total_invoices, total_amount, paid_amount, outstanding_amount,
+         overdue_amount, this_month_revenue, total_tax) = self.db.query(
+            func.count(Invoice.id),
+            func.coalesce(func.sum(Invoice.total_amount * rate), 0),
+            func.coalesce(func.sum(case((paid_cond, Invoice.total_amount * rate), else_=0)), 0),
+            func.coalesce(func.sum(case((outstanding_cond, Invoice.balance_due * rate), else_=0)), 0),
+            func.coalesce(func.sum(case((overdue_cond, Invoice.balance_due * rate), else_=0)), 0),
+            func.coalesce(func.sum(case((this_month_cond, Invoice.total_amount * rate), else_=0)), 0),
+            func.coalesce(func.sum(Invoice.tax_amount * rate), 0),
+        ).filter(*base_filters).one()
+        total_amount = float(total_amount)
+        paid_amount = float(paid_amount)
+        outstanding_amount = float(outstanding_amount)
+        overdue_amount = float(overdue_amount)
+        this_month_revenue = float(this_month_revenue)
+        total_tax = float(total_tax)
 
         status_query = self.db.query(
             Invoice.status,
@@ -509,15 +555,6 @@ class InvoiceRepository(BaseRepository[Invoice]):
             status_query = status_query.filter(Invoice.issue_date <= date_to)
         status_rows = status_query.group_by(Invoice.status).all()
         status_counts = {row[0].value if hasattr(row[0], "value") else str(row[0]): row[1] for row in status_rows}
-
-        now = datetime.utcnow()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        this_month_revenue = float(base.filter(
-            Invoice.status == "paid",
-            Invoice.paid_at >= month_start,
-        ).with_entities(func.coalesce(func.sum(Invoice.total_amount * rate), 0)).scalar() or 0)
-
-        total_tax = float(base.with_entities(func.coalesce(func.sum(Invoice.tax_amount * rate), 0)).scalar() or 0)
 
         avg_days_query = self.db.query(
             func.avg(
@@ -767,7 +804,6 @@ class InvoiceRepository(BaseRepository[Invoice]):
                 "collected": collected_lookup.get(key, 0.0),
                 "tax": data["tax"],
             })
-        return results
         return results
 
     def get_recent_activity(self, organization_id: int, limit: int = 10) -> List[Dict[str, Any]]:

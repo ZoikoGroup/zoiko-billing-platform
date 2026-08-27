@@ -43,6 +43,7 @@ from app.modules.auth.schemas import (
     UserCreateRequest,
     UserListResponse,
     UserResponse,
+    UserSummaryResponse,
     UserUpdateRequest,
 )
 
@@ -342,6 +343,32 @@ def list_users(
     total = query.count()
     users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
     return UserListResponse(users=users, total=total)
+
+
+@user_router.get("/users/summary", response_model=UserSummaryResponse, summary="User status summary counts")
+def get_user_summary(
+    current_user=Depends(get_current_org_admin),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import func
+    from app.core.dependencies import get_organization_id
+
+    org_id = get_organization_id(current_user)
+    base = db.query(User).filter(User.organization_id == org_id)
+
+    total = base.count() or 0
+    active = base.filter(User.is_active == True, User.is_verified == True).count() or 0
+    invited = base.filter(User.is_active == True, User.is_verified == False).count() or 0
+    suspended = base.filter(User.is_active == False).count() or 0
+    pending = total - active - invited - suspended
+
+    return UserSummaryResponse(
+        total=total,
+        active=active,
+        pending=max(pending, 0),
+        suspended=suspended,
+        invited=invited,
+    )
 
 
 @user_router.post("/users", response_model=UserResponse, summary="Invite a user into your organization")
