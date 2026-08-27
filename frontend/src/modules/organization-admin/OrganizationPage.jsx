@@ -297,8 +297,28 @@ export default function OrgAdminOrganizationPage() {
         <div className="orb orb-1" />
         <div className="orb orb-2" />
         <div className="page">
-          <div className="glass" style={{ padding: 60, textAlign: "center" }}>
-            <div className="dim">Loading organization details...</div>
+          <div className="hero rise">
+            <div>
+              <div style={{ width: 180, height: 32, borderRadius: 8, background: "#E5E7EB", marginBottom: 10 }} />
+              <div style={{ width: 320, height: 16, borderRadius: 6, background: "#F1F5F9" }} />
+            </div>
+          </div>
+          <div className="id-card glass rise" style={{ animationDelay: ".1s" }}>
+            <div className="id-left" style={{ gap: 16 }}>
+              <div style={{ width: 60, height: 60, borderRadius: 16, background: "#E5E7EB" }} />
+              <div>
+                <div style={{ width: 180, height: 24, borderRadius: 6, background: "#E5E7EB", marginBottom: 8 }} />
+                <div style={{ width: 260, height: 14, borderRadius: 4, background: "#F1F5F9" }} />
+              </div>
+            </div>
+          </div>
+          <div className="stat-strip rise" style={{ animationDelay: ".2s" }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} style={{ flex: 1, padding: "20px 24px", borderRadius: 14, background: "#fff", border: "1.5px solid #E5E7EB" }}>
+                <div style={{ width: 80, height: 12, borderRadius: 4, background: "#F1F5F9", marginBottom: 10 }} />
+                <div style={{ width: 48, height: 28, borderRadius: 6, background: "#E5E7EB" }} />
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import {
   listUsers,
+  getUserSummary,
   inviteUser,
   updateUser,
   deactivateUser,
   resendInvite,
 } from "../../service/userManagementService";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import { ROLE_LABELS } from "../../config/roles";
+import { ROLE_LABELS, ROLES } from "../../config/roles";
 import {
   X,
   CheckCircle,
@@ -18,220 +19,129 @@ import {
   Mail,
   Pencil,
   Ban,
+  Play,
+  UserPlus,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Shield,
+  Filter,
 } from "lucide-react";
 
-const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-  .org-dash{
-    --bg:#F7F5F1;
-    --glass: rgba(255,255,255,0.72);
-    --glass-solid:#FFFFFF;
-    --glass-border: rgba(28,24,40,0.08);
-    --ink:#1C1826;
-    --ink-soft:#635C72;
-    --ink-faint:#9D96AB;
-    --violet:#6E5AE6;
-    --violet-deep:#4B3BB0;
-    --violet-soft: rgba(110,90,230,0.10);
-    --amber:#D9791E;
-    --amber-deep:#B8600F;
-    --amber-soft: rgba(217,121,30,0.12);
-    --success:#178A50;
-    --success-soft:rgba(23,138,80,0.11);
-    --danger:#D6304C;
-    --danger-soft:rgba(214,48,76,0.10);
-    --radius:18px;
-
-    position:relative;
-    background:var(--bg);
-    color:var(--ink);
-    font-family:'Inter', sans-serif;
-    -webkit-font-smoothing:antialiased;
-    min-height:100vh;
-    overflow-x:clip;
-    isolation:isolate;
-  }
-  .org-dash *{ box-sizing:border-box; }
-
-  .org-dash .orb{ position:absolute; border-radius:50%; filter:blur(100px); z-index:0; pointer-events:none; }
-  .org-dash .orb-1{ width:560px; height:560px; top:-220px; right:-160px; background:radial-gradient(circle, rgba(110,90,230,0.16), transparent 70%); }
-  .org-dash .orb-2{ width:480px; height:480px; bottom:-200px; left:-160px; background:radial-gradient(circle, rgba(217,121,30,0.14), transparent 70%); }
-
-  .org-dash .page{ position:relative; z-index:2; max-width:1180px; margin:0 auto; padding:44px 32px 90px; }
-
-  @keyframes org-rise{ from{ opacity:0; transform:translateY(14px);} to{ opacity:1; transform:translateY(0);} }
-  .org-dash .rise{ animation:org-rise .6s cubic-bezier(.2,.7,.3,1) both; }
-  @media (prefers-reduced-motion: reduce){ .org-dash .rise{ animation:none; } }
-
-  .org-dash .hero{
-    display:flex; align-items:center; justify-content:space-between; gap:24px;
-    margin-bottom:22px; flex-wrap:wrap;
-  }
-  .org-dash h1.title{
-    font-family:'Fraunces', serif; font-weight:600; font-size:52px; line-height:1.2;
-    margin:0 0 12px; letter-spacing:-0.015em;
-    background:linear-gradient(100deg, var(--ink) 25%, var(--amber-deep) 62%, var(--violet-deep) 100%);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-  }
-  @media (max-width:640px){ .org-dash h1.title{ font-size:38px; } }
-  .org-dash .subtitle{ color:var(--ink-soft); font-size:15px; margin:0; max-width:520px; }
-  .org-dash .head-actions{ display:flex; gap:10px; flex:none; }
-
-  .org-dash .btn{
-    font-family:'Inter', sans-serif; font-size:13.5px; font-weight:600;
-    padding:12px 20px; border-radius:11px; cursor:pointer;
-    display:inline-flex; align-items:center; gap:8px; border:1px solid transparent;
-    transition:transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
-    white-space:nowrap;
-  }
-  .org-dash .btn:hover{ transform:translateY(-2px); }
-  .org-dash .btn-primary{
-    background:linear-gradient(120deg, var(--amber), var(--violet));
-    color:#fff; box-shadow:0 10px 26px -10px rgba(110,90,230,0.5);
-  }
-  .org-dash .btn-primary:hover{ box-shadow:0 14px 32px -10px rgba(110,90,230,0.65); }
-  .org-dash .btn-ghost{ background:var(--glass-solid); color:var(--ink); border-color:var(--glass-border); box-shadow:0 1px 2px rgba(28,24,40,0.04); }
-  .org-dash .btn-ghost:hover{ border-color:rgba(28,24,40,0.18); background:#fff; }
-  .org-dash .btn[disabled]{ opacity:0.5; cursor:not-allowed; transform:none; }
-
-  .org-dash .glass{
-    background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--radius);
-    backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
-    box-shadow:0 1px 0 rgba(255,255,255,0.6) inset, 0 20px 40px -26px rgba(28,24,40,0.16);
-  }
-
-  .org-dash .search-bar{
-    display:flex; align-items:center; gap:10px; padding:14px 18px; margin-bottom:20px;
-  }
-  .org-dash .search-bar input{
-    flex:1; border:none; outline:none; background:transparent; font-size:13.5px; color:var(--ink);
-    font-family:'Inter', sans-serif;
-  }
-  .org-dash .search-bar svg{ color:var(--ink-faint); flex:none; }
-
-  .org-dash table{ width:100%; border-collapse:collapse; }
-  .org-dash thead th{
-    text-align:left; font-size:11px; letter-spacing:0.06em; text-transform:uppercase;
-    color:var(--ink-faint); padding:14px 20px; border-bottom:1px solid var(--glass-border);
-  }
-  .org-dash tbody td{ padding:14px 20px; border-bottom:1px solid rgba(28,24,40,0.055); font-size:13.5px; vertical-align:middle; }
-  .org-dash tbody tr:last-child td{ border-bottom:none; }
-  .org-dash .user-cell{ display:flex; align-items:center; gap:12px; }
-  .org-dash .avatar{
-    width:34px; height:34px; border-radius:10px; flex:none; display:flex; align-items:center;
-    justify-content:center; font-family:'Fraunces', serif; font-weight:600; font-size:13px; color:#fff;
-    background:linear-gradient(135deg, var(--violet), var(--violet-deep));
-  }
-  .org-dash .user-name{ font-weight:600; color:var(--ink); }
-  .org-dash .user-email{ color:var(--ink-faint); font-size:12px; }
-  .org-dash .role-pill{
-    display:inline-flex; align-items:center; font-size:12px; font-weight:600; padding:3px 10px;
-    border-radius:100px; background:var(--violet-soft); color:var(--violet-deep);
-    border:1px solid rgba(110,90,230,0.22);
-  }
-  .org-dash .status-pill{
-    display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600;
-    padding:3px 10px 3px 8px; border-radius:100px;
-  }
-  .org-dash .status-pill .dot{ width:6px; height:6px; border-radius:100px; background:currentColor; }
-  .org-dash .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
-  .org-dash .icon-btn{
-    width:32px; height:32px; border-radius:9px; border:1px solid var(--glass-border); background:var(--glass-solid);
-    display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink-soft);
-  }
-  .org-dash .icon-btn:hover{ border-color:rgba(28,24,40,0.18); color:var(--ink); }
-  .org-dash .icon-btn.danger:hover{ color:var(--danger); border-color:rgba(214,48,76,0.3); }
-  .org-dash .empty-row{ padding:50px 20px; text-align:center; color:var(--ink-faint); font-size:13.5px; }
-
-  .org-dash .modal-overlay{
-    position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
-    background:rgba(28,24,40,0.45); backdrop-filter:blur(6px); padding:16px;
-  }
-  .org-dash .modal{ width:100%; max-width:560px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
-  .org-dash .modal-head{
-    display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
-    padding:22px 26px 18px; border-bottom:1px solid var(--glass-border);
-  }
-  .org-dash .modal-title{ font-family:'Fraunces', serif; font-weight:600; font-size:20px; margin:0 0 3px; color:var(--ink); }
-  .org-dash .modal-sub{ font-size:12px; color:var(--ink-faint); margin:0; }
-  .org-dash .modal-close{
-    width:32px; height:32px; border-radius:10px; border:1px solid var(--glass-border);
-    background:var(--glass-solid); color:var(--ink-soft); cursor:pointer; flex:none;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .org-dash .modal-body{ padding:20px 26px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
-  .org-dash .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  .org-dash .form-field label{ display:block; font-size:11.5px; font-weight:600; color:var(--ink-soft); margin-bottom:6px; letter-spacing:0.02em; }
-  .org-dash .form-field input, .org-dash .form-field select{
-    width:100%; font-family:'Inter', sans-serif; font-size:13.5px; color:var(--ink);
-    background:var(--glass-solid); border:1px solid var(--glass-border); border-radius:11px;
-    padding:11px 14px; outline:none;
-  }
-  .org-dash .form-field input:focus, .org-dash .form-field select:focus{
-    border-color:rgba(110,90,230,0.5); box-shadow:0 0 0 3px var(--violet-soft);
-  }
-  .org-dash .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); }
-  .org-dash .modal-foot{
-    display:flex; justify-content:flex-end; gap:10px; padding:16px 26px;
-    border-top:1px solid var(--glass-border); background:rgba(28,24,40,0.025);
-  }
-  .org-dash .field-error{ font-size:12px; color:var(--danger); margin-top:-6px; }
-
-  .org-dash .toast{
-    position:fixed; bottom:26px; right:26px; z-index:70;
-    display:flex; align-items:center; gap:10px; padding:14px 18px; border-radius:14px;
-    font-size:13.5px; font-weight:600; color:#fff; box-shadow:0 18px 40px -14px rgba(28,20,40,0.4);
-    animation:org-rise .4s cubic-bezier(.2,.7,.3,1) both;
-  }
-  .org-dash .toast-success{ background:var(--success); }
-  .org-dash .toast-danger{ background:var(--danger); }
-  .org-dash .toast button{ background:transparent; border:none; color:#fff; cursor:pointer; padding:2px; display:flex; }
-`;
+const INK = "#0F172A";
+const INK_SOFT = "#374151";
+const INK_FAINT = "#9CA3AF";
+const PRIMARY = "#2563EB";
+const SUCCESS = "#059669";
+const DANGER = "#DC2626";
+const WARNING = "#D97706";
+const LINE = "#E5E7EB";
 
 const STATUS_STYLES = {
-  active: { bg: "rgba(23,138,80,0.11)", color: "#178A50" },
-  pending: { bg: "rgba(217,121,30,0.12)", color: "#B8600F" },
-  inactive: { bg: "rgba(28,24,40,0.07)", color: "#635C72" },
+  active: { bg: "#D1FAE5", color: "#059669", label: "Active" },
+  invited: { bg: "#EDE9FE", color: "#7C3AED", label: "Invited" },
+  inactive: { bg: "#F1F5F9", color: "#64748B", label: "Deactivated" },
 };
 
+const STATUS_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "invited", label: "Invited" },
+  { key: "inactive", label: "Deactivated" },
+];
+
+const INVITABLE_ROLES = [
+  ROLES.BILLING_ADMIN,
+  ROLES.FINANCE_APPROVER,
+  ROLES.AUDITOR,
+];
+
+const PAGE_SIZE = 15;
+
+function getUserStatus(u) {
+  if (!u.is_active) return "inactive";
+  if (!u.is_verified) return "invited";
+  return "active";
+}
+
 function StatusPill({ active, verified }) {
-  if (!active) {
-    return (
-      <span className="status-pill" style={{ background: STATUS_STYLES.inactive.bg, color: STATUS_STYLES.inactive.color }}>
-        <span className="dot" />
-        Deactivated
-      </span>
-    );
-  }
-  if (!verified) {
-    return (
-      <span className="status-pill" style={{ background: STATUS_STYLES.pending.bg, color: STATUS_STYLES.pending.color }}>
-        <span className="dot" />
-        Pending
-      </span>
-    );
-  }
+  const key = !active ? "inactive" : !verified ? "invited" : "active";
+  const s = STATUS_STYLES[key];
   return (
-    <span className="status-pill" style={{ background: STATUS_STYLES.active.bg, color: STATUS_STYLES.active.color }}>
-      <span className="dot" />
-      Active
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />
+      {s.label}
     </span>
   );
+}
+
+function formatLastActive(iso) {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function initials(first, last) {
   return `${(first || "?")[0] || ""}${(last || "")[0] || ""}`.toUpperCase();
 }
 
-const EMPTY_FORM = { first_name: "", last_name: "", email: "", phone: "", role: "billing_admin", send_invite: true };
+const EMPTY_FORM = { first_name: "", last_name: "", email: "", phone: "", role: ROLES.BILLING_ADMIN, send_invite: true };
+
+function SummaryCard({ icon: Icon, label, value, color, bg }) {
+  return (
+    <div className="rounded-xl border p-4 flex items-center gap-3" style={{ background: "#fff", borderColor: LINE }}>
+      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: bg }}>
+        <Icon className="w-5 h-5" style={{ color }} />
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: INK_FAINT }}>{label}</p>
+        <p className="text-xl font-bold tracking-tight leading-none mt-0.5" style={{ color: INK }}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <tr className="animate-pulse">
+      <td className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100" />
+          <div className="space-y-1.5">
+            <div className="h-3.5 w-28 bg-slate-100 rounded" />
+            <div className="h-3 w-36 bg-slate-50 rounded" />
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-4"><div className="h-5 w-20 bg-slate-100 rounded-full" /></td>
+      <td className="px-5 py-4"><div className="h-5 w-20 bg-slate-100 rounded-full" /></td>
+      <td className="px-5 py-4"><div className="h-4 w-14 bg-slate-100 rounded" /></td>
+      <td className="px-5 py-4"><div className="h-5 w-5 bg-slate-100 rounded" /></td>
+    </tr>
+  );
+}
 
 export default function OrgAdminUserManagementPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState({ total: 0, active: 0, pending: 0, suspended: 0, invited: 0 });
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState({ msg: null, type: "success" });
 
@@ -239,13 +149,21 @@ export default function OrgAdminUserManagementPage() {
   const [inviteForm, setInviteForm] = useState(EMPTY_FORM);
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const [confirmDeactivate, setConfirmDeactivate] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const fetchUsers = useCallback((searchTerm) => {
+  const fetchSummary = useCallback(() => {
+    setSummaryLoading(true);
+    getUserSummary()
+      .then((res) => setSummary(res))
+      .catch(() => {})
+      .finally(() => setSummaryLoading(false));
+  }, []);
+
+  const fetchUsers = useCallback((searchTerm, skip) => {
     setLoading(true);
-    listUsers({ search: searchTerm })
+    listUsers({ search: searchTerm, skip, limit: PAGE_SIZE })
       .then((res) => {
         setUsers(res.users || []);
         setTotal(res.total || 0);
@@ -256,9 +174,17 @@ export default function OrgAdminUserManagementPage() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => fetchUsers(search), 300);
+    fetchSummary();
+  }, [fetchSummary]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+
+  useEffect(() => {
+    const t = setTimeout(() => fetchUsers(search, page * PAGE_SIZE), 300);
     return () => clearTimeout(t);
-  }, [search, fetchUsers]);
+  }, [search, page, fetchUsers]);
 
   const showToast = (msg, type = "success") => setToast({ msg, type });
 
@@ -279,7 +205,8 @@ export default function OrgAdminUserManagementPage() {
       await inviteUser(inviteForm);
       setShowInvite(false);
       showToast(`Invitation sent to ${inviteForm.email}.`);
-      fetchUsers(search);
+      fetchUsers(search, page * PAGE_SIZE);
+      fetchSummary();
     } catch (err) {
       setFormError(err.message || "Failed to invite user.");
     } finally {
@@ -289,7 +216,13 @@ export default function OrgAdminUserManagementPage() {
 
   const openEdit = (u) => {
     setEditUser(u);
-    setEditForm({ first_name: u.first_name, last_name: u.last_name, phone: u.phone || "", role: u.role, is_active: u.is_active });
+    setEditForm({
+      first_name: u.first_name,
+      last_name: u.last_name,
+      phone: u.phone || "",
+      role: u.role,
+      is_active: u.is_active,
+    });
     setFormError(null);
   };
 
@@ -300,7 +233,8 @@ export default function OrgAdminUserManagementPage() {
       await updateUser(editUser.id, editForm);
       setEditUser(null);
       showToast("User updated successfully.");
-      fetchUsers(search);
+      fetchUsers(search, page * PAGE_SIZE);
+      fetchSummary();
     } catch (err) {
       setFormError(err.message || "Failed to update user.");
     } finally {
@@ -311,12 +245,28 @@ export default function OrgAdminUserManagementPage() {
   const doDeactivate = async () => {
     setSubmitting(true);
     try {
-      await deactivateUser(confirmDeactivate.id);
-      setConfirmDeactivate(null);
-      showToast("User deactivated.");
-      fetchUsers(search);
+      await deactivateUser(confirmAction.id);
+      setConfirmAction(null);
+      showToast("User deactivated successfully.");
+      fetchUsers(search, page * PAGE_SIZE);
+      fetchSummary();
     } catch (err) {
       showToast(err.message || "Failed to deactivate user.", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const doReactivate = async () => {
+    setSubmitting(true);
+    try {
+      await updateUser(confirmAction.id, { is_active: true });
+      setConfirmAction(null);
+      showToast("User reactivated successfully.");
+      fetchUsers(search, page * PAGE_SIZE);
+      fetchSummary();
+    } catch (err) {
+      showToast(err.message || "Failed to reactivate user.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -331,166 +281,384 @@ export default function OrgAdminUserManagementPage() {
     }
   };
 
+  const filteredUsers = users.filter((u) => {
+    if (statusFilter !== "all") {
+      const s = getUserStatus(u);
+      if (s !== statusFilter) return false;
+    }
+    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const canPrev = page > 0;
+  const canNext = page < totalPages - 1;
+
   return (
-    <div className="org-dash">
-      <style>{styles}</style>
-      <div className="orb orb-1" />
-      <div className="orb orb-2" />
-
-      <div className="page">
-        <div className="hero rise" style={{ animationDelay: ".05s" }}>
-          <div>
-            <h1 className="title">User Management</h1>
-            <p className="subtitle">Invite and manage the people who have access to your organization.</p>
-          </div>
-          <div className="head-actions">
-            <button className="btn btn-primary" onClick={openInvite}>
-              <Plus className="w-4 h-4" /> Invite user
-            </button>
-          </div>
+    <div className="font-['Inter',system-ui,sans-serif]" style={{ color: INK }}>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight" style={{ color: INK }}>User Management</h1>
+          <p className="text-sm mt-0.5" style={{ color: INK_SOFT }}>Invite and manage the people who have access to your organization.</p>
         </div>
+        <button
+          onClick={openInvite}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
+          style={{ background: `linear-gradient(135deg, ${PRIMARY}, #1D4ED8)`, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
+        >
+          <Plus className="w-4 h-4" strokeWidth={2.5} />
+          Invite User
+        </button>
+      </div>
 
-        {error && (
-          <div className="glass rise" style={{ padding: 16, marginBottom: 20, color: "var(--danger)", fontSize: 13.5 }}>
-            {error}
-          </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        {summaryLoading ? (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="rounded-xl border p-4 animate-pulse" style={{ background: "#fff", borderColor: LINE }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-slate-100" />
+                  <div className="space-y-1.5">
+                    <div className="h-3 w-16 bg-slate-100 rounded" />
+                    <div className="h-5 w-8 bg-slate-100 rounded" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <SummaryCard icon={Users} label="Total" value={summary.total} color={PRIMARY} bg="#EFF6FF" />
+            <SummaryCard icon={CheckCircle} label="Active" value={summary.active} color={SUCCESS} bg="#D1FAE5" />
+            <SummaryCard icon={Mail} label="Invited" value={summary.invited} color="#7C3AED" bg="#EDE9FE" />
+            <SummaryCard icon={Ban} label="Deactivated" value={summary.suspended} color={DANGER} bg="#FEF2F2" />
+          </>
         )}
+      </div>
 
-        <div className="glass search-bar rise" style={{ animationDelay: ".1s" }}>
-          <Search className="w-4 h-4" />
-          <input
-            placeholder="Search by name or email…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      {error && (
+        <div className="mb-4 rounded-lg border p-4 text-sm flex items-center gap-2" style={{ background: "#FEF2F2", borderColor: "#FECACA", color: DANGER }}>
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+          <button onClick={() => fetchUsers(search, page * PAGE_SIZE)} className="ml-auto text-xs font-semibold underline" style={{ color: DANGER }}>Retry</button>
+        </div>
+      )}
+
+      <div className="rounded-xl border overflow-hidden shadow-sm" style={{ background: "#fff", borderColor: LINE }}>
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3.5 border-b" style={{ borderColor: LINE }}>
+          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+            <Search className="w-4 h-4" style={{ color: INK_FAINT }} />
+            <input
+              placeholder="Search by name or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: INK }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+                <X className="w-3.5 h-3.5" style={{ color: INK_FAINT }} />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "#F8FAFC" }}>
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all"
+                  style={{
+                    background: statusFilter === f.key ? "#fff" : "transparent",
+                    color: statusFilter === f.key ? INK : INK_FAINT,
+                    boxShadow: statusFilter === f.key ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border appearance-none cursor-pointer outline-none transition-colors focus:border-blue-400"
+                style={{ borderColor: LINE, color: roleFilter === "all" ? INK_FAINT : INK_SOFT, background: "#fff" }}
+              >
+                <option value="all">All Roles</option>
+                {Object.values(ROLES).filter(r => r !== ROLES.SUPER_ADMIN).map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                ))}
+              </select>
+              <Filter className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: INK_FAINT }} />
+            </div>
+          </div>
         </div>
 
-        <div className="glass rise" style={{ animationDelay: ".15s", overflow: "hidden" }}>
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["User", "Role", "Status", "Last Active", "Actions"].map((h, i) => (
+                  <th
+                    key={h}
+                    className="text-left text-[11px] font-bold uppercase tracking-wider px-5 py-3"
+                    style={{
+                      color: INK_SOFT,
+                      borderBottom: `2px solid ${LINE}`,
+                      ...(i === 4 ? { textAlign: "right" } : {}),
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "right" }}>Actions</th>
+                  <td colSpan={5} className="px-5 py-16 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "#EFF6FF" }}>
+                        <UserPlus className="w-6 h-6" style={{ color: PRIMARY }} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: INK }}>{search ? "No users match your search" : "No users yet"}</p>
+                        <p className="text-xs mt-0.5" style={{ color: INK_FAINT }}>{search ? "Try a different search term" : "Invite your first team member to get started."}</p>
+                      </div>
+                      {!search && (
+                        <button onClick={openInvite} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:-translate-y-0.5" style={{ background: PRIMARY }}>
+                          <Plus className="w-3.5 h-3.5" />
+                          Invite User
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={4} className="empty-row">Loading users…</td></tr>
-                ) : users.length === 0 ? (
-                  <tr><td colSpan={4} className="empty-row">No users found.</td></tr>
-                ) : (
-                  users.map((u) => (
-                    <tr key={u.id}>
-                      <td>
-                        <div className="user-cell">
-                          <div className="avatar">{initials(u.first_name, u.last_name)}</div>
-                          <div>
-                            <div className="user-name">{u.first_name} {u.last_name}</div>
-                            <div className="user-email">{u.email}</div>
-                          </div>
+              ) : (
+                filteredUsers.map((u) => (
+                  <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
+                    <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ background: "linear-gradient(135deg, #2563EB, #1D4ED8)" }}>
+                          {initials(u.first_name, u.last_name)}
                         </div>
-                      </td>
-                      <td><span className="role-pill">{ROLE_LABELS[u.role] || u.role}</span></td>
-                      <td><StatusPill active={u.is_active} verified={u.is_verified} /></td>
-                      <td>
-                        <div className="row-actions">
-                          {!u.is_verified && (
-                            <button className="icon-btn" title="Resend invite" onClick={() => doResendInvite(u)}>
-                              <Mail className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button className="icon-btn" title="Edit" onClick={() => openEdit(u)}>
-                            <Pencil className="w-4 h-4" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: INK }}>{u.first_name} {u.last_name}</p>
+                          <p className="text-xs truncate" style={{ color: INK_FAINT }}>{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: "#EFF6FF", color: "#2563EB" }}>
+                        {ROLE_LABELS[u.role] || u.role}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <StatusPill active={u.is_active} verified={u.is_verified} />
+                    </td>
+                    <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" style={{ color: INK_FAINT }} />
+                        <span className="text-xs" style={{ color: INK_SOFT }}>{formatLastActive(u.last_login_at)}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {!u.is_verified && u.is_active && (
+                          <button
+                            className="p-1.5 rounded-lg border transition-colors hover:bg-amber-50"
+                            style={{ borderColor: LINE, color: WARNING }}
+                            title="Resend invitation"
+                            onClick={() => doResendInvite(u)}
+                          >
+                            <Mail className="w-3.5 h-3.5" />
                           </button>
-                          {u.is_verified && (
-                            <button
-                              className="icon-btn danger"
-                              title="Deactivate"
-                              disabled={u.id === currentUser?.id}
-                              onClick={() => setConfirmDeactivate(u)}
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                        <button
+                          className="p-1.5 rounded-lg border transition-colors hover:bg-slate-50"
+                          style={{ borderColor: LINE, color: INK_SOFT }}
+                          title="Edit user"
+                          onClick={() => openEdit(u)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {u.is_verified && u.is_active && (
+                          <button
+                            className="p-1.5 rounded-lg border transition-colors hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ borderColor: LINE, color: DANGER }}
+                            title="Deactivate"
+                            disabled={u.id === currentUser?.id}
+                            onClick={() => setConfirmAction({ ...u, action: "deactivate" })}
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {u.is_verified && !u.is_active && (
+                          <button
+                            className="p-1.5 rounded-lg border transition-colors hover:bg-emerald-50"
+                            style={{ borderColor: LINE, color: SUCCESS }}
+                            title="Reactivate"
+                            onClick={() => setConfirmAction({ ...u, action: "reactivate" })}
+                          >
+                            <Play className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
 
         {!loading && total > 0 && (
-          <p style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-faint)" }}>
-            Showing {users.length} of {total} user{total === 1 ? "" : "s"}
-          </p>
+          <div className="flex items-center justify-between px-5 py-3 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+            <p className="text-xs" style={{ color: INK_FAINT }}>
+              Showing <span className="font-semibold" style={{ color: INK_SOFT }}>{filteredUsers.length}</span> of <span className="font-semibold" style={{ color: INK_SOFT }}>{total}</span> user{total === 1 ? "" : "s"}
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={!canPrev}
+                className="p-1.5 rounded-lg border transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50"
+                style={{ borderColor: LINE, color: INK_SOFT }}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-semibold px-2" style={{ color: INK_SOFT }}>
+                {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={!canNext}
+                className="p-1.5 rounded-lg border transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50"
+                style={{ borderColor: LINE, color: INK_SOFT }}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
       {toast.msg && (
-        <div className={`toast ${toast.type === "success" ? "toast-success" : "toast-danger"}`}>
+        <div
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold text-white shadow-xl animate-[slideUp_0.3s_ease-out]"
+          style={{ background: toast.type === "success" ? SUCCESS : DANGER }}
+        >
           {toast.type === "success" ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
           {toast.msg}
-          <button onClick={() => setToast({ msg: null })}><X className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setToast({ msg: null })} className="ml-1 p-0.5 hover:opacity-70 transition-opacity">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {showInvite && (
-        <div className="modal-overlay" onClick={() => setShowInvite(false)}>
-          <div className="glass modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowInvite(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b" style={{ borderColor: LINE }}>
               <div>
-                <h2 className="modal-title">Invite user</h2>
-                <p className="modal-sub">They'll receive an email to set up their password.</p>
+                <h2 className="text-lg font-bold" style={{ color: INK }}>Invite User</h2>
+                <p className="text-xs mt-0.5" style={{ color: INK_FAINT }}>They'll receive an email to set up their password.</p>
               </div>
-              <button className="modal-close" onClick={() => setShowInvite(false)}><X className="w-4 h-4" /></button>
+              <button onClick={() => setShowInvite(false)} className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
+                <X className="w-4 h-4" style={{ color: INK_SOFT }} />
+              </button>
             </div>
-            <div className="modal-body">
-              {formError && <p className="field-error">{formError}</p>}
-              <div className="form-grid">
-                <div className="form-field">
-                  <label>First name</label>
-                  <input value={inviteForm.first_name} onChange={(e) => setInviteForm({ ...inviteForm, first_name: e.target.value })} />
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              {formError && (
+                <p className="text-xs font-medium px-3 py-2 rounded-lg" style={{ background: "#FEF2F2", color: DANGER }}>{formError}</p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>First name *</label>
+                  <input
+                    value={inviteForm.first_name}
+                    onChange={(e) => setInviteForm({ ...inviteForm, first_name: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    style={{ borderColor: LINE, color: INK }}
+                  />
                 </div>
-                <div className="form-field">
-                  <label>Last name</label>
-                  <input value={inviteForm.last_name} onChange={(e) => setInviteForm({ ...inviteForm, last_name: e.target.value })} />
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Last name *</label>
+                  <input
+                    value={inviteForm.last_name}
+                    onChange={(e) => setInviteForm({ ...inviteForm, last_name: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    style={{ borderColor: LINE, color: INK }}
+                  />
                 </div>
               </div>
-              <div className="form-field">
-                <label>Email</label>
-                <input type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} />
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Email *</label>
+                <input
+                  type="email"
+                  value={inviteForm.email}
+                  onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                  className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  style={{ borderColor: LINE, color: INK }}
+                />
               </div>
-              <div className="form-grid">
-                <div className="form-field">
-                  <label>Phone (optional)</label>
-                  <input value={inviteForm.phone} onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Phone (optional)</label>
+                  <input
+                    value={inviteForm.phone}
+                    onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    style={{ borderColor: LINE, color: INK }}
+                  />
                 </div>
-                <div className="form-field">
-                  <label>Role</label>
-                  <select value={inviteForm.role} disabled>
-                    <option value="billing_admin">{ROLE_LABELS.billing_admin}</option>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Role</label>
+                  <select
+                    value={inviteForm.role}
+                    onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
+                    style={{ borderColor: LINE, color: INK }}
+                  >
+                    {INVITABLE_ROLES.map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
                   </select>
                 </div>
               </div>
-              <label className="checkbox-row">
+              <label className="flex items-center gap-2 text-sm" style={{ color: INK_SOFT }}>
                 <input
                   type="checkbox"
                   checked={inviteForm.send_invite}
                   onChange={(e) => setInviteForm({ ...inviteForm, send_invite: e.target.checked })}
+                  className="rounded"
                 />
                 Send invitation email now
               </label>
             </div>
-            <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={() => setShowInvite(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitInvite} disabled={submitting}>
-                {submitting ? "Inviting…" : "Send invite"}
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+              <button
+                className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
+                style={{ borderColor: LINE, color: INK_SOFT }}
+                onClick={() => setShowInvite(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
+                style={{ background: PRIMARY }}
+                onClick={submitInvite}
+                disabled={submitting}
+              >
+                {submitting ? "Sending..." : "Send Invite"}
               </button>
             </div>
           </div>
@@ -498,58 +666,108 @@ export default function OrgAdminUserManagementPage() {
       )}
 
       {editUser && (
-        <div className="modal-overlay" onClick={() => setEditUser(null)}>
-          <div className="glass modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setEditUser(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b" style={{ borderColor: LINE }}>
               <div>
-                <h2 className="modal-title">Edit user</h2>
-                <p className="modal-sub">{editUser.email}</p>
+                <h2 className="text-lg font-bold" style={{ color: INK }}>Edit User</h2>
+                <p className="text-xs mt-0.5" style={{ color: INK_FAINT }}>{editUser.email}</p>
               </div>
-              <button className="modal-close" onClick={() => setEditUser(null)}><X className="w-4 h-4" /></button>
+              <button onClick={() => setEditUser(null)} className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
+                <X className="w-4 h-4" style={{ color: INK_SOFT }} />
+              </button>
             </div>
-            <div className="modal-body">
-              {formError && <p className="field-error">{formError}</p>}
-              <div className="form-grid">
-                <div className="form-field">
-                  <label>First name</label>
-                  <input value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} />
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              {formError && (
+                <p className="text-xs font-medium px-3 py-2 rounded-lg" style={{ background: "#FEF2F2", color: DANGER }}>{formError}</p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>First name</label>
+                  <input
+                    value={editForm.first_name}
+                    onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    style={{ borderColor: LINE, color: INK }}
+                  />
                 </div>
-                <div className="form-field">
-                  <label>Last name</label>
-                  <input value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} />
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Last name</label>
+                  <input
+                    value={editForm.last_name}
+                    onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                    className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    style={{ borderColor: LINE, color: INK }}
+                  />
                 </div>
               </div>
-              <div className="form-field">
-                <label>Phone</label>
-                <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
-              </div>
-              <label className="checkbox-row">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Phone</label>
                 <input
-                  type="checkbox"
-                  checked={editForm.is_active}
-                  onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  style={{ borderColor: LINE, color: INK }}
                 />
-                Active
-              </label>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: INK_SOFT }}>Role</label>
+                <select
+                  value={editForm.role}
+                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                  className="w-full text-sm px-3 py-2.5 rounded-lg border outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
+                  style={{ borderColor: LINE, color: INK }}
+                >
+                  {Object.values(ROLES).filter(r => r !== ROLES.SUPER_ADMIN).map((r) => (
+                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  ))}
+                </select>
+              </div>
+              {editUser.id !== currentUser?.id && (
+                <label className="flex items-center gap-2 text-sm" style={{ color: INK_SOFT }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.is_active}
+                    onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+                    className="rounded"
+                  />
+                  Active
+                </label>
+              )}
             </div>
-            <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={() => setEditUser(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitEdit} disabled={submitting}>
-                {submitting ? "Saving…" : "Save changes"}
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+              <button
+                className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
+                style={{ borderColor: LINE, color: INK_SOFT }}
+                onClick={() => setEditUser(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
+                style={{ background: PRIMARY }}
+                onClick={submitEdit}
+                disabled={submitting}
+              >
+                {submitting ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {confirmDeactivate && (
+      {confirmAction && (
         <ConfirmDialog
-          title="Deactivate user"
-          message={`${confirmDeactivate.first_name} ${confirmDeactivate.last_name} will lose access immediately. This can be reversed by editing the user later.`}
-          confirmLabel="Deactivate"
+          title={confirmAction.action === "deactivate" ? "Deactivate User" : "Reactivate User"}
+          message={
+            confirmAction.action === "deactivate"
+              ? `${confirmAction.first_name} ${confirmAction.last_name} will lose access immediately. This can be reversed by reactivating the user later.`
+              : `${confirmAction.first_name} ${confirmAction.last_name} will regain access to the organization.`
+          }
+          confirmLabel={confirmAction.action === "deactivate" ? "Deactivate" : "Reactivate"}
           busy={submitting}
-          onConfirm={doDeactivate}
-          onClose={() => setConfirmDeactivate(null)}
+          onConfirm={confirmAction.action === "deactivate" ? doDeactivate : doReactivate}
+          onClose={() => setConfirmAction(null)}
         />
       )}
     </div>

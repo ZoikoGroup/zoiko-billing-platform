@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Receipt, Search, Filter, X, ChevronDown, ArrowUpDown,
-  Plus, AlertCircle, CheckCircle, Clock, Pencil, DollarSign, Landmark, Globe
+  Plus, AlertCircle, CheckCircle, Clock, Pencil, DollarSign, Landmark, Globe, Upload
 } from "lucide-react";
 import { taxApi } from "../../../service/billingService";
+import TaxRateImportWizard from "./tax-rate-import-wizard";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import {
@@ -100,12 +101,13 @@ export default function TaxRatesPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [showForm, setShowForm] = useState(false);
+  const [showImportWizard, setShowImportWizard] = useState(false);
   const [editRate, setEditRate] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState({
-    name: "", code: "", description: "", rate: "", tax_type: "sales_tax", jurisdiction: "",
-    jurisdiction_type: "country", is_active: true, is_compound: false, is_recoverable: true,
+    name: "", code: "", rate: "", tax_type: "sales_tax", jurisdiction: "",
+    is_active: true, is_compound: false, is_recoverable: true,
     country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0,
   });
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
@@ -161,7 +163,7 @@ export default function TaxRatesPage() {
       if (editRate) await taxApi.update(editRate.id, payload);
       else await taxApi.create(payload);
       setShowForm(false); setEditRate(null);
-      setFormData({ name: "", code: "", description: "", rate: "", tax_type: "sales_tax", jurisdiction: "", jurisdiction_type: "country", is_active: true, is_compound: false, is_recoverable: true, country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0 });
+      setFormData({ name: "", code: "", rate: "", tax_type: "sales_tax", jurisdiction: "", is_active: true, is_compound: false, is_recoverable: true, country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0 });
       setCurrentPage(1); fetchTaxRates();
     } catch (err) {
       setFormError(err.message || "Failed to save tax rate");
@@ -225,7 +227,7 @@ export default function TaxRatesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto" aria-label="Loading tax rates">
+      <div className="space-y-8" aria-label="Loading tax rates">
         <DashboardHeader {...headerProps} />
         <PageSkeleton rows={6} />
       </div>
@@ -234,7 +236,7 @@ export default function TaxRatesPage() {
 
   if (error && taxRates.length === 0) {
     return (
-      <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
+      <div className="space-y-8">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={() => { setLoading(true); fetchTaxRates(); }} title="Something went wrong" />
       </div>
@@ -242,7 +244,7 @@ export default function TaxRatesPage() {
   }
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6 max-w-7xl mx-auto">
+    <div className="space-y-8">
       <DashboardHeader {...headerProps} />
 
       <div className={DASHBOARD_KPI_GRID}>
@@ -293,7 +295,11 @@ export default function TaxRatesPage() {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => { setShowForm(true); setEditRate(null); setFormData({ name: "", code: "", description: "", rate: "", tax_type: "sales_tax", jurisdiction: "", jurisdiction_type: "country", is_active: true, is_compound: false, is_recoverable: true, country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0 }); }}
+              <button onClick={() => setShowImportWizard(true)}
+                className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50">
+                <Upload size={16} /> Import
+              </button>
+              <button onClick={() => { setShowForm(true); setEditRate(null); setFormData({ name: "", code: "", rate: "", tax_type: "sales_tax", jurisdiction: "", is_active: true, is_compound: false, is_recoverable: true, country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0 }); }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
                 <Plus size={18} /> Add Tax Rate
               </button>
@@ -368,7 +374,6 @@ export default function TaxRatesPage() {
                       </div>
                       <div>
                         <p className="font-medium text-slate-800">{rate.name || "Unnamed"}</p>
-                        {rate.description && <p className="text-xs text-slate-500 line-clamp-1">{rate.description}</p>}
                       </div>
                     </div>
                   </td>
@@ -384,7 +389,7 @@ export default function TaxRatesPage() {
                     ) : "—"}
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-600">
-                    {rate.jurisdiction ? `${rate.jurisdiction} (${rate.jurisdiction_type || "country"})` : "—"}
+                    {rate.jurisdiction || "—"}
                   </td>
                   <td className="px-4 py-4">
                     <StatusBadge status={rate.is_active ? "active" : "inactive"} options={STATUS_BADGE_OPTIONS} icon={rate.is_active !== false ? CheckCircle : Clock} />
@@ -401,7 +406,7 @@ export default function TaxRatesPage() {
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(rate.created_at)}</td>
                   <td className="px-4 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => { setEditRate(rate); setFormData({ name: rate.name || "", code: rate.code || "", description: rate.description || "", rate: (parseFloat(rate.rate || 0)).toString(), tax_type: rate.tax_type || "sales_tax", jurisdiction: rate.jurisdiction || "", jurisdiction_type: rate.jurisdiction_type || "country", is_active: rate.is_active !== false, is_compound: !!rate.is_compound, is_recoverable: rate.is_recoverable !== false, country_code: rate.country_code || "", currency_code: rate.currency_code || "", tax_type_label: rate.tax_type_label || "", is_default: !!rate.is_default, priority: rate.priority || 0 }); setShowForm(true); }}
+                      <button onClick={() => { setEditRate(rate); setFormData({ name: rate.name || "", code: rate.code || "", rate: (parseFloat(rate.rate || 0)).toString(), tax_type: rate.tax_type || "sales_tax", jurisdiction: rate.jurisdiction || "", is_active: rate.is_active !== false, is_compound: !!rate.is_compound, is_recoverable: rate.is_recoverable !== false, country_code: rate.country_code || "", currency_code: rate.currency_code || "", tax_type_label: rate.tax_type_label || "", is_default: !!rate.is_default, priority: rate.priority || 0 }); setShowForm(true); }}
                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label={`Edit tax rate ${rate.name || ""}`}
                       >
                         <Pencil size={16} />
@@ -451,11 +456,6 @@ export default function TaxRatesPage() {
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea rows={2} value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Rate (%) *</label>
@@ -470,24 +470,11 @@ export default function TaxRatesPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction</label>
-                  <input type="text" value={formData.jurisdiction} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction: e.target.value }))}
-                    placeholder="e.g. US, CA, EU"
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction Type</label>
-                  <select value={formData.jurisdiction_type} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction_type: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="country">Country</option>
-                    <option value="state">State / Province</option>
-                    <option value="county">County</option>
-                    <option value="city">City</option>
-                    <option value="region">Region</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction *</label>
+                <input type="text" value={formData.jurisdiction} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction: e.target.value }))}
+                  placeholder="e.g. India, US, EU"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-end pb-2.5">
@@ -558,6 +545,12 @@ export default function TaxRatesPage() {
             </div>
           </div>
         </div>
+      )}
+      {showImportWizard && (
+        <TaxRateImportWizard
+          onClose={() => setShowImportWizard(false)}
+          onImported={() => { setCurrentPage(1); fetchTaxRates(); }}
+        />
       )}
       {ConfirmationDialog}
     </div>

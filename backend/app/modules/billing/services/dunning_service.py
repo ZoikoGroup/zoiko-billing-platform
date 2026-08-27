@@ -303,7 +303,13 @@ class DunningService:
             all on those channels and are surfaced for observability).
         """
         self._require_dunning_enabled()
-        overdue = self.invoice_repo.list_all(organization_id, status=InvoiceStatus.OVERDUE, active_only=True)
+        # Uses the due-date-based definition of "overdue" (InvoiceRepository.
+        # list_effectively_overdue), not a strict status==OVERDUE filter --
+        # the OVERDUE flag only gets set by the scheduled overdue-invoice job
+        # (off by default) or a manual trigger, so a strict filter here would
+        # silently skip every genuinely overdue invoice until one of those
+        # has run. See list_effectively_overdue's docstring.
+        overdue = self.invoice_repo.list_effectively_overdue(organization_id)
         levels = self.level_repo.list_active(organization_id)
         if not levels:
             return []

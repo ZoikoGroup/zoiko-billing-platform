@@ -120,6 +120,21 @@ def validate_currency_format(v: Optional[str], valid_currencies: Set[str] = LEGA
     return currency
 
 
+def validate_country_code_format(v: Optional[str]) -> Optional[str]:
+    """Optional country check: blank/None passes through as None. Accepts
+    either a 2-letter ISO code or a recognized country name (same resolver
+    the bulk tax-rate importer already uses) and normalizes to the 2-letter
+    code either way."""
+    if v is None or (isinstance(v, str) and v.strip() == ""):
+        return None
+    from app.modules.auth.country_currency import resolve_country_code
+
+    resolved = resolve_country_code(v.strip())
+    if not resolved:
+        raise ValueError(f"Country '{v.strip()}' is not recognized. Use a valid name or 2-letter ISO code.")
+    return resolved
+
+
 def validate_code_required(v: str) -> str:
     if v is None or v.strip() == "":
         raise ValueError("Code cannot be empty")

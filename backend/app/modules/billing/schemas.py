@@ -29,7 +29,8 @@ from app.modules.billing.models import (
 )
 from app.modules.billing.utils.validators import (
     LEGACY_SCHEMA_CURRENCY_CODES, MAX_MONEY_AMOUNT,
-    validate_code_optional, validate_code_required, validate_currency_format,
+    validate_code_optional, validate_code_required, validate_country_code_format,
+    validate_currency_format,
     validate_effective_date_range, validate_email_format, validate_gst_format,
     validate_pan_format, validate_phone_format, validate_validity_date_range,
     validate_vat_format, validate_website_format,
@@ -3162,6 +3163,16 @@ class TaxRateCreate(BaseModel):
             raise ValueError("rate must be between 0 and 100")
         return v
 
+    @field_validator("currency_code", mode="before")
+    @classmethod
+    def validate_currency(cls, v: Optional[str]) -> Optional[str]:
+        return validate_currency_format(v)
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def validate_country(cls, v: Optional[str]) -> Optional[str]:
+        return validate_country_code_format(v)
+
 
 class TaxRateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -3184,6 +3195,16 @@ class TaxRateUpdate(BaseModel):
         if v is not None and (v < 0 or v > 100):
             raise ValueError("rate must be between 0 and 100")
         return v
+
+    @field_validator("currency_code", mode="before")
+    @classmethod
+    def validate_currency(cls, v: Optional[str]) -> Optional[str]:
+        return validate_currency_format(v)
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def validate_country(cls, v: Optional[str]) -> Optional[str]:
+        return validate_country_code_format(v)
     tax_type_label: Optional[str] = None
     is_default: Optional[bool] = None
     priority: Optional[int] = None

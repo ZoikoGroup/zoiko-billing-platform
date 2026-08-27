@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Undo2, Send, Ban, Eye, Loader2,
+  Undo2, Send, Ban, Eye, Loader2, Clock, CheckCircle, Wallet,
 } from "lucide-react";
 import { refundApi, customerApi, paymentApi, invoiceApi, creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
@@ -353,9 +353,9 @@ export default function RefundsPage() {
         ) : (
           <>
             <DashboardStatCard title="Total Refunds" value={(stats.total_count || 0).toLocaleString()} icon={Undo2} color={DOMAIN_ACCENTS.refunds.chip} />
-            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} color="from-amber-500 to-orange-500" />
-            <DashboardStatCard title="Completed Value" value={Number(stats.completed_value || 0)} color="from-emerald-500 to-teal-500" />
-            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} color="from-sky-500 to-cyan-500" />
+            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} icon={Clock} color="from-amber-500 to-orange-500" />
+            <DashboardStatCard title="Completed Value" value={Number(stats.completed_value || 0)} icon={CheckCircle} color="from-emerald-500 to-teal-500" />
+            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} icon={Wallet} color="from-sky-500 to-cyan-500" />
           </>
         )}
       </div>

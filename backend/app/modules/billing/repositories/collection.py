@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import and_, case, func
 
 from app.modules.billing.models import (
     CollectionAction,
@@ -85,24 +85,41 @@ class DunningCaseRepository(BaseRepository[DunningCase]):
         return self.get_first(organization_id, invoice_id=invoice_id, status=DunningStatus.ACTIVE.value)
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(DunningCase).filter(
+        """Single grouped-aggregate query instead of 7 separate round trips
+        (1 count + 1 sum + 5 status-filtered counts) -- each round trip to
+        the database in this environment costs real, measurable network
+        latency (~250-300ms observed), so 7 sequential queries for one
+        dashboard card was a significant, avoidable chunk of this endpoint's
+        load time. Every conditional COUNT/SUM below is computed by Postgres
+        in one pass over the same filtered row set a single plain
+        `SELECT count(*) ... WHERE org=? AND is_active` would already scan."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        row = self.db.query(
+            func.count(DunningCase.id),
+            func.coalesce(func.sum(DunningCase.total_overdue_amount), 0),
+            _count_if(DunningCase.status == "active"),
+            _count_if(DunningCase.status == "resolved"),
+            _count_if(DunningCase.status == "escalated"),
+            _count_if(DunningCase.status == "closed"),
+            _count_if(and_(DunningCase.status == "active", DunningCase.next_action_at <= func.current_date())),
+        ).filter(
             DunningCase.organization_id == organization_id,
             DunningCase.is_active == True,
-        )
-        total_count = base.count()
-        total_overdue_amount = self.db.query(func.coalesce(func.sum(DunningCase.total_overdue_amount), 0)).filter(
-            DunningCase.organization_id == organization_id, DunningCase.is_active == True,
-        ).scalar()
+        ).one()
+
+        (total_count, total_overdue_amount, active_count, resolved_count,
+         escalated_count, closed_count, due_for_action_count) = row
+
         return {
             "total_count": total_count,
             "total_overdue_amount": float(total_overdue_amount),
-            "active_count": base.filter(DunningCase.status == "active").count(),
-            "resolved_count": base.filter(DunningCase.status == "resolved").count(),
-            "escalated_count": base.filter(DunningCase.status == "escalated").count(),
-            "closed_count": base.filter(DunningCase.status == "closed").count(),
-            "due_for_action_count": base.filter(
-                DunningCase.status == "active", DunningCase.next_action_at <= func.current_date(),
-            ).count(),
+            "active_count": active_count,
+            "resolved_count": resolved_count,
+            "escalated_count": escalated_count,
+            "closed_count": closed_count,
+            "due_for_action_count": due_for_action_count,
         }
 
     def get_level_distribution(self, organization_id: int) -> List[Dict[str, Any]]:
@@ -236,26 +253,41 @@ class CollectionsCaseRepository(BaseRepository[CollectionsCase]):
         return query.first()
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(CollectionsCase).filter(
+        """Single grouped-aggregate query instead of 9 separate round trips
+        (1 count + 2 sums + 6 status/priority-filtered counts) -- see the
+        identical rationale on DunningCaseRepository.get_dashboard_stats
+        above."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        row = self.db.query(
+            func.count(CollectionsCase.id),
+            func.coalesce(func.sum(CollectionsCase.total_outstanding), 0),
+            func.coalesce(func.sum(CollectionsCase.amount_collected), 0),
+            _count_if(CollectionsCase.status == "open"),
+            _count_if(CollectionsCase.status == "in_progress"),
+            _count_if(CollectionsCase.status == "escalated"),
+            _count_if(CollectionsCase.status == "resolved"),
+            _count_if(CollectionsCase.status == "closed"),
+            _count_if(CollectionsCase.priority == "urgent"),
+        ).filter(
             CollectionsCase.organization_id == organization_id,
             CollectionsCase.is_active == True,
-        )
-        total_outstanding = self.db.query(func.coalesce(func.sum(CollectionsCase.total_outstanding), 0)).filter(
-            CollectionsCase.organization_id == organization_id, CollectionsCase.is_active == True,
-        ).scalar()
-        amount_collected = self.db.query(func.coalesce(func.sum(CollectionsCase.amount_collected), 0)).filter(
-            CollectionsCase.organization_id == organization_id, CollectionsCase.is_active == True,
-        ).scalar()
+        ).one()
+
+        (total_count, total_outstanding, amount_collected, open_count, in_progress_count,
+         escalated_count, resolved_count, closed_count, urgent_count) = row
+
         return {
-            "total_count": base.count(),
+            "total_count": total_count,
             "total_outstanding": float(total_outstanding),
             "amount_collected": float(amount_collected),
-            "open_count": base.filter(CollectionsCase.status == "open").count(),
-            "in_progress_count": base.filter(CollectionsCase.status == "in_progress").count(),
-            "escalated_count": base.filter(CollectionsCase.status == "escalated").count(),
-            "resolved_count": base.filter(CollectionsCase.status == "resolved").count(),
-            "closed_count": base.filter(CollectionsCase.status == "closed").count(),
-            "urgent_count": base.filter(CollectionsCase.priority == "urgent").count(),
+            "open_count": open_count,
+            "in_progress_count": in_progress_count,
+            "escalated_count": escalated_count,
+            "resolved_count": resolved_count,
+            "closed_count": closed_count,
+            "urgent_count": urgent_count,
         }
 
     def get_priority_distribution(self, organization_id: int) -> List[Dict[str, Any]]:

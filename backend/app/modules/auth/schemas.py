@@ -131,6 +131,8 @@ class UserResponse(BaseModel):
     last_name: str
     phone: Optional[str] = None
     is_active: bool
+    is_verified: bool = False
+    last_login_at: Optional[datetime] = None
     created_at: datetime
     platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
 
@@ -200,3 +202,11 @@ class UserUpdateRequest(BaseModel):
 class UserListResponse(BaseModel):
     users: list[UserResponse]
     total: int
+
+
+class UserSummaryResponse(BaseModel):
+    total: int = 0
+    active: int = 0
+    pending: int = 0
+    suspended: int = 0
+    invited: int = 0

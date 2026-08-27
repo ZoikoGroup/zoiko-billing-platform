@@ -102,6 +102,27 @@ def list_overdue(
     return svc.list_overdue(organization_id=current_user.organization_id)
 
 
+@router.post(
+    "/process-overdue",
+    response_model=dict,
+    summary="Manually transition this org's due SENT/PARTIALLY_PAID invoices to OVERDUE",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+def process_overdue_invoices(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """On-demand, org-scoped equivalent of the scheduled overdue-invoice job
+    (which only runs when ENABLE_RECURRING_BILLING_SCHEDULER is enabled).
+    Lets an operator force the OVERDUE transition for their own organization
+    without depending on that global scheduler being on."""
+    svc = InvoiceService(db)
+    return svc.process_overdue_invoices(
+        organization_id=current_user.organization_id,
+        updated_by=current_user.id,
+    )
+
+
 @router.get("/outstanding-total", response_model=dict)
 def get_outstanding_total(
     db: Session = Depends(get_db),

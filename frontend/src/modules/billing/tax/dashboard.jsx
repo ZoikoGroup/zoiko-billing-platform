@@ -32,21 +32,6 @@ const TAX_TYPE_META = {
 
 const CHART_COLORS = ["var(--color-accent-tax)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 
-function buildTrailingMonths(count) {
-  const now = new Date();
-  const toIso = (d) => d.toISOString().slice(0, 10);
-  return Array.from({ length: count }, (_, i) => {
-    const anchor = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1);
-    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-    const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-    return {
-      label: anchor.toLocaleString("en-US", { month: "short", year: "2-digit" }),
-      date_from: toIso(start),
-      date_to: toIso(end),
-    };
-  });
-}
-
 export default function TaxDashboardPage() {
   const navigate = useNavigate();
   const { baseCurrency, currencySymbol } = useCurrency();
@@ -75,15 +60,10 @@ export default function TaxDashboardPage() {
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
 
-      // getSummary() has no dedicated trend endpoint, so the monthly series
-      // is built by calling it once per trailing month window — every point
-      // is still a real, server-computed total (not client-side estimation).
-      const months = buildTrailingMonths(6);
-
-      const [summaryRes, ratesRes, ...monthlyRes] = await Promise.allSettled([
+      const [summaryRes, ratesRes, monthlyRes] = await Promise.allSettled([
         taxApi.getSummary(dateRange.date_from, dateRange.date_to),
         taxApi.list({ per_page: 100 }),
-        ...months.map((m) => taxApi.getSummary(m.date_from, m.date_to)),
+        taxApi.getMonthlyTrend(6),
       ]);
 
       if (summaryRes.status === "fulfilled") { setSummary(summaryRes.value); setErrorSummary(null); }
@@ -92,15 +72,12 @@ export default function TaxDashboardPage() {
       if (ratesRes.status === "fulfilled") { setTaxRates(extractArray(ratesRes.value)); setErrorRates(null); }
       else { setErrorRates(ratesRes.reason?.message || "Failed to load tax rates"); setTaxRates([]); }
 
-      if (monthlyRes.some((r) => r.status === "fulfilled")) {
-        setMonthlyTax(months.map((m, i) => ({
-          month: m.label,
-          tax: monthlyRes[i].status === "fulfilled" ? Number(monthlyRes[i].value?.total_tax || 0) : 0,
-        })));
+      if (monthlyRes.status === "fulfilled") {
+        setMonthlyTax(extractArray(monthlyRes.value).map((m) => ({ month: m.month, tax: Number(m.tax || 0) })));
         setErrorMonthly(null);
       } else {
         setMonthlyTax([]);
-        setErrorMonthly("Failed to load monthly tax trend");
+        setErrorMonthly(monthlyRes.reason?.message || "Failed to load monthly tax trend");
       }
 
       setLastUpdated(new Date());

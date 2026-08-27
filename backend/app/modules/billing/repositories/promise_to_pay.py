@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from app.modules.billing.models import PromiseToPay, PromiseToPayStatus
 from app.modules.billing.repositories.base import BaseRepository
@@ -82,35 +82,56 @@ class PromiseToPayRepository(BaseRepository[PromiseToPay]):
         )
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(PromiseToPay).filter(
+        """Single grouped-aggregate query instead of 7 separate round trips
+        (1 count + 1 sum + 5 status-filtered counts) — same rationale as
+        CollectionsCaseRepository/DunningCaseRepository.get_dashboard_stats:
+        each round trip costs real, measurable network latency in this
+        environment, so collapsing 7 sequential queries into 1 is a direct,
+        safe win with no change in the returned values."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        row = self.db.query(
+            func.count(PromiseToPay.id),
+            func.coalesce(func.sum(PromiseToPay.promise_amount), 0),
+            _count_if(PromiseToPay.status == "pending"),
+            _count_if(PromiseToPay.status == "overdue"),
+            _count_if(PromiseToPay.status == "fulfilled"),
+            _count_if(PromiseToPay.status == "broken"),
+            _count_if(PromiseToPay.status == "cancelled"),
+        ).filter(
             PromiseToPay.organization_id == organization_id,
             PromiseToPay.is_active == True,
-        )
-        total_promised = self.db.query(func.coalesce(func.sum(PromiseToPay.promise_amount), 0)).filter(
-            PromiseToPay.organization_id == organization_id, PromiseToPay.is_active == True,
-        ).scalar()
+        ).one()
+
+        (total_count, total_promised, pending_count, overdue_count,
+         fulfilled_count, broken_count, cancelled_count) = row
+
         return {
-            "total_count": base.count(),
+            "total_count": total_count,
             "total_promised_amount": float(total_promised),
-            "pending_count": base.filter(PromiseToPay.status == "pending").count(),
-            "overdue_count": base.filter(PromiseToPay.status == "overdue").count(),
-            "fulfilled_count": base.filter(PromiseToPay.status == "fulfilled").count(),
-            "broken_count": base.filter(PromiseToPay.status == "broken").count(),
-            "cancelled_count": base.filter(PromiseToPay.status == "cancelled").count(),
+            "pending_count": pending_count,
+            "overdue_count": overdue_count,
+            "fulfilled_count": fulfilled_count,
+            "broken_count": broken_count,
+            "cancelled_count": cancelled_count,
         }
 
     def get_success_rate(self, organization_id: int) -> Dict[str, Any]:
         """Fulfilled vs. broken among *resolved* promises — pending/overdue
         (still in flight) and cancelled (withdrawn, not a collection outcome)
-        are excluded from the denominator."""
-        fulfilled = self.db.query(func.count(PromiseToPay.id)).filter(
-            PromiseToPay.organization_id == organization_id, PromiseToPay.is_active == True,
-            PromiseToPay.status == "fulfilled",
-        ).scalar() or 0
-        broken = self.db.query(func.count(PromiseToPay.id)).filter(
-            PromiseToPay.organization_id == organization_id, PromiseToPay.is_active == True,
-            PromiseToPay.status == "broken",
-        ).scalar() or 0
+        are excluded from the denominator. Single query (was 2)."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        fulfilled, broken = self.db.query(
+            _count_if(PromiseToPay.status == "fulfilled"),
+            _count_if(PromiseToPay.status == "broken"),
+        ).filter(
+            PromiseToPay.organization_id == organization_id,
+            PromiseToPay.is_active == True,
+        ).one()
+
         resolved = fulfilled + broken
         success_rate = (fulfilled / resolved * 100) if resolved else 0.0
         return {

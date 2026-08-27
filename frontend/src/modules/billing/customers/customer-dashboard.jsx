@@ -264,7 +264,7 @@ export default function CustomerDashboard() {
 
   if (loading) {
     return (
-      <div className="space-y-8 px-4 py-6 sm:px-6" aria-label={`Loading ${plural.toLowerCase()} dashboard`}>
+      <div className="space-y-8" aria-label={`Loading ${plural.toLowerCase()} dashboard`}>
         <DashboardHeader {...headerProps} />
         <div className={DASHBOARD_KPI_GRID}>
           {Array.from({ length: 5 }).map((_, i) => <DashboardStatCardSkeleton key={i} />)}
@@ -283,7 +283,7 @@ export default function CustomerDashboard() {
 
   if (error && !kpiData) {
     return (
-      <div className="space-y-8 px-4 py-6 sm:px-6">
+      <div className="space-y-8">
         <DashboardHeader {...headerProps} />
         <ErrorState message={error} onRetry={() => fetchData(true)} title="Something went wrong" />
       </div>
@@ -291,7 +291,7 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <div className="space-y-8 px-4 py-6 sm:px-6">
+    <div className="space-y-8">
       <DashboardHeader {...headerProps} />
 
       {error && (

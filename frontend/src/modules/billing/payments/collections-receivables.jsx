@@ -3,9 +3,8 @@ import { useNavigate } from "react-router-dom";
 import {
   BarChart3, RefreshCw, Users, TrendingUp, Clock, FileText,
 } from "lucide-react"
-import { collectionApi, invoiceApi } from "../../../service/billingService";
+import { collectionApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
 import {
   ErrorState, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
@@ -19,7 +18,6 @@ export default function CollectionsReceivablesPage() {
 
   const [activeTab, setActiveTab] = useState("overview");
   const [cases, setCases] = useState([]);
-  const [invoices, setInvoices] = useState([]);
   const [agingData, setAgingData] = useState(null);
   const [queueData, setQueueData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,14 +29,12 @@ export default function CollectionsReceivablesPage() {
     try {
       setError(null);
       if (!loading) setRefreshing(true);
-      const [caseData, invData, aging, queue] = await Promise.all([
+      const [caseData, aging, queue] = await Promise.all([
         collectionApi.listCases({ per_page: 50 }),
-        invoiceApi.list({ per_page: 50, status: "sent" }).catch(() => ({ items: [] })),
         collectionApi.getAgingBuckets().catch(() => null),
         collectionApi.getCollectionsQueue().catch(() => undefined),
       ]);
       setCases(extractArray(caseData));
-      setInvoices(extractArray(invData));
       // The backend returns aging as a dict (legacy "0_30"/"31_60"/... keys
       // for API consumers that pre-date this report) plus a `buckets` array
       // shaped for this exact table — use that directly rather than running
@@ -59,20 +55,23 @@ export default function CollectionsReceivablesPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  /* Derived summary metrics. Computed over the fetched windows (latest 50
-     cases / latest 50 sent invoices), so they are indicative of recent
-     activity rather than all-time totals — disclosed in the caption below. */
+  /* Derived summary metrics. Computed over the fetched window (latest 50
+     cases), so they are indicative of recent activity rather than all-time
+     totals — disclosed in the caption below.
+
+     totalOutstanding/avgDaysOutstanding are derived from activeCases (the
+     same case population "In Collections" counts) using each case's own
+     total_outstanding/days_overdue fields, rather than from a separate,
+     differently-scoped "latest 50 sent invoices" fetch: that older fetch
+     only ever pulled invoices with status=sent (missing partially_paid
+     ones) and didn't filter for overdue/outstanding at all, so a sample
+     dominated by not-yet-due invoices (whose Math.max(0, diff) clamps to 0)
+     silently dragged the average toward 0 regardless of the real caseload's
+     age -- the same "trust the status flag instead of the real data" class
+     of bug DEF-02 fixed on the backend, reproduced here on the frontend. */
   const totalInCollections = cases.filter((c) => c.status !== "resolved" && c.status !== "closed").length;
   const resolvedCount = cases.filter((c) => c.status === "resolved").length;
-  const totalOutstanding = sumInBaseCurrency(invoices, baseCurrency).total;
   const recoveryRate = cases.length > 0 ? Math.round((resolvedCount / cases.length) * 100) : 0;
-  const avgDaysOutstanding = invoices.length > 0
-    ? Math.round(invoices.reduce((s, inv) => {
-        if (!inv.due_date) return s;
-        const diff = Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24));
-        return s + Math.max(0, diff);
-      }, 0) / invoices.length)
-    : 0;
 
   const tabs = [
     { key: "overview", label: "Overview" },
@@ -81,6 +80,10 @@ export default function CollectionsReceivablesPage() {
   ];
 
   const activeCases = cases.filter((c) => c.status !== "resolved" && c.status !== "closed");
+  const totalOutstanding = activeCases.reduce((s, c) => s + (Number(c.total_outstanding) || 0), 0);
+  const avgDaysOutstanding = activeCases.length > 0
+    ? Math.round(activeCases.reduce((s, c) => s + (Number(c.days_overdue) || 0), 0) / activeCases.length)
+    : 0;
 
   const caseColumns = [
     {
@@ -234,7 +237,7 @@ export default function CollectionsReceivablesPage() {
         </div>
         {!loading && (
           <p className="mt-2 text-xs text-slate-400">
-            Based on the latest {cases.length} collection case{cases.length === 1 ? "" : "s"} and {invoices.length} sent invoice{invoices.length === 1 ? "" : "s"}.
+            Based on the latest {cases.length} collection case{cases.length === 1 ? "" : "s"}.
           </p>
         )}
       </div>

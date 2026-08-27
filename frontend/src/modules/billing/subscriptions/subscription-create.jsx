@@ -243,7 +243,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
   const displayCurrency = wizardData.customer_currency || wizardData.contract_currency || orgCurrency;
 
   return (
-    <div className="space-y-6 px-4 py-6 sm:px-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={handleBack} aria-label="Go back"

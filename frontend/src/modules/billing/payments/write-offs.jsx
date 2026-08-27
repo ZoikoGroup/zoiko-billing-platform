@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ScrollText, Send, Ban, Eye, Loader2,
+  ScrollText, Send, Ban, Eye, Loader2, Clock, CheckCircle, Wallet,
 } from "lucide-react";
 import { writeOffApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
@@ -297,9 +297,9 @@ export default function WriteOffsPage() {
         ) : (
           <>
             <DashboardStatCard title="Total Write-offs" value={(stats.total_count || 0).toLocaleString()} icon={ScrollText} color={DOMAIN_ACCENTS.writeoffs.chip} />
-            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} color="from-amber-500 to-orange-500" />
-            <DashboardStatCard title="Executed Value" value={Number(stats.executed_value || 0)} color="from-emerald-500 to-teal-500" />
-            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} color="from-slate-400 to-slate-500" />
+            <DashboardStatCard title="Pending Approval" value={(stats.pending_approval_count || 0).toLocaleString()} icon={Clock} color="from-amber-500 to-orange-500" />
+            <DashboardStatCard title="Executed Value" value={Number(stats.executed_value || 0)} icon={CheckCircle} color="from-emerald-500 to-teal-500" />
+            <DashboardStatCard title="Outstanding Value" value={Number(stats.outstanding_value || 0)} icon={Wallet} color="from-slate-400 to-slate-500" />
           </>
         )}
       </div>
