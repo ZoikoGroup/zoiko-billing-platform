@@ -749,6 +749,26 @@ _WHAT_IS_EXCLUDE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# HARD how-to / procedural-question LEAD patterns.  Unlike _WHAT_IS_SIGNAL_RE,
+# these are matched as a PRE-GATE (see _rules_classify_intent) and are NOT
+# suppressed by _WHAT_IS_EXCLUDE_RE — the exclusion wrongly disqualified action
+# verbs ("add", "create", …), so "how to add the customer" lost ALL how-to
+# protection and fell through to the invoice-draft / customer-name ladder.
+# These leads are unambiguous conceptual/explanation requests and must route to
+# EXPLAIN before any entity or action logic runs.
+_HOWTO_LEAD_RE = re.compile(
+    r"\b(?:"
+    r"how\s+to"
+    r"|how\s+do\s+i|how\s+do\s+we|how\s+can\s+i|how\s+can\s+we|how\s+should\s+i|how\s+should\s+we"
+    r"|how\s+(?:do|can|should)\s+(?:i|we|you)\b"
+    r"|steps\s+(?:to|for|on)"
+    r"|guide\s+(?:to|for)"
+    r"|a\s+guide\s+(?:to|for)"
+    r"|instructions\s+(?:to|for|on)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 def _detect_what_is_how_to(normalized: str) -> bool:
     """Structural WHAT_IS/HOW_TO detection: signal word present AND domain
     vocabulary present.  Two-part match covers ALL phrasing styles without
@@ -1305,6 +1325,44 @@ DASHBOARD_QUALIFIER_ROUTES = {
     "subscription": {"intent": "subscription_list", "domain": "billing"},
 }
 
+# Module dashboards: "<qualifier> dashboard / overview / summary" resolves to a
+# live Inspect handler (in _handle_billing) that surfaces the SAME figures on
+# that module's UI dashboard page — never a generic explanation. QUALIFIERS map
+# each user word (singular/plural + common aliases) to its canonical intent.
+# Only genuinely conceptual framing ("what is a product dashboard", "how does
+# the pricing dashboard work") is reserved for EXPLAIN via the §2.1 how-to gate
+# / _detect_what_is_how_to, which fires BEFORE this D-11 block.
+MODULE_DASHBOARD_QUALIFIERS = {
+    "customer": "customer_dashboard",
+    "customers": "customer_dashboard",
+    "client": "customer_dashboard",
+    "clients": "customer_dashboard",
+    "product": "product_dashboard",
+    "products": "product_dashboard",
+    "pricing": "pricing_dashboard",
+    "price": "pricing_dashboard",
+    "quotation": "quotation_dashboard",
+    "quotations": "quotation_dashboard",
+    "quote": "quotation_dashboard",
+    "quotes": "quotation_dashboard",
+    "contract": "contract_dashboard",
+    "contracts": "contract_dashboard",
+    "subscription": "subscription_dashboard",
+    "subscriptions": "subscription_dashboard",
+    "subscriber": "subscription_dashboard",
+    "invoic": "invoice_dashboard",
+    "invoices": "invoice_dashboard",
+    "invoice": "invoice_dashboard",
+    "payment": "payment_dashboard",
+    "payments": "payment_dashboard",
+    "transaction": "payment_dashboard",
+    "tax": "tax_dashboard",
+    "taxes": "tax_dashboard",
+}
+# Qualifiers that mean the FINANCIAL/billing dashboard, not a module.
+_FINANCIAL_DASHBOARD_QUALIFIERS = ("financial", "finance", "org", "organization", "overview")
+
+
 INTENT_TOOLS = [
     ModelTool(
         name="search_invoices",
@@ -1379,12 +1437,20 @@ def derive_conversation_title(text: str | None, max_len: int = TITLE_MAX_LEN) ->
 
 
 def money(value, currency: str | None = None) -> str:
-    try:
-        amount = Decimal(str(value or 0))
-    except (InvalidOperation, TypeError):
-        amount = Decimal("0")
-    rendered = f"{amount:,.2f}"
-    return f"{currency or ''} {rendered}".strip()
+    # Delegates to the single shared formatter (symbol-based, dashboard-aligned).
+    from app.modules.billing.utils.currency_utils import format_currency
+    return format_currency(value, currency)
+
+
+def money_sym(value, currency_code: str | None = None) -> str:
+    """Render a monetary figure WITH its currency SYMBOL (e.g. "₹1,800.00"),
+    matching how the billing dashboard displays amounts.
+
+    The currency symbol is always derived from the SAME currency as the
+    value being rendered — never set independently — so the label can never
+    disagree with the number (the prior USD-hardcode regression)."""
+    from app.modules.billing.utils.currency_utils import format_currency
+    return format_currency(value, currency_code)
 
 
 def iso(value) -> str | None:
@@ -2445,6 +2511,22 @@ class ConversationEngine:
         ):
             return {"intent": "cross_tenant", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── HARD how-to / question gate (runs BEFORE PREPARE, INSPECT, and any
+        # customer-name extraction) ───────────────────────────────────────
+        # Any message that LEADS with a how-to / procedural-question pattern
+        # ("how to", "how do I", "how can I", "steps to", "guide to", …) is a
+        # conceptual explanation request and MUST route to EXPLAIN immediately.
+        # This is a hard gate: it short-circuits before the action-draft
+        # (PREPARE) logic and before entity/name extraction, so a phrase like
+        # "how to add the customer" can never be misread as an invoice-draft
+        # command or a customer-name lookup. Account-specific framings
+        # ("how do I add MY customer") deliberately fall through to the
+        # live-data handlers below. topic_screen keeps non-billing how-tos
+        # ("how to fix my car") out of EXPLAIN and into the §6.0 refusal.
+        if _HOWTO_LEAD_RE.search(normalized) and topic_screen(normalized):
+            if not _ACCOUNT_SPECIFIC_RE.search(normalized):
+                return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
         # ── Protected: invoice status vocabulary question ─────────────────
         # "What are the valid invoice statuses?" is a deterministic help
         # answer — must fire BEFORE the WHAT_IS/HOW_TO gate so that
@@ -2731,6 +2813,19 @@ class ConversationEngine:
                 return {"intent": "metric_growth_rate", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
             if _REFUND_AGGREGATE_RE.search(normalized):
                 return {"intent": "metric_refund_total", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            # "total paid amount" / "paid amount" → live paid total (INSPECT),
+            # never a definition. EXPLAIN cases ("how is paid amount calculated?",
+            # "what is paid amount?") are excluded by the `not _has_what_is_how_to`
+            # guard wrapping this block and handled by the metric-definition path.
+            if re.search(
+                r"\b(?:total\s+)?paid\s+(?:amount|revenue)\b"
+                r"|\btotal\s+amount\s+paid\b"
+                r"|\bhow\s+much\s+(?:have|has)\s+(?:we|they)\s+(?:been\s+)?paid\b"
+                r"|\bamount\s+paid\b"
+                r"|\bpaid\s+total\b",
+                normalized,
+            ):
+                return {"intent": "metric_paid_total", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Unqualified dashboard/summary asks (M1 Inspect) ──────────────
         # "Dashboard summary", "Show dashboard", bare "Overview", "Summary
@@ -2912,9 +3007,18 @@ class ConversationEngine:
             m_qual = None
         if m_qual:
             qualifier = m_qual.group(1)
-            if qualifier.rstrip("s") == "product":
-                return {"intent": "product_dashboard", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
-            if qualifier not in ("billing", "financial", "finance", "my", "our", "the", "org", "organization"):
+            # Module dashboards resolve to their live Inspect figure handler.
+            module_intent = MODULE_DASHBOARD_QUALIFIERS.get(qualifier)
+            # "customer dashboard" remains ambiguous when no customer page is
+            # active: it can mean the financial dashboard or customer records.
+            # Preserve the D-11 clarification in that case, while still
+            # resolving it directly when the caller is already on that surface.
+            customer_page = page_path and re.search(r"/billing/customers(?:/|$)", str(page_path).lower())
+            if module_intent and (module_intent != "customer_dashboard" or customer_page):
+                return {"intent": module_intent, "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if qualifier in _FINANCIAL_DASHBOARD_QUALIFIERS or qualifier in ("billing", "financial", "finance", "org", "organization"):
+                return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+            if qualifier not in ("my", "our", "the"):
                 singular = qualifier.rstrip("s")
                 route = DASHBOARD_QUALIFIER_ROUTES.get(singular)
                 # Page-context biasing: the user is already ON that surface's
@@ -3119,6 +3223,29 @@ class ConversationEngine:
         if re.search(r"\bquotations?\b|\bquotes?\b", normalized) and not re.search(r"\b(what\s+(?:is|are)|what'?s|whats\b|\bmean(?:s)?\b|difference)\b", normalized):
             return {"intent": "quotation_list", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── BILLING / PAYMENT HISTORY ───────────────────────────────────
+        # "billing history", "invoice history", "payment history",
+        # "transaction history" are RECORD-LIST requests. They must route to
+        # the invoice/payment list — NEVER a customer-name search (the
+        # customer-search branch below would otherwise treat "billing" as a
+        # customer name and answer "couldn't find a customer matching
+        # 'billing history'"). This guard must precede CUSTOMER SEARCH.
+        billing_history_patterns = (
+            "billing history", "bill history", "invoice history", "invoices history",
+            "my billing history", "our billing history", "show billing history",
+            "show me billing history", "view billing history", "billing transaction history",
+        )
+        if any(p in normalized for p in billing_history_patterns):
+            return {"intent": "invoice_list", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
+        payment_history_patterns = (
+            "payment history", "payments history", "transaction history",
+            "my payment history", "our payment history", "show payment history",
+            "show me payment history", "view payment history",
+        )
+        if any(p in normalized for p in payment_history_patterns):
+            return {"intent": "payment_list", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
         # ── CUSTOMER SEARCH / DETAILS ───────────────────────────────────
         # "find Gok", "do we have a customer named Gok", "look up Gok",
         # "customer details for Gok", "what do you know about Gok"
@@ -3183,7 +3310,7 @@ class ConversationEngine:
             "display invoices", "display all invoices", "get invoices", "view invoices",
             "see invoices", "my invoices", "all invoices", "invoices list",
             "unpaid invoices", "pending invoices", "overdue invoices", "past due invoices",
-            "open invoices", "outstanding invoices", "unpaid bills", "pending bills",
+            "open invoices", "open invoice", "outstanding invoices", "unpaid bills", "pending bills",
             "overdue bills", "bills that haven't been paid", "bills that have not been paid",
             "bills that are unpaid", "bills that are pending", "which invoices are overdue",
             "which invoices are unpaid", "which invoices are pending", "which bills are overdue",
@@ -3930,6 +4057,7 @@ class ConversationEngine:
         if spec.get("live"):
             svc = BillingDashboardService(self.db)
             kpis = svc.get_kpis(organization_id=ctx.organization_id)
+            base = self._base_currency(ctx.organization_id)
             value = kpis.get(spec["kpi_key"], 0)
             if code == "overdue":
                 overdue_count = self.db.query(func.count(Invoice.id)).filter(
@@ -3940,11 +4068,11 @@ class ConversationEngine:
                     Invoice.balance_due > 0,
                     Invoice.due_date < date.today(),
                 ).scalar() or 0
-                answer += (f"\n\nRight now: **{money(value)}** is overdue across "
+                answer += (f"\n\nRight now: **{money(value, base)}** is overdue across "
                            f"**{overdue_count} invoice(s)**.")
                 evidence[0].update({"value": str(value), "overdue_count": overdue_count})
             else:
-                answer += f"\n\nYour current {spec['label'].lower()}: **{money(value)}**."
+                answer += f"\n\nYour current {spec['label'].lower()}: **{money(value, base)}**."
                 evidence[0]["value"] = str(value)
             evidence[0]["as_of"] = datetime.now(timezone.utc).isoformat()
             answer += "\n\nAsk for the **dashboard summary** to see all figures together."
@@ -4051,11 +4179,12 @@ class ConversationEngine:
         else:
             rate = 100.0 if collections > 0 else 0.0
         rate_text = f"{round(rate, 1):.1f}".rstrip("0").rstrip(".") + "%"
+        base = self._base_currency(ctx.organization_id)
         return {
             "answer": (
                 f"Your collection rate is **{rate_text}**.\n\n"
-                f"- Billed revenue: **{money(total_revenue)}**\n"
-                f"- Collected (cleared payments): **{money(collections)}**\n\n"
+                f"- Billed revenue: **{money(total_revenue, base)}**\n"
+                f"- Collected (cleared payments): **{money(collections, base)}**\n\n"
                 "Collection rate is the share of billed revenue you have "
                 "actually collected so far."
             ),
@@ -4190,7 +4319,7 @@ class ConversationEngine:
             answer = "No refunds have been issued for your organization."
         else:
             answer = (
-                f"**{count} refund(s)** issued totalling **{money(total)}**.\n\n"
+                f"**{count} refund(s)** issued totalling **{money(total, self._base_currency(ctx.organization_id))}**.\n\n"
                 "Counts cleared refund payments recorded in your billing ledger."
             )
         return {
@@ -4220,9 +4349,10 @@ class ConversationEngine:
             answer = "No invoices have been issued yet, so there is no average invoice value."
         else:
             avg = total_revenue / total_invoices
+            base = self._base_currency(ctx.organization_id)
             answer = (
-                f"Your average invoice value is **{money(avg)}**.\n\n"
-                f"- Total billed revenue: **{money(total_revenue)}**\n"
+                f"Your average invoice value is **{money(avg, base)}**.\n\n"
+                f"- Total billed revenue: **{money(total_revenue, base)}**\n"
                 f"- Invoices issued: **{total_invoices}**"
             )
         return {
@@ -4257,7 +4387,7 @@ class ConversationEngine:
             answer = "No credit notes have been issued for your organization."
         else:
             answer = (
-                f"**{count} credit note(s)** issued, totalling **{money(total_amount)}**."
+                f"**{count} credit note(s)** issued, totalling **{money(total_amount, self._base_currency(ctx.organization_id))}**."
             )
         return {
             "answer": answer,
@@ -4334,10 +4464,11 @@ class ConversationEngine:
             from app.modules.billing.services.dashboard_service import BillingDashboardService
             kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id)
             amount = float(kpis.get("monthly_revenue", 0) or 0)
+        base = self._base_currency(ctx.organization_id)
         answer = (
-            f"Paid revenue this month is **{money(amount)}**.\n\n"
+            f"Paid revenue this month is **{money(amount, base)}**.\n\n"
             if window_start is None
-            else f"Paid revenue for {period_label} is **{money(amount)}**.\n\n"
+            else f"Paid revenue for {period_label} is **{money(amount, base)}**.\n\n"
         )
         return {
             "answer": (
@@ -4362,6 +4493,29 @@ class ConversationEngine:
             "qualification": "Live aggregate identical to the dashboard's Monthly Revenue card.",
             "next_actions": ["What's our collection rate?", "Dashboard summary"],
             "suggested_prompts": ["Total revenue", "Show overdue invoices"],
+        }
+
+    def _paid_total_response(self, ctx: AIContext) -> dict:
+        """Total amount paid (all-time) from the same BillingDashboardService
+        the dashboard page reads — answers 'total paid amount' / 'paid amount'
+        with the live figure, never a definition."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id)
+        amount = float(kpis.get("paid_amount", 0) or 0)
+        base = self._base_currency(ctx.organization_id)
+        return {
+            "answer": f"Total paid amount is **{money_sym(amount, base)}**.",
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Dashboard",
+                "type": "metric_paid_total",
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "value": str(amount),
+            }],
+            "qualification": "Total amount customers have paid (paid invoices / cleared payments), expressed in the organization base currency.",
+            "next_actions": ["Dashboard summary", "Show overdue invoices"],
+            "suggested_prompts": ["Dashboard summary", "How much is outstanding?", "Show recent payments"],
         }
 
     def _admin_count_response(self, ctx: AIContext) -> dict:
@@ -4407,6 +4561,7 @@ class ConversationEngine:
         series = BillingDashboardService(self.db).get_monthly_revenue(
             organization_id=ctx.organization_id,
         ).get("monthly_revenue") or []
+        base = self._base_currency(ctx.organization_id)
         if len(series) < 2:
             answer = "There isn't enough revenue history yet to compute monthly growth."
         else:
@@ -4418,12 +4573,12 @@ class ConversationEngine:
                 growth_text = f"{round(growth, 1):+.1f}%".replace("+0.0%", "0.0%")
                 answer = (
                     f"Monthly revenue growth is **{growth_text}** "
-                    f"({money(last_rev)} in {last.get('month')} vs {money(prev_rev)} in {prev.get('month')})."
+                    f"({money(last_rev, base)} in {last.get('month')} vs {money(prev_rev, base)} in {prev.get('month')})."
                 )
             elif last_rev > 0:
                 answer = (
-                    f"Revenue was **{money(last_rev)}** in {last.get('month')} versus "
-                    f"{money(prev_rev)} in {prev.get('month')} — growth can't be "
+                    f"Revenue was **{money(last_rev, base)}** in {last.get('month')} versus "
+                    f"{money(prev_rev, base)} in {prev.get('month')} — growth can't be "
                     "computed against a zero prior month."
                 )
             else:
@@ -4460,6 +4615,8 @@ class ConversationEngine:
             return self._avg_invoice_response(ctx)
         if intent_code == "metric_paid_period":
             return self._paid_period_response(ctx, normalized=text)
+        if intent_code == "metric_paid_total":
+            return self._paid_total_response(ctx)
         if intent_code == "admin_count":
             return self._admin_count_response(ctx)
         if intent_code == "metric_growth_rate":
@@ -4469,6 +4626,10 @@ class ConversationEngine:
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         svc = BillingDashboardService(self.db)
         kpis = svc.get_kpis(organization_id=org_id)
+        # Currency label is derived from the SAME source as the KPI figures
+        # (get_kpis values are expressed in the org base currency), and the
+        # dashboard renders symbols (₹) — never an independent "USD" label.
+        ccy = svc._get_base_currency(org_id)
 
         total_invoices = kpis.get("total_invoices", 0)
         total_revenue = kpis.get("total_revenue", 0)
@@ -4498,7 +4659,7 @@ class ConversationEngine:
         # dashboard page so the numbers always agree.
         if intent.get("intent") == "metric_revenue":
             return {
-                "answer": f"Total revenue is **{money(total_revenue)}**.",
+                "answer": f"Total revenue is **{money_sym(total_revenue, ccy)}**.",
                 "mode": "M1_INSPECT",
                 "risk_class": "R1",
                 "evidence": [{
@@ -4525,8 +4686,8 @@ class ConversationEngine:
 
         answer = (
             f"Financial overview for **{ctx.tenant_name or 'your organization'}**:\n\n"
-            f"**Invoices:** {total_invoices} total | **Revenue:** {money(total_revenue)} | "
-            f"**Outstanding:** {money(outstanding)} | **Overdue:** {overdue_count}\n\n"
+            f"**Invoices:** {total_invoices} total | **Revenue:** {money_sym(total_revenue, ccy)} | "
+            f"**Outstanding:** {money_sym(outstanding, ccy)} | **Overdue:** {overdue_count}\n\n"
             f"**Customers:** {total_customers}"
         )
         if overdue_count > 0:
@@ -4774,10 +4935,13 @@ class ConversationEngine:
                         f"@ {item.get('unit_price', '0')} = {item.get('total', '0')}"
                     )
             if money:
-                answer_parts.append(f"\n**Subtotal:** {money.get('subtotal', '0')}")
+                from app.modules.billing.utils.currency_utils import format_currency
+                _ccy = money.get("currency") or self._base_currency(ctx.organization_id)
+                _fmt = lambda v: format_currency(v, _ccy)
+                answer_parts.append(f"\n**Subtotal:** {_fmt(money.get('subtotal', '0'))}")
                 if money.get("tax") and money["tax"] != "0":
-                    answer_parts.append(f"**Tax:** {money['tax']}")
-                answer_parts.append(f"**Total:** {money.get('total', '0')}")
+                    answer_parts.append(f"**Tax:** {_fmt(money['tax'])}")
+                answer_parts.append(f"**Total:** {_fmt(money.get('total', '0'))}")
             if warnings:
                 answer_parts.append(f"\n**Warnings:** {'; '.join(warnings)}")
             answer_parts.append(
@@ -4794,6 +4958,7 @@ class ConversationEngine:
                 preview_result=preview_result,
                 proposed_params=proposed_params,
                 policy_result=policy_result,
+                org_id=ctx.organization_id,
             )
 
             # Build §8.3 restated-value confirm label
@@ -4801,6 +4966,7 @@ class ConversationEngine:
                 payload.get("action_type", "invoice_draft"),
                 proposed_params,
                 money,
+                org_id=ctx.organization_id,
             )
 
             return {
@@ -4971,6 +5137,7 @@ class ConversationEngine:
         # reference instead of falling into the create-a-new-draft prompt.
         _text_l = (text or "").lower()
         _inv_ref = self._extract_reference(_text_l, prefixes=("inv", "invoice"))
+        base = self._base_currency(ctx.organization_id)
         if _inv_ref and re.search(
             r"\b(?:change|update|edit|modif\w*|set|extend|postpone|move|resend|reissue|correct)\w*\b",
             _text_l,
@@ -4980,7 +5147,7 @@ class ConversationEngine:
                     f"I can prepare an update to invoice **{_inv_ref}**.\n\n"
                     f"Tell me exactly what should change — for example:\n"
                     f"  *Change the due date to net 60*\n"
-                    f"  *Update the amount to 450 USD*\n\n"
+                    f"  *Update the amount to {money(450, base)}*\n\n"
                     f"I'll show a preview before anything is saved."
                 ),
                 "mode": "M2_PREPARE",
@@ -5060,6 +5227,7 @@ class ConversationEngine:
             missing = proposed_params.get("line_items_missing", [])
             customer_name = proposed_params.get("customer_name", "")
             customer_ref = f" for {customer_name}" if customer_name else ""
+            base = self._base_currency(ctx.organization_id)
 
             # Check if there are products in the catalog we can suggest
             products = (
@@ -5071,20 +5239,20 @@ class ConversationEngine:
 
             if products:
                 product_list = "\n".join(
-                    f"  - **{p.name}** — {p.unit_price}" if hasattr(p, 'unit_price') and p.unit_price
+                    f"  - **{p.name}** — {money(p.unit_price, base)}" if hasattr(p, 'unit_price') and p.unit_price
                     else f"  - **{p.name}**"
                     for p in products
                 )
                 answer = (
                     f"**What product/service and amount should this invoice{customer_ref} include?**\n\n"
                     f"Your available products:\n{product_list}\n\n"
-                    f"For example: Create an invoice{customer_ref} for {products[0].name} at $500"
+                    f"For example: Create an invoice{customer_ref} for {products[0].name} at {money(500, base)}"
                 )
             else:
                 answer = (
                     f"**What product/service and amount should this invoice{customer_ref} include?**\n\n"
                     f"No products are set up in your catalog yet. Please specify a description and amount, e.g.\n"
-                    f"Create an invoice{customer_ref} for Consulting services at $500"
+                    f"Create an invoice{customer_ref} for Consulting services at {money(500, base)}"
                 )
 
             return {
@@ -5095,12 +5263,12 @@ class ConversationEngine:
                 "qualification": "Line item details needed before draft creation.",
                 "next_actions": [
                     f"Create an invoice{customer_ref} for {products[0].name}" if products
-                    else f"Create an invoice{customer_ref} for [service] at $[amount]"
+                    else f"Create an invoice{customer_ref} for [service] at {money(500, base)}"
                 ],
                 "suggested_prompts": [
                     f"Create an invoice{customer_ref} for {p.name}" for p in products
                 ] if products else [
-                    f"Create an invoice{customer_ref} for [service] at $[amount]"
+                    f"Create an invoice{customer_ref} for [service] at {money(500, base)}"
                 ],
             }
 
@@ -5195,7 +5363,14 @@ class ConversationEngine:
             "expires_at": draft_result.get("expires_at"),
         }
 
-    def _build_confirm_label(self, action_type: str, params: dict, money_summary: dict) -> str:
+    def _base_currency(self, org_id) -> str:
+        """Authoritative organization base currency (single source of truth,
+        identical to the billing dashboard). Used for every customer-facing
+        currency label so no hardcoded 'USD'/'INR' literal can leak in."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        return BillingDashboardService(self.db)._get_base_currency(org_id)
+
+    def _build_confirm_label(self, action_type: str, params: dict, money_summary: dict, org_id=None) -> str:
         """Build §8.3 restated-value confirm label: [Verb] + [material value] + [recipient].
 
         e.g. "Confirm ₹500.00 INR invoice for TOM"
@@ -5208,12 +5383,15 @@ class ConversationEngine:
         }
         verb = verbs.get(action_type, "Confirm")
 
-        currency = money_summary.get("currency") or params.get("currency") or "INR"
+        currency = money_summary.get("currency") or params.get("currency")
+        if not currency:
+            currency = self._base_currency(org_id) if org_id else ""
         total = money_summary.get("total", "0")
+        from app.modules.billing.utils.currency_utils import format_currency
         try:
-            amount_str = f"{currency} {float(total):,.2f}"
+            amount_str = format_currency(total, currency)
         except (TypeError, ValueError):
-            amount_str = f"{currency} {total}"
+            amount_str = str(total)
 
         objects = {
             "invoice_draft": "invoice",
@@ -5230,7 +5408,7 @@ class ConversationEngine:
 
     def _build_preview_card(self, payload: dict, money: dict, warnings: list,
                             preview_result: dict, proposed_params: dict,
-                            policy_result: dict) -> dict:
+                            policy_result: dict, org_id=None) -> dict:
         """Build §8.2 structured preview card with all 10 required elements.
 
         §8.2 checklist:
@@ -5245,6 +5423,7 @@ class ConversationEngine:
         9. Preview generated timestamp + expiry
         10. Primary Continue/Confirm + secondary Edit/Cancel actions
         """
+        from app.modules.billing.utils.currency_utils import format_currency
         action_type = payload.get("action_type", "invoice_draft")
         action_label_map = {
             "invoice_draft": "Issue invoice",
@@ -5254,7 +5433,9 @@ class ConversationEngine:
         }
         action_label = action_label_map.get(action_type, action_type.replace("_", " ").title())
 
-        currency = money.get("currency") or proposed_params.get("currency") or "INR"
+        currency = money.get("currency") or proposed_params.get("currency")
+        if not currency:
+            currency = self._base_currency(org_id) if org_id else ""
         total = money.get("total", "0")
 
         # Risk description (§8.2 element 2 — copy, not colour alone)
@@ -5307,7 +5488,7 @@ class ConversationEngine:
                 "subtotal": money.get("subtotal", "0"),
                 "tax": money.get("tax", "0"),
                 "total": total,
-                "display": f"{currency} {float(total):,.2f}" if total else None,
+                "display": (format_currency(total, currency) if total else None),
             },
             "line_items": payload.get("line_items", []),
             "changes": {
@@ -5500,6 +5681,22 @@ class ConversationEngine:
         # ── PRD §09 families: guided flows instead of silent mis-answers ──
         if intent_code == "product_dashboard":
             return self._product_overview(conv, ctx)
+        if intent_code == "pricing_dashboard":
+            return self._pricing_dashboard(conv, ctx)
+        if intent_code == "quotation_dashboard":
+            return self._quotation_dashboard(conv, ctx)
+        if intent_code == "contract_dashboard":
+            return self._contract_dashboard(conv, ctx)
+        if intent_code == "subscription_dashboard":
+            return self._subscription_dashboard(conv, ctx)
+        if intent_code == "invoice_dashboard":
+            return self._invoice_dashboard(conv, ctx)
+        if intent_code == "payment_dashboard":
+            return self._payment_dashboard(conv, ctx)
+        if intent_code == "tax_dashboard":
+            return self._tax_dashboard(conv, ctx)
+        if intent_code == "customer_dashboard":
+            return self._customer_dashboard(conv, ctx)
         if intent_code == "correct_request":
             return {
                 "answer": (
@@ -5698,9 +5895,10 @@ class ConversationEngine:
                 "suggested_prompts": ["Dashboard summary", "Show all invoices"],
             }
 
-        answer = f"**Account balance:** {money(total_outstanding)} outstanding across **{invoice_count} invoice(s)**."
+        base = self._base_currency(org_id)
+        answer = f"**Account balance:** {money(total_outstanding, base)} outstanding across **{invoice_count} invoice(s)**."
         if total_overdue:
-            answer += f"\n\n**Overdue:** {money(total_overdue)} — immediate attention recommended."
+            answer += f"\n\n**Overdue:** {money(total_overdue, base)} — immediate attention recommended."
         else:
             answer += "\n\nAll invoices are within their payment terms."
 
@@ -5790,7 +5988,7 @@ class ConversationEngine:
             if inv.due_date and inv.due_date < today
         )
         display_name = customer.company_name or customer.display_name or customer.customer_code
-        currency = open_invoices[0].currency if open_invoices else None
+        currency = self._base_currency(customer.organization_id)
 
         if not open_invoices:
             answer = f"**{display_name}** has **no outstanding balance** — all invoices are settled."
@@ -5863,9 +6061,10 @@ class ConversationEngine:
         if count == 0:
             answer = "No quotations have been created for your organization."
         else:
+            base = self._base_currency(ctx.organization_id)
             lines = [
                 f"- **{q.quote_number}** — {enum_value(q.status)}"
-                + (f" — {money(q.total_amount)}" if q.total_amount is not None else "")
+                + (f" — {money(q.total_amount, base)}" if q.total_amount is not None else "")
                 for q in rows
             ]
             more = count - len(lines)
@@ -5908,7 +6107,7 @@ class ConversationEngine:
             r"|^unpaid\b",
             normalized,
         ))
-        if "outstanding" in normalized or "unpaid" in normalized or "pending" in normalized or not_paid_ask:
+        if "outstanding" in normalized or "unpaid" in normalized or "pending" in normalized or "open" in normalized or not_paid_ask:
             query = query.filter(Invoice.balance_due > 0)
         elif "overdue" in normalized or "past due" in normalized:
             query = query.filter(Invoice.balance_due > 0, Invoice.due_date < date.today())
@@ -5950,14 +6149,17 @@ class ConversationEngine:
                 "suggested_prompts": ["Draft an invoice", "Show overdue invoices"],
             }
 
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        ccy = BillingDashboardService(self.db)._get_base_currency(org_id)
+
         lines = []
         for inv in invoices:
             customer_name = inv.customer.company_name if inv.customer else "—"
             status = enum_value(inv.status)
-            lines.append(f"- **{inv.invoice_number}** — {customer_name} — {status} — {money(inv.balance_due, inv.currency)} due")
+            lines.append(f"- **{inv.invoice_number}** — {customer_name} — {status} — {money_sym(inv.balance_due, ccy)} due")
 
         total = sum(Decimal(str(inv.balance_due or 0)) for inv in invoices)
-        answer = f"Found **{len(invoices)} invoice(s)** (total outstanding: {money(total)}):\n\n" + "\n".join(lines)
+        answer = f"Found **{len(invoices)} invoice(s)** (total outstanding: {money_sym(total, ccy)}):\n\n" + "\n".join(lines)
 
         return {
             "answer": answer,
@@ -6001,11 +6203,13 @@ class ConversationEngine:
         lines = []
         for p in payments:
             customer_name = p.customer.company_name if p.customer else "—"
-            lines.append(f"- **{p.payment_number}** — {customer_name} — {money(p.amount, p.currency)} — {enum_value(p.status)}")
+            lines.append(f"- **{p.payment_number}** — {customer_name} — {money_sym(p.amount, p.currency)} — {enum_value(p.status)}")
 
         total = sum(Decimal(str(p.amount or 0)) for p in payments)
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        ccy = BillingDashboardService(self.db)._get_base_currency(org_id)
         target = f" made by {customer.company_name}" if customer is not None else ""
-        answer = f"Found **{len(payments)} payment(s){target}** (total: {money(total)}):\n\n" + "\n".join(lines)
+        answer = f"Found **{len(payments)} payment(s){target}** (total: {money_sym(total, ccy)}):\n\n" + "\n".join(lines)
 
         return {
             "answer": answer,
@@ -6283,6 +6487,7 @@ class ConversationEngine:
                 "suggested_prompts": [],
             }
 
+        base = self._base_currency(ctx.organization_id)
         lines = []
         for c in customers:
             outstanding = by_customer.get(c.id, 0.0)
@@ -6293,7 +6498,7 @@ class ConversationEngine:
                 state = "active" if c.is_active else "inactive"
             lines.append(
                 f"- **{c.company_name}** ({c.customer_code}) — "
-                f"Outstanding: {money(outstanding)} — {state}"
+                f"Outstanding: {money(outstanding, base)} — {state}"
             )
 
         if only_outstanding:
@@ -6419,12 +6624,15 @@ class ConversationEngine:
         svc = BillingDashboardService(self.db)
         by_customer = {r["customer_id"]: r["outstanding"] for r in svc.get_outstanding_by_customer(ctx.organization_id)}
         outstanding = by_customer.get(customer.id, 0.0)
+        # Outstanding is expressed in the org base currency (same source as the
+        # value), rendered with the dashboard's currency symbol.
+        ccy = svc._get_base_currency(ctx.organization_id)
 
         return {
             "answer": (
                 f"**Customer: {customer.company_name}** ({enum_value(customer.status)})\n\n"
-                f"Outstanding: {money(outstanding)} | "
-                f"Credit: {money(customer.credit_balance, customer.currency)}"
+                f"Outstanding: {money_sym(outstanding, ccy)} | "
+                f"Credit: {money_sym(customer.credit_balance, customer.currency)}"
             ),
             "mode": "M1_INSPECT",
             "risk_class": "R1",
@@ -6546,7 +6754,7 @@ class ConversationEngine:
         ).scalar() or 0
         lines = []
         for p in products:
-            price = money(p.unit_price, p.currency) if p.unit_price is not None else "—"
+            price = money(p.default_price, p.currency) if p.default_price is not None else "—"
             lines.append(f"- **{p.name}** — {price}")
         answer = (
             f"Here's your **product catalog** ({total} product(s)):\n\n" + "\n".join(lines)
@@ -6565,6 +6773,92 @@ class ConversationEngine:
             "qualification": "Live product records. For the financial overview, ask for the 'billing dashboard'.",
             "next_actions": ["Billing dashboard summary", "Add a product"],
             "suggested_prompts": ["Dashboard summary", "Show invoices"],
+        }
+
+    def _customer_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        """Show the customer surface without falling into the finance summary."""
+        return self._list_customers("show customers", conv, ctx)
+
+    def _pricing_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        """Summarize active catalog pricing for the pricing surface."""
+        products = (
+            self.db.query(Product)
+            .filter(
+                Product.organization_id == ctx.organization_id,
+                Product.deleted_at.is_(None),
+                Product.is_active == True,
+            )
+            .order_by(Product.name.asc())
+            .limit(20)
+            .all()
+        )
+        if not products:
+            answer = "Your pricing catalog is currently empty."
+        else:
+            lines = [
+                f"- **{p.name}** — {money(p.default_price, p.currency)}"
+                for p in products
+            ]
+            answer = f"Active pricing for **{len(products)} product(s)**:\n\n" + "\n".join(lines)
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Pricing",
+                "type": "pricing_overview",
+                "count": len(products),
+            }],
+            "qualification": "Live active product pricing records.",
+            "next_actions": ["Show the product catalog", "Create a product"],
+            "suggested_prompts": ["Show the product catalog", "Dashboard summary"],
+        }
+
+    def _quotation_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        return self._list_quotations_response(ctx)
+
+    def _contract_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        return self._list_contracts("contract dashboard", conv, ctx)
+
+    def _subscription_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        return self._list_subscriptions("subscription dashboard", conv, ctx)
+
+    def _invoice_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        return self._list_invoices("invoice dashboard", conv, ctx)
+
+    def _payment_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        return self._list_payments("payment dashboard", conv, ctx)
+
+    def _tax_dashboard(self, conv: AIConversation, ctx: AIContext) -> dict:
+        from app.modules.billing.models import TaxRate
+
+        rates = (
+            self.db.query(TaxRate)
+            .filter(TaxRate.organization_id == ctx.organization_id, TaxRate.is_active == True)
+            .order_by(TaxRate.priority.desc(), TaxRate.name.asc())
+            .limit(20)
+            .all()
+        )
+        if not rates:
+            answer = "No active tax rates are configured for your organization."
+        else:
+            lines = [
+                f"- **{rate.name}** ({rate.code}) — {rate.rate}% — {enum_value(rate.tax_type)}"
+                for rate in rates
+            ]
+            answer = f"Active tax rates ({len(rates)}):\n\n" + "\n".join(lines)
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Tax Configuration",
+                "type": "tax_overview",
+                "count": len(rates),
+            }],
+            "qualification": "Live active tax-rate configuration records.",
+            "next_actions": ["Create a tax rate", "Show invoices"],
+            "suggested_prompts": ["Explain tax rates", "Dashboard summary"],
         }
 
     # ── Subscription / Contract / Product lists ────────────────────────
@@ -6715,8 +7009,9 @@ class ConversationEngine:
             }
 
         total = sum(Decimal(str(inv.balance_due or 0)) for inv in invoices)
+        base = self._base_currency(ctx.organization_id)
         return {
-            "answer": f"Found **{len(invoices)} overdue invoice(s)** totaling **{money(total)}**. Oldest due: {iso(invoices[0].due_date)}.",
+            "answer": f"Found **{len(invoices)} overdue invoice(s)** totaling **{money(total, base)}**. Oldest due: {iso(invoices[0].due_date)}.",
             "mode": "M1_INSPECT",
             "risk_class": "R1",
             "evidence": [{

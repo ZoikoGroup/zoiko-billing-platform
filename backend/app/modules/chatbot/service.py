@@ -297,12 +297,18 @@ def enum_value(value) -> str | None:
 
 
 def money(value, currency: str | None = None) -> str:
-    try:
-        amount = Decimal(str(value or 0))
-    except (InvalidOperation, TypeError):
-        amount = Decimal("0")
-    rendered = f"{amount:,.2f}"
-    return f"{currency or ''} {rendered}".strip()
+    # Delegates to the single shared formatter (symbol-based, dashboard-aligned).
+    from app.modules.billing.utils.currency_utils import format_currency
+    return format_currency(value, currency)
+
+
+def money_sym(value, currency_code: str | None = None) -> str:
+    """Render a monetary figure with its currency SYMBOL (e.g. "₹1,800.00"),
+    matching the billing dashboard. The currency symbol is always derived
+    from the SAME currency as the value — never set independently (the prior
+    USD-hardcode regression)."""
+    from app.modules.billing.utils.currency_utils import format_currency
+    return format_currency(value, currency_code)
 
 
 def iso(value) -> str | None:
@@ -780,6 +786,11 @@ class ChatbotService:
             Payment.organization_id == ctx.organization_id, Payment.deleted_at.is_(None), Payment.status == "cleared"
         ).scalar() or 0
 
+        # Currency label is derived from the SAME source as the figures (org
+        # base currency) and rendered as a symbol (₹), matching the dashboard.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        ccy = BillingDashboardService(self.db)._get_base_currency(ctx.organization_id)
+
         evidence = [
             ChatbotEvidence(
                 source="Zoiko Billing Dashboard",
@@ -799,10 +810,10 @@ class ChatbotService:
 
         answer = (
             f"Here is your financial overview for **{ctx.tenant_name or 'your organization'}**:\n\n"
-            f"**Invoices:** {total_invoices} total | **Revenue:** {money(total_revenue)} | "
-            f"**Outstanding:** {money(outstanding)} | **Overdue:** {overdue_count}\n\n"
+            f"**Invoices:** {total_invoices} total | **Revenue:** {money_sym(total_revenue, ccy)} | "
+            f"**Outstanding:** {money_sym(outstanding, ccy)} | **Overdue:** {overdue_count}\n\n"
             f"**Customers:** {total_customers} | **Active Subscriptions:** {active_subscriptions} | "
-            f"**Payments Received:** {money(total_payments)}"
+            f"**Payments Received:** {money_sym(total_payments, ccy)}"
         )
 
         if overdue_count > 0:
@@ -862,9 +873,9 @@ class ChatbotService:
         evidence = self._invoice_evidence(invoice)
         customer_name = invoice.customer.company_name if invoice.customer else "the customer"
         status = enum_value(invoice.status)
-        balance = money(invoice.balance_due, invoice.currency)
-        total = money(invoice.total_amount, invoice.currency)
-        paid = money(invoice.paid_amount, invoice.currency)
+        balance = money_sym(invoice.balance_due, invoice.currency)
+        total = money_sym(invoice.total_amount, invoice.currency)
+        paid = money_sym(invoice.paid_amount, invoice.currency)
 
         answer = (
             f"**Invoice {invoice.invoice_number}** for {customer_name} is **{status}**.\n\n"
@@ -913,17 +924,22 @@ class ChatbotService:
             )
 
         evidence = []
+        # When an invoice has no explicit currency, fall back to the org base
+        # currency (never a hardcoded "USD") — the label must match the value's
+        # source currency.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        base_ccy = BillingDashboardService(self.db)._get_base_currency(ctx.organization_id)
         total_by_currency: dict[str, Decimal] = {}
         for inv in invoices:
             evidence.extend(self._invoice_evidence(inv))
-            cur = inv.currency or "USD"
+            cur = inv.currency or base_ccy
             total_by_currency[cur] = total_by_currency.get(cur, Decimal("0")) + Decimal(str(inv.balance_due or 0))
 
         if len(total_by_currency) == 1:
-            cur, total = next(iter(total_by_currency.items()))
-            answer = f"Found **{len(invoices)} overdue invoice(s)** totaling **{money(total, cur)}**. Oldest due date: {iso(invoices[0].due_date)}."
+            total = next(iter(total_by_currency.values()))
+            answer = f"Found **{len(invoices)} overdue invoice(s)** totaling **{money_sym(total, base_ccy)}**. Oldest due date: {iso(invoices[0].due_date)}."
         else:
-            parts = [f"{cur}: {money(total, cur)}" for cur, total in total_by_currency.items()]
+            parts = [f"{cur}: {money_sym(total, cur)}" for cur, total in total_by_currency.items()]
             answer = f"Found **{len(invoices)} overdue invoice(s)** across multiple currencies: {', '.join(parts)}. Oldest due date: {iso(invoices[0].due_date)}."
 
         return self._build_response(
@@ -984,9 +1000,9 @@ class ChatbotService:
 
         answer = (
             f"**Payment {payment.payment_number}** for {customer_name} is **{enum_value(payment.status)}**.\n\n"
-            f"Amount: {money(payment.amount, payment.currency)} | "
-            f"Allocated: {money(allocated, payment.currency)} | "
-            f"Unallocated: {money(unallocated, payment.currency)}"
+            f"Amount: {money_sym(payment.amount, payment.currency)} | "
+            f"Allocated: {money_sym(allocated, payment.currency)} | "
+            f"Unallocated: {money_sym(unallocated, payment.currency)}"
         )
 
         evidence = [
@@ -1085,7 +1101,7 @@ class ChatbotService:
 
         answer = (
             f"**Customer: {customer.company_name}** ({enum_value(customer.status)})\n\n"
-            f"Outstanding Balance: {money(customer.outstanding_balance, customer.currency)} | "
+            f"Outstanding Balance: {money_sym(customer.outstanding_balance, customer.currency)} | "
             f"Credit Balance: {money(customer.credit_balance, customer.currency)}\n"
             f"Invoices: {invoice_count} | Payments: {payment_count} | "
             f"Lifetime Value: {money(customer.lifetime_value, customer.currency)}"

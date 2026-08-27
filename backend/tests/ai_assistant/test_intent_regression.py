@@ -28,7 +28,8 @@ from app.database import Base
 from app.modules.organizations.models import Organization
 from app.modules.billing.models import Invoice, InvoiceStatus
 from app.modules.billing.services.dashboard_service import BillingDashboardService
-from app.modules.chatbot.conversation.engine import ConversationEngine, money
+from app.modules.chatbot.conversation.engine import ConversationEngine, money, money_sym
+from app.modules.billing.utils.currency_utils import format_currency_display
 from app.modules.chatbot.context.ai_context import AIContext
 
 
@@ -818,7 +819,7 @@ class TestInspectOverExplain:
 
         # Billed = SENT 1000; cleared payments = 250 → 25% (dashboard formula)
         assert "**25%**" in result["answer"], result["answer"][:200]
-        assert "**1,000.00**" in result["answer"] and "**250.00**" in result["answer"]
+        assert money(1000, "USD") in result["answer"] and money(250, "USD") in result["answer"]
 
     def test_mrr_arr_returns_reporting_read_model(self, db, org, ctx):
         result = self._ask(db, org, ctx, "What's MRR and ARR?")
@@ -854,8 +855,8 @@ class TestInspectOverExplain:
         result = self._ask(db, org, ctx, "What's MRR and ARR?")
 
         # Monthly sub at 90 → MRR 90, ARR 1080 (monthly divisor = 1)
-        assert "**MRR:** USD 90.00" in result["answer"], result["answer"][:200]
-        assert "**ARR:** USD 1,080.00" in result["answer"]
+        assert f"**MRR:** {money(90, 'USD')}" in result["answer"], result["answer"][:200]
+        assert f"**ARR:** {money(1080, 'USD')}" in result["answer"]
 
     def test_rag_glossary_words_alone_still_go_to_help(self, db, org, ctx, kb):
         """Guardrail inverse: removing metric words restores Explain routing —
@@ -1094,7 +1095,7 @@ class TestRefundQuestionsNotActionDrafts:
         assert result["mode"] == "M1_INSPECT"
         assert "couldn't find a customer named" not in answer.lower()
         assert "**1 refund(s)**" in answer
-        assert "**250.00**" in answer
+        assert money(250, "USD") in answer
 
     def test_no_customer_specified_asks_instead_of_echoing_question(self, db, org, ctx):
         """Even if a draft flow is ever reached without a customer name, it
@@ -1155,7 +1156,7 @@ class TestNewDashboardMetricsLive:
 
         # Billed 1500 across 2 issued invoices → 750 (dashboard formula)
         assert result["mode"] == "M1_INSPECT"
-        assert "Your average invoice value is **750.00**." in result["answer"], (
+        assert f"Your average invoice value is **{money(750, 'USD')}**." in result["answer"], (
             result["answer"][:200]
         )
 
@@ -1182,7 +1183,7 @@ class TestNewDashboardMetricsLive:
 
         result = self._ask(db, org, ctx, "How many credit notes do we have?")
         assert "**1 credit note(s)**" in result["answer"], result["answer"][:200]
-        assert "**300.00**" in result["answer"]
+        assert money(300, "USD") in result["answer"]
 
     def test_paid_amount_this_month_matches_monthly_revenue_card(self, db, org, ctx, customers):
         from app.modules.billing.models import InvoiceStatus
@@ -1192,7 +1193,7 @@ class TestNewDashboardMetricsLive:
         result = self._ask(db, org, ctx, "paid amount this month")
 
         assert result["mode"] == "M1_INSPECT"
-        assert "Paid revenue this month is **700.00**." in result["answer"], (
+        assert f"Paid revenue this month is **{money(700, 'USD')}**." in result["answer"], (
             result["answer"][:200]
         )
         assert "Monthly Revenue card" in result["answer"]
@@ -1340,7 +1341,7 @@ class TestMetricPhrasingRoutes:
             intent = engine._classify_intent(conv, phrase, ctx)
             result = engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
             assert result["mode"] == "M1_INSPECT"
-            assert "250.00" in result["answer"] or "**0.00**" in result["answer"]
+            assert money(250, "USD") in result["answer"] or money(0, "USD") in result["answer"]
 
 
 class TestDomainGuardrails:
@@ -1973,11 +1974,14 @@ class TestActionDraftExpandedVerbsObjects:
 
 
 class TestActionVsExplainGuard:
-    """'how do I create/draft/issue X' stays in the guided action-draft flow
-    (R2).  Other action verbs (cancel, delete, record, etc.) route to
-    help_general (R0) for 'how do I' queries since they lack guided M2
-    flows.  Direct requests ('cancel invoice INV-1001') always route to
-    action_draft regardless of verb."""
+    """HARD how-to gate: any 'how do I' / 'how to' / 'steps to' / 'guide to'
+    lead routes to EXPLAIN (help_general, R0) BEFORE the action-draft (PREPARE)
+    logic — regardless of the verb that follows ('how do I create an invoice'
+    is an explanation request, not a draft command).  Direct imperative
+    requests without a how-to lead ('create an invoice for TOM', 'cancel
+    invoice INV-1001') still route to action_draft (R2).  Non-guided verbs
+    (cancel, delete, record, …) also route to help_general for 'how do I'
+    queries since they lack guided M2 flows."""
 
     def _classify(self, text: str) -> dict:
         from app.modules.chatbot.conversation.engine import ConversationEngine
@@ -1990,11 +1994,11 @@ class TestActionVsExplainGuard:
             db.close()
 
     @pytest.mark.parametrize("query,expected_intent", [
-        ("how do I create an invoice", "action_draft"),
-        ("how do I issue a refund", "action_draft"),
-        ("how do I draft a credit note", "action_draft"),
+        ("how do I create an invoice", "help_general"),
+        ("how do I issue a refund", "help_general"),
+        ("how do I draft a credit note", "help_general"),
     ])
-    def test_how_do_i_guided_verbs_stay_action(self, query: str, expected_intent: str):
+    def test_how_do_i_guided_verbs_are_explain(self, query: str, expected_intent: str):
         result = self._classify(query)
         assert result["intent"] == expected_intent, (
             f"{query!r} should be {expected_intent}, got {result['intent']}"
@@ -2237,7 +2241,7 @@ class TestBuildConfirmLabel(unittest.TestCase):
             {"currency": "INR", "total": "500"},
         )
         assert "Confirm" in label
-        assert "INR 500.00" in label
+        assert money_sym(500, "INR") in label
         assert "invoice" in label
         assert "TOM" in label
 
@@ -2249,7 +2253,7 @@ class TestBuildConfirmLabel(unittest.TestCase):
             {"currency": "USD", "total": "1000"},
         )
         assert "Confirm" in label
-        assert "USD 1,000.00" in label
+        assert money_sym(1000, "USD") in label
         assert "invoice" in label
         assert "for" not in label
 
@@ -2272,7 +2276,7 @@ class TestBuildConfirmLabel(unittest.TestCase):
             {"currency": "GBP", "total": "75"},
         )
         assert "credit note" in label
-        assert "GBP 75.00" in label
+        assert money_sym(75, "GBP") in label
 
     def test_unknown_action_type_uses_generic(self):
         engine = self._make_engine()
@@ -2651,3 +2655,220 @@ class TestPreviewCardShowsConfirmLabel(unittest.TestCase):
         # (It's OK in comments or as part of a longer string)
         assert '>Confirm</button>' not in source
         assert '>"Confirm"' not in source
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bug (user report): "billing history" / "payment history" routed to a
+# customer-name search and answered "couldn't find a customer matching …".
+# These are record-list requests and must reach invoice/payment list.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestBillingHistoryRouting:
+    @pytest.mark.parametrize("phrase,expected", [
+        ("billing history", "invoice_list"),
+        ("show me billing history", "invoice_list"),
+        ("show billing history", "invoice_list"),
+        ("invoice history", "invoice_list"),
+        ("payment history", "payment_list"),
+        ("show me payment history", "payment_list"),
+        ("transaction history", "payment_list"),
+    ])
+    def test_history_phrases_route_to_record_list(self, db, phrase, expected):
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] == expected, (
+            f"{phrase!r} routed to {result['intent']}, expected {expected}"
+        )
+
+    def test_billing_history_never_triggers_customer_search(self, db, org, ctx):
+        """The exact reported regression: 'Show me billing history' must NOT
+        be intercepted by the customer-name search branch."""
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid="test-conv-billhist")
+        intent = engine._classify_intent(conv, "Show me billing history", ctx)
+        assert intent["intent"] != "customer_search", intent
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "Show me billing history", intent, ctx)
+        assert "couldn't find a customer matching" not in result["answer"], result["answer"]
+        # It actually behaves like an invoice list (even with no invoices).
+        assert "invoice" in result["answer"].lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bug (user report): outstanding-balance / invoice-listing figures rendered a
+# currency label that didn't match the value's source currency (a hardcoded
+# "USD"). The label must derive from the SAME currency as the value and render
+# as a symbol (₹ / $) like the billing dashboard.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestCurrencyLabelConsistency:
+    def test_money_sym_renders_symbol_not_currency_code(self):
+        """A symbol (₹) is rendered, never the literal "USD" code as a label."""
+        expected = format_currency_display(1800, "INR")
+        assert money_sym(1800, "INR") == expected
+        assert expected.startswith("₹")
+        assert "USD" not in money_sym(1800, "INR")
+
+    def test_invoice_list_label_matches_base_currency(self, db, org, ctx, customers):
+        """Per-invoice list lines render the ORG BASE currency symbol (₹ for an
+        INR org), matching the summary/total — never a USD currency code label."""
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode.INR
+        db.commit()
+
+        add_invoice(db, org, customers["go"].id, "INV-CUR-1", InvoiceStatus.SENT,
+                    1800, currency="INR")
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid="test-conv-cur")
+        intent = engine._classify_intent(conv, "list invoices", ctx)
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "list invoices", intent, ctx)
+
+        # The org base-currency symbol is present in the line.
+        assert "₹1800.00" in result["answer"], result["answer"]
+        # The literal "USD" currency CODE is never used as a money label.
+        assert "USD 1800" not in result["answer"]
+
+    def test_dashboard_outstanding_label_matches_base_currency(self, db, org, ctx, customers, live_like_invoices):
+        """Outstanding figure label uses the org base currency (same source as
+        the value), rendered as a symbol — never an independent 'USD' code."""
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        kpis = BillingDashboardService(db).get_kpis(organization_id=org.id)
+        base_ccy = BillingDashboardService(db)._get_base_currency(org.id)
+
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid="test-conv-dashcur")
+        intent = engine._classify_intent(conv, "dashboard summary", ctx)
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "dashboard summary", intent, ctx)
+
+        # The rendered outstanding uses the base-currency SYMBOL, matching the value.
+        rendered = format_currency_display(kpis["outstanding_amount"], base_ccy)
+        assert rendered in result["answer"], (
+            f"expected {rendered!r} in overview answer: {result['answer']}"
+        )
+        # Regression guard: the old code emitted a bare "USD <amount>" label.
+        assert "USD " not in result["answer"], result["answer"]
+
+
+class TestCurrencyLabelInrComprehensive:
+    """INR org: every billing response type must render the ₹ symbol, never a
+    literal '$' or 'USD' code. Covers the three surfaces from the bug report
+    (outstanding-balance summary, per-invoice list, draft/preview/confirm
+    cards) and proves the ActionEngine no longer hardcodes 'USD' when an
+    invoice is drafted without an explicit currency."""
+
+    def _set_base_currency(self, db, org, code):
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode[code] if hasattr(CurrencyCode, code) else code
+        db.commit()
+
+    def test_inr_invoice_all_response_types_show_rupee(self, db, org, ctx, customers):
+        from types import SimpleNamespace
+
+        from app.modules.chatbot.actions.action_engine import ActionEngine
+
+        # Org base currency = INR (single source of truth, like the dashboard).
+        self._set_base_currency(db, org, "INR")
+
+        cust = add_customer(db, org, "CUST-INR", "INR Co")
+        add_invoice(db, org, cust.id, "INV-INR-1", InvoiceStatus.SENT, 500, currency="INR")
+        db.flush()
+
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid="conv-inr")
+
+        def ask(phrase):
+            intent = engine._classify_intent(conv, phrase, ctx)
+            handler = engine._get_handler(intent["domain"])
+            return handler(conv, phrase, intent, ctx)["answer"]
+
+        # 1) Outstanding-balance summary line
+        summary = ask("what's my outstanding balance?")
+        assert "₹" in summary, summary
+        assert "USD" not in summary and "$" not in summary, summary
+
+        # 2) Per-invoice list line items
+        listing = ask("list invoices")
+        assert "₹500.00" in listing, listing
+        assert "USD" not in listing and "$" not in listing, listing
+
+        # 3) Dashboard summary
+        dash = ask("dashboard summary")
+        assert "₹" in dash, dash
+        assert "USD" not in dash and "$" not in dash, dash
+
+        # 4) Draft / preview / confirm cards — ActionEngine must default to the
+        #    org base currency (INR), never a hardcoded 'USD'.
+        draft = SimpleNamespace(
+            organization_id=org.id,
+            action_uid="draft-inr-1",
+            action_type="invoice_draft",
+            proposed_params={
+                "customer_id": cust.id,
+                "line_items": [{"description": "Consulting", "quantity": 1, "unit_price": 500}],
+            },
+        )
+        ae = ActionEngine(db)
+        preview = ae._generate_billing_preview(draft)
+        assert preview["money_summary"]["currency"] == "INR", preview["money_summary"]
+
+        label = engine._build_confirm_label(
+            "invoice_draft", draft.proposed_params, preview["money_summary"], org_id=org.id,
+        )
+        assert "₹" in label and "USD" not in label and "$" not in label, label
+
+        card = engine._build_preview_card(
+            payload=preview["preview_payload"],
+            money=preview["money_summary"],
+            warnings=[],
+            preview_result={"preview_hash": "h", "created_at": None, "expires_at": None},
+            proposed_params=draft.proposed_params,
+            policy_result={"result": "READY_TO_EXECUTE"},
+            org_id=org.id,
+        )
+        assert "₹" in card["money"]["display"], card["money"]["display"]
+        assert "USD" not in card["money"]["display"] and "$" not in card["money"]["display"]
+
+    def test_inr_org_with_legacy_usd_invoices_list_shows_rupee_per_line(self, db, org, ctx, customers):
+        """REGRESSION for the live bug: an INR org whose invoices were created
+        (before the ActionEngine fix) with currency='USD' must still render every
+        per-invoice BULLET in the org base currency (₹), never the invoice's
+        stored 'USD' label. The summary/total already used base currency; the
+        per-line bullet used inv.currency -> '$' inconsistency."""
+        self._set_base_currency(db, org, "INR")
+
+        cust = add_customer(db, org, "CUST-LEG", "LEGACY FOREIGN Co")
+        # Legacy invoices stored as USD (the pre-fix default).
+        for num, bal in [("AI-INV-20260826-0004", 500),
+                         ("AI-INV-20260826-0003", 500),
+                         ("AI-INV-20260826-0002", 500),
+                         ("AI-INV-20260826-0001", 300)]:
+            add_invoice(db, org, cust.id, num, InvoiceStatus.SENT, bal, currency="USD")
+        db.flush()
+
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid="conv-legacy-usd")
+
+        intent = engine._classify_intent(conv, "list TOM's invoices with amounts", ctx)
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "list TOM's invoices with amounts", intent, ctx)
+        answer = result["answer"]
+        with open(r"C:\Users\madhu\AppData\Local\Temp\opencode\list_invoices_inr_legacy_usd.txt", "w", encoding="utf-8") as fh:
+            fh.write(answer)
+
+        # Every per-line bullet must carry the ₹ symbol.
+        bullet_lines = [ln for ln in answer.splitlines() if ln.strip().startswith("- **AI-INV")]
+        assert bullet_lines, f"expected per-invoice bullets, got:\n{answer}"
+        for ln in bullet_lines:
+            assert "₹" in ln, f"per-line bullet missing ₹ symbol:\n{ln}"
+            assert "USD" not in ln and "$" not in ln, f"per-line bullet leaked USD/$:\n{ln}"
+
+        # No USD code or $ anywhere in the whole response (summary, total, bullets).
+        assert "USD" not in answer, answer
+        assert "$" not in answer, answer
+        # Total line agrees with base-currency label.
+        assert "total outstanding:" in answer
