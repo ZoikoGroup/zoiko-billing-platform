@@ -190,9 +190,13 @@ export const ENDPOINTS = {
   TAX_RATES: `${BILLING}/tax-rates`,
   TAX_RATES_APPLICABLE: `${BILLING}/tax-rates/applicable`,
   TAX_RATES_SUMMARY: `${BILLING}/tax-rates/summary`,
+  TAX_RATES_SUMMARY_TREND: `${BILLING}/tax-rates/summary/trend`,
   TAX_RATES_CALCULATE: `${BILLING}/tax-rates/calculate`,
   TAX_RATES_DEFAULT: `${BILLING}/tax-rates/default`,
   TAX_RATE: (id) => `${BILLING}/tax-rates/${id}`,
+  TAX_RATES_IMPORT_PREVIEW: `${BILLING}/tax-rates/import/preview`,
+  TAX_RATES_IMPORT_CONFIRM: `${BILLING}/tax-rates/import/confirm`,
+  TAX_RATES_IMPORT_TEMPLATE: `${BILLING}/tax-rates/import/template`,
 
   CREDIT_NOTES: `${BILLING}/credit-notes`,
   CREDIT_NOTES_OUTSTANDING: `${BILLING}/credit-notes/outstanding`,

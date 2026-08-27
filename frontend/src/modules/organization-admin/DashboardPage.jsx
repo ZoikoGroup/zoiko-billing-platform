@@ -1,38 +1,40 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getOrganizationDashboardStats, getOrganizationDetails } from "../../service/orgAdminService";
-import { Users, Building2, FileText, AlertTriangle, Wallet, TrendingUp, Repeat } from "lucide-react";
+import { getCurrencySymbol, getCurrencyInfo } from "../../utils/currency";
+import { loadGlobalCurrency, getOrgBaseCurrency, isOrgCurrencyUnavailable } from "../billing/utils/CurrencyContext";
+import {
+  Users,
+  FileText,
+  AlertTriangle,
+  Wallet,
+  TrendingUp,
+  Repeat,
+  ArrowRight,
+  UserPlus,
+  Plus,
+  RefreshCw,
+  Shield,
+} from "lucide-react";
 
-// Palette matches the Login page: blue/navy primary, slate ink, emerald success,
-// red danger. See src/pages/LoginPage.jsx.
+const INK = "#0F172A";
+const INK_SOFT = "#374151";
+const INK_FAINT = "#9CA3AF";
 const PRIMARY = "#2563EB";
 const PRIMARY_DEEP = "#1D4ED8";
 const PRIMARY_LIGHT = "#60A5FA";
 const SUCCESS = "#059669";
 const DANGER = "#DC2626";
-const INK = "#0F172A";
-const INK_SOFT = "#374151";
-const INK_FAINT = "#9CA3AF";
-const PRIMARY_100 = "#DBEAFE";
-const SUCCESS_100 = "#D1FAE5";
-const DANGER_100 = "#FEF2F2";
+const WARNING = "#D97706";
 const LINE = "#E5E7EB";
-const AVATAR_COLORS = [
+
+const AVATAR_GRADIENTS = [
   `linear-gradient(135deg,${PRIMARY},${PRIMARY_DEEP})`,
   `linear-gradient(135deg,${PRIMARY_LIGHT},${PRIMARY})`,
   `linear-gradient(135deg,#0F172A,#1E293B)`,
-  `linear-gradient(135deg,#94A3B8,#64748B)`,
+  `linear-gradient(135deg,#6366F1,#4F46E5)`,
 ];
-
-function avatarBg(index) {
-  return AVATAR_COLORS[index % AVATAR_COLORS.length];
-}
-
-function fmtCurrency(amount) {
-  if (amount == null) return "—";
-  return `$${Number(amount).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
 
 function todayLabel() {
   const d = new Date();
@@ -48,40 +50,94 @@ function greeting() {
   return "Good evening";
 }
 
-const statusColors = { teal: { bg: SUCCESS, shadow: SUCCESS_100 }, amber: { bg: PRIMARY, shadow: PRIMARY_100 }, off: { bg: INK_FAINT, shadow: "#F3F4F6" } };
-
-const StatCard = React.memo(({ icon: Icon, iconBg, iconColor, label, value, sub, onClick }) => (
-  <div onClick={onClick} className="rounded-[14px] border bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 hover:shadow-[0_4px_10px_rgba(15,23,42,0.06),0_20px_40px_-20px_rgba(37,99,235,0.25)] hover:border-transparent transition-all duration-[180ms] cursor-pointer" style={{ borderColor: LINE }}>
-    <div className="w-[38px] h-[38px] rounded-[10px] flex items-center justify-center mb-4" style={{ background: iconBg, color: iconColor }}>
-      <Icon className="w-[18px] h-[18px]" strokeWidth={2.5} />
+function SkeletonCard({ className = "" }) {
+  return (
+    <div className={`rounded-xl border p-5 animate-pulse ${className}`} style={{ background: "#fff", borderColor: LINE }}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-slate-100" />
+      </div>
+      <div className="h-3 w-24 bg-slate-100 rounded mb-2" />
+      <div className="h-7 w-16 bg-slate-100 rounded" />
     </div>
-    <p className="text-[12.5px] font-medium" style={{ color: INK_SOFT }}>{label}</p>
-    <p className="text-[29px] font-bold tracking-[-0.01em] leading-none mt-1.5" style={{ color: INK }}>{value}</p>
-    {sub ? <p className="text-[11.5px] mt-1.5" style={{ color: INK_SOFT }}>{sub}</p> : null}
-  </div>
-));
+  );
+}
+
+function SkeletonTable() {
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ background: "#fff", borderColor: LINE }}>
+      <div className="px-5 py-4 border-b" style={{ borderColor: LINE }}>
+        <div className="h-4 w-32 bg-slate-100 rounded" />
+      </div>
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="flex items-center gap-3 px-5 py-3.5 border-b last:border-b-0 animate-pulse" style={{ borderColor: LINE }}>
+          <div className="w-9 h-9 rounded-lg bg-slate-100" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 w-28 bg-slate-100 rounded" />
+            <div className="h-3 w-20 bg-slate-50 rounded" />
+          </div>
+          <div className="h-5 w-16 bg-slate-100 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="rounded-xl border p-8 text-center" style={{ background: "#FEF2F2", borderColor: "#FECACA" }}>
+      <AlertTriangle className="w-8 h-8 mx-auto mb-3" style={{ color: DANGER }} />
+      <p className="text-sm font-semibold" style={{ color: DANGER }}>{message || "Something went wrong"}</p>
+      <p className="text-xs mt-1" style={{ color: INK_FAINT }}>Please try again or contact support if the issue persists.</p>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:-translate-y-0.5"
+          style={{ background: DANGER }}
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+const statusColors = {
+  teal: { bg: SUCCESS, shadow: "#D1FAE5" },
+  amber: { bg: WARNING, shadow: "#FEF3C7" },
+  off: { bg: INK_FAINT, shadow: "#F1F5F9" },
+};
 
 export default function OrgAdminDashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [stats, setStats] = useState(null);
   const [org, setOrg] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [orgCurrency, setOrgCurrency] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    setError(null);
     Promise.all([
       getOrganizationDashboardStats().catch(() => null),
       getOrganizationDetails().catch(() => null),
+      loadGlobalCurrency().catch(() => null),
     ])
       .then(([s, o]) => {
-        if (cancelled) return;
         if (s) setStats(s);
         if (o) setOrg(o);
+        setOrgCurrency(s?.currency || getOrgBaseCurrency() || "");
       })
-      .catch(err => { if (!cancelled) setError(err?.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch((err) => setError(err?.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchData();
     return () => { cancelled = true; };
   }, []);
 
@@ -95,38 +151,79 @@ export default function OrgAdminDashboardPage() {
     ? Math.round((activeCustomers / totalCustomers) * 100)
     : 100;
 
-  const kpis = useMemo(() => [
-    { key: "total_customers", label: "Customers", icon: Users, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/billing/customers" },
-    { key: "active_subscriptions", label: "Active Subscriptions", icon: Repeat, iconBg: SUCCESS_100, iconColor: SUCCESS, path: "/billing/subscriptions" },
-    { key: "open_invoices", label: "Open Invoices", icon: FileText, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/billing/invoices" },
-    { key: "overdue_invoices", label: "Overdue Invoices", icon: AlertTriangle, iconBg: DANGER_100, iconColor: DANGER, path: "/billing/collections" },
-    { key: "outstanding_amount", label: "Outstanding Amount", icon: Wallet, iconBg: DANGER_100, iconColor: DANGER, path: "/billing/invoices", fmt: fmtCurrency },
-    { key: "revenue_this_month", label: "Revenue This Month", icon: TrendingUp, iconBg: SUCCESS_100, iconColor: SUCCESS, path: "/billing/reports", fmt: fmtCurrency },
-    { key: "billing_admins", label: "Billing Admins", icon: Building2, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/organization-admin/organization" },
-  ], []);
+  const effectiveCurrency = stats?.currency || orgCurrency;
+
+  const formatMoney = useCallback((amount) => {
+    if (amount == null) return "\u2014";
+    if (!effectiveCurrency && isOrgCurrencyUnavailable()) return "Currency not configured";
+    if (!effectiveCurrency) return "\u2014";
+    const num = Number(amount);
+    if (Number.isNaN(num)) return "\u2014";
+    const info = getCurrencyInfo(effectiveCurrency);
+    const symbol = getCurrencySymbol(effectiveCurrency);
+    const precision = typeof info?.decimalDigits === "number" ? info.decimalDigits : 2;
+    return `${symbol}${num.toLocaleString("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision })}`;
+  }, [effectiveCurrency]);
+
+  const primaryKpis = useMemo(() => [
+    {
+      key: "outstanding_amount",
+      label: "Outstanding Amount",
+      icon: Wallet,
+      iconBg: "#FEF2F2",
+      iconColor: DANGER,
+      path: "/billing/invoices",
+      isCurrency: true,
+      supporting: () => {
+        const n = stats?.open_invoices ?? 0;
+        return `Across ${n} open invoice${n !== 1 ? "s" : ""}`;
+      },
+    },
+    {
+      key: "revenue_this_month",
+      label: "Revenue This Month",
+      icon: TrendingUp,
+      iconBg: "#D1FAE5",
+      iconColor: SUCCESS,
+      path: "/billing/reports",
+      isCurrency: true,
+      supporting: () => {
+        const n = stats?.active_subscriptions ?? 0;
+        return `${n} active subscription${n !== 1 ? "s" : ""}`;
+      },
+    },
+  ], [stats]);
+
+  const secondaryKpis = useMemo(() => [
+    { key: "total_customers", label: "Customers", icon: Users, iconBg: "#EFF6FF", iconColor: PRIMARY, path: "/billing/customers", supporting: () => `${stats?.active_customers ?? 0} active` },
+    { key: "active_subscriptions", label: "Active Subscriptions", icon: Repeat, iconBg: "#D1FAE5", iconColor: SUCCESS, path: "/billing/subscriptions", supporting: () => null },
+    { key: "open_invoices", label: "Open Invoices", icon: FileText, iconBg: "#EFF6FF", iconColor: PRIMARY, path: "/billing/invoices", supporting: () => {
+      const od = stats?.overdue_invoices ?? 0;
+      return od > 0 ? `${od} overdue` : null;
+    }},
+    { key: "billing_admins", label: "Billing Admins", icon: Shield, iconBg: "#FEF3C7", iconColor: WARNING, path: "/organization-admin/users", supporting: () => null },
+  ], [stats]);
 
   const recentCustomers = stats?.recent_customers || [];
 
   return (
-    <div className="font-['Inter',system-ui,sans-serif] p-4 sm:p-6 lg:p-8" style={{ background: "#F8FAFC", color: INK, minHeight: "calc(100vh - 4rem)" }}>
+    <div className="font-['Inter',system-ui,sans-serif]" style={{ color: INK }}>
       {error && (
-        <div className="mb-4 rounded-[8px] border p-4 text-sm" style={{ background: DANGER_100, borderColor: "#FECACA", color: DANGER }}>
-          {error}
-        </div>
+        <ErrorState message={error} onRetry={fetchData} />
       )}
 
-      <div className="flex items-center gap-3 mb-4 pb-4" style={{ borderBottom: `1px solid ${LINE}` }}>
-        <div className="w-10 h-10 rounded-[12px] overflow-hidden flex items-center justify-center flex-shrink-0">
+      <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 bg-white shadow-sm border" style={{ borderColor: LINE }}>
           <img src="/zoiko-icon.png" alt="Zoiko Billing" className="w-full h-full object-cover" />
         </div>
         <div>
           <p className="text-lg font-extrabold" style={{ color: INK, letterSpacing: "-0.01em" }}>{orgName}</p>
-          <p className="text-[12px] font-medium font-['JetBrains_Mono',monospace] uppercase tracking-[0.04em]" style={{ color: INK_FAINT }}>Organization ID · {orgCode}</p>
+          <p className="text-[11px] font-medium font-['JetBrains_Mono',monospace] uppercase tracking-wider" style={{ color: INK_FAINT }}>Organization ID &middot; {orgCode}</p>
         </div>
       </div>
 
       <div
-        className="relative flex justify-between items-center gap-6 mb-[22px] rounded-[20px] px-[34px] py-[30px] text-white overflow-hidden"
+        className="relative flex justify-between items-center gap-6 mb-6 rounded-2xl px-8 py-7 text-white overflow-hidden"
         style={{ background: "linear-gradient(164.56deg, #0B1220 0%, #101B33 60%, #0A0F1F 100%)", boxShadow: "0 4px 10px rgba(15,23,42,0.06), 0 20px 40px -20px rgba(37,99,235,0.25)" }}
       >
         <div
@@ -137,15 +234,16 @@ export default function OrgAdminDashboardPage() {
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] font-['JetBrains_Mono',monospace]" style={{ color: PRIMARY_LIGHT }}>
             {todayLabel()}
           </p>
-          <h1 className="text-[27px] font-extrabold tracking-[-0.01em] mt-2">{greeting()}, {displayName}</h1>
-          <p className="mt-1.5 text-[14px] max-w-[520px]" style={{ color: "rgba(255,255,255,0.68)" }}>
-            {totalCustomers} customers · {fmtCurrency(stats?.outstanding_amount)} outstanding across {stats?.open_invoices ?? 0} open invoices.
+          <h1 className="text-[26px] font-extrabold tracking-tight mt-2">{greeting()}, {displayName}</h1>
+          <p className="mt-1.5 text-[13.5px] max-w-[520px]" style={{ color: "rgba(255,255,255,0.65)" }}>
+            {totalCustomers} customer{totalCustomers !== 1 ? "s" : ""} &middot; {formatMoney(stats?.outstanding_amount)} outstanding across {stats?.open_invoices ?? 0} open invoice{stats?.open_invoices !== 1 ? "s" : ""}.
           </p>
-          <div className="flex gap-2.5 mt-[18px]">
-            <button onClick={() => navigate("/billing/customers")} className="flex items-center gap-2 px-[20px] py-2.5 rounded-[50px] text-[13.5px] font-semibold border-none cursor-pointer whitespace-nowrap" style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_DEEP})`, color: "#fff", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}>
-              ＋ Add Customer
+          <div className="flex gap-2.5 mt-5">
+            <button onClick={() => navigate("/billing/customers")} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold border-none cursor-pointer whitespace-nowrap transition-all hover:-translate-y-0.5" style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_DEEP})`, color: "#fff", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}>
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+              Add Customer
             </button>
-            <button onClick={() => navigate("/billing/invoices")} className="flex items-center gap-2 px-[20px] py-2.5 rounded-[50px] text-[13.5px] font-semibold cursor-pointer whitespace-nowrap" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.22)" }}>
+            <button onClick={() => navigate("/billing/invoices")} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold cursor-pointer whitespace-nowrap transition-all hover:-translate-y-0.5" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.22)" }}>
               View Invoices
             </button>
           </div>
@@ -161,71 +259,168 @@ export default function OrgAdminDashboardPage() {
             <div className="absolute inset-0 flex items-center justify-center font-extrabold text-[19px] pointer-events-none">{collectionRate}%</div>
           </div>
           <div>
-            <p className="text-[14.5px] font-bold">Active Customer Rate</p>
-            <p className="text-[11px] font-semibold tracking-[0.04em]" style={{ color: "rgba(255,255,255,0.6)" }}>Active vs. total customers</p>
+            <p className="text-[14px] font-bold">Active Customer Rate</p>
+            <p className="text-[11px] font-semibold tracking-wide" style={{ color: "rgba(255,255,255,0.55)" }}>Active vs. total customers</p>
           </div>
         </div>
       </div>
 
-      <div className="flex items-baseline justify-between mb-[14px]">
-        <h2 className="text-[15.5px] font-bold tracking-[-0.01em]" style={{ color: INK }}>Key Metrics</h2>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi) => (
-          <StatCard
-            key={kpi.key}
-            icon={kpi.icon}
-            iconBg={kpi.iconBg}
-            iconColor={kpi.iconColor}
-            label={kpi.label}
-            value={loading ? "—" : stats ? (kpi.fmt ? kpi.fmt(stats[kpi.key]) : (stats[kpi.key] ?? 0)) : "—"}
-            onClick={() => navigate(kpi.path)}
-          />
-        ))}
+      <h2 className="text-[14px] font-bold tracking-tight mb-3" style={{ color: INK }}>Financial Overview</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          primaryKpis.map((kpi) => (
+            <button
+              key={kpi.key}
+              onClick={() => navigate(kpi.path)}
+              className="rounded-xl border bg-white p-5 text-left shadow-sm hover:-translate-y-0.5 hover:shadow-md hover:border-transparent transition-all duration-200 cursor-pointer group"
+              style={{ borderColor: LINE }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: kpi.iconBg, color: kpi.iconColor }}>
+                  <kpi.icon className="w-5 h-5" strokeWidth={2.5} />
+                </div>
+                <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: INK_FAINT }} />
+              </div>
+              <p className="text-[12px] font-medium" style={{ color: INK_SOFT }}>{kpi.label}</p>
+              <p className="text-[26px] font-bold tracking-tight leading-none mt-1.5" style={{ color: INK }}>
+                {formatMoney(stats?.[kpi.key])}
+              </p>
+              {kpi.supporting && (() => {
+                const txt = kpi.supporting();
+                return txt ? <p className="text-[11px] mt-1.5 font-medium" style={{ color: INK_FAINT }}>{txt}</p> : null;
+              })()}
+            </button>
+          ))
+        )}
       </div>
 
-      <div className="flex items-baseline justify-between mb-[14px] mt-[30px]">
-        <h2 className="text-[15.5px] font-bold tracking-[-0.01em]" style={{ color: INK }}>Recent Customers</h2>
-        <button onClick={() => navigate("/billing/customers")} className="text-[12.5px] font-semibold cursor-pointer" style={{ color: PRIMARY }}>View all {totalCustomers} →</button>
+      <h2 className="text-[14px] font-bold tracking-tight mb-3" style={{ color: INK }}>Key Metrics</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          secondaryKpis.map((kpi) => (
+            <button
+              key={kpi.key}
+              onClick={() => navigate(kpi.path)}
+              className="rounded-xl border bg-white p-4 text-left shadow-sm hover:-translate-y-0.5 hover:shadow-md hover:border-transparent transition-all duration-200 cursor-pointer group"
+              style={{ borderColor: LINE }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: kpi.iconBg, color: kpi.iconColor }}>
+                  <kpi.icon className="w-4 h-4" strokeWidth={2.5} />
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: INK_FAINT }} />
+              </div>
+              <p className="text-[11.5px] font-medium" style={{ color: INK_SOFT }}>{kpi.label}</p>
+              <p className="text-[22px] font-bold tracking-tight leading-none mt-1" style={{ color: INK }}>
+                {stats?.[kpi.key] ?? 0}
+              </p>
+              {kpi.supporting && (() => {
+                const txt = kpi.supporting();
+                return txt ? <p className="text-[10.5px] mt-1 font-medium" style={{ color: INK_FAINT }}>{txt}</p> : null;
+              })()}
+            </button>
+          ))
+        )}
       </div>
-      <div className="rounded-[14px] border overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.10)]" style={{ background: "#fff", borderColor: LINE }}>
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                {["Customer", "Status"].map((h) => (
-                  <th key={h} className="text-left text-[11px] font-bold uppercase tracking-[0.05em] px-[14px] py-[13px]" style={{ color: INK_SOFT, borderBottom: `2px solid ${LINE}` }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentCustomers.length === 0 ? (
-                <tr><td colSpan={2} className="px-[14px] py-8 text-center text-[13px]" style={{ color: INK_SOFT }}>No customers yet</td></tr>
-              ) : recentCustomers.map((c, idx) => {
-                const dot = statusColors[c.statusColor] || statusColors.off;
-                return (
-                  <tr key={c.name || idx}>
-                    <td className="px-[14px] py-[13px] text-[13px]" style={{ borderBottom: `1px solid ${LINE}` }}>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center font-bold text-[11.5px] text-white flex-shrink-0" style={{ background: avatarBg(idx) }}>
-                          {c.initials}
-                        </div>
-                        <span>{c.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-[14px] py-[13px] text-[13px]" style={{ borderBottom: `1px solid ${LINE}` }}>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={{ background: dot.bg, boxShadow: `0 0 0 3px ${dot.shadow}` }} />
-                        <span className="capitalize">{c.status}</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[14px] font-bold tracking-tight" style={{ color: INK }}>Recent Customers</h2>
+        {totalCustomers > 0 && (
+          <button
+            onClick={() => navigate("/billing/customers")}
+            className="inline-flex items-center gap-1 text-[12px] font-semibold transition-colors hover:underline"
+            style={{ color: PRIMARY }}
+          >
+            View all {totalCustomers}
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <SkeletonTable />
+      ) : recentCustomers.length === 0 ? (
+        <div className="rounded-xl border overflow-hidden" style={{ background: "#fff", borderColor: LINE }}>
+          <div className="px-5 py-16 text-center">
+            <div className="w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ background: "#EFF6FF" }}>
+              <Users className="w-6 h-6" style={{ color: PRIMARY }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: INK }}>No customers yet</p>
+            <p className="text-xs mt-1 mb-4" style={{ color: INK_FAINT }}>Add your first customer to start billing.</p>
+            <button
+              onClick={() => navigate("/billing/customers")}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:-translate-y-0.5"
+              style={{ background: PRIMARY }}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Add Customer
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-xl border overflow-hidden shadow-sm" style={{ background: "#fff", borderColor: LINE }}>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Customer", "Company", "Status"].map((h) => (
+                    <th key={h} className="text-left text-[11px] font-bold uppercase tracking-wider px-5 py-3" style={{ color: INK_SOFT, borderBottom: `2px solid ${LINE}` }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recentCustomers.map((c, idx) => {
+                  const dot = statusColors[c.statusColor] || statusColors.off;
+                  return (
+                    <tr
+                      key={c.id || c.name || idx}
+                      className="cursor-pointer transition-colors hover:bg-slate-50/60"
+                      onClick={() => navigate(`/billing/customers/${c.id}`)}
+                    >
+                      <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-[11px] text-white flex-shrink-0"
+                            style={{ background: AVATAR_GRADIENTS[idx % AVATAR_GRADIENTS.length] }}
+                          >
+                            {c.initials}
+                          </div>
+                          <span className="text-sm font-semibold" style={{ color: INK }}>{c.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm" style={{ borderBottom: `1px solid ${LINE}`, color: INK_SOFT }}>
+                        {c.company_name || "\u2014"}
+                      </td>
+                      <td className="px-5 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: dot.bg, boxShadow: `0 0 0 3px ${dot.shadow}` }} />
+                          <span className="text-xs font-semibold capitalize" style={{ color: dot.bg === SUCCESS ? SUCCESS : dot.bg === WARNING ? WARNING : INK_SOFT }}>
+                            {c.status}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

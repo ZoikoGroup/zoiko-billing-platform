@@ -41,17 +41,27 @@ class TaxService:
         data = filter_allowed(data, TAX_RATE_ALLOWED_FIELDS)
         if self.rate_repo.exists(organization_id, code=data.get("code")):
             raise AlreadyExistsException("TaxRate", "code")
+        if data.get("is_default"):
+            # At most one default rate per org+currency -- unset any other
+            # active default in the same bucket before this one is written,
+            # in the same transaction as the create() below.
+            self.rate_repo.unset_default_for_currency(organization_id, data.get("currency_code"))
         rate = self.rate_repo.create(organization_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "TaxRate", rate.id, new_values=data)
         return rate
 
     def update_tax_rate(self, rate_id: int, organization_id: int, updated_by: int, **data: Any) -> TaxRate:
         data = filter_allowed(data, TAX_RATE_ALLOWED_FIELDS)
-        self.rate_repo.get_by_id(rate_id, organization_id)
+        existing = self.rate_repo.get_by_id(rate_id, organization_id)
         if data.get("code"):
-            existing = self.rate_repo.get_by_code(organization_id, data["code"])
-            if existing and existing.id != rate_id:
+            dup = self.rate_repo.get_by_code(organization_id, data["code"])
+            if dup and dup.id != rate_id:
                 raise AlreadyExistsException("TaxRate", "code")
+        if data.get("is_default"):
+            # A partial update may not include currency_code -- fall back to
+            # the row's current currency so the bucket is still correct.
+            effective_currency = data.get("currency_code", existing.currency_code)
+            self.rate_repo.unset_default_for_currency(organization_id, effective_currency, exclude_id=rate_id)
         updated = self.rate_repo.update(rate_id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "TaxRate", rate_id)
         return updated
@@ -245,18 +255,7 @@ class TaxService:
         return self.tax_repo.get_total_tax_for_invoice(organization_id, invoice_id)
 
     def get_tax_summary(self, organization_id: int, date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
-        taxes = self.tax_repo.list_all(organization_id, active_only=True)
-        if date_from:
-            taxes = [t for t in taxes if str(t.created_at.date() if hasattr(t.created_at, 'date') else t.created_at) >= date_from]
-        if date_to:
-            taxes = [t for t in taxes if str(t.created_at.date() if hasattr(t.created_at, 'date') else t.created_at) <= date_to]
-        total_tax = sum(t.tax_amount for t in taxes)
-        by_type = {}
-        for t in taxes:
-            key = t.tax_type.value if t.tax_type else "unknown"
-            by_type[key] = by_type.get(key, 0) + t.tax_amount
-        return {
-            "total_tax": float(total_tax),
-            "total_records": len(taxes),
-            "breakdown_by_type": {k: float(v) for k, v in by_type.items()},
-        }
+        return self.tax_repo.get_summary(organization_id, date_from=date_from, date_to=date_to)
+
+    def get_monthly_tax_trend(self, organization_id: int, months: int = 6) -> List[Dict[str, Any]]:
+        return self.tax_repo.get_monthly_trend(organization_id, months=months)

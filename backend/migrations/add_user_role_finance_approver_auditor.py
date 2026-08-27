@@ -30,6 +30,21 @@ NOT executed automatically and NOT run against Neon here — run it manually
 (once approved) from backend/ with BILLING_DATABASE_URL set:
     set BILLING_DATABASE_URL=postgresql://...
     python -m migrations.add_user_role_finance_approver_auditor
+
+NEW_VALUES must match SQLAlchemy's storage convention for `Column(Enum(UserRole))`
+with no `values_callable` override: it persists each member's *name*
+(e.g. "FINANCE_APPROVER"), not its `.value` (e.g. "finance_approver") — the
+same convention already used by the pre-existing SUPER_ADMIN/ORG_ADMIN/
+BILLING_ADMIN labels. An earlier version of this script used the lowercase
+`.value` form, which added enum labels the ORM layer never actually sends,
+so every insert of a FINANCE_APPROVER/AUDITOR user still failed with
+"invalid input value for enum userrole" until the correctly-cased labels
+were added. Running this corrected script on a database that already has
+the stray lowercase labels from that earlier version is still safe — those
+extra labels are simply never used by the application (Postgres has no way
+to drop a single enum label without recreating the type, so they're
+harmless, permanent no-ops rather than something this script needs to clean
+up).
 """
 
 import argparse
@@ -43,7 +58,7 @@ from sqlalchemy import text  # type: ignore[import]
 from app.database import engine
 from app.modules.auth.models import User
 
-NEW_VALUES = ["finance_approver", "auditor"]
+NEW_VALUES = ["FINANCE_APPROVER", "AUDITOR"]
 
 
 def _enum_type_name() -> str:

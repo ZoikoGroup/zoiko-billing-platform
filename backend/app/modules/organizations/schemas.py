@@ -124,10 +124,13 @@ class OrganizationListResponse(BaseModel):
 
 
 class RecentCustomer(BaseModel):
+    id: int
     name: str
     initials: str
     status: str
     statusColor: str
+    currency: Optional[str] = None
+    company_name: Optional[str] = None
 
 
 class OrganizationDashboardStats(BaseModel):
@@ -139,6 +142,7 @@ class OrganizationDashboardStats(BaseModel):
     outstanding_amount: float = 0
     revenue_this_month: float = 0
     billing_admins: int = 0
+    currency: Optional[str] = None
     recent_customers: list[RecentCustomer] = []
 
 
@@ -159,7 +163,7 @@ class OrganizationDetail(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     website: Optional[str] = None
-    currency: str = "USD"
+    currency: Optional[str] = None
     timezone: str = "UTC"
     fiscal_year_start: Optional[str] = None
     fiscal_year_end: Optional[str] = None

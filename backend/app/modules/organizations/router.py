@@ -150,79 +150,104 @@ def get_my_organization_dashboard_stats(
     db: Session = Depends(get_db),
 ):
     """Org-scoped KPIs for the Organization Admin dashboard — computed from
-    the billing module's own tables."""
+    the billing module's own tables using SQL-level aggregations."""
     from datetime import datetime, timezone
 
+    from sqlalchemy import func
     from app.core.dependencies import get_organization_id
     from app.modules.auth.models import User, UserRole
     from app.modules.billing.models import (
         BillingCustomer, CustomerStatus, Subscription, BillingSubscriptionStatus,
         Invoice, InvoiceStatus,
     )
+    from app.modules.organizations.models import Organization
 
     org_id = get_organization_id(current_user)
 
-    customers = db.query(BillingCustomer).filter(BillingCustomer.organization_id == org_id).all()
-    total_customers = len(customers)
-    active_customers = sum(1 for c in customers if c.status == CustomerStatus.ACTIVE)
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    org_currency = org.currency if org else None
+
+    total_customers = (
+        db.query(func.count(BillingCustomer.id))
+        .filter(BillingCustomer.organization_id == org_id)
+        .scalar()
+    ) or 0
+
+    active_customers = (
+        db.query(func.count(BillingCustomer.id))
+        .filter(
+            BillingCustomer.organization_id == org_id,
+            BillingCustomer.status == CustomerStatus.ACTIVE,
+        )
+        .scalar()
+    ) or 0
 
     active_subscriptions = (
-        db.query(Subscription)
+        db.query(func.count(Subscription.id))
         .filter(
             Subscription.organization_id == org_id,
             Subscription.status == BillingSubscriptionStatus.ACTIVE,
         )
-        .count()
-    )
+        .scalar()
+    ) or 0
 
     open_statuses = (InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID)
     open_invoices = (
-        db.query(Invoice)
+        db.query(func.count(Invoice.id))
         .filter(Invoice.organization_id == org_id, Invoice.status.in_(open_statuses))
-        .count()
-    )
+        .scalar()
+    ) or 0
+
     overdue_invoices = (
-        db.query(Invoice)
+        db.query(func.count(Invoice.id))
         .filter(Invoice.organization_id == org_id, Invoice.status == InvoiceStatus.OVERDUE)
-        .count()
-    )
-    outstanding_invoices = (
-        db.query(Invoice)
+        .scalar()
+    ) or 0
+
+    outstanding_amount = (
+        db.query(func.coalesce(func.sum(Invoice.balance_due), 0))
         .filter(
             Invoice.organization_id == org_id,
             Invoice.status.in_(open_statuses + (InvoiceStatus.OVERDUE,)),
         )
-        .all()
-    )
-    outstanding_amount = sum(float(i.balance_due or 0) for i in outstanding_invoices)
+        .scalar()
+    ) or 0
 
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    paid_this_month = (
-        db.query(Invoice)
+    revenue_this_month = (
+        db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
         .filter(
             Invoice.organization_id == org_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.updated_at >= month_start,
         )
-        .all()
-    )
-    revenue_this_month = sum(float(i.total_amount or 0) for i in paid_this_month)
+        .scalar()
+    ) or 0
 
     billing_admins = (
-        db.query(User)
+        db.query(func.count(User.id))
         .filter(User.organization_id == org_id, User.role == UserRole.BILLING_ADMIN)
-        .count()
-    )
+        .scalar()
+    ) or 0
 
     recent_customers = [
         RecentCustomer(
-            name=c.display_name or c.company_name,
-            initials="".join(w[0] for w in (c.display_name or c.company_name).split()[:2]).upper() or "U",
+            id=c.id,
+            name=c.display_name or c.company_name or "Unnamed Customer",
+            initials="".join(w[0] for w in (c.display_name or c.company_name or "U").split()[:2]).upper() or "U",
             status=c.status.value if hasattr(c.status, "value") else str(c.status),
             statusColor="teal" if c.status == CustomerStatus.ACTIVE else "amber" if c.status == CustomerStatus.SUSPENDED else "off",
+            currency=c.currency if hasattr(c, "currency") and c.currency else org_currency,
+            company_name=c.company_name,
         )
-        for c in sorted(customers, key=lambda c: c.id, reverse=True)[:5]
+        for c in (
+            db.query(BillingCustomer)
+            .filter(BillingCustomer.organization_id == org_id)
+            .order_by(BillingCustomer.id.desc())
+            .limit(5)
+            .all()
+        )
     ]
 
     return OrganizationDashboardStats(
@@ -234,6 +259,7 @@ def get_my_organization_dashboard_stats(
         outstanding_amount=outstanding_amount,
         revenue_this_month=revenue_this_month,
         billing_admins=billing_admins,
+        currency=org_currency,
         recent_customers=recent_customers,
     )
 

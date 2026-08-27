@@ -3,6 +3,8 @@ import { api } from "./api";
 export const listUsers = ({ search = "", skip = 0, limit = 50 } = {}) =>
   api.get("/api/auth/admin/users", { params: { search, skip, limit } });
 
+export const getUserSummary = () => api.get("/api/auth/admin/users/summary");
+
 export const inviteUser = (data) => api.post("/api/auth/admin/users", data);
 
 export const updateUser = (id, data) => api.put(`/api/auth/admin/users/${id}`, data);

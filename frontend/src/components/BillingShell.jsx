@@ -532,7 +532,12 @@ export default function BillingShell({ children }) {
               <TriageStrip />
             </>
           )}
-          {children}
+          {/* Single source of truth for the sidebar-to-content gutter and page
+              margins — every page renders here as {children} with no need to
+              (and no longer any reason to) set its own horizontal padding. */}
+          <div className="px-4 py-6 sm:px-6 lg:px-8">
+            {children}
+          </div>
         </main>
       </div>
 

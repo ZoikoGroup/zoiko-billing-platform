@@ -2,7 +2,7 @@ import base64
 import hashlib
 import hmac
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -1203,6 +1203,47 @@ class InvoiceService:
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.OVERDUE.value, updated_by)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "Invoice", invoice_id)
         return inv
+
+    def process_overdue_invoices(self, organization_id: int, updated_by: int) -> Dict[str, Any]:
+        """Manually, on-demand transition every SENT/PARTIALLY_PAID invoice
+        in this org whose due_date has passed to OVERDUE.
+
+        This is the org-scoped, on-demand counterpart to
+        tasks/overdue_invoices.py's scheduled job (which only runs when
+        ENABLE_RECURRING_BILLING_SCHEDULER is on, across every organization).
+        Lets an operator force the transition for their own org without
+        needing the global scheduler enabled -- e.g. right before checking
+        the Collections Queue or running Dunning, or as the org's only
+        mechanism at all if the scheduler is intentionally left off.
+        Each invoice is processed independently; one failure never aborts
+        the rest of the batch, matching the scheduled job's behavior.
+        """
+        today = date.today()
+        candidates = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.organization_id == organization_id,
+                Invoice.is_active == True,
+                Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID]),
+                Invoice.due_date.isnot(None),
+                Invoice.due_date < today,
+            )
+            .all()
+        )
+        marked, failed, errors = 0, 0, []
+        for inv in candidates:
+            try:
+                self.mark_overdue(invoice_id=inv.id, organization_id=organization_id, updated_by=updated_by)
+                marked += 1
+            except Exception as exc:
+                failed += 1
+                errors.append({"invoice_id": inv.id, "invoice_number": inv.invoice_number, "error": str(exc)})
+        return {
+            "found": len(candidates),
+            "marked_overdue": marked,
+            "failed": failed,
+            "errors": errors,
+        }
 
     # ── Queries ────────────────────────────────────────────────────────────
 

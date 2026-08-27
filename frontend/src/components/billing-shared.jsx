@@ -685,7 +685,7 @@ export function DashboardStatCard({
           ) : null}
         </div>
         <div className={`h-10 w-10 rounded-xl bg-linear-to-r ${color} text-white flex items-center justify-center shrink-0 ml-3 shadow-sm`}>
-          <Icon size={20} />
+          {Icon && <Icon size={20} />}
         </div>
       </div>
       {sparklineData && (

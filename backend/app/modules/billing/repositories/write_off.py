@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from decimal import Decimal
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_, case, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.modules.billing.models import (
@@ -295,34 +295,44 @@ class WriteOffRepository(BaseRepository[WriteOff]):
         ]
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        base = self.db.query(WriteOff).filter(
+        """Single grouped-aggregate query instead of 10 separate round trips
+        (1 count + 3 sums + 1 outstanding-sum + 6 status-filtered counts) —
+        each round trip costs real, measurable network latency in this
+        environment. get_outstanding_total() itself is left unchanged (still
+        callable standalone), just no longer called from inside this
+        method."""
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        outstanding_condition = WriteOff.status.in_(["draft", "pending_approval", "approved"])
+
+        row = self.db.query(
+            func.count(WriteOff.id),
+            func.coalesce(func.sum(WriteOff.amount), 0),
+            func.coalesce(func.sum(case((WriteOff.status == "executed", WriteOff.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((WriteOff.status == "reversed", WriteOff.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((outstanding_condition, WriteOff.amount), else_=0)), 0),
+            _count_if(WriteOff.status == "draft"),
+            _count_if(WriteOff.status == "pending_approval"),
+            _count_if(WriteOff.status == "approved"),
+            _count_if(WriteOff.status == "executed"),
+            _count_if(WriteOff.status == "reversed"),
+            _count_if(WriteOff.status == "cancelled"),
+        ).filter(
             WriteOff.organization_id == organization_id,
             WriteOff.is_active == True,
-        )
-        total_count = base.count()
-        total_value = self.db.query(func.coalesce(func.sum(WriteOff.amount), 0)).filter(
-            WriteOff.organization_id == organization_id, WriteOff.is_active == True,
-        ).scalar()
-        executed_value = self.db.query(func.coalesce(func.sum(WriteOff.amount), 0)).filter(
-            WriteOff.organization_id == organization_id, WriteOff.is_active == True,
-            WriteOff.status == "executed",
-        ).scalar()
-        reversed_value = self.db.query(func.coalesce(func.sum(WriteOff.amount), 0)).filter(
-            WriteOff.organization_id == organization_id, WriteOff.is_active == True,
-            WriteOff.status == "reversed",
-        ).scalar()
-        draft_count = base.filter(WriteOff.status == "draft").count()
-        pending_approval_count = base.filter(WriteOff.status == "pending_approval").count()
-        approved_count = base.filter(WriteOff.status == "approved").count()
-        executed_count = base.filter(WriteOff.status == "executed").count()
-        reversed_count = base.filter(WriteOff.status == "reversed").count()
-        cancelled_count = base.filter(WriteOff.status == "cancelled").count()
+        ).one()
+
+        (total_count, total_value, executed_value, reversed_value, outstanding_value,
+         draft_count, pending_approval_count, approved_count, executed_count,
+         reversed_count, cancelled_count) = row
+
         return {
             "total_count": total_count,
             "total_value": float(total_value),
             "executed_value": float(executed_value),
             "reversed_value": float(reversed_value),
-            "outstanding_value": self.get_outstanding_total(organization_id),
+            "outstanding_value": float(outstanding_value),
             "draft_count": draft_count,
             "pending_approval_count": pending_approval_count,
             "approved_count": approved_count,
