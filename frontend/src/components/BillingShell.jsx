@@ -458,6 +458,8 @@ function SidebarContent({ onNavigate, role }) {
           </div>
         )}
 
+        {role === "super_admin" && <div className="mt-10 border-t border-white/10 pt-6" />}
+
         {role === "super_admin" ? null : (
           <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
             {showWorkspace ? "Billing" : "Navigation"}
