@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { GitBranch, Plus, Send, Check, X, Archive } from "lucide-react";
+import { GitBranch, Plus, Send, Check, X, Archive, KeyRound } from "lucide-react";
 import {
   getCommercialPlan,
   listCommercialPlanVersions,
@@ -9,10 +9,145 @@ import {
   approveCommercialPlanVersion,
   rejectCommercialPlanVersion,
   archiveCommercialPlanVersion,
+  listEntitlementDefinitions,
+  listPlanVersionEntitlements,
+  setCommercialPlanVersionEntitlement,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Button, Modal, Field } from "../../components/billing-ui";
+import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, useConfirmationDialog } from "../../components/billing-shared";
-import { CATALOG_VERSION_STATUS_OPTIONS, formatDateOnly, formatDateTime, displayValue } from "./constants";
+import {
+  CATALOG_VERSION_STATUS_OPTIONS,
+  EntitlementRiskBadge,
+  formatDateOnly,
+  formatDateTime,
+  displayValue,
+} from "./constants";
+
+const MATRIX_INPUT_CLASS =
+  "w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100";
+
+function parseEntitlementValue(raw, valueType) {
+  if (raw === "" || raw === null || raw === undefined) return null;
+  if (valueType === "boolean") return raw === "true";
+  if (valueType === "integer") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (valueType === "set") return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return raw;
+}
+
+function EntitlementMatrixModal({ open, onClose, version, onSaved }) {
+  const [definitions, setDefinitions] = useState([]);
+  const [values, setValues] = useState({}); // definition_id -> raw editable value
+  const [saving, setSaving] = useState({}); // definition_id -> bool
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!open || !version) return;
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    Promise.all([listEntitlementDefinitions(), listPlanVersionEntitlements(version.id)])
+      .then(([defData, entData]) => {
+        if (!alive) return;
+        const defs = defData.definitions || [];
+        setDefinitions(defs);
+        const byDefId = {};
+        for (const ent of entData.entitlements || []) {
+          byDefId[ent.entitlement_definition_id] = ent.value;
+        }
+        const initial = {};
+        for (const def of defs) {
+          const value = byDefId[def.id];
+          initial[def.id] =
+            def.value_type === "set" && Array.isArray(value) ? value.join(", ") : value ?? "";
+        }
+        setValues(initial);
+      })
+      .catch((err) => alive && setError(err?.message || "Failed to load entitlements for this version."))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [open, version]);
+
+  async function handleSave(definition) {
+    setSaving((s) => ({ ...s, [definition.id]: true }));
+    setError(null);
+    try {
+      const parsed = parseEntitlementValue(values[definition.id], definition.value_type);
+      await setCommercialPlanVersionEntitlement(version.id, definition.id, parsed);
+      onSaved?.();
+    } catch (err) {
+      setError(err?.message || `Failed to save ${definition.key}.`);
+    } finally {
+      setSaving((s) => ({ ...s, [definition.id]: false }));
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Edit entitlements — v${version?.version_number ?? ""}`} icon={KeyRound} size="xl">
+      {loading ? (
+        <Spinner />
+      ) : error && definitions.length === 0 ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+      ) : (
+        <div className="space-y-3">
+          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+          <div className="max-h-[60vh] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="py-2 pr-3">Key</th>
+                  <th className="py-2 pr-3">Risk</th>
+                  <th className="py-2 pr-3">Value</th>
+                  <th className="py-2 pr-3 text-right">Save</th>
+                </tr>
+              </thead>
+              <tbody>
+                {definitions.map((def) => (
+                  <tr key={def.id} className="border-b border-slate-100">
+                    <td className="py-2 pr-3">
+                      <span className="font-mono text-xs font-semibold text-slate-800">{def.key}</span>
+                    </td>
+                    <td className="py-2 pr-3"><EntitlementRiskBadge value={def.risk_classification} /></td>
+                    <td className="py-2 pr-3">
+                      {def.value_type === "boolean" ? (
+                        <Select
+                          value={values[def.id] === "" ? "" : String(values[def.id])}
+                          onChange={(v) => setValues((s) => ({ ...s, [def.id]: v === "" ? "" : v }))}
+                          options={[{ value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]}
+                          placeholder="Unset"
+                        />
+                      ) : (
+                        <input
+                          value={values[def.id] ?? ""}
+                          onChange={(e) => setValues((s) => ({ ...s, [def.id]: e.target.value }))}
+                          placeholder={def.value_type === "set" ? "comma-separated" : def.value_type}
+                          className={MATRIX_INPUT_CLASS}
+                        />
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right">
+                      <Button size="sm" variant="secondary" loading={Boolean(saving[def.id])} onClick={() => handleSave(def)}>
+                        Save
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-end">
+            <Button variant="primary" onClick={onClose}>Done</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 const EMPTY_DRAFT = {
   plan_name: "",
@@ -157,6 +292,7 @@ export default function CommercialPlanVersionsPage() {
   const [success, setSuccess] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [submitTarget, setSubmitTarget] = useState(null);
+  const [matrixTarget, setMatrixTarget] = useState(null);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
   const load = useCallback(async () => {
@@ -236,7 +372,12 @@ export default function CommercialPlanVersionsPage() {
         width: 260,
         render: (row) => {
           if (row.status === "draft") {
-            return <Button size="sm" variant="primary" icon={Send} onClick={() => setSubmitTarget(row)}>Submit</Button>;
+            return (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setMatrixTarget(row)}>Edit entitlements</Button>
+                <Button size="sm" variant="primary" icon={Send} onClick={() => setSubmitTarget(row)}>Submit</Button>
+              </div>
+            );
           }
           if (row.status === "pending_approval") {
             return (
@@ -347,6 +488,12 @@ export default function CommercialPlanVersionsPage() {
           />
         )}
       </Modal>
+      <EntitlementMatrixModal
+        open={Boolean(matrixTarget)}
+        version={matrixTarget}
+        onClose={() => setMatrixTarget(null)}
+        onSaved={() => setSuccess(`Entitlements updated for v${matrixTarget?.version_number}.`)}
+      />
       {ConfirmationDialog}
     </div>
   );

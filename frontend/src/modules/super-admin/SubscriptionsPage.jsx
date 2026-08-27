@@ -14,21 +14,14 @@ import {
   PAGE_SIZE,
   SUBSCRIPTION_STATUS_OPTIONS,
   SUBSCRIPTION_TRANSITIONS,
+  TRANSITION_LABELS,
   formatDateOnly,
   formatDateTime,
+  formatTrialRemaining,
   displayValue,
 } from "./constants";
 
 const EMPTY_FORM = { organization_id: "", plan_id: "", status: "pending" };
-
-const TRANSITION_LABELS = {
-  active: "Activate",
-  past_due: "Mark Past Due",
-  restricted: "Restrict",
-  suspended: "Suspend",
-  cancelled: "Cancel",
-  expired: "Expire",
-};
 
 export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -221,6 +214,20 @@ export default function SubscriptionsPage() {
         render: (row) => <StatusBadge status={row.status} options={SUBSCRIPTION_STATUS_OPTIONS} />,
       },
       {
+        key: "trial",
+        label: "Trial / Recovery",
+        render: (row) => {
+          if (row.status !== "suspended" && row.status !== "pending" && row.status !== "trialing") {
+            return <span className="text-xs text-slate-400">—</span>;
+          }
+          const trial = formatTrialRemaining(row.trial_ends_at, row.status, row.recovery_ends_at);
+          if (!trial) return <span className="text-xs text-slate-400">—</span>;
+          const toneClass =
+            trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
+          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
+        },
+      },
+      {
         key: "period",
         label: "Period",
         render: (row) => (
@@ -321,7 +328,7 @@ export default function SubscriptionsPage() {
             emptyTitle="No commercial subscriptions yet"
             emptyMessage="Create the first subscription to assign a plan to an organization."
             emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create subscription</Button>}
-            minWidth={960}
+            minWidth={1120}
           />
         )}
 

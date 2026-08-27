@@ -31,7 +31,19 @@ from app.modules.commercial.schemas import (
     CommercialAccountResponse,
     CommercialBillingConfigurationSummary,
     CommercialOrganizationDetailResponse,
+    CommercialOverrideCreate,
+    CommercialOverrideListResponse,
+    CommercialOverrideResponse,
+    CommercialOverrideRevokeRequest,
     CommercialPlanCreate,
+    CommercialPlanVersionUpdate,
+    PlanEntitlementSet,
+    SubscriptionChangeListResponse,
+    SubscriptionChangeResponse,
+    SubscriptionChangeReverseRequest,
+    TrialStatusResponse,
+    UsageCounterListResponse,
+    UsageCounterResponse,
     CommercialPlanDefaultUpdate,
     CommercialPlanListResponse,
     CommercialPlanResponse,
@@ -43,6 +55,10 @@ from app.modules.commercial.schemas import (
     CommercialSubscriptionResponse,
     CommercialSubscriptionStatusUpdate,
     CommercialSubscriptionSummary,
+    EntitlementDefinitionListResponse,
+    EntitlementDefinitionResponse,
+    PlanEntitlementResponse,
+    PlanVersionEntitlementsResponse,
 )
 from app.modules.organizations.models import Organization, TenantLifecycleState
 from app.modules.super_admin.attention_service import AttentionService
@@ -551,6 +567,7 @@ _OPEN_SUBSCRIPTION_STATUSES = {
     CommercialSubscriptionStatus.PENDING,
     CommercialSubscriptionStatus.ACTIVE,
     CommercialSubscriptionStatus.SUSPENDED,
+    CommercialSubscriptionStatus.TRIALING,
 }
 
 
@@ -716,6 +733,8 @@ def _subscription_payload(subscription, org, plan):
         current_period_start=subscription.current_period_start,
         current_period_end=subscription.current_period_end,
         trial_ends_at=subscription.trial_ends_at,
+        recovery_ends_at=subscription.recovery_ends_at,
+        trial_granted_entitlements=subscription.trial_granted_entitlements,
         created_at=subscription.created_at,
         updated_at=subscription.updated_at,
     )
@@ -1155,6 +1174,70 @@ def get_commercial_plan_version(
     return _version_payload(version)
 
 
+# ── ZB-COM-ENT-001 Part 3 §16 — draft-version editing ───────────────────────
+# Rejected server-side (not just a UI convention) unless the version is
+# still DRAFT — see CommercialPlanVersionService.update_draft/
+# set_plan_entitlement. Publishing always means a NEW plan_version_id via
+# create_draft(); these two endpoints never touch a PUBLISHED row.
+
+@router.patch("/commercial-plan-versions/{version_id}", response_model=CommercialPlanVersionResponse)
+def update_commercial_plan_version(
+    version_id: int,
+    data: CommercialPlanVersionUpdate,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.service import CommercialPlanVersionService
+
+    version = CommercialPlanVersionService(db).get_version(version_id)
+    if version is None:
+        raise NotFoundException("Commercial Plan Version", "id")
+    try:
+        version = CommercialPlanVersionService(db).update_draft(
+            version, actor_id=current_user.id, **data.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(version)
+    return _version_payload(version)
+
+
+@router.put(
+    "/commercial-plan-versions/{version_id}/entitlements/{definition_id}",
+    response_model=PlanEntitlementResponse,
+)
+def set_commercial_plan_version_entitlement(
+    version_id: int,
+    definition_id: int,
+    data: PlanEntitlementSet,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.models import EntitlementDefinition
+    from app.modules.commercial.service import CommercialPlanVersionService
+
+    version = CommercialPlanVersionService(db).get_version(version_id)
+    if version is None:
+        raise NotFoundException("Commercial Plan Version", "id")
+    try:
+        row = CommercialPlanVersionService(db).set_plan_entitlement(
+            version, definition_id, data.value, is_contracted=data.is_contracted, actor_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(row)
+    definition = db.query(EntitlementDefinition).filter(EntitlementDefinition.id == definition_id).first()
+    return PlanEntitlementResponse(
+        id=row.id, plan_version_id=row.plan_version_id, entitlement_definition_id=row.entitlement_definition_id,
+        key=definition.key, value_type=definition.value_type, risk_classification=definition.risk_classification,
+        enforcement_type=definition.enforcement_type, value=row.value, is_contracted=row.is_contracted,
+    )
+
+
 @router.post("/commercial-plan-versions/{version_id}/submit", response_model=CommercialPlanVersionResponse)
 def submit_commercial_plan_version(
     version_id: int,
@@ -1251,6 +1334,546 @@ def archive_commercial_plan_version(
     db.commit()
     db.refresh(version)
     return _version_payload(version)
+
+
+# ── Entitlement Catalog (ZB-COM-ENT-001 Part 1 §12–§13, read-only) ─────────
+# Typed entitlement-key registry + per-plan-version entitlement values.
+# Read-only in Part 1: the catalog is seeded (scripts/seed_entitlement_definitions.py),
+# never mutated through these endpoints. PlanEntitlement values are resolved
+# from a CommercialPlanVersion's PUBLISHED (immutable) snapshot; draft values
+# are not exposed here.
+
+@router.get(
+    "/commercial-entitlement-definitions",
+    response_model=EntitlementDefinitionListResponse,
+)
+def list_entitlement_definitions(
+    search: str = "",
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Full typed entitlement-key registry (seeded key catalog)."""
+    from app.modules.commercial.models import EntitlementDefinition
+
+    query = db.query(EntitlementDefinition)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            (EntitlementDefinition.key.ilike(like))
+            | (EntitlementDefinition.description.ilike(like))
+        )
+    definitions = query.order_by(EntitlementDefinition.key).all()
+    return EntitlementDefinitionListResponse(definitions=definitions, total=len(definitions))
+
+
+@router.get(
+    "/commercial-entitlement-definitions/{definition_id}",
+    response_model=EntitlementDefinitionResponse,
+)
+def get_entitlement_definition(
+    definition_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.models import EntitlementDefinition
+
+    definition = (
+        db.query(EntitlementDefinition)
+        .filter(EntitlementDefinition.id == definition_id)
+        .first()
+    )
+    if definition is None:
+        raise NotFoundException("Entitlement Definition", "id")
+    return definition
+
+
+@router.get(
+    "/commercial-plan-versions/{version_id}/entitlements",
+    response_model=PlanVersionEntitlementsResponse,
+)
+def list_plan_version_entitlements(
+    version_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Typed entitlement values bound to one plan version (§13)."""
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.models import (
+        CommercialPlanVersion,
+        EntitlementDefinition,
+        PlanEntitlement,
+    )
+
+    version = (
+        db.query(CommercialPlanVersion)
+        .filter(CommercialPlanVersion.id == version_id)
+        .first()
+    )
+    if version is None:
+        raise NotFoundException("Commercial Plan Version", "id")
+
+    rows = (
+        db.query(PlanEntitlement, EntitlementDefinition)
+        .join(
+            EntitlementDefinition,
+            EntitlementDefinition.id == PlanEntitlement.entitlement_definition_id,
+        )
+        .filter(PlanEntitlement.plan_version_id == version_id)
+        .order_by(EntitlementDefinition.key)
+        .all()
+    )
+    return PlanVersionEntitlementsResponse(
+        version_id=version_id,
+        entitlements=[
+            {
+                "id": pe.id,
+                "plan_version_id": pe.plan_version_id,
+                "entitlement_definition_id": pe.entitlement_definition_id,
+                "key": definition.key,
+                "value_type": definition.value_type,
+                "risk_classification": definition.risk_classification,
+                "enforcement_type": definition.enforcement_type,
+                "value": pe.value,
+                "is_contracted": pe.is_contracted,
+            }
+            for pe, definition in rows
+        ],
+        total=len(rows),
+    )
+
+
+# ── Commercial Overrides (ZB-COM-ENT-001 Part 2 §16.1, dual-approval) ──────
+# Draft -> submit -> approve/reject lifecycle, mirroring the
+# commercial-plan-versions endpoints above byte-for-byte: the same generic
+# ApprovalService/ApprovalRequest maker-checker mechanism, the same
+# SelfApprovalError -> ForbiddenException / ValueError -> BadRequestException
+# translation, and the same explicit-decision-endpoint-per-domain pattern
+# (an override decision always re-validates CommercialOverrideService's own
+# state machine, not just the generic ApprovalRequest row).
+
+def _override_payload(override) -> CommercialOverrideResponse:
+    return CommercialOverrideResponse(
+        id=override.id,
+        organization_id=override.organization_id,
+        entitlement_definition_id=override.entitlement_definition_id,
+        entitlement_key=override.entitlement_definition.key if override.entitlement_definition else None,
+        value=override.value,
+        reason=override.reason,
+        status=override.status,
+        expires_at=override.expires_at,
+        requested_by_user_id=override.requested_by_user_id,
+        approval_request_id=override.approval_request_id,
+        approved_by_user_id=override.approved_by_user_id,
+        revoked_at=override.revoked_at,
+        revoked_by_user_id=override.revoked_by_user_id,
+        created_at=override.created_at,
+        updated_at=override.updated_at,
+    )
+
+
+@router.get("/commercial-overrides", response_model=CommercialOverrideListResponse)
+def list_commercial_overrides(
+    organization_id: int = None,
+    status: str = "",
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.commercial.enums import CommercialOverrideStatus
+    from app.modules.commercial.models import CommercialOverride
+
+    query = db.query(CommercialOverride)
+    if organization_id is not None:
+        query = query.filter(CommercialOverride.organization_id == organization_id)
+    if status:
+        try:
+            query = query.filter(CommercialOverride.status == CommercialOverrideStatus(status))
+        except ValueError:
+            raise BadRequestException(f"Invalid status '{status}'.")
+    rows = query.order_by(CommercialOverride.id.desc()).all()
+    return CommercialOverrideListResponse(overrides=[_override_payload(o) for o in rows], total=len(rows))
+
+
+@router.get("/commercial-overrides/{override_id}", response_model=CommercialOverrideResponse)
+def get_commercial_override(
+    override_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+
+    override = CommercialOverrideService(db).get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides", response_model=CommercialOverrideResponse)
+def create_commercial_override(
+    data: CommercialOverrideCreate,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+
+    try:
+        override = CommercialOverrideService(db).create_draft(
+            organization_id=data.organization_id,
+            entitlement_definition_id=data.entitlement_definition_id,
+            value=data.value,
+            reason=data.reason,
+            requested_by_user_id=current_user.id,
+            expires_at=data.expires_at,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides/{override_id}/submit", response_model=CommercialOverrideResponse)
+def submit_commercial_override(
+    override_id: int,
+    data: SubmitForApprovalRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+
+    svc = CommercialOverrideService(db)
+    override = svc.get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    try:
+        override, _request = svc.submit_for_approval(
+            override, requested_by_user_id=current_user.id, reason=data.reason
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides/{override_id}/approve", response_model=CommercialOverrideResponse)
+def approve_commercial_override(
+    override_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+    from app.modules.super_admin.approval_service import SelfApprovalError
+
+    svc = CommercialOverrideService(db)
+    override = svc.get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    try:
+        override = svc.approve_and_activate(override, approver_user_id=current_user.id)
+    except SelfApprovalError as exc:
+        raise ForbiddenException(str(exc))
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides/{override_id}/reject", response_model=CommercialOverrideResponse)
+def reject_commercial_override(
+    override_id: int,
+    data: RejectApprovalRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+    from app.modules.super_admin.approval_service import SelfApprovalError
+
+    svc = CommercialOverrideService(db)
+    override = svc.get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    try:
+        override = svc.reject(override, approver_user_id=current_user.id, rejection_reason=data.rejection_reason)
+    except SelfApprovalError as exc:
+        raise ForbiddenException(str(exc))
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides/{override_id}/revoke", response_model=CommercialOverrideResponse)
+def revoke_commercial_override(
+    override_id: int,
+    data: CommercialOverrideRevokeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+
+    svc = CommercialOverrideService(db)
+    override = svc.get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    try:
+        override = svc.revoke(override, actor_id=current_user.id, reason=data.reason)
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+# ── Usage diagnostics (ZB-COM-ENT-001 Part 3 §16) ───────────────────────────
+
+@router.get("/commercial-usage-counters", response_model=UsageCounterListResponse)
+def list_commercial_usage_counters(
+    organization_id: int = None,
+    entitlement_key: str = "",
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.modules.commercial.models import EntitlementDefinition, UsageCounter
+
+    query = db.query(UsageCounter, EntitlementDefinition).join(
+        EntitlementDefinition, EntitlementDefinition.id == UsageCounter.entitlement_definition_id,
+    )
+    if organization_id is not None:
+        query = query.filter(UsageCounter.organization_id == organization_id)
+    if entitlement_key:
+        query = query.filter(EntitlementDefinition.key == entitlement_key)
+    rows = query.order_by(UsageCounter.updated_at.desc()).all()
+    counters = [
+        UsageCounterResponse(
+            id=c.id, organization_id=c.organization_id, entitlement_definition_id=c.entitlement_definition_id,
+            entitlement_key=d.key, window_key=c.window_key, count=c.count,
+            soft_warned_at=c.soft_warned_at, updated_at=c.updated_at,
+        )
+        for c, d in rows
+    ]
+    return UsageCounterListResponse(counters=counters, total=len(counters))
+
+
+# ── Plan-change queue (ZB-COM-ENT-001 Part 3 §16) ───────────────────────────
+# List/inspect SubscriptionChange rows, including BLOCKED ones — the
+# spec's own words: "explicitly for investigating failed/inconsistent
+# transitions."
+
+def _subscription_change_payload(change) -> SubscriptionChangeResponse:
+    return SubscriptionChangeResponse(
+        id=change.id,
+        commercial_subscription_id=change.commercial_subscription_id,
+        from_plan_id=change.from_plan_id,
+        to_plan_id=change.to_plan_id,
+        from_plan_code=change.from_plan.plan_code if change.from_plan else None,
+        to_plan_code=change.to_plan.plan_code if change.to_plan else None,
+        direction=change.direction.value if hasattr(change.direction, "value") else change.direction,
+        status=change.status.value if hasattr(change.status, "value") else change.status,
+        effective_at=change.effective_at,
+        requested_at=change.requested_at,
+        requested_by_user_id=change.requested_by_user_id,
+        applied_at=change.applied_at,
+        reversed_at=change.reversed_at,
+        reversed_by_user_id=change.reversed_by_user_id,
+        reason=change.reason,
+        blockers=change.blockers,
+        price_impact=change.price_impact,
+    )
+
+
+@router.get("/commercial-subscription-changes", response_model=SubscriptionChangeListResponse)
+def list_commercial_subscription_changes(
+    status: str = "",
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException
+    from app.modules.commercial.enums import SubscriptionChangeStatus
+    from app.modules.commercial.models import SubscriptionChange
+
+    query = db.query(SubscriptionChange)
+    if status:
+        try:
+            query = query.filter(SubscriptionChange.status == SubscriptionChangeStatus(status))
+        except ValueError:
+            raise BadRequestException(f"Invalid status '{status}'.")
+    total = query.count()
+    rows = query.order_by(SubscriptionChange.id.desc()).offset(skip).limit(limit).all()
+    return SubscriptionChangeListResponse(changes=[_subscription_change_payload(c) for c in rows], total=total)
+
+
+@router.get("/commercial-subscription-changes/{change_id}", response_model=SubscriptionChangeResponse)
+def get_commercial_subscription_change(
+    change_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.models import SubscriptionChange
+
+    change = db.query(SubscriptionChange).filter(SubscriptionChange.id == change_id).first()
+    if change is None:
+        raise NotFoundException("SubscriptionChange", "id")
+    return _subscription_change_payload(change)
+
+
+@router.post("/commercial-subscription-changes/{change_id}/reverse", response_model=SubscriptionChangeResponse)
+def reverse_commercial_subscription_change(
+    change_id: int,
+    data: SubscriptionChangeReverseRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.models import SubscriptionChange
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    change = db.query(SubscriptionChange).filter(SubscriptionChange.id == change_id).first()
+    if change is None:
+        raise NotFoundException("SubscriptionChange", "id")
+    try:
+        change = CommercialSubscriptionService(db).reverse_scheduled_change(
+            change, actor_id=current_user.id, reason=data.reason,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(change)
+    return _subscription_change_payload(change)
+
+
+# ── Trial controls (ZB-COM-ENT-001 Part 3 §16) ──────────────────────────────
+
+@router.get("/commercial-accounts/{organization_id}/trial-status", response_model=TrialStatusResponse)
+def get_commercial_account_trial_status(
+    organization_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.models import CommercialAccount
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    account = (
+        db.query(CommercialAccount).filter(CommercialAccount.organization_id == organization_id).first()
+    )
+    if account is None:
+        raise NotFoundException("Commercial Account", "organization_id")
+
+    sub_svc = CommercialSubscriptionService(db)
+    subscription = sub_svc.get_active_subscription(account.id)
+    return TrialStatusResponse(
+        organization_id=organization_id,
+        has_open_subscription=subscription is not None,
+        subscription_status=(
+            subscription.status.value if subscription and hasattr(subscription.status, "value") else None
+        ),
+        trial_ends_at=subscription.trial_ends_at if subscription else None,
+        recovery_ends_at=subscription.recovery_ends_at if subscription else None,
+        evaluation_conversion_policy=(
+            subscription.evaluation_conversion_policy.value
+            if subscription and subscription.evaluation_conversion_policy else None
+        ),
+        evaluation_expiry_action=(
+            subscription.evaluation_expiry_action.value
+            if subscription and subscription.evaluation_expiry_action else None
+        ),
+        trial_granted_entitlements=subscription.trial_granted_entitlements if subscription else None,
+        is_trial_eligible=sub_svc.is_trial_eligible(account.id),
+    )
+
+
+# ── Commercial analytics (ZB-COM-ENT-001 Part 3 §18) ────────────────────────
+# Backend-only this pass (no dedicated frontend dashboard — a deliberate
+# scope cut per the spec's own guidance). Each endpoint returns exactly what
+# CommercialEntitlementAnalyticsService computes — see that module's
+# docstring for which ratios are/aren't computable from data that actually
+# exists in this codebase, and why.
+
+@router.get("/commercial-analytics/trial-activation-rate", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_trial_activation_rate(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).trial_activation_rate()
+
+
+@router.get("/commercial-analytics/trial-to-paid-conversion", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_trial_to_paid_conversion(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).trial_to_paid_conversion_rate()
+
+
+@router.get("/commercial-analytics/time-to-first-invoice", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_time_to_first_invoice(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).time_to_first_invoice_days()
+
+
+@router.get("/commercial-analytics/upgrade-conversion-rate", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_upgrade_conversion_rate(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).upgrade_conversion_rate()
+
+
+@router.get("/commercial-analytics/downgrade-save-rate", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_downgrade_save_rate(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).downgrade_save_rate()
+
+
+@router.get("/commercial-analytics/limit-pressure-rate", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_limit_pressure_rate(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).limit_pressure_rate()
+
+
+@router.get("/commercial-analytics/entitlement-denial-counts", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_entitlement_denial_counts(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).entitlement_denial_counts()
+
+
+@router.get("/commercial-analytics/revenue-leakage", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_revenue_leakage(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).revenue_leakage_exceptions()
+
+
+@router.get("/commercial-analytics/entitlement-drift", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_entitlement_drift(deep: bool = False, db: Session = Depends(get_db)):
+    """AC-15: entitlement-drift analytic, queryable and expected to return
+    zero for all live subscriptions. `deep=true` runs the expensive live-
+    resolution diff instead of the cheap always-on check."""
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    svc = CommercialEntitlementAnalyticsService(db)
+    return svc.entitlement_drift_deep_check() if deep else svc.entitlement_drift()
+
+
+@router.get("/commercial-analytics/failed-plan-transitions", dependencies=[Depends(require_capability("commercial_financial.read"))])
+def get_failed_plan_transitions(db: Session = Depends(get_db)):
+    from app.modules.commercial.analytics_service import CommercialEntitlementAnalyticsService
+
+    return CommercialEntitlementAnalyticsService(db).failed_plan_transitions()
 
 
 # ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5, Super Admin only) ─

@@ -25,6 +25,16 @@ Scopes registered today (§9.2 launch catalog):
     billing email sends: InvoiceService.send_invoice_via_email() and the
     dunning reminder sends ("Pause customer billing communications ... while
     preserving generated artifacts").
+  - ENTITLEMENT_ENFORCEMENT (ZB-COM-ENT-001 Part 2, §16.1 Level 2) — gates
+    EntitlementEnforcementService.assert_boolean()/assert_within_limit().
+    Engaging it pauses ALL entitlement HARD/SOFT/THROTTLE blocking
+    platform-wide (the resolver's L2 then resolves every key as fully
+    allowed); reads are unaffected. Deliberately separate from
+    EntitlementDefinition.is_globally_disabled (Part 2's Level 1): a
+    kill-switch scope always carries a mandatory bounded expires_at
+    (auto-lifts within 14 days, §9.1) — the right shape for "pause while we
+    investigate", the wrong shape for "this key is permanently, legally
+    prohibited" which must never silently auto-lift.
 
   Not registrable in this codebase (documented, not hidden): "Freeze
   outbound connector sync" (no ERP/accounting connector abstraction exists)
@@ -57,6 +67,7 @@ TENANT_PAYMENT_ATTEMPTS = "tenant_payment_attempts"
 TENANT_DUNNING = "tenant_dunning"
 TENANT_BILLING_COMMUNICATIONS = "tenant_billing_communications"
 PAUSE_PLATFORM_INVOICE_FINALIZATION = "pause_platform_invoice_finalization"
+ENTITLEMENT_ENFORCEMENT = "entitlement_enforcement"
 
 # ZB-SA-CMD-003 §9.2 launch catalog — Domain B entries with a REAL enforced
 # code path in this repository. Each entry carries its blast-radius preview
@@ -136,10 +147,27 @@ DOMAIN_A_BREAKER_CATALOG: dict[str, dict] = {
     },
 }
 
+ENTITLEMENT_BREAKER_CATALOG: dict[str, dict] = {
+    ENTITLEMENT_ENFORCEMENT: {
+        "display_name": "Pause entitlement enforcement",
+        "domain": "B",
+        "effect": (
+            "Stops all entitlement HARD/SOFT/THROTTLE blocking platform-wide; "
+            "reads still resolve normally. Existing overrides/limits are "
+            "preserved, not deleted."
+        ),
+        "gated_paths": [
+            "EntitlementEnforcementService.assert_boolean",
+            "EntitlementEnforcementService.assert_within_limit",
+        ],
+    },
+}
+
 KNOWN_BREAKER_SCOPES = {
     COMMERCIAL_SUBSCRIPTION_CHARGING,
     *DOMAIN_B_BREAKER_CATALOG.keys(),
     *DOMAIN_A_BREAKER_CATALOG.keys(),
+    *ENTITLEMENT_BREAKER_CATALOG.keys(),
 }
 
 # §9.1 auto-expiry bounds: a pause must always be time-bound. 14 days is the

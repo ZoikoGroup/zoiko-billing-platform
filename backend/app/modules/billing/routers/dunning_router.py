@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import DunningService
+from app.modules.commercial.entitlement_enforcement import require_entitlement
 from app.modules.billing.schemas import (
     DunningLevelCreate,
     DunningLevelUpdate,
@@ -26,7 +27,9 @@ router = APIRouter(prefix="/dunning", tags=["🧾 Dunning"])
     response_model=DunningLevelResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a dunning level",
-    dependencies=[Depends(get_current_billing_admin)],
+    # AC-01 (ZB-COM-ENT-001 Part 2): collections.dunning — unconditional
+    # BOOLEAN gate, pure dependency injection (no route-body changes needed).
+    dependencies=[Depends(get_current_billing_admin), Depends(require_entitlement("collections.dunning"))],
 )
 def create_level(
     data: DunningLevelCreate,

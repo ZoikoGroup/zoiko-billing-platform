@@ -198,12 +198,14 @@ from app.modules.commercial.platform_stripe_router import (
     webhook_router as commercial_stripe_webhook_router,
 )
 from app.modules.commercial.org_self_service_router import router as commercial_org_self_service_router
+from app.modules.commercial.entitlement_router import router as commercial_entitlement_router
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(auth_user_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(super_admin_router, prefix="/api")
 app.include_router(commercial_billing_router, prefix="/api")
+app.include_router(commercial_entitlement_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
 # Billing is mounted at /billing (root), exactly like the ZoikoOne main
 # platform — the billing frontend (modules/billing) calls /billing/* paths.

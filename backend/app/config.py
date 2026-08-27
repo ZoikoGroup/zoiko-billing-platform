@@ -174,6 +174,12 @@ class Settings(BaseSettings):
     ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = False
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
 
+    # Plane-1 scheduled plan-change apply sweep (ZB-COM-ENT-001 Part 3) — a
+    # SCHEDULED downgrade's effective_at is applied by this job. OFF by
+    # default — nothing applies a scheduled change until enabled.
+    ENABLE_SCHEDULED_PLAN_CHANGES: bool = False
+    SCHEDULED_PLAN_CHANGE_CHECK_INTERVAL_MINUTES: int = 60
+
     # ── Commercial (Plane 1) quote discount approval (§B7) ──────────────
     # A quote-level discount at or above this percentage of subtotal requires
     # discount_reason + a discount_approver_id different from the creator

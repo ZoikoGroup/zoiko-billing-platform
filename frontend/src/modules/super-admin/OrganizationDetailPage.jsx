@@ -18,6 +18,7 @@ import {
   getOrganizationOverview,
   updateBillingClassification,
   transitionOrganizationLifecycle,
+  getCommercialAccountTrialStatus,
 } from "../../service/commercialService";
 import { PageHeader, DataTable, Modal, Field, Select, Button } from "../../components/billing-ui";
 import { StatusBadge, ErrorState, PageSkeleton, EmptyState, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
@@ -224,6 +225,7 @@ export default function OrganizationDetailPage() {
   const [detail, setDetail] = useState(null);      // commercial-plane view (Phase 6/9)
   const [overview, setOverview] = useState(null);  // Phase 3A/3C composed read model
   const [profile, setProfile] = useState(null);
+  const [trialStatus, setTrialStatus] = useState(null);  // ZB-COM-ENT-001 Part 3 §16 trial controls
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
@@ -240,19 +242,22 @@ export default function OrganizationDetailPage() {
       // commercial detail keeps its accepted role for subscription data;
       // the profile adds full contact fields. A missing profile or detail
       // must not blank out the page — only the overview may fail it.
-      const [ov, d, p] = await Promise.all([
+      const [ov, d, p, ts] = await Promise.all([
         getOrganizationOverview(organizationId),
         getCommercialOrganizationDetail(organizationId).catch(() => null),
         getOrganizationProfile(organizationId).catch(() => null),
+        getCommercialAccountTrialStatus(organizationId).catch(() => null),
       ]);
       setOverview(ov);
       setDetail(d);
       setProfile(p);
+      setTrialStatus(ts);
     } catch (err) {
       setError(err?.message || "Failed to load organization.");
       setOverview(null);
       setDetail(null);
       setProfile(null);
+      setTrialStatus(null);
     } finally {
       setLoading(false);
     }
@@ -656,7 +661,9 @@ export default function OrganizationDetailPage() {
                 <InfoRow label="Max users" value={displayValue(entitlements.limits?.max_users)} />
                 <InfoRow label="Max storage (GB)" value={displayValue(entitlements.limits?.max_storage_gb)} />
                 <p className="mt-2 text-xs text-slate-500">
-                  Missing (—) values are unset, not unlimited. No limits are enforced until a future phase wires entitlements into tenant modules.
+                  Missing (—) values are unset, not unlimited. These legacy plan-level limits (max users / max storage)
+                  are not enforced. The typed entitlement catalog now enforces 5 of 19 keys at real routes — see the
+                  Entitlement Catalog page and docs/ENTITLEMENT_ENFORCEMENT_CHECKLIST.md for what's wired.
                 </p>
               </div>
               <div>
@@ -679,6 +686,35 @@ export default function OrganizationDetailPage() {
               title="No entitlements yet"
               message="Entitlements are resolved from the current open subscription's plan. Nothing is entitled while no open subscription exists."
             />
+          )}
+        </SectionCard>
+
+        <SectionCard icon={GitBranch} title="Trial Status" subtitle="ZB-COM-ENT-001 Part 3 §16 — eligibility and conversion/expiry state">
+          {trialStatus ? (
+            <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              <InfoRow
+                label="Trial eligibility"
+                value={trialStatus.is_trial_eligible ? "Eligible (no prior trial recorded)" : "Not eligible (already had a trial)"}
+              />
+              <InfoRow label="Subscription status" value={displayValue(trialStatus.subscription_status)} />
+              <InfoRow label="Trial ends at" value={trialStatus.trial_ends_at ? formatDateTime(trialStatus.trial_ends_at) : "—"} />
+              <InfoRow label="Recovery window ends" value={trialStatus.recovery_ends_at ? formatDateTime(trialStatus.recovery_ends_at) : "—"} />
+              <InfoRow label="Conversion policy" value={displayValue(trialStatus.evaluation_conversion_policy)} />
+              <InfoRow label="Expiry action" value={displayValue(trialStatus.evaluation_expiry_action)} />
+              {Array.isArray(trialStatus.trial_granted_entitlements) && trialStatus.trial_granted_entitlements.length > 0 && (
+                <div className="sm:col-span-2">
+                  <p className="mb-1.5 mt-3 text-xs font-bold uppercase tracking-wider text-slate-600">Trial-granted entitlements (frozen at grant time)</p>
+                  {trialStatus.trial_granted_entitlements.map((g) => (
+                    <div key={g.key} className="flex items-center justify-between border-b border-slate-100 py-1.5 text-xs last:border-0">
+                      <span className="font-mono text-slate-500">{g.key}</span>
+                      <span className="font-medium text-slate-700">{displayValue(g.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No trial status available for this organization.</p>
           )}
         </SectionCard>
 

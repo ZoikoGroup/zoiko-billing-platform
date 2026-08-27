@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import ContractService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
     ContractCreate,
     ContractUpdate,
@@ -311,6 +312,27 @@ def set_contract_items(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    # AC-01 (ZB-COM-ENT-001 Part 2): billing.usage_metering — gates setting
+    # contract line items only when a submitted item's Product is USAGE-type,
+    # since that's the action that actually establishes usage-based billing
+    # on a contract (Contract/ContractCreate itself has no usage-type field).
+    product_ids = {item.product_id for item in data.items if item.product_id}
+    if product_ids:
+        from app.modules.billing.models import Product, ProductType
+
+        has_usage_product = (
+            db.query(Product.id)
+            .filter(Product.id.in_(product_ids), Product.product_type == ProductType.USAGE)
+            .first()
+            is not None
+        )
+        if has_usage_product:
+            EntitlementEnforcementService(db).assert_boolean(
+                organization_id=current_user.organization_id,
+                key="billing.usage_metering",
+                actor_id=current_user.id,
+            )
+
     svc = ContractService(db)
     return svc.set_contract_items(
         contract_id=contract_id,
