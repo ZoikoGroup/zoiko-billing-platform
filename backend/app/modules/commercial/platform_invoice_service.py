@@ -24,7 +24,7 @@ DOCTRINE:
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -39,6 +39,7 @@ from app.modules.commercial.enums import (
 )
 from app.modules.commercial.models import (
     PlatformInvoice,
+    PlatformInvoiceDeliveryAttempt,
     PlatformInvoiceItem,
     PlatformInvoiceNumberSequence,
 )
@@ -286,11 +287,28 @@ class PlatformInvoiceService:
         sent = self._send_invoice_email(invoice, recipient)
         if not sent:
             self.db.rollback()
+            # Recorded in its own commit — the rollback above discarded the
+            # invoice-mutation attempt, but delivery evidence (§E5) must
+            # survive a failed send, not just a successful one.
+            self.db.add(PlatformInvoiceDeliveryAttempt(
+                platform_invoice_id=invoice.id,
+                channel="email",
+                provider="smtp",
+                result="failure",
+                error_detail=f"Failed to email invoice {invoice.invoice_number} to {recipient.email}",
+            ))
+            self.db.commit()
             raise ValueError(f"Failed to email invoice {invoice.invoice_number} to {recipient.email}")
 
         old = _invoice_snapshot(invoice)
         invoice.delivery_status = PlatformInvoiceDeliveryStatus.SENT
         invoice.sent_at = datetime.utcnow()
+        self.db.add(PlatformInvoiceDeliveryAttempt(
+            platform_invoice_id=invoice.id,
+            channel="email",
+            provider="smtp",
+            result="success",
+        ))
         self.db.flush()
 
         self._audit.log_no_commit(
@@ -535,3 +553,87 @@ class PlatformInvoiceService:
         self.db.flush()
 
         return f"{seq.prefix}{number:06d}"
+
+
+# ── First-invoice generation (registration → PENDING subscription) ─────────
+# provision_default_subscription() creates a PENDING self-serve subscription
+# but never invented a price for it, so nothing ever produced the invoice
+# the org needs to pay to activate it. This closes that gap: called once,
+# right after provisioning, from register_enterprise().
+
+INITIAL_INVOICE_NET_DAYS = 7
+
+
+def generate_initial_invoice_for_subscription(
+    db: Session, subscription, *, actor_id: Optional[int] = None,
+) -> Optional[PlatformInvoice]:
+    """Create + finalize (DRAFT -> ISSUED) the first invoice for a newly
+    provisioned PENDING CommercialSubscription. Returns None (never invents
+    a price) if the subscription's plan has no resolvable price. Does NOT
+    send/email the invoice — callers decide sync vs background (see
+    send_invoice_in_background below), so this stays fast and DB-only.
+    """
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    priced = CommercialSubscriptionService(db).resolve_price(subscription)
+    if priced is None:
+        logger.info(
+            "No resolvable price for subscription %s's plan — skipping initial invoice.",
+            subscription.id,
+        )
+        return None
+    price_amount, currency, _interval = priced
+
+    plan_name = subscription.plan.plan_name if subscription.plan else "Subscription"
+    svc = PlatformInvoiceService(db)
+    issue = date.today()
+    invoice = svc.create_draft(
+        account_id=subscription.commercial_account_id,
+        actor_id=actor_id,
+        invoice_type="standard",
+        subscription_id=subscription.id,
+        issue_date=issue,
+        due_date=issue + timedelta(days=INITIAL_INVOICE_NET_DAYS),
+        notes=f"Initial invoice for {plan_name} - pay to activate your subscription.",
+        currency=currency or "USD",
+    )
+    svc.add_item(
+        invoice_id=invoice.id,
+        actor_id=actor_id,
+        line_number=1,
+        description=f"{plan_name} - subscription (first period)",
+        unit_price=price_amount,
+    )
+    svc.finalize(invoice_id=invoice.id, actor_id=actor_id)
+    return invoice
+
+
+def send_invoice_email_with_session(db: Session, invoice_id: int) -> None:
+    """Send a PlatformInvoice email using WHATEVER session the caller gives
+    it. A transient SMTP failure is logged, never raised — the invoice
+    itself already exists and is valid regardless of whether this email
+    succeeds. Use this (not send_invoice_in_background) for a synchronous
+    caller sharing a session (e.g. register_enterprise's no-BackgroundTasks
+    fallback) — a fresh SessionLocal() can't see an invoice created in an
+    uncommitted/test-transactional session."""
+    try:
+        PlatformInvoiceService(db).send(invoice_id=invoice_id, actor_id=None)
+        db.commit()
+    except Exception as exc:
+        logger.warning("[invoice] Send failed for invoice %s: %s", invoice_id, exc)
+        db.rollback()
+
+
+def send_invoice_in_background(invoice_id: int) -> None:
+    """FastAPI BackgroundTasks entry point — opens its OWN DB session, safe
+    to call after the request's session has already closed (the invoice is
+    guaranteed committed by then — created_initial_invoice_for_subscription
+    runs inside the same transaction register_enterprise commits before
+    scheduling this)."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        send_invoice_email_with_session(db, invoice_id)
+    finally:
+        db.close()

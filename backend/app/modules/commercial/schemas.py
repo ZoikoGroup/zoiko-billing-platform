@@ -44,6 +44,7 @@ class CommercialSubscriptionSummary(BaseModel):
     plan_name: str
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
 
 
 class CommercialAccountResponse(BaseModel):
@@ -163,6 +164,7 @@ class CommercialSubscriptionResponse(BaseModel):
     end_at: Optional[datetime] = None
     current_period_start: Optional[datetime] = None
     current_period_end: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

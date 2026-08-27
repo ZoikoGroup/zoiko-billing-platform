@@ -163,12 +163,60 @@ class CommercialQuoteService:
         self._recalculate_totals(quote)
         return item
 
+    def set_discount(
+        self,
+        *,
+        quote_id: int,
+        actor_id: int,
+        discount_amount: Decimal,
+        reason: Optional[str] = None,
+        approver_id: Optional[int] = None,
+    ) -> CommercialQuote:
+        """Set a quote-level discount on a DRAFT quote, with its approver/reason.
+
+        This is distinct from per-item discount_amount (which rolls up into
+        quote.discount_amount via _recalculate_totals): a quote-level
+        discount above COMMERCIAL_QUOTE_DISCOUNT_APPROVAL_THRESHOLD_PERCENT
+        of subtotal is enforced at send_quote() time (§B7) — approver must
+        differ from the quote's creator.
+        """
+        quote = self._get_quote(quote_id)
+        self._require_status(quote, CommercialQuoteStatus.DRAFT)
+
+        if discount_amount < 0:
+            raise ValueError("Discount amount cannot be negative")
+
+        old = _quote_snapshot(quote)
+        quote.discount_amount = discount_amount
+        quote.discount_reason = reason
+        quote.discount_approver_id = approver_id
+        quote.total_amount = quote.subtotal - quote.discount_amount + quote.tax_amount
+        self.db.flush()
+
+        self._audit.log_no_commit(
+            actor_id=actor_id,
+            action=PlatformAuditAction.UPDATE,
+            entity_type="commercial_quote",
+            entity_id=quote.id,
+            old_values=old,
+            new_values=_quote_snapshot(quote),
+        )
+
+        return quote
+
     def send_quote(self, *, quote_id: int, actor_id: int) -> CommercialQuote:
         """Send a DRAFT quote to the org's admin by email. Generates
         public_token. Mirrors PlatformInvoiceService.send(): the email must
-        succeed before any DB mutation is committed."""
+        succeed before any DB mutation is committed.
+
+        Enforces §B7 discount approval: a quote-level discount at or above
+        COMMERCIAL_QUOTE_DISCOUNT_APPROVAL_THRESHOLD_PERCENT of subtotal
+        requires discount_reason set and discount_approver_id set to a user
+        other than the quote's creator.
+        """
         quote = self._get_quote(quote_id)
         self._require_status(quote, CommercialQuoteStatus.DRAFT)
+        self._enforce_discount_approval(quote)
 
         if not quote.public_token:
             quote.public_token = secrets.token_urlsafe(32)
@@ -479,6 +527,33 @@ class CommercialQuoteService:
         if not quote:
             raise ValueError(f"Quote {quote_id} not found")
         return quote
+
+    def _enforce_discount_approval(self, quote: CommercialQuote) -> None:
+        """§B7: a discount at/above the configured % of subtotal requires a
+        reason and an approver different from the quote's creator."""
+        from app.config import settings as _settings
+
+        if quote.subtotal <= 0 or quote.discount_amount <= 0:
+            return
+
+        threshold = Decimal(str(_settings.COMMERCIAL_QUOTE_DISCOUNT_APPROVAL_THRESHOLD_PERCENT))
+        discount_pct = (quote.discount_amount / quote.subtotal) * Decimal("100")
+        if discount_pct < threshold:
+            return
+
+        if not quote.discount_reason:
+            raise ValueError(
+                f"Discount of {discount_pct:.1f}% requires discount_reason "
+                f"(threshold: {threshold}%)"
+            )
+        if not quote.discount_approver_id:
+            raise ValueError(
+                f"Discount of {discount_pct:.1f}% requires a discount_approver_id "
+                f"(threshold: {threshold}%)"
+            )
+        if quote.discount_approver_id == quote.created_by:
+            from app.modules.super_admin.approval_service import SelfApprovalError
+            raise SelfApprovalError("Discount approver must be different from the quote creator")
 
     def _require_status(
         self, quote: CommercialQuote, expected: CommercialQuoteStatus, *, invert: bool = False

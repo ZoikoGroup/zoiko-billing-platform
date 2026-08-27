@@ -18,6 +18,14 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email_whitespace(cls, v):
+        # Autofill/password managers can deliver a padded email; strip it so
+        # the credential check sees the address the user meant. The password
+        # is deliberately NOT normalized — its exact bytes are the credential.
+        return v.strip() if isinstance(v, str) else v
+
 
 class RegisterRequest(BaseModel):
     organization: str = Field(..., min_length=1, max_length=200)

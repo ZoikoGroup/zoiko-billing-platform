@@ -234,6 +234,37 @@ def require_active_subscription(product_code: str):
             raise ForbiddenException(
                 "Your organization is suspended. Please contact support to regain access."
             )
+
+        # Plane 1 gate: a SUSPENDED CommercialSubscription (free-trial expired
+        # with no payment, or N1 day-20 payment-failure escalation) blocks
+        # the whole Billing product — but NOT the self-service "your Zoiko
+        # subscription" page or the public invoice/checkout links (those live
+        # outside billing_router, so an org can still see why it's suspended
+        # and pay to get reinstated). A super admin can also reactivate
+        # directly (PATCH .../commercial-subscriptions/{id}/status).
+        from app.modules.commercial.enums import CommercialSubscriptionStatus
+        from app.modules.commercial.models import CommercialAccount, CommercialSubscription
+
+        account = (
+            db.query(CommercialAccount)
+            .filter(CommercialAccount.organization_id == current_user.organization_id)
+            .first()
+        )
+        if account is not None:
+            suspended = (
+                db.query(CommercialSubscription)
+                .filter(
+                    CommercialSubscription.commercial_account_id == account.id,
+                    CommercialSubscription.status == CommercialSubscriptionStatus.SUSPENDED,
+                )
+                .order_by(CommercialSubscription.id.desc())
+                .first()
+            )
+            if suspended is not None:
+                raise ForbiddenException(
+                    "Your organization's Zoiko subscription is suspended. "
+                    "Pay the outstanding invoice from the Zoiko Subscription page to regain access."
+                )
         return current_user
 
     return _check_subscription

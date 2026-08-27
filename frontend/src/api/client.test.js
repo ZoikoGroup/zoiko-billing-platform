@@ -75,4 +75,56 @@ describe("api/client.js", () => {
     setSession({ access_token: "a2", refresh_token: "r2", user: { id: 2 } });
     expect(getAccessToken()).toBe("a2");
   });
+
+  it("a failed /api/auth/login never triggers a refresh round trip nor retries credentials", async () => {
+    // Stale session present: before the fix this burned a /auth/refresh call
+    // and RE-POSTED the login credentials, doubling rate-limit cost per click
+    // and wiping the stored session mid-attempt.
+    setSession({ access_token: "stale", refresh_token: "still-valid", user: { id: 1 } });
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(401, {
+        detail: "Invalid email or password.",
+        message: "Invalid email or password.",
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const err = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: { email: "user@example.com", password: "wrong" },
+    }).catch((e) => e);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // login POST only — no refresh, no retry
+    expect(err.status).toBe(401);
+    expect(err.serverDetail).toBe("Invalid email or password.");
+    expect(getAccessToken()).toBe("stale"); // existing session untouched by the failed attempt
+  });
+
+  it("network failure surfaces as a structured status-0 error, not a raw TypeError", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    const err = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: { email: "user@example.com", password: "x" },
+    }).catch((e) => e);
+
+    expect(err.status).toBe(0);
+    expect(err.network).toBe(true);
+    expect(err.message).not.toBe("");
+  });
+
+  it("a 5xx response carries its status so callers can show the server-error copy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(500, { message: "Something went wrong on the server." }))
+    );
+
+    const err = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: { email: "user@example.com", password: "x" },
+    }).catch((e) => e);
+
+    expect(err.status).toBe(500);
+    expect(err.network).toBeUndefined();
+  });
 });

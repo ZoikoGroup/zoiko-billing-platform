@@ -227,6 +227,7 @@ class AuditEventType(str, enum.Enum):
     ACTION_APPROVED = "action_approved"
     ACTION_REJECTED = "action_rejected"
     ACTION_EXECUTED = "action_executed"
+    ACTION_CANCELLED = "action_cancelled"
     ACTION_FAILED = "action_failed"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
     PERMISSION_DENIED = "permission_denied"

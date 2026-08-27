@@ -59,15 +59,15 @@ from app.modules.billing.models import (
 from app.modules.organizations.models import Organization
 
 from .models import (
-    Conversation,
-    ConversationMessage,
-    ActionDraft,
-    ChatbotAuditEvent,
+    AIConversation as Conversation,
+    AIConversationMessage as ConversationMessage,
+    AIActionDraft as ActionDraft,
+    AIAuditEvent as ChatbotAuditEvent,
     ConversationStatus,
     SenderType,
     RiskClass,
     AuthorityMode,
-    ActionDraftStatus,
+    DraftStatus as ActionDraftStatus,
     AuditEventType,
 )
 from .schemas import (

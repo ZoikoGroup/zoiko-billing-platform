@@ -69,6 +69,9 @@ from app.database import Base
 from app.modules.commercial.enums import (
     CommercialAccountStatus,
     CommercialBillingInterval,
+    CommercialEvaluationConversionPolicy,
+    CommercialEvaluationExpiryAction,
+    CommercialEvaluationPaymentRequirement,
     CommercialPlanStatus,
     CommercialPlanVersionStatus,
     CommercialQuoteStatus,
@@ -112,10 +115,16 @@ class CommercialAccount(Base):
     )
 
     # Captured at registration (§B3): which plan the registrant said they
-    # wanted, for Sales/onboarding visibility only. Never used to provision a
-    # CommercialSubscription — Phase 7 seeds no plans, so registration still
-    # leaves the account without one (see provision_default_subscription).
+    # wanted. For essentials/professional/business this is now the plan
+    # provision_default_subscription() actually assigns (falling back to the
+    # is_default plan if it doesn't resolve to an ACTIVE, non-quote-only
+    # plan). Kept on the account regardless, for Sales/onboarding visibility.
     intended_plan_code = Column(String(50), nullable=True)
+
+    # Stripe Customer id under ZOIKO's own Stripe account — never a tenant's
+    # StripeConnectedAccount. One per org, created lazily on first checkout
+    # (PlatformStripeService.get_or_create_customer).
+    stripe_customer_id = Column(String(255), nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -162,6 +171,12 @@ class CommercialPlan(Base):
     # when it exists. Phase 7 seeds NO plans, so registration leaves the
     # subscription absent unless an approved default plan is flagged later.
     is_default = Column(Boolean, default=False, nullable=False)
+
+    # Enterprise-tier marker: price is quote/order-form controlled (§2) — this
+    # plan may never be auto-provisioned by self-serve registration or picked
+    # up by provision_default_subscription's is_default lookup, even if it
+    # were ever mistakenly flagged is_default.
+    is_quote_only = Column(Boolean, default=False, server_default="0", nullable=False)
 
     # ── Pricing (PHASE 7: STRUCTURE ONLY — values NOT invented) ──────────────
     # These stay NULL until an approved catalogue defines them.
@@ -237,6 +252,12 @@ class CommercialPlanVersion(Base):
     max_storage_gb = Column(Integer, nullable=True)
     features = Column(JSON, nullable=True)
 
+    # Seeded pricing that has NOT been through Finance/legal approval yet —
+    # distinguishes a real approved catalog from placeholder numbers so
+    # /production-acceptance's COM-01 check never reports PASS on invented
+    # prices (see scripts/seed_commercial_plans.py).
+    is_placeholder_pricing = Column(Boolean, default=False, server_default="0", nullable=False)
+
     # ── Maker-checker linkage ────────────────────────────────────────────────
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approval_request_id = Column(Integer, ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True)
@@ -251,6 +272,64 @@ class CommercialPlanVersion(Base):
         return (
             f"<CommercialPlanVersion id={self.id} plan_id={self.plan_id} "
             f"v{self.version_number} status={self.status!r}>"
+        )
+
+
+class CommercialEvaluationProgram(Base):
+    """§B3 — a bounded, explicitly-activated trial/evaluation configuration
+    for exactly one plan. No program existing (or none with is_active=True)
+    is the default state: self-serve registration then grants NO trial —
+    trial_ends_at stays NULL. Creating a row here is a deliberate future
+    business decision this fix does not make on the codebase's behalf (no
+    row is seeded).
+
+    is_active is the explicit on/off switch, independent of row existence —
+    a program can be configured, reviewed, and left OFF, or deactivated
+    later without deleting its (auditable) history."""
+
+    __tablename__ = "commercial_evaluation_programs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_id = Column(
+        Integer,
+        ForeignKey("commercial_plans.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    is_active = Column(Boolean, default=False, server_default="0", nullable=False)
+    duration_days = Column(Integer, nullable=False)
+    payment_requirement = Column(
+        CaseInsensitiveEnum(CommercialEvaluationPaymentRequirement),
+        default=CommercialEvaluationPaymentRequirement.NONE,
+        server_default="NONE",
+        nullable=False,
+    )
+    conversion_policy = Column(
+        CaseInsensitiveEnum(CommercialEvaluationConversionPolicy),
+        default=CommercialEvaluationConversionPolicy.MANUAL,
+        server_default="MANUAL",
+        nullable=False,
+    )
+    expiry_action = Column(
+        CaseInsensitiveEnum(CommercialEvaluationExpiryAction),
+        default=CommercialEvaluationExpiryAction.SUSPEND,
+        server_default="SUSPEND",
+        nullable=False,
+    )
+
+    # §B3 governance: an active program must be traceable to who configured
+    # it and who signed off — COM-02 (production-acceptance) fails an active
+    # program with no approved_by.
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    plan = relationship("CommercialPlan", backref="evaluation_programs")
+
+    def __repr__(self):
+        return (
+            f"<CommercialEvaluationProgram id={self.id} plan_id={self.plan_id} "
+            f"is_active={self.is_active} duration_days={self.duration_days}>"
         )
 
 
@@ -298,6 +377,29 @@ class CommercialSubscription(Base):
     # CommercialDunningService's day 0/10/20/45 sweep — entirely independent
     # of Plane-2's tenant-facing dunning (N4).
     payment_failed_at = Column(DateTime, nullable=True)
+
+    # Self-serve free-trial deadline (§B3): set ONLY when
+    # provision_default_subscription() finds an is_active=True
+    # CommercialEvaluationProgram for the resolved plan — NOT unconditional.
+    # NULL is the default/expected value for every subscription unless a
+    # program has been explicitly configured and activated for its plan.
+    # Drives commercial/tasks/trial_expiry.py.
+    trial_ends_at = Column(DateTime, nullable=True)
+
+    # Snapshot of the CommercialEvaluationProgram's policy fields at the
+    # moment it applied — copied rather than re-resolved via a live FK so a
+    # program that's later edited/deactivated can't retroactively change the
+    # terms a subscription already committed to. NULL together with
+    # trial_ends_at whenever no program applied.
+    evaluation_payment_requirement = Column(
+        CaseInsensitiveEnum(CommercialEvaluationPaymentRequirement), nullable=True,
+    )
+    evaluation_conversion_policy = Column(
+        CaseInsensitiveEnum(CommercialEvaluationConversionPolicy), nullable=True,
+    )
+    evaluation_expiry_action = Column(
+        CaseInsensitiveEnum(CommercialEvaluationExpiryAction), nullable=True,
+    )
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -583,6 +685,39 @@ class PlatformInvoice(Base):
         return (
             f"<PlatformInvoice id={self.id} number={self.invoice_number!r} "
             f"status={self.status!r}>"
+        )
+
+
+class PlatformInvoiceDeliveryAttempt(Base):
+    """Append-only delivery evidence for a PlatformInvoice send (§E5).
+
+    One row per send attempt (success or failure) — never overwritten, unlike
+    the scalar sent_at/delivered_at/delivery_failed_at columns on
+    PlatformInvoice which only capture the latest state. Evidence of delivery
+    only: never records that the recipient read or accepted the invoice.
+    """
+
+    __tablename__ = "platform_invoice_delivery_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    platform_invoice_id = Column(
+        Integer,
+        ForeignKey("platform_invoices.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    channel = Column(String(30), default="email", nullable=False)
+    provider = Column(String(100), nullable=True)
+    attempted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    result = Column(String(20), nullable=False)  # "success" | "failure"
+    error_detail = Column(Text, nullable=True)
+
+    invoice = relationship("PlatformInvoice", backref="delivery_attempts")
+
+    def __repr__(self):
+        return (
+            f"<PlatformInvoiceDeliveryAttempt id={self.id} "
+            f"invoice={self.platform_invoice_id} result={self.result!r}>"
         )
 
 
@@ -905,4 +1040,34 @@ class PlatformRefund(Base):
         return (
             f"<PlatformRefund id={self.id} number={self.refund_number!r} "
             f"status={self.status!r}>"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Platform Stripe Event (webhook idempotency)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class PlatformStripeEvent(Base):
+    """One row per Stripe event id processed by the Plane-1 webhook handler
+    (POST /api/commercial/stripe/webhook). Entirely separate from Plane 2's
+    billing_* stripe_events table/webhook/secret — a re-delivered event is
+    skipped and the original outcome returned, same idempotency guarantee as
+    Plane 2's StripeEvent, on an isolated table."""
+
+    __tablename__ = "platform_stripe_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stripe_event_id = Column(String(255), unique=True, index=True, nullable=False)
+    event_type = Column(String(100), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="processed")
+    payload = Column(JSON, nullable=True)
+    error = Column(Text, nullable=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<PlatformStripeEvent id={self.id} "
+            f"stripe_event_id={self.stripe_event_id!r} status={self.status!r}>"
         )

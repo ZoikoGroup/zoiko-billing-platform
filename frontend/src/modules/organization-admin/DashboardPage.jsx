@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getOrganizationDashboardStats, getOrganizationDetails } from "../../service/orgAdminService";
 import { getCurrencySymbol, getCurrencyInfo } from "../../utils/currency";
 import { loadGlobalCurrency, getOrgBaseCurrency, isOrgCurrencyUnavailable } from "../billing/utils/CurrencyContext";
+import { platformSelfServiceApi } from "../../service/platformSelfServiceApi";
 import {
   Users,
   FileText,
@@ -16,6 +17,8 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Building2,
+  Clock,
 } from "lucide-react";
 
 const INK = "#0F172A";
@@ -24,8 +27,11 @@ const INK_FAINT = "#9CA3AF";
 const PRIMARY = "#2563EB";
 const PRIMARY_DEEP = "#1D4ED8";
 const PRIMARY_LIGHT = "#60A5FA";
+const PRIMARY_100 = "#DBEAFE";
 const SUCCESS = "#059669";
+const SUCCESS_100 = "#D1FAE5";
 const DANGER = "#DC2626";
+const DANGER_100 = "#FEF2F2";
 const WARNING = "#D97706";
 const LINE = "#E5E7EB";
 
@@ -48,6 +54,17 @@ function greeting() {
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
+}
+
+function trialRemaining(trialEndsAt, status) {
+  if (status === "suspended") return { label: "Your free trial ended without payment", expired: true };
+  if (status !== "pending" || !trialEndsAt) return null;
+  const diffMs = new Date(trialEndsAt).getTime() - Date.now();
+  if (diffMs <= 0) return { label: "Your free trial has ended", expired: true };
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const label = days >= 1 ? `${days} day${days === 1 ? "" : "s"} ${hours}h left in your free trial` : `${hours}h left in your free trial`;
+  return { label, expired: false };
 }
 
 function SkeletonCard({ className = "" }) {
@@ -84,7 +101,7 @@ function SkeletonTable() {
 
 function ErrorState({ message, onRetry }) {
   return (
-    <div className="rounded-xl border p-8 text-center" style={{ background: "#FEF2F2", borderColor: "#FECACA" }}>
+    <div className="rounded-xl border p-8 text-center" style={{ background: DANGER_100, borderColor: "#FECACA" }}>
       <AlertTriangle className="w-8 h-8 mx-auto mb-3" style={{ color: DANGER }} />
       <p className="text-sm font-semibold" style={{ color: DANGER }}>{message || "Something went wrong"}</p>
       <p className="text-xs mt-1" style={{ color: INK_FAINT }}>Please try again or contact support if the issue persists.</p>
@@ -103,8 +120,8 @@ function ErrorState({ message, onRetry }) {
 }
 
 const statusColors = {
-  teal: { bg: SUCCESS, shadow: "#D1FAE5" },
-  amber: { bg: WARNING, shadow: "#FEF3C7" },
+  teal: { bg: SUCCESS, shadow: SUCCESS_100 },
+  amber: { bg: PRIMARY, shadow: PRIMARY_100 },
   off: { bg: INK_FAINT, shadow: "#F1F5F9" },
 };
 
@@ -114,6 +131,7 @@ export default function OrgAdminDashboardPage() {
 
   const [stats, setStats] = useState(null);
   const [org, setOrg] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [orgCurrency, setOrgCurrency] = useState("");
@@ -125,11 +143,13 @@ export default function OrgAdminDashboardPage() {
       getOrganizationDashboardStats().catch(() => null),
       getOrganizationDetails().catch(() => null),
       loadGlobalCurrency().catch(() => null),
+      platformSelfServiceApi.getZoikoSubscription().catch(() => null),
     ])
-      .then(([s, o]) => {
+      .then(([s, o, _cur, z]) => {
         if (s) setStats(s);
         if (o) setOrg(o);
         setOrgCurrency(s?.currency || getOrgBaseCurrency() || "");
+        if (z) setSubscription(z.subscription || null);
       })
       .catch((err) => setError(err?.message))
       .finally(() => setLoading(false));
@@ -140,6 +160,8 @@ export default function OrgAdminDashboardPage() {
     fetchData();
     return () => { cancelled = true; };
   }, []);
+
+  const trial = subscription ? trialRemaining(subscription.trial_ends_at, subscription.status) : null;
 
   const displayName = user?.first_name || user?.name || "there";
   const orgName = org?.name || user?.organization_name || "Your Organization";
@@ -170,7 +192,7 @@ export default function OrgAdminDashboardPage() {
       key: "outstanding_amount",
       label: "Outstanding Amount",
       icon: Wallet,
-      iconBg: "#FEF2F2",
+      iconBg: DANGER_100,
       iconColor: DANGER,
       path: "/billing/invoices",
       isCurrency: true,
@@ -183,7 +205,7 @@ export default function OrgAdminDashboardPage() {
       key: "revenue_this_month",
       label: "Revenue This Month",
       icon: TrendingUp,
-      iconBg: "#D1FAE5",
+      iconBg: SUCCESS_100,
       iconColor: SUCCESS,
       path: "/billing/reports",
       isCurrency: true,
@@ -195,13 +217,13 @@ export default function OrgAdminDashboardPage() {
   ], [stats]);
 
   const secondaryKpis = useMemo(() => [
-    { key: "total_customers", label: "Customers", icon: Users, iconBg: "#EFF6FF", iconColor: PRIMARY, path: "/billing/customers", supporting: () => `${stats?.active_customers ?? 0} active` },
-    { key: "active_subscriptions", label: "Active Subscriptions", icon: Repeat, iconBg: "#D1FAE5", iconColor: SUCCESS, path: "/billing/subscriptions", supporting: () => null },
-    { key: "open_invoices", label: "Open Invoices", icon: FileText, iconBg: "#EFF6FF", iconColor: PRIMARY, path: "/billing/invoices", supporting: () => {
+    { key: "total_customers", label: "Customers", icon: Users, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/billing/customers", supporting: () => `${stats?.active_customers ?? 0} active` },
+    { key: "active_subscriptions", label: "Active Subscriptions", icon: Repeat, iconBg: SUCCESS_100, iconColor: SUCCESS, path: "/billing/subscriptions", supporting: () => null },
+    { key: "open_invoices", label: "Open Invoices", icon: FileText, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/billing/invoices", supporting: () => {
       const od = stats?.overdue_invoices ?? 0;
       return od > 0 ? `${od} overdue` : null;
     }},
-    { key: "billing_admins", label: "Billing Admins", icon: Shield, iconBg: "#FEF3C7", iconColor: WARNING, path: "/organization-admin/users", supporting: () => null },
+    { key: "billing_admins", label: "Billing Admins", icon: Shield, iconBg: PRIMARY_100, iconColor: PRIMARY, path: "/organization-admin/users", supporting: () => null },
   ], [stats]);
 
   const recentCustomers = stats?.recent_customers || [];
@@ -210,6 +232,24 @@ export default function OrgAdminDashboardPage() {
     <div className="font-['Inter',system-ui,sans-serif]" style={{ color: INK }}>
       {error && (
         <ErrorState message={error} onRetry={fetchData} />
+      )}
+
+      {trial && (
+        <div
+          onClick={() => navigate("/billing/workspace/zoiko-subscription")}
+          className="mb-4 flex items-center gap-3 rounded-[14px] border px-4 py-3 cursor-pointer transition-colors"
+          style={trial.expired
+            ? { background: DANGER_100, borderColor: "#FECACA" }
+            : { background: PRIMARY_100, borderColor: "#BFDBFE" }}
+        >
+          <Clock className="w-4 h-4 shrink-0" style={{ color: trial.expired ? DANGER : PRIMARY }} />
+          <p className="text-[13px] font-semibold" style={{ color: trial.expired ? DANGER : PRIMARY_DEEP }}>
+            {trial.label}
+          </p>
+          <span className="ml-auto text-[12px] font-semibold underline" style={{ color: trial.expired ? DANGER : PRIMARY }}>
+            {trial.expired ? "Pay now to restore access →" : "Pay now to activate →"}
+          </span>
+        </div>
       )}
 
       <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: `1px solid ${LINE}` }}>

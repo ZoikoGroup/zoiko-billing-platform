@@ -223,6 +223,9 @@ export const convertCommercialQuote = (quoteId, dueDate) =>
 export const addCommercialQuoteItem = (quoteId, data) =>
   api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/items`, data);
 
+export const setCommercialQuoteDiscount = (quoteId, data) =>
+  api.post(`/api/super-admin/commercial-billing/quotes/${quoteId}/discount`, data);
+
 // Platform Invoices
 export const createPlatformInvoice = (data) =>
   api.post("/api/super-admin/commercial-billing/invoices", data);
@@ -269,3 +272,13 @@ export const triggerPlatformReconciliation = () =>
 
 export const listPlatformReconciliationRuns = (limit = 20) =>
   api.get("/api/super-admin/commercial-billing/reconciliation/runs", { params: { limit } });
+
+// Evaluation Programs (§B3)
+export const listEvaluationPrograms = () =>
+  api.get("/api/super-admin/commercial-billing/evaluation-programs");
+
+export const createEvaluationProgram = (data) =>
+  api.post("/api/super-admin/commercial-billing/evaluation-programs", data);
+
+export const setEvaluationProgramStatus = (programId, isActive) =>
+  api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });

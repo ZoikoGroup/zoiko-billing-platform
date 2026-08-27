@@ -18,6 +18,7 @@ import hashlib
 import logging
 import os
 import re
+import time
 import uuid
 from typing import Any
 
@@ -68,6 +69,18 @@ QUERY_STOPWORDS = frozenset((
 ))
 
 
+# Enumeration/count-signal constants: used to boost chunks containing
+# structural list markers when the query asks about types, levels, etc.
+_ENUM_SIGNALS = frozenset({
+    "how", "many", "types", "levels", "stages",
+    "list", "kinds", "what", "are", "different",
+})
+_STRUCT_MARKERS = re.compile(
+    r"(?:level\s+\d|step\s+\d|(?:type|kind|stage|tier)\s+\d"
+    r"|\b\d+\.\s|option\s+[a-d])",
+)
+
+
 def _uid() -> str:
     return str(uuid.uuid4())
 
@@ -115,6 +128,42 @@ class KnowledgeRetriever:
 
     def __init__(self, db: Session):
         self.db = db
+        # Cache for approved document IDs per namespace (invalidate on KB changes)
+        self._doc_cache: dict[tuple, tuple[list[int], float]] = {}
+        self._doc_obj_cache: dict[tuple, tuple[list, float]] = {}  # cache document objects
+        self._cache_ttl = 300  # 5 minutes
+
+    def _get_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str) -> list[int] | None:
+        """Get cached document IDs if valid."""
+        import time
+        cache_key = (namespace_ids, freshness_policy)
+        if cache_key in self._doc_cache:
+            doc_ids, cached_time = self._doc_cache[cache_key]
+            if time.time() - cached_time < self._cache_ttl:
+                return doc_ids
+        return None
+
+    def _set_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str, doc_ids: list[int]) -> None:
+        """Cache document IDs."""
+        import time
+        cache_key = (namespace_ids, freshness_policy)
+        self._doc_cache[cache_key] = (doc_ids, time.time())
+
+    def _get_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str) -> list | None:
+        """Get cached document objects if valid."""
+        import time
+        cache_key = (namespace_ids, freshness_policy)
+        if cache_key in self._doc_obj_cache:
+            docs, cached_time = self._doc_obj_cache[cache_key]
+            if time.time() - cached_time < self._cache_ttl:
+                return docs
+        return None
+
+    def _set_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str, docs: list) -> None:
+        """Cache document objects."""
+        import time
+        cache_key = (namespace_ids, freshness_policy)
+        self._doc_obj_cache[cache_key] = (docs, time.time())
 
     def retrieve(
         self,
@@ -133,68 +182,65 @@ class KnowledgeRetriever:
         Returns:
             (results, citations_dict) — results for grounding, citations for DB storage
         """
+        start_time = time.monotonic()
+        
         # Resolve allowed namespaces
         namespaces = self._resolve_namespaces(ctx, namespace_codes)
         if not namespaces:
             return [], []
 
         # Build namespace-scoped query
-        namespace_ids = [ns.id for ns in namespaces]
-
-        # Get approved, current documents
-        doc_query = (
-            self.db.query(KnowledgeDocument)
-            .join(KnowledgeSource, KnowledgeSource.id == KnowledgeDocument.source_id)
-            .filter(
-                KnowledgeSource.namespace_id.in_(namespace_ids),
-                KnowledgeDocument.status == "approved",
-                KnowledgeDocument.freshness_status != FreshnessStatus.EXPIRED,
+        namespace_ids = tuple(ns.id for ns in namespaces)
+        
+        # Try cache first for document objects
+        approved_docs = self._get_cached_docs(namespace_ids, freshness_policy)
+        if approved_docs is not None:
+            doc_ids = [d.id for d in approved_docs]
+            cache_hit = True
+        else:
+            # Get approved, current documents with sources in one query.
+            # KnowledgeDocument has no 'source' relationship (only source_id FK),
+            # so we filter source titles directly in SQL via the join.
+            doc_query = (
+                self.db.query(KnowledgeDocument)
+                .join(KnowledgeSource, KnowledgeSource.id == KnowledgeDocument.source_id)
+                .filter(
+                    KnowledgeSource.namespace_id.in_(namespace_ids),
+                    KnowledgeSource.title.in_(PUBLIC_KB_SOURCE_TITLES),
+                    KnowledgeDocument.status == "approved",
+                    KnowledgeDocument.freshness_status != FreshnessStatus.EXPIRED,
+                )
             )
-        )
 
-        if freshness_policy == "current_only":
-            doc_query = doc_query.filter(KnowledgeDocument.freshness_status == FreshnessStatus.CURRENT)
+            if freshness_policy == "current_only":
+                doc_query = doc_query.filter(KnowledgeDocument.freshness_status == FreshnessStatus.CURRENT)
 
-        approved_docs = doc_query.all()
+            approved_docs = doc_query.all()
+            
+            if not approved_docs:
+                return [], []
+            
+            doc_ids = [d.id for d in approved_docs]
+            # Cache the document objects
+            self._set_cached_docs(namespace_ids, freshness_policy, approved_docs)
+            cache_hit = False
+        
+        logger.debug("KB retrieve: namespace_ids=%s doc_ids=%d cache_hit=%s time=%dms",
+                     namespace_ids, len(doc_ids), cache_hit, 
+                     int((time.monotonic() - start_time) * 1000))
 
-        # Scope backstop: drop any document whose source is not an explicitly
-        # public KB source BEFORE its chunks can be ranked or cited. Normally
-        # a no-op (the ingester allowlist keeps the index clean); this guards
-        # against a future misconfiguration reintroducing the leak.
-        namespace_sources = (
-            self.db.query(KnowledgeSource)
-            .filter(KnowledgeSource.namespace_id.in_(namespace_ids))
-            .all()
-        )
-        public_source_ids = {
-            s.id for s in namespace_sources if s.title in PUBLIC_KB_SOURCE_TITLES
-        }
-        leaked_docs = [
-            d for d in approved_docs if d.source_id not in public_source_ids
-        ]
-        if leaked_docs:
-            logger.warning(
-                "knowledge-scope: dropped %d non-public document(s) from "
-                "retrieval: %s — purge the index via scripts.seed_knowledge_base",
-                len(leaked_docs),
-                sorted({d.title for d in leaked_docs}),
-            )
-            approved_docs = [
-                d for d in approved_docs if d.source_id in public_source_ids
-            ]
-        if not approved_docs:
+        # Load all knowledge chunks for the approved documents
+        if not doc_ids:
             return [], []
-
-        doc_ids = [d.id for d in approved_docs]
-
-        # Get chunks from approved documents
         chunks = (
             self.db.query(KnowledgeChunk)
-            .filter(KnowledgeChunk.document_id.in_(doc_ids))
+            .filter(
+                KnowledgeChunk.document_id.in_(doc_ids),
+                KnowledgeChunk.classification != KnowledgeClassification.RESTRICTED,
+            )
             .order_by(KnowledgeChunk.document_id, KnowledgeChunk.chunk_sequence)
             .all()
         )
-
         if not chunks:
             return [], []
 
@@ -314,7 +360,11 @@ class KnowledgeRetriever:
         phrases = [
             (a, b) for a, b in zip(query_words, query_words[1:]) if a != b
         ]
-        if phrases:
+        phrase_patterns = [
+            re.compile(rf"\b(?:{re.escape(a)}\s+{re.escape(b)}|{re.escape(b)}\s+{re.escape(a)})\b")
+            for a, b in phrases
+        ]
+        if phrase_patterns:
             candidates = [
                 (c, s, o)
                 for c, s, o in (
@@ -322,14 +372,8 @@ class KnowledgeRetriever:
                         c,
                         min(
                             s + (0.15 if any(
-                                # Order-insensitive: "statuses can an invoice
-                                # have?" yields the pair (statuses, invoice),
-                                # which must still match "Invoice statuses".
-                                re.search(
-                                    rf"\b(?:{re.escape(a)}\s+{re.escape(b)}|{re.escape(b)}\s+{re.escape(a)})\b",
-                                    c.chunk_text.lower(),
-                                )
-                                for a, b in phrases
+                                pat.search(c.chunk_text.lower())
+                                for pat in phrase_patterns
                             ) else 0.0),
                             1.0,
                         ),
@@ -345,6 +389,7 @@ class KnowledgeRetriever:
         stage_trace: dict[int, dict] = {}
 
         for chunk, score, _occ in candidates:
+            chunk_lower = chunk.chunk_text.lower()
             if trace_enabled:
                 stage_trace[id(chunk)] = {"base": round(score, 3)}
             # Document-title relevance: a chunk whose DOCUMENT TITLE contains
@@ -378,6 +423,17 @@ class KnowledgeRetriever:
                 score = min(score + 0.05, 1.0)
                 if trace_enabled:
                     stage_trace[id(chunk)]["heading"] = 0.05
+            # Enumeration/count-signal boost: when the query asks "how many
+            # types", "what are the levels", "list the stages", etc., chunks
+            # containing structural list markers (Level 1, Step 2, numbered
+            # patterns) are direct answers. Without this, the setup how-to
+            # chunk matches the same words and scores equally or higher
+            # because it contains the term more times, even though it doesn't
+            # enumerate the types the user is asking about.
+            if unique_words & _ENUM_SIGNALS and _STRUCT_MARKERS.search(chunk_lower):
+                score = min(score + 0.20, 1.0)
+                if trace_enabled:
+                    stage_trace[id(chunk)]["enum"] = 0.20
             # Table-fragment demotion: chunks dominated by pipe-delimited
             # table rows (wireframe specs) extract as unreadable fragments;
             # definitional prose should win close contests against them.
@@ -412,6 +468,21 @@ class KnowledgeRetriever:
         if top_chunks:
             floor = top_chunks[0][1] * 0.85
             top_chunks = [(c, s) for c, s in top_chunks if s >= floor]
+            # Guarantee at least 2 chunks from the TOP document for LLM
+            # synthesis — the strict 85% floor can drop a genuinely relevant
+            # second chunk on "explain" queries where the definition and
+            # how-to sit just above/below the threshold.  Scoped to same
+            # document, relaxed to 80% of top score for the extra chunk.
+            if len(top_chunks) < 2:
+                top_doc_id = scored_chunks[0][0].document_id if scored_chunks else None
+                if top_doc_id:
+                    relaxed_floor = top_chunks[0][1] * 0.80
+                    same_doc_relaxed = [
+                        (c, s) for c, s in scored_chunks
+                        if c.document_id == top_doc_id and s >= relaxed_floor
+                    ]
+                    if len(same_doc_relaxed) >= 2:
+                        top_chunks = same_doc_relaxed[:2]
 
         # Build results
         results = []
@@ -419,11 +490,9 @@ class KnowledgeRetriever:
 
         # Build doc lookup for source info
         doc_map = {d.id: d for d in approved_docs}
-        source_map = {}
-        for doc in approved_docs:
-            if doc.source_id not in source_map:
-                source = self.db.query(KnowledgeSource).filter(KnowledgeSource.id == doc.source_id).first()
-                source_map[doc.source_id] = source
+        unique_source_ids = list({d.source_id for d in approved_docs})
+        sources = self.db.query(KnowledgeSource).filter(KnowledgeSource.id.in_(unique_source_ids)).all()
+        source_map = {s.id: s for s in sources}
 
         for rank, (chunk, score) in enumerate(top_chunks, 1):
             doc = doc_map.get(chunk.document_id)

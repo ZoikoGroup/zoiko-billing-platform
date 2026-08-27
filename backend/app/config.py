@@ -9,13 +9,24 @@ CORS origins and its own token namespace. Nothing here is shared with the
 old repo's app.config.
 """
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchored to THIS file's directory (backend/.env), not the process CWD.
+# With a bare ".env", launching uvicorn from any other working directory
+# (repo root, an IDE launcher, a service manager) silently skipped the file,
+# left BILLING_DATABASE_URL empty and — under DEBUG — fell back to the local
+# SQLite dev database. Registrations then landed in a different database than
+# the one the properly-launched server reads, surfacing as
+# "Invalid email or password." for accounts that genuinely exist.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -113,21 +124,20 @@ class Settings(BaseSettings):
     # OAuth state (CON-2): TTL for the signed, organization-bound state token.
     STRIPE_OAUTH_STATE_TTL_SECONDS: int = 600
 
-    # ── AI Model Gateway (provider-neutral) ────────────────────────────
-    # Provider selection: "groq" | "anthropic" | "" (auto — first key set).
-    AI_MODEL_PROVIDER: str = ""
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL_DEFAULT: str = "claude-sonnet-4-20250514"
-    ANTHROPIC_MAX_TOKENS: int = 4096
-    ANTHROPIC_TEMPERATURE: float = 0.1
-    # Groq (OpenAI-compatible chat-completions API; free tier at
-    # console.groq.com). No extra SDK needed — plain httpx.
+    # ── AI Model Gateway (Groq) ────────────────────────────────────────
     GROQ_API_KEY: str = ""
-    GROQ_MODEL_DEFAULT: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL_DEFAULT: str = "openai/gpt-oss-20b"
     GROQ_MAX_TOKENS: int = 2048
     GROQ_TEMPERATURE: float = 0.1
     AI_MODEL_TIMEOUT_SECONDS: int = 30
     AI_SAFE_MODE: bool = False
+    AI_PROVIDER: str = "groq"
+
+    # ── AI Model Gateway (Anthropic) ──────────────────────────────────
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL_DEFAULT: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_MAX_TOKENS: int = 2048
+    ANTHROPIC_TEMPERATURE: float = 0.1
 
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
@@ -146,6 +156,36 @@ class Settings(BaseSettings):
     FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
     # REC-01 — ledger reconciliation cadence.
     RECONCILIATION_INTERVAL_MINUTES: int = 1440
+    # Commercial (Plane 1) recurring invoice generation on subscription
+    # renewal — see commercial/tasks/recurring_invoice.py. OFF by default,
+    # independent of ENABLE_RECURRING_BILLING_SCHEDULER's Plane-2 jobs.
+    ENABLE_COMMERCIAL_RECURRING_INVOICING: bool = False
+    COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
+
+    # ── Commercial (Plane 1) free-trial enforcement (§B3) ───────────────
+    # A self-serve subscription only gets a trial_ends_at deadline when an
+    # is_active=True CommercialEvaluationProgram exists for its plan — the
+    # program's own duration_days sets the length, not a global setting (no
+    # program is seeded, so no plan grants a trial out of the box). If a
+    # granted trial expires unpaid, commercial/tasks/trial_expiry.py acts on
+    # it (per the program's expiry_action) and require_active_subscription
+    # blocks /billing/* access until a super admin reactivates it or the org
+    # pays. OFF by default — nothing acts on an expired trial until enabled.
+    ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = False
+    COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
+
+    # ── Commercial (Plane 1) quote discount approval (§B7) ──────────────
+    # A quote-level discount at or above this percentage of subtotal requires
+    # discount_reason + a discount_approver_id different from the creator
+    # before the quote may be sent. PLACEHOLDER business rule pending
+    # Finance sign-off — not an approved threshold.
+    COMMERCIAL_QUOTE_DISCOUNT_APPROVAL_THRESHOLD_PERCENT: float = 15.0
+
+    # ── Commercial (Plane 1) Stripe — Zoiko's own Stripe account, entirely
+    # separate from Plane 2's STRIPE_* settings above (never shared). ──────
+    PLATFORM_STRIPE_SECRET_KEY: str = ""
+    PLATFORM_STRIPE_PUBLISHABLE_KEY: str = ""
+    PLATFORM_STRIPE_WEBHOOK_SECRET: str = ""
 
 
 settings = Settings()

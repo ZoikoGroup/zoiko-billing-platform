@@ -374,7 +374,7 @@ def test_approved_default_plan_creates_subscription(db_session):
 
 
 def test_registration_atomicity(db_session, monkeypatch):
-    def _boom(self, account_id):
+    def _boom(self, account_id, intended_plan_code=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(

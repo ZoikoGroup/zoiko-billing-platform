@@ -367,7 +367,7 @@ def test_subscription_created_only_when_approved_default_plan_exists(db_session)
 
 
 def test_registration_remains_atomic(db_session, monkeypatch):
-    def _boom(self, account_id):
+    def _boom(self, account_id, intended_plan_code=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(
@@ -387,7 +387,7 @@ def test_registration_remains_atomic(db_session, monkeypatch):
 def test_failed_subscription_provisioning_rolls_back(db_session, monkeypatch):
     # Provisioning succeeds for the account but the subscription creation
     # itself fails -> the entire registration must roll back.
-    def _fail_subscription(self, account_id):
+    def _fail_subscription(self, account_id, intended_plan_code=None):
         raise RuntimeError("subscription failure")
 
     monkeypatch.setattr(

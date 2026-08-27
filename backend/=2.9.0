@@ -1,5 +1,0 @@
-Collecting pyotp
-  Using cached pyotp-2.10.0-py3-none-any.whl.metadata (10 kB)
-Using cached pyotp-2.10.0-py3-none-any.whl (13 kB)
-Installing collected packages: pyotp
-Successfully installed pyotp-2.10.0

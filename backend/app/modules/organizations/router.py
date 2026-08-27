@@ -597,8 +597,9 @@ def create_organization(
         CommercialSubscriptionService,
     )
     account = CommercialAccountService(db).ensure_commercial_account(org.id)
-    # CommercialSubscription (PHASE 7): only when an approved default plan
-    # exists — Phase 7 seeds none, so this is a safe no-op (flush-only).
+    # CommercialSubscription (PHASE 7): this Super-Admin-created-org path
+    # carries no registrant plan selection, so it always falls back to the
+    # approved is_default plan (a safe no-op if none exists). Flush-only.
     CommercialSubscriptionService(db).provision_default_subscription(account.id)
     db.flush()
 

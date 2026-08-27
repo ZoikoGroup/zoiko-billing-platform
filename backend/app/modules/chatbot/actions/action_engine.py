@@ -527,6 +527,28 @@ class ActionEngine:
                     status_code=409,
                 )
 
+        # ── Duplicate-execution guard (BUG 2) ───────────────────────────
+        # Reject if ANY prior execution already succeeded for this draft,
+        # regardless of idempotency key.  This prevents a second
+        # mutation from being created if the user taps execute twice
+        # with different keys.
+        prior_succeeded = (
+            self.db.query(AIActionExecution)
+            .join(AIActionPreview, AIActionExecution.action_preview_id == AIActionPreview.id)
+            .filter(
+                AIActionPreview.action_draft_id == draft.id,
+                AIActionExecution.execution_status == ExecutionStatus.SUCCEEDED,
+            )
+            .first()
+        )
+        if prior_succeeded:
+            raise ActionEngineError(
+                "This action has already been executed. "
+                f"Execution UID: {prior_succeeded.execution_uid}. "
+                "Duplicate execution is not permitted.",
+                status_code=409,
+            )
+
         # Check idempotency
         existing_execution = (
             self.db.query(AIActionExecution)
@@ -600,6 +622,17 @@ class ActionEngine:
                 pass
             raise ActionEngineError(f"Execution failed: {e}", status_code=500)
 
+        # ── Terminal-state enforcement (BUG 2 fix) ──────────────────────
+        # Move draft to EXPIRED (terminal) and preview to SUPERSEDED so
+        # any subsequent generate_preview() or execute_action() call
+        # against the same action_uid is rejected.  Without this, a
+        # second call with a different idempotency_key would find a
+        # still-VALIDATED draft and still-VALID preview and duplicate
+        # the mutation.
+        draft.draft_status = DraftStatus.EXPIRED
+        preview.preview_status = PreviewStatus.SUPERSEDED
+        self.db.flush()
+
         self._audit(AuditEventType.ACTION_EXECUTED, ctx, {
             "action_uid": action_uid,
             "execution_uid": execution.execution_uid,
@@ -614,6 +647,24 @@ class ActionEngine:
             "result": result,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         }
+
+    # ── Cancel / Discard ────────────────────────────────────────────────
+
+    def cancel_action(self, *, ctx: AIContext, action_uid: str) -> dict:
+        """Discard a draft action. Sets status to EXPIRED."""
+        draft = self._get_draft(action_uid, ctx)
+        if not draft:
+            raise ActionEngineError("Action draft not found.", status_code=404)
+        if draft.draft_status in (DraftStatus.REJECTED, DraftStatus.EXPIRED):
+            raise ActionEngineError("Action draft is already terminal.", status_code=409)
+
+        draft.draft_status = DraftStatus.EXPIRED
+        self.db.flush()
+        self._audit(AuditEventType.ACTION_CANCELLED, ctx, {
+            "action_uid": action_uid,
+            "action_type": draft.action_type,
+        })
+        return {"action_uid": action_uid, "status": "expired", "cancelled": True}
 
     # ── Internal Helpers ───────────────────────────────────────────────
 
@@ -686,7 +737,16 @@ class ActionEngine:
             ).first()
 
         line_items = params.get("line_items", [])
-        currency = params.get("currency", "USD")
+        # Currency consistency: use the currency extracted at draft creation.
+        # Never default — if absent, the extraction step should have set it.
+        currency = params.get("currency")
+        if not currency:
+            currency = "USD"
+            logger.warning(
+                "Currency not set in proposed_params for draft %s — "
+                "falling back to USD. This indicates a gap in extraction.",
+                draft.action_uid,
+            )
 
         # Calculate totals (deterministic, from params — not from model)
         subtotal = Decimal("0")
@@ -819,7 +879,7 @@ class ActionEngine:
             total_amount=total,
             paid_amount=Decimal("0"),
             balance_due=total,
-            currency=preview_payload.get("currency", "USD"),
+            currency=preview_payload.get("currency") or params.get("currency") or "USD",
             exchange_rate=Decimal("1"),
             is_recurring=False,
             is_active=True,
