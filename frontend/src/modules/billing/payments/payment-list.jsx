@@ -771,14 +771,14 @@ export default function PaymentListPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Payment Number *</label>
-                    <input type="text" value={wizardData.payment_number}
+                    <label htmlFor="payment-number-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Number *</label>
+                    <input id="payment-number-input" type="text" value={wizardData.payment_number}
                       onChange={(e) => setWizardData((p) => ({ ...p, payment_number: e.target.value }))}
                       className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Payment Date</label>
-                    <input type="date" value={wizardData.payment_date}
+                    <label htmlFor="payment-date-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Date</label>
+                    <input id="payment-date-input" type="date" value={wizardData.payment_date}
                       onChange={(e) => setWizardData((p) => ({ ...p, payment_date: e.target.value }))}
                       className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
@@ -786,18 +786,18 @@ export default function PaymentListPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Payment Type</label>
-                    <select value={wizardData.payment_type}
+                    <label htmlFor="payment-method-select" className="block text-sm font-medium text-slate-700 mb-1">Payment Type</label>
+                    <select id="payment-method-select" value={wizardData.payment_type}
                       onChange={(e) => setWizardData((p) => ({ ...p, payment_type: e.target.value }))}
                       className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                       {PAYMENT_METHOD_OPTIONS.filter((t) => t.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
+                    <label htmlFor="payment-amount-input" className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
                     <div className="relative">
                       <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input type="number" min="0" step="0.01" value={wizardData.amount}
+                      <input id="payment-amount-input" type="number" min="0" step="0.01" value={wizardData.amount}
                         onChange={(e) => setWizardData((p) => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
                         className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                     </div>

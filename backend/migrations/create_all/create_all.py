@@ -3,9 +3,12 @@ migrations/create_all/create_all.py
 -----------------------------------
 Creates the full database schema from the SQLAlchemy models.
 
-This is the only migration path in the standalone platform: the database
-starts EMPTY and `Base.metadata.create_all` builds every table in one shot.
-There is deliberately no alembic — the schema always matches the models.
+SUPERSEDED FOR POSTGRESQL: real database schema lifecycle is now owned by
+Alembic (backend/alembic/, docs/DATABASE_MIGRATION_GUIDE.md). Running this
+against a shared/production Postgres database is unsupported and will not
+be recognized by Alembic (no alembic_version row) — `initialize_database()`
+no longer create_alls Postgres at all. This script remains the bootstrap
+for the SQLite dev fallback only.
 
 Usage:
     # Dev / SQLite fallback (auto-downloads nothing, uses BILLING_DATABASE_URL

@@ -270,7 +270,7 @@ export default function QuotationDetailPage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-4">Quotation Information</h3>
+        <h2 className="text-sm font-semibold text-slate-900 mb-4">Quotation Information</h2>
         <div className="grid grid-cols-2 gap-x-8">
           <InfoRow label="Quote Number" value={quote.quote_number} />
           <InfoRow label="Version" value={`v${quote.quote_version || 1}`} />
@@ -329,7 +329,7 @@ export default function QuotationDetailPage() {
   const renderCustomer = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h3>
+        <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><User size={16} className="text-brand-500" /> {singular} Details</h2>
         {quote.customer_id && (
           <button onClick={() => navigate(`/billing/customers/${quote.customer_id}`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors">
@@ -344,10 +344,10 @@ export default function QuotationDetailPage() {
               {(customer.display_name || customer.company_name || "?").charAt(0).toUpperCase()}
             </div>
             <div>
-              <h4 onClick={() => navigate(`/billing/customers/${quote.customer_id}`)}
+              <h3 onClick={() => navigate(`/billing/customers/${quote.customer_id}`)}
                 className="text-lg font-bold text-slate-800 hover:text-brand-600 cursor-pointer transition-colors">
                 {customer.display_name || customer.company_name}
-              </h4>
+              </h3>
               <p className="text-sm text-slate-500">{customer.customer_code}</p>
             </div>
           </div>
@@ -386,7 +386,7 @@ export default function QuotationDetailPage() {
 
   const renderProducts = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Line Items ({items.length})</h3>
+      <h2 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Line Items ({items.length})</h2>
       {items.length === 0 ? (
         <div className="text-center py-8 text-slate-500">
           <Package size={32} className="mx-auto mb-2 text-slate-300" />
@@ -435,7 +435,7 @@ export default function QuotationDetailPage() {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
+          <h2 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h2>
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Subtotal ({items.length} items)</span>
@@ -456,7 +456,7 @@ export default function QuotationDetailPage() {
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h3>
+          <h2 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Hash size={16} className="text-brand-500" /> Details</h2>
           <div className="space-y-3">
           <InfoRow label="Currency" value={quote.currency || orgDefaultCurrency} />
             <InfoRow label="Discount %" value={discPct > 0 ? `${discPct}%` : "—"} />
@@ -472,7 +472,7 @@ export default function QuotationDetailPage() {
 
   const renderTimeline = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h3>
+      <h2 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Clock size={16} className="text-brand-500" /> Timeline</h2>
       <div className="space-y-4">
         <TimelineEvent icon={FileSignature} label="Created" date={quote.created_at} color="bg-brand-500" />
         {quote.sent_at && <TimelineEvent icon={Send} label={`Sent to ${singular}`} date={quote.sent_at} color="bg-blue-500" />}
@@ -501,13 +501,13 @@ export default function QuotationDetailPage() {
     <div className="space-y-6">
       {quote.notes && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h3>
+          <h2 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileEdit size={16} className="text-brand-500" /> Notes</h2>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{quote.notes}</p>
         </div>
       )}
       {quote.terms && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-          <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Terms & Conditions</h3>
+          <h2 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Terms & Conditions</h2>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{quote.terms}</p>
         </div>
       )}
@@ -522,7 +522,7 @@ export default function QuotationDetailPage() {
 
   const renderActivity = () => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-      <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h3>
+      <h2 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Activity size={16} className="text-brand-500" /> Recent Activity</h2>
       <div className="space-y-3">
         <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
           <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center"><FileSignature size={14} /></div>
@@ -609,7 +609,7 @@ export default function QuotationDetailPage() {
 
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-            <h3 className="text-sm font-semibold text-slate-900 mb-4">Actions</h3>
+            <h2 className="text-sm font-semibold text-slate-900 mb-4">Actions</h2>
             <div className="space-y-3">
               {quote.status === "draft" && (
                 <>
@@ -699,7 +699,7 @@ export default function QuotationDetailPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h3>
+            <h2 className="text-sm font-semibold text-slate-900 mb-3">Quick Summary</h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-medium">{formatDisplayCurrency(quote.subtotal, quote.currency)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Tax</span><span className="font-medium">{formatDisplayCurrency(quote.tax_amount, quote.currency)}</span></div>

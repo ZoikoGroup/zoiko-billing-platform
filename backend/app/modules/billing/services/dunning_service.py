@@ -310,6 +310,24 @@ class DunningService:
         # silently skip every genuinely overdue invoice until one of those
         # has run. See list_effectively_overdue's docstring.
         overdue = self.invoice_repo.list_effectively_overdue(organization_id)
+        overdue_invoice_ids = {inv.id for inv in overdue}
+
+        # Auto-resolve cases whose invoice has left the overdue set (paid in
+        # full, credited to zero, cancelled, etc). Nothing else in the
+        # codebase ever closes this loop -- payment/credit-note/write-off
+        # code never calls resolve_case/close_case -- so without this, a
+        # case for an invoice that later got paid stayed ACTIVE forever and
+        # remained eligible for further reminders/escalation on an invoice
+        # nothing is owed on. Runs before the wait-days/level gating below so
+        # stale cases still get closed even when no new case would be opened.
+        for case in self.case_repo.list_active_cases(organization_id):
+            if case.invoice_id not in overdue_invoice_ids:
+                self.resolve_case(
+                    case.id, organization_id,
+                    resolution_note="Invoice settled (paid/credited/cancelled) -- auto-resolved by dunning process.",
+                    updated_by=None,
+                )
+
         levels = self.level_repo.list_active(organization_id)
         if not levels:
             return []

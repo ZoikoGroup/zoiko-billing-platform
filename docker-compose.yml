@@ -15,6 +15,12 @@ services:
     # Host port matches the frontend's baked-in VITE_API_BASE_URL (frontend/.env).
     # Vite reads that value at build time, so if you change this port, update
     # frontend/.env and rebuild the frontend image to match.
+    #
+    # `alembic upgrade head` runs before uvicorn on every container start —
+    # Postgres schema lifecycle is Alembic-managed, not create_all (see
+    # docs/DATABASE_MIGRATION_GUIDE.md). Idempotent: a no-op once already
+    # at head.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"
     ports:
       - "8001:8001"
     environment:
