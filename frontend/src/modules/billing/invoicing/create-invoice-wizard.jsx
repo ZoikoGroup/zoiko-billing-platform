@@ -807,12 +807,15 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                 onFocus={() => setShowCustomerDropdown(true)}
                 onKeyDown={handleCustomerInputKeyDown}
                 aria-label={`Search ${getLabel("singularLower")}`}
+                role="combobox"
+                aria-haspopup="listbox"
                 aria-expanded={showCustomerDropdown}
+                aria-controls="customer-search-listbox"
                 className="block w-full rounded-lg border border-slate-200 pl-9 pr-3 py-2.5 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               {customerSearching && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 animate-spin" />}
             </div>
       {showCustomerDropdown && customerSearchTerm && (
-               <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto" role="listbox" aria-label={`Matching ${plural.toLowerCase()}`}>
+               <div id="customer-search-listbox" className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto" role="listbox" aria-label={`Matching ${plural.toLowerCase()}`}>
                  {customerSearchResults.length === 0 ? (
                     <p className="px-3 py-2 text-sm text-slate-500">{customerSearching ? "Searching..." : `No ${plural.toLowerCase()} found`}</p>
                  ) : (

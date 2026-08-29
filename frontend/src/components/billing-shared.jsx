@@ -660,12 +660,17 @@ export function DashboardStatCard({
       <div className="flex justify-between items-start gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider truncate">{title}</p>
-          <h3
+          {/* Not a heading: this is a KPI value, not a document section —
+              rendering it as <h3> put a bare number directly into the page's
+              heading outline (often straight after <h1>, skipping levels,
+              flagged by axe-core's heading-order rule) with no useful
+              meaning for heading-based screen-reader navigation. */}
+          <p
             className="text-xl lg:text-2xl font-extrabold text-slate-800 mt-2 leading-tight truncate"
             title={fullValue}
           >
             {displayValue}
-          </h3>
+          </p>
           {trend ? (
             <span
               title={trendValue}

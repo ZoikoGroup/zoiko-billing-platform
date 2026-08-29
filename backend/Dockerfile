@@ -15,4 +15,8 @@ ENV PYTHONUNBUFFERED=1
 ENV APP_PORT=8001
 EXPOSE 8001
 
+# Default: plain app start (works unmodified against the SQLite dev fallback
+# when BILLING_DATABASE_URL is unset — SQLite isn't Alembic-managed, see
+# docs/DATABASE_MIGRATION_GUIDE.md). docker-compose.yml overrides `command:`
+# to run `alembic upgrade head` first when pointed at its Postgres service.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

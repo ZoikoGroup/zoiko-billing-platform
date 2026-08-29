@@ -1,8 +1,20 @@
-# Create All — schema bootstrap
+# Create All — SQLite dev-fallback schema bootstrap (legacy for Postgres)
 
-The standalone Billing Platform has **no alembic**. Schema is created fresh,
-in one shot, via `Base.metadata.create_all` against an **empty** database.
-This directory is that bootstrap.
+> **Superseded for PostgreSQL.** Real (Postgres) database schema lifecycle
+> is now owned by Alembic — see `backend/alembic/` and
+> `docs/DATABASE_MIGRATION_GUIDE.md`. Never run this script, or rely on
+> `initialize_database()`'s implicit create_all, against a shared/production
+> Postgres database — `app/database.py`'s Postgres branch no longer performs
+> create_all at all; it verifies the schema is Alembic-migrated and fails
+> loudly with guidance if it isn't.
+>
+> This directory (and `Base.metadata.create_all`) remains the bootstrap for
+> the **SQLite dev fallback only** (no `BILLING_DATABASE_URL` set) — a
+> throwaway single-developer file where a full migration framework isn't
+> worth the setup friction.
+
+Schema is created fresh, in one shot, via `Base.metadata.create_all` against
+an **empty** SQLite database. This directory is that bootstrap.
 
 ## When to run
 

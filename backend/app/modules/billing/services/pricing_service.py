@@ -31,6 +31,7 @@ from app.modules.billing.repositories.catalog import (
     TaxGroupMemberRepository,
 )
 from app.modules.billing.repositories.catalog import ProductRepository
+from app.modules.billing.repositories.customer import CustomerRepository
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed, safe_commit_and_refresh
 from app.modules.billing.services.settings_service import BillingConfigurationService
@@ -371,6 +372,8 @@ class DiscountService:
         self.db = db
         self.repo = DiscountRepository(db)
         self.usage_repo = DiscountUsageRepository(db)
+        self.customer_repo = CustomerRepository(db)
+        self.config_service = BillingConfigurationService(db)
         self.audit = BillingAuditService(db)
 
     def create(self, organization_id: int, created_by: int, **data: Any) -> Discount:
@@ -379,6 +382,20 @@ class DiscountService:
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:
                 raise AlreadyExistsException("Discount", data["code"])
+        # Currency: explicit > linked customer's own currency (for a
+        # customer-specific discount) > org default -- same precedence
+        # already used for invoices/quotes/contracts/subscriptions/payments/
+        # price-lists. Previously this fell straight through to the
+        # Discount.currency column's own nullable default, leaving rows with
+        # currency=NULL that then crashed GET /billing/discounts with a
+        # ResponseValidationError (DiscountResponse.currency is a required,
+        # non-nullable str).
+        if not data.get("currency"):
+            customer_currency = None
+            if data.get("customer_id"):
+                customer = self.customer_repo.get_by_id(data["customer_id"], organization_id)
+                customer_currency = customer.currency
+            data["currency"] = customer_currency or self.config_service.get_default_currency(organization_id)
         obj = self.repo.create(organization_id, created_by=created_by, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Discount", obj.id, new_values=data)
         return obj
