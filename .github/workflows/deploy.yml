@@ -42,17 +42,45 @@ jobs:
               done
             }
 
+            # Sync a deployment checkout to origin/main deterministically. A plain
+            # `git pull` merges, and fails (aborting the deploy under set -e) if the
+            # checkout has drifted (untracked/modified files colliding with incoming
+            # ones, a stale merge state, etc.) - it also leaves no record of what that
+            # drift was. These checkouts only ever exist to mirror origin/main, so we
+            # log any drift for the record, then force them back onto it and verify the
+            # commit that lands is the one actually intended.
+            git_sync_to_main() {
+              echo "HEAD before sync: $(git rev-parse HEAD)"
+              local drift
+              drift="$(git status --porcelain)"
+              if [ -n "$drift" ]; then
+                echo "::warning::Uncommitted drift in $(pwd) before sync (will be discarded):"
+                echo "$drift"
+              fi
+              git fetch origin main
+              git reset --hard origin/main
+              local head origin_head
+              head="$(git rev-parse HEAD)"
+              origin_head="$(git rev-parse origin/main)"
+              if [ "$head" != "$origin_head" ]; then
+                echo "::error::HEAD ($head) does not match origin/main ($origin_head) after sync"
+                return 1
+              fi
+              echo "Synced to origin/main: $head"
+            }
+
             # =========================================================================
             # 1. BACKEND  (systemd unit: zoiko-billing-backend)
             # =========================================================================
             echo "::group::Backend deploy"
             cd /var/www/zoiko-billing-backend/app
             echo "Backend working dir: $(pwd)"
-            git pull origin main
+            git_sync_to_main
             cd backend
             echo "Python: $(python --version 2>&1)"
             source venv/bin/activate
-            pip install -r requirements.txt
+            echo "pip: $(pip --version 2>&1)"
+            retry 2 pip install -r requirements.txt
             deactivate
             sudo systemctl restart zoiko-billing-backend
             sudo systemctl is-active --quiet zoiko-billing-backend \
@@ -88,7 +116,7 @@ jobs:
 
             cd "$FRONTEND_DIR"
             echo "Frontend working dir: $(pwd)"
-            git pull origin main
+            git_sync_to_main
             cd frontend
             echo "node: $(node --version)"
             echo "npm: $(npm --version)"
