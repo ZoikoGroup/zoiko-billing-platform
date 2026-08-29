@@ -33,7 +33,11 @@ import {
   Building2,
   UserCog,
   ShieldCheck,
+  ShieldAlert,
   KeyRound,
+  KeySquare,
+  GitPullRequestArrow,
+  Clock,
   CheckSquare,
   Power,
   Bell,
@@ -212,6 +216,11 @@ const NAV_SECTIONS = [
       { label: "Products & Price Book", href: "/super-admin/commercial/plans", icon: Package },
       { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
       { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
+      { label: "Plan Entitlements", href: "/super-admin/commercial/plan-entitlements", icon: KeySquare },
+      { label: "Overrides", href: "/super-admin/commercial/overrides", icon: ShieldAlert },
+      { label: "Usage Diagnostics", href: "/super-admin/commercial/usage-diagnostics", icon: Gauge },
+      { label: "Plan-Change Queue", href: "/super-admin/commercial/plan-changes", icon: GitPullRequestArrow },
+      { label: "Evaluation Programs", href: "/super-admin/commercial/evaluation-programs", icon: Clock },
       { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
       { label: "Invoices", href: "/super-admin/commercial/invoices?tab=invoices", icon: Receipt },
       { label: "Payments", href: "/super-admin/commercial/invoices?tab=payments", icon: CreditCard },
@@ -457,6 +466,8 @@ function SidebarContent({ onNavigate, role }) {
             </NavLink>
           </div>
         )}
+
+        {role === "super_admin" && <div className="mt-10 border-t border-white/10 pt-6" />}
 
         {role === "super_admin" ? null : (
           <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">

@@ -72,10 +72,16 @@ from app.modules.commercial.enums import (
     CommercialEvaluationConversionPolicy,
     CommercialEvaluationExpiryAction,
     CommercialEvaluationPaymentRequirement,
+    CommercialOverrideStatus,
     CommercialPlanStatus,
     CommercialPlanVersionStatus,
     CommercialQuoteStatus,
     CommercialSubscriptionStatus,
+    EntitlementEnforcementType,
+    SubscriptionChangeDirection,
+    SubscriptionChangeStatus,
+    EntitlementRiskClassification,
+    EntitlementValueType,
     PlatformCreditNoteStatus,
     PlatformInvoiceDeliveryStatus,
     PlatformInvoiceDisputeStatus,
@@ -275,6 +281,99 @@ class CommercialPlanVersion(Base):
         )
 
 
+class EntitlementDefinition(Base):
+    """§12–§13 — typed entitlement key registry for the commercial catalog.
+
+    Each row is a single entitlement key (e.g. billing.invoice.create) with
+    its value type, risk classification, and enforcement type. This replaces
+    the untyped CommercialPlan.features JSON blob with a queryable, seeded
+    catalog that CommercialEntitlementService methods can resolve against.
+    """
+
+    __tablename__ = "entitlement_definitions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(200), unique=True, index=True, nullable=False)
+    value_type = Column(
+        CaseInsensitiveEnum(EntitlementValueType),
+        nullable=False,
+    )
+    risk_classification = Column(
+        CaseInsensitiveEnum(EntitlementRiskClassification),
+        default=EntitlementRiskClassification.STANDARD,
+        server_default="STANDARD",
+        nullable=False,
+    )
+    enforcement_type = Column(
+        CaseInsensitiveEnum(EntitlementEnforcementType),
+        default=EntitlementEnforcementType.HARD,
+        server_default="HARD",
+        nullable=False,
+    )
+    description = Column(Text, nullable=True)
+    # §16.1 Level 1 (legal/security prohibition) — a permanent, per-key deny
+    # that survives even an ENTITLEMENT_ENFORCEMENT kill-switch pause (Part
+    # 2 L1, checked before L2). Kept separate from BillingKillSwitch on
+    # purpose: every kill-switch scope carries a mandatory bounded
+    # expires_at (auto-lifts within 14 days, §9.1) — the right shape for
+    # "pause while we investigate", the wrong shape for "this key is
+    # permanently, legally prohibited" which must never silently auto-lift.
+    is_globally_disabled = Column(Boolean, default=False, server_default="0", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<EntitlementDefinition id={self.id} key={self.key!r} "
+            f"value_type={self.value_type!r}>"
+        )
+
+
+class PlanEntitlement(Base):
+    """§13 — binds an EntitlementDefinition to a CommercialPlanVersion with a
+    concrete value. One row per (plan_version, entitlement_key).
+
+    For Enterprise plans, is_contracted=True and value=NULL indicate the
+    entitlement is governed by the signed order form, not this catalog row.
+    """
+
+    __tablename__ = "plan_entitlements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_version_id = Column(
+        Integer,
+        ForeignKey("commercial_plan_versions.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    entitlement_definition_id = Column(
+        Integer,
+        ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    value = Column(JSON, nullable=True)
+    is_contracted = Column(Boolean, default=False, server_default="0", nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    plan_version = relationship("CommercialPlanVersion", backref="plan_entitlements")
+    entitlement_definition = relationship("EntitlementDefinition")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_version_id",
+            "entitlement_definition_id",
+            name="uq_plan_entitlements_version_definition",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<PlanEntitlement id={self.id} version={self.plan_version_id} "
+            f"definition={self.entitlement_definition_id} contracted={self.is_contracted}>"
+        )
+
+
 class CommercialEvaluationProgram(Base):
     """§B3 — a bounded, explicitly-activated trial/evaluation configuration
     for exactly one plan. No program existing (or none with is_active=True)
@@ -324,12 +423,70 @@ class CommercialEvaluationProgram(Base):
     approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    plan = relationship("CommercialPlan", backref="evaluation_programs")
+    # §5: the plan whose entitlement bundle is GRANTED during the trial.
+    # Separate from plan_id (which plan's signup triggers the program).
+    # Per §5, the standard trial grants Professional's entitlement bundle
+    # regardless of which plan the org signed up under.
+    granted_plan_id = Column(
+        Integer,
+        ForeignKey("commercial_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+
+    plan = relationship("CommercialPlan", backref="evaluation_programs", foreign_keys=[plan_id])
+    granted_plan = relationship("CommercialPlan", foreign_keys=[granted_plan_id])
 
     def __repr__(self):
         return (
             f"<CommercialEvaluationProgram id={self.id} plan_id={self.plan_id} "
             f"is_active={self.is_active} duration_days={self.duration_days}>"
+        )
+
+
+class CommercialEvaluationProgramCap(Base):
+    """§5 — per-entitlement cap configuration for an evaluation program.
+
+    One row per capped key (not a JSON blob), so caps stay typed and
+    queryable. These exist as configuration a platform_administrator could
+    activate, NOT as something live out of the box (is_active=False by
+    default on the parent program).
+    """
+
+    __tablename__ = "commercial_evaluation_program_caps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    evaluation_program_id = Column(
+        Integer,
+        ForeignKey("commercial_evaluation_programs.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    entitlement_definition_id = Column(
+        Integer,
+        ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    cap_value = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    evaluation_program = relationship("CommercialEvaluationProgram", backref="caps")
+    entitlement_definition = relationship("EntitlementDefinition")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_program_id",
+            "entitlement_definition_id",
+            name="uq_eval_caps_program_definition",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<CommercialEvaluationProgramCap id={self.id} "
+            f"program={self.evaluation_program_id} "
+            f"definition={self.entitlement_definition_id}>"
         )
 
 
@@ -400,6 +557,17 @@ class CommercialSubscription(Base):
     evaluation_expiry_action = Column(
         CaseInsensitiveEnum(CommercialEvaluationExpiryAction), nullable=True,
     )
+
+    # §5: recovery window end — computed as trial_ends_at + 14 days whenever
+    # trial_ends_at is set. The recovery-window *behavior* is a Part 2
+    # enforcement concern; this pass only computes and stores the value.
+    recovery_ends_at = Column(DateTime, nullable=True)
+
+    # §5: snapshot of the granted entitlement bundle from the trial program's
+    # granted_plan_id PlanEntitlement rows. Stored as JSON because Part 2's
+    # EntitlementSnapshot model will supersede it; this pass just captures
+    # the data at trial-grant time.
+    trial_granted_entitlements = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -531,7 +699,21 @@ class CommercialQuoteItem(Base):
     total = Column(Numeric(14, 2), nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
 
+    # Part 2 (§16.1) — lets an Enterprise quote explicitly grant/override an
+    # entitlement key as a negotiated line item, without a bigger quote-model
+    # rewrite. Nullable: most quote line items are ordinary priced items with
+    # no entitlement meaning. Acceptance of the quote drafts (DRAFT only, not
+    # auto-approved) a CommercialOverride per non-null row — see
+    # CommercialQuoteService.draft_overrides_from_quote_items.
+    entitlement_definition_id = Column(
+        Integer,
+        ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    entitlement_value = Column(JSON, nullable=True)
+
     quote = relationship("CommercialQuote", back_populates="items")
+    entitlement_definition = relationship("EntitlementDefinition")
 
     __table_args__ = (
         UniqueConstraint("quote_id", "line_number", name="uq_cquote_items_quote_line"),
@@ -1070,4 +1252,265 @@ class PlatformStripeEvent(Base):
         return (
             f"<PlatformStripeEvent id={self.id} "
             f"stripe_event_id={self.stripe_event_id!r} status={self.status!r}>"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Entitlement Enforcement (ZB-COM-ENT-001 Part 2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class EntitlementSnapshot(Base):
+    """Materialized read cache of an org's resolved entitlements (§11.1, §13).
+
+    One row per organization (unique), overwritten on every recompute — a
+    cache, not an audit trail. History of *why* an entitlement changed
+    already lives in PlanEntitlement / CommercialOverride / subscription
+    rows plus the platform audit trail. Recomputed synchronously whenever a
+    subscription is created/activated/transitioned, an override is
+    approved/revoked, or provisioning completes (see
+    EntitlementSnapshotService.recompute_snapshot and its call sites in
+    CommercialSubscriptionService) — a stale snapshot after a known state
+    change is a correctness bug, not just UX lag.
+
+    `values` shape: {key: {"value", "value_type", "is_contracted", "source"}}.
+    A key absent from `values` means "not resolvable at snapshot time" — the
+    resolver falls through to a live lookup (L6), never to an error.
+    """
+
+    __tablename__ = "entitlement_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    commercial_subscription_id = Column(
+        Integer,
+        ForeignKey("commercial_subscriptions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    values = Column(JSON, nullable=False, default=dict)
+    computed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    computed_reason = Column(String(100), nullable=True)
+    # ZB-COM-ENT-001 Part 3 (AC-03) — incremented by EntitlementSnapshotService
+    # on every recompute. This row is still overwritten in place (not an
+    # append-only history table); the counter exists purely so a caller can
+    # assert "exactly one recompute happened" across a transaction (e.g. a
+    # plan-change commit), not to reconstruct historical values.
+    snapshot_version = Column(Integer, default=0, server_default="0", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<EntitlementSnapshot id={self.id} organization_id={self.organization_id} "
+            f"computed_at={self.computed_at!r} snapshot_version={self.snapshot_version}>"
+        )
+
+
+class CommercialOverride(Base):
+    """§16.1 — a per-org, per-entitlement override of the plan's default
+    value, with maker-checker approval (via the generic ApprovalRequest/
+    ApprovalService mechanism, not a bespoke self-approval check here).
+
+    No unique constraint on (organization_id, entitlement_definition_id):
+    history of rejected/expired/revoked overrides is preserved, the same
+    way CommercialSubscription preserves CANCELLED rows. "At most one live
+    APPROVED override per org+key" is enforced in CommercialOverrideService
+    (check-then-raise), not a DB constraint, since a DB constraint can't
+    express "APPROVED and not expired".
+
+    The resolver's L3 reads only status == APPROVED and
+    (expires_at IS NULL OR expires_at > now()) — an expired override simply
+    stops matching with no cleanup step required (AC-10).
+    """
+
+    __tablename__ = "commercial_overrides"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False,
+    )
+    entitlement_definition_id = Column(
+        Integer, ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"), index=True, nullable=False,
+    )
+    value = Column(JSON, nullable=True)
+    reason = Column(Text, nullable=False)
+    status = Column(
+        CaseInsensitiveEnum(CommercialOverrideStatus),
+        default=CommercialOverrideStatus.DRAFT,
+        server_default="DRAFT",
+        nullable=False,
+        index=True,
+    )
+    # Nullable: an Enterprise override may be permanent (no expiry).
+    expires_at = Column(DateTime, nullable=True)
+
+    requested_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approval_request_id = Column(Integer, ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    entitlement_definition = relationship("EntitlementDefinition")
+
+    def __repr__(self):
+        return (
+            f"<CommercialOverride id={self.id} organization_id={self.organization_id} "
+            f"definition={self.entitlement_definition_id} status={self.status!r}>"
+        )
+
+
+class UsageIncrementEvent(Base):
+    """Idempotency ledger for usage increments (Part 2, §14). Mirrors
+    PlatformStripeEvent's get-or-create-by-unique-id + status-flip pattern
+    exactly: a retried increment with the same idempotency_key is a no-op,
+    never a double-count.
+    """
+
+    __tablename__ = "usage_increment_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False,
+    )
+    entitlement_definition_id = Column(
+        Integer, ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"), index=True, nullable=False,
+    )
+    # Caller-supplied natural id, e.g. f"invoice:{invoice.id}".
+    idempotency_key = Column(String(255), nullable=False)
+    window_key = Column(String(32), nullable=False)
+    amount = Column(Integer, default=1, nullable=False)
+    status = Column(String(20), default="processed", nullable=False)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "entitlement_definition_id", "idempotency_key",
+            name="uq_usage_increment_events_dedupe",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<UsageIncrementEvent id={self.id} organization_id={self.organization_id} "
+            f"idempotency_key={self.idempotency_key!r} status={self.status!r}>"
+        )
+
+
+class UsageCounter(Base):
+    """Fast aggregate read model for a (org, entitlement, window), upserted
+    by UsageMeteringService.increment as UsageIncrementEvent rows are
+    processed. `soft_warned_at` tracks the start of a SOFT_THEN_HARD grace
+    period once a soft limit is first breached in this window.
+    """
+
+    __tablename__ = "usage_counters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False,
+    )
+    entitlement_definition_id = Column(
+        Integer, ForeignKey("entitlement_definitions.id", ondelete="RESTRICT"), index=True, nullable=False,
+    )
+    window_key = Column(String(32), nullable=False)
+    count = Column(Integer, default=0, nullable=False)
+    soft_warned_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "entitlement_definition_id", "window_key",
+            name="uq_usage_counters_org_def_window",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<UsageCounter id={self.id} organization_id={self.organization_id} "
+            f"window_key={self.window_key!r} count={self.count}>"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plane 1 — Plan-Change Orchestration (ZB-COM-ENT-001 Part 3, §7-§8)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class SubscriptionChange(Base):
+    """One row per upgrade/downgrade event against a CommercialSubscription
+    (§6.1, §7, §8). `from_plan_id`/`to_plan_id` are captured explicitly at
+    creation time rather than derived later, because
+    CommercialSubscriptionService.apply_plan_change() mutates the
+    subscription's own commercial_plan_id in place — the "from" fact would
+    otherwise be lost once the change applies.
+
+    No direct organization_id column: reached via
+    subscription.account.organization_id, matching CommercialSubscription
+    itself (which has no direct organization_id either).
+    """
+
+    __tablename__ = "subscription_changes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    commercial_subscription_id = Column(
+        Integer,
+        ForeignKey("commercial_subscriptions.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    from_plan_id = Column(Integer, ForeignKey("commercial_plans.id", ondelete="RESTRICT"), nullable=False)
+    to_plan_id = Column(Integer, ForeignKey("commercial_plans.id", ondelete="RESTRICT"), nullable=False)
+    from_catalog_version_id = Column(
+        Integer, ForeignKey("commercial_plan_versions.id", ondelete="RESTRICT"), nullable=True,
+    )
+    to_catalog_version_id = Column(
+        Integer, ForeignKey("commercial_plan_versions.id", ondelete="RESTRICT"), nullable=True,
+    )
+    direction = Column(CaseInsensitiveEnum(SubscriptionChangeDirection), nullable=False)
+    status = Column(
+        CaseInsensitiveEnum(SubscriptionChangeStatus),
+        default=SubscriptionChangeStatus.PENDING,
+        server_default="PENDING",
+        nullable=False,
+        index=True,
+    )
+    effective_at = Column(DateTime, nullable=True)
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    requested_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    reversed_at = Column(DateTime, nullable=True)
+    reversed_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=True)
+    # Frozen copies at commit time — snapshots, not live-reresolved, so the
+    # rationale for a change stays auditable even if pricing/entitlements
+    # change later (same "snapshot, don't re-resolve live" principle already
+    # used for CommercialSubscription.evaluation_payment_requirement etc).
+    blockers = Column(JSON, nullable=True)
+    price_impact = Column(JSON, nullable=True)
+    correlation_id = Column(String(100), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_subscription_changes_status_effective_at", "status", "effective_at"),
+    )
+
+    subscription = relationship("CommercialSubscription", backref="plan_changes")
+    from_plan = relationship("CommercialPlan", foreign_keys=[from_plan_id])
+    to_plan = relationship("CommercialPlan", foreign_keys=[to_plan_id])
+
+    def __repr__(self):
+        return (
+            f"<SubscriptionChange id={self.id} subscription={self.commercial_subscription_id} "
+            f"direction={self.direction!r} status={self.status!r}>"
         )

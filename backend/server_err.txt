@@ -1,0 +1,7 @@
+INFO:     Started server process [32696]
+INFO:     Waiting for application startup.
+2026-08-25 21:38:02,995 [zoiko_billing] [INFO] Database schema already up to date; skipped create_all.
+2026-08-25 21:38:04,798 [zoiko_billing] [INFO] Recurring billing scheduler disabled (ENABLE_RECURRING_BILLING_SCHEDULER=false).
+2026-08-25 21:38:04,799 [zoiko_billing] [INFO] Zoiko Billing Platform backend is ready.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8005 (Press CTRL+C to quit)

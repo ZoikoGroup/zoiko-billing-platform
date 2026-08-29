@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import InvoiceService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
     InvoiceCommunicationCreate,
     InvoiceCommunicationResponse,
@@ -40,6 +41,30 @@ def create_invoice(
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
 ):
+    # AC-01 (ZB-COM-ENT-001 Part 2): billing.invoice.monthly_limit — a limit
+    # check via get_limit-style resolution, not a boolean gate. Window is the
+    # current UTC calendar month, matching the key's own name.
+    from datetime import datetime as _datetime
+
+    from app.modules.billing.models import Invoice
+
+    period_start = _datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    invoices_this_period = (
+        db.query(Invoice)
+        .filter(
+            Invoice.organization_id == current_user.organization_id,
+            Invoice.created_at >= period_start,
+            Invoice.deleted_at.is_(None),
+        )
+        .count()
+    )
+    EntitlementEnforcementService(db).assert_within_limit(
+        organization_id=current_user.organization_id,
+        key="billing.invoice.monthly_limit",
+        current_count=invoices_this_period,
+        actor_id=current_user.id,
+    )
+
     svc = InvoiceService(db)
     return svc.create_invoice(
         organization_id=current_user.organization_id,

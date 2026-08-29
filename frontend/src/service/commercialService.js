@@ -110,6 +110,16 @@ export const listSuperAdminUsers = (params = {}) =>
 export const listCommercialPlanVersions = (planId) =>
   api.get(`/api/super-admin/commercial-plans/${planId}/versions`);
 
+// ── Entitlement catalog (ZB-COM-ENT-001 Part 1 §12–§13, read-only) ─────────
+export const listEntitlementDefinitions = (params = {}) =>
+  api.get("/api/super-admin/commercial-entitlement-definitions", { params });
+
+export const getEntitlementDefinition = (definitionId) =>
+  api.get(`/api/super-admin/commercial-entitlement-definitions/${definitionId}`);
+
+export const listPlanVersionEntitlements = (versionId) =>
+  api.get(`/api/super-admin/commercial-plan-versions/${versionId}/entitlements`);
+
 export const getCommercialPlanVersion = (versionId) =>
   api.get(`/api/super-admin/commercial-plan-versions/${versionId}`);
 
@@ -129,6 +139,34 @@ export const rejectCommercialPlanVersion = (versionId, rejectionReason) =>
 
 export const archiveCommercialPlanVersion = (versionId) =>
   api.post(`/api/super-admin/commercial-plan-versions/${versionId}/archive`, {});
+
+// ── Commercial overrides (ZB-COM-ENT-001 Part 2 §16.1, dual-approval) ───
+// Draft -> submit -> approve/reject lifecycle, mirroring the catalog-version
+// endpoints above. At most one live APPROVED override may exist per
+// (organization, entitlement key) — the backend enforces this and returns a
+// 400 if violated; the frontend surfaces that error, it never pre-blocks it.
+export const listCommercialOverrides = (params = {}) =>
+  api.get("/api/super-admin/commercial-overrides", { params });
+
+export const getCommercialOverride = (overrideId) =>
+  api.get(`/api/super-admin/commercial-overrides/${overrideId}`);
+
+export const createCommercialOverride = (data) =>
+  api.post("/api/super-admin/commercial-overrides", data);
+
+export const submitCommercialOverride = (overrideId, reason) =>
+  api.post(`/api/super-admin/commercial-overrides/${overrideId}/submit`, { reason });
+
+export const approveCommercialOverride = (overrideId) =>
+  api.post(`/api/super-admin/commercial-overrides/${overrideId}/approve`, {});
+
+export const rejectCommercialOverride = (overrideId, rejectionReason) =>
+  api.post(`/api/super-admin/commercial-overrides/${overrideId}/reject`, {
+    rejection_reason: rejectionReason,
+  });
+
+export const revokeCommercialOverride = (overrideId, reason) =>
+  api.post(`/api/super-admin/commercial-overrides/${overrideId}/revoke`, { reason });
 
 // ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
 export const listApprovalRequests = (params = {}) =>
@@ -171,3 +209,40 @@ export const transitionOrganizationLifecycle = (organizationId, target, reason) 
 // lifecycle audit events — all composed server-side.
 export const getPlatformLifecycle = () =>
   api.get("/api/super-admin/platform/lifecycle");
+
+// ── ZB-COM-ENT-001 Part 3 §16 — draft-version editing ────────────────────
+// Rejected server-side unless the version is still DRAFT — publishing
+// always means a NEW plan_version_id, never an edit of a published row.
+export const updateCommercialPlanVersion = (versionId, data) =>
+  api.patch(`/api/super-admin/commercial-plan-versions/${versionId}`, data);
+
+export const setCommercialPlanVersionEntitlement = (versionId, definitionId, value, isContracted = false) =>
+  api.put(`/api/super-admin/commercial-plan-versions/${versionId}/entitlements/${definitionId}`, {
+    value, is_contracted: isContracted,
+  });
+
+// ── Usage diagnostics (ZB-COM-ENT-001 Part 3 §16) ────────────────────────
+export const listCommercialUsageCounters = (params = {}) =>
+  api.get("/api/super-admin/commercial-usage-counters", { params });
+
+// ── Plan-change queue (ZB-COM-ENT-001 Part 3 §16) ────────────────────────
+export const listCommercialSubscriptionChanges = (params = {}) =>
+  api.get("/api/super-admin/commercial-subscription-changes", { params });
+
+export const getCommercialSubscriptionChange = (changeId) =>
+  api.get(`/api/super-admin/commercial-subscription-changes/${changeId}`);
+
+export const reverseCommercialSubscriptionChange = (changeId, reason) =>
+  api.post(`/api/super-admin/commercial-subscription-changes/${changeId}/reverse`, { reason });
+
+// ── Trial controls (ZB-COM-ENT-001 Part 3 §16) ───────────────────────────
+export const getCommercialAccountTrialStatus = (organizationId) =>
+  api.get(`/api/super-admin/commercial-accounts/${organizationId}/trial-status`);
+
+// ── Commercial analytics (ZB-COM-ENT-001 Part 3 §18, backend-only surface —
+//    used ad hoc from Super Admin tooling, not a dedicated dashboard page) ──
+export const getCommercialEntitlementDrift = (deep = false) =>
+  api.get("/api/super-admin/commercial-analytics/entitlement-drift", { params: deep ? { deep: true } : {} });
+
+export const getCommercialFailedPlanTransitions = () =>
+  api.get("/api/super-admin/commercial-analytics/failed-plan-transitions");

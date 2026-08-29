@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import CustomerService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
     BulkDeleteRequest,
     BulkStatusRequest,
@@ -57,6 +58,27 @@ def create_customer(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    # AC-01 (ZB-COM-ENT-001 Part 2): org.entity.max — a limit check via
+    # get_limit-style resolution. Substituted for the spec's non-existent
+    # "legal entity" concept — BillingCustomer (with its own legal_name
+    # field) is the closest real analogue to a billing entity under the org.
+    from app.modules.billing.models import BillingCustomer
+
+    existing_customers = (
+        db.query(BillingCustomer)
+        .filter(
+            BillingCustomer.organization_id == current_user.organization_id,
+            BillingCustomer.deleted_at.is_(None),
+        )
+        .count()
+    )
+    EntitlementEnforcementService(db).assert_within_limit(
+        organization_id=current_user.organization_id,
+        key="org.entity.max",
+        current_count=existing_customers,
+        actor_id=current_user.id,
+    )
+
     svc = CustomerService(db)
     return svc.create_customer(
         organization_id=current_user.organization_id,

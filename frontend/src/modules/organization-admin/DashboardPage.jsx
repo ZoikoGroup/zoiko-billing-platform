@@ -161,6 +161,12 @@ export default function OrgAdminDashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Ensure the org base currency is loaded (same source as the main Billing
+  // Dashboard) so fmtCurrency renders in the correct symbol (e.g. ₹).
+  useEffect(() => {
+    loadGlobalCurrency().catch(() => {});
+  }, []);
+
   const trial = subscription ? trialRemaining(subscription.trial_ends_at, subscription.status) : null;
 
   const displayName = user?.first_name || user?.name || "there";

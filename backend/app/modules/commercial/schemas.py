@@ -19,7 +19,7 @@ remain null until an approved catalogue supplies them.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,8 +28,12 @@ from app.modules.commercial.enums import (
     BillingSource,
     CommercialAccountStatus,
     CommercialBillingInterval,
+    CommercialOverrideStatus,
     CommercialPlanStatus,
     CommercialSubscriptionStatus,
+    EntitlementEnforcementType,
+    EntitlementRiskClassification,
+    EntitlementValueType,
 )
 
 
@@ -45,6 +49,7 @@ class CommercialSubscriptionSummary(BaseModel):
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
+    recovery_ends_at: Optional[datetime] = None
 
 
 class CommercialAccountResponse(BaseModel):
@@ -165,6 +170,11 @@ class CommercialSubscriptionResponse(BaseModel):
     current_period_start: Optional[datetime] = None
     current_period_end: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
+    # ZB-COM-ENT-001 Part 1 — trial/recovery window + the entitlement bundle
+    # snapshot granted during the trial (copied from the evaluation program's
+    # granted_plan_id PlanEntitlement rows at provision time).
+    recovery_ends_at: Optional[datetime] = None
+    trial_granted_entitlements: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
@@ -247,3 +257,182 @@ class CommercialOrganizationDetailResponse(BaseModel):
     plan: Optional[CommercialPlanResponse] = None
     subscription_history: list[CommercialSubscriptionResponse]
     entitlements: dict
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-COM-ENT-001 Part 1 — Entitlement Catalog read models (§12–§13)
+# Read-only Super Admin surfaces. No mutation endpoints exist in Part 1 —
+# the catalog is seeded (scripts/seed_entitlement_definitions.py) and read.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class EntitlementDefinitionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    key: str
+    value_type: EntitlementValueType
+    risk_classification: EntitlementRiskClassification
+    enforcement_type: EntitlementEnforcementType
+    description: Optional[str] = None
+    created_at: datetime
+
+
+class EntitlementDefinitionListResponse(BaseModel):
+    definitions: list[EntitlementDefinitionResponse]
+    total: int
+
+
+class PlanEntitlementResponse(BaseModel):
+    """One typed entitlement value bound to a CommercialPlanVersion.
+
+    is_contracted=True with value=None means the entitlement is governed by
+    the signed Enterprise order form, not this catalog row.
+    """
+
+    id: int
+    plan_version_id: int
+    entitlement_definition_id: int
+    key: str
+    value_type: EntitlementValueType
+    risk_classification: EntitlementRiskClassification
+    enforcement_type: EntitlementEnforcementType
+    value: Optional[Any] = None
+    is_contracted: bool = False
+
+
+class PlanVersionEntitlementsResponse(BaseModel):
+    version_id: int
+    entitlements: list[PlanEntitlementResponse]
+    total: int
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-COM-ENT-001 Part 2 §16.1 — Commercial Overrides (dual-approval)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class CommercialOverrideCreate(BaseModel):
+    organization_id: int
+    entitlement_definition_id: int
+    value: Optional[Any] = None
+    reason: str = Field(..., min_length=1, max_length=2000)
+    expires_at: Optional[datetime] = None
+
+
+class CommercialOverrideResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    entitlement_definition_id: int
+    entitlement_key: Optional[str] = None
+    value: Optional[Any] = None
+    reason: str
+    status: CommercialOverrideStatus
+    expires_at: Optional[datetime] = None
+    requested_by_user_id: Optional[int] = None
+    approval_request_id: Optional[int] = None
+    approved_by_user_id: Optional[int] = None
+    revoked_at: Optional[datetime] = None
+    revoked_by_user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommercialOverrideListResponse(BaseModel):
+    overrides: list[CommercialOverrideResponse]
+    total: int
+
+
+class CommercialOverrideRevokeRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-COM-ENT-001 Part 3 §16 — draft-version editing, usage diagnostics,
+# plan-change queue, trial controls
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class CommercialPlanVersionUpdate(BaseModel):
+    """Every field optional — PATCH semantics (only supplied fields change).
+    Rejected server-side (CommercialPlanVersionService.update_draft) unless
+    the version is still DRAFT."""
+
+    plan_name: Optional[str] = None
+    description: Optional[str] = None
+    billing_interval: Optional[CommercialBillingInterval] = None
+    currency: Optional[str] = None
+    price_amount: Optional[Decimal] = None
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    max_users: Optional[int] = None
+    max_storage_gb: Optional[int] = None
+    features: Optional[dict] = None
+
+
+class PlanEntitlementSet(BaseModel):
+    value: Optional[Any] = None
+    is_contracted: bool = False
+
+
+class UsageCounterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    entitlement_definition_id: int
+    entitlement_key: Optional[str] = None
+    window_key: str
+    count: int
+    soft_warned_at: Optional[datetime] = None
+    updated_at: datetime
+
+
+class UsageCounterListResponse(BaseModel):
+    counters: list[UsageCounterResponse]
+    total: int
+
+
+class SubscriptionChangeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    commercial_subscription_id: int
+    from_plan_id: int
+    to_plan_id: int
+    from_plan_code: Optional[str] = None
+    to_plan_code: Optional[str] = None
+    direction: str
+    status: str
+    effective_at: Optional[datetime] = None
+    requested_at: datetime
+    requested_by_user_id: Optional[int] = None
+    applied_at: Optional[datetime] = None
+    reversed_at: Optional[datetime] = None
+    reversed_by_user_id: Optional[int] = None
+    reason: Optional[str] = None
+    blockers: Optional[Any] = None
+    price_impact: Optional[Any] = None
+
+
+class SubscriptionChangeListResponse(BaseModel):
+    changes: list[SubscriptionChangeResponse]
+    total: int
+
+
+class SubscriptionChangeReverseRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class TrialStatusResponse(BaseModel):
+    organization_id: int
+    has_open_subscription: bool
+    subscription_status: Optional[str] = None
+    trial_ends_at: Optional[datetime] = None
+    recovery_ends_at: Optional[datetime] = None
+    evaluation_conversion_policy: Optional[str] = None
+    evaluation_expiry_action: Optional[str] = None
+    trial_granted_entitlements: Optional[Any] = None
+    is_trial_eligible: bool

@@ -191,6 +191,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Commercial (Plane-1) Free-Trial Expiry Sweep",
         ),
         (
+            "app.modules.commercial.tasks.apply_scheduled_change:run_scheduled_plan_change_job",
+            settings.SCHEDULED_PLAN_CHANGE_CHECK_INTERVAL_MINUTES,
+            "scheduled_plan_change_job",
+            "Commercial (Plane-1) Scheduled Plan-Change Apply Sweep",
+        ),
+        (
             "app.modules.super_admin.tasks.financial_consistency:run_financial_consistency_job",
             settings.FINANCIAL_CONSISTENCY_INTERVAL_MINUTES,
             "financial_consistency_job",

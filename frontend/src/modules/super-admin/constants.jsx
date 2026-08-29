@@ -99,7 +99,10 @@ export const PLAN_STATUS_OPTIONS = [
 
 // Order mirrors the backend's dunning escalation path (N1): active ->
 // past_due (day 0) -> restricted (day 10) -> suspended (day 20) ->
-// cancelled (day 45, "terminate" — never a hard delete, per N2).
+// cancelled (day 45, "terminate" — never a hard delete, per N2). The four
+// ZB-COM-ENT-001 Part 1 states (trialing/scheduled_change/
+// cancel_at_period_end/enterprise_pending) are appended last — mirror the
+// backend enums.py exactly, presentation only.
 export const SUBSCRIPTION_STATUS_OPTIONS = [
   { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-700" },
   { value: "active", label: "Active", color: "bg-emerald-100 text-emerald-700" },
@@ -108,6 +111,10 @@ export const SUBSCRIPTION_STATUS_OPTIONS = [
   { value: "suspended", label: "Suspended", color: "bg-slate-100 text-slate-600" },
   { value: "cancelled", label: "Cancelled", color: "bg-red-100 text-red-700" },
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
+  { value: "trialing", label: "Trialing", color: "bg-sky-100 text-sky-700" },
+  { value: "scheduled_change", label: "Scheduled Change", color: "bg-indigo-100 text-indigo-700" },
+  { value: "cancel_at_period_end", label: "Cancel at Period End", color: "bg-violet-100 text-violet-700" },
+  { value: "enterprise_pending", label: "Enterprise Pending", color: "bg-cyan-100 text-cyan-700" },
 ];
 
 // ── Versioned price catalog (ZB-COM-BILL-001 §T1, Phase 4) ──────────────
@@ -117,6 +124,25 @@ export const CATALOG_VERSION_STATUS_OPTIONS = [
   { value: "published", label: "Published", color: "bg-emerald-100 text-emerald-700" },
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
   { value: "archived", label: "Archived", color: "bg-slate-100 text-slate-600" },
+];
+
+// ── Commercial overrides (ZB-COM-ENT-001 Part 2 §16.1, dual-approval) ────
+export const OVERRIDE_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-600" },
+  { value: "pending_approval", label: "Pending Approval", color: "bg-amber-100 text-amber-700" },
+  { value: "approved", label: "Approved", color: "bg-emerald-100 text-emerald-700" },
+  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
+  { value: "revoked", label: "Revoked", color: "bg-slate-100 text-slate-600" },
+  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-500" },
+];
+
+// ── Plan-change orchestration (ZB-COM-ENT-001 Part 3 §7-§8) ──────────────
+export const SUBSCRIPTION_CHANGE_STATUS_OPTIONS = [
+  { value: "pending", label: "Pending", color: "bg-slate-100 text-slate-600" },
+  { value: "blocked", label: "Blocked", color: "bg-red-100 text-red-700" },
+  { value: "scheduled", label: "Scheduled", color: "bg-amber-100 text-amber-700" },
+  { value: "applied", label: "Applied", color: "bg-emerald-100 text-emerald-700" },
+  { value: "reversed", label: "Reversed", color: "bg-slate-100 text-slate-500" },
 ];
 
 // ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
@@ -287,25 +313,44 @@ export function SubscriptionLifecycleBadge({ value }) {
  * surfaces its own errors on illegal transitions.
  */
 export const SUBSCRIPTION_TRANSITIONS = {
-  pending: ["active", "cancelled", "suspended"],
-  active: ["past_due", "suspended", "cancelled", "expired"],
+  pending: ["active", "cancelled", "suspended", "trialing", "enterprise_pending"],
+  active: ["past_due", "suspended", "cancelled", "expired", "scheduled_change", "cancel_at_period_end"],
   past_due: ["restricted", "active", "cancelled"],
   restricted: ["suspended", "active", "cancelled"],
   suspended: ["active", "cancelled"],
   cancelled: [],
   expired: [],
+  trialing: ["active", "cancelled", "suspended", "expired"],
+  scheduled_change: ["active", "cancelled"],
+  cancel_at_period_end: ["active", "cancelled"],
+  enterprise_pending: ["pending", "active", "cancelled"],
+};
+
+export const TRANSITION_LABELS = {
+  active: "Activate",
+  past_due: "Mark Past Due",
+  restricted: "Restrict",
+  suspended: "Suspend",
+  cancelled: "Cancel",
+  expired: "Expire",
+  trialing: "Start Trial",
+  scheduled_change: "Schedule Change",
+  cancel_at_period_end: "Cancel at Period End",
+  enterprise_pending: "Enterprise Pending",
 };
 
 /**
  * Free-trial remaining-time helper (COMMERCIAL_TRIAL_PERIOD_DAYS, see
- * commercial/tasks/trial_expiry.py). Only meaningful while status is
- * "pending" (trial running) or "suspended" (trial expired unpaid) — ACTIVE/
- * CANCELLED/etc subscriptions have no trial countdown to show.
+ * commercial/tasks/trial_expiry.py). Meaningful while status is "pending"
+ * (legacy ad-hoc trial) or "trialing" (ZB-COM-ENT-001 trial under a
+ * CommercialEvaluationProgram) — and "suspended" (trial expired unpaid).
+ * ACTIVE/CANCELLED/etc subscriptions have no trial countdown to show.
  * Returns null when there's nothing trial-related to display.
  */
-export function formatTrialRemaining(trialEndsAt, status) {
+export function formatTrialRemaining(trialEndsAt, status, recoveryEndsAt = null) {
   if (status === "suspended") return { label: "Trial expired", tone: "risk" };
-  if (status !== "pending" || !trialEndsAt) return null;
+  if (status !== "pending" && status !== "trialing") return null;
+  if (!trialEndsAt) return null;
 
   const end = new Date(trialEndsAt);
   if (Number.isNaN(end.getTime())) return null;
@@ -314,7 +359,15 @@ export function formatTrialRemaining(trialEndsAt, status) {
 
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
+  let label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
+
+  if (recoveryEndsAt) {
+    const rEnd = new Date(recoveryEndsAt);
+    if (!Number.isNaN(rEnd.getTime()) && rEnd.getTime() > Date.now()) {
+      const rDays = Math.ceil((rEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      label += ` · recovery ${rDays}d`;
+    }
+  }
   return { label, tone: days === 0 ? "attention" : "default" };
 }
 
@@ -364,4 +417,74 @@ export function CommercialSourceBadge({ value }) {
 export function CommercialClassificationBadge({ value }) {
   const option = COMMERCIAL_CLASSIFICATION_BADGES[value];
   return <StatusBadge status={value} options={[{ value, ...(option || {}) }]} fallbackColor="bg-slate-100 text-slate-600" />;
+}
+
+// ── Entitlement catalog (ZB-COM-ENT-001 Part 1 §12–§13) ───────────────────
+// Presentation-only mirrors of the backend enums. The catalog is read-only
+// in Part 1; values come from the seeded definitions + PlanEntitlement rows.
+
+export const ENTITLEMENT_VALUE_TYPE_OPTIONS = [
+  { value: "boolean", label: "Boolean", color: "bg-slate-100 text-slate-600" },
+  { value: "integer", label: "Integer", color: "bg-blue-100 text-blue-700" },
+  { value: "enum", label: "Enum", color: "bg-indigo-100 text-indigo-700" },
+  { value: "set", label: "Set", color: "bg-violet-100 text-violet-700" },
+];
+
+export const ENTITLEMENT_VALUE_TYPE_BADGES = {
+  boolean: { label: "Boolean", color: "bg-slate-100 text-slate-600" },
+  integer: { label: "Integer", color: "bg-blue-100 text-blue-700" },
+  enum: { label: "Enum", color: "bg-indigo-100 text-indigo-700" },
+  set: { label: "Set", color: "bg-violet-100 text-violet-700" },
+};
+
+export const ENTITLEMENT_RISK_OPTIONS = [
+  { value: "standard", label: "Standard", color: "bg-emerald-100 text-emerald-700" },
+  { value: "high_risk", label: "High Risk", color: "bg-rose-100 text-rose-700" },
+];
+
+export const ENTITLEMENT_RISK_BADGES = {
+  standard: { label: "Standard", color: "bg-emerald-100 text-emerald-700" },
+  high_risk: { label: "High Risk", color: "bg-rose-100 text-rose-700" },
+};
+
+export const ENTITLEMENT_ENFORCEMENT_OPTIONS = [
+  { value: "informational", label: "Informational", color: "bg-slate-100 text-slate-600" },
+  { value: "soft_then_hard", label: "Soft then Hard", color: "bg-amber-100 text-amber-700" },
+  { value: "throttle", label: "Throttle", color: "bg-sky-100 text-sky-700" },
+  { value: "hard", label: "Hard", color: "bg-red-100 text-red-700" },
+];
+
+export const ENTITLEMENT_ENFORCEMENT_BADGES = {
+  informational: { label: "Informational", color: "bg-slate-100 text-slate-600" },
+  soft_then_hard: { label: "Soft then Hard", color: "bg-amber-100 text-amber-700" },
+  throttle: { label: "Throttle", color: "bg-sky-100 text-sky-700" },
+  hard: { label: "Hard", color: "bg-red-100 text-red-700" },
+};
+
+export function EntitlementValueTypeBadge({ value }) {
+  const option = ENTITLEMENT_VALUE_TYPE_BADGES[value];
+  return <StatusBadge status={value} options={[{ value, ...(option || {}) }]} fallbackColor="bg-slate-100 text-slate-600" />;
+}
+
+export function EntitlementRiskBadge({ value }) {
+  const option = ENTITLEMENT_RISK_BADGES[value];
+  return <StatusBadge status={value} options={[{ value, ...(option || {}) }]} fallbackColor="bg-slate-100 text-slate-600" />;
+}
+
+export function EntitlementEnforcementBadge({ value }) {
+  const option = ENTITLEMENT_ENFORCEMENT_BADGES[value];
+  return <StatusBadge status={value} options={[{ value, ...(option || {}) }]} fallbackColor="bg-slate-100 text-slate-600" />;
+}
+
+/**
+ * Human-readable rendering of one typed entitlement value.
+ * boolean -> on/off; set -> sorted; null + contracted -> "Contracted (order form)".
+ */
+export function formatEntitlementValue(value, valueType, isContracted = false) {
+  if (isContracted && (value === null || value === undefined)) return "Contracted";
+  if (value === null || value === undefined || value === "") return "—";
+  if (valueType === "boolean") return value ? "Enabled" : "Disabled";
+  if (valueType === "set" && Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }

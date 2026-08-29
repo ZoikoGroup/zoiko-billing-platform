@@ -151,7 +151,6 @@ def get_my_organization_dashboard_stats(
 ):
     """Org-scoped KPIs for the Organization Admin dashboard — computed from
     the billing module's own tables using SQL-level aggregations."""
-    from datetime import datetime, timezone
 
     from sqlalchemy import func
     from app.core.dependencies import get_organization_id
@@ -204,26 +203,13 @@ def get_my_organization_dashboard_stats(
         .scalar()
     ) or 0
 
-    outstanding_amount = (
-        db.query(func.coalesce(func.sum(Invoice.balance_due), 0))
-        .filter(
-            Invoice.organization_id == org_id,
-            Invoice.status.in_(open_statuses + (InvoiceStatus.OVERDUE,)),
-        )
-        .scalar()
-    ) or 0
+    # Keep financial totals aligned with the main billing dashboard, including
+    # conversion from invoice currencies into the organization's base currency.
+    from app.modules.billing.services.dashboard_service import BillingDashboardService
 
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    revenue_this_month = (
-        db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
-        .filter(
-            Invoice.organization_id == org_id,
-            Invoice.status == InvoiceStatus.PAID,
-            Invoice.updated_at >= month_start,
-        )
-        .scalar()
-    ) or 0
+    kpis = BillingDashboardService(db).get_kpis(org_id)
+    outstanding_amount = float(kpis.get("outstanding_amount", 0))
+    revenue_this_month = float(kpis.get("total_revenue", 0))
 
     billing_admins = (
         db.query(func.count(User.id))
