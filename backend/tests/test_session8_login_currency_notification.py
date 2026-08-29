@@ -21,6 +21,7 @@ non-negotiables:
 Run: cd backend && python -m pytest tests/test_session8_login_currency_notification.py -q
 """
 
+import bcrypt
 import pyotp
 import pytest
 from pydantic import ValidationError
@@ -156,6 +157,46 @@ def test_tenant_user_cannot_obtain_super_admin_access(db_session):
     claims = decode_access_token(result["access_token"])
     assert claims["role"] == "org_admin"
     assert claims["organization_id"] == org.id
+
+
+def test_existing_org_login_with_legacy_2a_bcrypt_hash_still_works(db_session):
+    """REGRESSION for the live 'Invalid email or password' symptom on existing
+    organizations: production users carry plain `$2a$` bcrypt hashes (passlib's
+    bcrypt backend emits $2b$, Node/py-bcrypt frequently emit $2a$). A persisted
+    org + user whose stored hash is a genuine $2a$ string MUST still log in and
+    mint valid tokens — passlib 1.7.4 is pinned to verify that exact dialect."""
+    org = make_organization(db_session, code="LEGCY", name="Legacy INR Org")
+    org.country = "India"
+    org.currency = "INR"
+
+    raw = bcrypt.hashpw(b"existing-pass-2024", bcrypt.gensalt(rounds=10, prefix=b"2a"))
+    legacy = raw.decode("utf-8")
+    assert legacy.startswith("$2a$")
+
+    existing = User(
+        email="legacy@s8.example",
+        hashed_password=legacy,
+        role=UserRole.ORG_ADMIN,
+        organization_id=org.id,
+        first_name="Existing",
+        last_name="Owner",
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(existing)
+    db_session.flush()
+
+    # Correct password for an existing org user -> valid tokens, org scoping.
+    result = login_user(db_session, existing.email, "existing-pass-2024")
+    assert result["access_token"] and result["refresh_token"]
+    claims = decode_access_token(result["access_token"])
+    assert claims["role"] == "org_admin"
+    assert claims["organization_id"] == org.id
+    assert claims["user_id"] == existing.id
+
+    # Wrong password for that same existing user is still rejected.
+    with pytest.raises(UnauthorizedException):
+        login_user(db_session, existing.email, "wrong-password")
 
 
 # ══ 2. Privileged step-up MFA still enforced (no fallback) ═══════════════════

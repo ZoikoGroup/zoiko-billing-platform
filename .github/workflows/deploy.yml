@@ -3,6 +3,7 @@ name: Deploy Zoiko Billing Platform
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -15,21 +16,119 @@ jobs:
           username: ${{ secrets.GCP_SSH_USER }}
           key: ${{ secrets.GCP_SSH_KEY }}
           script: |
-            set -e
+            # Fail fast on any error so a bad install/build is never reported as a success.
+            set -euo pipefail
 
+            # Optional HTTP readiness-probe port for the backend on the VM.
+            # Set a GitHub Actions repository variable named BACKEND_HEALTH_PORT to enable
+            # the HTTP /ready probe (e.g. 8000 or 8001). If empty, backend health is
+            # verified authoritatively via `systemctl is-active`.
+            BACKEND_HEALTH_PORT="${{ vars.BACKEND_HEALTH_PORT }}"
+
+            # Bounded retry for transient install/build failures (registry/network/OOM).
+            # Final failure still aborts the deployment; it never suppresses errors.
+            retry() {
+              local max=${1:-2}
+              shift
+              local n=1
+              until "$@"; do
+                if [ "$n" -ge "$max" ]; then
+                  echo "::error::Command failed after ${n} attempt(s): $*"
+                  return 1
+                fi
+                echo "Retrying (${n}/${max}): $*"
+                n=$((n + 1))
+                sleep 10
+              done
+            }
+
+            # =========================================================================
+            # 1. BACKEND  (systemd unit: zoiko-billing-backend)
+            # =========================================================================
+            echo "::group::Backend deploy"
             cd /var/www/zoiko-billing-backend/app
+            echo "Backend working dir: $(pwd)"
             git pull origin main
             cd backend
+            echo "Python: $(python --version 2>&1)"
             source venv/bin/activate
             pip install -r requirements.txt
             deactivate
             sudo systemctl restart zoiko-billing-backend
+            sudo systemctl is-active --quiet zoiko-billing-backend \
+              || { echo "::error::zoiko-billing-backend unit not active after restart"; exit 1; }
+            echo "systemd unit zoiko-billing-backend active: YES"
+            if [ -n "$BACKEND_HEALTH_PORT" ]; then
+              ready=0
+              for i in 1 2 3 4 5 6; do
+                if curl -fsS "http://127.0.0.1:${BACKEND_HEALTH_PORT}/ready" >/dev/null 2>&1; then
+                  ready=1
+                  echo "Backend HTTP /ready OK (port ${BACKEND_HEALTH_PORT})"
+                  break
+                fi
+                echo "Waiting for backend /ready (attempt ${i}/6)..."
+                sleep 5
+              done
+              if [ "$ready" -ne 1 ]; then
+                echo "::error::Backend /ready did not return 200 after restart"
+                exit 1
+              fi
+            else
+              echo "BACKEND_HEALTH_PORT unset; backend health verified via systemctl is-active"
+            fi
+            echo "::endgroup::"
 
-            cd /var/www/zoiko-billing-platform/app
+            # =========================================================================
+            # 2. FRONTEND  (static, nginx-served under /var/www/zoiko-billing-platform/html)
+            # =========================================================================
+            echo "::group::Frontend deploy"
+            TARGET_BASE="/var/www/zoiko-billing-platform"
+            FRONTEND_DIR="$TARGET_BASE/app"
+            DIST_DIR="$FRONTEND_DIR/frontend/dist"
+
+            cd "$FRONTEND_DIR"
+            echo "Frontend working dir: $(pwd)"
             git pull origin main
             cd frontend
-            npm install
-            npm run build
-            sudo rm -rf /var/www/zoiko-billing-platform/html/*
-            sudo cp -r dist/* /var/www/zoiko-billing-platform/html/
-            sudo chown -R www-data:www-data /var/www/zoiko-billing-platform/html
+            echo "node: $(node --version)"
+            echo "npm: $(npm --version)"
+
+            # Deterministic install from the committed lockfile (package-lock.json in sync).
+            retry 2 npm ci
+            retry 2 npm run build
+
+            # Verify the build produced a real, non-empty dist with an entry HTML.
+            if [ ! -s "$DIST_DIR/index.html" ]; then
+              echo "::error::frontend/dist/index.html is missing or empty - build produced no output"
+              exit 1
+            fi
+            echo "frontend/dist verified: index.html present"
+            echo "frontend/dist file count: $(find "$DIST_DIR" -type f | wc -l)"
+
+            # Stage the build, then atomically swap it into the live html dir so nginx
+            # never serves an empty/partial tree. Previous release retained as html.old
+            # only long enough to complete the swap, then removed.
+            sudo rm -rf "$TARGET_BASE/html.new"
+            sudo mkdir -p "$TARGET_BASE/html.new"
+            sudo cp -r "$DIST_DIR/." "$TARGET_BASE/html.new/"
+            sudo rm -rf "$TARGET_BASE/html.old"
+            if [ -d "$TARGET_BASE/html" ]; then
+              sudo mv "$TARGET_BASE/html" "$TARGET_BASE/html.old"
+            fi
+            sudo mv "$TARGET_BASE/html.new" "$TARGET_BASE/html"
+            sudo rm -rf "$TARGET_BASE/html.old"
+            sudo chown -R www-data:www-data "$TARGET_BASE/html"
+
+            # Authoritative static-frontend health check after the swap.
+            if [ ! -s "$TARGET_BASE/html/index.html" ]; then
+              echo "::error::Live html/index.html missing after swap - deployment incomplete"
+              exit 1
+            fi
+            echo "Live html verified: index.html present"
+            echo "::endgroup::"
+
+            echo "::group::Deployment summary"
+            echo "Backend  : zoiko-billing-backend restarted and active"
+            echo "Frontend : dist staged and swapped into $TARGET_BASE/html"
+            echo "::endgroup::"
+            echo "Deploy complete."
