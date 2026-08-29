@@ -132,18 +132,26 @@ async def zoiko_exception_handler(request: Request, exc: ZoikoException):
 async def generic_exception_handler(request: Request, exc: Exception):
     """Catches any unexpected server error and returns a clean message."""
     import logging
+    from app.config import settings as _settings
+
     request_id = _request_id(request)
     logging.getLogger("zoiko_billing").error(
         f"Unhandled error on {request.method} {request.url.path} [request_id={request_id}]: {exc}",
         exc_info=True,
     )
+    body: dict = {
+        "success": False,
+        "error": "INTERNAL_SERVER_ERROR",
+        "message": "Something went wrong on the server. Please try again later.",
+        "request_id": request_id,
+    }
+    # DEVELOPMENT diagnostics only: surface the real exception so the browser
+    # Network tab / console shows exactly what failed. Never leaked outside
+    # DEBUG (production keeps the generic message).
+    if bool(getattr(_settings, "DEBUG", False)):
+        body["detail"] = f"{type(exc).__name__}: {exc}"
     return JSONResponse(
         status_code=500,
-        content={
-            "success": False,
-            "error": "INTERNAL_SERVER_ERROR",
-            "message": "Something went wrong on the server. Please try again later.",
-            "request_id": request_id,
-        },
+        content=body,
         headers=_cors_headers(request),
     )

@@ -35,12 +35,13 @@ import {
   createSession,
   listSessions,
   getSession,
-  sendMessage,
+  sendMessageStreamed,
   generatePreview,
   confirmAction,
   executeAction,
   cancelAction,
 } from "./api";
+import { useTypewriter } from "./useTypewriter";
 import PreviewCard from "./PreviewCard";
 import ConfirmDialog from "./ConfirmDialog";
 import { FAQ_CATEGORIES, WELCOME_MESSAGE, DEFAULT_PROMPTS, CONTEXTUAL_PROMPTS, TOPIC_KEYWORDS } from "./suggestedPrompts";
@@ -269,21 +270,63 @@ export default function AssistantPanel({ isOpen, onClose }) {
   // workspace width (680 px, within 560–720). Below `sm` the panel is a
   // full-screen sheet (spec: ≤767 px full-screen assistant).
   const [isExpanded, setIsExpanded] = useState(false);
-  const messagesEndRef = useRef(null);
+  const chatViewportRef = useRef(null);
   const inputRef = useRef(null);
   const recentRef = useRef(null);
   const sessionsLoadingRef = useRef(false);
+  // Auto-follow (ChatGPT-style): while TRUE the chat keeps the LATEST content
+  // pinned at the bottom (message sends + every typewriter chunk + the final
+  // reveal).  A single passive scroll listener flips it OFF when the user
+  // deliberately scrolls up to read older messages, and back ON only when
+  // they return to the bottom or send a new message — we never yank someone
+  // back down mid-read.  Refs only: no state → zero re-renders from scrolling.
+  const stickRef = useRef(true);
+  const scrollChatToBottom = useCallback((behavior = "auto") => {
+    const el = chatViewportRef.current;
+    if (!el || !stickRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+  // Typewriter (FE): the assistant message currently animating, and whether
+  // its progressive reveal has completed.  Only NEW responses animate —
+  // restored history renders instantly.  When a newer message arrives the
+  // previous `animatingUid` is superseded, which snaps the old animation to
+  // its complete text (never two overlapped animations, never dropped chars).
+  const [animatingUid, setAnimatingUid] = useState(null);
+  const [animDoneUid, setAnimDoneUid] = useState(null);
+  // SSE streaming (FE): uid of the assistant message whose text is still
+  // arriving from the streaming endpoint.  While set it renders raw (never
+  // re-types) and defers structured blocks; cleared when the stream's
+  // terminal `done` event reconciles the authoritative reply.
+  const [streamingUid, setStreamingUid] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
+      console.warn("[assistant-cx] panel opened: loading session history");
       loadSessions();
       inputRef.current?.focus();
     }
   }, [isOpen]);
 
+  // Only the chat container's own scroll moves: the viewport is scrollable
+  // in isolation, so the browser page is never scrolled by the panel.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const el = chatViewportRef.current;
+    if (!el) return;
+    const trackStick = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+      if (atBottom && !stickRef.current) stickRef.current = true;
+      else if (!atBottom && stickRef.current) stickRef.current = false;
+    };
+    el.addEventListener("scroll", trackStick, { passive: true });
+    return () => el.removeEventListener("scroll", trackStick);
+  }, [isOpen]);
+
+  // Follow the newest content whenever the message list changes
+  // (send, history restore, reply delivered).  Per-chunk typing ticks are
+  // handled inside MarkdownTypewriter via the same stick-aware scroll.
+  useEffect(() => {
+    scrollChatToBottom();
+  }, [messages, scrollChatToBottom]);
 
   // BUG 2 fix: Whenever messages change (load, append), scan for
   // executed action UIDs and update the tracking set.
@@ -308,14 +351,19 @@ export default function AssistantPanel({ isOpen, onClose }) {
         // Pre-fetch first session data in parallel with setting sessions
         const firstSession = data[0];
         getSession(firstSession.conversation_uid).then((session) => {
+          console.warn("[assistant-cx] session restored:", firstSession.conversation_uid, `(${session.messages?.length || 0} messages)`);
           setActiveSession(session);
           setMessages(session.messages || []);
+          setAnimatingUid(null);
+          setAnimDoneUid(null);
           setStatusAnnouncement(`Loaded conversation: ${session.title || "Untitled"}`);
         }).catch((err) => {
+          console.warn("[assistant-cx] session restore FAILED:", firstSession.conversation_uid, err?.name, err?.message);
           console.error("Failed to load session:", err);
         });
       }
     } catch (err) {
+      console.warn("[assistant-cx] listSessions FAILED:", err?.name, err?.message);
       console.error("Failed to load sessions:", err);
     } finally {
       sessionsLoadingRef.current = false;
@@ -328,45 +376,103 @@ export default function AssistantPanel({ isOpen, onClose }) {
       const session = await getSession(uid);
       setActiveSession(session);
       setMessages(session.messages || []);
+      setAnimatingUid(null);
+      setAnimDoneUid(null);
       setStatusAnnouncement(`Loaded conversation: ${session.title || "Untitled"}`);
     } catch (err) {
       console.error("Failed to load session:", err);
     }
   };
 
+  const notifySendFailure = (err) => {
+    console.error("[CHATBOT-DIAG] send failure:", err?.name, err?.message, {
+      status: err?.status,
+      sessionExpired: err?.sessionExpired,
+      retryAfter: err?.retryAfter,
+      cause: err?.cause,
+    });
+    let errorText;
+    let errorStatus;
+    if (err?.sessionExpired) {
+      errorText = "Your session has expired. Please sign in again to continue.";
+      errorStatus = "Session expired";
+    } else if (err?.status === 429) {
+      const wait = err?.retryAfter || 10;
+      errorText = `You're sending messages a bit quickly — please wait ${wait}s and try again.`;
+      errorStatus = "Rate limited";
+    } else {
+      // Friendly copy for everyone…
+      const friendly = "Couldn't reach the assistant just now. Your message is on the screen above — tap send to retry.";
+      // …but in development the real reason is never hidden (status + server
+      // detail go straight into the bubble so the Network tab and the console
+      // agree). Production always shows the friendly message only.
+      if (import.meta.env.MODE === "development") {
+        const statusLabel = err?.status != null ? `HTTP ${err.status}` : "network error";
+        errorText = `${friendly}\n(${statusLabel}: ${err?.message || "unknown"})`;
+      } else {
+        errorText = friendly;
+      }
+      errorStatus = err?.status != null ? `HTTP ${err.status}` : "Connection issue";
+    }
+    setMessages((prev) => [...prev, {
+      message_uid: `error-${Date.now()}`,
+      sender_type: "system",
+      message_text: errorText,
+      created_at: new Date().toISOString(),
+    }]);
+    setStatusAnnouncement(errorStatus);
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
+    // A new message always resumes auto-follow and jumps to the latest
+    // content — even if the user had scrolled up to read older messages.
+    stickRef.current = true;
+    scrollChatToBottom();
     let targetUid = activeSession?.conversation_uid;
     setInput("");
     setLoading(true);
     setStatusAnnouncement("Assistant is thinking...");
+    // Streaming fires-and-forgets (SSE callbacks settle later), so the shared
+    // catch/finally below must not tear down loading/side effects before the
+    // stream has reached its terminal event. Once a stream is started only
+    // its settle() (onDone/onError) clears `loading`.
+    let didStartStream = false;
+    let streamSettled = false;
     try {
       if (!targetUid) {
-        // Title is derived server-side from the first user message; pass the
-        // placeholder so the backend's derivation logic kicks in.
-        const session = await createSession("New Conversation", text);
-        setActiveSession(session);
-        setSessions((prev) => [session, ...prev]);
-        const initResp = session.messages?.[0];
         const userMsg = { message_uid: `temp-${Date.now()}`, sender_type: "user", message_text: text, created_at: new Date().toISOString() };
-        const assistantMsg = {
-          message_uid: initResp?.message_uid || `resp-${Date.now()}`,
-          sender_type: "assistant",
-          message_text: initResp?.answer || "",
-          mode: initResp?.mode || "M0_EXPLAIN",
-          risk_class: initResp?.risk_class || "R0",
-          structured_payload: { evidence: initResp?.evidence || [], next_actions: initResp?.next_actions || [], qualification: initResp?.qualification, suggested_prompts: initResp?.suggested_prompts || [], actions: initResp?.actions || [], draft_card: initResp?.draft_card, preview_card: initResp?.preview_card, confirm_label: initResp?.confirm_label },
-          created_at: new Date().toISOString(),
-        };
-        setMessages([userMsg, assistantMsg]);
-        const modeConfig = MODE_CONFIG[assistantMsg.mode] || MODE_CONFIG.M0_EXPLAIN;
-        setStatusAnnouncement(`${modeConfig.label} response received`);
+        setMessages([userMsg]);
+        try {
+          // Title is derived server-side from the first user message; pass the
+          // placeholder so the backend's derivation logic kicks in.
+          const session = await createSession("New Conversation", text);
+          setActiveSession(session);
+          setSessions((prev) => [session, ...prev]);
+          const initResp = session.messages?.[0];
+          const assistantMsg = {
+            message_uid: initResp?.message_uid || `resp-${Date.now()}`,
+            sender_type: "assistant",
+            message_text: initResp?.answer || "",
+            mode: initResp?.mode || "M0_EXPLAIN",
+            risk_class: initResp?.risk_class || "R0",
+            structured_payload: { evidence: initResp?.evidence || [], next_actions: initResp?.next_actions || [], qualification: initResp?.qualification, suggested_prompts: initResp?.suggested_prompts || [], actions: initResp?.actions || [], draft_card: initResp?.draft_card, preview_card: initResp?.preview_card, confirm_label: initResp?.confirm_label },
+            created_at: new Date().toISOString(),
+          };
+          setMessages([userMsg, assistantMsg]);
+          setAnimatingUid(assistantMsg.message_uid);
+          setAnimDoneUid(null);
+          const modeConfig = MODE_CONFIG[assistantMsg.mode] || MODE_CONFIG.M0_EXPLAIN;
+          setStatusAnnouncement(`${modeConfig.label} response received`);
+        } catch (err) {
+          console.warn("[assistant-cx] createSession FAILED:", err?.name, err?.message);
+          notifySendFailure(err);
+        }
         return;
       }
       const userMsg = { message_uid: `temp-${Date.now()}`, sender_type: "user", message_text: text, created_at: new Date().toISOString() };
       setMessages((prev) => [...prev, userMsg]);
-      const response = await sendMessage(targetUid, text);
       // Mirror the backend's first-message titling locally so the history
       // dropdown reflects the new title without a refetch.
       setSessions((prev) => prev.map((sess) => (
@@ -381,49 +487,111 @@ export default function AssistantPanel({ isOpen, onClose }) {
           ? { ...prev, title: deriveTitle(text) }
           : prev
       ));
-      const assistantMsg = {
-        message_uid: response.message_uid,
-        sender_type: "assistant",
-        message_text: response.answer,
-        mode: response.mode,
-        risk_class: response.risk_class,
-        structured_payload: { evidence: response.evidence, next_actions: response.next_actions, qualification: response.qualification, suggested_prompts: response.suggested_prompts, actions: response.actions, draft_card: response.draft_card, preview_card: response.preview_card, confirm_label: response.confirm_label },
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      const modeConfig = MODE_CONFIG[response.mode] || MODE_CONFIG.M0_EXPLAIN;
-      setStatusAnnouncement(`${modeConfig.label} response received`);
-    } catch (err) {
-      console.error("[CHATBOT-DIAG] handleSend FAILED:", err);
-      console.error("[CHATBOT-DIAG] Error name:", err?.name, "message:", err?.message, "stack:", err?.stack);
 
-      let errorText;
-      let errorStatus;
-
-      if (err?.sessionExpired) {
-        errorText = "Your session has expired. Please sign in again to continue.";
-        errorStatus = "Session expired";
-      } else if (err?.status === 429) {
-        const wait = err?.retryAfter || 10;
-        errorText = `You're sending messages a bit quickly — please wait ${wait}s and try again.`;
-        errorStatus = "Rate limited";
-      } else if (err?.status === 0 || err?.message === "network_failure" || !navigator.onLine) {
-        errorText = "I ran into a temporary issue processing that. Your message wasn't lost — please try sending it again. If this keeps happening, I can connect you to a team member.";
-        errorStatus = "Temporary issue";
-      } else {
-        errorText = "I ran into a temporary issue processing that. Your message wasn't lost — please try sending it again. If this keeps happening, I can connect you to a team member.";
-        errorStatus = "Temporary issue";
-      }
-
+      // Optimistic streaming bubble: text fills in as SSE `token` events
+      // arrive; the authoritative reply reconciles on the `done` event.
+      const respUid = `resp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setMessages((prev) => [...prev, {
-        message_uid: `error-${Date.now()}`,
-        sender_type: "system",
-        message_text: errorText,
+        message_uid: respUid,
+        sender_type: "assistant",
+        message_text: "",
+        mode: "M0_EXPLAIN",
+        risk_class: "R0",
+        structured_payload: {},
         created_at: new Date().toISOString(),
       }]);
-      setStatusAnnouncement(errorStatus);
+      setStreamingUid(respUid);
+      setAnimatingUid(null);
+      setAnimDoneUid(null);
+
+      let done = false;
+      let pendingTokens = [];
+      let flushTimer = null;
+      const flushTokens = () => {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        if (!pendingTokens.length) return;
+        const chunk = pendingTokens.join("");
+        pendingTokens = [];
+        setMessages((prev) => prev.map((m) =>
+          m.message_uid === respUid ? { ...m, message_text: (m.message_text || "") + chunk } : m
+        ));
+        scrollChatToBottom();
+      };
+      const settle = () => {
+        streamSettled = true;
+        if (done) return;
+        done = true;
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        setLoading(false);
+      };
+
+      didStartStream = true;
+      sendMessageStreamed(targetUid, text, undefined, {
+        onToken: (delta) => {
+          if (done) return;
+          pendingTokens.push(delta);
+          if (!flushTimer) flushTimer = setTimeout(flushTokens, 40);
+        },
+        onDone: (payload) => {
+          if (done) return;
+          const response = payload.response || {};
+          const streamed = payload.streamed === true;
+          // Sweep any token stragglers into the bubble, then overwrite with
+          // the authoritative answer so partial text can never drift from it.
+          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+          pendingTokens = [];
+          setMessages((prev) => prev.map((m) =>
+            m.message_uid === respUid
+              ? {
+                  ...m,
+                  message_text: response.answer || m.message_text,
+                  mode: response.mode || m.mode,
+                  risk_class: response.risk_class || m.risk_class,
+                  structured_payload: {
+                    evidence: response.evidence || [],
+                    next_actions: response.next_actions || [],
+                    qualification: response.qualification,
+                    suggested_prompts: response.suggested_prompts || [],
+                    actions: response.actions || [],
+                    draft_card: response.draft_card,
+                    preview_card: response.preview_card,
+                    confirm_label: response.confirm_label,
+                  },
+                }
+              : m
+          ));
+          setStreamingUid(null);
+          if (streamed) {
+            // Words already appeared live — settle at the bottom of the reply
+            // without re-typing it.
+            setAnimDoneUid(respUid);
+            requestAnimationFrame(scrollChatToBottom);
+          } else {
+            // Whole answer arrived at once (rules/canned/cached) — type it out.
+            setAnimatingUid(respUid);
+            setAnimDoneUid(null);
+            requestAnimationFrame(scrollChatToBottom);
+          }
+          const modeConfig = MODE_CONFIG[response.mode || "M0_EXPLAIN"] || MODE_CONFIG.M0_EXPLAIN;
+          setStatusAnnouncement(`${modeConfig.label} response received`);
+          settle();
+        },
+        onError: (err) => {
+          console.error("[CHATBOT-DIAG] stream FAILED:", err?.name, err?.message);
+          setStreamingUid(null);
+          settle();
+          notifySendFailure(err);
+        },
+      });
+    } catch (err) {
+      if (!streamSettled) {
+        console.error("[CHATBOT-DIAG] handleSend FAILED (pre-stream):", err?.name, err?.message, err?.stack);
+        notifySendFailure(err);
+      }
     } finally {
-      setLoading(false);
+      // The streaming path is fire-and-forget: settle() (onDone/onError) owns
+      // setLoading(false), so the synchronous finally must not clear it early.
+      if (!didStartStream) setLoading(false);
     }
   };
 
@@ -515,8 +683,9 @@ export default function AssistantPanel({ isOpen, onClose }) {
       }
       setPreviewData(null);
       setActiveAction(null);
+      const execUid = `exec-${Date.now()}`;
       setMessages((prev) => [...prev, {
-        message_uid: `exec-${Date.now()}`,
+        message_uid: execUid,
         sender_type: "assistant",
         message_text: "**Action executed successfully.** The mutation is now live.",
         mode: "M4_EXECUTE",
@@ -534,6 +703,8 @@ export default function AssistantPanel({ isOpen, onClose }) {
         },
         created_at: new Date().toISOString(),
       }]);
+      setAnimatingUid(execUid);
+      setAnimDoneUid(null);
     } catch (err) {
       setMessages((prev) => [...prev, {
         message_uid: `err-${Date.now()}`,
@@ -585,6 +756,8 @@ export default function AssistantPanel({ isOpen, onClose }) {
       const session = await createSession("New Conversation");
       setActiveSession(session);
       setMessages(session.messages || []);
+      setAnimatingUid(null);
+      setAnimDoneUid(null);
       setSessions((prev) => [session, ...prev]);
       setStatusAnnouncement("New conversation started");
       inputRef.current?.focus();
@@ -619,7 +792,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
       <div
         role="complementary"
         aria-label="AI Billing Assistant"
-        className={`ab-panel h-full shrink-0 flex flex-col border-l border-[var(--ab-border)] transition-[width] duration-200 ease-out lg:shadow-2xl ${
+        className={`ab-panel h-full shrink-0 flex flex-col border-l border-[var(--ab-border)] transition-[width] duration-200 ease-out lg:shadow-2xl lg:pt-[65px] ${
           isExpanded ? "w-[680px]" : "w-[440px]"
         } max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-50 max-lg:border-0 max-lg:shadow-2xl`}
         style={themeVars}
@@ -732,7 +905,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         </header>
 
         {/* Messages viewport */}
-        <div className="ab-viewport flex-1 overflow-y-auto px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
+        <div ref={chatViewportRef} className="ab-viewport flex-1 overflow-y-auto px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
           {messages.length === 0 && !loading && (
             <>
               {/* Welcome message bubble */}
@@ -783,40 +956,68 @@ export default function AssistantPanel({ isOpen, onClose }) {
             </>
           )}
 
-          {messages.map((msg) => (
-            <div key={msg.message_uid}>
-              <MessageBubble
-                message={msg}
-                showDisclaimer={
-                  msg.sender_type === "assistant" &&
-                  msg.message_uid ===
-                    messages.find((m) => m.sender_type === "assistant")?.message_uid
-                }
-              />
-              {/* §8.1 — M2 Editable Structured Draft Card */}
-              {msg.structured_payload?.draft_card && msg.sender_type === "assistant" && (
-                <div className="pl-9 mt-2">
-                  <DraftCard
-                    draftCard={msg.structured_payload.draft_card}
-                    actions={msg.structured_payload.actions}
-                    onAction={handleAction}
-                    loading={loading}
-                    isExecuted={executedActionUids.has(msg.structured_payload.draft_card.action_uid)}
-                  />
-                </div>
-              )}
-              {/* BUG 2 fix: Only show ActionButtons if the action has NOT been executed */}
-              {msg.structured_payload?.actions?.length > 0 && msg.sender_type === "assistant" && !msg.structured_payload?.draft_card && !msg.structured_payload?.preview_card && !executedActionUids.has(msg.structured_payload.actions?.[0]?.action_uid) && (
-                <div className="pl-9">
-                  <ActionButtons
-                    actions={msg.structured_payload.actions}
-                    onAction={handleAction}
-                    loading={loading}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+          {messages.map((msg) => {
+            const animating =
+              msg.sender_type === "assistant" && msg.message_uid === animatingUid;
+            const isStreaming =
+              msg.sender_type === "assistant" && msg.message_uid === streamingUid;
+            // Structured blocks (draft/action cards, evidence, captions,
+            // qualification) wait until the reveal completes — while the
+            // typewriter runs OR the SSE stream is live — then appear,
+            // no flicker, matching a streaming UX.
+            const deferStructured =
+              (animating || isStreaming) &&
+              animDoneUid !== msg.message_uid &&
+              !!msg.message_text;
+            return (
+              <div key={msg.message_uid}>
+                <MessageBubble
+                  message={msg}
+                  showDisclaimer={
+                    msg.sender_type === "assistant" &&
+                    msg.message_uid ===
+                      messages.find((m) => m.sender_type === "assistant")?.message_uid
+                  }
+                  animate={animating}
+                  streaming={isStreaming}
+                  deferStructured={deferStructured}
+                  onChunkScroll={scrollChatToBottom}
+                  onDone={() => {
+                    if (msg.message_uid === animatingUid) {
+                      setAnimDoneUid(msg.message_uid);
+                      // Deferred structured blocks (evidence, cards) reveal
+                      // in the same commit as `animDoneUid` — settle the
+                      // scroll AFTER the DOM has grown so the post-reveal
+                      // viewport rests exactly at the bottom.
+                      requestAnimationFrame(scrollChatToBottom);
+                    }
+                  }}
+                />
+                {/* §8.1 — M2 Editable Structured Draft Card */}
+                {msg.structured_payload?.draft_card && msg.sender_type === "assistant" && !deferStructured && (
+                  <div className="pl-9 mt-2">
+                    <DraftCard
+                      draftCard={msg.structured_payload.draft_card}
+                      actions={msg.structured_payload.actions}
+                      onAction={handleAction}
+                      loading={loading}
+                      isExecuted={executedActionUids.has(msg.structured_payload.draft_card.action_uid)}
+                    />
+                  </div>
+                )}
+                {/* BUG 2 fix: Only show ActionButtons if the action has NOT been executed */}
+                {msg.structured_payload?.actions?.length > 0 && msg.sender_type === "assistant" && !msg.structured_payload?.draft_card && !msg.structured_payload?.preview_card && !executedActionUids.has(msg.structured_payload.actions?.[0]?.action_uid) && !deferStructured && (
+                  <div className="pl-9">
+                    <ActionButtons
+                      actions={msg.structured_payload.actions}
+                      onAction={handleAction}
+                      loading={loading}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {previewData && (
             <div className="pl-9 mt-2">
@@ -829,7 +1030,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
             </div>
           )}
 
-          {loading && (
+          {loading && !streamingUid && (
             <div className="flex items-start gap-2">
               <ZoikoMark size={28} rounded="rounded-lg" />
               <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3">
@@ -841,7 +1042,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
             </div>
           )}
 
-          <div ref={messagesEndRef} />
+          <div aria-hidden="true" />
         </div>
 
         {/* Suggested prompts — contextual follow-ups or server-side suggestions.
@@ -991,6 +1192,84 @@ function MarkdownContent({ text }) {
   );
 }
 
+/**
+ * Live body for an SSE-streaming assistant bubble: renders whatever text has
+ * arrived so far plus a trailing blinking caret.  Unlike MarkdownTypewriter
+ * it never re-animates — each `token` event simply renders the accumulated
+ * Markdown (transient half-markup, e.g. a partially-open `**`, settles once
+ * the authoritative text lands).
+ */
+function StreamingText({ text }) {
+  return (
+    <div className="text-sm leading-relaxed">
+      {text ? <ReactMarkdown components={MD_COMPONENTS}>{text}</ReactMarkdown> : null}
+      <span className="ab-typing-caret ml-0.5" aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * Progressive-typing body for a single assistant bubble (ChatGPT-style).
+ * ── The reveal NEVER swaps component trees: `useTypewriter` advances a
+ * prefix of the token stream and this component re-renders ReactMarkdown on
+ * top of it, so the completed state is byte-identical to MarkdownContent and
+ * there is no flicker or layout jump at the end.
+ * ── "Typing…" is shown only while waiting for the first content chunk.
+ * ── A small blinking caret trails partial text; both disappear on complete.
+ */
+function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
+  const { displayed, isTyping, done } = useTypewriter(text);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const onChunkScrollRef = useRef(onChunkScroll);
+  onChunkScrollRef.current = onChunkScroll;
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    if (done && !firedRef.current) {
+      firedRef.current = true;
+      onDoneRef.current?.();
+    }
+  }, [done]);
+
+  // Keep the viewport pinned to the live cursor as each chunk is revealed,
+  // in lock-step with the typing animation.  The callback is ref-backed so
+  // this fires on every chunk without re-binding the effect; it is a no-op
+  // while the user is scrolled up reading history (stick-aware) and uses
+  // instant positioning to avoid any smooth-scroll lag behind the words.
+  useEffect(() => {
+    if (displayed) onChunkScrollRef.current?.();
+  }, [displayed]);
+
+  const hasText = text && text.length > 0;
+
+  return (
+    <div className="text-sm leading-relaxed">
+      {isTyping && !displayed && hasText && (
+        <span
+          className="inline-flex items-center gap-1 uppercase tracking-wider text-[10px]"
+          style={{ color: "var(--ab-text-muted)" }}
+          role="status"
+        >
+          <span className="ab-typing-dot ab-typing-dot--1" />
+          <span className="ab-typing-dot ab-typing-dot--2" />
+          <span className="ab-typing-dot ab-typing-dot--3" />
+          <span className="sr-only">Assistant is typing</span>
+        </span>
+      )}
+      {isTyping && !displayed && hasText && (
+        <span className="inline-block h-4" aria-hidden="true" />
+      )}
+      {displayed && (
+        <ReactMarkdown components={MD_COMPONENTS}>{displayed}</ReactMarkdown>
+      )}
+      {isTyping && displayed && hasText && (
+        <span className="ab-typing-caret ml-0.5" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+
 function SourceFooter({ evidence, disclaimer }) {
   const [open, setOpen] = useState(false);
   const primary = evidence[0] || {};
@@ -1026,7 +1305,7 @@ function SourceFooter({ evidence, disclaimer }) {
   );
 }
 
-function MessageBubble({ message, showDisclaimer = false }) {
+function MessageBubble({ message, showDisclaimer = false, animate = false, streaming = false, deferStructured = false, onChunkScroll, onDone }) {
   const isUser = message.sender_type === "user";
   const isSystem = message.sender_type === "system";
   const mode = message.mode ? MODE_CONFIG[message.mode] : null;
@@ -1069,12 +1348,16 @@ function MessageBubble({ message, showDisclaimer = false }) {
         >
           {isUser ? (
             <div className="whitespace-pre-wrap">{message.message_text}</div>
+          ) : streaming ? (
+            <StreamingText text={message.message_text} />
+          ) : animate ? (
+            <MarkdownTypewriter text={message.message_text} onChunkScroll={onChunkScroll} onDone={onDone} />
           ) : (
             <MarkdownContent text={message.message_text} />
           )}
         </div>
 
-        {!isUser && (
+        {!isUser && !deferStructured && (
           <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 leading-none">
             {(evType === "action_draft" || evType === "action_preview") && (
               <>
@@ -1091,7 +1374,7 @@ function MessageBubble({ message, showDisclaimer = false }) {
           </div>
         )}
 
-        {evidence.length > 0 && !isUser && (
+        {evidence.length > 0 && !isUser && !deferStructured && (
           <SourceFooter
             evidence={evidence}
             disclaimer={qualifications}
@@ -1103,7 +1386,7 @@ function MessageBubble({ message, showDisclaimer = false }) {
             answer of a conversation; afterwards it stays available inside
             the collapsed source footer (and always in the response payload,
             per FRS traceability / Guardrail §13 Output Policy). */}
-        {showDisclaimer && qualifications && !isUser && (
+        {showDisclaimer && qualifications && !isUser && !deferStructured && (
           <p className="ab-citation text-[10px] mt-1 italic">{qualifications}</p>
         )}
       </div>

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,6 +51,8 @@ from ..models import (
     BillingPlane,
     UserRefStatus,
 )
+
+logger = logging.getLogger("zoiko_billing.ai.context")
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,50 @@ def get_ai_context(
 
     # Resolve permission scopes from role
     permission_scopes = ROLE_PERMISSIONS.get(role, ["billing:read"])
+
+    # Evidence store (guide §2 ai_iam_user_ref + ai_permission_snapshot):
+    # ensure identity + permission-snapshot rows exist so every conversation
+    # and model run can be attributed to a user/tenant point-in-time. Writes
+    # are best-effort — a busy authentication write must never fail the request.
+    if tenant_context_id and permission_scopes:
+        try:
+            iam_ref = (
+                db.query(IAMUserRef)
+                .filter(
+                    IAMUserRef.user_ref_id == current_user.id,
+                    IAMUserRef.tenant_context_id == tenant_context_id,
+                )
+                .first()
+            )
+            if iam_ref is None:
+                iam_ref = IAMUserRef(
+                    user_ref_id=current_user.id,
+                    tenant_context_id=tenant_context_id,
+                    role_summary=role,
+                )
+                db.add(iam_ref)
+                db.flush()
+            snap = (
+                db.query(PermissionSnapshot)
+                .filter(
+                    PermissionSnapshot.user_ref_id == iam_ref.id,
+                    PermissionSnapshot.tenant_context_id == tenant_context_id,
+                )
+                .order_by(PermissionSnapshot.created_at.desc())
+                .first()
+            )
+            if snap is None or (snap.scopes_json or []) != permission_scopes:
+                db.add(PermissionSnapshot(
+                    user_ref_id=iam_ref.id,
+                    tenant_context_id=tenant_context_id,
+                    scopes_json=permission_scopes,
+                    source_policy_version="role-policy-v1",
+                    snapshot_hash=_compute_scopes_hash(permission_scopes),
+                ))
+            db.flush()
+        except Exception as exc:  # noqa: BLE001 — evidence writes are non-fatal
+            db.rollback()
+            logger.warning("permission snapshot write skipped (non-fatal): %s", exc)
 
     return AIContext(
         user_id=current_user.id,

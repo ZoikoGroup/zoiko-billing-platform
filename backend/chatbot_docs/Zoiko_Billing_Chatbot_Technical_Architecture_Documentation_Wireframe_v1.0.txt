@@ -1,0 +1,811 @@
+ZOIKO BILLING
+Chatbot Technical Architecture Documentation Wireframe
+Reference Architecture • Security • Runtime • Resilience • SRE • Engineering Handoff
+[TABLE: 1 rows x 1 cols]
+Architecture doctrine The Zoiko Billing Chatbot is a governed conversational control surface over authoritative Billing capabilities. Models interpret and propose; deterministic services resolve identity, context, permissions, policy, authoritative state, preview, approval, execution and evidence. No architecture component may turn the chatbot into a shadow ledger, shadow policy engine or uncontrolled autonomous financial actor.
+[END TABLE]
+[TABLE: 10 rows x 2 cols]
+Field | Value
+Document ID | ZB-AI-ARCH-001
+Version | 1.0 — Detailed Technical Architecture Wireframe
+Date | 17 August 2026
+Status | Proposed for Approval
+Owner | Zoiko Billing Engineering / Architecture
+Prepared for | AI/Agentic, Backend, Platform/SRE, Security, Data, Frontend, QA, Product, Finance Engineering
+Parent artefacts | ZB-AI-WF-001; ZB-AI-PRD-001; ZB-AI-FRS-001; ZB-AI-API-001; Database/ER Wireframe; KB Wireframe; UI/UX Figma Wireframe
+Language | American English
+Classification | Confidential — Internal Use
+[END TABLE]
+Provider/product names in this document are logical or reference targets unless explicitly designated as an adopted Zoiko standard. Final cloud, model, vector, queue and observability products require architecture approval and production validation.
+1. Document Control, Purpose & Approval
+[TABLE: 9 rows x 2 cols]
+Role | Approval responsibility
+Global/Product Architecture | Confirms architectural coherence, system boundaries and long-term platform fit.
+Backend / API Lead | Owns service contracts, authoritative integrations, action orchestration and persistence boundaries.
+AI / Agentic Lead | Owns model gateway, tool orchestration, prompt/runtime policy and evaluation integration.
+Security Lead | Owns trust boundaries, IAM, secrets, threat controls, logging policy and security release gates.
+Platform / SRE | Owns runtime topology, scaling, observability, SLOs, incidents, resilience and DR.
+Data / Knowledge Lead | Owns retrieval/index architecture, ingestion, data classification and knowledge lifecycle.
+Finance Engineering | Approves all financial-state invariants and integration semantics.
+QA Lead | Owns architecture-level verification, fault injection and non-functional acceptance evidence.
+[END TABLE]
+1.1 Purpose
+This document defines the target technical architecture and the minimum engineering evidence required to operate the Zoiko Billing Chatbot safely in production. It bridges the product/functional specifications and the deployable implementation. It is intentionally implementation-oriented but does not replace source-code design documents, infrastructure-as-code, runbooks, DDL migrations or API specifications.
+1.2 Architecture output set
+System context and trust boundaries.
+Logical component model and ownership.
+Request, retrieval and governed-action execution flows.
+Persistence, eventing and evidence architecture.
+Identity, authorization, tenant/entity isolation and security controls.
+Deployment topology, environments, release architecture and regionalization.
+Observability, SLOs, resilience, scaling, disaster recovery and operational readiness.
+Architecture Decision Record (ADR) backlog, release gates and traceable acceptance criteria.
+1.3 Approval rule
+[TABLE: 1 rows x 1 cols]
+No silent divergence If implementation departs materially from this architecture, engineering must record the change in an ADR, assess security/financial consequences, update the relevant API/database/FRS artifacts, and obtain the applicable owner approvals before production release.
+[END TABLE]
+2. Architecture Principles & Non-Negotiable Invariants
+[TABLE: 13 rows x 3 cols]
+ID | Invariant | Architecture requirement
+P-01 | Authoritative financial truth | Invoices, payments, balances, reconciliation, credits, refunds and commercial-account state remain owned by Zoiko Billing domain services/ledgers.
+P-02 | Model has no inherent authority | An LLM may interpret intent and propose parameters, but cannot authorize itself, bypass policy or write directly to financial stores.
+P-03 | Context before data | Every data-bearing request resolves user, tenant, legal entity, billing plane and effective permissions before retrieval or action.
+P-04 | Preview before consequence | High-risk actions require deterministic authoritative preview, freshness/version validation and explicit confirmation; maker-checker applies when policy requires.
+P-05 | Evidence by construction | Messages, retrieval provenance, action stages, approvals, tool calls, service responses and audit events share correlation IDs sufficient for reconstruction.
+P-06 | Fail closed | Ambiguous identity, stale previews, unavailable authority services, missing policy or unresolved financial state must block or safely degrade rather than guess.
+P-07 | Two-plane separation | Tenant billing and Zoiko Billing's own SaaS commercial billing are separate data/permission planes with no implicit crossover.
+P-08 | Least privilege | Every user, service, worker and provider integration receives only the minimum permissions and network/data access required.
+P-09 | Regional/data governance | Data placement, retention and provider routing respect tenant home-region, classification and jurisdiction policy.
+P-10 | Replaceable AI provider | Core billing workflows do not depend on proprietary model behavior. The model gateway normalizes provider access and preserves policy independence.
+P-11 | Asynchronous truth | Long-running actions expose durable job/state machines. Transport timeout never becomes inferred financial success or failure.
+P-12 | Observable and operable | Every critical path has measurable SLIs, actionable alerts, kill switches, runbooks and rollback/recovery mechanisms.
+[END TABLE]
+2.1 Forbidden architecture shortcuts
+Direct LLM-to-database or LLM-to-payment-provider credentials.
+Chatbot-owned replicated financial ledgers used as authoritative state.
+Client-supplied tenant/entity/role claims accepted without server resolution.
+Model-generated SQL against production financial stores.
+Unbounded agent loops or dynamic tool discovery in production financial workflows.
+Shared vector namespace across tenants without hard authorization filters.
+Logging raw secrets, payment credentials, unrestricted prompts or unnecessary PII.
+Financial execution endpoints that lack idempotency, audit correlation or version/freshness controls.
+3. Quality Attributes & Architecture Drivers
+[TABLE: 11 rows x 3 cols]
+Driver | Launch target / requirement | Design response
+Correctness | Financial facts and effects must come from authoritative services. | Typed contracts, provenance, version checks, deterministic preview and execution receipts.
+Availability | Proposed: 99.95% monthly for chatbot orchestration excluding explicitly defined upstream dependencies. | Multi-AZ stateless services, HA stores, graceful degradation, dependency isolation.
+Latency | Proposed: UI acknowledgement <300 ms; first streamed content P95 <=3 s; action preview P95 <=5 s excluding slow external dependencies. | Streaming, caching of safe metadata, parallel read calls, provider routing and bounded timeouts.
+Security | No cross-tenant leakage; no model-held privileged credentials; full consequential-action evidence. | Zero-trust service identity, ABAC/RBAC, network segmentation, secrets manager, audit.
+Scalability | Horizontal scale for conversation bursts and retrieval load. | Stateless compute, queue-backed workers, autoscaling, partitionable stores.
+Resilience | Dependency failure must not corrupt or misstate financial outcomes. | Circuit breakers, retry policy, idempotency, durable jobs, unknown/pending states.
+Explainability | Users/operators must see sources and action basis without revealing hidden chain-of-thought. | Structured citations, decision-basis codes, provenance records, observable policy decisions.
+Portability | Model/provider changes must not rewrite financial workflow logic. | Model gateway, provider adapters, canonical schemas and prompt registry.
+Operability | Production incidents must be diagnosable end-to-end. | Correlation IDs, distributed traces, dashboards, structured logs, runbooks.
+Cost control | AI and retrieval spend must be measurable and governable. | Per-tenant/model token/cost telemetry, quotas, routing policies, caching, budget alerts.
+[END TABLE]
+All numerical SLO/latency values above are proposed architecture objectives and must be load-tested against the selected model/provider and authoritative Billing services before they are promoted to committed production SLOs.
+4. System Context & External Dependencies
+Figure 1 — System context and authority boundary
+4.1 External dependency classes
+[TABLE: 7 rows x 3 cols]
+Dependency | Role | Failure posture
+Zoiko Billing domain APIs | Authoritative customer, invoice, payment, balance, reconciliation, credit, refund and commercial state. | Financial truth unavailable => do not infer; degrade to explanation/status if safe.
+Identity provider / IAM | Authentication, user lifecycle, roles/groups/claims seed. | No authenticated context => block protected capabilities.
+Model provider(s) | Language understanding, generation and optional embeddings. | Fallback provider/model only when classification/policy permits; otherwise graceful unavailable.
+Knowledge sources | Approved Billing documents and tenant content. | No current authoritative source => abstain or clearly label non-authoritative guidance.
+Notification/event services | Async completion, approvals, webhooks and operations. | Queue/retry; preserve durable state; no duplicate financial effect.
+Observability/SIEM | Operational/security telemetry. | Buffer where possible; security-critical logging failure may fail closed per policy.
+[END TABLE]
+4.2 Architectural dependency rule
+[TABLE: 1 rows x 1 cols]
+Dependency truth boundary The chatbot may aggregate, explain and orchestrate authoritative services, but it cannot manufacture missing authority. When a required Billing service is unavailable, the architecture must preserve uncertainty explicitly and provide a safe recovery/status path.
+[END TABLE]
+5. Reference Logical Architecture
+Figure 2 — Logical service architecture and data/evidence boundaries
+5.1 Layer responsibilities
+[TABLE: 8 rows x 3 cols]
+Layer | Primary responsibility | Must not
+Experience | Conversation, structured cards, citations, previews, confirmations, approval and receipts. | Authorize actions or infer financial completion.
+Edge/BFF | Ingress controls, auth handoff, request shaping, streaming and client compatibility. | Trust client role/context assertions.
+Orchestration | Context resolution, workflow state, service/tool coordination and response composition. | Contain uncontrolled business rules that belong to Billing/policy services.
+AI/Knowledge | Model access, prompt policy, retrieval, reranking, grounding and citations. | Receive payment secrets or write financial state.
+Action Control | Action lifecycle, deterministic validation, preview, confirm, approvals, idempotent execution. | Delegate authority to generated text.
+Evidence/Data | Conversation state, provenance, action evidence, audit pointers, approved knowledge index. | Become a second Billing ledger.
+Authoritative Billing | Financial system of record and business-rule enforcement. | Assume chatbot validation replaces domain validation.
+[END TABLE]
+6. Component Catalog & Ownership
+[TABLE: 16 rows x 5 cols]
+ID | Component | Owner | Responsibility | Primary dependencies
+C-01 | Chat UI / Assistant Shell | Frontend | Conversation UX, structured cards, citations, action previews, approvals, status and receipts. | API/BFF only
+C-02 | API Gateway / BFF | Platform/Backend | Ingress auth checks, WAF/rate-limit integration, API versioning, streaming, response shaping. | UI; orchestrator
+C-03 | Chat Orchestrator | AI/Backend | Session workflow, context, routing, tool coordination, evidence correlation, response assembly. | Policy, model gateway, RAG, action control
+C-04 | Context Resolver | Backend/Security | Resolve authenticated user -> tenant -> entity -> billing plane -> permission context. | IAM, tenant service
+C-05 | Policy / Guardrail Service | Security/Product | Risk class, tool/mode eligibility, content/data handling, approval requirements, model/provider restrictions. | Policy registry, context
+C-06 | Model Gateway | AI Platform | Canonical model interface, provider routing, prompt registry, redaction, token limits, timeout/cost policies. | Approved model providers
+C-07 | Retrieval Service | AI/Data | Authorized hybrid retrieval, metadata filters, reranking, freshness, citation candidates. | Knowledge index, KB metadata
+C-08 | Action Control Plane | Backend/Finance Eng | Draft -> preview -> confirmation -> approval -> execution lifecycle and idempotency. | Billing APIs, approval service, evidence store
+C-09 | Billing API Adapter | Backend | Canonical typed adapters, timeouts, retries, mapping and provenance for domain APIs. | Zoiko Billing services
+C-10 | Approval Service | Backend/Product | Maker-checker queues, decision policies, expiry and evidence. | IAM, action control
+C-11 | Async Worker / Job Service | Platform/Backend | Long-running operations, webhooks, retries, status transitions. | Event bus, Billing APIs
+C-12 | Evidence Store | Data/Backend | Durable chatbot state, provenance, action chain, audit references. | Relational DB/object store
+C-13 | Knowledge Index | Data/AI | Lexical/vector indexes partitioned by namespace/tenant/classification. | Ingestion pipeline
+C-14 | Event / Audit Publisher | Platform/Security | Append/fan-out auditable events and operational signals. | Event bus, audit archive
+C-15 | Observability Stack | SRE/Security | Metrics, traces, structured logs, SIEM feeds, dashboards and alerting. | All runtime services
+[END TABLE]
+7. Request Lifecycle & Conversation Runtime
+7.1 Read/explain path
+[TABLE: 9 rows x 3 cols]
+Step | Stage | Required behavior
+1 | Ingress | Gateway validates token syntax, request limits, client version and correlation ID.
+2 | Context | Context Resolver resolves tenant/entity/billing plane and effective capabilities.
+3 | Classification | Orchestrator/Policy classify intent, data sensitivity and required mode.
+4 | Plan | Orchestrator selects allow-listed retrieval/tool calls; no arbitrary tools.
+5 | Ground | RAG and/or Billing read APIs provide evidence and authoritative data.
+6 | Generate | Model Gateway supplies bounded prompt context; response must fit structured schema where required.
+7 | Verify | Response composer checks citations, data provenance, permissions and unsupported claims.
+8 | Emit | Stream/display answer and cards; persist message/evidence correlation.
+[END TABLE]
+7.2 Runtime state machine
+[TABLE: 1 rows x 1 cols]
+RECEIVED -> CONTEXT_RESOLVED -> CLASSIFIED -> GROUNDING -> GENERATING -> VALIDATING -> COMPLETED | | | | +-> DENIED +-> NO_SOURCE +-> TOOL_ERROR +-> SAFE_FAILURE
+[END TABLE]
+7.3 Agent-loop constraint
+[TABLE: 1 rows x 1 cols]
+Bounded orchestration Production workflows use explicit workflow graphs and allow-listed tools with maximum step counts, timeouts and budget ceilings. Recursive autonomous loops, self-installing tools, arbitrary URL fetching and unrestricted code execution are prohibited.
+[END TABLE]
+8. Governed Financial Action Architecture
+Figure 3 — Consequential financial action sequence
+8.1 Action states
+[TABLE: 11 rows x 3 cols]
+State | Meaning | Permitted transition
+DRAFT | Interpreted candidate parameters; no financial effect. | VALIDATING / CANCELLED
+VALIDATING | Server resolves entities, permissions and business-rule prerequisites. | PREVIEW_READY / DENIED / FAILED
+PREVIEW_READY | Authoritative calculated effect bound to versions/hash and expiry. | CONFIRMED / EXPIRED / SUPERSEDED / CANCELLED
+CONFIRMED | User explicitly accepted exact preview. | AWAITING_APPROVAL / EXECUTING / EXPIRED
+AWAITING_APPROVAL | Maker-checker or policy decision required. | APPROVED / REJECTED / EXPIRED
+APPROVED | Required approval satisfied. | EXECUTING / EXPIRED
+EXECUTING | Idempotent authoritative write in progress. | SUCCEEDED / PENDING / FAILED_UNKNOWN
+PENDING | Durable async operation awaiting terminal event/status. | SUCCEEDED / FAILED
+SUCCEEDED | Authoritative receipt confirms effect. | Terminal
+FAILED / FAILED_UNKNOWN | Known failure or ambiguous external outcome. | RECOVERY / RECONCILIATION / Terminal per policy
+[END TABLE]
+8.2 Hard technical controls
+Action execution API requires an action_id, valid preview_id/hash, confirmation evidence, approval evidence where required, actor/context snapshot and idempotency key.
+Preview payload is generated from authoritative Billing services, not model arithmetic.
+Resource versions/ETags are rechecked immediately before write; stale effects return conflict and require a new preview.
+The executing service re-evaluates authorization even if upstream already authorized.
+All terminal/pending results return a receipt or durable operation identifier and correlation ID.
+The model never stores or receives raw PSP secrets, card credentials, banking passwords or service administrator credentials.
+9. Model Gateway & AI Runtime Architecture
+9.1 Model gateway responsibilities
+[TABLE: 10 rows x 2 cols]
+Capability | Requirement
+Provider abstraction | Expose canonical chat/structured-output/embedding interfaces independent of any single model vendor.
+Model registry | Approved model IDs, capabilities, max context, risk classification, region, cost and lifecycle status.
+Routing | Route by task, data classification, latency/cost budget, region and availability; never solely by model preference.
+Prompt registry | Versioned system/developer prompt assets with change approval, rollback and hash recorded in model_run evidence.
+Structured output | Use schema-constrained outputs for tool/action parameters; reject malformed or out-of-contract payloads.
+Data minimization | Send only necessary context; redact/mask restricted fields before provider call when policy requires.
+Timeout/budget | Per-call timeout, max tokens, max cost and step budget.
+Fallback | Fallback model/provider only if data policy, task capability and evaluation threshold permit.
+Safety telemetry | Record provider/model/prompt versions, latency, token count, policy outcome and safe error code; do not retain hidden chain-of-thought.
+[END TABLE]
+9.2 Model isolation
+[TABLE: 1 rows x 1 cols]
+No financial credentials in model context The model gateway receives user-visible financial facts needed for the task and opaque resource references where possible. It never receives privileged database credentials, PSP secrets, signing keys or unconstrained service tokens.
+[END TABLE]
+9.3 Prompt/runtime policy boundary
+System prompts are policy-controlled configuration, not the sole security boundary.
+All model-proposed actions are parsed into typed canonical objects and validated by deterministic services.
+Tool list is compiled from effective capabilities; unavailable/unauthorized tools are not exposed to the model.
+External/tenant documents are treated as untrusted content, never as higher-priority instructions.
+10. Retrieval-Augmented Generation Architecture
+10.1 Retrieval pipeline
+[TABLE: 9 rows x 2 cols]
+Stage | Architecture behavior
+Namespace resolution | Resolve global/internal/jurisdiction/tenant/entity namespace set from authenticated context and task.
+Query formulation | Generate bounded search query; preserve critical billing terms, IDs, jurisdiction and product version.
+Lexical + vector retrieval | Hybrid retrieval over approved published chunks; authorization filters applied before/within search, not after answer generation.
+Metadata filtering | Enforce status=published, freshness, classification, product, jurisdiction, tenant and entity constraints.
+Reranking | Rerank only already-authorized candidates; authority/freshness can override semantic similarity.
+Evidence set | Return source IDs, document/chunk versions, authority level, effective dates and excerpt hashes.
+Answerability | If evidence is contradictory, stale or insufficient, return a controlled abstention/clarification state.
+Citation assembly | Response cites retrievable evidence references; historical answers remain reconstructable via stored versions.
+[END TABLE]
+10.2 Index architecture
+Vector and lexical indexes may be separate physical services or one platform, but authorization semantics must be identical.
+Tenant content is physically or logically partitioned with hard tenant filters; cache keys include namespace/tenant and classification.
+Embedding text is treated as derived sensitive data and inherits source classification/retention.
+Deletion/retirement propagates to retrieval availability while historical evidence records preserve the prior citation reference as required.
+10.3 Prompt injection boundary
+[TABLE: 1 rows x 1 cols]
+Retrieved content is data, not instruction Instructions inside customer documents, imported PDFs, emails or web-derived material cannot alter system policies, tool permissions, model gateway configuration or action-control requirements. Retrieval output is wrapped and labeled as untrusted evidence.
+[END TABLE]
+11. Data Architecture & Persistence Boundaries
+[TABLE: 7 rows x 4 cols]
+Store | Reference technology class | Stores | Does not store
+Relational evidence store | PostgreSQL-compatible ACID RDBMS | Sessions, messages, model/tool runs, action chain, approvals, provenance, audit pointers, jobs. | Authoritative invoice/payment/customer ledgers.
+Knowledge index | Vector DB or pgvector-compatible + lexical search | Embeddings/chunk references, searchable approved text, metadata indexes. | Unapproved cross-tenant content or secrets.
+Object storage | Encrypted object store | Evidence packages, exports, immutable/redacted bundles, ingestion originals where approved. | Publicly exposed unrestricted artifacts.
+Cache | Redis-compatible ephemeral store | Rate limits, locks, hot session metadata, short-lived retrieval/cache results. | Only copy of durable state.
+Event bus | Kafka/SQS/PubSub-equivalent | Durable events, async jobs, audit fan-out, webhooks. | Business truth without an owning service/state store.
+Observability platform | Metrics/logs/traces | Operational telemetry with redaction. | Raw payment credentials, unrestricted prompt content or secrets.
+[END TABLE]
+11.1 Data access pattern
+[TABLE: 1 rows x 1 cols]
+API-only financial access Chatbot services must access Zoiko Billing financial state through versioned domain APIs/events. Direct SQL access to Billing production ledgers is prohibited except separately governed operational tooling outside the chatbot runtime.
+[END TABLE]
+11.2 Data consistency model
+Action chain and approvals require strong transactional consistency inside the chatbot evidence store.
+Knowledge index is eventually consistent with published KB state but publication/revocation events must be observable and bounded.
+Billing financial state uses the consistency semantics of authoritative domain services; chatbot snapshots are provenance evidence, never current truth after their as_of/version point.
+Caches are disposable and must not be used to bypass revalidation for financial mutation.
+12. Event-Driven & Asynchronous Architecture
+12.1 Canonical event envelope
+[TABLE: 1 rows x 1 cols]
+event_id: uuid event_type: zb.chatbot.<domain>.<verb>.v1 occurred_at: RFC3339 timestamp correlation_id: uuid/string causation_id: uuid/string tenant_id: uuid | null legal_entity_id: uuid | null billing_plane: TENANT | ZOIKO_COMMERCIAL subject: {type, id, version} actor: {type, id} schema_version: 1 payload: {...redacted/typed...}
+[END TABLE]
+12.2 Event principles
+At-least-once delivery is assumed unless the selected platform proves otherwise; consumers must be idempotent.
+Financial mutation completion events are interpreted using authoritative operation/resource IDs and versions.
+Outbox/inbox or equivalent patterns are required where loss between durable state change and event publication would break evidence or job execution.
+Dead-letter queues have ownership, alerting, replay tooling and security classification.
+Replay must not repeat a financial effect; handlers use event_id/operation_id/idempotency keys.
+12.3 Primary event families
+[TABLE: 7 rows x 3 cols]
+Family | Examples | Consumers
+Conversation | message.created, response.completed, response.failed | Analytics, audit, support tooling
+Knowledge | document.published, document.revoked, index.updated | Retrieval/index, cache invalidation
+Action | action.previewed, action.confirmed, action.executing, action.succeeded | UI status, audit, analytics
+Approval | approval.requested, approved, rejected, expired | Action control, notification
+Job | job.started, job.retrying, job.completed, job.failed | Status API, SRE
+Security | access.denied, policy.blocked, injection.detected | SIEM, security dashboards
+[END TABLE]
+13. Identity, Authorization, Tenant & Entity Isolation
+13.1 Identity chain
+[TABLE: 1 rows x 1 cols]
+Human identity (OIDC/SSO) -> session principal -> effective tenant membership -> legal entity access -> billing plane -> RBAC/ABAC scopes -> action-specific policy
+[END TABLE]
+13.2 Enforcement points
+[TABLE: 8 rows x 2 cols]
+Point | Mandatory enforcement
+API gateway | Authenticated session/token, basic scope, anti-abuse and request constraints.
+Context Resolver | Canonical tenant/entity membership and billing-plane selection from server-owned data.
+Orchestrator | Capability/tool compilation and task boundary.
+Retrieval service | Namespace/classification/tenant filters before evidence return.
+Action Control | Fine-grained permission, risk, amount/threshold, maker-checker and context policy.
+Billing API | Domain-level authorization and resource ownership validation; defense in depth.
+Data stores | Tenant key/row-level controls where supported; privileged support paths separately governed.
+[END TABLE]
+13.3 Support/admin access
+Support access uses separately privileged roles, purpose code, time-bound elevation where appropriate and full audit.
+Support cannot silently impersonate customer approval/confirmation.
+Cross-tenant search tooling is not exposed through normal chatbot runtime APIs.
+Break-glass access requires explicit workflow, alerting and retrospective review.
+14. Trust Zones & Security Architecture
+Figure 4 — Trust zones and enforcement boundaries
+14.1 Security controls by plane
+[TABLE: 7 rows x 2 cols]
+Plane | Controls
+Client/edge | TLS, CSP/security headers, WAF, bot/abuse protection, upload limits, schema validation, CSRF protection where applicable.
+Service-to-service | mTLS or workload identity, short-lived tokens, network allow-lists/policies, least-privilege service accounts.
+Data | Encryption at rest, managed KMS, field/data minimization, backup encryption, access logging, tenant-aware queries.
+AI/provider | Approved endpoints/accounts, provider privacy settings, request minimization, model allow-list, data-classification routing.
+Operations | Privileged-access management, MFA, secret rotation, immutable audit, SIEM, incident response.
+Supply chain | Pinned dependencies, artifact signing/attestation where supported, SBOM, vulnerability scanning, protected CI secrets.
+[END TABLE]
+15. Threat Model & Abuse Cases
+[TABLE: 13 rows x 4 cols]
+ID | Threat | Scenario | Primary mitigations
+T-01 | Prompt injection / indirect injection | Retrieved content attempts to override system rules or call tools. | Instruction/data separation; tool allow-list; policy engine; no direct execution; injection tests.
+T-02 | Cross-tenant data leakage | Prompt/search/cache key causes data from another tenant/entity. | Server context resolution; namespace filters; tenant-scoped cache keys; negative tests.
+T-03 | Privilege escalation | User asks model to act as admin or change billing plane. | Server authorization; capability compilation; domain revalidation.
+T-04 | Stale-preview execution | Resource changes after user previews effect. | Expiry, preview hash, resource version/ETag revalidation.
+T-05 | Duplicate financial action | Network retry repeats invoice/refund/reconciliation. | Idempotency key, durable operation state, consumer deduplication.
+T-06 | Tool argument manipulation | Model inserts hidden customer ID, amount or destination. | Typed schema, allow-list, entity ownership validation, preview display.
+T-07 | Data exfiltration | User requests bulk restricted data through natural language. | Export scopes, result caps, DLP/classification policy, approval for bulk export.
+T-08 | Model provider compromise/outage | Provider returns malicious/unavailable output. | Schema validation, provider isolation, fallback policy, deterministic action layer.
+T-09 | Log/telemetry leakage | Sensitive prompt/service payload lands in logs. | Structured logging allow-list, redaction library, secret scanners.
+T-10 | Webhook spoof/replay | External completion callback forged or replayed. | Signature verification/mTLS, timestamp/replay window, event deduplication.
+T-11 | Denial of wallet | Automated expensive prompts/token abuse. | Rate limits, quotas, budgets, model tiers, max context/tool steps.
+T-12 | Support misuse | Privileged staff accesses tenant information without purpose. | PAM/elevation, support session purpose, immutable audit, review alerts.
+[END TABLE]
+15.1 Security test obligation
+Each threat above must have at least one automated or repeatable manual verification procedure, an owner, an expected safe result and evidence attached to the production security review. Architecture approval is not satisfied by a narrative threat model alone.
+16. Production Deployment Topology
+Figure 5 — Reference production topology and regional cell pattern
+16.1 Deployment doctrine
+Stateless application services run across multiple availability zones/failure domains.
+Durable stores use managed HA/replication appropriate to their consistency needs.
+Tenant home-region routing is a target capability for residency/latency; region assignment must match authoritative Billing data placement.
+Model provider calls use region/policy-aware routing and private connectivity when justified/available.
+No active-active cross-region financial mutation is introduced by the chatbot unless authoritative Billing services themselves support and approve it.
+16.2 Compute classes
+[TABLE: 6 rows x 3 cols]
+Class | Examples | Scaling signal
+Interactive stateless | BFF, orchestrator, policy/context, action API | Requests/sec, concurrency, CPU/memory, latency
+AI-bound | Model gateway, retrieval/reranker | Concurrent calls, provider quota, token rate, queue depth
+Async workers | Ingestion, webhook handlers, long-running actions | Queue depth, oldest message age, job duration
+Data | RDBMS/vector/cache | Connections, CPU/IO, index latency, memory, replica lag
+Operations | Telemetry collectors, audit publishers | Buffer depth, drop rate, ingest latency
+[END TABLE]
+17. Environment & Release Architecture
+[TABLE: 7 rows x 4 cols]
+Environment | Purpose | Data policy | External integration
+Local/dev | Developer iteration and unit integration. | Synthetic/anonymized only. | Mocks/sandboxes by default.
+Shared integration | Contract integration across services. | Synthetic test tenants. | Sandbox Billing/provider services.
+QA/system | End-to-end functional and adversarial testing. | Curated non-production datasets. | Sandbox; deterministic fixtures.
+Performance | Load/soak/fault testing. | Generated representative volumes. | Isolated quotas/endpoints.
+Staging/pre-prod | Production-like release candidate verification. | Masked/synthetic; no uncontrolled production copy. | Production-like integrations under non-production accounts where possible.
+Production | Live tenants. | Classified production data under retention/residency policy. | Live authoritative Billing/model/platform services.
+[END TABLE]
+17.1 Configuration separation
+No production secrets in lower environments.
+Environment-specific provider accounts, API keys, queues and storage buckets.
+Infrastructure-as-code parameterizes environment/region; no manual snowflake production configuration.
+Prompt/model/policy configuration is versioned and promoted through controlled release stages.
+18. Network, Secrets & Cryptographic Boundaries
+18.1 Network architecture
+Public ingress terminates only at approved edge/gateway surfaces.
+Application, data and administrative endpoints remain private where platform capability allows.
+Egress is allow-listed for model providers, Billing services and necessary platform dependencies.
+Database/vector/cache access is only from approved service identities/subnets/workloads.
+Administrative access uses managed secure access paths; no permanent public database exposure.
+18.2 Secrets management
+[TABLE: 6 rows x 3 cols]
+Secret class | Storage | Runtime rule
+Service credentials | Managed secrets/KMS or workload identity | Short-lived preferred; injected at runtime; never in source/image.
+Model provider credentials | Secrets manager / federated identity where available | Dedicated account/project; scoped; rotated; monitored.
+Webhook signing keys | Secrets manager/KMS | Versioned rotation; dual-key overlap supported.
+Encryption keys | Managed KMS/HSM tier as classification requires | Separation of duties; rotation; access audit.
+Client tokens | Secure browser/mobile session mechanism | No long-lived privileged service token in client.
+[END TABLE]
+18.3 Encryption
+TLS 1.2+ minimum in transit; prefer current platform-standard strong configurations.
+Encryption at rest for databases, indexes, object storage, queues and backups.
+Sensitive export artifacts use short-lived signed access and access audit.
+Field-level/tokenization controls may be applied to high-risk identifiers based on data classification.
+19. Observability & Evidence Architecture
+19.1 Correlation standard
+[TABLE: 1 rows x 1 cols]
+trace_id -> correlation_id -> session_id -> message_id -> model_run_id/tool_invocation_id -> action_id -> operation_id -> audit_event_id
+[END TABLE]
+19.2 Telemetry requirements
+[TABLE: 7 rows x 2 cols]
+Signal | Minimum dimensions / examples
+Metrics | service, endpoint/operation, status, tenant tier (not tenant name), region, model, risk class, dependency, queue, cache outcome.
+Traces | Ingress through orchestration, retrieval, model gateway, Billing adapter, action control and async worker boundaries.
+Logs | Structured event code, correlation ID, safe actor/context IDs, operation state, latency, safe error; payloads redacted.
+Audit | Security/financial evidence distinct from debug logs; append-only semantics and governed retention.
+AI telemetry | Model/provider/version, prompt version hash, tokens, latency, cost estimate, structured-output validation result, fallback.
+RAG telemetry | Namespace set, top-k, reranker, source versions, freshness, no-answer reason; avoid logging unredacted document text by default.
+[END TABLE]
+19.3 Dashboards
+Golden signals: traffic, errors, latency, saturation.
+AI: provider latency/error/token/cost/fallback rate and schema failures.
+Knowledge: retrieval success, stale-source rate, no-answer rate, citation coverage.
+Actions: preview->confirm conversion, stale preview, approval aging, execution success/pending/failure, duplicate prevention.
+Security: denied access, injection detections, unusual export volume, support elevation, secret/logging alerts.
+20. SLOs, Error Budgets & Operational Objectives
+[TABLE: 10 rows x 3 cols]
+SLI | Proposed initial objective | Measurement boundary
+Chat orchestration availability | 99.95% monthly | Valid authenticated requests reaching chatbot orchestration, excluding defined dependency-wide outages.
+Read-only API latency | P95 <= 1.0 s excluding model generation | Gateway through authoritative read adapter for normal reads.
+First streamed content | P95 <= 3.0 s | Accepted user message to first meaningful assistant content/event.
+Grounded answer completion | P95 <= 8.0 s for standard requests | Message accepted to completed grounded response under normal dependency health.
+Action preview | P95 <= 5.0 s excluding designated external PSP delays | Confirmation-ready authoritative preview.
+Action execution acknowledgement | P95 <= 2.0 s | Execute call to authoritative receipt or durable PENDING operation ID.
+Cross-tenant leakage | 0 tolerated | Security tests + incident telemetry.
+Duplicate financial effect | 0 tolerated | Idempotency/reconciliation verification.
+Audit evidence completeness | 100% for R3/R4 actions | Required lifecycle events present and correlated.
+[END TABLE]
+These are architecture targets, not claims about current production performance. Product/SRE must validate and formally ratify SLOs after representative performance testing.
+20.1 Error-budget policy
+SLO breach pauses risky feature expansion when reliability work is required.
+Security/financial-integrity invariants have no discretionary error budget.
+Dependency errors are still measured; exclusion from one SLO does not remove operational ownership or customer impact tracking.
+21. Resilience, Timeouts & Graceful Degradation
+[TABLE: 10 rows x 2 cols]
+Failure | Required behavior
+Model provider slow/unavailable | Use policy-approved fallback if safe; otherwise return controlled unavailable response. No financial state changes are inferred.
+Retrieval service unavailable | Billing read/action APIs may continue where no KB evidence is required; policy/compliance answers fail safe.
+Billing read API unavailable | Do not answer financial fact as current; optionally provide last-known timestamp only if explicitly labeled and product-approved.
+Billing write timeout | Query durable operation/idempotency status. Do not blindly retry without contract.
+Approval service unavailable | Keep action in safe waiting state; execution blocked.
+Evidence DB unavailable | Protected mutation paths fail closed if required evidence cannot be durably recorded.
+Cache unavailable | Degrade to durable stores with rate-limit/flood safeguards; no loss of authoritative state.
+Event bus unavailable | Use transactional outbox/buffer; monitor backlog; do not drop required audit/action events.
+Observability partial outage | Buffer best effort; security-critical telemetry failure policy may block privileged actions.
+[END TABLE]
+21.1 Resilience patterns
+Per-dependency timeout budgets; no unbounded waits.
+Exponential backoff with jitter for retryable idempotent operations.
+Circuit breakers and bulkheads around provider/Billing dependencies.
+Queue-based load leveling for long-running or bursty work.
+Backpressure: reject/throttle before resource exhaustion.
+Kill switches for model/provider, tool family, tenant capability, high-risk action class and knowledge namespace.
+22. Scaling, Capacity & Performance Engineering
+22.1 Capacity model inputs
+[TABLE: 8 rows x 2 cols]
+Input | Measure
+Active tenants/users | Peak concurrent sessions and geographic distribution.
+Prompt traffic | Messages/sec, average context, peak burst multiplier.
+Model usage | Tokens/sec, request concurrency, model mix, provider quotas.
+Retrieval | Queries/sec, index size, top-k, reranking cost, tenant cardinality.
+Actions | Previews/sec, executions/sec, approval queue, async job rate.
+Data | Messages/day, audit events/day, retention, object evidence volume.
+Dependencies | Billing API limits, DB connections, queue throughput, webhook rates.
+[END TABLE]
+22.2 Performance design rules
+Stateless services horizontal-scale behind health-aware load balancing.
+Connection pools are bounded; queue/worker concurrency protects databases and authoritative Billing APIs.
+Large transcripts are summarized/bounded using governed memory policy rather than sending unlimited context to models.
+Retrieval indexes use partitioning/sharding only after measured thresholds; avoid premature complexity.
+Streaming affects UX only; it does not permit early authoritative conclusions.
+Load tests include normal, burst, degraded dependency, large-tenant and high-cardinality namespace scenarios.
+23. Disaster Recovery & Business Continuity
+[TABLE: 7 rows x 4 cols]
+Asset | Proposed RPO | Proposed RTO | Recovery approach
+Chat evidence RDBMS | <= 15 min | <= 2 h | Encrypted backups + PITR/replica; restore and integrity test.
+Knowledge index | <= 24 h or rebuildable | <= 4 h | Rebuild from canonical published knowledge + metadata; snapshots optional.
+Object evidence/archive | <= 15 min for required evidence | <= 4 h | Versioned/replicated encrypted object storage as policy requires.
+Cache | 0 requirement | Minutes | Recreate; never authoritative.
+Prompt/policy/config registry | Near-zero via source/config replication | <= 1 h | Version-control/config backup and signed release artifacts.
+Event/job state | <= 15 min | <= 2 h | Durable queue/event retention + outbox/state replay; idempotent consumers.
+[END TABLE]
+RPO/RTO values are proposed design objectives and require validation against Zoiko Billing corporate continuity requirements and the final managed-service architecture.
+23.1 DR test requirements
+At least scheduled restore exercises for evidence DB and object evidence.
+Prove action-chain referential integrity after restore.
+Prove no duplicate financial action under event/job replay.
+Document DNS/routing/provider failover steps and rollback.
+Run tabletop scenario for model-provider outage, region impairment and authoritative Billing dependency outage.
+24. CI/CD, Supply Chain & Release Controls
+24.1 Pipeline stages
+[TABLE: 1 rows x 1 cols]
+commit -> static checks -> unit tests -> dependency/SBOM scan -> build/sign -> contract tests -> integration -> adversarial AI/RAG tests -> security tests -> performance smoke -> deploy lower env -> canary/staging -> approval -> production progressive rollout -> verification
+[END TABLE]
+24.2 Mandatory gates
+[TABLE: 9 rows x 2 cols]
+Gate | Evidence
+Contract compatibility | OpenAPI/schema diff passes; consumers/providers compatible.
+Database migration | Forward/backward strategy, rollback/restore and migration tests.
+Prompt/model evaluation | Golden-set + adversarial evaluations meet threshold for changed model/prompt.
+Security | SAST/dependency/secrets checks; threat-specific tests; no unresolved critical issues.
+Tenant isolation | Automated negative cross-tenant/entity cases.
+Action safety | Stale preview, duplicate retry, approval bypass and timeout ambiguity tests.
+Observability | New critical paths emit trace/metrics/log/audit events and dashboards/alerts updated.
+Rollback | Application/config/model rollback path verified.
+[END TABLE]
+24.3 Progressive delivery
+Feature flags and capability flags separate deployment from exposure.
+High-risk action classes can be enabled tenant-by-tenant or cohort-by-cohort.
+Model/provider changes use canary or shadow evaluation where privacy/policy permits.
+Rollback must not require deleting evidence or rewriting financial history.
+25. Configuration, Feature Flags & Kill Switches
+[TABLE: 7 rows x 3 cols]
+Control | Examples | Rule
+Capability flags | chat, knowledge, invoice read, refund prepare, refund execute | Default deny for unvalidated/high-risk capability.
+Model routing | model/provider per task/classification/region | Versioned; audit changes; immediate rollback.
+Prompt versions | system/task templates | Immutable version IDs; staged promotion.
+Risk policy | R0-R4 thresholds, confirmation/approval rules | Owned by policy service; changes require approval/testing.
+Tenant rollout | allow-list cohorts, beta tenants | Explicit entitlement; no accidental global exposure.
+Kill switch | provider, action family, tool, namespace, exports | Fast operational disable without code deploy.
+[END TABLE]
+25.1 Configuration-as-code principle
+Security-sensitive and behaviorally significant configuration should be version controlled, peer reviewed, environment-scoped and auditable. Runtime administrative consoles may write controlled configuration only through the same approval/evidence model, not by direct database editing.
+26. Privacy, Retention & Data Lifecycle Architecture
+[TABLE: 8 rows x 2 cols]
+Data class | Architecture treatment
+Conversation content | Classify, minimize, tenant-scope, encrypt, retain per approved product/privacy policy; allow deletion where legally/permissibly required without corrupting immutable financial/audit records.
+Financial snapshots | Store minimal display/provenance snapshot and authoritative reference; avoid full ledger replication.
+Model inputs/outputs | Treat as application data; provider retention/training settings governed; log only minimized telemetry.
+Embeddings | Inherit source sensitivity and deletion/retention obligations.
+Audit/evidence | Longer governed retention may apply; separate immutable evidence from user-facing transcript retention.
+Exports | Short-lived signed access; encryption; audit; auto-expiry/retention job.
+Telemetry | Pseudonymous IDs and redaction; no secrets or full sensitive payload by default.
+[END TABLE]
+26.1 Data subject / tenant deletion tension
+[TABLE: 1 rows x 1 cols]
+Separate transcript from regulated evidence The architecture must distinguish deletable conversational content from financial/compliance evidence that may have mandatory retention. Deletion workflows remove or anonymize what policy permits while preserving required audit integrity and referential evidence.
+[END TABLE]
+27. FinOps & AI Cost Architecture
+[TABLE: 7 rows x 2 cols]
+Control | Requirement
+Usage attribution | Record model/provider/tokens/cost estimate by operation, environment, tenant tier and task class without exposing tenant identity in broad dashboards.
+Budget controls | Per-tenant/workspace quotas where commercial policy requires; global/provider budget alerts; denial/degrade strategy documented.
+Model tiering | Use the least costly model that meets validated task-quality and risk requirements.
+Context discipline | Bound transcript history; retrieve only necessary chunks; avoid duplicate large payloads.
+Caching | Cache only safe deterministic/retrieval artifacts with correct tenant/namespace keys and TTL; never cache authorization decisions beyond safe lifetime.
+Cost anomaly | Alert on token spikes, loop-like behavior, abnormal retrieval size or provider price/config changes.
+[END TABLE]
+27.1 Cost is not a safety override
+Cost routing must never downgrade to a model/provider that fails the data-classification, regional, quality or structured-output requirements of the task. Safety and correctness constraints are hard filters before cost optimization.
+28. Test Architecture & Verification Strategy
+[TABLE: 10 rows x 2 cols]
+Test layer | Coverage
+Unit | Policy rules, parsers, context resolver, schema validators, idempotency helpers, redaction.
+Contract | OpenAPI requests/responses, event schemas, provider adapter behavior, backwards compatibility.
+Integration | IAM, Billing adapters, model gateway, retrieval/index, DB, queue, approval service.
+E2E | User intent -> evidence -> preview -> confirm/approve -> execution -> receipt across UI/API/runtime.
+Security | Cross-tenant, privilege escalation, prompt injection, SSRF/tool abuse, secrets/logging, webhook replay.
+AI evaluation | Golden set, groundedness, citation correctness, abstention, structured action parameters, refusal/guardrails.
+Resilience | Dependency timeout, partial outage, duplicate event, lost response, DB failover, queue backlog, provider fallback.
+Performance | Burst, soak, large tenant, concurrent retrieval, action preview/execution, queue recovery.
+DR | Backup restore, event replay, configuration/model rollback and region impairment tabletop/test.
+[END TABLE]
+28.1 Architecture fitness functions
+No network path from model provider to financial database.
+No action execution without required preview/confirmation/approval chain.
+No cross-tenant retrieval under negative test corpus.
+No action endpoint lacking idempotency requirements.
+No R3/R4 execution without complete correlated audit evidence.
+No production deployment if critical telemetry is missing for new high-risk path.
+29. Architecture Requirements Register
+[TABLE: 61 rows x 3 cols]
+Requirement ID | Architecture requirement | Priority
+ZB-ARCH-CORE-001 | The chatbot shall use authoritative Zoiko Billing APIs for current financial state. | P0
+ZB-ARCH-CORE-002 | The chatbot runtime shall not write directly to financial databases. | P0
+ZB-ARCH-CORE-003 | All services shall propagate a correlation identifier end-to-end. | P0
+ZB-ARCH-CORE-004 | All protected operations shall resolve server-side user, tenant, entity and billing-plane context. | P0
+ZB-ARCH-CORE-005 | The architecture shall preserve strict separation between TENANT and ZOIKO_COMMERCIAL billing planes. | P0
+ZB-ARCH-AI-006 | The model gateway shall expose only approved model/provider configurations. | P1
+ZB-ARCH-AI-007 | Tool availability shall be compiled from effective permissions and policy. | P1
+ZB-ARCH-AI-008 | Structured tool/action outputs shall be schema validated before use. | P1
+ZB-ARCH-AI-009 | Production orchestration shall enforce bounded tool steps, timeouts and token/cost budgets. | P1
+ZB-ARCH-AI-010 | Model inputs shall exclude privileged credentials and unnecessary sensitive data. | P1
+ZB-ARCH-AI-011 | Prompt and model versions shall be recorded for each model run. | P1
+ZB-ARCH-AI-012 | Provider fallback shall require capability, policy and data-classification compatibility. | P1
+ZB-ARCH-RAG-013 | Retrieval shall apply tenant/namespace/classification filters before evidence is returned. | P1
+ZB-ARCH-RAG-014 | Only published, authorized knowledge shall be retrievable for user answers. | P1
+ZB-ARCH-RAG-015 | Retrieval shall preserve source/document/chunk version and freshness metadata. | P1
+ZB-ARCH-RAG-016 | Retrieved content shall be treated as untrusted data, not executable instructions. | P1
+ZB-ARCH-RAG-017 | Knowledge revocation shall prevent future retrieval within a bounded propagation objective. | P1
+ZB-ARCH-RAG-018 | Embeddings shall inherit source data classification and retention. | P1
+ZB-ARCH-ACTION-019 | Consequential actions shall follow draft, validate, preview, confirm, approval-if-required and execute states. | P0
+ZB-ARCH-ACTION-020 | Action previews shall be generated from authoritative Billing services. | P0
+ZB-ARCH-ACTION-021 | Preview freshness and resource versions shall be revalidated before execution. | P0
+ZB-ARCH-ACTION-022 | Financial mutation calls shall use idempotency keys. | P0
+ZB-ARCH-ACTION-023 | Execution shall return an authoritative receipt or durable pending operation identifier. | P0
+ZB-ARCH-ACTION-024 | Ambiguous execution outcomes shall enter a durable unknown/pending recovery path. | P0
+ZB-ARCH-ACTION-025 | Maker-checker policy shall be enforced server-side. | P0
+ZB-ARCH-DATA-026 | Durable chatbot governance state shall use an ACID relational evidence store. | P1
+ZB-ARCH-DATA-027 | Caches shall never be the only copy of durable state. | P1
+ZB-ARCH-DATA-028 | Chatbot persistence shall not duplicate authoritative financial ledgers. | P1
+ZB-ARCH-DATA-029 | Event consumers shall be idempotent under duplicate delivery. | P1
+ZB-ARCH-DATA-030 | Required state-change/event publication shall use outbox/inbox or equivalent loss-prevention pattern. | P1
+ZB-ARCH-DATA-031 | Evidence objects and exports shall be encrypted and access-controlled. | P1
+ZB-ARCH-DATA-032 | Audit/evidence retention shall be separable from transcript retention. | P1
+ZB-ARCH-SEC-033 | Service-to-service access shall use workload identity or short-lived least-privilege credentials. | P0
+ZB-ARCH-SEC-034 | Production secrets shall be stored in managed secret/KMS systems, not code/config files. | P0
+ZB-ARCH-SEC-035 | Public ingress shall terminate at approved edge/gateway controls. | P0
+ZB-ARCH-SEC-036 | Data stores shall not be publicly exposed. | P0
+ZB-ARCH-SEC-037 | Support/admin cross-tenant access shall be purpose-bound and audited. | P0
+ZB-ARCH-SEC-038 | Webhook/event callbacks shall be authenticated and replay-resistant. | P0
+ZB-ARCH-SEC-039 | Logs/traces shall redact secrets and restricted payloads. | P0
+ZB-ARCH-SEC-040 | The system shall provide fast kill switches for high-risk capabilities/providers/tools. | P0
+ZB-ARCH-OPS-041 | Stateless services shall be horizontally scalable and deployed across multiple failure domains. | P1
+ZB-ARCH-OPS-042 | Every critical dependency shall have explicit timeout and retry semantics. | P1
+ZB-ARCH-OPS-043 | Circuit breaking/backpressure shall protect the system from dependency/resource exhaustion. | P1
+ZB-ARCH-OPS-044 | Critical paths shall emit metrics, logs, traces and audit evidence appropriate to their purpose. | P1
+ZB-ARCH-OPS-045 | Production dashboards shall cover AI, RAG, actions, dependencies and security signals. | P1
+ZB-ARCH-OPS-046 | SLOs and alert thresholds shall be validated under representative load. | P1
+ZB-ARCH-OPS-047 | Backups shall be encrypted and restore procedures tested. | P1
+ZB-ARCH-OPS-048 | DR replay shall not duplicate financial effects. | P1
+ZB-ARCH-OPS-049 | Configuration/model/prompt changes shall be versioned and rollback-capable. | P1
+ZB-ARCH-OPS-050 | Production release shall support progressive capability rollout. | P1
+ZB-ARCH-PRIV-051 | Provider routing shall respect data classification and regional policy. | P1
+ZB-ARCH-PRIV-052 | The system shall minimize model context and retained telemetry. | P1
+ZB-ARCH-PRIV-053 | Embeddings, exports and evidence shall follow source/derived-data lifecycle policy. | P1
+ZB-ARCH-PRIV-054 | Deletion/anonymization workflows shall preserve mandatory immutable evidence. | P1
+ZB-ARCH-QA-055 | Automated tests shall cover cross-tenant denial and billing-plane isolation. | P1
+ZB-ARCH-QA-056 | Automated tests shall cover stale preview and duplicate mutation protection. | P1
+ZB-ARCH-QA-057 | Adversarial tests shall cover direct and indirect prompt injection. | P1
+ZB-ARCH-QA-058 | Fault-injection tests shall cover model, Billing API, event bus and data-store failure. | P1
+ZB-ARCH-QA-059 | Architecture fitness checks shall run in CI for critical invariants. | P1
+ZB-ARCH-QA-060 | High-risk paths shall not release without complete acceptance evidence. | P1
+[END TABLE]
+30. Architecture Acceptance Criteria
+[TABLE: 51 rows x 2 cols]
+ID | Acceptance criterion
+AC-01 | A user without tenant membership cannot retrieve any tenant financial or knowledge content.
+AC-02 | Entity-scoped user cannot access another legal entity through prompt, URL parameter, cached context or tool argument.
+AC-03 | TENANT billing plane cannot access ZOIKO_COMMERCIAL resources without an explicitly authorized commercial-plane context.
+AC-04 | Model-proposed unauthorized tool is rejected before invocation.
+AC-05 | Malformed structured model output is rejected and produces no financial side effect.
+AC-06 | Indirect prompt injection in retrieved content cannot add tools, change policy or bypass action controls.
+AC-07 | Stale preview cannot execute after referenced resource version changes.
+AC-08 | Duplicate identical execute requests with the same idempotency key cause one financial effect.
+AC-09 | Same idempotency key with materially different payload is rejected.
+AC-10 | R3/R4 action requiring approval cannot execute before required approval is recorded.
+AC-11 | User confirmation is bound to the exact preview hash/version shown.
+AC-12 | Billing write timeout does not cause the chatbot to state success without authoritative status.
+AC-13 | All R3/R4 actions have correlation-linked preview, confirmation, approval if required, execution and audit evidence.
+AC-14 | Model provider cannot reach chatbot or Billing databases directly.
+AC-15 | No production service container/image contains hard-coded production secrets.
+AC-16 | Logs and traces pass secret/PII redaction tests for representative high-risk payloads.
+AC-17 | Knowledge retrieval excludes revoked/unpublished documents.
+AC-18 | Tenant-specific knowledge never appears in another tenant retrieval test.
+AC-19 | Provider fallback is blocked when model/provider fails task or data-policy requirements.
+AC-20 | Model/prompt version can be reconstructed for a historical response.
+AC-21 | RAG citation source/version can be reconstructed for a historical grounded answer.
+AC-22 | Cache loss does not lose durable action or evidence state.
+AC-23 | Duplicate event delivery does not repeat a financial effect or approval.
+AC-24 | Dead-letter/replay process preserves idempotency and evidence.
+AC-25 | Evidence database restore passes referential-integrity checks for action chains.
+AC-26 | DR event/job replay creates no duplicate financial effects.
+AC-27 | Critical service outage triggers documented degraded state rather than uncontrolled retries.
+AC-28 | Kill switch disables selected high-risk action without code deployment.
+AC-29 | Production canary rollback restores prior application/model/prompt configuration.
+AC-30 | All new critical endpoints appear in traces with correlation IDs.
+AC-31 | Dashboards expose model/provider error, latency, token and cost signals.
+AC-32 | Dashboards expose retrieval no-answer, freshness and citation coverage signals.
+AC-33 | Dashboards expose action preview, approval, execution and pending/failure states.
+AC-34 | Rate limiting prevents a single actor/tenant from exhausting model capacity under configured policy.
+AC-35 | Large-transcript tests demonstrate bounded context behavior.
+AC-36 | Bulk-export request is blocked or approved according to explicit scope/policy.
+AC-37 | Support elevation creates purpose/time-bound evidence and cannot silently impersonate user confirmation.
+AC-38 | Webhook spoof and replay tests are rejected.
+AC-39 | Lower environments cannot use production credentials or unrestricted production datasets.
+AC-40 | OpenAPI/event schema compatibility checks block incompatible release.
+AC-41 | Database migrations have tested forward and rollback/recovery strategy.
+AC-42 | AI golden/adversarial evaluation passes defined release threshold for changed prompt/model.
+AC-43 | Representative load test validates agreed SLOs and dependency quotas.
+AC-44 | Fault injection proves safe behavior during model, Billing API and queue disruptions.
+AC-45 | Security review confirms no direct model-to-financial-store path.
+AC-46 | Architecture owners have approved all unresolved high-impact ADRs or explicitly accepted deferral.
+AC-47 | Runbooks exist for provider outage, action ambiguity, queue backlog, data restore and security incident.
+AC-48 | Audit archive access is restricted and independently logged.
+AC-49 | Exports expire and become inaccessible after configured retention/access window.
+AC-50 | Production release gate evidence is stored and traceable to version/deployment.
+[END TABLE]
+31. Production Architecture Release Gates
+[TABLE: 16 rows x 3 cols]
+Gate | Name | Required evidence
+Gate 01 | Architecture approval | System context, boundaries, component ownership and critical ADRs approved.
+Gate 02 | Authority integrity | Finance Engineering verifies no shadow ledger/direct DB mutation path.
+Gate 03 | IAM isolation | Tenant/entity/billing-plane negative tests pass.
+Gate 04 | Action safety | Preview/confirm/approval/idempotency/stale-state tests pass.
+Gate 05 | AI runtime safety | Model/tool schemas, bounded orchestration and provider policy validated.
+Gate 06 | RAG governance | Namespace isolation, freshness, citations and injection controls validated.
+Gate 07 | Security | Threat-model tests, secrets/network/logging controls and vulnerability review pass.
+Gate 08 | Data/evidence | Persistence, audit correlation, retention and backup design validated.
+Gate 09 | Observability | Dashboards, alerts, traces, audit feeds and runbooks operational.
+Gate 10 | Reliability | Load, soak, dependency-failure and backpressure tests meet approved thresholds.
+Gate 11 | DR | Restore and replay exercise completed without evidence corruption or duplicate financial effects.
+Gate 12 | Release engineering | CI/CD, contract checks, migration controls, canary and rollback proven.
+Gate 13 | Privacy/compliance | Data flow, provider routing, retention and export controls approved.
+Gate 14 | Operational readiness | On-call ownership, escalation, incident procedures and kill switches verified.
+Gate 15 | Go-live authority | Product, Engineering, Security, Finance Engineering and SRE sign production readiness.
+[END TABLE]
+32. Architecture Decision Record (ADR) Backlog
+[TABLE: 16 rows x 4 cols]
+ADR | Decision | Required outcome | Priority
+ADR-001 | Primary cloud/runtime platform and regional cell mapping | Must align with existing Zoiko Billing production platform. | Blocker
+ADR-002 | Model provider(s), account isolation and region/data policy | Choose approved providers/models and fallback matrix. | Blocker
+ADR-003 | Relational evidence store technology/topology | Confirm managed PostgreSQL-compatible service, HA/backups/partitioning. | Blocker
+ADR-004 | Knowledge index technology | Choose pgvector/managed vector/search approach; define lexical hybrid strategy. | Blocker
+ADR-005 | Event bus / job architecture | Choose queue/event platform and outbox/retry/DLQ implementation. | Blocker
+ADR-006 | Service implementation language/framework | Prefer existing Zoiko Billing standards; avoid polyglot without justification. | High
+ADR-007 | Model gateway deployment pattern | Shared AI platform service vs product-local gateway. | High
+ADR-008 | Policy engine implementation | Code/config rules vs dedicated policy engine; define ownership and change controls. | High
+ADR-009 | Tenant data isolation mechanism | Schema/row-level/DB partition strategy for chatbot evidence and KB metadata. | High
+ADR-010 | Regionalization/data residency | Tenant home-region routing and provider-region constraints. | High
+ADR-011 | Audit/WORM archive | Technology and retention for immutable evidence packets. | Medium
+ADR-012 | Observability standard | Tracing/logging/metrics/SIEM platform and redaction library. | High
+ADR-013 | DR topology | Warm standby/pilot-light/multi-region pattern for chatbot-owned stores. | High
+ADR-014 | Feature flag/config platform | Signed/versioned config, tenant rollout and kill-switch mechanism. | Medium
+ADR-015 | Prompt/model evaluation platform | Golden-set storage, automated eval execution and release thresholds. | High
+[END TABLE]
+32.1 ADR minimum template
+Context/problem and constraints.
+Decision and alternatives considered.
+Security, financial-integrity, privacy and operational consequences.
+Migration/rollback implications.
+Owner, approvers, date, status and superseded ADR references.
+33. Operational Runbook Set
+[TABLE: 11 rows x 2 cols]
+Runbook | Minimum contents
+RB-01 Model provider outage | Detection, fallback eligibility, disable switch, customer behavior, escalation, recovery validation.
+RB-02 Billing API outage | Dependency identification, safe degradation, action blocking, status reconciliation, communications.
+RB-03 Ambiguous financial execution | Operation lookup, idempotency status, authoritative reconciliation, user messaging, escalation.
+RB-04 Queue backlog/DLQ | Throttle, inspect, replay safely, idempotency proof, capacity remediation.
+RB-05 Evidence DB failover/restore | Read/write posture, fail-closed actions, restore, integrity validation, reopen criteria.
+RB-06 Knowledge poisoning/revocation | Disable namespace/source, purge index/cache, identify affected answers, evidence review.
+RB-07 Cross-tenant/security incident | Kill capability, preserve evidence, revoke access, incident response, affected-resource analysis.
+RB-08 Secret compromise | Rotate/revoke, identify use, redeploy, audit, provider/account review.
+RB-09 Cost/token anomaly | Rate limit, disable route/model, inspect loop/abuse, budget protection, restore.
+RB-10 Rollback | Application, prompt, model, policy and database/config rollback decision tree.
+[END TABLE]
+34. Implementation Sequence & Engineering Handoff
+[TABLE: 8 rows x 3 cols]
+Phase | Architecture deliverables | Exit condition
+A — Foundations | Context/IAM, service skeletons, evidence store, correlation, secrets, observability baseline. | Authenticated read-only skeleton with tenant isolation and traces.
+B — Knowledge | Ingestion/index, namespace enforcement, retrieval/rerank, citations, injection defenses. | Grounded Billing knowledge answers pass evaluation.
+C — Authoritative reads | Billing adapters, typed cards, provenance, error/degraded states. | Financial inspection is authoritative and auditable.
+D — Governed prepare/preview | Action service, preview/version/hash, UI contracts, evidence chain. | No financial mutation; preview safety proven.
+E — Controlled execution | Confirmation, approvals, idempotent writes, async jobs, receipts, webhook handling. | Selected R3/R4 action passes all safety gates.
+F — Scale/operations | Load, autoscaling, SLOs, DR, on-call/runbooks, cost controls. | Production readiness review passes.
+G — Progressive launch | Tenant cohorts, canary, monitoring, feedback/evaluation loops. | Go-live authority approves broader exposure.
+[END TABLE]
+34.1 Engineering handoff checklist
+Create service repository/module ownership map and CODEOWNERS.
+Convert component contracts into OpenAPI/event schemas and generated client/server stubs where adopted.
+Convert evidence/action state models into migrations with constraints and tests.
+Create infrastructure-as-code modules for networks, compute, stores, queues, secrets and telemetry.
+Create model/provider registry, prompt registry, risk/tool policy configuration and evaluation pipeline.
+Create SLO dashboards, alerts, synthetic tests, runbooks and on-call ownership before enabling high-risk actions.
+35. Traceability to Prior Zoiko Billing Chatbot Artifacts
+[TABLE: 9 rows x 2 cols]
+Prior artifact | Architecture realization
+Engineering Wireframe — interaction states | Experience shell and orchestrator state machine implement explain/inspect/prepare/preview/execute UX.
+PRD — product doctrines | Architecture principles P-01 through P-12 make product doctrines enforceable.
+FRS — functional requirements | Component catalog and runtime flows allocate every functional behavior to deterministic services.
+API Documentation | Gateway/BFF/action/Billing adapters implement canonical contracts, idempotency, errors and events.
+Database / ER Wireframe | Evidence Store, cache, vector/index, object and event boundaries match approved persistence doctrine.
+Knowledge Base Wireframe | Retrieval service/index enforce namespaces, authority hierarchy, freshness, citations and revocation.
+UI/UX Figma Wireframe | Structured cards, citations, preview/confirm/approval/receipt states consume deterministic API/runtime contracts.
+Prompt/Guardrail Documentation — forthcoming | Will govern model prompts, policy classifiers, tool rules and unsafe-output handling within Model Gateway/Policy Service.
+[END TABLE]
+35.1 Conflict precedence
+If implementation artifacts conflict, financial system-of-record rules and security/authorization invariants take precedence. Product/functional documents define intended behavior; API/database/architecture artifacts must be reconciled through controlled change, not selectively ignored by teams.
+Appendix A — Reference Port/Protocol & Connectivity Matrix
+[TABLE: 11 rows x 5 cols]
+From | To | Protocol | Purpose | Rule
+Client | Global edge | HTTPS/WSS | UI/API/streaming | Public; TLS; WAF; auth.
+Edge/BFF | Orchestrator | HTTPS/gRPC over private network | Application requests/stream | Service identity; no public endpoint.
+Orchestrator | Model Gateway | HTTPS/gRPC private | Generation/structured output | Policy context propagated.
+Orchestrator | Retrieval | HTTPS/gRPC private | Authorized evidence retrieval | Tenant/namespace context mandatory.
+Orchestrator | Action Control | HTTPS/gRPC private | Draft/preview/execute state | Authenticated service + actor context.
+Action Control | Billing APIs | HTTPS private/service mesh | Authoritative financial operations | mTLS/workload identity; idempotency.
+Services | Evidence DB | DB protocol private | Durable chatbot state | Private; least-privilege DB role.
+Retrieval | Knowledge index | Private service protocol | Hybrid/vector search | Namespace filters.
+Workers | Event bus | TLS private | Async jobs/events | Service identity; DLQ.
+All services | Observability collectors | OTLP/HTTPS or platform standard | Metrics/traces/logs | Redaction and private path.
+[END TABLE]
+Appendix B — Canonical Technology-Class Mapping
+[TABLE: 11 rows x 3 cols]
+Architecture capability | Reference class | Selection criteria
+Container/serverless runtime | Managed Kubernetes, container platform or serverless compute | Existing Zoiko standard, autoscaling, workload identity, private networking, cost/ops maturity.
+Relational DB | Managed PostgreSQL-compatible | ACID, HA, PITR, encryption, observability, migration tooling.
+Cache | Redis-compatible managed cache | TTL, HA, encryption, eviction metrics, tenant-aware keying.
+Vector/lexical search | pgvector/managed vector/search platform | Hybrid retrieval, metadata filters, tenant isolation, latency, rebuildability.
+Event/queue | Kafka/SQS/SNS/PubSub/service-bus class | Durability, DLQ, ordering needs, throughput, idempotent processing.
+Object storage | Encrypted managed object store | Versioning, retention, signed URLs, lifecycle, replication.
+Secrets/KMS | Managed secrets + KMS/HSM tier | Rotation, workload identity, audit, separation of duties.
+Observability | OpenTelemetry-compatible telemetry + managed backend | Trace correlation, structured logs, metrics, SIEM integration.
+Policy/config | Versioned policy/config store + feature flags | Audit, staged rollout, emergency disable, environment separation.
+Model gateway | Zoiko shared or product-local AI gateway | Provider abstraction, routing, privacy, budget, observability, schema outputs.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Selection discipline Architecture class names intentionally avoid forcing a vendor decision. Engineering should prefer existing Zoiko platform standards unless a documented ADR proves a material security, reliability, cost or product advantage.
+[END TABLE]
+Appendix C — Glossary
+[TABLE: 13 rows x 2 cols]
+Term | Meaning
+Action Control Plane | Deterministic service boundary governing preparation, preview, confirmation, approval and execution of consequential actions.
+Authoritative service | Zoiko Billing domain service/ledger that owns current financial state or rule evaluation.
+Billing plane | TENANT customer billing plane or ZOIKO_COMMERCIAL SaaS/subscription billing plane.
+Context Resolver | Service that converts authenticated identity into canonical tenant/entity/permission context.
+Evidence Store | Chatbot-owned durable orchestration/provenance database; not a financial ledger.
+Home region | Region assigned for tenant/application data processing under architecture/data-governance policy.
+Idempotency | Property ensuring safe retries do not create duplicate financial effects.
+Model Gateway | Controlled adapter/routing layer between Zoiko runtime and approved AI model providers.
+RAG | Retrieval-Augmented Generation using governed knowledge evidence to ground model responses.
+R3/R4 | Higher-risk action classes requiring stronger confirmation/approval/control.
+Structured output | Model output constrained to a defined schema rather than free-form tool parameters.
+WORM | Write Once Read Many storage posture for evidence where required.
+[END TABLE]
+Appendix D — Controlled Open Decisions
+[TABLE: 10 rows x 3 cols]
+Decision | Owner | Required before
+Final cloud/runtime topology and production regions | Architecture / SRE | Production infrastructure build
+Primary/fallback model provider and data-region policy | AI / Security / Privacy | External model integration
+Relational/vector/event/cache managed services | Architecture / Data / SRE | Infrastructure provisioning
+Final SLO/RPO/RTO commitments | SRE / Product / Architecture | Go-live review
+High-risk action classes and maker-checker thresholds | Product / Finance / Security | Execution capability enablement
+Audit retention/WORM requirements by jurisdiction | Legal/Compliance / Security | Production evidence policy
+Support elevation and break-glass operating model | Security / Support / Product | Support production access
+Tenant home-region/residency strategy | Architecture / Legal / Product | Multi-region rollout
+Prompt/model evaluation thresholds | AI / QA / Product | Model/prompt release gating
+[END TABLE]

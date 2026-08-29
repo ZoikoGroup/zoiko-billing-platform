@@ -101,6 +101,7 @@ body {
 /* Message viewport */
 .ab-viewport {
   background: var(--ab-bg);
+  overscroll-behavior: contain;
 }
 
 /* Assistant message bubble */
@@ -114,6 +115,37 @@ body {
   background: var(--ab-system-bubble);
   color: var(--ab-system-bubble-text);
   border: 1px solid var(--ab-system-bubble-border);
+}
+
+/* Typewriter "Typing…" indicator — three pulsing dots shown only while the
+   assistant response is waiting for its first content chunk. */
+.ab-typing-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--ab-accent-text);
+  opacity: 0.25;
+  animation: ab-typing-blink 1.2s ease-in-out infinite;
+}
+.ab-typing-dot--2 { animation-delay: 0.2s; }
+.ab-typing-dot--3 { animation-delay: 0.4s; }
+@keyframes ab-typing-blink {
+  0%, 70%, 100% { opacity: 0.25; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-1px); }
+}
+
+/* Trailing caret while words are being revealed (hidden once complete). */
+.ab-typing-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: var(--ab-accent-text);
+  animation: ab-caret-blink 0.95s steps(2, start) infinite;
+  vertical-align: text-bottom;
+}
+@keyframes ab-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
 }
 
 /* Citation / evidence text */

@@ -95,9 +95,33 @@ RISK_POLICIES = {
 
 
 class ActionEngineError(Exception):
-    def __init__(self, message: str, status_code: int = 422):
+    """Canonical chatbot action error (guide §24 — ApiProblem-style contract).
+
+    Every error carries a stable `error_code` and a human `recovery` hint so
+    clients never have to guess how to proceed from a bare status code.
+    """
+
+    DEFAULT_RECOVERY = {
+        404: "Check the action or draft reference and try again.",
+        409: "The state has moved on (e.g. preview superseded or already executed). Re-run the latest step first.",
+        410: "This preview or approval has expired. Regenerate a fresh one and reconfirm.",
+        403: "Your role does not permit this action. Ask an authorized user to approve it.",
+        503: "Safe mode is active — execution is disabled. Try again later.",
+        422: "The request could not be validated. Review the submitted parameters and retry.",
+    }
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 422,
+        *,
+        error_code: str | None = None,
+        recovery: str | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
+        self.error_code = error_code or f"action_{status_code}"
+        self.recovery = recovery or self.DEFAULT_RECOVERY.get(status_code)
 
 
 class ActionEngine:
@@ -107,6 +131,25 @@ class ActionEngine:
         self.db = db
 
     # ── Phase 1: DRAFT (M2 — Prepare) ─────────────────────────────────
+
+    def _resolve_authoritative_currency(self, ctx: AIContext, customer_id=None) -> str:
+        """Sec 8.2 authoritative currency resolution — the SINGLE source of
+        truth for a governed draft's currency: the customer's configured
+        currency when one is attached, else the organization base currency
+        (identical to the billing dashboard).  Never a hardcoded literal, and
+        never inferred from the utterance.  The DRAFT pins the resolved value
+        and every later lifecycle state must re-derive the same authoritative
+        value and match it — a mismatch is a conflict, blocked (fail closed).
+        """
+        if customer_id:
+            customer = self.db.query(BillingCustomer).filter(
+                BillingCustomer.id == customer_id,
+                BillingCustomer.organization_id == ctx.organization_id,
+            ).first()
+            if customer and customer.currency:
+                return customer.currency
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        return BillingDashboardService(self.db)._get_base_currency(ctx.organization_id)
 
     def create_draft(
         self,
@@ -118,6 +161,16 @@ class ActionEngine:
         risk_class: str = "R2",
     ) -> dict:
         """Create an action draft. No mutation possible at this stage."""
+        proposed_params = dict(proposed_params if proposed_params else {})
+        # Sec 8.2 currency pin: if the utterance named no currency, resolve the
+        # authoritative one NOW (customer currency → org base) so the DRAFT
+        # owns it and every later state passes it through unchanged — never
+        # inferred, never a literal, never re-derived downstream.
+        if action_type in ("invoice_draft", "credit_note", "refund", "payment_allocation") \
+                and not proposed_params.get("currency"):
+            proposed_params["currency"] = self._resolve_authoritative_currency(
+                ctx, proposed_params.get("customer_id"),
+            )
         draft = AIActionDraft(
             action_uid=_uid(),
             conversation_id=conversation_id,
@@ -418,6 +471,8 @@ class ActionEngine:
             raise ActionEngineError(
                 f"Cannot decide: approval status is {approval.request_status.value}.",
                 status_code=409,
+                error_code="approval_not_decidable",
+                recovery="Only pending approvals can be decided. Refresh the approval state.",
             )
 
         if approval.expires_at:
@@ -427,13 +482,20 @@ class ActionEngine:
             if expires < datetime.now(timezone.utc):
                 approval.request_status = ApprovalRequestStatus.EXPIRED
                 self.db.commit()
-                raise ActionEngineError("Approval request has expired.", status_code=410)
+                raise ActionEngineError(
+                    "Approval request has expired.",
+                    status_code=410,
+                    error_code="approval_expired",
+                    recovery="Request a fresh approval before continuing.",
+                )
 
         # Prevent self-approval (maker-checker)
         if approval.requested_by_user_id == ctx.user_id:
             raise ActionEngineError(
                 "Self-approval is not permitted. Another authorized user must approve.",
                 status_code=403,
+                error_code="self_approval_forbidden",
+                recovery="Ask another authorized user to approve this action.",
             )
 
         decision_enum = ApprovalDecisionType(decision)
@@ -487,14 +549,24 @@ class ActionEngine:
             .first()
         )
         if not preview:
-            raise ActionEngineError("No valid preview found. Regenerate preview.", status_code=409)
+            raise ActionEngineError(
+                "No valid preview found. Regenerate preview.",
+                status_code=409,
+                error_code="preview_missing",
+                recovery="Regenerate a fresh preview, then confirm and execute.",
+            )
 
         if preview.expires_at:
             expires = preview.expires_at
             if expires.tzinfo is None:
                 expires = expires.replace(tzinfo=timezone.utc)
             if expires < datetime.now(timezone.utc):
-                raise ActionEngineError("Preview has expired. Regenerate and reconfirm.", status_code=410)
+                raise ActionEngineError(
+                    "Preview has expired. Regenerate and reconfirm.",
+                    status_code=410,
+                    error_code="preview_expired",
+                    recovery="Regenerate a fresh preview and reconfirm before executing.",
+                )
 
         # Verify confirmation exists
         confirmation = (
@@ -509,6 +581,8 @@ class ActionEngine:
             raise ActionEngineError(
                 "Confirmation required. Please confirm the preview before executing.",
                 status_code=409,
+                error_code="confirmation_required",
+                recovery="Confirm the current preview before executing the action.",
             )
 
         # Check approval if required
@@ -525,6 +599,8 @@ class ActionEngine:
                 raise ActionEngineError(
                     "Approval required. This action must be approved before execution.",
                     status_code=409,
+                    error_code="approval_required",
+                    recovery="Have an authorized user approve the action before executing.",
                 )
 
         # ── Duplicate-execution guard (BUG 2) ───────────────────────────
@@ -743,15 +819,23 @@ class ActionEngine:
         base_currency = BillingDashboardService(self.db)._get_base_currency(draft.organization_id)
 
         line_items = params.get("line_items", [])
-        # Currency consistency: use the currency extracted at draft creation.
-        # Never default — if absent, the extraction step should have set it.
+        # Sec 8.2 / P-06 hard control: the DRAFT's pinned currency IS
+        # authoritative and must pass through UNCHANGED.  Re-deriving it here
+        # or silently overwriting would let the preview drift from what the
+        # user drafted.  Missing → block (regenerate the draft); mismatch
+        # against the authoritative record → block as a conflict.
         currency = params.get("currency")
         if not currency:
-            currency = base_currency
-            logger.warning(
-                "Currency not set in proposed_params for draft %s — "
-                "falling back to organization base currency %s.",
-                draft.action_uid, currency,
+            raise ActionEngineError(
+                "Currency conflict: draft carries no currency. Regenerate the draft.",
+                status_code=409,
+            )
+        resolved_ccy = customer.currency if customer and customer.currency else base_currency
+        if currency != resolved_ccy:
+            raise ActionEngineError(
+                f"Currency conflict: draft is {currency} but the authoritative "
+                f"record resolves to {resolved_ccy}. Regenerate the draft before previewing.",
+                status_code=409,
             )
 
         # Calculate totals (deterministic, from params — not from model)
@@ -856,10 +940,10 @@ class ActionEngine:
         params = draft.proposed_params or {}
         preview_payload = preview.preview_payload or {}
 
-        # Currency consistency: draft invoices adopt the organization's base
-        # currency (single source of truth, identical to the billing dashboard)
-        # rather than a hardcoded literal. Falls back to base currency only if
-        # extraction failed to capture one.
+        # Sec 8.2 / P-06 re-check immediately before the write: the DRAFT's
+        # pinned currency must equal the PREVIEWED currency, and both must
+        # still match the authoritative record right now.  Any drift is a
+        # conflict — blocked before mutation, never silently overwritten.
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         base_currency = BillingDashboardService(self.db)._get_base_currency(draft.organization_id)
 
@@ -867,12 +951,34 @@ class ActionEngine:
         if not customer_id:
             raise ActionEngineError("Cannot create invoice: customer_id is required.", status_code=422)
 
+        draft_ccy = params.get("currency")
+        preview_ccy = preview_payload.get("currency")
+        if not draft_ccy or not preview_ccy or draft_ccy != preview_ccy:
+            raise ActionEngineError(
+                "Currency conflict: draft and preview currencies disagree. "
+                "Regenerate the preview before executing.",
+                status_code=409,
+            )
+        customer_rec = self.db.query(BillingCustomer).filter(
+            BillingCustomer.id == customer_id,
+            BillingCustomer.organization_id == draft.organization_id,
+        ).first()
+        resolved_ccy = customer_rec.currency if customer_rec and customer_rec.currency else base_currency
+        if draft_ccy != resolved_ccy:
+            raise ActionEngineError(
+                f"Currency conflict: draft is {draft_ccy} but the authoritative "
+                f"record resolves to {resolved_ccy}. Regenerate the draft before executing.",
+                status_code=409,
+            )
+        currency = draft_ccy
+
         subtotal = Decimal(preview_payload.get("subtotal", "0"))
         tax_amount = Decimal(preview_payload.get("tax_amount", "0"))
         total = Decimal(preview_payload.get("total", "0"))
 
         now = date.today()
-        seq = self.db.query(Invoice).filter(Invoice.organization_id == draft.organization_id).count() + 1
+        from app.modules.chatbot.billing_adapter import BillingAdapter
+        seq = BillingAdapter(self.db).count_invoices_for_org(draft.organization_id) + 1
         invoice_number = f"AI-INV-{now.strftime('%Y%m%d')}-{seq:04d}"
 
         invoice = Invoice(
@@ -892,7 +998,7 @@ class ActionEngine:
             total_amount=total,
             paid_amount=Decimal("0"),
             balance_due=total,
-            currency=preview_payload.get("currency") or params.get("currency") or base_currency,
+            currency=currency,
             exchange_rate=Decimal("1"),
             is_recurring=False,
             is_active=True,

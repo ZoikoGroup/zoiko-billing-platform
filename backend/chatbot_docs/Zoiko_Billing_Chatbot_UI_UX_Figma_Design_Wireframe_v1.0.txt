@@ -1,0 +1,708 @@
+ZOIKO BILLING
+Chatbot UI/UX & Figma Design Files
+Detailed Product Design, Component, Prototype & Engineering Handoff Wireframe
+[TABLE: 1 rows x 1 cols]
+DESIGN DOCTRINE The assistant must feel native to Zoiko Billing, make financial context legible, preserve user control, and make the boundary between explanation, preparation, approval and execution unmistakable. No consequential billing action may be hidden behind conversational ambiguity. The UI must expose authority, state, impact and provenance before commitment.
+[END TABLE]
+[TABLE: 10 rows x 2 cols]
+Document ID | ZB-AI-UX-001
+Version | 1.0 — UI/UX & Figma Design Wireframe
+Date | August 17, 2026
+Status | Proposed for Approval
+Owner | Zoiko Billing Product Design / Product / AI Platform
+Prepared for | Product Design, Engineering, AI/ML, Product, QA, Billing Operations, Security, Accessibility, Technical Writing
+Language | American English
+Classification | Confidential — Internal Use
+Design-file assumption | No pre-existing Figma file is assumed. This specification defines the canonical file, library, frames, components, prototypes and handoff package to be created.
+Related specifications | ZB-AI-WF-001; ZB-AI-PRD-001; ZB-AI-FRS-001; ZB-AI-API-001; Database/ER Wireframe; ZB-AI-KB-001
+[END TABLE]
+1. Executive Summary
+This document defines the complete Figma and UI/UX design specification for the Zoiko Billing Chatbot. It translates the approved product, functional, API, data and knowledge requirements into a coherent visual system that designers can build in Figma and engineers can implement without inventing behavior during development.
+The target experience is a governed billing assistant embedded in Zoiko Billing. It must support low-risk explanation and inspection with conversational speed while progressively introducing structure, previews, approvals and explicit confirmation as financial consequence increases.
+1.1 Design outcomes
+A native Zoiko Billing assistant experience rather than a generic floating chatbot pasted onto the product.
+Fast answerability for billing questions, with concise evidence and financial-state provenance.
+Clear progressive authority: Explain → Inspect → Prepare → Preview → Execute.
+No dark patterns, accidental execution, hidden tenant/entity context or ambiguous money values.
+Consistent desktop, tablet and mobile behavior using a shared component library.
+A Figma source of truth that maps cleanly to engineering design tokens and production components.
+WCAG 2.2 AA behavior designed into every interactive state, not added after handoff.
+1.2 Product experience principle
+[TABLE: 1 rows x 1 cols]
+THE INTERFACE MUST SHOW WHAT CHANGED When the assistant moves from answering to proposing or committing a billing change, the UI must visibly change mode. The user must be able to distinguish a suggestion, a prepared draft, an authoritative preview, a pending approval and a completed operation at a glance.
+[END TABLE]
+1.3 Non-goals
+Do not redesign the entire Zoiko Billing application.
+Do not create a visually independent AI brand inside Zoiko Billing.
+Do not use chat text alone for complex financial action review.
+Do not allow the model to choose colors, icons or labels dynamically for risk-critical states.
+Do not encode financial state only by color.
+Do not make knowledge citations or audit references optional for grounded financial/compliance answers.
+2. Design Source-of-Truth Hierarchy
+[TABLE: 6 rows x 3 cols]
+Priority | Source | Design implication
+1 | Authoritative product/business rules in PRD, FRS, API and data specifications | Design cannot override permissions, state transitions, approval requirements or financial semantics.
+2 | Approved Zoiko Billing design system / brand library | Use canonical tokens and components where available.
+3 | This chatbot UI/UX specification | Defines assistant-specific interaction and visual patterns.
+4 | Figma prototype behavior | Illustrates implementation, but must remain consistent with specifications.
+5 | Exploratory design concepts | Non-authoritative until approved and promoted into the library.
+[END TABLE]
+Where an existing Zoiko Billing token or component differs from the working visual values shown in this document, the approved product design system wins. The values here are therefore implementation-ready defaults and must be mapped to canonical brand tokens during Figma library setup.
+2.1 Traceability tags
+[TABLE: 9 rows x 2 cols]
+Annotation tag | Use
+PRD | Product requirement reference
+FRS | Functional requirement reference
+API | Endpoint/operation reference
+DATA | Entity/state reference
+KB | Knowledge/citation behavior
+A11Y | Accessibility behavior
+ANALYTICS | Event/telemetry requirement
+SEC | Security or privacy requirement
+[END TABLE]
+3. Canonical Figma File Architecture
+[TABLE: 12 rows x 3 cols]
+Page | Required contents | Ownership
+00 — README & Governance | File status, owners, links, release version, design principles, change log, review checklist. | Design Lead
+01 — Foundations | Color, typography, spacing, grid, radius, elevation, iconography, motion, accessibility tokens. | Design System
+02 — Components | All assistant primitives, variants, states, properties and component documentation. | Design System / Product Design
+03 — Patterns | Composite patterns: citations, financial summary, action preview, approval, error/recovery, empty/loading. | Product Design
+04 — Desktop | Production frames for side panel, expanded assistant, context drawers and billing workflows. | Product Design
+05 — Responsive & Mobile | Tablet/mobile frames, full-screen assistant, safe areas, keyboard and bottom-sheet behavior. | Product Design
+06 — User Flows | Task flows and state diagrams with PRD/FRS traceability. | Product Design / Product
+07 — Prototypes | Clickable task prototypes for usability testing and engineering reference. | Product Design
+08 — Handoff | Specs, redlines, interaction notes, API/data annotations, analytics and content strings. | Product Design / Engineering
+09 — QA & Accessibility | Contrast, keyboard, focus, screen-reader annotations, responsive regression frames. | Design / QA / A11Y
+10 — Archive | Deprecated explorations and superseded components; clearly separated from production library. | Design Lead
+[END TABLE]
+3.1 File naming
+[TABLE: 8 rows x 3 cols]
+CANONICAL FILE NAME Zoiko Billing — Chatbot Product Design — v1.x
+Object | Convention | Example
+Frame | [Surface] / [Flow] / [State] / [Breakpoint] | Assistant / Refund / Confirm / Desktop-L
+Component | ZB-AI/[Category]/[Component] | ZB-AI/Action/Preview Card
+Variant property | Property=Value | Risk=High; State=Ready; Density=Comfortable
+Flow start | FLOW — [NN] [Task] | FLOW — 04 Reconcile Payment
+Annotation | [TAG]-[NNN] | A11Y-014
+Exploration | EXP — [date] — [concept] | EXP — 2026-08-17 — compact citations
+[END TABLE]
+3.2 Branch and release governance
+Production components are modified through Figma branching or an equivalent controlled review workflow.
+Design-library changes require named reviewer approval and a version note.
+Breaking component changes increment the design-system minor version and include migration notes.
+Frames linked for engineering handoff must reference published component instances, not detached copies.
+Deprecated components remain visible only in Archive with a replacement pointer and removal target.
+4. Foundations & Design Tokens
+4.1 Working semantic color tokens
+[TABLE: 11 rows x 4 cols]
+Token | Working value | Use | Rule
+surface.page | #FFFFFF | Primary canvas | Use approved product surface if different.
+surface.subtle | #F4F6F8 | Secondary backgrounds | Never substitute for disabled state.
+text.primary | #13213C | Primary headings/financial values | AAA preferred for critical values.
+text.secondary | #414A54 | Body/supporting copy | Maintain AA contrast.
+brand.primary | #0A4F4A | Primary action/active assistant state | Map to approved Zoiko Billing brand token.
+brand.accent | #C79A32 | Attention/preview emphasis | Not for error states.
+state.success | #1E6B43 | Confirmed success | Pair with icon + text.
+state.danger | #8A1F11 | Destructive/failed/high consequence | Pair with explicit label.
+state.info | #235A9F | Informational system state | Do not use as generic brand color.
+border.default | #D7DDE2 | Containers/dividers | Use tokenized border widths.
+[END TABLE]
+4.2 Typography
+[TABLE: 8 rows x 4 cols]
+Style | Desktop | Mobile | Use
+Display / page title | 28–32 px / 600 | 24–28 px / 600 | Full-screen assistant or major task
+Section title | 20–24 / 600 | 19–22 / 600 | Action cards, panels
+Body | 15–16 / 400 | 16 / 400 | Conversation and descriptions
+Body strong | 15–16 / 600 | 16 / 600 | Labels and important facts
+Caption | 12–13 / 400 | 12–13 / 400 | Metadata, timestamps, provenance
+Money large | 24–28 / 600 | 22–26 / 600 | Financial preview total
+Code/reference | 12–13 monospace | 12–13 monospace | IDs, request/audit refs
+[END TABLE]
+4.3 Spacing, radius and layout tokens
+[TABLE: 7 rows x 3 cols]
+Family | Tokens | Application
+Spacing | 4, 8, 12, 16, 24, 32, 40, 48 px | Use 4 px base grid; components primarily 8 px rhythm.
+Radius | 6, 10, 14, 18, 24 px | Controls → cards → composer/sheets.
+Control height | 32, 40, 44, 48, 56 px | 44 px minimum target area for primary touch controls.
+Panel width | 420–480 px standard; 560–720 px expanded | Desktop assistant surface.
+Content max | 720 px conversational reading width | Prevents overly long line lengths in full-screen mode.
+Elevation | 0, 1, 2, overlay | Use sparingly; hierarchy should rely on layout first.
+[END TABLE]
+4.4 Iconography
+Use the Zoiko Billing/product icon family where available; do not introduce a separate AI icon set.
+Every consequential icon must have a visible label or accessible name.
+Use recognizable semantic icons: source/citation, warning, approval, lock, external link, refresh, success, error, copy.
+Sparkle/AI iconography may identify assistant-generated content but never imply correctness or authority.
+4.5 Motion
+[TABLE: 6 rows x 3 cols]
+Interaction | Target | Reduced motion
+Panel open/close | 150–220 ms ease-out | Instant/fade only
+Card state change | 120–180 ms | No translation required
+Loading/progress | Indeterminate only when duration unknown | Static text + progress status
+Success transition | Short fade/check | Static success state
+Streaming text | Optional progressive reveal | Render complete chunks without typewriter effect
+[END TABLE]
+5. Assistant Shell & Information Architecture
+Figure 1. Desktop embedded assistant shell — low-fidelity implementation reference.
+5.1 Desktop modes
+[TABLE: 6 rows x 4 cols]
+Mode | Width/behavior | Use | Persistence
+Docked panel | 420–480 px right rail | Default conversational assistance while user stays in billing workflow. | May persist across compatible routes.
+Expanded workspace | 560–720 px or split view | Complex action preview, reconciliation, reports, long source review. | Route-bound.
+Full page | Standard application content width | Multi-step review, approvals, complex exceptions. | Dedicated route.
+Context drawer | 320–440 px secondary drawer | Sources, audit detail, entity context. | Closes independently.
+Modal | Rare; 480–640 px | Short blocking confirmation only when an existing product pattern requires it. | Never for long reading.
+[END TABLE]
+5.2 Shell anatomy
+1. Header: assistant name, connection/status indicator, close/expand controls.
+2. Resolved context bar: workspace/tenant, legal entity, optional currency/reporting context.
+3. Conversation viewport with bounded reading width.
+4. Conversation items using typed message/card primitives.
+5. Contextual suggestion row when useful; never blocks the composer.
+6. Composer with attachment policy, send/cancel generation and accessible shortcuts.
+7. Persistent trust line for AI limitations where required by product policy.
+5.3 Context visibility
+[TABLE: 1 rows x 1 cols]
+P0 CONTEXT RULE Tenant and legal-entity context must be visible whenever a user is inspecting or preparing financial information. If the user changes context, the assistant must visibly acknowledge the change and invalidate incompatible prepared actions or previews.
+[END TABLE]
+6. Component Library Specification
+[TABLE: 19 rows x 3 cols]
+Component | Required variants/properties | Key states
+Assistant Launcher | size; label; unread state; placement | default, hover, focus, active, disabled
+Assistant Header | mode; connectivity; expandability | ready, reconnecting, degraded
+Context Bar | tenant; entity; context count; switchable | resolved, changed, restricted, unresolved
+User Message | text; attachment indicator | sent, pending, failed
+Assistant Message | grounding; streaming; risk class | streaming, complete, partial, abstained, error
+Suggested Prompt Chip | intent; enabled | default, focus, disabled
+Citation / Source Chip | source type; authority; count | available, restricted, superseded
+Financial Summary Card | resource type; amount; currency; status | current, stale, partial, unavailable
+Action Draft Card | action type; risk; editability | draft, invalid, ready
+Action Preview Card | risk; impact; expiry; approval | ready, changed, expired, blocked
+Confirmation Control | risk; confirmation type | ready, pending, confirmed, cancelled
+Approval Card | role; stage; SLA/status | required, pending, approved, rejected, expired
+Operation Receipt | operation type; finality | submitted, processing, succeeded, failed, partially completed
+Error Banner/Card | severity; recoverability | inline, blocking, degraded
+Empty State | context | no conversation, no results, no permission
+Loading/Progress | determinacy; operation | retrieving, validating, executing
+Composer | attachments; stop; suggestions | ready, composing, sending, streaming, blocked
+Source Drawer | source type; excerpt; metadata | loading, available, unavailable, access denied
+[END TABLE]
+6.1 Component property doctrine
+Prefer explicit Figma component properties to duplicate components.
+Risk and state are separate properties; e.g., Risk=High and State=Expired.
+Content length must be tested with realistic long customer names, invoice IDs and translated labels.
+No component may rely on hidden layers for production-critical accessibility information.
+Detached components are prohibited on Handoff pages unless justified and annotated.
+6.2 Financial display primitive
+[TABLE: 8 rows x 2 cols]
+Element | Requirement
+Amount | Always pair numeric value with ISO currency code when ambiguity is possible.
+Sign | Credits/refunds/negative balances use explicit semantic labels; do not rely on minus alone.
+Timestamp | Show “as of” time/date for volatile financial summaries where relevant.
+Status | Use canonical API/FRS vocabulary; map machine status to user-readable label.
+Entity | Display legal/seller entity when action or record consequence depends on it.
+Source | Financial fact links to authoritative resource or evidence view.
+Rounding | Display uses product currency rules; underlying exact amount remains authoritative.
+[END TABLE]
+7. Conversation & Answer Patterns
+7.1 Answer structure
+[TABLE: 8 rows x 3 cols]
+Answer type | Visual pattern | Required content
+Simple product answer | Assistant message + optional citation | Direct answer; relevant navigation/action link.
+Grounded policy answer | Message + citation cluster | Answer; policy name; effective/current context; sources.
+Financial inspection | Summary card + supporting narrative | Amount/status; currency; entity; timestamp/provenance.
+Ambiguous request | Clarification prompt | One decisive missing input at a time where possible.
+Insufficient evidence | Abstention card | What is unknown; why; safe next step.
+Permission denial | Access state | What cannot be accessed; safe navigation or admin path.
+Degraded service | Degraded banner + bounded response | What is unavailable; which information remains reliable.
+[END TABLE]
+7.2 Streaming behavior
+Stream explanatory text only when it improves perceived speed; do not stream action parameters into a preview as if they were authoritative.
+Structured financial cards render after required fields validate.
+Show “Checking…” or “Validating…” status while authoritative tools are running rather than fake typing indicators.
+Allow user to stop generation without cancelling already-submitted financial operations; those operations require their own control/state.
+7.3 Citations and evidence
+[TABLE: 7 rows x 2 cols]
+Pattern | Behavior
+Inline source chip | Opens source drawer focused on cited section.
+Multiple sources | Collapsed source row shows count; expand without losing conversation position.
+Financial resource link | Opens authoritative Zoiko Billing resource in same tenant/entity context.
+Restricted source | Never reveal title/snippet beyond entitlement; display generic restriction message if necessary.
+Superseded source | Never used normally; historical mode must be explicit and visually labeled.
+Copy answer | Copy excludes hidden system metadata; may include source labels when user chooses “Copy with sources”.
+[END TABLE]
+8. Governed Financial Action UX
+Figure 2. High-consequence action pattern: Preview → Confirm → authoritative receipt.
+8.1 Mode transition
+[TABLE: 7 rows x 3 cols]
+Mode | UI treatment | What user may believe
+Explain | Conversational answer | No financial change is being prepared or made.
+Inspect | Read-only financial/resource cards | Data is authoritative as of shown context/time.
+Prepare | Editable structured draft card | A proposal exists; nothing has been committed.
+Preview | Authoritative preview + impact + expiry | System has validated what would happen if committed.
+Execute | Explicit confirmation, approval or submit control | A governed operation is being requested/processed.
+Receipt | Operation result with authoritative status | Only “succeeded/final” when API confirms finality.
+[END TABLE]
+8.2 Preview card anatomy
+1. Action label using human language, e.g., “Issue invoice” or “Refund payment.”
+2. Risk level expressed through copy/iconography, not merely color.
+3. Affected customer/account/resource and immutable reference.
+4. Legal entity and tenant/workspace context.
+5. Money values with ISO currency and exact visible amount.
+6. Fields that will change, showing before/after where applicable.
+7. Side effects: communication, ledger entry, reconciliation impact, external processor interaction.
+8. Approval requirement and approver role where known.
+9. Preview generated timestamp and expiry/invalidation condition.
+10. Primary “Continue/Confirm” and secondary “Edit/Cancel” actions with clear labels.
+8.3 Explicit confirmation
+[TABLE: 1 rows x 1 cols]
+NO GENERIC “YES” FOR HIGH-RISK ACTIONS High-risk confirmation must restate the action and material value. Use controls such as “Confirm $2,480.00 USD refund” or a review screen with a single unambiguous submit action. Conversational “yes” may only be accepted where the FRS explicitly allows it and the active preview context remains valid.
+[END TABLE]
+8.4 State invalidation
+[TABLE: 7 rows x 2 cols]
+Change | Required UI response
+Tenant/entity changes | Invalidate preview; explain context change.
+Material amount/recipient changes | Return to Prepare/Preview; require fresh validation.
+Underlying resource version changes | Show conflict; refresh authoritative preview.
+Approval policy changes | Update required approval path; block outdated submit.
+Preview expires | Mark Expired; disable confirm; offer Refresh preview.
+Permission revoked | Block execution; preserve safe read-only context where permitted.
+[END TABLE]
+9. Core Task Flow Wireframes
+9.1 Ask about billing
+1. User asks a product, policy or billing-process question.
+2. Assistant determines whether answer requires knowledge retrieval, financial inspection or both.
+3. Relevant permitted sources are retrieved.
+4. Assistant answers directly, showing citations when grounded content is material.
+5. If answer implies an action, show a separate suggested action control; do not silently transition into execution.
+9.2 Inspect invoices / balances
+1. Resolve tenant/entity context.
+2. Collect missing filters only if required.
+3. Show read-only summary with result count, amount, currency, status scope and “as of” context.
+4. Allow expandable list/table; preserve sort/filter semantics.
+5. Resource row opens authoritative invoice/customer record.
+6. Offer follow-up action such as Prepare reminder, but keep it visually distinct from inspection.
+9.3 Prepare and issue invoice
+1. Collect/resolve customer, seller entity, currency, commercial basis and line items.
+2. Render editable structured draft; validate required fields inline.
+3. User selects Review invoice.
+4. API generates authoritative preview with totals, taxes/adjustments where applicable and recipient impact.
+5. UI shows approval requirement if applicable.
+6. Explicit confirmation submits issue request.
+7. Receipt displays processing/final status and invoice reference only from authoritative API.
+9.4 Payment allocation / reconciliation
+1. Display unmatched payment and candidate invoices in a structured comparison pattern, not prose alone.
+2. Show confidence/reasoning as decision support, never as authority.
+3. User selects proposed match or modifies allocation.
+4. Preview shows exact allocation amounts and any remainder.
+5. Confirm/approval commits governed reconciliation operation.
+6. Receipt links to payment, invoice(s), reconciliation and audit reference.
+9.5 Refund
+1. User invokes refund from a payment context or conversation.
+2. Assistant reads refund eligibility and processor/state constraints.
+3. Prepare screen captures reason and permitted amount.
+4. Authoritative preview shows refund amount/currency, original payment, destination constraints, fees/side effects if applicable, and approval requirement.
+5. Explicit confirmation submits request.
+6. Receipt may be Pending/Processing; never imply settled funds until confirmed.
+9.6 Report/export
+1. Collect report scope, date range, entities, currencies and grouping.
+2. Preview report criteria and estimated data scope.
+3. For sensitive/exportable data, show access and data-egress warning when policy requires.
+4. Generate asynchronously when needed and show progress.
+5. Completion state provides controlled download link and expiry information.
+10. Responsive & Mobile Design
+Figure 3. Mobile/full-screen assistant behavior and responsive design rules.
+[TABLE: 5 rows x 3 cols]
+Breakpoint | Assistant behavior | Primary layout rule
+≥ 1440 | Docked 440–480 px; optional expanded split | Keep main billing context usable alongside assistant.
+1024–1439 | Docked 400–440 px or overlay depending route | Avoid compressing data tables below usable width.
+768–1023 | Overlay or full-height sheet | Prioritize one major surface at a time.
+≤ 767 | Full-screen assistant route/sheet | Single-column; sticky header/composer; safe-area aware.
+[END TABLE]
+10.1 Mobile rules
+Financial tables transform to labeled stacked rows or purpose-built cards; horizontal scrolling is a last resort.
+Action preview remains a dedicated review step; do not collapse material fields behind accordions by default.
+Primary commit action stays reachable but must not obscure content or keyboard focus.
+Use operating-system safe-area insets for bottom composer and confirmation controls.
+Source drawer becomes a full-screen secondary route or bottom sheet with clear return navigation.
+Long customer names, IDs and money values wrap without truncating meaning.
+11. Required State Catalogue
+[TABLE: 13 rows x 2 cols]
+State family | Required frames
+Entry | First use; returning conversation; assistant unavailable; feature disabled.
+Conversation | Empty; user sent; assistant retrieving; streaming; complete; stopped; retry.
+Context | Resolved; unresolved; tenant changed; entity changed; unauthorized entity.
+Knowledge | Grounded answer; multiple sources; no evidence; conflicting evidence; restricted source; stale source.
+Financial inspect | Loading; success; empty; partial; stale; resource changed; permission denied.
+Prepare | Initial; editable; validation error; blocked; ready.
+Preview | Generating; ready; requires approval; expired; invalidated; conflict; blocked.
+Approval | Not required; pending; approved; rejected; expired; approver unavailable.
+Execute | Submitting; queued; processing; succeeded; failed; partially succeeded; unknown finality.
+Connectivity | Offline; reconnecting; API degraded; knowledge unavailable; action service unavailable.
+Security | Session expired; step-up required; restricted export; support-access banner.
+Responsive | Desktop, tablet and mobile examples for every P0 pattern.
+[END TABLE]
+12. Error, Recovery & Degraded-State UX
+[TABLE: 11 rows x 3 cols]
+Condition | User-facing pattern | Recovery
+Validation error | Inline field error + summary if multiple | Correct field; preserve entered data.
+Stale preview | Blocking preview state | Refresh preview; explain changed dependency.
+Concurrency conflict | Conflict card with current state | Reload resource; regenerate proposal.
+Permission denied | Access state; no sensitive detail | Link to permitted route/admin request.
+Service timeout | Bounded retry state | Retry read; never duplicate write without idempotency.
+Unknown operation finality | “Checking status” receipt | Poll authoritative job/status; do not re-submit blindly.
+Knowledge unavailable | Answer limitation | Offer product navigation or support path.
+Cross-tenant mismatch | Blocking security state | Return to current tenant; discard incompatible draft.
+Export failed | Job failure receipt | Retry/recreate if safe; expose request reference.
+Session expired | Re-authentication state | Re-authenticate; revalidate all prepared actions after return.
+[END TABLE]
+13. Accessibility Specification — WCAG 2.2 AA
+[TABLE: 13 rows x 2 cols]
+Area | Required behavior
+Keyboard | All functionality keyboard-operable; logical order; no keyboard traps.
+Focus | Visible focus indicator; focus moves intentionally on dialogs/routes; returns to initiator on close.
+Screen reader | Semantic headings, landmarks, button names, status announcements and table labels.
+Streaming | New assistant content announced without repeatedly interrupting the user; status regions are throttled.
+Color | Meaning never relies on color alone; contrast meets AA minimums.
+Touch | Interactive targets meet minimum target-size standard or approved product equivalent.
+Errors | Programmatically associated field messages; error summary points to fields when needed.
+Dialogs | Correct role/name/description; background inert; Escape behavior consistent unless unsafe.
+Financial values | Currency, sign and amount order reads intelligibly with assistive technology.
+Charts/data | Provide tabular/text alternative for any visual summary.
+Motion | Respect prefers-reduced-motion; no essential information depends on animation.
+Zoom/reflow | Usable at 200% zoom and narrow viewport without loss of content/function.
+[END TABLE]
+13.1 Focus order — assistant panel
+1. Panel title and context.
+2. Header controls.
+3. Conversation content in chronological order.
+4. Per-message actions/citations after their associated content.
+5. Suggested prompts if present.
+6. Composer input.
+7. Attachment/auxiliary controls.
+8. Send/stop control.
+14. UX Writing & Microcopy Standard
+[TABLE: 10 rows x 2 cols]
+Rule | Example
+Use verbs that describe consequence | “Issue invoice” instead of “Continue” when the action commits issuance.
+State finality precisely | “Submitted for approval” not “Done” when approval is pending.
+Prefer canonical financial nouns | Invoice, payment, allocation, reconciliation, credit, refund.
+Avoid anthropomorphic authority | “I checked the invoice service” is weaker than “Invoice status: Paid — as of …”.
+Explain blockers concretely | “This preview expired because the invoice changed. Refresh to review the current total.”
+Use concise source language | “Sources (2)” or named policy/resource links.
+No false certainty | Use bounded uncertainty when evidence or service status is incomplete.
+Do not blame users | Describe the condition and recovery path.
+Keep destructive labels explicit | “Cancel refund request” rather than “Cancel” where ambiguity exists.
+[END TABLE]
+14.1 Confirmation copy formula
+[TABLE: 1 rows x 1 cols]
+FORMULA [Verb] + [material object/value] + [optional recipient/context]. Example: “Confirm $2,480.00 USD refund” or “Issue invoice INV-DRAFT-8821 to Northstar Labs”.
+[END TABLE]
+15. Localization, Currency & Jurisdiction UX
+[TABLE: 9 rows x 2 cols]
+Topic | Rule
+Currency | Use ISO currency code when symbols are ambiguous or multiple currencies coexist.
+Number format | Follow user/product locale for display; never change underlying exact value.
+Dates | Use localized display but preserve unambiguous date context in high-risk previews where needed.
+Timezone | Show tenant/entity/report timezone when it affects billing meaning.
+Right-to-left | Components must mirror layout where appropriate without mirroring financial semantics/icons incorrectly.
+Translation expansion | Design critical buttons/labels for 30–50% expansion; test German/French-like length and non-Latin scripts.
+Jurisdiction | Compliance text is scoped; clearly label jurisdiction when answer/action depends on it.
+Legal entity | Use full or approved abbreviated legal/seller entity in consequential flows.
+[END TABLE]
+16. Trust, Privacy & Security UX
+[TABLE: 9 rows x 2 cols]
+Control | UI requirement
+Support impersonation/elevation | Persistent banner identifies elevated/support-access session; no stealth access.
+Sensitive field masking | Mask data not needed for task; provide deliberate reveal only where permitted.
+Session expiry | Re-authentication visibly interrupts high-risk execution; never silently replay action.
+Step-up authentication | Explain why additional verification is required without exposing security internals.
+Export/data egress | Warn/confirm where policy requires; show scope and file expiry.
+Prompt injection in content | Never render retrieved text as privileged instructions; source view visually distinguishes quoted content.
+External communication | Show recipient, channel, subject/template and material content before sending when required.
+Audit | Receipts expose human-usable audit/request reference without leaking internal secrets.
+[END TABLE]
+17. Figma Prototype Requirements
+[TABLE: 11 rows x 3 cols]
+Prototype | Minimum path | Purpose
+P01 — Product Q&A | Ask → retrieval → grounded answer → source drawer | Validate trust/citation interaction.
+P02 — Invoice inspection | Ask → filters → summary → invoice resource | Validate financial inspection.
+P03 — Create/issue invoice | Prepare → edit → preview → confirm → receipt | Validate governed action progression.
+P04 — Reconciliation | Payment → candidates → allocation → preview → confirm | Validate structured decision support.
+P05 — Refund | Eligibility → prepare → preview → approval/confirm → receipt | Validate high-risk workflow.
+P06 — Approval | Pending approval → reviewer details → approve/reject → receipt | Validate maker-checker pattern.
+P07 — Failure/recovery | Preview expired / concurrency conflict → refresh → continue | Validate safe recovery.
+P08 — Mobile | Ask → inspect → action preview → source view | Validate responsive behavior.
+P09 — Accessibility keyboard | Open → navigate → source → confirm → return focus | Validate focus model.
+P10 — Degraded mode | Knowledge or action service unavailable | Validate bounded degradation.
+[END TABLE]
+17.1 Prototype realism
+Use realistic billing data with synthetic names and values; no production customer data.
+Prototype delays should approximate retrieval/action validation but never fake completion states.
+Use variables/component properties for state rather than duplicating unrelated frames where practical.
+Every prototype start point includes scenario, persona/role, tenant/entity context and success criterion.
+18. Engineering Handoff Specification
+[TABLE: 13 rows x 2 cols]
+Handoff item | Required detail
+Component mapping | Figma component → frontend component name → repository/package owner.
+Design tokens | Semantic token name; platform value; light/dark behavior if supported.
+Responsive rules | Constraints, min/max widths, overflow, wrapping and breakpoint behavior.
+Interaction notes | Trigger, state transition, cancellation, focus and keyboard behavior.
+API binding | Endpoint/operation; loading/error/empty states; fields displayed.
+Data mapping | Field → display transformation; precision; locale; status mapping.
+Permissions | Hidden vs disabled vs denied patterns; server authority remains source of truth.
+Analytics | Event name, trigger, properties and privacy classification.
+Accessibility | ARIA/semantic intent, announcements, label behavior, focus destination.
+Content | Canonical strings, dynamic variables and truncation/wrapping rules.
+Test IDs | Optional stable identifiers for critical automated UI tests.
+Fallback | Behavior when source/API/citation is unavailable.
+[END TABLE]
+18.1 Dev Mode / inspect readiness
+All production frames use Auto Layout and published components.
+Layer names are semantic; no “Rectangle 418” for handoff-critical objects.
+Spacing and dimensions derive from tokens where possible.
+Prototype-only hotspots are not mistaken for production requirements; behavior notes are explicit.
+Variables/styles are published and documented.
+Figma sections group each feature into Happy path, Edge states, Responsive and Notes.
+19. UX Analytics & Instrumentation Design
+[TABLE: 8 rows x 3 cols]
+Event family | Examples | Design annotation
+Assistant entry | assistant_opened, assistant_expanded | Entry surface and route context.
+Prompting | prompt_submitted, suggested_prompt_used | Intent class, not raw sensitive text by default.
+Grounding | source_opened, citation_expanded | Source type and authority tier where privacy permits.
+Action lifecycle | action_prepare_started, preview_generated, confirmation_shown, action_submitted | Action type, risk class, not sensitive free text.
+Approval | approval_requested, approval_decision_viewed | Stage/status.
+Recovery | preview_expired, conflict_shown, retry_used | Failure class and recovery path.
+Accessibility | keyboard_flow_completed in test only | QA instrumentation, not production user profiling.
+[END TABLE]
+20. Component Naming & Variant Matrix
+[TABLE: 9 rows x 3 cols]
+Component | Primary properties | Example instance name
+ZB-AI/Message/Assistant | State; Grounding; Density; Risk | Assistant Message / State=Complete / Grounding=Cited
+ZB-AI/Card/FinancialSummary | Resource; State; CurrencyMode | Financial Summary / Resource=Invoice / State=Current
+ZB-AI/Action/Preview | Action; Risk; Approval; State | Preview / Action=Refund / Risk=High / State=Ready
+ZB-AI/Action/Receipt | Operation; State; Finality | Receipt / Operation=Refund / State=Processing
+ZB-AI/Control/Composer | State; Attachment; Suggestions | Composer / State=Streaming
+ZB-AI/Context/Bar | Tenant; Entity; State | Context Bar / State=Resolved
+ZB-AI/Citation/Chip | SourceType; Authority; State | Citation / SourceType=Policy / State=Available
+ZB-AI/Feedback/Error | Severity; Recovery | Error / Severity=Blocking / Recovery=RefreshPreview
+[END TABLE]
+21. Design QA Matrix
+[TABLE: 13 rows x 5 cols]
+Scenario | Desktop | Mobile | A11Y | Required check
+Grounded Q&A | Yes | Yes | Yes | Citation/source behavior and reading order.
+Multi-currency summary | Yes | Yes | Yes | Currency code, wrapping, locale.
+Tenant switch mid-draft | Yes | Yes | Yes | Invalidation and context announcement.
+Expired preview | Yes | Yes | Yes | Disabled confirm + recovery.
+Maker-checker approval | Yes | Yes | Yes | Role/status/finality.
+Refund pending processor | Yes | Yes | Yes | No false completion.
+Long customer name | Yes | Yes | Yes | No destructive truncation.
+200% zoom | Yes | N/A | Yes | No loss of function/content.
+Keyboard only | Yes | Yes ext. keyboard | Yes | Focus order and modal behavior.
+Screen reader | Yes | Yes | Yes | Status announcements and labels.
+RTL layout | Yes | Yes | Yes | Mirroring and alignment.
+Service degraded | Yes | Yes | Yes | Bounded capability messaging.
+[END TABLE]
+22. UI/UX Functional Design Requirements
+22.1 Requirements UX-001–UX-020
+[TABLE: 21 rows x 5 cols]
+ID | Requirement | P | Owner | Verification
+UX-001 | Assistant is visually integrated into Zoiko Billing shell and design system. | P0 | Design | Design review
+UX-002 | Desktop default supports docked side panel without obscuring primary route context. | P0 | Design | Responsive QA
+UX-003 | Mobile assistant is full-screen/sheet with sticky header and composer. | P0 | Design | Mobile QA
+UX-004 | Tenant and legal entity are visible in all consequential financial states. | P0 | Design | State QA
+UX-005 | Changing tenant/entity invalidates incompatible prepared actions and previews. | P0 | Design+Eng | E2E
+UX-006 | Explain, Inspect, Prepare, Preview and Execute are visually distinguishable. | P0 | Design | Usability QA
+UX-007 | Financial amount displays include currency semantics without symbol ambiguity. | P0 | Design | Localization QA
+UX-008 | Volatile financial summaries display appropriate as-of/provenance context. | P0 | Design | Data QA
+UX-009 | Assistant answers support citations/source opening where grounding is material. | P0 | Design+Eng | KB E2E
+UX-010 | Restricted sources never expose unauthorized titles/snippets. | P0 | Design+Sec | Security QA
+UX-011 | No evidence/conflicting evidence has an explicit abstention pattern. | P0 | Design | Scenario QA
+UX-012 | Action preparation uses structured fields/cards instead of prose-only parameter capture. | P0 | Design | Flow QA
+UX-013 | Authoritative preview presents material values, affected resources and side effects. | P0 | Design+Product | Flow QA
+UX-014 | High-risk confirmation restates material action/value. | P0 | Design+Product | Usability QA
+UX-015 | Expired preview disables commit and offers fresh preview. | P0 | Design+Eng | E2E
+UX-016 | Concurrency conflict shows current state and safe recovery. | P0 | Design+Eng | E2E
+UX-017 | Operation receipt distinguishes submitted, processing, succeeded and failed. | P0 | Design | State QA
+UX-018 | Pending approval cannot be rendered as completed financial operation. | P0 | Design | Approval QA
+UX-019 | Assistant service degradation clearly identifies unavailable capabilities. | P0 | Design | Failure QA
+UX-020 | Unknown operation finality must trigger status-check pattern, not duplicate submission. | P0 | Design+Eng | E2E
+[END TABLE]
+22.2 Requirements UX-021–UX-040
+[TABLE: 21 rows x 5 cols]
+ID | Requirement | P | Owner | Verification
+UX-021 | All critical interactions are keyboard operable. | P0 | Design+A11Y | Keyboard QA
+UX-022 | Focus remains visible and is programmatically managed across overlays. | P0 | Design+A11Y | Focus QA
+UX-023 | Dynamic assistant status is announced accessibly without excessive interruption. | P0 | Design+A11Y | Screen reader QA
+UX-024 | Meaning is never conveyed by color alone. | P0 | Design | A11Y audit
+UX-025 | Primary touch controls meet minimum target-size requirements. | P0 | Design | A11Y audit
+UX-026 | Layouts support 200% zoom/reflow without loss of content/function. | P0 | Design | Zoom QA
+UX-027 | Errors are associated with affected fields and have actionable recovery copy. | P0 | Design | Form QA
+UX-028 | Reduced-motion preference is respected. | P0 | Design+Eng | A11Y QA
+UX-029 | Long text, IDs and translations wrap without hiding material meaning. | P0 | Design | Localization QA
+UX-030 | RTL behavior is defined for shared assistant components. | P1 | Design | RTL QA
+UX-031 | Data export surfaces scope and expiry when relevant. | P0 | Design+Sec | Security QA
+UX-032 | Support/elevated access has persistent visible indication. | P0 | Design+Sec | Security QA
+UX-033 | External communication review exposes recipient and material message content. | P0 | Design | Flow QA
+UX-034 | Copy behavior does not silently include hidden metadata or sensitive context. | P0 | Design+Sec | Security QA
+UX-035 | Streaming text may not imply authoritative action completion. | P0 | Design | State QA
+UX-036 | Structured cards render only after required authoritative fields validate. | P0 | Design+Eng | E2E
+UX-037 | Figma production frames use published components and Auto Layout. | P0 | Design | Library audit
+UX-038 | Component variants separate state from risk. | P0 | Design | Library audit
+UX-039 | Handoff frames carry PRD/FRS/API/DATA/KB annotations where material. | P0 | Design | Handoff audit
+UX-040 | Design tokens map to product semantic tokens rather than hard-coded implementation values. | P0 | Design+Eng | Token audit
+[END TABLE]
+22.3 Requirements UX-041–UX-060
+[TABLE: 21 rows x 5 cols]
+ID | Requirement | P | Owner | Verification
+UX-041 | Every P0 flow has desktop and mobile production frames. | P0 | Design | Coverage audit
+UX-042 | Every P0 flow has loading, empty, error and permission variants where applicable. | P0 | Design | Coverage audit
+UX-043 | Every P0 financial action has preview, invalidation and receipt states. | P0 | Design | Coverage audit
+UX-044 | Maker-checker flows include pending, approved, rejected and expired states. | P0 | Design | Approval audit
+UX-045 | Prototypes use synthetic data only. | P0 | Design+Sec | Data audit
+UX-046 | Prototype start frames declare persona, role, tenant/entity and success criteria. | P0 | Design | Prototype audit
+UX-047 | Design library publishes component descriptions and usage/do-not-use notes. | P1 | Design | Library audit
+UX-048 | Analytics events are annotated without requiring raw sensitive prompt capture. | P0 | Design+Data | Analytics review
+UX-049 | Source drawer preserves return position in conversation. | P1 | Design | Usability QA
+UX-050 | Mobile keyboard/safe-area behavior is explicitly designed. | P0 | Design | Mobile QA
+UX-051 | High-risk commit button labels are action-specific, not generic. | P0 | Design | Copy audit
+UX-052 | Canonical API/FRS status vocabulary is used in product UI mappings. | P0 | Design+Eng | Traceability audit
+UX-053 | Cross-product Payroll/HR content is not surfaced as Zoiko Billing knowledge without authorized integration. | P0 | Design+KB | Security QA
+UX-054 | AI identity/branding does not imply autonomous financial authority. | P0 | Design+Product | Design review
+UX-055 | User can identify source/resource used for material financial facts. | P0 | Design+Eng | E2E
+UX-056 | Assistant preserves unsent draft text across benign panel resize/expand transitions. | P1 | Design+Eng | UX QA
+UX-057 | Conversation history does not expose content from a different tenant after context switch. | P0 | Design+Sec | Security QA
+UX-058 | Critical destructive controls are separated from benign navigation controls. | P0 | Design | Usability QA
+UX-059 | Progress components distinguish retrieval, validation and execution where material. | P1 | Design | State QA
+UX-060 | Action cancellation copy distinguishes cancelling a draft from cancelling a submitted operation. | P0 | Design | Copy QA
+[END TABLE]
+23. Design Acceptance Criteria
+[TABLE: 46 rows x 2 cols]
+AC | Acceptance criterion
+UX-AC-01 | No P0 financial action can be mistaken for a conversational suggestion.
+UX-AC-02 | Every P0 action path visibly identifies tenant/entity before confirmation.
+UX-AC-03 | Every money value in a multi-currency context is unambiguous.
+UX-AC-04 | No final success state is shown before authoritative API finality.
+UX-AC-05 | Preview expiration and underlying-resource conflicts are visible and recoverable.
+UX-AC-06 | Pending approvals are visually distinct from completed actions.
+UX-AC-07 | Grounded answers expose usable sources without overwhelming the conversation.
+UX-AC-08 | Unauthorized/restricted sources leak no metadata beyond policy.
+UX-AC-09 | All production components have keyboard, focus, hover, disabled and error states where applicable.
+UX-AC-10 | All P0 flows meet WCAG 2.2 AA design requirements.
+UX-AC-11 | 200% zoom and mobile width preserve all material review information.
+UX-AC-12 | Primary mobile actions remain reachable above safe areas and virtual keyboard.
+UX-AC-13 | Every P0 flow includes at least one documented failure/recovery path.
+UX-AC-14 | Every P0 action includes a receipt/audit reference pattern.
+UX-AC-15 | Component library has no undocumented duplicate production components.
+UX-AC-16 | Engineering can map each handoff component to a stable semantic token/component name.
+UX-AC-17 | No production handoff frame uses real customer or employee data.
+UX-AC-18 | Figma file contains clear status/version/owner metadata.
+UX-AC-19 | All critical strings are available in the content handoff inventory.
+UX-AC-20 | All API-bound states have loading, success and error UI defined.
+UX-AC-21 | All async operations have queued/processing/final state patterns.
+UX-AC-22 | External message send flows expose recipient and content before send where policy requires.
+UX-AC-23 | Support/elevated access is persistently visible.
+UX-AC-24 | Cross-tenant context switching cannot visually preserve incompatible financial action state.
+UX-AC-25 | UX copy distinguishes draft, preview, request, approval and completion.
+UX-AC-26 | High-risk actions use action-specific confirmation labels.
+UX-AC-27 | No essential state is color-only.
+UX-AC-28 | All source/citation controls have accessible labels and focus behavior.
+UX-AC-29 | No assistant motion violates reduced-motion setting.
+UX-AC-30 | Reconciliation comparison remains comprehensible without relying on prose.
+UX-AC-31 | Long translated labels do not cause overlap or hide material values.
+UX-AC-32 | Figma prototype flows match FRS state transitions and API finality semantics.
+UX-AC-33 | Design QA page includes desktop/mobile/a11y regression examples.
+UX-AC-34 | All P0 frames are marked Ready for Dev only after Product, Engineering and Design review.
+UX-AC-35 | Deprecated components are removed from active library or clearly marked and non-preferred.
+UX-AC-36 | Analytics annotations avoid requiring raw prompt text by default.
+UX-AC-37 | Assistant status/degradation messaging identifies which capability is unavailable.
+UX-AC-38 | Users can return from source/audit detail without losing conversation position.
+UX-AC-39 | Action review surfaces show before/after values when the operation modifies an existing resource.
+UX-AC-40 | Action receipt links to authoritative resource when available.
+UX-AC-41 | The assistant never visually represents a generated draft as an issued invoice, completed refund or reconciled payment.
+UX-AC-42 | Permission-denied states give a safe path without revealing hidden information.
+UX-AC-43 | Figma library passes contrast and component-property audit.
+UX-AC-44 | Engineering handoff includes responsive overflow/wrapping rules.
+UX-AC-45 | The final design passes a representative usability test for explain, inspect and high-risk action workflows.
+[END TABLE]
+24. Production Design Release Gates
+[TABLE: 15 rows x 3 cols]
+Gate | Pass condition | Approver
+G1 — Scope | P0 flows and state inventory complete. | Product
+G2 — Design system | Components/tokens published; no uncontrolled duplicates. | Design Lead
+G3 — Financial safety | Preview/confirm/receipt patterns approved against FRS/API. | Product + Billing Ops
+G4 — Context isolation | Tenant/entity switch behavior approved. | Security + Product
+G5 — Accessibility | WCAG 2.2 AA design audit passed. | A11Y/QA
+G6 — Responsive | Desktop/tablet/mobile P0 flows reviewed. | Design + Frontend
+G7 — Content | Canonical strings and state labels approved. | Product/Content
+G8 — Knowledge | Citation/abstention/restriction patterns approved. | AI/KB + Security
+G9 — Error recovery | Stale/conflict/degraded/unknown-finality states validated. | Engineering + QA
+G10 — Prototype | P01–P10 prototypes usable and traceable. | Design + Product
+G11 — Handoff | API/data/analytics/a11y annotations complete. | Engineering Lead
+G12 — Usability | Representative P0 tasks pass agreed usability threshold. | Product Design
+G13 — QA coverage | Regression frame matrix complete. | QA
+G14 — Final sign-off | Ready for Dev status approved with change log/version. | Product + Design + Engineering
+[END TABLE]
+25. Design RACI
+[TABLE: 10 rows x 7 cols]
+Work item | Design | Product | Frontend | AI/Backend | Security | QA/A11Y
+Design system/components | A/R | C | C | I | C | C
+Conversation patterns | A/R | C | C | C | C | C
+Financial action UX | R | A | C | C | C | C
+Figma prototypes | A/R | C | C | C | I | C
+API/data annotations | R | C | C | A/R | I | C
+Accessibility | R | C | C | I | C | A/R
+Security/privacy patterns | R | C | C | C | A | C
+Usability testing | A/R | C | I | I | I | C
+Ready-for-Dev review | R | A | A/R | C | C | C
+[END TABLE]
+26. Controlled Open Decisions
+[TABLE: 10 rows x 4 cols]
+Decision | Default in this spec | Owner | Must resolve by
+Canonical Zoiko Billing brand token mapping | Use semantic tokens; working teal/navy/gold values are placeholders if canonical library differs. | Design System | Before component library publish
+Default desktop panel width | 440 px within 420–480 range. | Design + Frontend | Prototype P01
+Expanded assistant behavior | Split workspace preferred over modal. | Product Design | Prototype P03
+Conversation persistence across routes | Persist only where tenant/entity context remains compatible. | Product + Eng | Before implementation
+Attachment support | Disabled unless FRS/API security model explicitly enables it. | Product + Security | Before composer final
+Voice input | Out of scope v1. | Product | Roadmap
+Dark mode | Inherit product capability; do not create assistant-only mode. | Design System | Before release if product supports dark
+Historical-source mode | Admin/support only if KB spec enables it. | KB + Product | Before source drawer final
+Feedback controls | Thumbs/issue reporting without exposing sensitive text by default. | Product + Data | Before analytics lock
+[END TABLE]
+27. Figma Delivery Package Checklist
+☐ 00 README page with owner, version, status, change log and specification links.
+☐ Foundations page with published semantic variables/styles.
+☐ Production component library with descriptions and variants.
+☐ Composite patterns page.
+☐ Desktop P0 frames.
+☐ Tablet/mobile P0 frames.
+☐ All required state variants.
+☐ P01–P10 prototypes.
+☐ User-flow diagrams with requirement references.
+☐ Accessibility annotations and focus-order notes.
+☐ Engineering handoff page with API/data mapping.
+☐ Content/string inventory.
+☐ Analytics event annotations.
+☐ Responsive redlines/constraints.
+☐ Synthetic test data set.
+☐ QA/regression page.
+☐ Deprecation/archive section.
+☐ Ready-for-Dev review record.
+28. Engineering Implementation Sequence
+1. Publish semantic tokens and assistant foundations.
+2. Implement shell, context bar, message primitives and composer.
+3. Implement grounded answer/citation patterns.
+4. Implement financial summary/read-only inspection cards.
+5. Implement structured draft and validation components.
+6. Implement Preview → Confirm → Receipt control plane UI.
+7. Implement approval and asynchronous operation states.
+8. Implement error/degraded/security states.
+9. Complete mobile/responsive adaptations.
+10. Wire analytics, accessibility behavior and automated UI tests.
+11. Run design QA against Figma and FRS/API traceability.
+12. Release only after all production design gates pass.
+29. Final Design Doctrine
+[TABLE: 1 rows x 1 cols]
+LOCKED PRINCIPLE Zoiko Billing’s assistant must make complex billing easier without making financial consequence invisible. Conversation provides speed; structured UI provides control. Every material action must reveal context, amount, affected resource, authority, approval state and finality before the user can reasonably believe the operation is complete.
+[END TABLE]
+Approval of this wireframe authorizes creation of the canonical Figma file and design library described herein. It does not authorize engineering to bypass unresolved requirements in the PRD, FRS, API, data or knowledge specifications.
