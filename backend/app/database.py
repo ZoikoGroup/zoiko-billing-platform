@@ -3,10 +3,17 @@ database.py
 -----------
 SQLAlchemy engine/session bootstrap for the standalone Billing Platform.
 
-Uses BILLING_DATABASE_URL (PostgreSQL in production; SQLite fallback in
-development when the URL is empty). The schema is created fresh via
-migrations/create_all on an empty database — there is no migration from,
-or sync with, the main platform's database.
+Uses BILLING_DATABASE_URL (PostgreSQL in every real deployment; SQLite
+fallback in development when the URL is empty) — there is no migration
+from, or sync with, the main platform's database.
+
+Schema lifecycle differs by dialect:
+  - PostgreSQL: owned by Alembic (backend/alembic/,
+    docs/DATABASE_MIGRATION_GUIDE.md). This module never creates or alters
+    a Postgres schema; see _verify_postgres_schema_is_migrated().
+  - SQLite (dev fallback only): still bootstrapped via
+    Base.metadata.create_all(), see migrations/create_all/README.md and
+    _initialize_sqlite_dev_schema().
 """
 
 import logging
@@ -137,18 +144,20 @@ def _add_missing_columns() -> None:
       - columns added to models after the initial table creation
       - partial schema drift (e.g. missing catalog_version_id, actor_role)
 
+    Only called from _initialize_sqlite_dev_schema() — the PostgreSQL branch
+    is Alembic-managed now (_verify_postgres_schema_is_migrated() never
+    calls this) and is kept here only because SQLite's dev-fallback bootstrap
+    still needs the same drift repair Base.metadata.create_all() can't do on
+    its own (create_all only creates MISSING TABLES; it never adds columns
+    to tables that already exist). The PostgreSQL branch below is dead code
+    against a real deployment today, left in place rather than deleted in
+    case the SQLite fallback path is ever pointed at a scratch Postgres.
+
     Performance: (PostgreSQL) uses a single information_schema query to fetch
     ALL existing columns across ALL tables in one round-trip (critical for
     remote DBs like Neon where per-table introspection is prohibitively slow).
     (SQLite) reads each table's columns via PRAGMA table_info — SQLite has no
     information_schema, but the local file makes per-table PRAGMAs cheap.
-
-    Runs on both PostgreSQL and SQLite: Base.metadata.create_all only creates
-    MISSING TABLES — it never adds columns to tables that already exist, so
-    without this repair pass every schema drift between the models and an
-    existing database (either dialect) surfaces at runtime as
-    "no such column" OperationalErrors (e.g. users.platform_role breaking
-    POST /auth/register).
     """
     if engine.dialect.name not in {"postgresql", "sqlite"}:
         return
@@ -209,22 +218,44 @@ def _add_missing_columns() -> None:
 
 
 def initialize_database() -> None:
-    """Create any tables that don't exist yet (create_all), then add missing columns.
+    """Bootstrap (SQLite dev fallback) or verify (PostgreSQL) the schema.
 
-    This is the intended bootstrap for the standalone platform: the DB
-    starts empty and the schema is created in one shot. See
+    SQLite (no BILLING_DATABASE_URL set — a throwaway single-developer file,
+    never "real" persisted data): unchanged zero-config bootstrap, exactly
+    as before create_all + _add_missing_columns. See
     migrations/create_all/README.md.
 
+    PostgreSQL (every "real" deployment — local docker-compose, staging,
+    production): schema lifecycle is owned by Alembic, not this function
+    (see backend/alembic/, docs/DATABASE_MIGRATION_GUIDE.md). We no longer
+    create_all/ALTER a Postgres database implicitly at app startup — that
+    silently patched schema drift instead of surfacing it, which is exactly
+    what a migration framework exists to prevent. This function now only
+    verifies the schema looks migrated and fails loudly with actionable
+    guidance if it doesn't (caught by main.py's lifespan the same way a
+    connectivity failure already is: the app starts in degraded 503 mode
+    until the database is reachable/migrated, rather than crashing outright).
+    """
+    if engine.dialect.name == "sqlite":
+        _initialize_sqlite_dev_schema()
+    else:
+        _verify_postgres_schema_is_migrated()
+
+
+def _initialize_sqlite_dev_schema() -> None:
+    """Create any tables that don't exist yet (create_all), then add missing columns.
+
     `create_all`'s default `checkfirst=True` issues one existence-check
-    round trip per table (~60+ on this schema), which is slow against a
-    remote DB and can time out mid-check. We do a single bulk lookup via
-    the inspector instead, then create only what's missing with
+    round trip per table (~60+ on this schema); we do a single bulk lookup
+    via the inspector instead, then create only what's missing with
     `checkfirst=False` so no further per-table checks happen.
 
     After create_all, ``_add_missing_columns`` adds any columns that
     SQLAlchemy models define but are absent from the live DB. This handles
     schema drift (e.g. columns added to models after the original table
-    creation) without requiring a full migration framework.
+    creation) without requiring a full migration framework — acceptable
+    here because this is always a disposable local SQLite file, not data
+    that needs a reviewable, reversible migration history.
     """
     try:
         existing_tables = set(inspect(engine).get_table_names())
@@ -242,6 +273,41 @@ def initialize_database() -> None:
     except exc.SQLAlchemyError as exc_info:
         logger.error("Database initialization failed: %s", exc_info)
         raise
+
+
+def _verify_postgres_schema_is_migrated() -> None:
+    """Fail fast, with actionable guidance, if Postgres hasn't been Alembic-migrated.
+
+    Deliberately does NOT create or alter any table. A missing
+    `alembic_version` table means `alembic upgrade head` (fresh env) or
+    `alembic stamp head` (a pre-existing database whose schema already
+    matches the baseline — see docs/DATABASE_MIGRATION_GUIDE.md) has never
+    been run against this database.
+    """
+    existing_tables = set(inspect(engine).get_table_names())
+    if "alembic_version" not in existing_tables:
+        raise RuntimeError(
+            "This PostgreSQL database has not been migrated with Alembic "
+            "(no 'alembic_version' table found). Run `alembic upgrade head` "
+            "(fresh database) or `alembic stamp head` (existing database "
+            "whose schema already matches the baseline) from backend/ "
+            "before starting the app. See docs/DATABASE_MIGRATION_GUIDE.md. "
+            "Never run create_all against a shared/production database."
+        )
+    model_table_names = {table.name for table in Base.metadata.tables.values()}
+    missing = sorted(model_table_names - existing_tables)
+    if missing:
+        logger.warning(
+            "Postgres schema is Alembic-managed but missing %d table(s) the "
+            "models define: %s. Run `alembic upgrade head` to apply pending "
+            "migrations.",
+            len(missing), missing,
+        )
+    else:
+        logger.info(
+            "Postgres schema verified: Alembic-managed and up to date (%d tables).",
+            len(existing_tables),
+        )
 
 
 def get_db():
