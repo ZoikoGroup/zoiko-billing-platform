@@ -1,0 +1,891 @@
+ZOIKO BILLING
+Chatbot API Documentation Wireframe
+OpenAPI • Swagger UI • Postman • Webhooks • Contract Testing
+[TABLE: 1 rows x 1 cols]
+Engineering doctrine The chatbot API is a governed interface into authoritative Zoiko Billing services. It must not create a parallel financial system of record, weaken tenant/entity boundaries, or allow conversational convenience to bypass validation, approval, idempotency, audit, or immutable financial history.
+[END TABLE]
+[TABLE: 10 rows x 2 cols]
+Field | Value
+Document ID | ZB-AI-API-001
+Version | 1.0 — Detailed Engineering Wireframe
+Date | 17 August 2026
+Status | Proposed for Approval
+Owner | Zoiko Billing Product / Engineering
+Prepared for | Backend, AI/Agentic, Frontend, QA, Security, DevOps/SRE, Finance Engineering, Product
+Parent artefacts | ZB-AI-WF-001 Engineering Wireframe; ZB-AI-PRD-001 PRD; ZB-AI-FRS-001 FRS
+Language | American English
+Classification | Confidential — Internal Use
+[END TABLE]
+API paths, service names, quotas and latency targets in this document are contract-design requirements or proposed defaults unless explicitly marked authoritative. Engineering must bind them to deployed services before production release.
+Document Control & Approval
+[TABLE: 8 rows x 2 cols]
+Role | Approval responsibility
+Product Owner | Confirms capability scope, user outcomes and commercial boundaries.
+API / Backend Lead | Owns resource semantics, versioning, schemas, idempotency and backward compatibility.
+AI / Agentic Lead | Owns orchestration contracts, tool invocation payloads and model-to-API boundaries.
+Security Lead | Approves authentication, authorization, secrets handling, abuse controls and data classification.
+Finance Engineering | Approves financial invariants, payment/refund/reconciliation semantics and authoritative-state sourcing.
+QA Lead | Approves contract tests, negative cases, examples and release evidence.
+SRE / Platform | Approves quotas, observability, resilience, deployment and rollback controls.
+[END TABLE]
+Change Control
+Breaking contract changes require a new major API version or an explicitly approved migration mechanism.
+OpenAPI is the canonical machine-readable API contract. Swagger UI and Postman assets must be generated or validated against it, not maintained as divergent manual copies.
+Every operation must have an owner, operationId, security requirement, error contract, audit/correlation semantics and examples before production exposure.
+Financial mutation endpoints require explicit idempotency and concurrency rules.
+Document Hierarchy
+[TABLE: 8 rows x 3 cols]
+Layer | Question answered | Primary artefact
+Product | What outcome must exist? | PRD
+Functional | What must the system do? | FRS
+Interaction | How does the user experience behave? | Engineering Wireframe
+Contract | How do software components communicate? | This API Documentation Wireframe
+Persistence | How is authoritative state stored? | Database Schema / ER Diagram
+Runtime | How is the system deployed and operated? | Technical Architecture
+AI Governance | How may models reason and act? | Prompt / Guardrail Documentation
+[END TABLE]
+Executive API Doctrine
+Zoiko Billing should operate a contract-first chatbot integration model. The API layer exists to make AI actions explicit, constrained, observable and testable. The model may interpret intent and prepare structured requests; authoritative services determine permissions, business validity, financial state and mutation success.
+[TABLE: 10 rows x 2 cols]
+Doctrine | Non-negotiable API consequence
+Authoritative state | No model response may be treated as financial truth without authoritative service data.
+Tenant isolation | Tenant and legal-entity context are validated server-side; client-provided context is never blindly trusted.
+Progressive authority | Explain/Inspect/Prepare/Preview/Execute are distinct capabilities and must be expressible in API scopes and response states.
+Preview before consequence | Material mutations expose deterministic preview artefacts before execution when the FRS requires confirmation or approval.
+Idempotent money movement | Retrying a financial mutation must not duplicate the economic effect.
+Immutable history | Issued invoices and posted financial records are corrected through governed mechanisms, not destructive overwrite.
+Evidence by default | Every consequential action returns correlation/audit identifiers sufficient for support, QA and forensic review.
+Fail closed | Ambiguous identity, scope, entity, currency, permission, approval or financial state blocks mutation.
+Two commercial planes | Tenant billing and Zoiko Billing SaaS subscription billing use explicit namespaces and authorization boundaries.
+[END TABLE]
+1. Purpose and Scope
+1.1 Purpose
+This document defines the required structure, semantics and acceptance standard for the API documentation package that engineers will implement for the Zoiko Billing Chatbot. It is intentionally more prescriptive than a normal API style guide because the chatbot can initiate financially consequential workflows.
+1.2 Deliverables governed by this wireframe
+[TABLE: 9 rows x 3 cols]
+Deliverable | Required form | Source of truth status
+OpenAPI contract | YAML or JSON; target OpenAPI 3.2.x | Canonical HTTP contract
+Swagger UI | Generated interactive reference | Rendered view of OpenAPI; not independently edited
+Postman collection | Current supported collection format; generated/validated against OpenAPI | Consumer/test asset
+Postman environments | Local, dev, QA/staging; production values excluded from shared files | Non-secret configuration scaffold
+Webhook catalogue | OpenAPI-compatible schemas plus event documentation | Canonical event payload contract
+Examples pack | Happy-path and negative request/response examples | Documentation and contract-test fixtures
+Contract tests | CI-executable validation against spec | Release evidence
+Changelog / deprecation register | Versioned Markdown/repository artefact | Human-readable lifecycle record
+[END TABLE]
+1.3 Out of scope
+Database physical design; covered by the next Database Schema / ER Diagram artefact.
+Infrastructure topology; covered by Technical Architecture Documentation.
+Prompt text and detailed AI safety policies; covered by Prompt Engineering / AI Guardrail Documentation.
+Direct exposure of internal database tables to the model.
+Cross-product Payroll or HR APIs unless a separately approved integration and namespace exists.
+2. Standards Baseline
+[TABLE: 9 rows x 2 cols]
+Standard / tool | Required posture
+OpenAPI Specification | Target 3.2.x. Pin an exact patch version in the repository and CI once toolchain compatibility is validated.
+JSON Schema | Use the dialect supported by the pinned OpenAPI version; avoid tool-specific schema shortcuts in canonical definitions.
+Swagger UI | Generate from canonical OpenAPI; Try-it-out disabled or restricted for production mutation operations unless Security approves.
+Postman | Use current supported collection format; derive collections from the specification where practical and lint in CI.
+HTTP | HTTPS only outside local development; consistent status codes and cache semantics.
+OAuth 2.0 / OIDC | Preferred interactive identity model where available; short-lived tokens and server-side authorization.
+RFC 7807-style problem details | Adopt a consistent problem response shape or stricter Zoiko equivalent for machine-actionable errors.
+W3C Trace Context | Propagate trace/correlation context across orchestration and authoritative services where platform support exists.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Compatibility rule OpenAPI 3.2.x is the documentation target, but a production release must not adopt a version unsupported by the chosen validator, code generator, gateway, Swagger UI build, Postman conversion path or security scanner. Pin the highest mutually supported 3.2.x patch; if a temporary 3.1.x exception is required, record it as a controlled deviation with an upgrade date.
+[END TABLE]
+3. API Product Model
+3.1 API audiences
+[TABLE: 8 rows x 2 cols]
+Consumer | Primary use
+Chatbot orchestration service | Resolve user intent into governed reads, previews and executions.
+Zoiko Billing web application | Host chatbot session UI and render structured results/action previews.
+Mobile clients, if enabled | Consume the same governed contract through supported client SDKs.
+Internal backend services | Invoke authoritative domain services through approved service-to-service identities.
+QA automation | Run deterministic happy-path, negative, authorization and idempotency tests.
+Support / Operations tooling | Read audit-safe status and evidence; never bypass normal financial controls.
+Integration partners | Only explicitly published external endpoints; internal chatbot APIs remain private by default.
+[END TABLE]
+3.2 Logical API surfaces
+[TABLE: 10 rows x 4 cols]
+Surface | Namespace example | Purpose | Exposure
+Conversation | /v1/chat/... | Session/message lifecycle and structured assistant output | Authenticated product clients
+Action control | /v1/actions/... | Prepare, preview, confirm, approve and execute governed actions | Chatbot/orchestrator
+Billing read/write | /v1/billing/... | Invoice, customer, payment, credit and report domain operations | Internal/private by default
+Reconciliation | /v1/reconciliation/... | Candidates, matches, exceptions and commitments | Privileged internal
+Knowledge | /v1/knowledge/... | Grounded policy/product retrieval | Internal chatbot
+Approvals | /v1/approvals/... | Maker-checker and approval state | Privileged internal
+Audit | /v1/audit/... | Evidence retrieval and action provenance | Privileged read
+Commercial account | /v1/platform-billing/... | Zoiko Billing SaaS subscription/account billing | Separate plane and scopes
+Webhooks | event types, not REST namespace | Asynchronous state change delivery | Approved subscribers
+[END TABLE]
+3.3 Contract-first lifecycle
+Define or revise requirement in PRD/FRS.
+Add/modify OpenAPI path, schema, security and examples.
+Run spectral/linter/schema validation and breaking-change check.
+Generate or validate mock server and Postman artefacts.
+Implement server/client.
+Run contract, authorization, idempotency, negative and regression tests.
+Publish generated Swagger UI for approved environment.
+Attach release evidence and changelog entry.
+Deploy behind feature flag or capability gate as required.
+4. Global API Design Rules
+[TABLE: 16 rows x 2 cols]
+Rule ID | Rule
+API-RULE-001 | Resource names use plural nouns; action endpoints are reserved for genuine commands that cannot be represented as safe resource state transitions.
+API-RULE-002 | Every operation has a globally unique, stable operationId.
+API-RULE-003 | Every mutation defines idempotency, concurrency and retry semantics.
+API-RULE-004 | Every request is associated with authenticated subject, tenant, entity context and correlation ID.
+API-RULE-005 | Server authorization is authoritative; UI hiding is never a security control.
+API-RULE-006 | Money uses decimal strings or integer minor units as explicitly defined by schema; never binary floating point.
+API-RULE-007 | Currency uses ISO 4217 codes and is never inferred when the economic meaning would change.
+API-RULE-008 | Timestamps are ISO 8601/RFC 3339 with explicit offset/UTC; local business date is separately modeled where required.
+API-RULE-009 | Stable enumerations are documented; unknown/new values must not crash tolerant clients.
+API-RULE-010 | Responses never include secrets, payment card sensitive authentication data, model hidden reasoning, internal credentials or raw infrastructure diagnostics.
+API-RULE-011 | Errors are machine-readable, human-readable and mapped to a recoverability class.
+API-RULE-012 | List endpoints use deterministic pagination and documented filter/sort semantics.
+API-RULE-013 | Destructive DELETE is not used for posted/issued financial records.
+API-RULE-014 | Financial state returned to the model includes provenance and as-of semantics sufficient to avoid stale-state assertions.
+API-RULE-015 | Two-plane separation is represented in path, scope, service and audit context; no implicit crossover.
+[END TABLE]
+5. Authentication, Authorization & Context
+5.1 Security schemes
+[TABLE: 5 rows x 3 cols]
+Scheme | Use | Requirement
+OIDC user bearer token | Interactive chatbot user | Short-lived; contains subject/session claims; server resolves authoritative tenant membership and roles.
+Service OAuth / workload identity | Orchestrator-to-service | Per-service identity; least-privilege scopes; no long-lived static token in application code.
+Webhook signature | Outbound events | Timestamped HMAC/asymmetric signature; replay window; key rotation and verification documentation.
+Support elevation token | Approved support workflows | Time-bounded, reason-bound, auditable and policy-controlled.
+[END TABLE]
+5.2 Required request context
+[TABLE: 9 rows x 3 cols]
+Header / field | Required | Semantics
+Authorization | Yes | Bearer/workload identity; never logged in plaintext.
+X-Correlation-Id | Yes or generated | End-to-end diagnostic and evidence correlation.
+X-Tenant-Id | Contextual | Explicit tenant target; validated against token/session server-side.
+X-Entity-Id | For entity-bound operations | Legal/seller entity; validated and echoed in authoritative responses.
+Idempotency-Key | Financial mutations | Unique client-generated key within documented retention window.
+If-Match / version | Concurrent mutations where applicable | Optimistic concurrency; prevents stale update.
+Accept-Language | Optional | Presentation localization only; must not change financial semantics.
+X-Client-Version | Recommended | Compatibility and rollout diagnostics.
+[END TABLE]
+5.3 Scope model
+[TABLE: 9 rows x 3 cols]
+Scope family | Examples | Notes
+chat | chat:read, chat:write | Conversation lifecycle only.
+billing-read | invoice:read, payment:read, balance:read | No mutation.
+billing-prepare | invoice:prepare, refund:prepare | May generate drafts/previews only.
+billing-execute | invoice:issue, refund:execute, reconciliation:commit | High-risk; may require role + confirmation/approval.
+approval | approval:read, approval:decide | Maker-checker enforced server-side.
+knowledge | knowledge:read | Restricted to approved namespace/corpus.
+audit | audit:read | Privileged evidence access.
+platform-commercial | platform-billing:read/write | Separate Zoiko Billing SaaS commercial plane.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Never trust the model for authorization The model may request an operation and supply interpreted parameters. The API must independently determine whether the authenticated subject can perform that operation in the resolved tenant and entity context. Any contradiction is denied server-side and returned as a structured authorization error.
+[END TABLE]
+6. Common Data Contracts
+6.1 Money
+[TABLE: 1 rows x 1 cols]
+Money: type: object required: [amount, currency] properties: amount: type: string pattern: "^-?[0-9]+(\\.[0-9]+)?$" description: Exact decimal representation; never IEEE-754 float. currency: type: string pattern: "^[A-Z]{3}$" description: ISO 4217 currency code.
+[END TABLE]
+6.2 Resource reference
+[TABLE: 1 rows x 1 cols]
+ResourceRef: type: object required: [type, id] properties: type: { type: string } id: { type: string, format: uuid } display_label: { type: string } version: { type: string }
+[END TABLE]
+6.3 Evidence/provenance envelope
+[TABLE: 8 rows x 2 cols]
+Field | Purpose
+correlation_id | Join user request, orchestrator call, domain services and audit record.
+audit_event_id | Immutable evidence pointer where an auditable event exists.
+source_service | Authoritative service that produced the financial fact/state.
+source_version | Resource or event version supporting concurrency/freshness.
+as_of | Timestamp at which returned state is authoritative.
+tenant_id / entity_id | Explicit commercial context.
+decision_basis | Structured business-rule or policy reference; never hidden model reasoning.
+[END TABLE]
+6.4 Assistant structured response envelope
+[TABLE: 1 rows x 1 cols]
+AssistantResponse: session_id: uuid message_id: uuid mode: explain | inspect | prepare | preview | execute answer: string citations: [KnowledgeCitation] cards: [StructuredCard] proposed_actions: [ActionProposal] warnings: [Warning] provenance: EvidenceEnvelope
+[END TABLE]
+7. Error Contract
+7.1 Canonical problem shape
+[TABLE: 1 rows x 1 cols]
+ApiProblem: type: URI-or-code title: short stable title status: HTTP status code: ZB_<DOMAIN>_<REASON> detail: safe human-readable explanation correlation_id: uuid/string retryable: boolean recovery: NONE | RETRY | REFRESH | CONFIRM | APPROVAL | SUPPORT field_errors: [{field, code, message}] safe_context: object
+[END TABLE]
+7.2 Error taxonomy
+[TABLE: 10 rows x 4 cols]
+HTTP | Zoiko error family | Example | Client behaviour
+400 | VALIDATION | ZB_INVOICE_INVALID_LINE | Correct fields; do not retry unchanged.
+401 | AUTHENTICATION | ZB_AUTH_TOKEN_INVALID | Reauthenticate.
+403 | AUTHORIZATION | ZB_AUTH_SCOPE_DENIED | Do not retry; explain access requirement.
+404 | NOT_FOUND | ZB_INVOICE_NOT_FOUND | Re-resolve resource/context.
+409 | CONFLICT | ZB_ACTION_STALE_PREVIEW | Refresh state and create a new preview.
+412 | PRECONDITION | ZB_RESOURCE_VERSION_MISMATCH | Fetch latest resource, then re-evaluate.
+422 | BUSINESS_RULE | ZB_REFUND_NOT_ELIGIBLE | Present business-rule reason and permitted alternatives.
+429 | RATE_LIMIT | ZB_RATE_LIMITED | Honor Retry-After; backoff.
+503 | DEPENDENCY | ZB_PAYMENT_SERVICE_UNAVAILABLE | Safe retry only if operation is idempotent; no inferred success.
+[END TABLE]
+7.3 Error safety
+Never return stack traces, SQL fragments, credentials, internal hostnames, raw model prompts, policy secrets or unnecessary PII.
+For ambiguous financial outcomes, return an explicit UNKNOWN/PENDING state plus a reconciliation/status endpoint; never transform transport uncertainty into success/failure by inference.
+The chatbot must use code/recovery fields to decide whether to retry, ask for confirmation, refresh state, escalate, or stop.
+8. Idempotency, Concurrency & Retries
+[TABLE: 8 rows x 2 cols]
+Concern | Contract requirement
+Idempotency key | Required for invoice issue, payment allocation, reconciliation commit, credit posting, refund execution and any externally visible financial mutation.
+Retention | Server documents how long an idempotency key is remembered; repeated identical requests return the original result/reference.
+Payload mismatch | Same key with materially different request must return conflict and must not execute.
+Concurrency | Mutable drafts and approval resources expose a version/ETag; stale writes fail.
+Retry policy | GET/HEAD safe to retry; mutation retry allowed only under idempotency contract.
+Timeout ambiguity | Client queries operation/status using correlation/action ID rather than blindly repeating.
+Distributed sagas | Long-running financial workflows expose state transitions and compensation/exception handling, not hidden synchronous assumptions.
+[END TABLE]
+9. Pagination, Filtering, Sorting & Search
+[TABLE: 8 rows x 2 cols]
+Area | Required design
+Pagination | Cursor-based preferred for high-volume mutable financial lists; page/offset only if authoritative service guarantees stable semantics.
+Default/max page size | Explicit per endpoint; server caps requests.
+Filters | Typed, documented and allow-listed. Never accept raw SQL-like filter expressions.
+Date ranges | Explicit timezone/business-date semantics; inclusive/exclusive boundaries documented.
+Sort | Allow-listed fields and deterministic tiebreaker.
+Search | Full-text/customer/invoice number search is distinct from exact ID lookup; result confidence not treated as identity proof.
+Totals | Expensive aggregate totals are opt-in or separate endpoints if required for performance.
+[END TABLE]
+10. Endpoint Catalogue — Conversation & Orchestration
+[TABLE: 8 rows x 5 cols]
+Method | Path | Operation | Scope | Contract note
+POST | /v1/chat/sessions | Create chatbot session | chat:write | Creates bounded session with tenant context; returns capabilities and session expiry.
+GET | /v1/chat/sessions/{session_id} | Read session | chat:read | Returns safe session state, not hidden model reasoning.
+DELETE | /v1/chat/sessions/{session_id} | Close session | chat:write | Ends conversation context; does not delete financial/audit evidence.
+POST | /v1/chat/sessions/{session_id}/messages | Submit user message | chat:write | Returns/streams structured assistant response plus proposed actions/citations.
+GET | /v1/chat/sessions/{session_id}/messages | List messages | chat:read | Paginated transcript with retention/access controls.
+POST | /v1/chat/sessions/{session_id}/cancel | Cancel active generation/action | chat:write | Best-effort cancellation; financial operation cancellation semantics remain domain-owned.
+GET | /v1/chat/capabilities | Resolve effective capabilities | chat:read | Server-calculated modes/scopes/features for current subject/context.
+[END TABLE]
+10.1 Message request requirements
+[TABLE: 7 rows x 2 cols]
+Field | Requirement
+content | User-visible prompt/message; size-limited and content-policy screened as appropriate.
+client_message_id | Client-generated deduplication/correlation identifier.
+context_refs | Optional references to already-authorized UI resources; server revalidates access.
+requested_mode | Advisory only; server returns effective allowed mode.
+locale | Presentation locale.
+stream | If supported, must not stream a final financial success assertion before authoritative completion.
+[END TABLE]
+10.2 Streaming event model
+[TABLE: 9 rows x 2 cols]
+Event | Purpose
+message.started | Acknowledges processing.
+content.delta | Non-authoritative natural-language token/content chunk.
+tool.started | Optional safe UI status; must not reveal hidden tool arguments containing sensitive data.
+card.ready | Structured read result ready.
+action.proposed | Governed action proposal created.
+action.preview_ready | Deterministic preview ready for confirmation/approval.
+message.completed | Final response envelope.
+message.failed | Structured failure and recovery path.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Streaming invariant Streaming improves responsiveness but cannot weaken truthfulness. A provisional sentence such as “refund completed” must never be emitted before the authoritative refund service confirms the terminal state.
+[END TABLE]
+11. Endpoint Catalogue — Action Control Plane
+[TABLE: 9 rows x 5 cols]
+Method | Path | Operation | Mode | Contract note
+POST | /v1/actions | Create action proposal | prepare | Creates typed action from validated intent/parameters; no financial mutation.
+GET | /v1/actions/{action_id} | Read action state | inspect | Returns lifecycle, dependencies, preview version, confirmation/approval state.
+POST | /v1/actions/{action_id}/preview | Generate authoritative preview | preview | Re-resolves current state and returns exact effect, warnings and expiry.
+POST | /v1/actions/{action_id}/confirm | Record user confirmation | preview | Binds confirmation to action ID + preview hash/version; no broader consent.
+POST | /v1/actions/{action_id}/submit-approval | Request approval | preview | Creates approval workflow when policy requires maker-checker.
+POST | /v1/actions/{action_id}/execute | Execute action | execute | Requires valid preview/confirmation/approval and idempotency key where consequential.
+POST | /v1/actions/{action_id}/cancel | Cancel pending action | prepare | Cancels only if domain state permits.
+GET | /v1/actions/{action_id}/events | Action timeline | inspect | Returns safe, audit-correlated lifecycle events.
+[END TABLE]
+11.1 Action lifecycle
+[TABLE: 1 rows x 1 cols]
+DRAFT → VALIDATING → READY_FOR_PREVIEW → PREVIEWED → {CONFIRMATION_REQUIRED | APPROVAL_REQUIRED | READY_TO_EXECUTE} → EXECUTING → {SUCCEEDED | FAILED | PENDING_EXTERNAL | EXCEPTION} Terminal/cancellation states: CANCELLED, EXPIRED, REJECTED
+[END TABLE]
+11.2 Preview binding
+Preview returns a deterministic preview_id/hash, resource versions, totals/currency, affected entity, warnings, approvals required and expiration timestamp.
+Execution must reject expired or stale preview, changed authoritative resource version, changed entity, changed financial total or revoked permission.
+Confirmation text shown to the user is generated from structured preview data; the model may explain it but may not substitute a different economic meaning.
+12. Endpoint Catalogue — Customers & Commercial Basis
+[TABLE: 7 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/billing/customers | Search/list customers | customer:read | Deterministic filters; tenant scoped.
+GET | /v1/billing/customers/{customer_id} | Read customer | customer:read | Returns billing identity, status and safe contact fields.
+POST | /v1/billing/customers | Create customer | customer:write | Duplicate controls; tax/legal fields validated per configured jurisdiction rules.
+PATCH | /v1/billing/customers/{customer_id} | Update customer | customer:write | ETag/version required for material changes.
+GET | /v1/billing/customers/{customer_id}/balances | Customer balances | balance:read | Currency-separated balances; never silently net unrelated currencies.
+GET | /v1/billing/commercial-bases | Resolve price/tax/terms basis | billing:read | Returns applicable commercial basis and provenance.
+[END TABLE]
+12.1 Customer resolution rules
+Search result labels must include sufficient disambiguators to prevent wrong-customer actions.
+Natural-language customer names supplied by the model are not accepted as mutation identity; mutations use resolved immutable customer_id.
+Potential duplicate creation returns a structured conflict/candidate response, not silent duplicate insertion.
+13. Endpoint Catalogue — Invoices
+[TABLE: 11 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/billing/invoices | Search/list invoices | invoice:read | Filters: customer, number, status, entity, currency, dates; paginated.
+GET | /v1/billing/invoices/{invoice_id} | Read invoice | invoice:read | Authoritative totals/status + provenance.
+POST | /v1/billing/invoices/drafts | Create draft invoice | invoice:prepare | Validates entity/customer/currency/commercial basis; no issuance.
+PATCH | /v1/billing/invoices/drafts/{invoice_id} | Update draft | invoice:prepare | Optimistic concurrency; line/tax recomputation authoritative.
+POST | /v1/billing/invoices/{invoice_id}/preview-issue | Preview issuance | invoice:issue | Returns immutable-impact summary and communication plan.
+POST | /v1/billing/invoices/{invoice_id}/issue | Issue invoice | invoice:issue | Idempotent; confirmation/approval as policy requires.
+POST | /v1/billing/invoices/{invoice_id}/void-preview | Preview void/correction | invoice:adjust | Checks legal/status eligibility.
+POST | /v1/billing/invoices/{invoice_id}/void | Governed void | invoice:adjust | Never destructive delete; produces audit/evidence.
+POST | /v1/billing/invoices/{invoice_id}/send | Send/resend invoice communication | invoice:communicate | Delivery is distinct from financial state.
+GET | /v1/billing/invoices/{invoice_id}/events | Invoice event history | invoice:read | Immutable event/audit projection.
+[END TABLE]
+13.1 Invoice issue request skeleton
+[TABLE: 1 rows x 1 cols]
+POST /v1/billing/invoices/{invoice_id}/issue Authorization: Bearer <token> X-Tenant-Id: <tenant> X-Entity-Id: <seller_entity> Idempotency-Key: <uuid> If-Match: "<invoice-version>" { "preview_id": "...", "confirmation_id": "...", "send": {"enabled": true, "template_id": "..."} }
+[END TABLE]
+13.2 Invoice state invariants
+Issued invoice content is immutable except via explicitly modeled legally/commercially valid adjustment pathways.
+Issue endpoint must recompute/validate totals server-side; it must not trust totals supplied by the model/client.
+Seller entity, currency, tax treatment, customer, due date and invoice number assignment are authoritative backend concerns.
+Successful issue returns invoice_id, number, status, issued_at, total, currency, evidence envelope and communication state separately.
+14. Endpoint Catalogue — Payments & Allocations
+[TABLE: 8 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/billing/payments | Search/list payments | payment:read | Status/provider/customer/entity/currency/date filters.
+GET | /v1/billing/payments/{payment_id} | Read payment | payment:read | Authoritative lifecycle plus provider references safe for UI.
+POST | /v1/billing/payments/{payment_id}/allocations/preview | Preview allocation | payment:allocate | Shows invoice effects and residual/unapplied balance.
+POST | /v1/billing/payments/{payment_id}/allocations | Commit allocation | payment:allocate | Idempotent; currency/entity constraints; audit event.
+POST | /v1/billing/payments/manual/preview | Preview manual payment record | payment:record | Maker-checker if configured; evidence/source required.
+POST | /v1/billing/payments/manual | Record manual payment | payment:record | No false processor settlement assertion; source metadata required.
+GET | /v1/billing/payments/{payment_id}/events | Payment event history | payment:read | Provider + internal state chronology.
+[END TABLE]
+14.1 Payment truth model
+[TABLE: 7 rows x 2 cols]
+Field | Meaning
+payment_status | Zoiko Billing authoritative business status.
+provider_status | External processor/bank status when applicable.
+settlement_status | Settlement state, separately modeled from authorization/capture.
+allocation_status | Whether received funds are fully/partially/unapplied.
+amount / currency | Original economic amount; exact representation.
+available_to_refund | Server-derived refundable amount; not model-calculated.
+[END TABLE]
+15. Endpoint Catalogue — Reconciliation
+[TABLE: 8 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/reconciliation/items | List unmatched/exception items | reconciliation:read | Source, date, amount, entity, currency filters.
+GET | /v1/reconciliation/items/{item_id}/candidates | Generate/read match candidates | reconciliation:read | Candidates include basis/confidence evidence, never auto-truth.
+POST | /v1/reconciliation/matches/preview | Preview match | reconciliation:commit | Validates amounts, currencies, counterparties and existing allocations.
+POST | /v1/reconciliation/matches | Commit match | reconciliation:commit | Idempotent; maker-checker above policy threshold.
+POST | /v1/reconciliation/items/{item_id}/exception | Classify exception | reconciliation:write | Requires reason code; creates follow-up state.
+POST | /v1/reconciliation/matches/{match_id}/reverse-preview | Preview reversal | reconciliation:commit | Shows downstream effects.
+POST | /v1/reconciliation/matches/{match_id}/reverse | Governed reversal | reconciliation:commit | No destructive history rewrite.
+[END TABLE]
+15.1 Match candidate schema
+[TABLE: 7 rows x 2 cols]
+Field | Requirement
+candidate_id | Ephemeral/stable identifier for the candidate set version.
+target_ref | Immutable payment/invoice/bank item reference.
+confidence | Structured score/class; never presented as guaranteed truth.
+basis | Allow-listed reasons such as exact_reference, amount_date, customer_reference.
+differences | Amount/date/reference discrepancies explicitly enumerated.
+candidate_set_version | Execution must use current set/version or re-preview.
+[END TABLE]
+16. Endpoint Catalogue — Credits, Adjustments & Refunds
+[TABLE: 8 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+POST | /v1/billing/credits/preview | Preview credit/credit-note | credit:prepare | Shows invoice/balance/tax effects.
+POST | /v1/billing/credits | Create/post credit | credit:execute | Idempotent; reason code; approval by policy.
+GET | /v1/billing/refunds/eligibility | Evaluate refund eligibility | refund:read | Server-derived refundable amount/reasons.
+POST | /v1/billing/refunds/preview | Preview refund | refund:prepare | Amount/currency/destination constraints; fees if applicable.
+POST | /v1/billing/refunds | Execute refund | refund:execute | Idempotent; confirmation + approval when required.
+GET | /v1/billing/refunds/{refund_id} | Read refund | refund:read | May be asynchronous; exposes pending/succeeded/failed states.
+GET | /v1/billing/refunds/{refund_id}/events | Refund event history | refund:read | Processor and internal lifecycle evidence.
+[END TABLE]
+16.1 Refund execution invariant
+[TABLE: 1 rows x 1 cols]
+No duplicate refunds The refund endpoint must require an idempotency key and bind it to the payment, amount, currency, destination and action context. A timeout or client disconnect is not permission to repeat the economic action blindly; the client retrieves refund/action status first.
+[END TABLE]
+17. Endpoint Catalogue — Reports & Financial Answers
+[TABLE: 7 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/billing/reports/ar | Accounts receivable summary | report:read | As-of timestamp, entity, currency and aging basis explicit.
+GET | /v1/billing/reports/revenue | Billing/revenue report projection | report:read | Must define whether billed, recognized or collected; never conflate.
+GET | /v1/billing/reports/collections | Collections status | report:read | Overdue/open/payment status definitions explicit.
+POST | /v1/billing/reports/query | Structured report query | report:read | Allow-listed dimensions/measures; no arbitrary SQL.
+POST | /v1/billing/exports | Create export job | export:create | Permission, purpose, row limits, data classification and expiry.
+GET | /v1/billing/exports/{job_id} | Read export job | export:read | Signed/short-lived download reference only when ready.
+[END TABLE]
+17.1 Financial-answer response requirements
+Every aggregated answer includes metric definition, filters, currency treatment, entity scope and as-of time.
+Cross-currency totals require an approved FX methodology and rate source/date; otherwise return currency-separated totals.
+The chatbot must distinguish billed, due, overdue, paid, collected, settled and recognized where these concepts differ.
+Large data answers should return a summary and evidence-linked result set rather than injecting unbounded rows into model context.
+18. Endpoint Catalogue — Knowledge / RAG
+[TABLE: 5 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+POST | /v1/knowledge/query | Retrieve grounded knowledge | knowledge:read | Namespace + tenant access enforced; returns passages and citations.
+GET | /v1/knowledge/documents/{document_id} | Read approved document metadata | knowledge:read | Returns title/version/effective dates/classification, not unrestricted raw file by default.
+GET | /v1/knowledge/namespaces | List authorized namespaces | knowledge:read | Prevents cross-product/cross-tenant retrieval.
+POST | /v1/knowledge/feedback | Record retrieval/answer feedback | knowledge:feedback | No financial mutation; auditable quality signal.
+[END TABLE]
+18.1 Knowledge query contract
+[TABLE: 8 rows x 2 cols]
+Field | Requirement
+query | Natural-language search string after input policy checks.
+namespace | Explicit allowed corpus; e.g., zoiko-billing-product, tenant-approved-billing-policy.
+tenant_id | Required for tenant-private corpus; server derived/validated.
+filters | Document type, effective date, locale, version where appropriate.
+top_k | Server-capped; not an unrestricted retrieval budget.
+citations | Document ID, title, section/page/anchor, version/effective date and retrieval score.
+content_safety | Retrieved text treated as untrusted data; instructions inside documents do not become system/tool instructions.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Billing knowledge only by default Payroll policies, HR documentation and other Zoiko product corpora are out of scope for the Zoiko Billing assistant unless a separately approved cross-product integration grants a distinct namespace and permissions. Retrieval must never silently broaden beyond the user’s authorized billing corpus.
+[END TABLE]
+19. Endpoint Catalogue — Approvals & Audit
+[TABLE: 7 rows x 5 cols]
+Method | Path | Operation | Scope | Key rule
+GET | /v1/approvals | List approvals | approval:read | Filter by state/action/type; subject to role/tenant/entity permissions.
+GET | /v1/approvals/{approval_id} | Read approval | approval:read | Contains action preview summary and maker identity.
+POST | /v1/approvals/{approval_id}/approve | Approve | approval:decide | Approver cannot equal maker where separation-of-duties policy requires.
+POST | /v1/approvals/{approval_id}/reject | Reject | approval:decide | Reason required; action becomes non-executable unless re-prepared.
+GET | /v1/audit/events | Search audit events | audit:read | Privileged; immutable projection; privacy-filtered.
+GET | /v1/audit/events/{event_id} | Read audit event | audit:read | Evidence data + correlation; no secret/internal reasoning leakage.
+[END TABLE]
+19.1 Audit event minimum
+[TABLE: 9 rows x 2 cols]
+Dimension | Required evidence
+Who | Authenticated subject/service identity and delegated/support context.
+Where | Tenant, legal entity and environment.
+What | Stable action/operation code and affected resource references.
+When | Server timestamp and ordering/event identifier.
+Why | User-supplied reason code/approved business basis where required; not hidden chain-of-thought.
+Before/after | Safe structured state references/diffs appropriate to domain and privacy.
+Authority | Scopes/roles/approval references used.
+Correlation | Correlation ID, action ID, idempotency key hash/reference and external provider reference where relevant.
+[END TABLE]
+20. Separate Zoiko Billing SaaS Commercial Plane
+The Zoiko Billing Chatbot may eventually answer questions about the customer’s subscription to Zoiko Billing itself. Those operations must never share ambiguous paths, scopes or resource IDs with tenant revenue operations.
+[TABLE: 7 rows x 2 cols]
+Tenant billing plane | Zoiko Billing commercial plane
+/v1/billing/invoices | /v1/platform-billing/invoices
+customer_id = tenant’s customer | account_id = Zoiko Billing subscriber account
+invoice:read / invoice:issue | platform-billing:read / platform-billing:manage
+Tenant finance permissions | Zoiko account owner/admin permissions
+Tenant legal entity | Zoiko merchant/legal entity
+Tenant financial audit | Zoiko commercial/billing audit
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+P0 invariant A request such as “show me my latest invoice” is ambiguous if the user can access both planes. The API/orchestrator must establish whether the user means an invoice their business issued or an invoice Zoiko Billing issued to them before retrieving or acting.
+[END TABLE]
+21. Asynchronous Operations & Jobs
+[TABLE: 8 rows x 2 cols]
+Pattern | Required semantics
+202 Accepted | Used when completion cannot be guaranteed within synchronous request budget.
+operation_id | Stable identifier returned immediately.
+status endpoint | GET operation/job resource with state, timestamps, result/error and safe progress.
+terminal states | SUCCEEDED, FAILED, CANCELLED; PENDING_EXTERNAL/REQUIRES_ATTENTION as domain-specific intermediates.
+polling | Retry-After or recommended poll interval; exponential client backoff.
+webhook completion | Optional notification; polling/status remains recoverable source.
+expiration | Temporary operation artefacts have documented retention; financial/audit records follow their own retention.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+{ "operation_id": "op_...", "state": "PENDING_EXTERNAL", "resource_ref": {"type":"refund","id":"..."}, "created_at": "...", "updated_at": "...", "next_poll_after_seconds": 5, "correlation_id": "..." }
+[END TABLE]
+22. Webhook / Event Contract
+22.1 Initial event families
+[TABLE: 10 rows x 2 cols]
+Event type | Typical trigger
+invoice.issued | Invoice reaches authoritative issued state.
+invoice.delivery.updated | Communication sent/delivered/bounced; does not alter invoice financial state.
+payment.updated | Payment lifecycle changes.
+payment.settled | Settlement confirmed where processor supports it.
+reconciliation.match.committed | Match committed.
+refund.updated | Refund state changes, including asynchronous completion.
+approval.updated | Approval approved/rejected/expired.
+action.updated | Chatbot-governed action lifecycle changes.
+export.ready | Approved export job completed.
+[END TABLE]
+22.2 Event envelope
+[TABLE: 1 rows x 1 cols]
+WebhookEvent: event_id: uuid/string event_type: string event_version: string occurred_at: date-time tenant_id: uuid entity_id: uuid? resource: ResourceRef data: object correlation_id: string delivery_attempt: integer
+[END TABLE]
+22.3 Delivery guarantees
+Assume at-least-once delivery unless platform provides stronger guarantee; consumers deduplicate by event_id.
+Sign every event and include timestamp/replay protection.
+Retries use bounded exponential backoff and dead-letter/exception handling.
+Event ordering is not assumed globally; include resource/event versions for ordering within a resource where needed.
+Webhook payloads minimize sensitive data; consumers fetch authoritative resource for details.
+23. API Versioning & Deprecation
+[TABLE: 9 rows x 2 cols]
+Topic | Standard
+Public path version | Major version in path, e.g., /v1.
+Patch/minor evolution | Backward-compatible schema additions allowed under published compatibility policy.
+Breaking change | New major version or approved version-negotiated contract.
+Deprecation | Mark in OpenAPI, changelog and developer docs; provide replacement and sunset date.
+Sunset communication | Machine-readable headers where applicable plus developer notice.
+Schema tolerance | Clients should ignore unknown response fields; server rejects unknown critical request fields only where safety requires.
+Enums | Avoid closed-enum breakage; document forward-compatible client behavior.
+Breaking-change CI | Compare candidate OpenAPI to production baseline before merge/deploy.
+[END TABLE]
+24. Rate Limits, Quotas & Abuse Controls
+[TABLE: 7 rows x 2 cols]
+Class | Design requirement
+Interactive chat | Per-user/session/tenant limits tuned to UX and model cost.
+Read APIs | Per-token/tenant burst + sustained limits; list/search more restrictive than exact-ID fetch as needed.
+Mutation APIs | Lower limits; idempotency plus abuse monitoring.
+Knowledge retrieval | Query and token/context limits; corpus access enforced before retrieval.
+Exports | Separate concurrent-job and daily-volume limits.
+Support elevation | Strict low-volume, alertable and reason-bound.
+[END TABLE]
+429 responses include Retry-After and structured quota context safe for the client.
+Rate limit state must not reveal other tenants’ usage.
+Security may apply adaptive limits or block high-risk patterns independently of published product quotas.
+25. Security & Privacy Contract Requirements
+[TABLE: 13 rows x 2 cols]
+Control | API documentation requirement
+TLS | HTTPS-only server URLs outside local development.
+Authentication | Every non-public operation declares security schemes; no accidental “security: []”.
+Authorization | Document scopes/roles but state server-side policy is authoritative.
+PII minimization | Response examples use synthetic data; schemas identify sensitive fields/classification.
+PCI boundary | No PAN/CVV/SAD in chatbot requests, logs, prompts or examples; use provider tokens/references.
+Secrets | Postman environments contain placeholders, never shared live secrets.
+Prompt injection | Tool APIs accept typed parameters and independently validate; retrieved text cannot alter authorization/tool policy.
+SSRF/URL fetching | No arbitrary URL fetch endpoint exposed to model unless separately hardened and allow-listed.
+Mass assignment | Request schemas allow-list writable fields; model cannot set internal status/audit/admin fields.
+Logging | Sensitive headers/body fields redacted by default.
+Data residency | If applicable, region routing/tenant residency requirements are enforced below the model and documented.
+Deletion/retention | Conversation retention is distinct from immutable financial/audit retention obligations.
+[END TABLE]
+26. OpenAPI File Architecture
+26.1 Repository structure
+[TABLE: 1 rows x 1 cols]
+api/ openapi.yaml # root, pinned OAS patch paths/ chat.yaml actions.yaml invoices.yaml payments.yaml reconciliation.yaml refunds.yaml reports.yaml knowledge.yaml approvals.yaml audit.yaml components/ schemas/ parameters/ headers/ responses/ securitySchemes/ examples/ webhooks/ overlays/ # optional environment/audience overlays tests/ postman/ changelog/
+[END TABLE]
+26.2 Operation documentation minimum
+[TABLE: 12 rows x 2 cols]
+OpenAPI element | Required content
+summary | Short action-oriented summary.
+description | Business semantics, invariants, side effects, authority boundaries.
+operationId | Stable globally unique identifier.
+tags | One primary domain tag; secondary only if useful.
+security | Required scheme/scopes.
+parameters | Typed path/query/header parameters with examples/constraints.
+requestBody | Schema, required fields, semantic validation notes and examples.
+responses | Success + all material auth/validation/business/conflict/dependency cases.
+callbacks/webhooks | Where applicable.
+deprecated | Explicit lifecycle marker.
+x-* extensions | Only governed Zoiko extensions such as risk class, audit action code or required approval policy.
+[END TABLE]
+26.3 Proposed Zoiko extensions
+[TABLE: 7 rows x 2 cols]
+Extension | Purpose
+x-zoiko-risk-class | R0 read/explain through R4 consequential financial action classification.
+x-zoiko-audit-action | Stable audit action code emitted for operation.
+x-zoiko-idempotency | Required/optional/not-applicable plus retention semantics.
+x-zoiko-approval-policy | Policy key evaluated server-side.
+x-zoiko-plane | tenant-billing or platform-commercial.
+x-zoiko-data-classification | Public/internal/confidential/restricted field or operation classification.
+[END TABLE]
+27. Swagger UI Wireframe
+[TABLE: 9 rows x 2 cols]
+UI region | Required content / behavior
+Header | Zoiko Billing Chatbot API, environment badge, pinned spec version, build/hash.
+Authorization | OIDC/service auth configuration; production credentials never persisted by docs UI.
+Tag navigation | Conversation, Actions, Customers, Invoices, Payments, Reconciliation, Credits/Refunds, Reports, Knowledge, Approvals, Audit, Platform Billing.
+Operation card | Method/path, summary, risk class, scopes, plane, idempotency, description, parameters, schemas, examples, response codes.
+Try it out | Enabled in dev/QA; read-only or tightly controlled in staging; production mutation disabled by default.
+Schema explorer | Reusable components with descriptions and examples.
+Error reference | Linked canonical error codes and recovery semantics.
+Changelog | Visible link/version history.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Documentation must not become a bypass Swagger UI is a developer interface, not an alternative privileged console. Disabling a button is insufficient: production gateways and backend authorization must enforce exactly the same controls regardless of client.
+[END TABLE]
+28. Postman Collection Wireframe
+28.1 Folder structure
+[TABLE: 1 rows x 1 cols]
+Zoiko Billing Chatbot API 00 - Health & Capabilities 01 - Chat Sessions 02 - Messages 03 - Actions - Prepare & Preview 04 - Actions - Confirm & Execute 05 - Customers 06 - Invoices 07 - Payments & Allocations 08 - Reconciliation 09 - Credits & Refunds 10 - Reports & Exports 11 - Knowledge 12 - Approvals 13 - Audit 14 - Platform Commercial Billing 90 - Negative / Security Cases 99 - Cleanup (non-production only)
+[END TABLE]
+28.2 Environments
+[TABLE: 5 rows x 2 cols]
+Environment | Permitted content
+Local | localhost/base URL, synthetic tenant IDs, developer-issued ephemeral token via auth flow.
+Dev | Dev base URL, synthetic/test tenants, non-secret variable names.
+QA/Staging | Controlled test tenants, test provider references; restricted credentials injected securely at runtime.
+Production | No shared exported environment with secrets. Production execution collection disabled/restricted by policy.
+[END TABLE]
+28.3 Collection variables
+[TABLE: 8 rows x 2 cols]
+Variable | Example role
+baseUrl | Environment-specific API root.
+tenantId / entityId | Synthetic or authorized test context.
+sessionId | Set by session create test.
+actionId / previewId | Chained workflow variables.
+customerId / invoiceId / paymentId | Fixture references.
+idempotencyKey | Generated per mutation test; intentionally reused for idempotency test.
+correlationId | Generated each request/test.
+[END TABLE]
+28.4 Pre-request and test scripts
+Generate correlation/idempotency IDs as appropriate.
+Acquire/refresh token through approved auth mechanism; never hard-code live credentials.
+Assert status, content type, schema, correlation ID and expected business state.
+Assert mutation response resource/evidence IDs.
+Run explicit duplicate/idempotency assertion by replaying selected financial mutation.
+Validate forbidden cross-tenant/entity access returns denial, not empty success where that would hide a security defect.
+Validate no secret or sensitive payment fields appear in examples/responses.
+29. Example Catalogue Requirements
+[TABLE: 9 rows x 2 cols]
+Domain | Required examples
+Chat | Create session, grounded read answer, proposed action, denied action, streaming failure.
+Invoice | Draft, validation failure, preview issue, successful issue, stale preview, duplicate idempotent retry.
+Payment | Read settled vs pending, allocation preview/commit, currency mismatch.
+Reconciliation | Candidate list, preview commit, approval required, stale candidate set.
+Refund | Eligible preview, approval required, async pending, terminal success, duplicate retry, ineligible.
+Knowledge | Grounded citation response, no-result, unauthorized namespace, prompt-injection document treated as data.
+Auth | 401, scope denied, wrong tenant/entity, revoked membership.
+Dependency | 503, timeout/unknown outcome with safe status recovery.
+[END TABLE]
+30. Contract Testing & CI Quality Gates
+[TABLE: 13 rows x 2 cols]
+Gate | Required automated evidence
+Syntax/schema | OpenAPI parses and validates against pinned version.
+Style | Lint rules pass; descriptions/security/examples present.
+Breaking change | Diff against production/stable baseline; breaking changes blocked without approved major migration.
+Example validity | Examples validate against referenced schemas.
+Mock tests | Representative client requests run against mock contract.
+Provider contract | Deployed service response validates against OpenAPI for sampled/automated tests.
+Authorization | Scope/tenant/entity negative tests.
+Idempotency | Replay identical mutation and mismatched-payload same-key tests.
+Concurrency | Stale ETag/version tests.
+Security | SAST/API scan/schema fuzzing as platform supports.
+Postman | Collection lints and selected suite runs in CI.
+Documentation | Swagger build succeeds and pinned spec/version metadata present.
+[END TABLE]
+31. Observability Contract
+[TABLE: 7 rows x 2 cols]
+Signal | Requirement
+Correlation | Every request has correlation ID propagated across orchestrator, authoritative service and audit event.
+Trace | Distributed trace context propagated where supported; sensitive content excluded from span attributes.
+Metrics | Latency, request count, error class, rate limit, dependency failure, idempotency replay, authorization denial, stale-preview rejection.
+Logs | Structured, redacted, tenant-aware, action/resource references; no prompts containing restricted data unless separately governed.
+Audit | Consequential domain/audit event is distinct from operational log and has stronger retention/integrity controls.
+AI telemetry | Record model/tool outcome metadata needed for quality/safety without storing hidden chain-of-thought.
+[END TABLE]
+31.1 API SLI candidates
+[TABLE: 7 rows x 2 cols]
+SLI | Definition
+Availability | Successful service availability excluding valid 4xx business/auth denials.
+Latency | p50/p95/p99 by operation class; reads separated from financial mutations and async accepts.
+Correctness | Contract/schema conformance and domain invariant pass rate.
+Idempotency integrity | Zero duplicate economic effects under supported retry patterns.
+Authorization integrity | Zero successful unauthorized cross-tenant/entity operations.
+Documentation freshness | Published spec hash/version matches deployed contract/build.
+[END TABLE]
+Numeric SLO targets are intentionally not invented here; Platform/SRE and Product must approve them against deployed architecture and commercial commitments.
+32. Failure & Recovery Matrix
+[TABLE: 11 rows x 3 cols]
+Failure | Required API behaviour | Chatbot behaviour
+Auth token expired | 401 structured error | Reauthenticate; no action retry until identity restored.
+Wrong tenant/entity | 403/404 per security policy, audited | Stop; request/resolve correct context.
+Stale resource | 409/412 | Refresh and create new preview.
+Dependency timeout before known mutation | 503/operation unknown | Query action/status; do not assert success.
+Processor accepted but completion pending | 202/PENDING_EXTERNAL | Explain pending state; poll/webhook.
+Rate limited | 429 + Retry-After | Back off; avoid request storm.
+Knowledge unavailable | 503 or safe no-result | Do not fabricate policy answer; explain unavailable evidence.
+Approval expired | 409/422 | Create fresh preview/approval if user still intends action.
+Idempotency mismatch | 409 | Stop and surface conflict; generate new key only for genuinely new intent.
+Webhook delivery fails | Retry/DLQ; resource remains authoritative | No financial rollback solely due to notification failure.
+[END TABLE]
+33. API Threat Model — Chatbot-Specific
+[TABLE: 11 rows x 2 cols]
+Threat | Control requirement
+Prompt injection asks model to call admin action | Typed tool allow-list + server scopes/roles; model text cannot create authority.
+Cross-tenant ID guessing | Tenant-bound authorization on every resource lookup; non-enumerable IDs are supplemental only.
+Mass assignment through model-generated JSON | Strict request schemas; reject unknown/admin-only writable fields.
+Duplicate refund due to retry | Idempotency + action status recovery.
+Stale preview after invoice/payment changed | Version binding + preview expiry + execution revalidation.
+Knowledge document contains malicious “instructions” | Retriever marks content as data; orchestration policy has higher authority.
+Model fabricates resource ID | Server lookup/authorization fails closed; no fuzzy mutation identity.
+Sensitive data copied into logs/prompts | Input/output redaction and data classification controls.
+Support impersonation | Time-bound elevation, explicit reason, audit, user/tenant visibility as policy requires.
+Plane confusion | Separate namespaces/scopes/services and explicit plane field in audit/action contracts.
+[END TABLE]
+34. Traceability to FRS
+The implemented API specification must maintain a machine- or repository-readable mapping between operationIds/schema components and the approved FRS requirement IDs. The table below defines the minimum mapping categories for this document; the final engineering repository should enumerate the exact FRS IDs from ZB-AI-FRS-001.
+[TABLE: 13 rows x 2 cols]
+FRS capability family | API contract areas
+Conversation/session management | /chat/sessions, /messages, streaming events, capability resolution
+Identity/tenant/entity | Security schemes, context headers, authorization errors
+Invoice workflows | /billing/invoices/* plus actions/preview/execute
+Payments/balances | /payments, /allocations, customer balances
+Reconciliation | /reconciliation/items, candidates, matches, reversals
+Credits/refunds | /credits, /refunds, async operations
+Approvals/maker-checker | /approvals plus action lifecycle
+Knowledge/RAG | /knowledge/query, namespaces, citations
+Audit/evidence | /audit/events, evidence envelope, correlation
+Global/currency | Money schema, entity/currency/date rules, reports
+Two-plane separation | /billing vs /platform-billing scopes/namespaces
+Error/recovery | ApiProblem, retry/refresh/approval/support semantics
+[END TABLE]
+35. Definition of Ready for an Endpoint
+Parent PRD/FRS requirement identified.
+Operation owner assigned.
+Path/method/resource semantics agreed.
+Risk class and commercial plane declared.
+Security scheme and scopes declared.
+Tenant/entity context rules declared.
+Request/response schemas complete.
+All financial amount/currency semantics explicit.
+Validation and material business-rule errors documented.
+Idempotency/concurrency/retry behavior documented.
+Audit/correlation behavior documented.
+At least one valid and one material negative example present.
+Contract test exists or is planned in same delivery.
+Breaking-change impact assessed.
+Product/Finance/Security review triggered where required.
+36. Definition of Done for the API Documentation Pack
+Canonical OpenAPI file validates against the pinned specification version.
+Swagger UI build renders all operations and schemas without errors.
+Postman collection is generated/validated and runs the agreed smoke/negative suite.
+No exported shared environment contains production secrets.
+Every operation has operationId, description, security, examples and material error responses.
+Every financial mutation has idempotency and stale-state semantics.
+Two-plane separation is visible in namespaces, scopes and documentation.
+Contract diff shows no unapproved breaking changes.
+Security review has no unresolved critical/high findings.
+QA has evidence for cross-tenant/entity denial, idempotency, stale preview and authorization cases.
+Published docs version/hash matches the deployed release.
+Changelog and deprecation register updated.
+FRS traceability complete.
+Rollback/compatibility plan exists for any contract migration.
+37. Production Acceptance Criteria
+[TABLE: 46 rows x 4 cols]
+ID | Acceptance criterion | Priority | Owner
+API-AC-001 | An authenticated user can create a chat session only within an authorized tenant context. | P0 | QA / Engineering
+API-AC-002 | Effective capabilities are resolved server-side and do not rely on client-declared role. | P0 | QA / Engineering
+API-AC-003 | A chat read answer can carry structured provenance/citation data without exposing hidden reasoning. | P0 | QA / Engineering
+API-AC-004 | A model-proposed invoice action cannot execute without server-side customer/entity/currency validation. | P0 | QA / Engineering
+API-AC-005 | Invoice issue retries with the same valid idempotency key produce one economic effect. | P0 | QA / Engineering
+API-AC-006 | Reusing an idempotency key with a different invoice-issue payload is rejected. | P0 | QA / Engineering
+API-AC-007 | An issued invoice cannot be deleted or silently overwritten through the chatbot API. | P0 | QA / Engineering
+API-AC-008 | A stale invoice version prevents issue/adjustment until state is refreshed and re-previewed. | P0 | QA / Engineering
+API-AC-009 | Payment status, settlement status and allocation status are independently represented where applicable. | P0 | QA / Engineering
+API-AC-010 | A payment allocation in an incompatible currency is rejected unless an explicitly supported conversion workflow exists. | P0 | QA / Engineering
+API-AC-011 | Reconciliation candidate confidence never grants execution authority by itself. | P0 | QA / Engineering
+API-AC-012 | A reconciliation commit can require maker-checker approval according to server policy. | P0 | QA / Engineering
+API-AC-013 | A refund endpoint derives eligibility/refundable amount from authoritative services. | P0 | QA / Engineering
+API-AC-014 | A refund retry after timeout does not create a duplicate refund under the documented idempotency contract. | P0 | QA / Engineering
+API-AC-015 | Asynchronous refund completion can be recovered through a status endpoint even if a webhook is missed. | P0 | QA / Engineering
+API-AC-016 | Cross-tenant resource access is denied even when a valid resource identifier is supplied. | P0 | QA / Engineering
+API-AC-017 | Cross-entity mutation is denied when the authenticated user lacks the required entity authority. | P0 | QA / Engineering
+API-AC-018 | Tenant billing and Zoiko Billing SaaS commercial billing cannot be confused by the same path/scope combination. | P0 | QA / Engineering
+API-AC-019 | A knowledge request cannot retrieve an unauthorized tenant or cross-product namespace. | P0 | QA / Engineering
+API-AC-020 | Retrieved document text cannot change API authorization or tool permissions. | P0 | QA / Engineering
+API-AC-021 | Every consequential mutation returns a correlation identifier and evidence/audit reference. | P0 | QA / Engineering
+API-AC-022 | API error responses do not contain secrets, stack traces or raw internal prompts. | P0 | QA / Engineering
+API-AC-023 | 429 responses provide machine-actionable retry guidance. | P0 | QA / Engineering
+API-AC-024 | A 503/timeout with unknown economic outcome does not cause the chatbot to claim success. | P0 | QA / Engineering
+API-AC-025 | OpenAPI examples validate against their schemas. | P1 | QA / Engineering
+API-AC-026 | Every production operation is represented in the published OpenAPI contract. | P1 | QA / Engineering
+API-AC-027 | Swagger UI is generated from the same pinned contract used by CI. | P1 | QA / Engineering
+API-AC-028 | Production Swagger UI cannot bypass backend authorization and mutation policy. | P1 | QA / Engineering
+API-AC-029 | Postman smoke tests can run against QA without hard-coded credentials. | P1 | QA / Engineering
+API-AC-030 | Postman financial mutation tests include explicit idempotency replay cases. | P1 | QA / Engineering
+API-AC-031 | Breaking OpenAPI changes are detected before merge/release. | P0 | QA / Engineering
+API-AC-032 | Unknown additive response fields do not break supported tolerant clients. | P1 | QA / Engineering
+API-AC-033 | Money is never represented by binary floating-point in the canonical API schema. | P0 | QA / Engineering
+API-AC-034 | Cross-currency aggregate reports either use an approved FX basis or remain currency-separated. | P1 | QA / Engineering
+API-AC-035 | Every report answer declares its as-of/filter/entity/currency semantics. | P1 | QA / Engineering
+API-AC-036 | Webhook consumers can deduplicate repeated delivery using event_id. | P1 | QA / Engineering
+API-AC-037 | Webhook signatures can be verified and replayed old events rejected within policy. | P1 | QA / Engineering
+API-AC-038 | Operational logs redact authorization credentials and governed sensitive fields. | P1 | QA / Engineering
+API-AC-039 | Support elevation is time-bound, reason-bound and present in audit evidence. | P1 | QA / Engineering
+API-AC-040 | FRS requirement-to-operation traceability is complete for the released scope. | P1 | QA / Engineering
+API-AC-041 | Deployed API build exposes/records the same contract version/hash as the published documentation. | P1 | QA / Engineering
+API-AC-042 | A rollback or compatibility strategy exists before any major-version cutover. | P1 | QA / Engineering
+API-AC-043 | No default Zoiko Billing knowledge endpoint includes Payroll or HR corpora. | P0 | QA / Engineering
+API-AC-044 | All mutation request schemas reject unauthorized writable fields rather than mass-assigning them. | P0 | QA / Engineering
+API-AC-045 | The chatbot can recover from a stale action preview by refreshing state and generating a new preview rather than forcing execution. | P0 | QA / Engineering
+[END TABLE]
+38. Release Gates
+[TABLE: 13 rows x 2 cols]
+Gate | Exit evidence
+G1 — Contract completeness | All released paths/schemas/security/errors/examples present and validated.
+G2 — Financial invariants | Finance Engineering signs invoice/payment/reconciliation/refund semantics.
+G3 — Authorization | Security tests tenant/entity/scope/maker-checker boundaries.
+G4 — Idempotency | Replay and timeout-recovery tests pass for all consequential mutations.
+G5 — Two-plane isolation | Tenant and Zoiko SaaS commercial APIs are isolated in namespace/scope/audit.
+G6 — Knowledge isolation | Billing corpus/tenant namespaces enforced; cross-product retrieval denied by default.
+G7 — Error safety | Structured error matrix complete; no sensitive diagnostics leak.
+G8 — Webhook resilience | Signature, replay, duplicate and retry tests pass.
+G9 — Toolchain | Pinned OAS version works with validator, gateway, Swagger UI, Postman and CI scanners.
+G10 — Documentation parity | Published Swagger/OpenAPI hash matches deployed implementation baseline.
+G11 — Contract regression | No unapproved breaking diff; client compatibility suite passes.
+G12 — Operational readiness | Observability, limits, rollback, incident ownership and support runbooks linked.
+[END TABLE]
+39. Engineering Handoff Checklist
+Backend / API
+Confirm deployed service boundaries and replace namespace examples with final routes.
+Pin OpenAPI patch version and tooling versions.
+Implement reusable schemas/headers/errors/security components.
+Implement action/preview/confirmation/idempotency contracts before connecting model execution.
+Publish contract tests as required CI checks.
+AI / Agentic
+Map tool definitions 1:1 to safe API operations; avoid generic unrestricted HTTP tool.
+Never send model-generated authorization decisions.
+Use immutable IDs resolved from authorized reads for mutations.
+Handle ApiProblem recovery codes deterministically.
+Do not expose or log hidden chain-of-thought.
+Frontend
+Render structured cards/actions separately from model prose.
+Display tenant/entity/currency and consequential preview data before confirmation.
+Bind confirmation UI to preview/action ID and expiry.
+Handle pending/async states without presenting false completion.
+Do not treat hidden/disabled controls as authorization.
+QA
+Generate tests from acceptance criteria and FRS traceability.
+Maintain synthetic multi-tenant/entity fixtures.
+Test idempotency, stale previews, wrong-plane, prompt-injection retrieval and dependency ambiguity.
+Validate OpenAPI examples and Postman collection in CI.
+Security
+Review scopes, token audience, service identities, webhook signatures and elevation.
+Scan for mass assignment, BOLA/IDOR, injection, SSRF and sensitive-data leakage.
+Approve production Swagger “try it” policy and Postman production restrictions.
+SRE / Platform
+Set gateway policies, quotas, TLS, tracing and redaction.
+Expose spec/build version metadata.
+Define SLOs and alerts using operation risk class.
+Own rollback and compatibility process.
+40. Controlled Open Decisions
+[TABLE: 13 rows x 3 cols]
+Decision | Owner | Must be resolved before
+Exact OpenAPI 3.2.x patch supported by all selected tools | API Lead / Platform | Spec repository lock
+REST base domains and internal/external exposure model | Platform / Security | Integration environment
+Streaming protocol: SSE vs WebSocket vs HTTP chunking | Architecture / Frontend | Chat integration
+OIDC provider/token audience and workload identity implementation | Security / Platform | Auth integration
+Idempotency retention window by financial mutation | Finance Engineering / API | Mutation production
+ETag/version strategy per mutable resource | Backend Lead | Contract implementation
+Approval policy keys and threshold inputs | Product / Finance / Security | R3/R4 actions
+Webhook signature algorithm/key management | Security / Platform | Webhook beta
+Rate limits and commercial quotas | Product / SRE | Production launch
+Numeric SLOs | SRE / Product | Production launch
+Production Swagger UI try-it policy | Security | Developer docs release
+Postman v3 vs compatibility export strategy for engineering tools | API Lead / QA | Developer handoff
+[END TABLE]
+Appendix A — Canonical OpenAPI Skeleton
+[TABLE: 1 rows x 1 cols]
+openapi: 3.2.0 info: title: Zoiko Billing Chatbot API version: 1.0.0 description: >- Governed API contracts for conversational billing reads, previews and actions. servers: - url: https://{environment}.api.example/v1 variables: environment: { default: dev } tags: - name: Chat - name: Actions - name: Invoices - name: Payments - name: Reconciliation - name: Refunds - name: Knowledge - name: Approvals - name: Audit paths: # split by domain and bundled in CI components: securitySchemes: oidc: { ... } schemas: Money: { ... } ApiProblem: { ... }
+[END TABLE]
+This skeleton illustrates structure only. Final syntax must validate against the exact pinned OpenAPI patch version and chosen bundler/toolchain.
+Appendix B — Sample Action Preview Response
+[TABLE: 1 rows x 1 cols]
+{ "action_id": "act_...", "preview_id": "prv_...", "type": "INVOICE_ISSUE", "state": "CONFIRMATION_REQUIRED", "expires_at": "2026-08-17T10:30:00Z", "context": {"tenant_id":"...","entity_id":"..."}, "effect": { "resource":{"type":"invoice","id":"...","version":"7"}, "total":{"amount":"1250.00","currency":"USD"}, "customer":{"type":"customer","id":"...","display_label":"Example Co"} }, "warnings": [], "approval": {"required": false}, "confirmation": {"required": true}, "provenance": {"correlation_id":"...","as_of":"..."} }
+[END TABLE]
+Appendix C — Postman Minimum Test Assertions
+[TABLE: 1 rows x 1 cols]
+// illustrative Postman-style assertions pm.test("HTTP status is expected", () => pm.expect(pm.response.code).to.eql(200)); pm.test("Correlation id returned", () => pm.expect(pm.response.headers.get("X-Correlation-Id")).to.exist); pm.test("Currency is explicit", () => pm.expect(pm.response.json().total.currency).to.match(/^[A-Z]{3}$/)); pm.test("No secret response fields", () => { const raw = pm.response.text(); pm.expect(raw).not.to.include("client_secret"); pm.expect(raw).not.to.include("cvv"); });
+[END TABLE]
+Appendix D — Standards Notes
+At the time this wireframe was prepared, the OpenAPI Initiative publishes OpenAPI Specification 3.2.0, dated 19 September 2025. Postman documentation describes migration from collection v2.1 JSON to a v3 YAML format and provides linting for the v3 collection format. Swagger UI remains an interactive documentation surface generated from an OpenAPI description. Engineering must nevertheless pin versions to the actually supported toolchain rather than assume every tool supports every current specification feature.
+Final Engineering Doctrine
+[TABLE: 1 rows x 1 cols]
+The API is the control boundary A sophisticated conversational experience is valuable only if the underlying contract is deterministic. Zoiko Billing’s chatbot may interpret, explain and orchestrate; the API layer must establish identity, authority, economic meaning, exact amounts, current state, approvals, idempotency and evidence before any consequential financial change occurs.
+[END TABLE]

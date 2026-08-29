@@ -13,7 +13,7 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterator
 
 
 @dataclass
@@ -102,6 +102,28 @@ class ModelGateway(ABC):
     def health_check(self) -> bool:
         """Return True if the provider is reachable."""
         return True
+
+    def complete_stream(
+        self,
+        *,
+        messages: list[ModelMessage],
+        system_prompt: str = "",
+        tools: list[ModelTool] | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+    ) -> Iterator[str] | None:
+        """Stream content deltas for a completion, if the provider supports it.
+
+        Yields plain content fragments (str) as they arrive.  Providers that
+        do not implement token streaming return ``None`` and callers fall back
+        to the deterministic :meth:`complete` path.
+
+        Raises:
+            ModelGatewayError: On provider errors, timeouts, or schema violations.
+        """
+        return None
 
 
 class ModelGatewayError(Exception):

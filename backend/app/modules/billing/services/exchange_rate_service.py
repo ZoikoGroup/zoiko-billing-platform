@@ -37,9 +37,13 @@ class ExchangeRateService:
         self.db = db
         self.repo = BillingConfigurationRepository(db)
 
-    def is_rate_stale(self, organization_id: int) -> bool:
-        """Check if cached exchange rates are older than the freshness threshold."""
-        config = self.repo.get_by_organization(organization_id)
+    def is_rate_stale(self, organization_id: int, config=None) -> bool:
+        """Check if cached exchange rates are older than the freshness threshold.
+
+        Accepts an already-fetched BillingConfiguration (config=...) so callers
+        that hold the row (e.g. get_kpis' currency-rate builder) don't pay a
+        second round trip for the same record."""
+        config = config or self.repo.get_by_organization(organization_id)
         if not config or not config.exchange_rate_last_refreshed:
             return True
         last_refreshed = config.exchange_rate_last_refreshed
@@ -55,6 +59,7 @@ class ExchangeRateService:
         organization_id: int,
         from_currency: str,
         to_currency: str,
+        config=None,
     ) -> Tuple[Decimal, str, datetime]:
         """
         Get exchange rate from one currency to another.
@@ -69,7 +74,7 @@ class ExchangeRateService:
         if from_currency == to_currency:
             return Decimal("1"), "self", datetime.now(timezone.utc)
 
-        config = self.repo.get_by_organization(organization_id)
+        config = config or self.repo.get_by_organization(organization_id)
         if not config:
             raise BadRequestException(
                 "No billing configuration found. Please configure billing settings first."

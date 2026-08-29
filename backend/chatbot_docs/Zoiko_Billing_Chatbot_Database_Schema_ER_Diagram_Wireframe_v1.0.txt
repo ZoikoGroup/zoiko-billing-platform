@@ -1,0 +1,843 @@
+ZOIKO BILLING
+Chatbot Database Schema / ER Diagram Wireframe
+Engineering Data Model, Authoritative Boundaries, Entity Relationship Design and Implementation Handoff
+[TABLE: 8 rows x 2 cols]
+Document ID | ZB-AI-DB-001
+Version | 1.0 — Proposed for Approval
+Date | 17 August 2026
+Prepared for | Zoiko Billing Engineering, Product, Security, Data, QA and Operations
+Prepared by | Global CTO / Product Development Office
+Classification | Confidential — Internal Use
+Primary system | Zoiko Billing Chatbot and Action Control Plane
+Database status | Wireframe specification; final physical DDL must be generated through engineering review and migration governance
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Core database doctrine The chatbot database must record conversation state, grounded evidence, retrieval provenance, action previews, confirmations, approvals, executions and audit events. It must not become a shadow ledger, shadow invoice store, shadow payment system or second financial source of truth. Authoritative financial state remains in Zoiko Billing domain services and ledgers.
+[END TABLE]
+Contents
+1. Executive Database Doctrine
+2. Scope and Non-Goals
+3. Data Ownership Boundary
+4. Storage Architecture Wireframe
+5. Logical ER Diagram
+6. Schema Design Standards
+7. Core Entity Groups
+8. Table-by-Table Wireframe
+9. Relationships, Constraints and Cardinality
+10. Indexing and Query Patterns
+11. Security, Privacy and Row-Level Governance
+12. Retention, Archiving and Deletion
+13. Audit, Evidence and Financial-State Provenance
+14. Knowledge / RAG Data Model
+15. Approval and Governed-Action Model
+16. Integration Event Model
+17. Migration and Versioning Standard
+18. ER Diagram Notation / DBML Handoff
+19. Performance and Scale Targets
+20. QA, Validation and Release Gates
+21. Engineering Handoff Checklist
+22. Appendices
+1. Executive Database Doctrine
+[TABLE: 1 rows x 1 cols]
+What this document controls This document defines the database and entity-relationship wireframe required to implement the Zoiko Billing Chatbot safely. It is not the final migration file, not a complete DDL package, and not a substitute for the authoritative Zoiko Billing financial schema.
+[END TABLE]
+Authoritative finance remains external: Invoices, payments, balances, allocations, credits, refunds, tax calculations and ledger state must be read from and committed through Zoiko Billing domain services only.
+The chatbot records evidence: The chatbot database stores user utterances, assistant messages, model runs, retrieval provenance, proposed parameters, previews, confirmations, approvals, execution receipts and audit events.
+All actions are governed: Consequential actions must flow through draft, preview, confirmation, approval when required, and execution. The database must make this progression auditable and impossible to skip.
+No silent financial mutation: A generated response must never update financial state directly. Every mutating operation must have an immutable server-side action record and an authoritative execution result.
+Two-plane isolation: Tenant billing data and Zoiko Billing's own SaaS commercial-account billing must remain in separate planes, with explicit database guards against context leakage.
+Evidence over chat logs: Conversation logs are insufficient. Each material answer must connect to source documents, service responses, timestamps, actor identity, tenant/entity context and risk evaluation.
+[TABLE: 6 rows x 3 cols]
+Principle | Database implication | Production consequence
+No shadow ledger | Only pointers to financial resources are stored; no duplicated invoice/payment ledgers. | Reconciliation, balances and ageing are calculated by Zoiko Billing services.
+Context before data | Every session, message, action and retrieval carries tenant_id and legal_entity_id where applicable. | Cross-tenant data leakage becomes structurally preventable.
+Preview before execution | Action preview records are immutable and expire. | Users cannot approve stale calculations.
+Approvals are first-class | Approval requests and decisions are separate entities. | Maker-checker control is verifiable.
+Grounding is recorded | Retrieval run, citations, document versions and freshness are stored. | Financial and policy answers can be challenged and reconstructed.
+[END TABLE]
+2. Scope and Non-Goals
+[TABLE: 7 rows x 2 cols]
+In scope | Out of scope / prohibited
+Conversation sessions, messages and contextual metadata. | Replacing the Zoiko Billing invoice, payment, customer, tax or ledger databases.
+Intent classification, risk class, policy evaluation and model-run metadata. | Allowing AI output to become an authoritative financial record.
+Action drafts, previews, confirmations, approvals and execution receipts. | Committing financial changes without authoritative service validation.
+Knowledge sources, versions, chunks, retrieval runs and citations. | Using Payroll or HR knowledge by default for a Billing chatbot.
+Audit events, evidence packets, support access and operational controls. | Storing secrets, raw payment card data, full bank credentials or unnecessary PII.
+Pointers to authoritative Zoiko Billing resources. | Duplicating invoice PDFs or payment ledgers unless required as immutable export/evidence references.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Payroll / HR corpus control The engineer's source list included payroll policies, HR documentation and compliance documents. For Zoiko Billing, those materials must not enter the default chatbot knowledge namespace. They require explicit cross-product authorization, separate retrieval namespace, separate permissions and a visible source label.
+[END TABLE]
+3. Data Ownership Boundary
+The chatbot database is an orchestration evidence store. Zoiko Billing financial services remain authoritative for financial state. The database must therefore be designed around references, not replication.
+Figure 1 — Data boundary: chatbot evidence store, retrieval index and authoritative Zoiko Billing services
+[TABLE: 9 rows x 4 cols]
+Data class | System of record | Chatbot database role | Duplication rule
+Customer profile | Zoiko Billing customer service | Pointer + displayed snapshot hash where needed. | No full duplicate except minimal display cache with TTL.
+Invoice | Zoiko Billing invoice service | Pointer, preview payload summary, action evidence. | No duplicate invoice ledger.
+Payment | Zoiko Billing payment service / PSP integrations | Pointer and operation receipt. | No PAN, CVV, full bank credentials or PSP secrets.
+Balance / ageing | Zoiko Billing balance/ledger service | Query response evidence + timestamp. | No persisted calculated balance as truth.
+Knowledge article | Approved Billing knowledge repository | Versioned metadata, chunk index and citations. | Permitted; source versions must be tracked.
+Conversation | Chatbot database | Full system of record for chatbot interaction. | Permitted subject to retention rules.
+Action approval | Chatbot/action control plane | Primary action-governance record. | Permitted and required.
+Audit event | Evidence/audit store | Append-only activity evidence. | Permitted and required.
+[END TABLE]
+4. Storage Architecture Wireframe
+[TABLE: 7 rows x 4 cols]
+Storage component | Recommended technology class | Purpose | Notes
+Relational database | PostgreSQL-compatible RDBMS | Conversations, actions, approvals, retrieval metadata, audit pointers and state transitions. | Primary ACID store for chatbot orchestration.
+Vector index | Managed vector DB or pgvector-compatible index | Semantic retrieval over approved billing knowledge chunks. | No uncontrolled personal or financial payloads without classification.
+Object storage | Encrypted object store | Evidence packets, export files, redacted transcript bundles and immutable snapshots. | Referenced by object_uri and content hash.
+Cache | Redis-compatible ephemeral cache | Rate limiting, session acceleration, preview locks and idempotency hot keys. | Not system of record. TTL mandatory.
+Event bus | Kafka/SNS/SQS/PubSub equivalent | Action completion, audit fan-out, webhook delivery and asynchronous jobs. | At-least-once delivery with idempotency.
+Observability store | Logs/metrics/traces platform | Operational telemetry, SLIs and alerting. | Must redact secrets and restricted payloads.
+[END TABLE]
+Core relational schema: Use the relational store for all durable chatbot state and governance records.
+Vector data isolation: Store chunk IDs and embedding references separately from financial action records to avoid accidental data blending.
+Object storage discipline: Use object storage only for files and evidence packages; persist hashes, retention class and access policy in the database.
+Cache discipline: Anything stored only in cache must be safe to lose.
+5. Logical ER Diagram
+The following logical ER diagram shows the core entity groups and their data relationships. It is intentionally domain-level rather than a full physical model, because the final DDL must be generated with engineering migration tooling.
+Figure 2 — Logical ER diagram for Zoiko Billing Chatbot data model
+[TABLE: 7 rows x 3 cols]
+Entity group | Primary entities | Design purpose
+Identity and context | iam_user_ref, permission_snapshot, tenant_context, chatbot_session | Bind every interaction to a verified actor, tenant, legal entity, locale and access scope.
+Conversation and AI evidence | conversation, conversation_message, intent_classification, model_run | Preserve user intent, assistant behaviour, model configuration and generated outputs.
+Retrieval and knowledge | knowledge_source, knowledge_document, knowledge_chunk, retrieval_run, retrieval_citation | Make every grounded answer traceable to approved material and freshness.
+Governed action control | action_draft, action_preview, action_confirmation, approval_request, action_execution | Prevent direct AI mutation and preserve controlled action flow.
+Financial resource pointers | financial_resource_pointer | service_response_snapshot
+Audit and evidence | audit_event, evidence_packet, support_access_session | Support investigation, governance, compliance and operational reconstruction.
+[END TABLE]
+6. Schema Design Standards
+[TABLE: 13 rows x 2 cols]
+Standard | Required rule
+Identifier format | Use UUID/ULID-style immutable surrogate primary keys. Avoid natural keys as primary keys.
+Tenant scope | All tenant-scoped tables must carry tenant_id; legal-entity-scoped tables must carry legal_entity_id.
+Actor scope | All user-triggered records must carry actor_user_ref_id or system_actor_ref_id.
+Timestamps | Use created_at, updated_at and, where relevant, expires_at, decided_at, executed_at and archived_at in UTC.
+State fields | Use controlled enums for lifecycle states; prohibit free-text state.
+Money fields | Use integer minor units plus ISO currency code for any temporary amount fields.
+JSON fields | Allow JSONB for evidence snapshots only where schema version is stored and indexed keys are clear.
+Hashing | Hash material evidence payloads and document versions using a modern content-hash strategy.
+Soft delete | Use soft deletion only for non-evidence entities. Audit, approval and execution evidence must not be hard-deleted.
+PII minimisation | Store the minimum data required for operation, audit and support. Prefer user_ref_id over raw personal attributes.
+Schema version | Every complex JSON payload must carry schema_version.
+Idempotency | Every mutating operation must support idempotency_key and request_fingerprint.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Naming convention Use snake_case database names, singular table names where engineering convention permits, and consistent suffixes: _id for identifiers, _ref_id for external authoritative references, _at for timestamps, _hash for hashes, _json for structured payloads and _status for controlled state.
+[END TABLE]
+7. Core Entity Groups
+7.1 Identity, tenant and session context
+[TABLE: 5 rows x 2 cols]
+Entity | Purpose
+iam_user_ref | Local reference to an authenticated user from the identity provider; not the primary identity source.
+permission_snapshot | Point-in-time permission set used for a message, answer, preview or action.
+tenant_context | Resolved tenant, workspace, legal entity, locale, timezone and data-residency context.
+chatbot_session | Browser/app/embed session carrying auth state, channel, device class and risk signals.
+[END TABLE]
+7.2 Conversation and message evidence
+[TABLE: 5 rows x 2 cols]
+Entity | Purpose
+conversation | Top-level business conversation thread.
+conversation_message | User, assistant, system and tool-visible messages with risk and redaction flags.
+message_attachment | Reference to uploaded files or export outputs, with classification and scan status.
+message_redaction | Record of redaction applied for safety, privacy or retention reasons.
+[END TABLE]
+7.3 AI, retrieval and policy evidence
+[TABLE: 6 rows x 2 cols]
+Entity | Purpose
+intent_classification | Resolved intent, confidence, ambiguity, domain and risk class.
+model_run | Model/provider/configuration record for each generated response or planning call.
+retrieval_run | Knowledge query, filter set, namespace and freshness evaluation.
+retrieval_citation | Source chunk/document references used in a grounded answer.
+policy_evaluation | Guardrail, permission and financial-action policy decisions.
+[END TABLE]
+7.4 Governed action control plane
+[TABLE: 7 rows x 2 cols]
+Entity | Purpose
+action_draft | AI/user-proposed structured intent before authoritative validation.
+action_preview | Server-authoritative preview of a consequential action.
+action_confirmation | User confirmation bound to a specific unexpired preview.
+approval_request | Maker-checker workflow record where approval is required.
+approval_decision | Approve, reject, request changes or expire decision with actor and reason.
+action_execution | Final operation receipt returned by authoritative service after execution.
+[END TABLE]
+7.5 Knowledge and retrieval corpus
+[TABLE: 5 rows x 2 cols]
+Entity | Purpose
+knowledge_namespace | Billing, support, implementation, internal SOP or tenant-specific corpus boundary.
+knowledge_source | Approved source system or document collection.
+knowledge_document | Versioned source document metadata.
+knowledge_chunk | Retrievable unit with source offsets, hashes and classification.
+[END TABLE]
+7.6 Audit and evidence
+[TABLE: 4 rows x 2 cols]
+Entity | Purpose
+audit_event | Immutable activity record for investigation and compliance.
+evidence_packet | Compiled package linking conversation, sources, approvals and service receipts.
+support_access_session | Controlled support/admin access to tenant chat and action evidence.
+[END TABLE]
+8. Table-by-Table Wireframe
+The following table wireframes define the minimum schema intent. Engineering may adjust physical types and constraints, but must preserve the semantics, relationships and guardrails.
+8.1 tenant_context
+Resolved tenant and legal-entity context for chatbot operations.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+tenant_context_id | uuid pk | Primary context record.
+tenant_id | uuid not null indexed | Tenant/workspace boundary.
+legal_entity_id | uuid nullable indexed | Seller or operating legal entity when context is entity-specific.
+billing_plane | enum tenant_billing|zoiko_commercial_billing | Plane isolation guard.
+locale | varchar(16) | Locale for display formatting.
+timezone | varchar(64) | IANA timezone used for user-facing dates.
+data_residency_region | varchar(32) | Data region for storage/routing.
+context_hash | char(64) | Tamper-evident context digest.
+created_at | timestamptz | UTC creation timestamp.
+[END TABLE]
+8.2 iam_user_ref
+Local non-authoritative reference to authenticated actors.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+user_ref_id | uuid pk | Local reference identifier.
+tenant_id | uuid indexed | Tenant scope.
+idp_subject_hash | char(64) | Hashed identity-provider subject.
+display_name_redacted | text nullable | Display name only where necessary.
+role_summary | text | Human-readable role summary.
+status | enum active|suspended|deleted_ref | Current reference usability.
+created_at | timestamptz | Creation timestamp.
+last_seen_at | timestamptz nullable | Last chatbot interaction timestamp.
+[END TABLE]
+8.3 permission_snapshot
+Point-in-time permission evidence used to answer or act.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+permission_snapshot_id | uuid pk | Snapshot identifier.
+user_ref_id | uuid fk | Actor reference.
+tenant_context_id | uuid fk | Resolved tenant/entity context.
+scopes_json | jsonb | Resolved scopes and denials.
+source_policy_version | varchar(64) | IAM/RBAC/ABAC policy version.
+snapshot_hash | char(64) | Content digest.
+expires_at | timestamptz | Short validity window.
+created_at | timestamptz | Snapshot timestamp.
+[END TABLE]
+8.4 chatbot_session
+Browser/app/embed session for risk-aware conversation handling.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+session_id | uuid pk | Session identifier.
+user_ref_id | uuid fk nullable | Authenticated actor; null only for pre-auth surfaces.
+tenant_context_id | uuid fk nullable | Resolved context after login.
+channel | enum web|mobile|admin|embed|api | Source channel.
+device_fingerprint_hash | char(64) nullable | Device-risk signal, not raw fingerprint.
+ip_region | varchar(32) nullable | Coarse region only.
+risk_score | numeric(5,2) | Session risk score.
+status | enum active|expired|revoked | Session state.
+started_at | timestamptz | Start time.
+ended_at | timestamptz nullable | End time.
+[END TABLE]
+8.5 conversation
+Business conversation thread.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+conversation_id | uuid pk | Conversation identifier.
+session_id | uuid fk | Parent session.
+tenant_context_id | uuid fk | Context lock.
+title | text nullable | Derived or user-provided title.
+conversation_status | enum open|resolved|archived|locked | Lifecycle state.
+primary_domain | enum billing|support|account|unknown | Conversation domain.
+highest_risk_class | enum R0|R1|R2|R3|R4 | Highest risk seen.
+created_at | timestamptz | Created timestamp.
+updated_at | timestamptz | Updated timestamp.
+retention_class | varchar(32) | Retention policy binding.
+[END TABLE]
+8.6 conversation_message
+Atomic message record with safety and provenance markers.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+message_id | uuid pk | Message identifier.
+conversation_id | uuid fk indexed | Parent conversation.
+sender_type | enum user|assistant|system|tool | Message origin.
+message_text | text | Redacted visible message text.
+raw_payload_object_id | uuid nullable | Reference to encrypted raw payload when retention allows.
+language | varchar(16) | Detected or selected language.
+risk_class | enum R0|R1|R2|R3|R4 | Message risk class.
+contains_financial_data | boolean | Financial data flag.
+contains_pii | boolean | PII flag.
+created_at | timestamptz | Message timestamp.
+[END TABLE]
+8.7 intent_classification
+Intent and risk decision for a user message.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+intent_classification_id | uuid pk | Classification record.
+message_id | uuid fk unique | User message classified.
+intent_code | varchar(80) | Canonical intent.
+intent_domain | varchar(48) | Billing/customer/payment/reconciliation/etc.
+confidence | numeric(5,4) | Classifier confidence.
+ambiguity_reason | text nullable | Why clarification is required.
+risk_class | enum R0|R1|R2|R3|R4 | Consequentiality level.
+classified_by | enum rules|model|hybrid | Classification method.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.8 model_run
+Record of model-assisted generation/planning.
+[TABLE: 12 rows x 3 cols]
+Field | Type / constraint | Purpose
+model_run_id | uuid pk | Model run identifier.
+conversation_id | uuid fk | Conversation context.
+message_id | uuid fk nullable | Triggering message.
+run_type | enum answer|classify|plan|summarize|redact|evaluate | Run purpose.
+provider | varchar(64) | Model provider.
+model_name | varchar(128) | Model/deployment identifier.
+prompt_template_id | uuid fk nullable | Prompt template used.
+input_hash | char(64) | Input digest, not always full input.
+output_hash | char(64) | Output digest.
+latency_ms | integer | Duration.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.9 prompt_template
+Versioned system and task prompt catalog.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+prompt_template_id | uuid pk | Template identifier.
+template_code | varchar(80) | Stable prompt code.
+version | varchar(32) | Version.
+risk_scope | enum R0|R1|R2|R3|R4|all | Allowed use.
+template_hash | char(64) | Content digest.
+status | enum draft|approved|deprecated|revoked | Lifecycle.
+approved_by | uuid nullable | Approver ref.
+approved_at | timestamptz nullable | Approval time.
+[END TABLE]
+8.10 tool_invocation
+Calls from chatbot orchestration to services/tools.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+tool_invocation_id | uuid pk | Tool call record.
+model_run_id | uuid fk nullable | Model run requesting call.
+conversation_id | uuid fk | Context.
+tool_name | varchar(96) | Canonical tool/service name.
+request_hash | char(64) | Request digest.
+response_hash | char(64) | Response digest.
+status | enum pending|succeeded|failed|denied|timed_out | Outcome.
+error_code | varchar(64) nullable | Canonical error.
+started_at | timestamptz | Start time.
+finished_at | timestamptz nullable | End time.
+[END TABLE]
+8.11 knowledge_namespace
+Retrieval namespace boundary.
+[TABLE: 8 rows x 3 cols]
+Field | Type / constraint | Purpose
+knowledge_namespace_id | uuid pk | Namespace identifier.
+tenant_id | uuid nullable | Null for global Zoiko-approved content.
+namespace_code | varchar(80) | billing_public, billing_internal, tenant_billing, etc.
+allowed_domains_json | jsonb | Permitted domain labels.
+blocked_domains_json | jsonb | Excluded domains such as payroll/hr unless approved.
+status | enum active|locked|deprecated | Lifecycle.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.12 knowledge_source
+Approved knowledge source metadata.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+knowledge_source_id | uuid pk | Source identifier.
+knowledge_namespace_id | uuid fk | Namespace.
+source_type | enum doc|sop|faq|policy|api|tenant_file | Source class.
+source_name | text | Human source name.
+owner_team | varchar(80) | Owning team.
+classification | enum public|internal|confidential|restricted | Data classification.
+status | enum active|review_required|retired | Lifecycle.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.13 knowledge_document
+Versioned document metadata.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+knowledge_document_id | uuid pk | Document identifier.
+knowledge_source_id | uuid fk | Source.
+document_version | varchar(64) | Version label.
+document_hash | char(64) | Content hash.
+effective_from | timestamptz nullable | Validity start.
+effective_until | timestamptz nullable | Validity end.
+freshness_status | enum current|stale|expired|unknown | Freshness classification.
+object_uri | text nullable | Encrypted source object pointer.
+indexed_at | timestamptz | Index timestamp.
+[END TABLE]
+8.14 knowledge_chunk
+Retrievable chunk record.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+knowledge_chunk_id | uuid pk | Chunk identifier.
+knowledge_document_id | uuid fk | Parent document.
+chunk_sequence | integer | Order within document.
+chunk_text_redacted | text | Approved retrievable text.
+embedding_ref | text | Vector index reference.
+page_start | integer nullable | Source page start.
+page_end | integer nullable | Source page end.
+chunk_hash | char(64) | Chunk digest.
+classification | enum public|internal|confidential|restricted | Classification.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.15 retrieval_run
+Retrieval operation for a message or answer.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+retrieval_run_id | uuid pk | Retrieval identifier.
+conversation_id | uuid fk | Conversation.
+message_id | uuid fk nullable | Triggering message.
+knowledge_namespace_id | uuid fk | Namespace searched.
+query_hash | char(64) | Query digest.
+filters_json | jsonb | Applied filters.
+top_k | integer | Requested results.
+freshness_policy | varchar(64) | Freshness rule.
+status | enum succeeded|no_result|denied|failed | Outcome.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.16 retrieval_citation
+Source evidence used by an answer.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+retrieval_citation_id | uuid pk | Citation identifier.
+retrieval_run_id | uuid fk | Retrieval run.
+knowledge_chunk_id | uuid fk | Chunk cited.
+rank | integer | Rank.
+score | numeric(8,6) | Similarity/relevance score.
+used_in_message_id | uuid fk nullable | Assistant message that used citation.
+citation_label | text | Human-readable source label.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.17 policy_evaluation
+Policy, guardrail and authorization evaluation.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+policy_evaluation_id | uuid pk | Evaluation identifier.
+conversation_id | uuid fk | Context.
+message_id | uuid fk nullable | Triggering message.
+action_draft_id | uuid fk nullable | Action under evaluation.
+policy_code | varchar(80) | Policy/rule code.
+policy_version | varchar(64) | Policy version.
+decision | enum allow|deny|clarify|escalate|approve_required | Outcome.
+reason_code | varchar(96) | Reason.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.18 action_draft
+Proposed structured action before authoritative validation.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+action_draft_id | uuid pk | Draft identifier.
+conversation_id | uuid fk | Conversation.
+created_by_message_id | uuid fk | Triggering user message.
+action_type | varchar(96) | Canonical action type.
+risk_class | enum R2|R3|R4 | Consequentiality.
+proposed_params_json | jsonb | Proposed parameters.
+draft_status | enum proposed|validated|rejected|expired | Draft state.
+created_at | timestamptz | Timestamp.
+expires_at | timestamptz | Draft expiry.
+[END TABLE]
+8.19 action_preview
+Authoritative server-side preview of a consequential action.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+action_preview_id | uuid pk | Preview identifier.
+action_draft_id | uuid fk | Parent draft.
+preview_status | enum valid|expired|superseded|rejected | State.
+authoritative_service | varchar(96) | Service that calculated preview.
+preview_payload_json | jsonb | Displayable authoritative preview.
+resource_version_vector | text nullable | Resource version/etag set.
+money_summary_json | jsonb nullable | Exact-money summary when applicable.
+preview_hash | char(64) | Preview digest.
+created_at | timestamptz | Timestamp.
+expires_at | timestamptz | Expiry.
+[END TABLE]
+8.20 action_confirmation
+User confirmation bound to a specific preview.
+[TABLE: 8 rows x 3 cols]
+Field | Type / constraint | Purpose
+action_confirmation_id | uuid pk | Confirmation identifier.
+action_preview_id | uuid fk unique | Preview being confirmed.
+confirmed_by_user_ref_id | uuid fk | Actor confirming.
+confirmation_phrase_hash | char(64) | Hash of confirmation text/gesture.
+confirmed_at | timestamptz | Timestamp.
+ip_region | varchar(32) nullable | Coarse region.
+status | enum confirmed|revoked|expired | State.
+[END TABLE]
+8.21 approval_request
+Maker-checker workflow for actions requiring approval.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+approval_request_id | uuid pk | Approval request identifier.
+action_preview_id | uuid fk | Preview requiring approval.
+tenant_context_id | uuid fk | Context.
+approval_policy_code | varchar(96) | Policy requiring approval.
+required_approver_role | varchar(96) | Role/permission required.
+request_status | enum pending|approved|rejected|expired|cancelled | Lifecycle.
+requested_by_user_ref_id | uuid fk | Requester.
+requested_at | timestamptz | Timestamp.
+expires_at | timestamptz | Expiry.
+[END TABLE]
+8.22 approval_decision
+Approver decision record.
+[TABLE: 8 rows x 3 cols]
+Field | Type / constraint | Purpose
+approval_decision_id | uuid pk | Decision identifier.
+approval_request_id | uuid fk | Parent request.
+decided_by_user_ref_id | uuid fk | Approver actor.
+decision | enum approve|reject|request_changes | Decision.
+reason | text nullable | Decision reason.
+permission_snapshot_id | uuid fk | Approver permission snapshot.
+decided_at | timestamptz | Decision timestamp.
+[END TABLE]
+8.23 action_execution
+Execution record and authoritative result.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+action_execution_id | uuid pk | Execution identifier.
+action_preview_id | uuid fk | Preview executed.
+approval_request_id | uuid fk nullable | Approval record if needed.
+idempotency_key | varchar(128) | Idempotency key.
+request_fingerprint | char(64) | Execution request digest.
+execution_status | enum pending|succeeded|failed|compensated|unknown | Outcome.
+authoritative_service | varchar(96) | Service called.
+service_operation_id | varchar(128) nullable | Authoritative operation ID.
+result_payload_json | jsonb | Receipt/result summary.
+executed_at | timestamptz nullable | Execution time.
+[END TABLE]
+8.24 financial_resource_pointer
+Reference to authoritative financial resources.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+financial_resource_pointer_id | uuid pk | Pointer identifier.
+tenant_context_id | uuid fk | Tenant/entity context.
+resource_type | enum customer|invoice|payment|allocation|credit|refund|report|export | Resource class.
+resource_ref_id | varchar(128) | Authoritative service ID.
+resource_display_key | varchar(128) nullable | Invoice number/customer code/etc.
+service_name | varchar(96) | Authoritative service.
+resource_version | varchar(128) nullable | ETag/version if available.
+last_seen_at | timestamptz | Last time observed.
+last_seen_hash | char(64) nullable | Response digest.
+[END TABLE]
+8.25 service_response_snapshot
+Bounded evidence of service responses used in answers/previews.
+[TABLE: 9 rows x 3 cols]
+Field | Type / constraint | Purpose
+service_response_snapshot_id | uuid pk | Snapshot identifier.
+tool_invocation_id | uuid fk | Tool call.
+financial_resource_pointer_id | uuid fk nullable | Related resource.
+snapshot_type | enum query|preview|execution|error | Response class.
+payload_hash | char(64) | Response digest.
+payload_redacted_json | jsonb nullable | Redacted display/evidence payload.
+classification | enum internal|confidential|restricted | Data classification.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.26 audit_event
+Append-only evidence event.
+[TABLE: 11 rows x 3 cols]
+Field | Type / constraint | Purpose
+audit_event_id | uuid pk | Audit identifier.
+tenant_context_id | uuid fk nullable | Context.
+actor_user_ref_id | uuid fk nullable | Actor.
+event_type | varchar(96) | Event code.
+event_subject_type | varchar(96) | Subject table/resource type.
+event_subject_id | uuid nullable | Subject ID.
+event_payload_hash | char(64) | Payload digest.
+event_payload_redacted_json | jsonb nullable | Redacted detail.
+correlation_id | uuid | Cross-system correlation.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.27 evidence_packet
+Compiled evidence bundle for review or export.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+evidence_packet_id | uuid pk | Packet identifier.
+conversation_id | uuid fk nullable | Conversation.
+action_execution_id | uuid fk nullable | Execution.
+packet_type | enum support|audit|dispute|qa|security | Purpose.
+object_uri | text | Encrypted packet location.
+content_hash | char(64) | Bundle digest.
+retention_class | varchar(32) | Retention policy.
+created_by_user_ref_id | uuid fk nullable | Creator.
+created_at | timestamptz | Timestamp.
+[END TABLE]
+8.28 support_access_session
+Support/admin access governance.
+[TABLE: 10 rows x 3 cols]
+Field | Type / constraint | Purpose
+support_access_session_id | uuid pk | Support session identifier.
+tenant_context_id | uuid fk | Tenant context accessed.
+support_user_ref_id | uuid fk | Support actor.
+access_reason_code | varchar(96) | Reason.
+approved_by_user_ref_id | uuid fk nullable | Approver where required.
+scope_json | jsonb | Allowed scope.
+status | enum active|expired|revoked | State.
+started_at | timestamptz | Start.
+ended_at | timestamptz nullable | End.
+[END TABLE]
+9. Relationships, Constraints and Cardinality
+[TABLE: 17 rows x 4 cols]
+From | Cardinality | To | Rule
+iam_user_ref | 1:N | chatbot_session | A user can create many sessions.
+chatbot_session | 1:N | conversation | A session can contain multiple conversations.
+conversation | 1:N | conversation_message | Messages belong to one conversation.
+conversation_message | 1:0..1 | intent_classification | Only user/action-driving messages require intent classification.
+conversation_message | 1:N | model_run | A message may trigger multiple model runs.
+model_run | 1:N | tool_invocation | A model run can request multiple tool calls, subject to guardrails.
+retrieval_run | 1:N | retrieval_citation | A retrieval run can produce multiple citations.
+knowledge_document | 1:N | knowledge_chunk | A document is split into retrievable chunks.
+action_draft | 1:N | policy_evaluation | Drafts may require several policy decisions.
+action_draft | 1:0..N | action_preview | A draft may be previewed multiple times as data changes.
+action_preview | 1:0..1 | action_confirmation | Only one active confirmation may bind to a preview.
+action_preview | 1:0..1 | approval_request | Approval is conditional on policy and risk.
+approval_request | 1:N | approval_decision | Multiple decisions can record reject/request-change history; only one final approval is effective.
+action_preview | 1:0..1 | action_execution | A preview can be executed at most once successfully.
+action_execution | N:1 | financial_resource_pointer | Executions can create or modify referenced financial resources.
+audit_event | N:1 | tenant_context | Audit events are tenant-scoped where applicable.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Hard constraint No database relationship may allow an action_execution to exist without an action_preview. For R3/R4 actions, execution must also require confirmation and any required approval decision. This must be enforced by service logic and verified by database-level constraints where feasible.
+[END TABLE]
+10. Indexing and Query Patterns
+[TABLE: 9 rows x 3 cols]
+Query pattern | Required indexes / design | Target behaviour
+Load conversation history | conversation_id + created_at on conversation_message | Fast chronological render of recent messages.
+Find pending approvals | tenant_context_id + request_status + expires_at on approval_request | Managers see pending decisions without scanning historical approvals.
+Validate preview freshness | action_preview_id + preview_status + expires_at + resource_version_vector | Stale previews fail closed.
+Trace an execution | correlation_id across action_execution, tool_invocation and audit_event | Single investigation path across systems.
+Resource history | resource_type + resource_ref_id on financial_resource_pointer and service_response_snapshot | Investigate chatbot interactions involving a specific invoice/customer/payment.
+Knowledge retrieval | knowledge_namespace_id + freshness_status + classification; vector index on embedding_ref/chunk text | Relevant, authorised and current retrieval.
+Abuse/rate limits | user_ref_id/session_id + created_at event rollups | Detect excessive requests without persisting unsafe telemetry.
+Support access audit | tenant_context_id + support_user_ref_id + started_at | Support access can be reviewed quickly.
+[END TABLE]
+Partitioning: Consider time-based partitioning for conversation_message, audit_event, model_run, tool_invocation and service_response_snapshot after volume thresholds are confirmed.
+Hot paths: Optimize for current conversations, pending actions, pending approvals and recent financial resource investigations.
+Cold paths: Archived conversations and evidence packets can move to lower-cost storage while keeping searchable metadata.
+PII searches: Avoid direct indexes on sensitive text. Use reference IDs, hashes, classifications and approved support tooling.
+11. Security, Privacy and Row-Level Governance
+[TABLE: 11 rows x 2 cols]
+Control | Database requirement
+Tenant isolation | Every tenant-scoped query must filter by tenant_id through service context; row-level security should be enabled for high-risk tables where feasible.
+Legal-entity isolation | Where tenant has multiple seller entities, legal_entity_id must be included for finance-related actions and answers.
+Billing-plane isolation | billing_plane enum prevents tenant billing records and Zoiko commercial-account records from mixing.
+Encryption | Encrypt data at rest; use envelope encryption for raw payload/object references and evidence packets.
+Secret exclusion | Do not store API keys, PSP secrets, card data, CVV, bank passwords or raw OAuth tokens.
+Data classification | Every knowledge source, chunk, attachment, snapshot and evidence packet carries classification.
+Access logging | Support/admin reads must be logged through support_access_session and audit_event.
+Prompt-injection resilience | Retrieved content cannot grant permissions, alter policy or issue hidden operational instructions.
+Redaction | Raw payload retention requires classification, reason and retention class. Display text should be redacted where possible.
+Export control | Evidence/export object URIs require signed, expiring access and audit events.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+-- Row-level access principle, illustrative only SELECT * FROM conversation_message cm JOIN conversation c ON c.conversation_id = cm.conversation_id JOIN tenant_context tc ON tc.tenant_context_id = c.tenant_context_id WHERE tc.tenant_id = current_setting('app.tenant_id')::uuid AND (tc.legal_entity_id IS NULL OR tc.legal_entity_id = current_setting('app.legal_entity_id')::uuid);
+[END TABLE]
+12. Retention, Archiving and Deletion
+[TABLE: 8 rows x 3 cols]
+Data category | Default retention class | Deletion / archive rule
+Session telemetry | Short operational | Expire or anonymise after operational need, subject to security holds.
+Conversation messages | Customer-support / operational | Retain according to tenant policy; redact raw payloads earlier where possible.
+Action previews | Governance evidence | Retain preview summary/hash to prove what user confirmed, even after expiry.
+Approvals and executions | Financial governance | Retain for audit/dispute period; no hard deletion except legal purge workflow.
+Knowledge chunks | Knowledge lifecycle | Retire outdated versions but preserve metadata for citation reconstruction.
+Audit events | Immutable audit | Append-only; archive to WORM-capable storage where required.
+Evidence packets | Purpose-bound | Retention determined by dispute/support/security/QA purpose.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Deletion doctrine Deletion must never corrupt an audit chain. Where personal data deletion is required, use redaction, tokenization, detached identity references and legally governed purge workflows while retaining non-personal operational evidence where permitted.
+[END TABLE]
+13. Audit, Evidence and Financial-State Provenance
+Audit chain: Each material answer or action must be reconstructable from conversation message, intent classification, retrieval citations, policy evaluations, tool invocations and service snapshots.
+Financial provenance: For financial answers, store which authoritative service was queried, the resource version seen, response timestamp and display hash.
+Action provenance: For actions, store proposed parameters, authoritative preview, confirmation, approval, idempotency key and execution receipt.
+Human accountability: Actor IDs must be recorded for confirmation, approval, rejection, support access and override decisions.
+[TABLE: 9 rows x 3 cols]
+Event type | Trigger | Must include
+chat.message.created | User/assistant/tool message persisted. | conversation_id, message_id, actor/session, risk class.
+rag.retrieval.completed | Retrieval run completed. | namespace, document versions, chunks, freshness result.
+policy.evaluation.completed | Guardrail or authorization decision made. | policy code/version, decision, reason.
+action.preview.created | Authoritative preview generated. | action type, service, preview hash, expiry, resource versions.
+action.confirmed | User confirms preview. | actor, preview ID, confirmation hash, timestamp.
+approval.decision.recorded | Approver decides. | approver, permission snapshot, decision reason.
+action.execution.completed | Authoritative service returns result. | idempotency key, operation ID, result, status.
+support.access.started | Support/admin accesses tenant evidence. | support actor, reason, scope, approval if needed.
+[END TABLE]
+14. Knowledge / RAG Data Model
+[TABLE: 1 rows x 1 cols]
+RAG doctrine The knowledge model must answer: what source was searched, what version was used, what chunks were retrieved, what was actually cited, whether the material was current, and whether the actor was allowed to see it.
+[END TABLE]
+[TABLE: 5 rows x 4 cols]
+Knowledge namespace | Default audience | Allowed content | Blocked unless explicitly authorised
+billing_public | Customers/prospects | Product explainers, approved FAQs, public help material. | Internal SOPs, tenant data, HR/payroll material.
+billing_internal | Zoiko authorised staff | Internal billing support SOPs, escalation paths, approved playbooks. | Tenant-specific files without support access.
+tenant_billing | Tenant authorised users | Tenant-specific billing configuration, imported docs, approved invoice/payment SOPs. | Other tenant data, Zoiko commercial account data.
+zoiko_commercial_billing | Zoiko Billing commercial/admin users | Zoiko Billing subscriptions, invoices and account support material. | Tenant customer ledgers and tenant financial data.
+[END TABLE]
+Freshness enforcement: Expired knowledge must not be used for billing-policy answers unless the assistant explicitly states that current material is unavailable and refuses consequential action.
+Citation storage: Citations must capture document ID, chunk ID, version, source offsets and retrieval rank.
+Tenant corpus: Tenant-uploaded material is only retrieved inside that tenant and legal entity scope.
+Injection boundary: Instructions inside retrieved documents are treated as content, not system instructions.
+15. Approval and Governed-Action Model
+[TABLE: 8 rows x 3 cols]
+Lifecycle step | Required table | Required state condition
+Draft | action_draft | Draft created from user intent and proposed parameters. No financial mutation.
+Policy evaluation | policy_evaluation | Determine whether action is allowed, denied, requires clarification or requires approval.
+Preview | action_preview | Authoritative service calculates the exact effect and expiry.
+Confirmation | action_confirmation | User confirms the specific preview hash before expiry.
+Approval | approval_request + approval_decision | Required when policy, threshold, risk class or tenant configuration demands maker-checker.
+Execution | action_execution | Authoritative service executes idempotently and returns receipt.
+Audit | audit_event | Every step emits audit evidence with correlation ID.
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+stateDiagram-v2 [*] --> proposed proposed --> rejected: invalid / denied proposed --> previewed: authoritative preview created previewed --> expired: expires_at elapsed previewed --> confirmed: user confirms preview_hash confirmed --> approval_pending: approval required confirmed --> executable: no approval required approval_pending --> approved: approver approves approval_pending --> rejected: approver rejects approved --> executable executable --> executing executing --> succeeded executing --> failed executing --> unknown: timeout / pending async confirmation
+[END TABLE]
+16. Integration Event Model
+[TABLE: 8 rows x 4 cols]
+Event | Producer | Consumer | Payload requirement
+chatbot.action.preview.created | Action Control Plane | Audit/notifications/UI | Preview ID, action type, expiry, hash, correlation ID.
+chatbot.approval.requested | Action Control Plane | Approvals/notifications | Approval request ID, policy, approver role, expiry.
+chatbot.approval.decided | Approvals service | Action Control Plane/audit | Decision, approver, timestamp, reason.
+chatbot.action.execution.completed | Action Control Plane | Audit/webhook/job tracker | Execution ID, authoritative operation ID, status.
+knowledge.document.indexed | Knowledge pipeline | Retrieval service | Document ID, version, namespace, chunk count.
+knowledge.document.retired | Knowledge governance | Retrieval service | Document ID, version, retirement reason.
+support.access.started | Support console | Audit/security monitoring | Support actor, scope, reason, tenant context.
+[END TABLE]
+Idempotency: Every event handler must be idempotent and keyed by event_id and subject ID.
+Ordering: Do not rely on global ordering. State transitions must check current record state.
+Replay: Replay must not re-execute financial mutations. Use action_execution idempotency keys and service receipts.
+Schema evolution: Events must carry schema_version and producer_version.
+17. Migration and Versioning Standard
+[TABLE: 9 rows x 2 cols]
+Area | Requirement
+Migration tool | Use engineering-approved migration tooling with forward-only production migrations and reversible lower-environment testing.
+DDL review | All DDL affecting evidence, approvals or actions requires engineering, security and product review.
+Zero-downtime | Additive migrations first; backfill; dual-read/write when needed; then remove old columns after compatibility window.
+Enum changes | Controlled enum expansion only; no removal until historical data handling is approved.
+JSON schema | Version every complex JSON payload and validate at service boundary.
+Seed data | Prompt templates, policy codes, risk classes and namespaces require signed seed-data migrations.
+Data backfill | Backfills must be idempotent, batched, observable and resumable.
+Rollback | Rollback must not destroy audit evidence. Prefer feature rollback over destructive schema rollback.
+[END TABLE]
+18. ER Diagram Notation / DBML Handoff
+Engineering may translate this specification into DBML, Mermaid ERD or native migration DDL. The following DBML-style skeleton is illustrative and should be used as the ERD handoff starting point, not as production DDL.
+[TABLE: 1 rows x 1 cols]
+Table tenant_context { tenant_context_id uuid [pk] tenant_id uuid [not null] legal_entity_id uuid billing_plane varchar [not null] locale varchar timezone varchar data_residency_region varchar context_hash char(64) created_at timestamptz } Table conversation { conversation_id uuid [pk] session_id uuid [ref: > chatbot_session.session_id] tenant_context_id uuid [ref: > tenant_context.tenant_context_id] conversation_status varchar highest_risk_class varchar retention_class varchar created_at timestamptz updated_at timestamptz } Table conversation_message { message_id uuid [pk] conversation_id uuid [ref: > conversation.conversation_id] sender_type varchar message_text text risk_class varchar contains_financial_data boolean contains_pii boolean created_at timestamptz } Table action_draft { action_draft_id uuid [pk] conversation_id uuid [ref: > conversation.conversation_id] created_by_message_id uuid [ref: > conversation_message.message_id] action_type varchar risk_class varchar proposed_params_json jsonb draft_status varchar created_at timestamptz expires_at timestamptz } Table action_preview { action_preview_id uuid [pk] action_draft_id uuid [ref: > action_draft.action_draft_id] preview_status varchar authoritative_service varchar preview_payload_json jsonb resource_version_vector text preview_hash char(64) created_at timestamptz expires_at timestamptz } Table action_execution { action_execution_id uuid [pk] action_preview_id uuid [ref: > action_preview.action_preview_id] idempotency_key varchar request_fingerprint char(64) execution_status varchar authoritative_service varchar service_operation_id varchar result_payload_json jsonb executed_at timestamptz }
+[END TABLE]
+19. Performance and Scale Targets
+[TABLE: 14 rows x 3 cols]
+Capability | Target / design requirement
+Conversation load | Recent thread render must use indexed message pagination and avoid loading full history by default.
+Preview validation | Preview lookup and expiry validation must be fast enough for conversational confirmation flow.
+Approvals dashboard | Pending approvals query must be scoped and indexed by tenant/entity/status/expiry.
+Audit lookup | Correlation ID investigation should return primary records without full text search.
+Knowledge retrieval | Vector retrieval must filter by namespace, tenant, classification and freshness before ranking or before result use.
+Write throughput | Message, model_run, tool_invocation and audit_event inserts must be resilient to bursts.
+Archive path | Historical conversation storage must not degrade current operational query performance.
+Table family | Scale expectation | Mitigation
+conversation_message | Highest growth by interaction volume. | Partition by time and tenant-size tier; archive cold content.
+model_run / tool_invocation | High write volume during AI orchestration. | Structured logs, hash payloads, retention classes.
+audit_event | High compliance value and long retention. | Append-only partitions, archival index, object-store packets.
+knowledge_chunk | Medium growth; depends on tenant uploads. | Namespace quotas, stale document retirement, deduplication by hash.
+service_response_snapshot | Can grow quickly if overused. | Store redacted snapshots only for material responses/actions.
+[END TABLE]
+20. QA, Validation and Release Gates
+[TABLE: 44 rows x 3 cols]
+ID | Acceptance criterion | Verification
+DB-AC-001 | No R3/R4 action can reach execution without a valid preview. | Automated test + QA evidence required
+DB-AC-002 | Expired preview confirmation is rejected and audited. | Automated test + QA evidence required
+DB-AC-003 | Approvals cannot be approved by the requester when maker-checker policy forbids self-approval. | Automated test + QA evidence required
+DB-AC-004 | Tenant A cannot retrieve Tenant B conversations, sources, chunks, previews or approvals. | Automated test + QA evidence required
+DB-AC-005 | Zoiko commercial-account billing context cannot query tenant customer billing resources. | Automated test + QA evidence required
+DB-AC-006 | Billing chatbot default retrieval excludes Payroll and HR namespaces. | Automated test + QA evidence required
+DB-AC-007 | Every assistant answer using knowledge records at least one retrieval_run or records no-source refusal. | Automated test + QA evidence required
+DB-AC-008 | Every financial answer stores authoritative service response provenance or refuses to answer as authoritative. | Automated test + QA evidence required
+DB-AC-009 | Every action_execution has idempotency_key and request_fingerprint. | Automated test + QA evidence required
+DB-AC-010 | Replayed execution request returns prior receipt rather than re-mutating financial state. | Automated test + QA evidence required
+DB-AC-011 | Support access without reason/scope is denied. | Automated test + QA evidence required
+DB-AC-012 | Audit event exists for message creation, preview creation, confirmation, approval decision and execution. | Automated test + QA evidence required
+DB-AC-013 | Raw payment card data cannot be inserted into any chatbot table. | Automated test + QA evidence required
+DB-AC-014 | Evidence packet content_hash matches exported object payload. | Automated test + QA evidence required
+DB-AC-015 | Schema migrations preserve historical enum values and evidence-chain readability. | Automated test + QA evidence required
+DB-AC-016 | Knowledge document retirement prevents future citation while preserving historical citation reconstruction. | Automated test + QA evidence required
+DB-AC-017 | Database backups and restore tests preserve referential integrity for action chains. | Automated test + QA evidence required
+DB-AC-018 | Service downtime produces pending/unknown status without duplicate execution. | Automated test + QA evidence required
+DB-AC-019 | A user with inspect-only permission cannot create an action preview requiring write authority. | Automated test + QA evidence required
+DB-AC-020 | A revoked session cannot continue a conversation or confirm an action. | Automated test + QA evidence required
+DB-AC-021 | Conversation archive does not remove related action/audit evidence. | Automated test + QA evidence required
+DB-AC-022 | Object URI access uses expiring signed access and emits audit evidence. | Automated test + QA evidence required
+DB-AC-023 | Row-level access policy is verified through negative cross-tenant tests. | Automated test + QA evidence required
+DB-AC-024 | All money summaries store minor units and currency code, never float amounts. | Automated test + QA evidence required
+DB-AC-025 | All JSON payloads carrying evidence include schema_version. | Automated test + QA evidence required
+DB-AC-026 | All PII flags/classifications propagate to evidence packets and exports. | Automated test + QA evidence required
+DB-AC-027 | All indexes required for current operational workflows exist before launch. | Automated test + QA evidence required
+DB-AC-028 | All migration backfills are idempotent and resumable. | Automated test + QA evidence required
+DB-AC-029 | All event consumers are idempotent under duplicate delivery. | Automated test + QA evidence required
+DB-AC-030 | All disabled namespaces are excluded from retrieval even when prompt asks for them. | Automated test + QA evidence required
+Release gate | Required evidence
+Gate 1 | Data ownership boundary approved by Product, Engineering and Security.
+Gate 2 | Schema reviewed against PRD, FRS and API contract traceability.
+Gate 3 | Tenant/entity/billing-plane isolation tested with negative cases.
+Gate 4 | Preview-confirm-approval-execute chain enforced and tested.
+Gate 5 | Knowledge namespace controls tested, including Payroll/HR exclusion by default.
+Gate 6 | Audit/evidence packet generation tested end to end.
+Gate 7 | Migration rollback/feature rollback plan approved.
+Gate 8 | Retention, redaction, archiving and legal-hold behaviour approved.
+Gate 9 | PII/financial-data minimisation review completed.
+Gate 10 | Load and indexing tests meet target operational paths.
+Gate 11 | Backup and restore test confirms evidence-chain integrity.
+Gate 12 | Production data-access runbooks and support-access controls approved.
+[END TABLE]
+21. Engineering Handoff Checklist
+[TABLE: 14 rows x 2 cols]
+Area | Handoff requirement
+Data architecture | Confirm final relational/vector/object/cache/event technology choices.
+Schema owner | Assign database owner, migration owner and DRI for evidence/audit data.
+Migration repo | Create migration repository structure and naming convention.
+ERD source | Convert logical model into maintained DBML/Mermaid/DDL artefact.
+Constraints | Implement database-level constraints for action chain integrity where feasible.
+Services | Map every table to owning service and access pattern.
+RLS/security | Implement tenant/entity/billing-plane access controls.
+Indexes | Implement required indexes for current conversation, approvals, resource trace and audit.
+Retention | Implement retention_class and archive jobs.
+RAG | Implement namespace, source, document, chunk, retrieval and citation tables.
+Audit | Implement audit_event emission and correlation IDs.
+Testing | Implement all DB-AC acceptance tests.
+Runbooks | Document restore, archive, support-access and incident-reconstruction procedures.
+[END TABLE]
+22. Appendices
+Appendix A — Controlled enums
+[TABLE: 8 rows x 2 cols]
+Enum | Values
+risk_class | R0 informational, R1 account/context, R2 prepare, R3 consequential, R4 restricted/high-risk.
+billing_plane | tenant_billing, zoiko_commercial_billing.
+preview_status | valid, expired, superseded, rejected.
+execution_status | pending, succeeded, failed, compensated, unknown.
+request_status | pending, approved, rejected, expired, cancelled.
+classification | public, internal, confidential, restricted.
+conversation_status | open, resolved, archived, locked.
+[END TABLE]
+Appendix B — Canonical correlation IDs
+conversation_id: Human interaction thread.
+correlation_id: Cross-system tracing from UI to orchestration to billing service to audit.
+action_preview_id: Preview-bound governance chain.
+action_execution_id: Execution receipt and idempotency anchor.
+financial_resource_pointer_id: Reference to authoritative customer/invoice/payment/refund/etc.
+evidence_packet_id: Compiled support/audit/dispute evidence package.
+Appendix C — Prohibited data in chatbot database
+[TABLE: 7 rows x 2 cols]
+Prohibited data | Required alternative
+CVV, PAN, full card data or PSP secrets | Use PSP token references and authoritative payment service receipts.
+Raw bank credentials | Use bank integration references and authorised service statuses.
+Tenant financial ledger duplication | Use financial_resource_pointer and service_response_snapshot.
+Unredacted unnecessary PII | Use references, hashes and redacted payloads.
+Payroll/HR records by default | Use separate authorised namespace and product integration only.
+System prompts or secrets in retrievable tenant corpus | Keep prompt templates in controlled prompt_template table and restrict access.
+[END TABLE]
+Approval Page
+[TABLE: 7 rows x 4 cols]
+Function | Approver | Decision | Date
+Product Owner
+Engineering Lead
+Data Architect
+Security Lead
+QA Lead
+Operations Lead
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+Approval instruction Approval of this document authorises engineering to translate the wireframe into physical ERD/DDL and migration planning. It does not authorise production deployment without release gates, security review, QA evidence and go-live approval.
+[END TABLE]

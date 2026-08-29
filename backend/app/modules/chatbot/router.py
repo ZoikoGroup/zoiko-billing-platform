@@ -25,10 +25,15 @@ All endpoints gated by:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+import asyncio
+import json
+import threading
+
 from app.core.dependencies import get_current_user, require_active_subscription
-from app.database import get_db
+from app.database import get_db, SessionLocal
 
 from .context import get_ai_context, AIContext
 from .schemas import (
@@ -116,6 +121,20 @@ def _get_gateway(provider: str | None = None) -> ModelGateway | None:
 
 def _engine(db: Session, provider: str | None = None) -> ConversationEngine:
     return ConversationEngine(db, model_gateway=_get_gateway(provider))
+
+
+def _raise_action_error(e: ActionEngineError) -> None:
+    """Canonical action error body (guide §24 — ApiProblem-style): status +
+    stable error_code + a human recovery hint so clients never see a bare
+    message and never have to guess the next step from a status code."""
+    raise HTTPException(
+        status_code=e.status_code,
+        detail={
+            "error_code": getattr(e, "error_code", None) or f"action_{e.status_code}",
+            "message": str(e),
+            "recovery": getattr(e, "recovery", None),
+        },
+    )
 
 
 def _actions(db: Session) -> ActionEngine:
@@ -219,6 +238,108 @@ def send_message(
         )
 
 
+# ── Streaming (SSE) ─────────────────────────────────────────────────────
+# Same governed pipeline as POST /messages, but with a token sink attached
+# to the request-scoped engine: when the LLM synthesis step supports
+# incremental generation the router relays each content delta as an SSE
+# "token" event *while the pipeline is still running*, so the client sees
+# words appear instead of a static "Checking records..." wait.
+
+async def _sse_events(conversation_uid: str, message: str, ctx: AIContext, page_path: str | None):
+    """Async generator bridging a producer thread to an SSE stream.
+
+    The pipeline runs on a daemon thread with its OWN database session (the
+    request thread's session belongs to the dependency lifecycle and is never
+    shared across threads).  Tokens arriving from the LLM stream are relayed
+    live; the terminal event carries the full governed ChatbotResponse (which
+    the client treats as authoritative — it reconciles any partial text).
+    """
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    tokens: list[str] = []
+
+    def sink(token: str) -> None:
+        tokens.append(token)
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
+        except RuntimeError:
+            pass  # event loop already shutting down
+
+    def run_pipeline() -> None:
+        try:
+            with SessionLocal() as sess:
+                engine = ConversationEngine(sess, model_gateway=_get_gateway())
+                engine._token_sink = sink
+                result = engine.send_message(
+                    conversation_uid=conversation_uid,
+                    message=message,
+                    ctx=ctx,
+                    page_path=page_path,
+                )
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                ("done", {"response": result, "streamed": bool(tokens)}),
+            )
+        except Exception as exc:
+            _logger.error("[CHATBOT-DIAG] STREAM pipeline failed: %s: %s", type(exc).__name__, exc)
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
+
+    threading.Thread(target=run_pipeline, daemon=True).start()
+
+    # Flush headers immediately so the client switches to "streaming" state.
+    yield "event: ready\ndata: {}\n\n"
+    while True:
+        kind, payload = await queue.get()
+        if kind == "token":
+            yield f"event: token\ndata: {json.dumps({'delta': payload})}\n\n"
+        elif kind == "done":
+            yield f"event: done\ndata: {json.dumps(payload)}\n\n"
+            break
+        elif kind == "error":
+            yield f"event: error\ndata: {json.dumps({'message': payload})}\n\n"
+            break
+
+
+@router.post("/sessions/{conversation_uid}/messages/stream")
+async def stream_message(
+    conversation_uid: str,
+    body: SendMessageRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: AIContext = Depends(get_ai_context),
+):
+    """Send a message and receive the answer as a Server-Sent Events stream.
+
+    Events:
+      ready — headers flushed (generation started)
+      token — ``{"delta": "..."}`` partial answer text (LLM-synthesized only)
+      done  — ``{"response": {...}, "streamed": bool}`` authoritative reply;
+              ``streamed`` true means tokens were relayed incrementally,
+              false means the answer was produced whole (rules/canned/cached)
+              and the client should animate it locally.
+      error — ``{"message": "..."}`` terminal failure
+    """
+    _logger.error("[CHATBOT-DIAG] ENTRY: POST /sessions/%s/messages/stream text=%r", conversation_uid, body.message[:200] if body.message else "")
+    cleaned_text, violations = _guardrail.sanitize_input(body.message)
+    if violations and any("injection" in v for v in violations):
+        _logger.error("[CHATBOT-DIAG] BLOCKED by guardrail (stream): %s", violations)
+        return ChatbotResponse(
+            message_uid=str(uuid.uuid4()),
+            answer="I'm sorry, I couldn't process that request. Please rephrase your billing question.",
+            mode="M0_EXPLAIN",
+            risk_class="R0",
+        )
+    return StreamingResponse(
+        _sse_events(conversation_uid, cleaned_text, ctx, body.page),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ── Action Lifecycle Endpoints ───────────────────────────────────────────────
 
 @router.post("/actions/draft", response_model=DraftResponse)
@@ -235,7 +356,7 @@ def create_draft(
             proposed_params=body.proposed_params,
         )
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/preview", response_model=PreviewResponse)
@@ -248,7 +369,7 @@ def preview_action(
     try:
         return _actions(db).generate_preview(ctx=ctx, action_uid=action_uid)
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/confirm", response_model=ConfirmationResponse)
@@ -267,7 +388,7 @@ def confirm_action(
             preview_hash=body.preview_hash,
         )
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/approval-request")
@@ -280,7 +401,7 @@ def request_approval(
     try:
         return _actions(db).request_approval(ctx=ctx, action_uid=action_uid)
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/approve")
@@ -299,7 +420,7 @@ def approve_action(
             comment=body.comment,
         )
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/execute", response_model=ExecutionResponse)
@@ -319,7 +440,7 @@ def execute_action(
             idempotency_key=body.idempotency_key,
         )
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 @router.post("/actions/{action_uid}/cancel")
@@ -332,7 +453,7 @@ def cancel_action_endpoint(
     try:
         return _actions(db).cancel_action(ctx=ctx, action_uid=action_uid)
     except ActionEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        _raise_action_error(e)
 
 
 # ── Capabilities, Metrics & Health ───────────────────────────────────────────

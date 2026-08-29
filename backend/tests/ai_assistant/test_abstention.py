@@ -6,7 +6,7 @@ a financial claim. Never fabricate a financial answer.
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestAbstentionBehavior:
@@ -112,12 +112,13 @@ class TestAbstentionBehavior:
             request_id="test",
         )
 
-        # Mock empty query result
-        mock_query = MagicMock()
-        mock_query.options.return_value.filter.return_value.filter.return_value.first.return_value = None
-        db.query.return_value = mock_query
-
-        result = engine._lookup_invoice("INV-9999", "invoice inv-9999", MagicMock(), ctx)
+        # Ledger reads go through the BillingAdapter — stub it to return no
+        # record for the unknown reference (the handler must abstain).
+        with patch(
+            "app.modules.chatbot.billing_adapter.BillingAdapter.lookup_invoice",
+            return_value=None,
+        ):
+            result = engine._lookup_invoice("INV-9999", "invoice inv-9999", MagicMock(), ctx)
 
         assert "No invoice found" in result["answer"]
         assert result["risk_class"] == "R1"

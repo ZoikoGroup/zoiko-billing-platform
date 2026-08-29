@@ -74,49 +74,16 @@ class GroqModelGateway(ModelGateway):
                 retryable=False,
             )
 
-        resolved_model = model or settings.GROQ_MODEL_DEFAULT
-        resolved_max_tokens = max_tokens or settings.GROQ_MAX_TOKENS
-        resolved_temperature = temperature if temperature is not None else settings.GROQ_TEMPERATURE
-
-        api_messages: list[dict[str, str]] = []
-        if system_prompt:
-            system_content = system_prompt
-            if response_format and response_format.get("type") == "json_object":
-                system_content += (
-                    "\n\nYou MUST respond with valid JSON only. "
-                    "No markdown, no explanation outside the JSON."
-                )
-            api_messages.append({"role": "system", "content": system_content})
-        for msg in messages:
-            if msg.role == "system" and system_prompt:
-                continue  # explicit system_prompt wins; avoid duplicates
-            api_messages.append({
-                "role": msg.role if msg.role in ("user", "assistant", "system") else "user",
-                "content": msg.content if isinstance(msg.content, str) else json.dumps(msg.content),
-            })
-        if not any(m["role"] == "user" for m in api_messages):
-            api_messages.append({"role": "user", "content": "Hello"})
-
-        payload: dict[str, Any] = {
-            "model": resolved_model,
-            "max_tokens": resolved_max_tokens,
-            "temperature": resolved_temperature,
-            "messages": api_messages,
-        }
-        if tools:
-            payload["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    },
-                }
-                for t in tools
-            ]
-        if response_format and response_format.get("type") == "json_object":
-            payload["response_format"] = {"type": "json_object"}
+        resolved_model, resolved_max_tokens, resolved_temperature, payload = self._build_request(
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            stream=False,
+        )
 
         headers = {
             "Authorization": f"Bearer {settings.GROQ_API_KEY}",
@@ -244,6 +211,164 @@ class GroqModelGateway(ModelGateway):
             usage=usage,
             raw={"id": data.get("id", "")},
         )
+
+    @staticmethod
+    def _build_request(
+        *,
+        messages: list[ModelMessage],
+        system_prompt: str,
+        tools: list[ModelTool] | None,
+        model: str | None,
+        max_tokens: int | None,
+        temperature: float | None,
+        response_format: dict | None,
+        stream: bool,
+    ) -> tuple[str, int, float, dict[str, Any]]:
+        """Assemble the (model, max_tokens, temperature, payload) for a call.
+
+        Shared by both :meth:`complete` (single response) and
+        :meth:`complete_stream` (token streaming) so the two paths can never
+        drift apart in prompt construction.
+        """
+        resolved_model = model or settings.GROQ_MODEL_DEFAULT
+        resolved_max_tokens = max_tokens or settings.GROQ_MAX_TOKENS
+        resolved_temperature = temperature if temperature is not None else settings.GROQ_TEMPERATURE
+
+        api_messages: list[dict[str, str]] = []
+        if system_prompt:
+            system_content = system_prompt
+            if response_format and response_format.get("type") == "json_object":
+                system_content += (
+                    "\n\nYou MUST respond with valid JSON only. "
+                    "No markdown, no explanation outside the JSON."
+                )
+            api_messages.append({"role": "system", "content": system_content})
+        for msg in messages:
+            if msg.role == "system" and system_prompt:
+                continue  # explicit system_prompt wins; avoid duplicates
+            api_messages.append({
+                "role": msg.role if msg.role in ("user", "assistant", "system") else "user",
+                "content": msg.content if isinstance(msg.content, str) else json.dumps(msg.content),
+            })
+        if not any(m["role"] == "user" for m in api_messages):
+            api_messages.append({"role": "user", "content": "Hello"})
+
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "max_tokens": resolved_max_tokens,
+            "temperature": resolved_temperature,
+            "messages": api_messages,
+        }
+        if stream:
+            payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
+        if tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    },
+                }
+                for t in tools
+            ]
+        if response_format and response_format.get("type") == "json_object":
+            payload["response_format"] = {"type": "json_object"}
+
+        return resolved_model, resolved_max_tokens, resolved_temperature, payload
+
+    def complete_stream(
+        self,
+        *,
+        messages: list[ModelMessage],
+        system_prompt: str = "",
+        tools: list[ModelTool] | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        response_format: dict | None = None,
+    ):
+        """Stream content deltas for a completion (SSE chat-completions API).
+
+        Yields plain content fragments (str) as they become available.
+        Raises ModelGatewayError for auth/transport/non-OK responses —
+        the same failure semantics as :meth:`complete`, but without the
+        multi-attempt retry loop (a single retry rides out transient HTTP
+        errors; anything else surfaces immediately so the caller can fall
+        back to the deterministic path).
+        """
+        if not settings.GROQ_API_KEY:
+            raise ModelGatewayError(
+                "GROQ_API_KEY is not configured.",
+                provider="groq",
+                retryable=False,
+            )
+
+        resolved_model, _, _, payload = self._build_request(
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            stream=True,
+        )
+
+        headers = {
+            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        start_time = time.monotonic()
+        client = self._get_client()
+        try:
+            with client.stream(
+                "POST", GROQ_CHAT_COMPLETIONS_URL, json=payload, headers=headers
+            ) as resp:
+                if resp.status_code != 200:
+                    self._close_client()
+                    retryable = resp.status_code in (429, 500, 502, 503, 504)
+                    logger.error(
+                        "Groq stream error status=%d after %dms (retryable=%s)",
+                        resp.status_code, int((time.monotonic() - start_time) * 1000), retryable,
+                    )
+                    raise ModelGatewayError(
+                        f"Model provider HTTP {resp.status_code}",
+                        provider="groq",
+                        retryable=retryable,
+                    )
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = (choices[0].get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
+        except ModelGatewayError:
+            raise
+        except httpx.TimeoutException:
+            self._close_client()
+            logger.error("Groq stream timeout after %dms", int((time.monotonic() - start_time) * 1000))
+            raise ModelGatewayError("Model provider timeout.", provider="groq", retryable=True) from None
+        except httpx.HTTPError as e:
+            self._close_client()
+            logger.error("Groq stream connection error: %s", type(e).__name__)
+            raise ModelGatewayError(
+                f"Model provider error: {type(e).__name__}",
+                provider="groq",
+                retryable=True,
+            ) from None
 
     @staticmethod
     def _parse_tool_arguments(raw: Any) -> dict[str, Any]:

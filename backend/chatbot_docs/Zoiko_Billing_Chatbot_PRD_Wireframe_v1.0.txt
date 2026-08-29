@@ -1,0 +1,827 @@
+ZOIKO BILLING
+CHATBOT
+Product Requirements Document (PRD)
+Detailed product wireframe, requirement taxonomy and approval baseline
+[TABLE: 1 rows x 1 cols]
+PRODUCT DOCTRINE A permission-aware billing assistant that helps users understand, prepare and complete governed billing work without becoming a second source of financial truth.
+[END TABLE]
+[TABLE: 11 rows x 2 cols]
+Field | Value
+Document ID | ZB-AI-PRD-001
+Version | 1.0 — Product Requirements Wireframe
+Date | 17 August 2026
+Status | Proposed for Approval
+Owner | Zoiko Billing Product / Zoiko Tech
+Prepared for | Product, Engineering, Design, Finance, Billing Operations, Security, Compliance, QA, Customer Success
+Parent product | Zoiko Billing — global billing and invoicing platform
+Primary dependency | ZB-AI-WF-001 — Zoiko Billing Chatbot Engineering Wireframe v1.0
+Language | American English
+Classification | Confidential — Internal Use
+[END TABLE]
+Decision requested: Approve the PRD structure, scope, product doctrine, P0 requirements, release gates and success measures before the Functional Requirements Specification (FRS) is drafted.
+SECTION 00
+Document Control, Purpose and Hierarchy
+This document defines the product contract; downstream specifications must trace back to it.
+Purpose
+Define exactly what the Zoiko Billing Chatbot must achieve for customers and Zoiko operations: the user problems it solves, supported workflows, product boundaries, product-level controls, priorities, measurable outcomes and release criteria. It is detailed enough to guide design and engineering while intentionally leaving protocol, endpoint, database and low-level implementation detail to later controlled documents.
+Document hierarchy
+[TABLE: 10 rows x 3 cols]
+Layer | Document | Primary question answered
+1 | PRD — this document | What product are we building, for whom, why, within which boundaries, and how will we know it works?
+2 | Engineering Wireframe — ZB-AI-WF-001 | How should the interaction surfaces, states, components and governed action patterns behave?
+3 | FRS | What precise functional and non-functional behaviors must each subsystem satisfy?
+4 | API Documentation | What machine contracts expose those behaviors?
+5 | Database / ER | What authoritative data structures and relationships support them?
+6 | Knowledge Base | What governed business knowledge may retrieval use?
+7 | UI/UX Figma | What approved visual and interaction specification is implemented?
+8 | Technical Architecture | How are services, trust boundaries, deployment and reliability designed?
+9 | Prompt / AI Guardrails | How is model behavior constrained, evaluated, versioned and governed?
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+TRACEABILITY RULE Every P0/P1 PRD requirement must receive a stable requirement ID. The FRS, API, test plan and release evidence must reference those IDs rather than silently redefining product behavior.
+[END TABLE]
+SECTION 01
+Executive Product Decision
+Ship an operating assistant for billing work — not a generic support bot and not an autonomous finance agent.
+Product decision
+Zoiko Billing should embed a conversational assistant across the billing workspace that can answer grounded billing questions, locate records, explain state, prepare structured drafts, preview consequences, and invoke only those governed actions the authenticated user is already entitled to perform.
+The product must make routine billing work materially faster while strengthening — never weakening — permission boundaries, financial-state integrity, approval controls, auditability and user understanding.
+[TABLE: 1 rows x 1 cols]
+NORTH-STAR BEHAVIOR The fastest path should also be the safest path: find the right record, explain the authoritative state, collect missing facts, preview the proposed change, require the right approval, execute through domain APIs, and show evidence of what happened.
+[END TABLE]
+Commercial outcome
+• Reduce time spent locating invoices, customers, balances, payment events and reconciliation evidence.
+• Increase successful completion of billing tasks without forcing users through unnecessary navigation.
+• Reduce avoidable support contacts caused by misunderstood invoice, payment, balance or workflow states.
+• Increase confidence in Zoiko Billing as a controlled system of financial record rather than a convenience layer that can drift from reality.
+• Create an extensible assistant platform that can support deeper automation later without making unsafe autonomy the launch requirement.
+SECTION 02
+Product Vision, Positioning and Value Proposition
+Conversation becomes a governed command-and-explanation layer across the billing lifecycle.
+Vision statement
+Enable an authorized user to move from a billing question to a verified answer or governed next action in one coherent conversation, using the same authoritative data, permissions and workflow rules as the rest of Zoiko Billing.
+Positioning
+[TABLE: 7 rows x 2 cols]
+Dimension | Product position
+Category | Embedded AI billing assistant / conversational operating layer
+Primary value | Clarity, speed, controlled action and evidence across billing workflows
+Not positioned as | General chatbot, tax adviser, accounting replacement, collections bot, payment processor, or autonomous financial agent
+Trust anchor | Authoritative Zoiko Billing services and immutable financial records
+Differentiator | Explanation + workflow assistance + governed actions in the same permission-aware experience
+Enterprise promise | AI assistance without bypassing finance controls, role segregation, tenant isolation or auditability
+[END TABLE]
+Core value proposition
+[TABLE: 1 rows x 1 cols]
+ONE-SENTENCE PROMISE Ask Zoiko Billing what happened, what is outstanding, what needs attention, or what you want to prepare — and receive a grounded answer or a governed path to completion.
+[END TABLE]
+SECTION 03
+Problem Statement and Opportunity
+Billing software contains the answer; users often lose time finding, interpreting and acting on it.
+Primary user problem
+Billing work is fragmented across customers, invoices, charges, payments, credits, reconciliation, approval states, reports and settings. Even when data is correct, users must often know which screen, filter, state model or record relationship explains the situation. That creates navigation cost, interpretation cost and support dependence.
+Opportunity areas
+[TABLE: 7 rows x 3 cols]
+Problem | User consequence | Assistant opportunity
+Record discovery friction | Time lost searching across customers, invoices and payment views | Natural-language retrieval scoped to current tenant/entity/permissions
+State interpretation | Users misread “sent”, “paid”, “pending”, “partially allocated” or “overdue” | Explain authoritative state with source-linked evidence
+Drafting overhead | Repeated invoice/customer/credit preparation work | Collect fields conversationally and create structured drafts
+Workflow uncertainty | User does not know next valid action or required approval | Present state-aware actions and approvals
+Reconciliation complexity | Payments, allocations and residual balances are difficult to reason about | Explain matching evidence and unresolved differences
+Support dependency | Simple billing questions become tickets | Resolve safely in-product or route with context when human help is required
+[END TABLE]
+SECTION 04
+Users, Personas and Jobs-to-be-Done
+The assistant serves role-specific billing work; authority is derived from real product permissions.
+[TABLE: 8 rows x 4 cols]
+Persona | Primary JTBD | Representative asks | Control note
+Billing Administrator | Create and manage billing records efficiently | Find customer/invoice; prepare invoice; issue with approval; manage credits; explain balance | Broad operational authority; still subject to approvals
+Finance / Controller | Maintain financial integrity and close visibility | Review payment state; reconcile; investigate variances; review audit history | High-value actions may require maker-checker
+Accounts Receivable | Collect accurately and prioritize follow-up | Find overdue invoices; understand balances; prepare reminders; view payment evidence | No authority to alter issued financial history unless granted
+Customer Support | Answer customer billing questions quickly | Explain invoice/due date/payment status; locate records; route disputes | Typically read-heavy; limited financial mutation rights
+Business Owner / Executive | Understand billing health without operational detail | Ask for outstanding balance, aging, collections summary, exceptions | Aggregated view only within entitled entities
+Auditor / Read-only Reviewer | Trace what happened and why | Inspect invoice/payment/credit/audit evidence | No mutation actions
+Zoiko Internal Support | Diagnose tenant issues under controlled support access | Explain product state, incidents and configuration | Must use separately governed support access; never silent tenant impersonation
+[END TABLE]
+Persona design rule
+The assistant must never infer authority from role labels in conversation. It must rely on authenticated tenant, legal-entity, workspace and permission context returned by authoritative authorization services.
+SECTION 05
+Goals, Non-Goals and Product Principles
+Scope is intentionally ambitious on usefulness and conservative on uncontrolled autonomy.
+P0 product goals
+1. Provide accurate, source-grounded answers about customer, invoice, payment, balance, credit and reconciliation state.
+2. Enable conversational preparation of billing work while preserving required fields, validation and state-machine rules.
+3. Expose only actions that the authenticated user is authorized to take in the active tenant and entity context.
+4. Require explicit preview and confirmation before consequential actions; require additional approval where policy demands.
+5. Generate a durable audit trail for material assistant-assisted decisions and actions.
+6. Fail safely when evidence, context, permission or model confidence is insufficient.
+Explicit non-goals for initial commercial release
+• Autonomously issuing invoices, refunds, credits, write-offs or collection actions without user authorization.
+• Replacing Zoiko Billing domain services, ledgers, approval engines or canonical state machines.
+• Providing definitive tax, legal, audit or accounting advice.
+• Writing SQL or directly mutating production databases.
+• Ingesting unrestricted customer data into model training.
+• Acting across tenants, entities or commercial planes because a user merely mentions another account in conversation.
+• Sending external communications without a visible recipient, content and sending-identity preview.
+SECTION 06
+Product Doctrine and Non-Negotiable Rules
+These requirements outrank convenience, latency and model creativity.
+[TABLE: 13 rows x 3 cols]
+ID | Doctrine | Mandatory product rule
+D-01 | Authoritative state | Model output is explanatory; Zoiko Billing services and records are authoritative.
+D-02 | No guessing | Never invent amounts, states, dates, taxes, FX, discounts, entities, customer identity, permissions or payment evidence.
+D-03 | Plane separation | Tenant-to-customer billing and Zoiko Billing’s own SaaS subscription/commercial billing remain visibly and technically distinct.
+D-04 | Issued-record integrity | Issued invoices are not silently rewritten; correction uses governed credit/void/debit/replacement workflows.
+D-05 | Payment evidence | A message, remittance statement or “I paid” claim is not payment state. Payment status comes from approved evidence.
+D-06 | Permission parity | Assistant capability is never broader than the underlying product permission model.
+D-07 | Human authority | High-consequence actions require explicit user confirmation and any policy-required approval.
+D-08 | Auditability | Material actions must be attributable, explainable and replay-safe.
+D-09 | Prompt isolation | Retrieved files, notes and customer-provided text are untrusted content, not instructions to the assistant runtime.
+D-10 | Privacy | Sensitive financial/customer data is minimized, scoped and excluded from prohibited model inputs.
+D-11 | Safe uncertainty | When context is missing or ambiguous, ask, narrow scope or route; do not guess.
+D-12 | No false completion | The assistant must distinguish draft, submitted, queued, delivered, processed, settled, reconciled and failed states.
+[END TABLE]
+SECTION 07
+Capability Scope and Priority Model
+A tiered capability model keeps launch useful while making the control boundary explicit.
+[TABLE: 16 rows x 4 cols]
+Capability | Launch behavior | Priority | Risk class
+Record discovery | Search customers, invoices, payments, credits, disputes, balances | P0 | Read
+State explanation | Explain status, balance composition, payment allocation, overdue condition | P0 | Read
+Invoice drafting | Create/edit invoice drafts from conversational inputs | P0 | Draft
+Invoice issue workflow | Preview and submit eligible draft for issue | P0 | Governed write
+Payment investigation | Locate payment attempts/evidence/allocations and explain state | P0 | Read
+Reconciliation assistance | Suggest candidate matches and explain unmatched amounts | P0 | Recommendation / governed write
+Credit / adjustment preparation | Prepare credit/debit/void/replacement workflows | P1 | Draft / governed write
+Refund initiation | Prepare eligible refund request | P1 | High-consequence write
+Collections assistance | Prioritize overdue balances and draft reminders | P1 | Draft / controlled communication
+Customer maintenance | Prepare safe updates to customer billing profile | P1 | Governed write
+Reporting Q&A | Answer supported questions from approved billing/reporting data | P1 | Read / aggregate
+Exports | Prepare authorized exports with scope preview | P1 | Read / data egress
+Commercial account help | Explain Zoiko Billing plan/entitlement state in separate commercial context | P1 | Read
+Tax advisory | Determine tax treatment independently | Excluded | Not permitted
+Autonomous collections | Send escalating payment demands without authorized review | Excluded | Not permitted
+[END TABLE]
+SECTION 08
+Conversation Modes and Progressive Authority
+The same conversation may move from understanding to action, but authority must increase deliberately.
+[TABLE: 7 rows x 4 cols]
+Mode | Purpose | Risk | Expected output
+M0 — Explain | Answer product/help questions; no tenant record required | Low | Grounded knowledge answer
+M1 — Inspect | Read authorized tenant/entity records and explain state | Low–medium | Source-linked answer + record references
+M2 — Prepare | Collect/validate inputs and create non-authoritative draft payload | Medium | Structured draft + missing fields + validation
+M3 — Preview | Resolve permissions/policy and show exact proposed consequence | Medium–high | Action preview with authoritative computed values
+M4 — Execute | Invoke authorized domain action after required confirmation/approval | High | Execution receipt + resulting state + audit reference
+M5 — Escalate | Route to human/operations when policy, confidence or failure demands it | Variable | Context package; no unauthorized mutation
+[END TABLE]
+[TABLE: 1 rows x 1 cols]
+PROGRESSION RULE A model may recommend the next mode, but the product—not the model—must determine whether a transition is valid based on context, authorization, policy and workflow state.
+[END TABLE]
+SECTION 09
+Intent Taxonomy and Top User Journeys
+Launch evaluation must cover the journeys users will actually attempt, not only happy-path prompts.
+[TABLE: 13 rows x 3 cols]
+Intent family | Example | Product resolution
+Find / lookup | “Show invoice INV-10428.” | Customer/invoice/payment/credit search
+Explain / why | “Why does Acme still owe $1,250?” | Balance decomposition + allocations + credits
+Summarize | “What is overdue this week?” | Authorized aggregation
+Create draft | “Create an invoice for the August retainer.” | Field collection + invoice draft
+Modify draft | “Change the due date to net 30.” | Draft validation only
+Issue / submit | “Send this invoice.” | Preview + permission + issue/send workflow
+Reconcile | “Match this $5,000 payment.” | Candidate matching + evidence + governed allocation
+Correct | “Customer was overcharged.” | Credit/adjustment workflow, never silent edit
+Refund | “Refund the duplicate payment.” | Eligibility + preview + approval + processor handoff
+Communicate | “Remind them this is overdue.” | Recipient/sender/content preview + communication control
+Export | “Export unpaid invoices for Europe.” | Scope preview + permission + data egress controls
+Help / how-to | “How do partial payments work?” | Governed knowledge answer
+[END TABLE]
+SECTION 10
+Context, Identity, Tenant and Entity Scope
+Context must be visible enough that a user can detect when the assistant is operating in the wrong scope.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CTX-001 | Priority P0 | Title Authenticated context | Evidence Acceptance test / telemetry
+Every tenant-specific assistant turn must bind to the authenticated user, tenant/workspace, active legal entity where relevant, and server-resolved permissions. | Every tenant-specific assistant turn must bind to the authenticated user, tenant/workspace, active legal entity where relevant, and server-resolved permissions. | Every tenant-specific assistant turn must bind to the authenticated user, tenant/workspace, active legal entity where relevant, and server-resolved permissions. | Every tenant-specific assistant turn must bind to the authenticated user, tenant/workspace, active legal entity where relevant, and server-resolved permissions.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CTX-002 | Priority P0 | Title Context visibility | Evidence Acceptance test / telemetry
+The interface must visibly identify the active tenant and, for entity-sensitive tasks, the legal entity/currency context before a consequential action. | The interface must visibly identify the active tenant and, for entity-sensitive tasks, the legal entity/currency context before a consequential action. | The interface must visibly identify the active tenant and, for entity-sensitive tasks, the legal entity/currency context before a consequential action. | The interface must visibly identify the active tenant and, for entity-sensitive tasks, the legal entity/currency context before a consequential action.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CTX-003 | Priority P0 | Title No silent context carryover | Evidence Acceptance test / telemetry
+Changing customer, entity, workspace or commercial plane must invalidate stale action previews and require fresh authorization/policy evaluation. | Changing customer, entity, workspace or commercial plane must invalidate stale action previews and require fresh authorization/policy evaluation. | Changing customer, entity, workspace or commercial plane must invalidate stale action previews and require fresh authorization/policy evaluation. | Changing customer, entity, workspace or commercial plane must invalidate stale action previews and require fresh authorization/policy evaluation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CTX-004 | Priority P0 | Title Cross-tenant prohibition | Evidence Acceptance test / telemetry
+No conversational instruction may grant access to another tenant or entity. Cross-tenant operations require separately authorized product flows. | No conversational instruction may grant access to another tenant or entity. Cross-tenant operations require separately authorized product flows. | No conversational instruction may grant access to another tenant or entity. Cross-tenant operations require separately authorized product flows. | No conversational instruction may grant access to another tenant or entity. Cross-tenant operations require separately authorized product flows.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CTX-005 | Priority P0 | Title Support access distinction | Evidence Acceptance test / telemetry
+Zoiko internal support access, where permitted, must be explicitly identified, separately authorized and audited; the assistant must not silently impersonate a tenant user. | Zoiko internal support access, where permitted, must be explicitly identified, separately authorized and audited; the assistant must not silently impersonate a tenant user. | Zoiko internal support access, where permitted, must be explicitly identified, separately authorized and audited; the assistant must not silently impersonate a tenant user. | Zoiko internal support access, where permitted, must be explicitly identified, separately authorized and audited; the assistant must not silently impersonate a tenant user.
+[END TABLE]
+SECTION 11
+Answer and Evidence Contract
+A useful answer should reveal what the system knows, what it does not know, and what the user can safely do next.
+Standard answer anatomy
+1. Direct answer — concise statement of the authoritative finding.
+2. Evidence — record(s), state(s), amount(s), dates and source references used to reach the answer.
+3. Qualification — ambiguity, stale data, pending processor state or missing evidence, when present.
+4. Next actions — only valid actions for the current role, record state and policy context.
+5. Action status — if a workflow was invoked, distinguish requested/queued/succeeded/failed and expose an audit/reference identifier.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-ANS-001 | Priority P0 | Title Grounded financial answer | Evidence Acceptance test / telemetry
+Tenant financial answers must be grounded in authoritative data retrieved for the current request. The assistant may not rely on conversational memory as the source of a financial fact. | Tenant financial answers must be grounded in authoritative data retrieved for the current request. The assistant may not rely on conversational memory as the source of a financial fact. | Tenant financial answers must be grounded in authoritative data retrieved for the current request. The assistant may not rely on conversational memory as the source of a financial fact. | Tenant financial answers must be grounded in authoritative data retrieved for the current request. The assistant may not rely on conversational memory as the source of a financial fact.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-ANS-002 | Priority P0 | Title Citation to product records | Evidence Acceptance test / telemetry
+Where feasible, answers about specific records must provide in-product references or deep links so the user can inspect the underlying customer, invoice, payment, credit or audit record. | Where feasible, answers about specific records must provide in-product references or deep links so the user can inspect the underlying customer, invoice, payment, credit or audit record. | Where feasible, answers about specific records must provide in-product references or deep links so the user can inspect the underlying customer, invoice, payment, credit or audit record. | Where feasible, answers about specific records must provide in-product references or deep links so the user can inspect the underlying customer, invoice, payment, credit or audit record.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-ANS-003 | Priority P0 | Title Uncertainty disclosure | Evidence Acceptance test / telemetry
+When evidence is incomplete, stale or conflicting, the assistant must state that limitation and avoid presenting an inferred financial state as fact. | When evidence is incomplete, stale or conflicting, the assistant must state that limitation and avoid presenting an inferred financial state as fact. | When evidence is incomplete, stale or conflicting, the assistant must state that limitation and avoid presenting an inferred financial state as fact. | When evidence is incomplete, stale or conflicting, the assistant must state that limitation and avoid presenting an inferred financial state as fact.
+[END TABLE]
+SECTION 12
+Invoice Product Requirements
+Invoice assistance must accelerate work without weakening commercial basis, validation or issued-record integrity.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-001 | Priority P0 | Title Invoice lookup | Evidence Acceptance test / telemetry
+Find authorized invoices by invoice number, customer, status, date, amount, currency and supported semantic criteria. | Find authorized invoices by invoice number, customer, status, date, amount, currency and supported semantic criteria. | Find authorized invoices by invoice number, customer, status, date, amount, currency and supported semantic criteria. | Find authorized invoices by invoice number, customer, status, date, amount, currency and supported semantic criteria.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-002 | Priority P0 | Title Invoice explanation | Evidence Acceptance test / telemetry
+Explain amount due, paid/credited portions, due date, issuance/delivery state and relevant correction history. | Explain amount due, paid/credited portions, due date, issuance/delivery state and relevant correction history. | Explain amount due, paid/credited portions, due date, issuance/delivery state and relevant correction history. | Explain amount due, paid/credited portions, due date, issuance/delivery state and relevant correction history.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-003 | Priority P0 | Title Draft construction | Evidence Acceptance test / telemetry
+Collect required seller, customer, line-item, currency, pricing, tax-input, date and payment-term fields and create a structured draft only after validation. | Collect required seller, customer, line-item, currency, pricing, tax-input, date and payment-term fields and create a structured draft only after validation. | Collect required seller, customer, line-item, currency, pricing, tax-input, date and payment-term fields and create a structured draft only after validation. | Collect required seller, customer, line-item, currency, pricing, tax-input, date and payment-term fields and create a structured draft only after validation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-004 | Priority P0 | Title Authoritative preview | Evidence Acceptance test / telemetry
+Before issue, display server-computed totals and authoritative validation results rather than model-calculated final financial values. | Before issue, display server-computed totals and authoritative validation results rather than model-calculated final financial values. | Before issue, display server-computed totals and authoritative validation results rather than model-calculated final financial values. | Before issue, display server-computed totals and authoritative validation results rather than model-calculated final financial values.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-005 | Priority P0 | Title Issue control | Evidence Acceptance test / telemetry
+Issuance requires explicit user confirmation and any required approval. The model cannot self-confirm. | Issuance requires explicit user confirmation and any required approval. The model cannot self-confirm. | Issuance requires explicit user confirmation and any required approval. The model cannot self-confirm. | Issuance requires explicit user confirmation and any required approval. The model cannot self-confirm.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-006 | Priority P0 | Title Issued immutability | Evidence Acceptance test / telemetry
+Material correction to an issued invoice must route to supported credit/void/debit/replacement workflows and preserve history. | Material correction to an issued invoice must route to supported credit/void/debit/replacement workflows and preserve history. | Material correction to an issued invoice must route to supported credit/void/debit/replacement workflows and preserve history. | Material correction to an issued invoice must route to supported credit/void/debit/replacement workflows and preserve history.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-007 | Priority P0 | Title Delivery distinction | Evidence Acceptance test / telemetry
+The assistant must distinguish invoice issuance from delivery and delivery from payment. | The assistant must distinguish invoice issuance from delivery and delivery from payment. | The assistant must distinguish invoice issuance from delivery and delivery from payment. | The assistant must distinguish invoice issuance from delivery and delivery from payment.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-INV-008 | Priority P0 | Title Duplicate prevention | Evidence Acceptance test / telemetry
+Repeated or retried conversational actions must not create duplicate invoices or duplicate send actions. | Repeated or retried conversational actions must not create duplicate invoices or duplicate send actions. | Repeated or retried conversational actions must not create duplicate invoices or duplicate send actions. | Repeated or retried conversational actions must not create duplicate invoices or duplicate send actions.
+[END TABLE]
+SECTION 13
+Payment and Balance Product Requirements
+Payment state must be evidence-led and balances must be decomposable.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-001 | Priority P0 | Title Payment lookup | Evidence Acceptance test / telemetry
+Locate authorized payment records, payment attempts, allocations and relevant processor/reference identifiers. | Locate authorized payment records, payment attempts, allocations and relevant processor/reference identifiers. | Locate authorized payment records, payment attempts, allocations and relevant processor/reference identifiers. | Locate authorized payment records, payment attempts, allocations and relevant processor/reference identifiers.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-002 | Priority P0 | Title No payment-by-assertion | Evidence Acceptance test / telemetry
+Customer/user statements, email receipts or uploaded documents may be evidence for review but must not directly set payment state. | Customer/user statements, email receipts or uploaded documents may be evidence for review but must not directly set payment state. | Customer/user statements, email receipts or uploaded documents may be evidence for review but must not directly set payment state. | Customer/user statements, email receipts or uploaded documents may be evidence for review but must not directly set payment state.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-003 | Priority P0 | Title Balance decomposition | Evidence Acceptance test / telemetry
+Explain outstanding balance as invoice amount minus applied payments/credits/adjustments plus other authoritative components. | Explain outstanding balance as invoice amount minus applied payments/credits/adjustments plus other authoritative components. | Explain outstanding balance as invoice amount minus applied payments/credits/adjustments plus other authoritative components. | Explain outstanding balance as invoice amount minus applied payments/credits/adjustments plus other authoritative components.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-004 | Priority P0 | Title Pending-state clarity | Evidence Acceptance test / telemetry
+Differentiate initiated, pending, failed, settled, reversed, disputed and allocated states supported by the product/payment provider. | Differentiate initiated, pending, failed, settled, reversed, disputed and allocated states supported by the product/payment provider. | Differentiate initiated, pending, failed, settled, reversed, disputed and allocated states supported by the product/payment provider. | Differentiate initiated, pending, failed, settled, reversed, disputed and allocated states supported by the product/payment provider.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-005 | Priority P0 | Title Allocation trace | Evidence Acceptance test / telemetry
+Show which payment amounts are allocated to which invoice(s) and identify unapplied residuals where authorized. | Show which payment amounts are allocated to which invoice(s) and identify unapplied residuals where authorized. | Show which payment amounts are allocated to which invoice(s) and identify unapplied residuals where authorized. | Show which payment amounts are allocated to which invoice(s) and identify unapplied residuals where authorized.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PAY-006 | Priority P0 | Title Sensitive-data minimization | Evidence Acceptance test / telemetry
+Do not display or send prohibited raw card/bank credentials to the model; use tokenized/redacted identifiers only. | Do not display or send prohibited raw card/bank credentials to the model; use tokenized/redacted identifiers only. | Do not display or send prohibited raw card/bank credentials to the model; use tokenized/redacted identifiers only. | Do not display or send prohibited raw card/bank credentials to the model; use tokenized/redacted identifiers only.
+[END TABLE]
+SECTION 14
+Reconciliation, Credits, Adjustments and Refunds
+The assistant may reduce reasoning effort, but authoritative matching and financial corrections remain governed workflows.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REC-001 | Priority P0 | Title Match recommendations | Evidence Acceptance test / telemetry
+Suggest reconciliation candidates using approved data and explain why each candidate matches; do not silently commit an allocation. | Suggest reconciliation candidates using approved data and explain why each candidate matches; do not silently commit an allocation. | Suggest reconciliation candidates using approved data and explain why each candidate matches; do not silently commit an allocation. | Suggest reconciliation candidates using approved data and explain why each candidate matches; do not silently commit an allocation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REC-002 | Priority P0 | Title Ambiguity threshold | Evidence Acceptance test / telemetry
+If more than one plausible match remains or the confidence threshold is not met, the product must require user review. | If more than one plausible match remains or the confidence threshold is not met, the product must require user review. | If more than one plausible match remains or the confidence threshold is not met, the product must require user review. | If more than one plausible match remains or the confidence threshold is not met, the product must require user review.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REC-003 | Priority P0 | Title Reconciliation commit | Evidence Acceptance test / telemetry
+Applying a match requires explicit authorization and must execute through the canonical reconciliation service. | Applying a match requires explicit authorization and must execute through the canonical reconciliation service. | Applying a match requires explicit authorization and must execute through the canonical reconciliation service. | Applying a match requires explicit authorization and must execute through the canonical reconciliation service.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CRD-001 | Priority P1 | Title Credit/adjustment path | Evidence Acceptance test / telemetry
+When correcting an issued invoice, present only correction mechanisms valid for that record state and jurisdiction/configuration. | When correcting an issued invoice, present only correction mechanisms valid for that record state and jurisdiction/configuration. | When correcting an issued invoice, present only correction mechanisms valid for that record state and jurisdiction/configuration. | When correcting an issued invoice, present only correction mechanisms valid for that record state and jurisdiction/configuration.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REF-001 | Priority P1 | Title Refund eligibility | Evidence Acceptance test / telemetry
+Before refund preview, validate original payment, available refundable amount, currency, provider capability, prior refunds and applicable approval policy. | Before refund preview, validate original payment, available refundable amount, currency, provider capability, prior refunds and applicable approval policy. | Before refund preview, validate original payment, available refundable amount, currency, provider capability, prior refunds and applicable approval policy. | Before refund preview, validate original payment, available refundable amount, currency, provider capability, prior refunds and applicable approval policy.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REF-002 | Priority P1 | Title Refund confirmation | Evidence Acceptance test / telemetry
+Show exact refund amount/currency/destination-safe identifier and consequences before authorization; never expose full sensitive payment credentials. | Show exact refund amount/currency/destination-safe identifier and consequences before authorization; never expose full sensitive payment credentials. | Show exact refund amount/currency/destination-safe identifier and consequences before authorization; never expose full sensitive payment credentials. | Show exact refund amount/currency/destination-safe identifier and consequences before authorization; never expose full sensitive payment credentials.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-REF-003 | Priority P1 | Title Asynchronous completion | Evidence Acceptance test / telemetry
+A submitted refund must not be represented as completed until the authoritative payment/provider state confirms the appropriate terminal status. | A submitted refund must not be represented as completed until the authoritative payment/provider state confirms the appropriate terminal status. | A submitted refund must not be represented as completed until the authoritative payment/provider state confirms the appropriate terminal status. | A submitted refund must not be represented as completed until the authoritative payment/provider state confirms the appropriate terminal status.
+[END TABLE]
+SECTION 15
+Customer, Account and Commercial-Basis Requirements
+The assistant must respect customer identity, seller identity and commercial basis rather than treating free text as master data.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CUS-001 | Priority P0 | Title Customer resolution | Evidence Acceptance test / telemetry
+Resolve customer identity against authoritative records and require disambiguation when names collide or confidence is insufficient. | Resolve customer identity against authoritative records and require disambiguation when names collide or confidence is insufficient. | Resolve customer identity against authoritative records and require disambiguation when names collide or confidence is insufficient. | Resolve customer identity against authoritative records and require disambiguation when names collide or confidence is insufficient.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CUS-002 | Priority P1 | Title Profile updates | Evidence Acceptance test / telemetry
+Customer master-data changes must show the fields being changed, preserve audit history and honor edit permissions. | Customer master-data changes must show the fields being changed, preserve audit history and honor edit permissions. | Customer master-data changes must show the fields being changed, preserve audit history and honor edit permissions. | Customer master-data changes must show the fields being changed, preserve audit history and honor edit permissions.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CUS-003 | Priority P0 | Title Commercial basis | Evidence Acceptance test / telemetry
+Prices, terms, discounts and contractual basis must come from approved configuration or explicit authorized input; the model may not invent them. | Prices, terms, discounts and contractual basis must come from approved configuration or explicit authorized input; the model may not invent them. | Prices, terms, discounts and contractual basis must come from approved configuration or explicit authorized input; the model may not invent them. | Prices, terms, discounts and contractual basis must come from approved configuration or explicit authorized input; the model may not invent them.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CUS-004 | Priority P0 | Title Entity correctness | Evidence Acceptance test / telemetry
+Billing seller/legal entity must be resolved from authoritative configuration, not inferred from conversation. | Billing seller/legal entity must be resolved from authoritative configuration, not inferred from conversation. | Billing seller/legal entity must be resolved from authoritative configuration, not inferred from conversation. | Billing seller/legal entity must be resolved from authoritative configuration, not inferred from conversation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-CUS-005 | Priority P1 | Title Duplicate customer control | Evidence Acceptance test / telemetry
+Assistant-created customer drafts must run duplicate-resolution logic before authoritative creation. | Assistant-created customer drafts must run duplicate-resolution logic before authoritative creation. | Assistant-created customer drafts must run duplicate-resolution logic before authoritative creation. | Assistant-created customer drafts must run duplicate-resolution logic before authoritative creation.
+[END TABLE]
+SECTION 16
+External Communication and Collections Requirements
+Drafting is low-friction; sending is a controlled act with visible identity, recipient and content.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-001 | Priority P1 | Title Draft communications | Evidence Acceptance test / telemetry
+Draft invoice reminders, payment follow-ups and supported customer messages using record-grounded facts. | Draft invoice reminders, payment follow-ups and supported customer messages using record-grounded facts. | Draft invoice reminders, payment follow-ups and supported customer messages using record-grounded facts. | Draft invoice reminders, payment follow-ups and supported customer messages using record-grounded facts.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-002 | Priority P0 | Title Send preview | Evidence Acceptance test / telemetry
+Before sending, show recipient(s), sender identity/channel, message content, attached/referenced record and intended action. | Before sending, show recipient(s), sender identity/channel, message content, attached/referenced record and intended action. | Before sending, show recipient(s), sender identity/channel, message content, attached/referenced record and intended action. | Before sending, show recipient(s), sender identity/channel, message content, attached/referenced record and intended action.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-003 | Priority P0 | Title Recipient authority | Evidence Acceptance test / telemetry
+Recipient addresses/numbers must come from authorized customer/contact records or explicit validated user input; never model invention. | Recipient addresses/numbers must come from authorized customer/contact records or explicit validated user input; never model invention. | Recipient addresses/numbers must come from authorized customer/contact records or explicit validated user input; never model invention. | Recipient addresses/numbers must come from authorized customer/contact records or explicit validated user input; never model invention.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-004 | Priority P0 | Title Delivery semantics | Evidence Acceptance test / telemetry
+Sent, accepted by provider, delivered, bounced and failed must remain distinct states. | Sent, accepted by provider, delivered, bounced and failed must remain distinct states. | Sent, accepted by provider, delivered, bounced and failed must remain distinct states. | Sent, accepted by provider, delivered, bounced and failed must remain distinct states.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-005 | Priority P0 | Title No autonomous escalation | Evidence Acceptance test / telemetry
+The launch assistant must not independently decide to escalate collection pressure, threaten consequences, or initiate legal action. | The launch assistant must not independently decide to escalate collection pressure, threaten consequences, or initiate legal action. | The launch assistant must not independently decide to escalate collection pressure, threaten consequences, or initiate legal action. | The launch assistant must not independently decide to escalate collection pressure, threaten consequences, or initiate legal action.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-COM-006 | Priority P1 | Title Opt-out / policy compliance | Evidence Acceptance test / telemetry
+Communications must respect configured legal, consent and notification policies where applicable. | Communications must respect configured legal, consent and notification policies where applicable. | Communications must respect configured legal, consent and notification policies where applicable. | Communications must respect configured legal, consent and notification policies where applicable.
+[END TABLE]
+SECTION 17
+Reporting, Analytics and Export Requirements
+The assistant can make billing intelligence easier to ask for without turning model arithmetic into accounting truth.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RPT-001 | Priority P1 | Title Approved metric definitions | Evidence Acceptance test / telemetry
+Any KPI or aggregate answer must use approved metric definitions and authoritative query/reporting services. | Any KPI or aggregate answer must use approved metric definitions and authoritative query/reporting services. | Any KPI or aggregate answer must use approved metric definitions and authoritative query/reporting services. | Any KPI or aggregate answer must use approved metric definitions and authoritative query/reporting services.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RPT-002 | Priority P1 | Title Scope disclosure | Evidence Acceptance test / telemetry
+Aggregate answers must state the relevant entity, currency, date range and filters where ambiguity would alter interpretation. | Aggregate answers must state the relevant entity, currency, date range and filters where ambiguity would alter interpretation. | Aggregate answers must state the relevant entity, currency, date range and filters where ambiguity would alter interpretation. | Aggregate answers must state the relevant entity, currency, date range and filters where ambiguity would alter interpretation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RPT-003 | Priority P0 | Title Currency integrity | Evidence Acceptance test / telemetry
+Do not sum unlike currencies into a single number unless an approved conversion methodology and rate source are explicitly applied and disclosed. | Do not sum unlike currencies into a single number unless an approved conversion methodology and rate source are explicitly applied and disclosed. | Do not sum unlike currencies into a single number unless an approved conversion methodology and rate source are explicitly applied and disclosed. | Do not sum unlike currencies into a single number unless an approved conversion methodology and rate source are explicitly applied and disclosed.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RPT-004 | Priority P1 | Title Export preview | Evidence Acceptance test / telemetry
+Before generating a data export, show scope, record classes, date/filter criteria, format and any applicable sensitive-data warning. | Before generating a data export, show scope, record classes, date/filter criteria, format and any applicable sensitive-data warning. | Before generating a data export, show scope, record classes, date/filter criteria, format and any applicable sensitive-data warning. | Before generating a data export, show scope, record classes, date/filter criteria, format and any applicable sensitive-data warning.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RPT-005 | Priority P1 | Title Data egress authorization | Evidence Acceptance test / telemetry
+Exports must honor permission and tenant/entity boundaries and be audited as data-egress events where policy requires. | Exports must honor permission and tenant/entity boundaries and be audited as data-egress events where policy requires. | Exports must honor permission and tenant/entity boundaries and be audited as data-egress events where policy requires. | Exports must honor permission and tenant/entity boundaries and be audited as data-egress events where policy requires.
+[END TABLE]
+SECTION 18
+Zoiko Commercial Account vs Tenant Billing Plane
+This separation is a launch-critical product invariant, not a wording preference.
+Two commercial planes
+[TABLE: 3 rows x 4 cols]
+Plane | What it represents | Examples | Assistant rule
+Tenant billing plane | A Zoiko Billing customer billing its own customers | Tenant invoices, customer payments, credits, balances, reconciliation | Default operational assistant context inside tenant billing workspace
+Zoiko commercial plane | Zoiko charging the tenant for use of Zoiko Billing | Zoiko subscription, entitlements, Zoiko-issued invoices, plan/payment state | Separate account/billing context with distinct labels, permissions and data tools
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PLN-001 | Priority P0 | Title Visible plane label | Evidence Acceptance test / telemetry
+The assistant must label which commercial plane is active whenever an answer or action could be confused between tenant billing and Zoiko’s own charges. | The assistant must label which commercial plane is active whenever an answer or action could be confused between tenant billing and Zoiko’s own charges. | The assistant must label which commercial plane is active whenever an answer or action could be confused between tenant billing and Zoiko’s own charges. | The assistant must label which commercial plane is active whenever an answer or action could be confused between tenant billing and Zoiko’s own charges.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PLN-002 | Priority P0 | Title Tool separation | Evidence Acceptance test / telemetry
+Data access and actions for the two planes must use distinct authorized capabilities; a conversational reference must not silently switch planes. | Data access and actions for the two planes must use distinct authorized capabilities; a conversational reference must not silently switch planes. | Data access and actions for the two planes must use distinct authorized capabilities; a conversational reference must not silently switch planes. | Data access and actions for the two planes must use distinct authorized capabilities; a conversational reference must not silently switch planes.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-PLN-003 | Priority P0 | Title No cross-plane mutation | Evidence Acceptance test / telemetry
+An action prepared in one plane must be invalidated if the user switches to the other plane before execution. | An action prepared in one plane must be invalidated if the user switches to the other plane before execution. | An action prepared in one plane must be invalidated if the user switches to the other plane before execution. | An action prepared in one plane must be invalidated if the user switches to the other plane before execution.
+[END TABLE]
+SECTION 19
+Knowledge and Retrieval Product Requirements
+Knowledge answers need governed sources, freshness and instruction isolation.
+Knowledge corpus for Zoiko Billing
+• Product help and feature documentation.
+• Billing policies and operating procedures.
+• Invoice, payment, reconciliation, credit, refund and dispute SOPs.
+• Permission and approval guidance.
+• Supported integration documentation and troubleshooting runbooks.
+• Security, privacy and compliance guidance approved for the target audience.
+• Pricing/plan/entitlement content only from approved commercial sources and with effective-date/version control.
+• Jurisdiction-specific guidance only where approved and explicitly scoped; no free-form legal/tax invention.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-KB-001 | Priority P0 | Title Approved sources only | Evidence Acceptance test / telemetry
+The assistant may ground product/policy answers only in approved, versioned sources available to the user’s audience/role. | The assistant may ground product/policy answers only in approved, versioned sources available to the user’s audience/role. | The assistant may ground product/policy answers only in approved, versioned sources available to the user’s audience/role. | The assistant may ground product/policy answers only in approved, versioned sources available to the user’s audience/role.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-KB-002 | Priority P0 | Title Freshness metadata | Evidence Acceptance test / telemetry
+Retrieved knowledge must carry source, version/effective date and audience classification sufficient to prevent obsolete guidance from being presented as current. | Retrieved knowledge must carry source, version/effective date and audience classification sufficient to prevent obsolete guidance from being presented as current. | Retrieved knowledge must carry source, version/effective date and audience classification sufficient to prevent obsolete guidance from being presented as current. | Retrieved knowledge must carry source, version/effective date and audience classification sufficient to prevent obsolete guidance from being presented as current.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-KB-003 | Priority P0 | Title Prompt-injection resistance | Evidence Acceptance test / telemetry
+Instructions embedded in retrieved documents, uploaded files, invoice descriptions or customer notes must be treated as data, not system authority. | Instructions embedded in retrieved documents, uploaded files, invoice descriptions or customer notes must be treated as data, not system authority. | Instructions embedded in retrieved documents, uploaded files, invoice descriptions or customer notes must be treated as data, not system authority. | Instructions embedded in retrieved documents, uploaded files, invoice descriptions or customer notes must be treated as data, not system authority.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-KB-004 | Priority P0 | Title Conflict behavior | Evidence Acceptance test / telemetry
+When two authoritative sources conflict, do not synthesize a convenient answer; identify the conflict and route to the controlling source or human owner. | When two authoritative sources conflict, do not synthesize a convenient answer; identify the conflict and route to the controlling source or human owner. | When two authoritative sources conflict, do not synthesize a convenient answer; identify the conflict and route to the controlling source or human owner. | When two authoritative sources conflict, do not synthesize a convenient answer; identify the conflict and route to the controlling source or human owner.
+[END TABLE]
+SECTION 20
+UI/UX Product Requirements
+The assistant must feel native to billing work and keep consequential context visible.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-001 | Priority P0 | Title Embedded entry | Evidence Acceptance test / telemetry
+Provide assistant access from global billing navigation and context-sensitive record surfaces. | Provide assistant access from global billing navigation and context-sensitive record surfaces. | Provide assistant access from global billing navigation and context-sensitive record surfaces. | Provide assistant access from global billing navigation and context-sensitive record surfaces.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-002 | Priority P0 | Title Desktop panel | Evidence Acceptance test / telemetry
+Default desktop experience uses a side panel that preserves the current billing page; complex tasks may expand to full workspace. | Default desktop experience uses a side panel that preserves the current billing page; complex tasks may expand to full workspace. | Default desktop experience uses a side panel that preserves the current billing page; complex tasks may expand to full workspace. | Default desktop experience uses a side panel that preserves the current billing page; complex tasks may expand to full workspace.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-003 | Priority P0 | Title Record context chips | Evidence Acceptance test / telemetry
+Show active customer/invoice/entity context when it materially constrains the answer/action. | Show active customer/invoice/entity context when it materially constrains the answer/action. | Show active customer/invoice/entity context when it materially constrains the answer/action. | Show active customer/invoice/entity context when it materially constrains the answer/action.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-004 | Priority P0 | Title Structured cards | Evidence Acceptance test / telemetry
+Render records, evidence, previews, validations and execution receipts as structured UI components rather than relying only on prose. | Render records, evidence, previews, validations and execution receipts as structured UI components rather than relying only on prose. | Render records, evidence, previews, validations and execution receipts as structured UI components rather than relying only on prose. | Render records, evidence, previews, validations and execution receipts as structured UI components rather than relying only on prose.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-005 | Priority P0 | Title Explicit confirmation | Evidence Acceptance test / telemetry
+Consequential actions require a distinct confirmation control; text generation cannot masquerade as user confirmation. | Consequential actions require a distinct confirmation control; text generation cannot masquerade as user confirmation. | Consequential actions require a distinct confirmation control; text generation cannot masquerade as user confirmation. | Consequential actions require a distinct confirmation control; text generation cannot masquerade as user confirmation.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-006 | Priority P0 | Title Undo semantics | Evidence Acceptance test / telemetry
+Offer “undo” only where the underlying domain operation is genuinely reversible. Otherwise present the correct compensating/correction workflow. | Offer “undo” only where the underlying domain operation is genuinely reversible. Otherwise present the correct compensating/correction workflow. | Offer “undo” only where the underlying domain operation is genuinely reversible. Otherwise present the correct compensating/correction workflow. | Offer “undo” only where the underlying domain operation is genuinely reversible. Otherwise present the correct compensating/correction workflow.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-007 | Priority P0 | Title Progress and async state | Evidence Acceptance test / telemetry
+Show pending/processing states without falsely implying completion for asynchronous billing/payment operations. | Show pending/processing states without falsely implying completion for asynchronous billing/payment operations. | Show pending/processing states without falsely implying completion for asynchronous billing/payment operations. | Show pending/processing states without falsely implying completion for asynchronous billing/payment operations.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-UX-008 | Priority P1 | Title Mobile parity | Evidence Acceptance test / telemetry
+Mobile may simplify layout but must preserve the same permission, confirmation, evidence and security controls. | Mobile may simplify layout but must preserve the same permission, confirmation, evidence and security controls. | Mobile may simplify layout but must preserve the same permission, confirmation, evidence and security controls. | Mobile may simplify layout but must preserve the same permission, confirmation, evidence and security controls.
+[END TABLE]
+SECTION 21
+AI Risk Model and Action Classification
+Risk is classified by consequence, not by how confident the model sounds.
+[TABLE: 7 rows x 4 cols]
+Class | Examples | Minimum control | Outcome
+R0 — Informational | Generic product explanation; no tenant data | Normal answer | Grounded KB answer
+R1 — Tenant read | Record lookup/explanation | Permission + tenant scope | Read-only structured answer
+R2 — Draft/preparation | Invoice draft, reminder draft, match suggestion | Validation + no authoritative mutation | Draft artifact
+R3 — Governed mutation | Issue invoice, apply reconciliation, customer update | Permission + preview + explicit confirmation + idempotency | Domain action receipt
+R4 — High consequence | Refund, credit/void, write-off or policy-sensitive action | Enhanced policy, approval/maker-checker as configured, reason capture | Controlled action + evidence
+RX — Prohibited | Direct DB mutation, secret exposure, unauthorized cross-tenant action | Block | Safe refusal / route
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RSK-001 | Priority P0 | Title Server-side risk resolution | Evidence Acceptance test / telemetry
+Risk/action policy must be enforced by product services. Model-generated labels are advisory and cannot lower the required control level. | Risk/action policy must be enforced by product services. Model-generated labels are advisory and cannot lower the required control level. | Risk/action policy must be enforced by product services. Model-generated labels are advisory and cannot lower the required control level. | Risk/action policy must be enforced by product services. Model-generated labels are advisory and cannot lower the required control level.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-RSK-002 | Priority P0 | Title Confirmation expiry | Evidence Acceptance test / telemetry
+Action previews must expire or be invalidated when material context, authoritative data, permissions or policy state changes. | Action previews must expire or be invalidated when material context, authoritative data, permissions or policy state changes. | Action previews must expire or be invalidated when material context, authoritative data, permissions or policy state changes. | Action previews must expire or be invalidated when material context, authoritative data, permissions or policy state changes.
+[END TABLE]
+SECTION 22
+Security, Privacy and Data Governance Requirements
+AI convenience must not expand the sensitive-data exposure surface.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-001 | Priority P0 | Title Least privilege | Evidence Acceptance test / telemetry
+Assistant retrieval and actions operate with the authenticated principal’s effective permissions and scoped service credentials. | Assistant retrieval and actions operate with the authenticated principal’s effective permissions and scoped service credentials. | Assistant retrieval and actions operate with the authenticated principal’s effective permissions and scoped service credentials. | Assistant retrieval and actions operate with the authenticated principal’s effective permissions and scoped service credentials.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-002 | Priority P0 | Title Tenant isolation | Evidence Acceptance test / telemetry
+No prompt, cache, retrieval index, trace or model call may cause tenant data to leak across tenant boundaries. | No prompt, cache, retrieval index, trace or model call may cause tenant data to leak across tenant boundaries. | No prompt, cache, retrieval index, trace or model call may cause tenant data to leak across tenant boundaries. | No prompt, cache, retrieval index, trace or model call may cause tenant data to leak across tenant boundaries.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-003 | Priority P0 | Title Secret exclusion | Evidence Acceptance test / telemetry
+API keys, access tokens, signing secrets, CVC, full PAN and other prohibited secrets are blocked/redacted from model context and logs. | API keys, access tokens, signing secrets, CVC, full PAN and other prohibited secrets are blocked/redacted from model context and logs. | API keys, access tokens, signing secrets, CVC, full PAN and other prohibited secrets are blocked/redacted from model context and logs. | API keys, access tokens, signing secrets, CVC, full PAN and other prohibited secrets are blocked/redacted from model context and logs.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-004 | Priority P0 | Title Prompt/data separation | Evidence Acceptance test / telemetry
+System/developer instructions, tool metadata and retrieved business data must be separated with explicit trust boundaries. | System/developer instructions, tool metadata and retrieved business data must be separated with explicit trust boundaries. | System/developer instructions, tool metadata and retrieved business data must be separated with explicit trust boundaries. | System/developer instructions, tool metadata and retrieved business data must be separated with explicit trust boundaries.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-005 | Priority P0 | Title Retention policy | Evidence Acceptance test / telemetry
+Conversation and model telemetry retention must be configurable/governed and aligned to approved privacy, security and contractual requirements. | Conversation and model telemetry retention must be configurable/governed and aligned to approved privacy, security and contractual requirements. | Conversation and model telemetry retention must be configurable/governed and aligned to approved privacy, security and contractual requirements. | Conversation and model telemetry retention must be configurable/governed and aligned to approved privacy, security and contractual requirements.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-006 | Priority P0 | Title Training default | Evidence Acceptance test / telemetry
+Tenant/customer financial data must not be used for foundation-model training by default. | Tenant/customer financial data must not be used for foundation-model training by default. | Tenant/customer financial data must not be used for foundation-model training by default. | Tenant/customer financial data must not be used for foundation-model training by default.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-007 | Priority P1 | Title Sensitive transcript controls | Evidence Acceptance test / telemetry
+High-risk values should be masked or omitted from user-visible history where product policy requires; audit evidence must remain appropriately protected. | High-risk values should be masked or omitted from user-visible history where product policy requires; audit evidence must remain appropriately protected. | High-risk values should be masked or omitted from user-visible history where product policy requires; audit evidence must remain appropriately protected. | High-risk values should be masked or omitted from user-visible history where product policy requires; audit evidence must remain appropriately protected.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-SEC-008 | Priority P0 | Title Abuse controls | Evidence Acceptance test / telemetry
+Rate limits, anomalous-use detection and safeguards must prevent data-exfiltration prompting, brute-force record enumeration and automated misuse. | Rate limits, anomalous-use detection and safeguards must prevent data-exfiltration prompting, brute-force record enumeration and automated misuse. | Rate limits, anomalous-use detection and safeguards must prevent data-exfiltration prompting, brute-force record enumeration and automated misuse. | Rate limits, anomalous-use detection and safeguards must prevent data-exfiltration prompting, brute-force record enumeration and automated misuse.
+[END TABLE]
+SECTION 23
+Audit, Evidence and Explainability Requirements
+The system must distinguish conversational narration from actual events that changed billing state.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-AUD-001 | Priority P0 | Title Material action event | Evidence Acceptance test / telemetry
+Each material assistant-assisted action records actor, tenant/entity, action type, target record, preview/version, authorization outcome, execution result, timestamp and correlation/idempotency reference. | Each material assistant-assisted action records actor, tenant/entity, action type, target record, preview/version, authorization outcome, execution result, timestamp and correlation/idempotency reference. | Each material assistant-assisted action records actor, tenant/entity, action type, target record, preview/version, authorization outcome, execution result, timestamp and correlation/idempotency reference. | Each material assistant-assisted action records actor, tenant/entity, action type, target record, preview/version, authorization outcome, execution result, timestamp and correlation/idempotency reference.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-AUD-002 | Priority P0 | Title Prompt provenance boundary | Evidence Acceptance test / telemetry
+Audit evidence should record enough model/tool versioning and decision metadata for investigation without indiscriminately persisting secrets or unnecessary sensitive prompt content. | Audit evidence should record enough model/tool versioning and decision metadata for investigation without indiscriminately persisting secrets or unnecessary sensitive prompt content. | Audit evidence should record enough model/tool versioning and decision metadata for investigation without indiscriminately persisting secrets or unnecessary sensitive prompt content. | Audit evidence should record enough model/tool versioning and decision metadata for investigation without indiscriminately persisting secrets or unnecessary sensitive prompt content.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-AUD-003 | Priority P0 | Title Human confirmation evidence | Evidence Acceptance test / telemetry
+Where confirmation/approval is required, capture the confirming actor and what was confirmed rather than only a generic “approved” flag. | Where confirmation/approval is required, capture the confirming actor and what was confirmed rather than only a generic “approved” flag. | Where confirmation/approval is required, capture the confirming actor and what was confirmed rather than only a generic “approved” flag. | Where confirmation/approval is required, capture the confirming actor and what was confirmed rather than only a generic “approved” flag.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-AUD-004 | Priority P0 | Title State provenance | Evidence Acceptance test / telemetry
+When explaining a financial state, the assistant should identify the authoritative record/service evidence used so users can independently verify material claims. | When explaining a financial state, the assistant should identify the authoritative record/service evidence used so users can independently verify material claims. | When explaining a financial state, the assistant should identify the authoritative record/service evidence used so users can independently verify material claims. | When explaining a financial state, the assistant should identify the authoritative record/service evidence used so users can independently verify material claims.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-AUD-005 | Priority P0 | Title No audit substitution | Evidence Acceptance test / telemetry
+Chat transcripts are not a substitute for canonical financial/audit records. | Chat transcripts are not a substitute for canonical financial/audit records. | Chat transcripts are not a substitute for canonical financial/audit records. | Chat transcripts are not a substitute for canonical financial/audit records.
+[END TABLE]
+SECTION 24
+Globalization, Currency, Localization and Regulatory Boundaries
+Global support requires explicit context, not universal assumptions.
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-GLB-001 | Priority P1 | Title Locale-aware presentation | Evidence Acceptance test / telemetry
+Dates, numbers, currency symbols and localized text may adapt to user locale while retaining unambiguous ISO currency/entity context where material. | Dates, numbers, currency symbols and localized text may adapt to user locale while retaining unambiguous ISO currency/entity context where material. | Dates, numbers, currency symbols and localized text may adapt to user locale while retaining unambiguous ISO currency/entity context where material. | Dates, numbers, currency symbols and localized text may adapt to user locale while retaining unambiguous ISO currency/entity context where material.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-GLB-002 | Priority P0 | Title Multi-currency discipline | Evidence Acceptance test / telemetry
+The assistant must preserve source currency and must not silently convert or aggregate across currencies. | The assistant must preserve source currency and must not silently convert or aggregate across currencies. | The assistant must preserve source currency and must not silently convert or aggregate across currencies. | The assistant must preserve source currency and must not silently convert or aggregate across currencies.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-GLB-003 | Priority P1 | Title Timezone clarity | Evidence Acceptance test / telemetry
+Time-sensitive states use authoritative timestamps and should expose timezone when it changes interpretation of due/processed/event timing. | Time-sensitive states use authoritative timestamps and should expose timezone when it changes interpretation of due/processed/event timing. | Time-sensitive states use authoritative timestamps and should expose timezone when it changes interpretation of due/processed/event timing. | Time-sensitive states use authoritative timestamps and should expose timezone when it changes interpretation of due/processed/event timing.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-GLB-004 | Priority P0 | Title Jurisdiction boundary | Evidence Acceptance test / telemetry
+Tax, invoicing, retention and communications rules must come from approved jurisdiction/configuration services or content; the assistant does not create legal rules. | Tax, invoicing, retention and communications rules must come from approved jurisdiction/configuration services or content; the assistant does not create legal rules. | Tax, invoicing, retention and communications rules must come from approved jurisdiction/configuration services or content; the assistant does not create legal rules. | Tax, invoicing, retention and communications rules must come from approved jurisdiction/configuration services or content; the assistant does not create legal rules.
+[END TABLE]
+[TABLE: 2 rows x 4 cols]
+Requirement ZB-PRD-GLB-005 | Priority P2 | Title Language fallback | Evidence Acceptance test / telemetry
+If supported localized knowledge is unavailable, the product must clearly fall back to an approved language/source rather than fabricate localized policy. | If supported localized knowledge is unavailable, the product must clearly fall back to an approved language/source rather than fabricate localized policy. | If supported localized knowledge is unavailable, the product must clearly fall back to an approved language/source rather than fabricate localized policy. | If supported localized knowledge is unavailable, the product must clearly fall back to an approved language/source rather than fabricate localized policy.
+[END TABLE]
+SECTION 25
+Dependencies and Integration Boundaries
+The chatbot is an orchestration consumer of authoritative product capabilities.
+[TABLE: 13 rows x 4 cols]
+Dependency | Purpose | Priority | Boundary
+Identity / SSO | Authenticated principal, session and tenant context | P0 | Fail closed
+Authorization / RBAC | Effective permissions and approvals | P0 | Fail closed
+Customer service | Customer master data and contacts | P0 | Read/write through domain service only
+Invoice service | Draft, issue, state and correction workflows | P0 | Canonical invoice authority
+Payment service / provider adapter | Payment attempts, settlement/refund state | P0 | Provider + internal state authority
+Ledger / balance service | Balance composition and financial events | P0 | Read authoritative state
+Reconciliation service | Candidate matching and application | P0 | Canonical allocation workflow
+Notification/communications | Email/SMS/document delivery where supported | P1 | Sender/recipient/delivery state authority
+Reporting/analytics | Approved aggregates and metrics | P1 | No model-only KPI computation
+Knowledge/RAG | Approved product/policy sources | P0 | Versioned/permission-aware retrieval
+Audit/evidence | Immutable/controlled event evidence | P0 | Mandatory for material action
+Observability | Tracing, metrics, evaluation and incident signals | P0 | PII/secret-conscious telemetry
+[END TABLE]
+SECTION 26
+Success Metrics and Product KPIs
+Launch success is measured by task completion and trust, not message volume.
+[TABLE: 11 rows x 4 cols]
+Metric | Definition | Target | Measurement
+Task success rate | % of benchmark user tasks completed correctly without unsupported claims | ≥ 90% P0 benchmark at launch; ≥ 95% post-hardening target | Weekly eval + release gate
+Grounded answer precision | Material factual claims supported by authoritative source/tool output | ≥ 99% for financial-state eval set | Automated + human audit
+Unauthorized action rate | Actions executed without required permission/confirmation/approval | 0 | Release blocker
+Duplicate mutation rate | Duplicate invoices/actions from retries/replay | 0 for idempotent protected flows | Production telemetry
+Median time-to-answer | Time from user submit to useful grounded response for common reads | Target set by architecture; product objective < 5s where dependencies allow | Performance telemetry
+Task-time reduction | Time saved vs standard UI for benchmark workflows | ≥ 30% median improvement on selected P0 journeys | Usability study
+Escalation quality | Human escalations containing sufficient structured context | ≥ 95% complete on defined fields | Support audit
+User trust score | Users rating answer/action confidence after verified tasks | ≥ 4.2/5 target after stabilization | In-product research
+Hallucinated financial fact rate | Unsupported material amount/date/state/entity fact | 0 tolerance in release gate set | Red-team eval
+Security boundary violations | Cross-tenant/secret exposure in tests or production | 0 | Security gate / incident metrics
+[END TABLE]
+SECTION 27
+Product Analytics and Evaluation Instrumentation
+Instrument the funnel from ask → evidence → preview → action → verified outcome without turning telemetry into a privacy liability.
+Required event families
+• assistant_opened / entry_surface / active_context
+• intent_resolved / intent_uncertain / clarification_requested
+• tool_call_started / succeeded / failed / denied
+• answer_rendered / source_opened / record_deeplink_opened
+• draft_created / validation_failed / preview_generated / preview_invalidated
+• confirmation_requested / confirmation_completed / approval_required / approval_denied
+• action_submitted / action_succeeded / action_failed / action_state_pending
+• escalation_created / escalation_reason / handoff_completed
+• user_feedback / correction_reported / unsafe_output_reported
+[TABLE: 1 rows x 1 cols]
+TELEMETRY RULE Use structured IDs, outcome categories and redacted context. Do not default to logging full prompts, secrets or unnecessary customer financial text merely because it is convenient for debugging.
+[END TABLE]
+SECTION 28
+Product Quality Bars: Reliability, Performance and Accessibility
+A chatbot that is fast but wrong is not a successful billing product.
+[TABLE: 9 rows x 3 cols]
+Quality dimension | Product requirement | Priority
+Reliability | Material actions must be idempotent/replay-safe and expose authoritative terminal/pending status. | P0
+Availability | Assistant degradation must not block core Zoiko Billing workflows; the product remains usable without AI. | P0
+Latency | Common read answers should feel interactive; slow tools must expose progress rather than stall silently. | P1
+Accessibility | WCAG 2.2 AA target for assistant surfaces; keyboard navigation, focus order, labels, status announcements and contrast are mandatory. | P0
+Responsive | Desktop, tablet and mobile maintain control parity and readable structured previews. | P1
+Resilience | Model/provider failure must produce a safe fallback; no partial mutation because a response render failed. | P0
+Consistency | Action state and financial facts shown in chat must refresh from authoritative services when the underlying record changes. | P0
+Supportability | Correlation IDs and safe diagnostic metadata available to authorized support/engineering. | P1
+[END TABLE]
+SECTION 29
+Failure, Ambiguity and Edge-State Requirements
+Failure behavior is part of the product, not an implementation afterthought.
+[TABLE: 13 rows x 2 cols]
+Condition | Required behavior
+Ambiguous customer/invoice | Ask user to choose from authorized candidates; do not guess.
+No permission | Explain that the action/data is unavailable and, where appropriate, identify the required role/workflow without leaking hidden data.
+Stale preview | Invalidate preview and regenerate from current authoritative state.
+Payment provider timeout | Show submitted/pending only if an authoritative request was accepted; otherwise show failure/unknown and offer safe retry.
+Tool partial failure | Do not manufacture a complete answer; identify unavailable component and retain known verified facts.
+Conflicting records | Surface conflict and route to the relevant reconciliation/support workflow.
+Prompt injection in file/note | Ignore embedded instructions and treat content only as untrusted business data.
+Model outage | Provide standard UI fallback / help link; no blocking of core billing operations.
+Conversation too long | Summarize non-authoritative context safely; re-fetch material financial facts before action.
+Record changed mid-flow | Require refreshed preview and, if material, renewed confirmation.
+Unsupported request | State boundary and direct user to supported Zoiko Billing workflow or human support.
+Potential legal/tax advice | Provide product-state facts, approved informational guidance and appropriate disclaimer/routing; no definitive individualized legal/tax conclusion.
+[END TABLE]
+SECTION 30
+Release Scope and Phased Delivery
+Commercial release should expand authority only after evidence proves the lower-risk layers are dependable.
+[TABLE: 6 rows x 4 cols]
+Phase | Priority | Capability | Exit gate
+Phase A — Read & Explain | P0 | Product help; record search; invoice/payment/balance explanation; source-linked answers; no mutations | Accuracy, isolation, permission, latency and KB quality gates
+Phase B — Prepare & Preview | P0 | Invoice drafts; structured data collection; reconciliation suggestions; communication drafts; action preview framework | Validation, preview invalidation, no unauthorized writes
+Phase C — Governed Actions | P0/P1 | Issue invoice, approved reconciliation and selected profile actions through canonical APIs | Confirmation, idempotency, audit, async state, rollback/compensation tests
+Phase D — High-Consequence Actions | P1 | Credits/refunds/advanced adjustments where policy and maker-checker controls are mature | Security/legal/finance approval + red-team + production guardrails
+Phase E — Intelligence Expansion | P1/P2 | Reporting Q&A, proactive insights, additional integrations and workflow recommendations | Metric correctness, explainability, relevance and opt-out controls
+[END TABLE]
+SECTION 31
+Go-Live Gates and Production Readiness
+No single demo or “looks good” approval is sufficient for a financial workflow assistant.
+[TABLE: 13 rows x 2 cols]
+Gate | Required evidence
+G1 — Product scope | P0 flows and explicit non-goals approved by Product, Finance/Billing Ops and Engineering.
+G2 — Authorization | Cross-role and cross-tenant matrix proves no capability exceeds core product permissions.
+G3 — Financial accuracy | Release evaluation shows zero unsupported material financial facts in blocker set.
+G4 — Action governance | Preview/confirm/approval/idempotency/audit controls pass for every enabled mutation.
+G5 — Security | Prompt injection, data exfiltration, secret handling, tenant isolation and abuse testing passed.
+G6 — Knowledge | Approved sources, freshness, versioning and conflict behavior verified.
+G7 — UX/A11y | Critical flows meet accessibility and responsive interaction standards.
+G8 — Reliability | Model/tool/provider failures degrade safely; core billing product remains available.
+G9 — Observability | Production tracing, alerts, evaluation sampling, correlation IDs and incident runbooks ready.
+G10 — Operational ownership | Support, escalation, model rollback/disable controls and on-call ownership assigned.
+G11 — Legal/privacy | Data-processing, retention, user disclosure and applicable AI/privacy controls approved.
+G12 — Controlled rollout | Feature flag, tenant allowlist/pilot or equivalent staged-release mechanism operational.
+[END TABLE]
+SECTION 32
+Product Acceptance Criteria
+These criteria define “product-ready”; the FRS will decompose them into precise system behaviors and tests.
+[TABLE: 36 rows x 2 cols]
+ID | Acceptance criterion
+AC-01 | A user can ask for a specific invoice and receive the correct authorized record with an in-product reference.
+AC-02 | A user can ask why an invoice balance is outstanding and receive a decomposition grounded in payments, credits and current invoice state.
+AC-03 | The assistant cannot reveal an invoice/customer from another tenant even when the user supplies a valid-looking identifier.
+AC-04 | Switching legal entity invalidates any material preview created under the prior entity.
+AC-05 | A draft invoice can be created conversationally without issuing it.
+AC-06 | Final invoice totals shown before issue come from authoritative billing computation/validation.
+AC-07 | An issued invoice cannot be silently modified through chat.
+AC-08 | Issuing an invoice requires explicit authorized user confirmation.
+AC-09 | Repeated submission/retry cannot create duplicate protected actions.
+AC-10 | “The customer said they paid” cannot directly change payment state.
+AC-11 | Pending payment/refund state is not described as settled/completed before authoritative confirmation.
+AC-12 | The assistant can explain payment allocations and unapplied amounts using authoritative records.
+AC-13 | Ambiguous reconciliation candidates require user choice/review.
+AC-14 | A reconciliation action executes only through the canonical service and produces an audit reference.
+AC-15 | A refund action, if enabled, validates eligible amount and required approval before submission.
+AC-16 | A communication send preview exposes recipient, sender identity, content and related record before sending.
+AC-17 | The assistant distinguishes sent/accepted/delivered/failed communication states.
+AC-18 | The assistant does not aggregate unlike currencies without an approved explicit conversion method.
+AC-19 | Export actions show scope and honor data-egress permissions.
+AC-20 | The tenant billing plane and Zoiko commercial plane cannot be silently mixed in the same action.
+AC-21 | Retrieved document text cannot override system/policy instructions.
+AC-22 | Secrets and prohibited payment credentials are excluded/redacted from model context and telemetry.
+AC-23 | Material actions record actor, scope, target, confirmation/approval and outcome evidence.
+AC-24 | Core Zoiko Billing remains usable when the model provider is unavailable.
+AC-25 | The assistant identifies uncertainty rather than inventing missing price, tax, FX, state, identity or permission facts.
+AC-26 | Record changes after preview force refresh before execution.
+AC-27 | A read-only user receives useful explanation but no concealed or executable mutation control.
+AC-28 | Mobile retains the same confirmation, permission and evidence protections as desktop.
+AC-29 | Critical assistant flows meet WCAG 2.2 AA target and keyboard-only completion.
+AC-30 | The release can be disabled/rolled back independently without making core billing unavailable.
+AC-31 | Unsupported legal/tax/advisory prompts receive bounded informational help rather than fabricated authoritative advice.
+AC-32 | A human escalation contains enough structured record/context information to avoid making the user restate the entire issue.
+AC-33 | Product analytics can distinguish ask, answer, preview, confirmation, execution and outcome without storing prohibited secrets.
+AC-34 | Benchmark P0 journeys achieve the approved task-success and grounded-accuracy release targets.
+AC-35 | No release gate is waived solely because a model evaluation average is high; blocker-class control failures remain blockers.
+[END TABLE]
+SECTION 33
+Assumptions, Dependencies, Risks and Mitigations
+The largest risks come from authority and data semantics, not from conversational copy.
+[TABLE: 11 rows x 4 cols]
+Risk | Failure mode | Severity | Mitigation
+Authoritative APIs are incomplete | Assistant is pressured to infer/mutate outside domain services | High | Defer write capability; close API gaps before enabling action
+Permissions vary by tenant/entity | UI/model exposes wrong action | Critical | Server-side authorization every read/write; role matrix tests
+Financial terminology differs by integration | Incorrect state explanation | High | Canonical state mapping + provider-specific adapters
+Knowledge becomes stale | Wrong policy/product guidance | High | Version/effective-date metadata + owner + publication workflow
+Prompt injection via customer content | Data exfiltration or unsafe tool use | Critical | Trust-boundary separation + tool allowlists + adversarial tests
+Users over-trust fluent answers | Unsupported facts accepted as truth | High | Evidence links, uncertainty language, authoritative previews
+Model/provider outage | User workflow blocked | Medium | Graceful fallback; core UI remains primary system
+Long conversations retain stale context | Wrong entity/record/action | High | Context chips, TTL, re-fetch before material action
+Cross-currency analytics confusion | Misleading totals | High | Currency-preserving answers; explicit approved conversion only
+Premature autonomy pressure | Controls bypassed for convenience | Critical | Phased release and non-waivable R3/R4 governance
+[END TABLE]
+SECTION 34
+Ownership, RACI and Decision Rights
+Every control requires a named human owner outside the model runtime.
+[TABLE: 12 rows x 3 cols]
+Owner | Decision / accountability | RACI
+Product | PRD scope, priorities, customer outcomes, release sequencing | A/R
+Engineering | Implementation, service contracts, reliability, idempotency, observability | R
+Solutions Architecture | System boundaries, integration architecture, failure/isolation patterns | R/C
+Design / UX | Interaction design, action previews, accessibility, usability evidence | R
+Finance / Billing Operations | Financial semantics, approvals, reconciliation/correction/refund policy | A/C
+Security | Threat model, secrets, tenant isolation, abuse controls, security gate | A/R
+Privacy / Legal / Compliance | Data use, retention, disclosures, jurisdictional constraints | A/C
+QA | Functional, regression, adversarial and end-to-end release evidence | R
+AI / ML owner | Model selection, evals, guardrails, prompt/version governance, rollback | R
+Customer Success / Support | Escalation design, user feedback, support readiness | R/C
+Commercial | Packaging/entitlement decisions; claims approval | A/C
+[END TABLE]
+SECTION 35
+Master Requirement Catalogue and Traceability
+Downstream specifications must preserve these IDs and add implementation-level child requirements rather than renumbering product intent.
+[TABLE: 16 rows x 4 cols]
+Prefix | Domain | IDs | Priority
+CTX | Context, identity, tenant and entity | CTX-001…005 | P0
+ANS | Grounded answer/evidence | ANS-001…003 | P0
+INV | Invoice | INV-001…008 | P0
+PAY | Payment and balance | PAY-001…006 | P0
+REC/CRD/REF | Reconciliation/corrections/refunds | REC-001…003; CRD-001; REF-001…003 | P0/P1
+CUS | Customer/commercial basis | CUS-001…005 | P0/P1
+COM | Communications/collections | COM-001…006 | P0/P1
+RPT | Reporting/export | RPT-001…005 | P0/P1
+PLN | Commercial-plane separation | PLN-001…003 | P0
+KB | Knowledge/retrieval | KB-001…004 | P0
+UX | Experience controls | UX-001…008 | P0/P1
+RSK | Risk/action policy | RSK-001…002 | P0
+SEC | Security/privacy | SEC-001…008 | P0/P1
+AUD | Audit/evidence | AUD-001…005 | P0
+GLB | Globalization/regulatory boundaries | GLB-001…005 | P0/P1/P2
+[END TABLE]
+FRS traceability requirement
+The next document must map each PRD requirement to one or more functional/non-functional requirements, actor preconditions, triggers, validations, success states, failure states, audit events and test evidence. Any proposed change to a P0 doctrine or acceptance criterion must return to PRD-level approval rather than being silently implemented in the FRS.
+SECTION 36
+Open Decisions Before Build Lock
+These items may be resolved during PRD approval or explicitly carried as controlled decisions into the FRS.
+[TABLE: 9 rows x 4 cols]
+ID | Decision | Question / boundary | Owner
+OD-01 | Launch naming | Use “Zoiko Billing Assistant”, “Billing Assistant”, or another approved customer-facing name. Product behavior is independent of naming. | Product / Brand
+OD-02 | Initial write scope | Confirm exactly which R3 actions ship in the first commercial cohort: invoice issue, reconciliation apply, customer update and/or others. | Product + Finance + Engineering
+OD-03 | R4 enablement | Confirm whether refunds/credits/voids ship at launch or only after controlled pilot evidence. | Finance + Risk + Product
+OD-04 | Model/provider posture | Confirm approved model/provider/data-processing configuration and fallback strategy. | AI + Security + Privacy
+OD-05 | Conversation retention | Approve retention, user deletion/export policy and tenant-specific controls. | Privacy + Security + Product
+OD-06 | Knowledge publication workflow | Assign source owners, approval workflow, effective-date rules and deprecation process. | Product Ops + Compliance
+OD-07 | Proactive suggestions | Confirm whether assistant may proactively surface overdue/reconciliation exceptions at launch or remain user-invoked. | Product + UX
+OD-08 | External communication channels | Confirm launch channels (email only vs email/SMS/other) and sending-identity rules. | Product + Comms Ops + Legal
+[END TABLE]
+SECTION 37
+Approval Baseline and Next Document
+Approval of this PRD authorizes detailed functional specification; it does not authorize production release.
+[TABLE: 1 rows x 1 cols]
+APPROVAL STATEMENT Approve ZB-AI-PRD-001 v1.0 as the product requirements baseline for the Zoiko Billing Chatbot, subject to controlled resolution of the open decisions above. On approval, the next deliverable is the Functional Requirements Specification (FRS), which will decompose every requirement into precise system behavior and testable acceptance conditions.
+[END TABLE]
+Approval checklist
+• Product vision and non-goals accepted.
+• Two-plane billing separation accepted as a P0 invariant.
+• P0 capability set and phased authority model accepted.
+• Financial-state, permission, confirmation, audit and AI-safety doctrine accepted.
+• Success metrics and release gates accepted.
+• Open decisions assigned to owners or explicitly deferred with no unsafe default.
+• FRS authorized as the next controlled deliverable.

@@ -40,9 +40,9 @@ class BillingDashboardService:
     def _get_base_currency(self, organization_id: int) -> str:
         return self.config_svc.get_default_currency(organization_id)
 
-    def _build_currency_rates(self, organization_id: int) -> Dict[str, float]:
+    def _build_currency_rates(self, organization_id: int, base_currency: Optional[str] = None) -> Dict[str, float]:
         """Build {currency_code: multiplier_to_base} for all currencies in use."""
-        base = self._get_base_currency(organization_id)
+        base = base_currency or self._get_base_currency(organization_id)
         unique_currencies = set()
 
         inv_currencies = self.db.query(Invoice.currency).filter(
@@ -62,7 +62,7 @@ class BillingDashboardService:
         # unreachable live API is hit at most once instead of once per currency.
         config = self.exchange_svc.repo.get_by_organization(organization_id)
         try:
-            if config and self.exchange_svc.is_rate_stale(organization_id):
+            if config and self.exchange_svc.is_rate_stale(organization_id, config=config):
                 self.exchange_svc.refresh_rates(organization_id)
         except Exception:
             self.db.rollback()
@@ -73,8 +73,8 @@ class BillingDashboardService:
                 rates[curr] = 1.0
             else:
                 try:
-                    if config and not self.exchange_svc.is_rate_stale(organization_id):
-                        rate, _, _ = self.exchange_svc.get_rate(organization_id, curr, base)
+                    if config and not self.exchange_svc.is_rate_stale(organization_id, config=config):
+                        rate, _, _ = self.exchange_svc.get_rate(organization_id, curr, base, config=config)
                     else:
                         rate, _, _ = self.exchange_svc._get_cached_rate(config, curr, base)
                         if rate is None:

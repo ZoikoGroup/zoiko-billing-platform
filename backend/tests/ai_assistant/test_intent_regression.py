@@ -1099,7 +1099,10 @@ class TestRefundQuestionsNotActionDrafts:
 
     def test_no_customer_specified_asks_instead_of_echoing_question(self, db, org, ctx):
         """Even if a draft flow is ever reached without a customer name, it
-        must ASK for one — never echo the utterance back as a 'name'."""
+        must ASK for a resolution — never echo the utterance back as a
+        'name'. A forced REFUND draft asks for the PAYMENT first (the refund
+        guard resolves the missing payment reference before any customer
+        check, PRD §11: a refund must name the paying transaction)."""
         engine = ConversationEngine(db, model_gateway=None)
         conv = make_conv(db, org, uid="test-conv-noask")
         forced = {"intent": "action_draft", "domain": "action", "risk_class": "R2"}
@@ -1108,7 +1111,7 @@ class TestRefundQuestionsNotActionDrafts:
 
         low = result["answer"].lower()
         assert "couldn't find a customer named" not in low
-        assert "which customer" in low
+        assert "which payment" in low
 
     def test_named_but_unknown_customer_still_reports_name(self, db, org, ctx):
         engine = ConversationEngine(db, model_gateway=None)
@@ -2801,14 +2804,19 @@ class TestCurrencyLabelInrComprehensive:
         assert "₹" in dash, dash
         assert "USD" not in dash and "$" not in dash, dash
 
-        # 4) Draft / preview / confirm cards — ActionEngine must default to the
-        #    org base currency (INR), never a hardcoded 'USD'.
+        # 4) Draft / preview / confirm cards — the ActionEngine must pass the
+        #    DRAFT-pinned currency (Sec 8.2 authoritative: customer INR) through
+        #    preview/confirm unchanged — never fall back to a hardcoded 'USD'
+        #    nor re-derive the currency at a later state.
+        cust.currency = "INR"
+        db.flush()
         draft = SimpleNamespace(
             organization_id=org.id,
             action_uid="draft-inr-1",
             action_type="invoice_draft",
             proposed_params={
                 "customer_id": cust.id,
+                "currency": "INR",  # pinned at DRAFT creation (customer currency)
                 "line_items": [{"description": "Consulting", "quantity": 1, "unit_price": 500}],
             },
         )
@@ -2833,12 +2841,13 @@ class TestCurrencyLabelInrComprehensive:
         assert "₹" in card["money"]["display"], card["money"]["display"]
         assert "USD" not in card["money"]["display"] and "$" not in card["money"]["display"]
 
-    def test_inr_org_with_legacy_usd_invoices_list_shows_rupee_per_line(self, db, org, ctx, customers):
-        """REGRESSION for the live bug: an INR org whose invoices were created
-        (before the ActionEngine fix) with currency='USD' must still render every
-        per-invoice BULLET in the org base currency (₹), never the invoice's
-        stored 'USD' label. The summary/total already used base currency; the
-        per-line bullet used inv.currency -> '$' inconsistency."""
+    def test_legacy_usd_invoices_list_render_in_own_currency(self, db, org, ctx, customers):
+        """GLB-002 / §30 money contract: an INR org whose invoices were created
+        with currency='USD' must render every figure in the invoice's OWN
+        currency ($) — never silently re-labelled as the org base (₹). A USD
+        balance shown as ₹ would be a silent cross-currency mislabel. Because
+        every invoice here is genuinely USD, the total is a USD total; no
+        cross-currency aggregation is performed or implied."""
         self._set_base_currency(db, org, "INR")
 
         cust = add_customer(db, org, "CUST-LEG", "LEGACY FOREIGN Co")
@@ -2858,15 +2867,294 @@ class TestCurrencyLabelInrComprehensive:
         result = handler(conv, "list TOM's invoices with amounts", intent, ctx)
         answer = result["answer"]
 
-        # Every per-line bullet must carry the ₹ symbol.
+        # Every per-line bullet must carry the invoice's own $ currency, never ₹.
         bullet_lines = [ln for ln in answer.splitlines() if ln.strip().startswith("- **AI-INV")]
         assert bullet_lines, f"expected per-invoice bullets, got:\n{answer}"
         for ln in bullet_lines:
-            assert "₹" in ln, f"per-line bullet missing ₹ symbol:\n{ln}"
-            assert "USD" not in ln and "$" not in ln, f"per-line bullet leaked USD/$:\n{ln}"
+            assert "$" in ln, f"per-line bullet lost its own-currency $ symbol:\n{ln}"
+            assert "₹" not in ln, f"per-line bullet mislabelled in base currency:\n{ln}"
 
-        # No USD code or $ anywhere in the whole response (summary, total, bullets).
-        assert "USD" not in answer, answer
-        assert "$" not in answer, answer
-        # Total line agrees with base-currency label.
+        # No ₹ anywhere: the total must not silently convert USD invoices to INR.
+        assert "₹" not in answer, answer
+        # Total line agrees with the invoice currency label.
         assert "total outstanding:" in answer
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRD §11 regression — Action Draft phrasing (no M0 how-to fallback)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _run_phrase(db, org, ctx, phrase, uid):
+    engine = ConversationEngine(db, model_gateway=None)
+    conv = make_conv(db, org, uid=uid)
+    intent = engine._classify_intent(conv, phrase, ctx)
+    handler = engine._get_handler(intent["domain"])
+    return engine, conv, intent, handler(conv, phrase, intent, ctx)
+
+
+class TestInvoiceDraftPhrasingRegression:
+    """PRD §11: imperative 'create/draft/generate/make <an invoice>' phrasings
+    that carry a customer, a service, and an amount MUST land a real
+    action_draft → M2_PREPARE (validated Action UID) — never the generic M0
+    how-to fallback (the symptom of the pre-fix UnboundLocalError crash in
+    _handle_action where the preview local `money` shadowed the formatter)."""
+
+    TOM_VARIANTS = [
+        "create a invoices for a TOM for a consulting charge for a INR500",
+        "Create an invoice for TOM for a consulting charge for a 500",
+        "create invoice for Tom for a consulting charge of INR 500",
+        "Create a draft invoice for TOM for a consulting charge 500",
+        "generate an invoice for TOM for a consulting charge at ₹500",
+        "make an invoice for TOM for a consulting fee of 750",
+        "create an invoice for TOM for a consulting charge for a INR 1000",
+    ]
+
+    @pytest.fixture()
+    def tom(self, db, org):
+        cust = add_customer(db, org, "CUST-TOM", "TOM")
+        cust.currency = "INR"
+        db.flush()
+        return cust
+
+    @pytest.mark.parametrize("phrase", TOM_VARIANTS)
+    def test_customer_service_amount_phrasings_land_real_draft(
+            self, db, org, ctx, tom, phrase):
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, phrase, f"conv-draft-{abs(hash(phrase)) % 10 ** 9}")
+
+        assert intent["intent"] == "action_draft", intent
+        assert intent["risk_class"] == "R2", intent
+        assert result["mode"] == "M2_PREPARE", (
+            f"{phrase!r} fell back to {result['mode']} instead of a draft:\n"
+            f"{result['answer'][:400]}"
+        )
+        answer = result["answer"]
+        assert "Invoice Draft" in answer, answer[:300]
+        assert "Action UID" in answer, answer[:300]
+        assert "validated" in answer, answer[:300]
+
+    @pytest.mark.parametrize("phrase", [
+        "how do I create an invoice",
+        "how should I generate an invoice for a customer",
+    ])
+    def test_how_to_stays_explain(self, db, org, ctx, phrase):
+        """Guard: amount phrasings must not have widened action_draft into the
+        how-to gate — 'how do I...' questions remain explain/escalate, never a
+        draft card."""
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, phrase, f"conv-how-{abs(hash(phrase)) % 10 ** 9}")
+        assert intent["intent"] == "help_general", intent
+        assert result["mode"] != "M2_PREPARE", result["mode"]
+        assert "Action UID" not in result["answer"]
+
+
+class TestInvoiceCountQualifierRegression:
+    """PRD §11: 'how many invoices are there' (bare, open/unpaid/pending,
+    overdue) must answer from the live ledger — invoice_count, M1_INSPECT,
+    qualifier label + exact count — never a KB/RAG answer."""
+
+    def _seed(self, db, org, cust):
+        add_invoice(db, org, cust.id, "INV-OPEN1", InvoiceStatus.SENT, 1000)
+        add_invoice(db, org, cust.id, "INV-OPEN2", InvoiceStatus.PARTIALLY_PAID, 2000, paid="500")
+        add_invoice(db, org, cust.id, "INV-OVER1", InvoiceStatus.SENT, 1500, due_offset_days=-3)
+        add_invoice(db, org, cust.id, "INV-PAID1", InvoiceStatus.PAID, 3000, paid="3000")
+        add_invoice(db, org, cust.id, "INV-DRAFT1", InvoiceStatus.DRAFT, 9000)
+        add_invoice(db, org, cust.id, "INV-CANC1", InvoiceStatus.CANCELLED, 8000)
+        db.flush()
+
+    @pytest.mark.parametrize("phrase,count,label", [
+        ("how many invoices are there", 4, "invoice(s)"),
+        ("how many open invoices are there", 3, "open invoice(s)"),
+        ("how many unpaid invoices are there", 3, "unpaid invoice(s)"),
+        ("how many pending invoices are there", 3, "pending invoice(s)"),
+        ("how many outstanding invoices are there", 3, "outstanding invoice(s)"),
+        ("how many overdue invoices are there", 1, "overdue invoice(s)"),
+    ])
+    def test_counts_answer_from_live_ledger(self, db, org, ctx, phrase, count, label):
+        cust = add_customer(db, org, "CUST-COUNT", "Count Co")
+        self._seed(db, org, cust)
+
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, phrase, f"conv-count-{abs(hash(phrase)) % 10 ** 9}")
+
+        assert intent["intent"] == "invoice_count", intent
+        assert intent["risk_class"] == "R1", intent
+        assert result["mode"] == "M1_INSPECT", result["mode"]
+        assert result["answer"] == f"You currently have **{count} {label}**.", (
+            result["answer"][:200]
+        )
+        evidence = result["evidence"][0]
+        assert evidence["type"] == "invoice_count", evidence
+        assert evidence["count"] == count, evidence
+        assert "Zoiko Billing Invoices" in evidence["source"], evidence
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUG-1 regression — standalone balance VALUE asks must be a FRESH live fetch
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestOutstandingBalanceFreshFetch:
+    """User report: "what's the outstanding balance?" (standalone, no
+    customer) misrouted to R0/help + a KB glossary article instead of
+    R1/account_balance. ZB-PRD-ANS-001: financial answers are grounded in a
+    FRESH authoritative ledger fetch — the identical question asked twice must
+    reflect intervening mutations (M1_INSPECT + evidence), never a stale or
+    history-echoed figure."""
+
+    def _seed(self, db, org):
+        cust = add_customer(db, org, "BAL1", "Bal Co")
+        add_invoice(db, org, cust.id, "INV-B1", InvoiceStatus.SENT, 1000)
+        add_invoice(db, org, cust.id, "INV-B2", InvoiceStatus.SENT, 500)
+        return cust
+
+    @staticmethod
+    def _figure(answer):
+        import re as _re
+        m = _re.search(r"\$?([\d,]+\.\d{2})", answer)
+        return float(m.group(1).replace(",", "")) if m else None
+
+    def test_standalone_outstanding_balance_goes_live_inspect(self, db, org, ctx):
+        self._seed(db, org)
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, "what's the outstanding balance?", "conv-bal-1")
+        assert intent["intent"] == "account_balance", intent
+        assert intent["risk_class"] == "R1", intent
+        assert result["mode"] == "M1_INSPECT", result["mode"]
+        assert result["evidence"], "expected ledger evidence"
+
+    @pytest.mark.parametrize("phrase", [
+        "What is the outstanding balance?",
+        "what is the total balance due?",
+        "how much is outstanding?",
+    ])
+    def test_outstanding_value_variants_route_to_account_balance(self, db, org, ctx, phrase):
+        self._seed(db, org)
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, phrase, f"conv-bal-v-{abs(hash(phrase))}")
+        assert intent["intent"] == "account_balance", (phrase, intent)
+        assert result["mode"] == "M1_INSPECT", result["mode"]
+
+    def test_second_ask_reflects_intervening_mutation(self, db, org, ctx):
+        """Identical question before/after a ledger change must NOT reuse a
+        stale answer — every balance ask recomputes the live outstanding."""
+        cust = self._seed(db, org)
+
+        _, _, _, result1 = _run_phrase(
+            db, org, ctx, "what's the outstanding balance?", "conv-bal-2a")
+        assert result1["mode"] == "M1_INSPECT", result1["mode"]
+
+        add_invoice(db, org, cust.id, "INV-B3", InvoiceStatus.SENT, 2000)
+        db.flush()
+
+        _, _, _, result2 = _run_phrase(
+            db, org, ctx, "what's the outstanding balance?", "conv-bal-2b")
+        assert result2["mode"] == "M1_INSPECT", result2["mode"]
+        assert result2["evidence"], "expected fresh ledger evidence"
+
+        f1 = self._figure(result1["answer"])
+        f2 = self._figure(result2["answer"])
+        assert f1 == 1500.0, result1["answer"]
+        assert f2 == 3500.0, result2["answer"]
+
+    @pytest.mark.parametrize("phrase", [
+        "what is the outstanding balance concept?",
+        "what does outstanding balance mean?",
+        "explain me about Outstanding",
+    ])
+    def test_definitional_outstanding_stays_explain(self, db, org, ctx, phrase):
+        """Definitional asks must stay on the KB/define path — never the
+        live balance route."""
+        self._seed(db, org)
+        _, _, intent, _ = _run_phrase(
+            db, org, ctx, phrase, f"conv-bal-def-{abs(hash(phrase))}")
+        assert intent["intent"] == "metric_definition", (phrase, intent)
+
+    @pytest.mark.parametrize("phrase", [
+        "customers who owe money",
+        "show customers with outstanding balances",
+    ])
+    def test_customer_list_balance_phrasing_not_hijacked(self, db, org, ctx, phrase):
+        """Customer-LISTING phrasings keep their customer census — the new
+        org-wide balance route must not clobber them."""
+        self._seed(db, org)
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, phrase, f"conv-bal-cust-{abs(hash(phrase))}")
+        assert intent["intent"] == "customer_outstanding", (phrase, intent)
+        assert result["mode"] == "M1_INSPECT", result["mode"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUG-2 regression — Refund intent family vs Payment Allocation / fabricated
+# zero-amount drafts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestRefundIntentRegression:
+    """User report: "refund more than the original payment amount" routed to
+    Payment Allocation (Reconciliation family) and fabricated an M2_PREPARE
+    draft with ₹0.00 subtotal. PRD §11 separates Refund from Reconciliation;
+    a refund must (a) name the payment it refunds and (b) never exceed what
+    was originally collected — eligibility blocks BEFORE any preview, so no
+    placeholder draft is ever produced."""
+
+    def _seed(self, db, org):
+        from app.modules.billing.models import Payment
+        cust = add_customer(db, org, "GO", "Gok")
+        p = Payment(
+            organization_id=org.id, customer_id=cust.id,
+            payment_number="PMT-1", payment_type="manual",
+            status="cleared", currency="USD", amount="100.00",
+            is_active=True, payment_date=date.today(),
+        )
+        db.add(p)
+        db.flush()
+        return cust
+
+    def test_refund_without_payment_asks_not_drafts(self, db, org, ctx):
+        from app.modules.chatbot.models import AIActionDraft
+        self._seed(db, org)
+
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, "Refund more than the original payment amount",
+            "conv-refund-1")
+
+        assert intent["intent"] == "action_draft", intent
+        assert result["mode"] == "M2_PREPARE", result["mode"]
+        answer = result["answer"].lower()
+        assert "which payment" in answer, result["answer"]
+        # Payment-Allocation family must NOT be suggested.
+        assert "allocat" not in answer, result["answer"]
+        # No fabricated zero/placeholder draft.
+        assert "0.00" not in result["answer"]
+        assert db.query(AIActionDraft).count() == 0
+
+    def test_refund_exceeding_payment_blocked_before_preview(self, db, org, ctx):
+        from app.modules.chatbot.models import AIActionDraft, AIActionExecution
+        self._seed(db, org)
+
+        _, _, intent, result = _run_phrase(
+            db, org, ctx,
+            "Refund $100000 from payment PMT-1 back to Gok beyond their payment amount",
+            "conv-refund-2")
+
+        assert intent["intent"] == "action_draft", intent
+        assert result["mode"] != "M3_PREVIEW", result["mode"]
+        assert result["mode"] != "M4_EXECUTE", result["mode"]
+        answer = result["answer"].lower()
+        assert "can't" in answer or "cannot" in answer or "exceed" in answer, (
+            result["answer"][:200])
+        assert result["evidence"], "expected payment evidence in the block"
+        assert db.query(AIActionDraft).count() == 0
+        assert db.query(AIActionExecution).count() == 0
+
+    def test_refund_within_payment_amount_drafts(self, db, org, ctx):
+        from app.modules.chatbot.models import AIActionDraft
+        self._seed(db, org)
+
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, "Refund $50 from payment PMT-1 back to Gok",
+            "conv-refund-3")
+
+        assert intent["intent"] == "action_draft", intent
+        assert result["mode"] == "M2_PREPARE", result["mode"]
+        assert "Refund" in result["answer"], result["answer"][:200]
+        assert db.query(AIActionDraft).count() == 1
