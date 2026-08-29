@@ -2857,8 +2857,6 @@ class TestCurrencyLabelInrComprehensive:
         handler = engine._get_handler(intent["domain"])
         result = handler(conv, "list TOM's invoices with amounts", intent, ctx)
         answer = result["answer"]
-        with open(r"C:\Users\madhu\AppData\Local\Temp\opencode\list_invoices_inr_legacy_usd.txt", "w", encoding="utf-8") as fh:
-            fh.write(answer)
 
         # Every per-line bullet must carry the ₹ symbol.
         bullet_lines = [ln for ln in answer.splitlines() if ln.strip().startswith("- **AI-INV")]
