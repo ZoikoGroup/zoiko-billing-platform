@@ -228,7 +228,7 @@ export const productApi = {
   bulkStatus: (ids, status) => api.post(ENDPOINTS.PRODUCT_BULK_STATUS, { ids, status }),
   bulkDelete: (ids) => api.post(ENDPOINTS.PRODUCT_BULK_DELETE, { ids }),
   listSubscribable: () => api.get(ENDPOINTS.PRODUCT_SUBSCRIBABLE),
-  listUsageBillable: () => api.get(ENDPOINTS.PRODUCT_USAGE_BILLABLE),
+  listUsageBillable: (params) => api.get(buildUrl(ENDPOINTS.PRODUCT_USAGE_BILLABLE, params)),
   // ── Phase 5B: Import / Export ────────────────────────────────────────────
   importPreview: (formData) =>
     api.post(ENDPOINTS.PRODUCT_IMPORT_PREVIEW, formData),

@@ -140,19 +140,34 @@ export default function ProductListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
-  const fetchProducts = useCallback(async (isInitial = false) => {
+  // pageOverride lets a caller that just reset currentPage to 1 (e.g. after
+  // create/duplicate/import) fetch page 1 immediately, instead of racing
+  // React's async state update: setCurrentPage(1) followed by fetchProducts()
+  // in the same synchronous block would otherwise still read the OLD
+  // currentPage/safePage from this closure, briefly (or, on out-of-order
+  // network responses, persistently) showing the wrong page.
+  //
+  // clearFilters is the same fix applied to search/status/type/category/
+  // currency: a bulk import's success callback calls the matching
+  // setXFilter("") setters for the visible dropdowns, but -- same stale-
+  // closure problem -- an immediately-following fetchProducts() call would
+  // still read the OLD filter values from THIS closure, not the ones just
+  // set. A leftover filter (e.g. "Active" status, or a search term) then
+  // hides the very rows the import just created, making a fully successful
+  // import look like it silently did nothing.
+  const fetchProducts = useCallback(async (isInitial = false, pageOverride = null, clearFilters = false) => {
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
 
       const params = {
-        page: safePage,
+        page: pageOverride ?? safePage,
         per_page: ITEMS_PER_PAGE,
-        search_term: debouncedSearch || undefined,
-        product_type: typeFilter || undefined,
-        status: statusFilter || undefined,
-        category_id: categoryFilter || undefined,
-        currency: currencyFilter || undefined,
+        search_term: clearFilters ? undefined : (debouncedSearch || undefined),
+        product_type: clearFilters ? undefined : (typeFilter || undefined),
+        status: clearFilters ? undefined : (statusFilter || undefined),
+        category_id: clearFilters ? undefined : (categoryFilter || undefined),
+        currency: clearFilters ? undefined : (currencyFilter || undefined),
         sort_by: sortField,
         sort_order: sortDir,
       };
@@ -183,8 +198,11 @@ export default function ProductListPage() {
       const data = await productApi.listCategories({ root_only: true });
       const items = data?.items || data?.data || data || [];
       setCategories(Array.isArray(items) ? items : []);
-    } catch {
-      // silent
+    } catch (err) {
+      // Non-fatal: the page still works without categories (filter/form
+      // dropdowns just show no options), but a silent failure gave no way
+      // to tell "no categories exist" apart from "the request failed".
+      console.error("[ProductList] Failed to load categories:", err);
     }
   }, []);
 
@@ -282,8 +300,10 @@ export default function ProductListPage() {
     setDuplicatingId(id);
     try {
       await productApi.duplicate(id);
+      setSearch(""); setDebouncedSearch("");
+      setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
       setCurrentPage(1);
-      fetchProducts();
+      fetchProducts(false, 1, true);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to duplicate product");
     } finally {
@@ -335,8 +355,10 @@ export default function ProductListPage() {
       });
       setShowCreateModal(false);
       setNewProduct({ name: "", code: "", default_price: "", description: "", product_type: "service", is_active: true, image_url: "", category_id: "", brand: "", billing_frequency: "one_time", default_discount: "", invoice_description: "", currency: baseCurrency, original_price: "", country: "", gst_vat_group: "" });
+      setSearch(""); setDebouncedSearch("");
+      setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
       setCurrentPage(1);
-      fetchProducts();
+      fetchProducts(false, 1, true);
     } catch (err) {
       setFormError(err.message || "Failed to create product");
     } finally {
@@ -427,13 +449,27 @@ export default function ProductListPage() {
   };
 
   const handleTypeChange = (value, data, setData) => {
-    const updates = { product_type: value, billing_frequency: getFrequencyForType(value) };
-    if (value === "subscription") { updates.is_subscribable = true; updates.is_usage_billable = false; }
-    else if (value === "usage") { updates.is_usage_billable = true; updates.is_subscribable = false; }
-    else if (value === "good") { updates.is_subscribable = false; updates.is_usage_billable = false; }
-    else if (value === "service") { updates.is_subscribable = false; updates.is_usage_billable = false; }
+    // Every type gets an explicit is_subscribable/is_usage_billable pair --
+    // "retainer" and "other" used to fall through with neither branch
+    // matching, silently carrying over whatever flags were set by a
+    // PREVIOUSLY selected type (e.g. switching Subscription -> Retainer kept
+    // is_subscribable: true).
+    const updates = {
+      product_type: value,
+      billing_frequency: getFrequencyForType(value),
+      is_subscribable: value === "subscription",
+      is_usage_billable: value === "usage",
+    };
     setData((p) => ({ ...p, ...updates }));
   };
+
+  // formError is shared by the Create and Edit modals; without clearing it on
+  // open/cancel, a failed Create attempt's message would still be showing the
+  // next time the (unrelated) Edit modal opens.
+  const openCreateModal = () => { setFormError(null); fetchCategories(); setShowCreateModal(true); };
+  const closeCreateModal = () => { setShowCreateModal(false); setFormError(null); };
+  const openEditModal = (product) => { setFormError(null); fetchCategories(); setEditProduct({ ...product }); setShowEditModal(true); };
+  const closeEditModal = () => { setShowEditModal(false); setFormError(null); };
 
   const renderFormFields = (data, setData, showAdvanced, setShowAdvanced, includeImage = true) => (
     <div className="space-y-6">
@@ -658,11 +694,11 @@ export default function ProductListPage() {
   );
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateModal(false)}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeCreateModal}>
       <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-slate-800">New Product</h2>
-          <button onClick={() => setShowCreateModal(false)} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
+          <button onClick={closeCreateModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
         </div>
         {formError && (
           <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -671,7 +707,7 @@ export default function ProductListPage() {
         )}
         {renderFormFields(newProduct, (updater) => { setNewProduct(updater(newProduct)); }, showAdvancedCreate, setShowAdvancedCreate)}
         <div className="flex justify-end gap-3 mt-8">
-          <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+          <button onClick={closeCreateModal} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
           <button onClick={handleCreate} disabled={formLoading || !newProduct.name}
             className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
             {formLoading ? "Creating..." : "Create Product"}
@@ -684,11 +720,11 @@ export default function ProductListPage() {
   const renderEditModal = () => {
     if (!editProduct) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowEditModal(false)}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeEditModal}>
         <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-slate-800">Edit Product</h2>
-            <button onClick={() => setShowEditModal(false)} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
+            <button onClick={closeEditModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
           </div>
           {formError && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -697,7 +733,7 @@ export default function ProductListPage() {
           )}
           {renderFormFields(editProduct, setEditProduct, showAdvancedEdit, setShowAdvancedEdit)}
           <div className="flex justify-end gap-3 mt-8">
-            <button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+            <button onClick={closeEditModal} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
             <button onClick={handleUpdate} disabled={formLoading}
               className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
               {formLoading ? "Saving..." : "Save Changes"}
@@ -735,6 +771,13 @@ export default function ProductListPage() {
         </span>
       </nav>
       {successMessage && <SuccessMessage message={successMessage} onDismiss={() => setSuccessMessage(null)} />}
+      {error && products.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss error" className="text-red-600 hover:text-red-800"><X size={14} /></button>
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
@@ -837,7 +880,7 @@ export default function ProductListPage() {
               >
                 <Upload size={16} /> Import
               </button>
-              <button onClick={() => { fetchCategories(); setShowCreateModal(true); }}
+              <button onClick={openCreateModal}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
                 <Plus size={18} /> Add Product
               </button>
@@ -980,7 +1023,7 @@ export default function ProductListPage() {
                       {!search && !statusFilter && !typeFilter && !categoryFilter && !currencyFilter && (
                         <div className="flex gap-3">
                           <button
-                            onClick={() => { fetchCategories(); setShowCreateModal(true); }}
+                            onClick={openCreateModal}
                             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-brand-200 transition-all"
                           >
                             <Plus size={16} /> Add Product / Service
@@ -998,10 +1041,14 @@ export default function ProductListPage() {
                 </tr>
               ) : products.map((product) => (
                 <tr key={product.id} tabIndex={0} role="row"
-                  className={`hover:bg-slate-50 transition-colors cursor-pointer focus:outline-2 focus:outline-brand-400 focus:outline-offset-[-2px] ${selectedIds.has(product.id) ? "bg-brand-50/50" : ""}`}
-                  onClick={() => navigate(`/billing/products/${product.id}`)}
+                  className={`hover:bg-slate-50 transition-colors ${product.status === "archived" ? "" : "cursor-pointer"} focus:outline-2 focus:outline-brand-400 focus:outline-offset-[-2px] ${selectedIds.has(product.id) ? "bg-brand-50/50" : ""}`}
+                  // Archived products are soft-deleted: GET /products/{id} 404s
+                  // for them (only the dedicated Restore action reaches them),
+                  // so navigating to the detail page from here would just show
+                  // a "failed to load" error for a row the user can plainly see.
+                  onClick={() => { if (product.status !== "archived") navigate(`/billing/products/${product.id}`); }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); navigate(`/billing/products/${product.id}`); }
+                    if (e.key === "Enter" && product.status !== "archived") { e.preventDefault(); navigate(`/billing/products/${product.id}`); }
                     if (e.key === "Escape") { e.preventDefault(); setSelectedIds(new Set()); setSelectAll(false); }
                   }}>
                   <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
@@ -1062,7 +1109,7 @@ export default function ProductListPage() {
                       </button>
                     ) : (
                       <>
-                        <button onClick={() => { fetchCategories(); setEditProduct({ ...product }); setShowEditModal(true); }} aria-label={`Edit ${product.name || "product"}`}
+                        <button onClick={() => openEditModal(product)} aria-label={`Edit ${product.name || "product"}`}
                           className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit">
                           <Pencil size={16} />
                         </button>
@@ -1093,7 +1140,17 @@ export default function ProductListPage() {
       {showImportModal && (
         <ImportWizardModal
           onClose={() => setShowImportModal(false)}
-          onImported={() => { setShowImportModal(false); setCurrentPage(1); fetchProducts(); }}
+          onImported={() => {
+            setShowImportModal(false);
+            // Clear every filter/search that could hide the just-imported
+            // rows -- both the visible dropdown state and (via clearFilters,
+            // since these setters won't have taken effect yet on the next
+            // line) the fetch itself.
+            setSearch(""); setDebouncedSearch("");
+            setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
+            setCurrentPage(1);
+            fetchProducts(false, 1, true);
+          }}
         />
       )}
       {showExportMenu && (

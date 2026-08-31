@@ -24,6 +24,7 @@ from app.modules.billing.repositories.customer import (
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
+from app.modules.billing.utils.validators import validate_gst_format, validate_pan_format
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -64,9 +65,17 @@ class CustomerService:
 
     def _validate_duplicate(
         self, organization_id: int, email: Optional[str] = None,
-        code: Optional[str] = None, company_name: Optional[str] = None,
+        code: Optional[str] = None,
         exclude_id: Optional[int] = None,
     ) -> None:
+        # company_name is intentionally NOT enforced as unique here: there is
+        # no DB constraint on it (only organization_id+customer_code is
+        # unique), and the bulk import wizard's own duplicate detection only
+        # checks customer_code/email. Blocking on company_name meant rows
+        # that the import preview reported as "valid" (e.g. several distinct
+        # customer accounts under the same company, a common real-world
+        # case) would still fail at confirm time with a confusing
+        # "already exists" error.
         if email:
             existing = self.repo.get_first(organization_id, email=email)
             if existing and (exclude_id is None or existing.id != exclude_id):
@@ -75,10 +84,6 @@ class CustomerService:
             existing = self.repo.get_first(organization_id, customer_code=code)
             if existing and (exclude_id is None or existing.id != exclude_id):
                 raise AlreadyExistsException("Customer", "customer_code")
-        if company_name:
-            existing = self.repo.get_first(organization_id, company_name=company_name)
-            if existing and (exclude_id is None or existing.id != exclude_id):
-                raise AlreadyExistsException("Customer", "company_name")
 
     def _resolve_org_currency(self, organization_id: int) -> str:
         """Resolve the organization's base/default currency.
@@ -108,7 +113,6 @@ class CustomerService:
             organization_id,
             email=data.get("email"),
             code=data.get("customer_code"),
-            company_name=data.get("company_name"),
         )
         # create_no_commit + log_no_commit + a single commit below makes the
         # customer row and its audit entry atomic: previously each was its
@@ -140,8 +144,25 @@ class CustomerService:
             self._validate_duplicate(organization_id, email=data["email"], exclude_id=customer_id)
         if data.get("customer_code") and data["customer_code"] != customer.customer_code:
             self._validate_duplicate(organization_id, code=data["customer_code"], exclude_id=customer_id)
-        if data.get("company_name") and data["company_name"] != customer.company_name:
-            self._validate_duplicate(organization_id, company_name=data["company_name"], exclude_id=customer_id)
+        # gst_number/pan: only strictly format-check when the value is
+        # actually being changed. The frontend resends the customer's full
+        # field set on every save, so unconditionally re-validating would
+        # keep rejecting saves of unrelated fields on any customer whose
+        # gst_number/pan predates this format check (e.g. bulk-imported data,
+        # which never format-checks these) or was entered before validation
+        # existed.
+        for field_name, validator_fn in (("gst_number", validate_gst_format), ("pan", validate_pan_format)):
+            if field_name not in data:
+                continue
+            existing_norm = (getattr(customer, field_name) or "").strip().upper()
+            incoming_norm = (data[field_name] or "").strip().upper()
+            if incoming_norm == existing_norm:
+                data[field_name] = getattr(customer, field_name)
+            else:
+                try:
+                    data[field_name] = validator_fn(data[field_name])
+                except ValueError as exc:
+                    raise BadRequestException(str(exc))
         updated = self.repo.update(customer_id, organization_id, **data)
         self.audit.log(
             organization_id, updated_by, BillingAuditAction.UPDATE,

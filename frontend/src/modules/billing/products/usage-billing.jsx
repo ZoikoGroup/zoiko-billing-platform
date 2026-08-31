@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, RefreshCw, Zap, DollarSign, Activity, Calendar, Search, Plus, X, AlertCircle, CheckCircle, Settings2, FlaskConical, Download, KeyRound, Gauge } from "lucide-react";
+import { BarChart3, RefreshCw, Zap, DollarSign, Activity, Calendar, Search, Plus, X, AlertCircle, CheckCircle, Settings2, FlaskConical, Download, Gauge } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
@@ -36,22 +36,17 @@ function StatusPill({ status }) {
   );
 }
 
-function ApiKeyPill({ connected }) {
-  return connected ? (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-brand-50 text-brand-700 border border-brand-100">
-      <KeyRound size={12} /> Connected
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-500 border border-slate-200">
-      No API key
-    </span>
-  );
-}
+// Product has no dedicated "meter type" column, so it's proxied through
+// billing_frequency -- this map and meterTypeFor() must stay in sync (one is
+// the write side, the other the read side of the same encoding) so a meter
+// created with a given Meter Type displays as that same type afterward.
+const METER_TYPE_TO_BILLING_FREQUENCY = { sum: "usage_based", max: "monthly", unique: "quarterly", last: "one_time" };
 
 function meterTypeFor(product) {
   const freq = product?.billing_frequency || "usage_based";
   if (freq === "usage_based") return "Sum";
   if (freq === "monthly" || freq === "recurring") return "Max";
+  if (freq === "quarterly") return "Unique Count";
   return "Last Value";
 }
 
@@ -80,17 +75,34 @@ export default function UsageBillingPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  // isInitial=false (a manual refresh) must not flip `loading` -- the render
+  // below blanks the whole page while `loading` is true, so refreshing used
+  // to replace the entire table with a full-page spinner instead of just
+  // animating the refresh icon.
+  const fetchData = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       setError(null);
-      const [usageRes, allRes] = await Promise.allSettled([
+      // Fetch both active and inactive (but not archived) meters, from both
+      // sources -- otherwise deactivating a meter made it vanish from this
+      // page entirely instead of showing up with an "inactive" status pill.
+      const [usageRes, usageInactiveRes, allRes, allInactiveRes] = await Promise.allSettled([
         productApi.listUsageBillable(),
+        productApi.listUsageBillable({ is_active: false }),
         productApi.list({ per_page: 100, product_type: "usage" }),
+        productApi.list({ per_page: 100, product_type: "usage", is_active: false }),
       ]);
-      if (usageRes.status === "fulfilled") setUsageProducts(extractArray(usageRes.value));
-      if (allRes.status === "fulfilled") setAllProducts(extractArray(allRes.value));
-      if (usageRes.status === "rejected" && allRes.status === "rejected") {
+      const usageItems = [
+        ...(usageRes.status === "fulfilled" ? extractArray(usageRes.value) : []),
+        ...(usageInactiveRes.status === "fulfilled" ? extractArray(usageInactiveRes.value) : []),
+      ];
+      const allItems = [
+        ...(allRes.status === "fulfilled" ? extractArray(allRes.value) : []),
+        ...(allInactiveRes.status === "fulfilled" ? extractArray(allInactiveRes.value) : []),
+      ];
+      setUsageProducts(usageItems);
+      setAllProducts(allItems);
+      if ([usageRes, usageInactiveRes, allRes, allInactiveRes].every((r) => r.status === "rejected")) {
         setError("Failed to load usage data");
       }
     } catch (err) {
@@ -101,7 +113,7 @@ export default function UsageBillingPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(true); }, [fetchData]);
 
   const mergedProducts = useMemo(() => {
     const merged = [...new Map([...usageProducts, ...allProducts].map((p) => [p.id, p])).values()];
@@ -141,7 +153,7 @@ export default function UsageBillingPage() {
         code: createForm.code || undefined,
         description: createForm.description || undefined,
         product_type: "usage",
-        billing_frequency: "usage_based",
+        billing_frequency: METER_TYPE_TO_BILLING_FREQUENCY[createForm.meter_type] || "usage_based",
         unit_label: createForm.unit_label,
         default_price: price,
         currency: createForm.currency,
@@ -309,7 +321,6 @@ export default function UsageBillingPage() {
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Meter Type</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">API Key</th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Billing Model</th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
@@ -339,7 +350,6 @@ export default function UsageBillingPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{product.unit_label || "—"}</td>
                     <td className="px-6 py-4 text-right font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(product.default_price || 0, product.currency || baseCurrency)}</td>
-                    <td className="px-6 py-4 text-center"><ApiKeyPill connected={product.is_subscribable} /></td>
                     <td className="px-6 py-4 text-center">
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <Zap size={12} className="text-brand" /> {product.is_subscribable ? "Subscribable" : "Pay-as-you-go"}
