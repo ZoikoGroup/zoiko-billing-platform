@@ -144,6 +144,10 @@ export default function ImportWizardModal({ onClose, onImported }) {
       setError("Only CSV and XLSX files are supported.");
       return;
     }
+    if (ext === "xls") {
+      setError("Legacy Excel .xls is not supported. Please open the file in Excel and re-save as .xlsx (or export as .csv), then upload again.");
+      return;
+    }
     if (f.size > MAX_IMPORT_FILE_SIZE_BYTES) {
       setError(`File is too large (${(f.size / (1024 * 1024)).toFixed(1)} MB). The maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / (1024 * 1024)} MB — please split it into smaller files.`);
       return;
@@ -289,7 +293,7 @@ export default function ImportWizardModal({ onClose, onImported }) {
                      : file ? "border-emerald-400 bg-emerald-50"
                              : "border-slate-300 hover:border-brand-400 hover:bg-brand-50/50 bg-slate-50"}`}
       >
-        <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileSelect} />
+        <input ref={fileInputRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={handleFileSelect} />
         {file ? (
           <>
             <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
@@ -579,7 +583,7 @@ export default function ImportWizardModal({ onClose, onImported }) {
           </div>
         </div>
 
-        {valid === 0 && (
+        {valid === 0 && duplicate === 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
             <p className="text-sm font-semibold text-red-700 mb-1">No valid rows to import</p>
             <p className="text-xs text-red-600">Please fix the errors in your file and try again.</p>
@@ -656,7 +660,10 @@ export default function ImportWizardModal({ onClose, onImported }) {
   const canProceed = () => {
     if (step === 1) return !!file;
     if (step === 2) return true;
-    if (step === 4) return preview && preview.valid > 0;
+    // Duplicates are actionable too (skip/overwrite/create copy per the
+    // chosen strategy) -- only block when there's truly nothing to do with
+    // any row in the file.
+    if (step === 4) return preview && (preview.valid > 0 || preview.duplicate > 0);
     return true;
   };
 
@@ -688,9 +695,25 @@ export default function ImportWizardModal({ onClose, onImported }) {
     else if (step === 4) setStep(2);
   };
 
+  // Rows that will actually create/update a product: all "valid" rows, plus
+  // "duplicate" rows whose resolved action (per-row override, falling back to
+  // the global strategy) is "overwrite" or "create_copy". Duplicates left on
+  // "skip" (the default global strategy, and the default per-row action under
+  // "review") are never imported — counting them here would tell the user
+  // "Import N Products" and then only create fewer than N.
+  const projectedImportCount = () => {
+    if (!preview) return 0;
+    const dupWillImport = (preview.rows || []).filter((r) => {
+      if (r.status !== "duplicate") return false;
+      const action = perRowActions[r.row_index] || duplicateStrategy;
+      return action === "overwrite" || action === "create_copy";
+    }).length;
+    return (preview.valid || 0) + dupWillImport;
+  };
+
   const nextLabel = () => {
     if (step === 2) return loading ? "Validating…" : "Validate & Preview";
-    if (step === 4) return loading ? "Importing…" : `Import ${preview?.valid || 0} Products`;
+    if (step === 4) return loading ? "Importing…" : `Import ${projectedImportCount()} Products`;
     if (step === 5) return null;
     return "Next";
   };
@@ -751,7 +774,7 @@ export default function ImportWizardModal({ onClose, onImported }) {
             </button>
 
             <div className="flex items-center gap-3">
-              {step === 4 && preview?.valid === 0 && (
+              {step === 4 && preview?.valid === 0 && preview?.duplicate === 0 && (
                 <span className="text-xs text-red-600 font-medium">No valid rows to import</span>
               )}
               {nextLabel() && (

@@ -37,6 +37,7 @@ from app.modules.billing.services.customer_service import (
     CustomerService,
 )
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES as VALID_CURRENCIES
+from app.modules.billing.utils.validators import validate_gst_format, validate_pan_format
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -380,9 +381,18 @@ class CustomerImportService:
         else:
             raise ValueError("Unsupported file format")
 
-        # Auto-detect common/template columns, then let explicit user overrides win.
+        # Auto-detect common/template columns, then let explicit user overrides
+        # win. Only a truthy override replaces an auto-detected mapping: the
+        # column-mapping UI's "— Auto detect —" option submits "" for that
+        # column, meaning "no override, keep whatever was auto-detected" --
+        # not "map this column to nothing". Merging blindly (`.update(...)`
+        # with no filter) let selecting that option for an already
+        # correctly auto-detected column (e.g. Customer Code/Company Name)
+        # silently erase its mapping, so every row failed the required-field
+        # check and the whole file came back "No valid rows to import"
+        # despite being fine.
         effective_map = dict(_auto_map_columns(headers))
-        effective_map.update(column_map or {})
+        effective_map.update({k: v for k, v in (column_map or {}).items() if v})
 
         customer_svc = CustomerService(self.db)
         org_currency = customer_svc._resolve_org_currency(organization_id)
@@ -917,6 +927,24 @@ class CustomerImportService:
                 mapped["gst_number"] = mapped["tax_id"]
             if tax_profile.tax_system == "VAT" and mapped.get("tax_id") and not mapped.get("vat_number"):
                 mapped["vat_number"] = mapped["tax_id"]
+
+        # --- GST / PAN format validation ---
+        # Enforced at import time (not just on later manual edits) so a bad
+        # value -- including one auto-copied from a generic Tax ID column
+        # above -- doesn't get created silently and then block unrelated
+        # edits later (CustomerService.update_customer re-validates these on
+        # change, but a value that was never valid to begin with still needs
+        # catching somewhere).
+        if mapped.get("gst_number"):
+            try:
+                mapped["gst_number"] = validate_gst_format(mapped["gst_number"])
+            except ValueError as exc:
+                errors.append(f"Invalid GST Number '{mapped['gst_number']}': {exc}")
+        if mapped.get("pan"):
+            try:
+                mapped["pan"] = validate_pan_format(mapped["pan"])
+            except ValueError as exc:
+                errors.append(f"Invalid PAN '{mapped['pan']}': {exc}")
 
         # --- Payment terms ---
         terms = (mapped.get("payment_terms") or "").lower().strip()

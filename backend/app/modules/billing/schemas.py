@@ -303,20 +303,19 @@ class CustomerUpdate(BaseModel):
     def validate_website(cls, v: Optional[str]) -> Optional[str]:
         return validate_website_format(v)
 
-    @field_validator("gst_number", mode="before")
-    @classmethod
-    def validate_gst(cls, v: Optional[str]) -> Optional[str]:
-        return validate_gst_format(v)
+    # gst_number/pan are deliberately NOT strictly format-validated here (unlike
+    # CustomerCreate). This is an Update schema, and the frontend always
+    # resends the customer's full current field set on every save -- so an
+    # unconditional format check would keep re-rejecting a pre-existing value
+    # that predates this validation (e.g. bulk-imported data, which never
+    # format-checks GST/PAN), blocking saves of completely unrelated fields.
+    # CustomerService.update_customer applies the strict check instead, but
+    # only when the incoming value actually differs from what's stored.
 
     @field_validator("vat_number", mode="before")
     @classmethod
     def validate_vat(cls, v: Optional[str]) -> Optional[str]:
         return validate_vat_format(v)
-
-    @field_validator("pan", mode="before")
-    @classmethod
-    def validate_pan(cls, v: Optional[str]) -> Optional[str]:
-        return validate_pan_format(v)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -556,10 +555,10 @@ class ProductCreate(BaseModel):
     product_type: ProductType = ProductType.SERVICE
     unit_label: Optional[str] = None
     currency: Optional[str] = None
-    default_price: Decimal = Decimal("0")
-    original_price: Decimal = Decimal("0")
-    cost_price: Decimal = Decimal("0")
-    tax_percentage: Decimal = Decimal("0")
+    default_price: Decimal = Field(Decimal("0"), ge=0)
+    original_price: Decimal = Field(Decimal("0"), ge=0)
+    cost_price: Decimal = Field(Decimal("0"), ge=0)
+    tax_percentage: Decimal = Field(Decimal("0"), ge=0)
     tax_category_id: Optional[int] = None
     country: Optional[str] = None
     gst_vat_group: Optional[str] = None
@@ -570,7 +569,7 @@ class ProductCreate(BaseModel):
     image_url: Optional[str] = None
     brand: Optional[str] = None
     billing_frequency: BillingFrequency = BillingFrequency.ONE_TIME
-    default_discount: Decimal = Decimal("0")
+    default_discount: Decimal = Field(Decimal("0"), ge=0, le=100)
     invoice_description: Optional[str] = None
 
 
@@ -582,10 +581,10 @@ class ProductUpdate(BaseModel):
     product_type: Optional[ProductType] = None
     unit_label: Optional[str] = None
     currency: Optional[str] = None
-    default_price: Optional[Decimal] = None
-    original_price: Optional[Decimal] = None
-    cost_price: Optional[Decimal] = None
-    tax_percentage: Optional[Decimal] = None
+    default_price: Optional[Decimal] = Field(None, ge=0)
+    original_price: Optional[Decimal] = Field(None, ge=0)
+    cost_price: Optional[Decimal] = Field(None, ge=0)
+    tax_percentage: Optional[Decimal] = Field(None, ge=0)
     tax_category_id: Optional[int] = None
     country: Optional[str] = None
     gst_vat_group: Optional[str] = None
@@ -596,7 +595,7 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     brand: Optional[str] = None
     billing_frequency: Optional[BillingFrequency] = None
-    default_discount: Optional[Decimal] = None
+    default_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     invoice_description: Optional[str] = None
 
 

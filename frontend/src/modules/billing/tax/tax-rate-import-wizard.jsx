@@ -569,7 +569,7 @@ export default function TaxRateImportWizard({ onClose, onImported }) {
           </div>
         </div>
 
-        {valid === 0 && (
+        {valid === 0 && duplicate === 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
             <p className="text-sm font-semibold text-red-700 mb-1">No valid rows to import</p>
             <p className="text-xs text-red-600">Please fix the errors in your file and try again.</p>
@@ -646,7 +646,10 @@ export default function TaxRateImportWizard({ onClose, onImported }) {
   const canProceed = () => {
     if (step === 1) return !!file;
     if (step === 2) return true;
-    if (step === 4) return preview && preview.valid > 0;
+    // Duplicates are actionable too (skip/overwrite/create copy per the
+    // chosen strategy) -- only block when there's truly nothing to do with
+    // any row in the file.
+    if (step === 4) return preview && (preview.valid > 0 || preview.duplicate > 0);
     return true;
   };
 
@@ -680,7 +683,7 @@ export default function TaxRateImportWizard({ onClose, onImported }) {
 
   const nextLabel = () => {
     if (step === 2) return loading ? "Validating…" : "Validate & Preview";
-    if (step === 4) return loading ? "Importing…" : `Import ${preview?.valid || 0} Rates`;
+    if (step === 4) return loading ? "Importing…" : `Import ${(preview?.valid || 0) + (preview?.duplicate || 0)} Rates`;
     if (step === 5) return null;
     return "Next";
   };
@@ -741,7 +744,7 @@ export default function TaxRateImportWizard({ onClose, onImported }) {
             </button>
 
             <div className="flex items-center gap-3">
-              {step === 4 && preview?.valid === 0 && (
+              {step === 4 && preview?.valid === 0 && preview?.duplicate === 0 && (
                 <span className="text-xs text-red-600 font-medium">No valid rows to import</span>
               )}
               {nextLabel() && (

@@ -313,8 +313,16 @@ class TaxRateImportService:
         else:
             raise ValueError("Unsupported file format")
 
+        # Only a truthy override replaces an auto-detected mapping: the
+        # column-mapping UI's "— Auto detect —" option submits "" for that
+        # column, meaning "no override, keep whatever was auto-detected" --
+        # not "map this column to nothing". Merging blindly (`.update(...)`
+        # with no filter) let selecting that option for an already
+        # correctly auto-detected column silently erase its mapping, so
+        # every row failed the required-field check and the whole file came
+        # back "No valid rows to import" despite being fine.
         effective_map = dict(_auto_map_columns(headers))
-        effective_map.update(column_map or {})
+        effective_map.update({k: v for k, v in (column_map or {}).items() if v})
 
         org_currency = _resolve_org_currency(self.db, organization_id)
 

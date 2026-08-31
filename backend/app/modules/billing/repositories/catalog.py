@@ -32,8 +32,8 @@ class ProductCategoryRepository(BaseRepository[ProductCategory]):
     def list_root(self, organization_id: int, active_only: bool = True) -> List[ProductCategory]:
         return self.list_all(organization_id, active_only=active_only, parent_id=None)
 
-    def list_children(self, organization_id: int, parent_id: int) -> List[ProductCategory]:
-        return self.list_all(organization_id, parent_id=parent_id)
+    def list_children(self, organization_id: int, parent_id: int, active_only: bool = True) -> List[ProductCategory]:
+        return self.list_all(organization_id, active_only=active_only, parent_id=parent_id)
 
     def list_paginated(
         self,
@@ -120,6 +120,25 @@ class ProductRepository(BaseRepository[Product]):
         self.db.refresh(product)
         return product
 
+    def get_deleted_by_code(self, organization_id: int, code: str) -> Optional[Product]:
+        """Return a soft-deleted product matching this org + code, or None.
+
+        `exists()`/`get_by_code()` deliberately exclude soft-deleted rows so a
+        deleted product no longer counts as a live uniqueness collision, but
+        the underlying row still occupies the (organization_id, code) unique
+        constraint. Callers that need to *reuse* that code (e.g. re-importing a
+        previously deleted catalog) must find and restore the archived row
+        rather than attempt a conflicting insert."""
+        return (
+            self.db.query(Product)
+            .filter(
+                Product.organization_id == organization_id,
+                Product.code == code,
+                Product.deleted_at.isnot(None),
+            )
+            .first()
+        )
+
     def count_by_category(self, organization_id: int, category_id: int) -> int:
         return self.count(organization_id, active_only=False, category_id=category_id)
 
@@ -147,12 +166,23 @@ class ProductRepository(BaseRepository[Product]):
         search_term: Optional[str],
         filters: Dict[str, Any],
         extra_filter: Any = None,
+        include_deleted: bool = False,
     ) -> Dict[str, Any]:
         """
         Shared DB-level (LIMIT/OFFSET, no in-Python filtering) query builder for
         the list_paginated branches below that need a raw query outside the base
         repository's active_only toggle (e.g. "archived only" or "everything
         regardless of status") — was previously duplicated verbatim three times.
+
+        include_deleted=False (the default) excludes soft-deleted/archived rows,
+        matching every other listing path in this app. Only the two callers that
+        explicitly want archived rows in the result (status="archived", which
+        supplies its own deleted_at.isnot(None) extra_filter, and status="all",
+        which deliberately means "literally everything") pass True -- every other
+        caller of this bypass (e.g. active_only=False with no status filter) used
+        to silently include archived products alongside active/inactive ones,
+        which is what made GET /products?is_active=false return archived rows
+        too instead of just inactive ones.
         """
         from app.modules.billing.models import Product as ProductModel, ProductCategory as CategoryModel
         from sqlalchemy import asc, desc
@@ -162,6 +192,8 @@ class ProductRepository(BaseRepository[Product]):
         query = self.db.query(ProductModel).outerjoin(
             CategoryModel, ProductModel.category_id == CategoryModel.id
         ).filter(ProductModel.organization_id == organization_id)
+        if not include_deleted:
+            query = query.filter(ProductModel.deleted_at.is_(None))
         if extra_filter is not None:
             query = query.filter(extra_filter)
         for field, value in filters.items():
@@ -178,7 +210,11 @@ class ProductRepository(BaseRepository[Product]):
             order_fn = asc if sort_order == "asc" else desc
             query = query.order_by(order_fn(getattr(ProductModel, sort_by)))
         items = query.offset((page - 1) * per_page).limit(per_page).all()
-        return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": max(1, -(-total // per_page))}
+        # Matches BaseRepository.list_paginated's zero-result convention
+        # (pages=0, not 1) so callers get a consistent answer regardless of
+        # which internal path served the request.
+        pages = (total + per_page - 1) // per_page if total else 0
+        return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
 
     def list_paginated(
         self,
@@ -211,11 +247,15 @@ class ProductRepository(BaseRepository[Product]):
                 return self._paginated_products_query(
                     organization_id, page, per_page, sort_by, sort_order, search_term, filters,
                     extra_filter=ProductModel.deleted_at.isnot(None),
+                    include_deleted=True,
                 )
             if status == "inactive":
                 filters["is_active"] = False
             elif status == "all":
-                return self._paginated_products_query(organization_id, page, per_page, sort_by, sort_order, search_term, filters)
+                return self._paginated_products_query(
+                    organization_id, page, per_page, sort_by, sort_order, search_term, filters,
+                    include_deleted=True,
+                )
             else:
                 filters["is_active"] = True
         return super().list_paginated(
