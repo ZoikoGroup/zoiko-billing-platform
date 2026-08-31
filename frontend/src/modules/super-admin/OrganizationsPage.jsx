@@ -15,6 +15,7 @@ import {
   CommercialSourceBadge,
   CommercialClassificationBadge,
   LifecycleStateBadge,
+  formatTrialRemaining,
 } from "./constants";
 
 const EMPTY_ORG_FORM = {
@@ -223,17 +224,32 @@ export default function OrganizationsPage() {
         ),
       },
       {
-        key: "subscription_status",
-        label: "Subscription",
+        key: "subscription_plan",
+        label: "Plan",
         render: (row) =>
-          row.subscription_status ? (
-            <span className="text-xs font-medium text-slate-600">
-              {row.subscription_plan_code ? `${row.subscription_plan_code} · ` : ""}
-              {displayValue(row.subscription_status)}
+          row.subscription_plan_code ? (
+            <span>
+              <span className="block font-medium text-slate-700">
+                {row.subscription_plan_name || row.subscription_plan_code}
+              </span>
+              <span className="block text-xs text-slate-500">
+                {displayValue(row.subscription_status)}
+              </span>
             </span>
           ) : (
-            <span className="text-xs text-slate-400">Not assigned</span>
+            <span className="text-xs text-slate-400">No plan assigned</span>
           ),
+      },
+      {
+        key: "trial_remaining",
+        label: "Free Trial Remaining",
+        render: (row) => {
+          const trial = formatTrialRemaining(row.trial_ends_at, row.subscription_status, row.recovery_ends_at);
+          if (!trial) return <span className="text-xs text-slate-400">—</span>;
+          const toneClass =
+            trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
+          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
+        },
       },
       {
         key: "users",
@@ -291,7 +307,7 @@ export default function OrganizationsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Organizations"
-        description="Tenant directory — identity, lifecycle state, subscription assignment, operational counts and incident load. Financial records stay behind privileged access."
+        description="Tenant directory — identity, lifecycle state, selected plan, free-trial time remaining, operational counts and incident load. Financial records stay behind privileged access."
         icon={Building2}
         meta={`${displayValue(total)} organization(s)`}
         actions={
@@ -342,7 +358,7 @@ export default function OrganizationsPage() {
             onRowClick={(row) => navigate(`/super-admin/organizations/${row.id}`)}
             emptyTitle="No organizations found"
             emptyMessage={search || lifecycleFilter ? "No organizations match your filters." : "Organizations will appear here once they are provisioned."}
-            minWidth={1080}
+            minWidth={1200}
           />
         )}
       </div>

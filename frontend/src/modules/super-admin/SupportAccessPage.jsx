@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { ShieldAlert, KeyRound, Users, CreditCard, Repeat, History, LogOut } from "lucide-react";
 import {
   requestPrivilegedAccess,
@@ -346,6 +346,14 @@ function TenantSummaryPanel({ grant }) {
 
 export default function SupportAccessPage() {
   const { activeGrant, refresh: refreshShell } = useCommandCenter();
+  const location = useLocation();
+  // Same workflow, reached from two sidebar labels ("Support Access" and
+  // "Privileged Sessions" under Governance & Security) — only the heading
+  // changes to match whichever label the operator clicked.
+  const pageTitle =
+    location.pathname === "/super-admin/governance/privileged-sessions"
+      ? "Privileged Sessions"
+      : "Support Access";
   const [searchParams] = useSearchParams();
   const deepLinkOrgCode = searchParams.get("organization") || "";
   const [history, setHistory] = useState([]);
@@ -419,7 +427,7 @@ export default function SupportAccessPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Support Access"
+        title={pageTitle}
         description="Just-in-time, tenant-scoped, MFA-protected privileged access to a tenant's read-only billing summary (Domain B). Default off — no standing access exists."
         icon={ShieldAlert}
         actions={

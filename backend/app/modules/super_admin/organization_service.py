@@ -160,6 +160,11 @@ class OrganizationDirectoryService:
             "subscription_plan_code": (
                 current_sub.plan.plan_code if current_sub is not None and current_sub.plan else None
             ),
+            "subscription_plan_name": (
+                current_sub.plan.plan_name if current_sub is not None and current_sub.plan else None
+            ),
+            "trial_ends_at": current_sub.trial_ends_at if current_sub else None,
+            "recovery_ends_at": current_sub.recovery_ends_at if current_sub else None,
             "total_users": counts.get("total", 0),
             "active_users": counts.get("active", 0),
             "org_admins": counts.get("org_admins", 0),

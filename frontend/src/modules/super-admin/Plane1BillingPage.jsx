@@ -1019,7 +1019,7 @@ export default function Plane1BillingPage() {
     { key: "quotes", label: "Quotes", icon: Send },
     { key: "invoices", label: "Invoices", icon: Receipt },
     { key: "payments", label: "Payments", icon: CreditCard },
-    { key: "reconciliation", label: "Reconciliation", icon: ClipboardCheck },
+    { key: "reconciliation", label: "Platform Revenue Reconciliation", icon: ClipboardCheck },
     { key: "evaluation", label: "Evaluation Programs", icon: Clock },
   ];
 
