@@ -301,6 +301,37 @@ def send_quote(
     return quote
 
 
+def _convert_and_invoice_accepted_quote(
+    db: Session, quote: CommercialQuote, actor_id: Optional[int]
+) -> None:
+    """Acceptance is the billing trigger: an accepted quote is converted to a
+    PlatformInvoice, finalized (DRAFT -> ISSUED), and emailed to the org's
+    admin — no invoice is ever generated/sent before the org accepts a quote.
+
+    A failure to email doesn't undo the acceptance/invoice: the invoice
+    already exists and is valid, and PlatformInvoiceService.send() records
+    its own delivery-attempt failure for later retry.
+    """
+    quote_svc = CommercialQuoteService(db)
+    invoice_svc = PlatformInvoiceService(db)
+
+    invoice = quote_svc.convert_to_invoice(quote_id=quote.id, actor_id=actor_id)
+    db.commit()
+
+    invoice = invoice_svc.finalize(invoice_id=invoice.id, actor_id=actor_id)
+    db.commit()
+
+    try:
+        invoice_svc.send(invoice_id=invoice.id, actor_id=actor_id)
+    except Exception:
+        logger.exception(
+            "Failed to auto-send invoice %s after quote %s acceptance",
+            invoice.id,
+            quote.id,
+        )
+    db.commit()
+
+
 @router.post(
     "/quotes/{quote_id}/approve",
     summary="Approve a commercial quote (enforces approver != creator)",
@@ -314,6 +345,7 @@ def approve_quote(
     svc = CommercialQuoteService(db)
     quote = svc.approve_quote(quote_id=quote_id, actor_id=current_user.id)
     db.commit()
+    _convert_and_invoice_accepted_quote(db, quote, current_user.id)
     return quote
 
 
@@ -888,6 +920,7 @@ def accept_public_quote(token: str, db: Session = Depends(get_db)):
     svc = CommercialQuoteService(db)
     quote = svc.accept_public_quote(token)
     db.commit()
+    _convert_and_invoice_accepted_quote(db, quote, quote.created_by)
     return _serialize_public_quote(quote)
 
 

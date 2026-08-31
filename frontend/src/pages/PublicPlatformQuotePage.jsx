@@ -206,14 +206,17 @@ export default function PublicPlatformQuotePage() {
           <SectionCard title="Your Response" icon="✍️">
             {actionError && <p className="pquo-action-error">{actionError}</p>}
             {!showRejectForm ? (
-              <div className="pquo-action-row">
-                <button type="button" className="pquo-btn pquo-btn--accept" disabled={acting} onClick={handleAccept}>
-                  {acting ? "Working…" : "Accept Quote"}
-                </button>
-                <button type="button" className="pquo-btn pquo-btn--reject" disabled={acting} onClick={() => setShowRejectForm(true)}>
-                  Reject Quote
-                </button>
-              </div>
+              <>
+                <div className="pquo-action-row">
+                  <button type="button" className="pquo-btn pquo-btn--accept" disabled={acting} onClick={handleAccept}>
+                    {acting ? "Working…" : "Approve Quote"}
+                  </button>
+                  <button type="button" className="pquo-btn pquo-btn--reject" disabled={acting} onClick={() => setShowRejectForm(true)}>
+                    Reject Quote
+                  </button>
+                </div>
+                <p className="pquo-action-hint">Approving generates your invoice immediately — we'll email it to you right away.</p>
+              </>
             ) : (
               <div className="pquo-reject-form">
                 <label className="pquo-reject-label" htmlFor="pquo-reject-reason">Reason (optional)</label>
@@ -241,7 +244,7 @@ export default function PublicPlatformQuotePage() {
         {status === "accepted" && (
           <div className="pquo-status-banner pquo-status-banner--accepted">
             <span>✅</span>
-            <p>You've accepted this quote. Zoiko Billing Accounts will follow up with your invoice.</p>
+            <p>You've approved this quote. Your invoice has been generated and emailed to your organization's admin.</p>
           </div>
         )}
         {status === "rejected" && (
@@ -308,6 +311,7 @@ const STYLES = `
   .pquo-notes { font-size: 0.88rem; color: #94a3b8; line-height: 1.7; white-space: pre-wrap; margin: 0; }
   .pquo-action-error { font-size: 0.85rem; color: #f87171; margin: 0 0 1rem; }
   .pquo-action-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .pquo-action-hint { font-size: 0.78rem; color: #64748b; margin: 0.85rem 0 0; }
   .pquo-btn { padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-size: 0.9rem; font-weight: 700; border: none; cursor: pointer; transition: all 0.15s; }
   .pquo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .pquo-btn--accept { background: linear-gradient(135deg, #10b981, #34d399); color: #052e1f; }
