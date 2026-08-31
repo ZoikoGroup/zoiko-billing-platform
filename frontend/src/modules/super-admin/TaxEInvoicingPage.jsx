@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Landmark, FileWarning } from "lucide-react";
+import { Landmark } from "lucide-react";
 import { getTaxSummary } from "../../service/commandCenterService";
 import { PageHeader, DataTable } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
@@ -48,7 +48,7 @@ export default function TaxEInvoicingPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Tax & E-Invoicing"
+        title="Tax"
         description="Real applied-tax amounts recorded per invoice/credit note, grouped by currency, jurisdiction, and tax type across every tenant. Figures are per-currency and never summed across currencies."
         icon={Landmark}
         meta={summary ? `${summary.total_records} tax record(s)` : null}
@@ -66,21 +66,6 @@ export default function TaxEInvoicingPage() {
             ) : (
               <DataTable columns={TAX_COLUMNS} data={summary.buckets} rowKey={(r) => `${r.currency}-${r.jurisdiction}-${r.tax_type}`} minWidth={800} />
             )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6">
-          <div className="flex items-start gap-3">
-            <FileWarning size={18} className="mt-0.5 shrink-0 text-slate-400" />
-            <div className="text-xs text-slate-600">
-              <p className="font-bold text-slate-700">E-Invoicing Compliance — Not integrated</p>
-              <p className="mt-1">
-                This codebase has no e-invoicing network integration — no Peppol, KSeF, Factur-X, or ZATCA
-                transmission, and no VIES VAT-ID validation. GSTIN/VAT numbers are stored and printed on PDFs
-                as plain tax-ID fields only, not validated against any government registry or transmitted to
-                any tax authority portal. Building this requires a new integration project, not a UI change.
-              </p>
-            </div>
           </div>
         </div>
       </div>

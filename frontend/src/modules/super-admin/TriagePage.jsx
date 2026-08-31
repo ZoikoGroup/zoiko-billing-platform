@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   Activity,
   AlertCircle,
@@ -27,6 +27,7 @@ import {
   suppressAttentionItem,
   listAttentionItems,
 } from "../../service/commandCenterService";
+import { getJobTelemetry, retryJob } from "../../service/privilegedAccessService";
 import { PageHeader } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 
@@ -58,13 +59,40 @@ const PIPELINE_STAGE_MAPPINGS = [
   { stage: "Reconciliation", job_name: "financial_consistency_job", label: "Reconciliation & Ledger Integrity" },
 ];
 
+// Route-to-heading mapping: this page is reachable from three distinct
+// sidebar entries ("Triage & Attention", "Incidents", "Processing Failures &
+// Reprocessing") that all point at the same underlying triage data. The
+// heading (and, for the reprocessing route, a placeholder scaffold) changes
+// per-route so the page reflects the label the operator actually clicked.
+const ROUTE_INCIDENTS = "/super-admin/reliability/incidents";
+const ROUTE_REPROCESSING = "/super-admin/reliability/reprocessing";
+
 export default function TriagePage() {
+  const location = useLocation();
+  const isIncidentsRoute = location.pathname === ROUTE_INCIDENTS;
+  const isReprocessingRoute = location.pathname === ROUTE_REPROCESSING;
+  const pageTitle = isReprocessingRoute
+    ? "Processing Failures & Reprocessing"
+    : isIncidentsRoute
+    ? "Incidents"
+    : "Triage & Operational Incidents";
+
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState(null);
+
+  // Failed-job reprocessing (only fetched on the reprocessing route — see
+  // ROUTE_REPROCESSING above). Reuses the same JobHealthItem data System
+  // Health/Job Health already surface; the retry action itself is new.
+  const [failedJobs, setFailedJobs] = useState([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobsError, setJobsError] = useState(null);
+  const [retryReasons, setRetryReasons] = useState({});
+  const [retryingJob, setRetryingJob] = useState(null);
+  const [retryMessage, setRetryMessage] = useState(null);
 
   // Form states for incident actions
   const [resolutionCode, setResolutionCode] = useState("");
@@ -85,6 +113,42 @@ export default function TriagePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadFailedJobs = useCallback(() => {
+    setJobsLoading(true);
+    getJobTelemetry()
+      .then((data) => {
+        const jobs = (data?.jobs || []).filter((j) => j.last_status === "FAILED");
+        setFailedJobs(jobs);
+        setJobsError(null);
+      })
+      .catch((e) => setJobsError(e?.message || "Unable to load job health."))
+      .finally(() => setJobsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (isReprocessingRoute) loadFailedJobs();
+  }, [isReprocessingRoute, loadFailedJobs]);
+
+  const handleRetryJob = async (jobName) => {
+    const reason = (retryReasons[jobName] || "").trim();
+    if (reason.length < 3) {
+      setRetryMessage({ jobName, type: "error", text: "A reason of at least 3 characters is required." });
+      return;
+    }
+    setRetryingJob(jobName);
+    setRetryMessage(null);
+    try {
+      await retryJob(jobName, reason);
+      setRetryMessage({ jobName, type: "success", text: "Queued for an immediate retry." });
+      setRetryReasons((prev) => ({ ...prev, [jobName]: "" }));
+      loadFailedJobs();
+    } catch (e) {
+      setRetryMessage({ jobName, type: "error", text: e?.message || "Failed to queue retry." });
+    } finally {
+      setRetryingJob(null);
+    }
+  };
 
   const handleAcknowledge = async (item) => {
     setActionLoading(true);
@@ -143,7 +207,7 @@ export default function TriagePage() {
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader
-          title="Triage & Operational Incidents"
+          title={pageTitle}
           description="Real-time incident response, 7-stage processing pipeline telemetry, circuit breaker safety controls, and critical audit stream."
           icon={ClipboardList}
         />
@@ -157,6 +221,80 @@ export default function TriagePage() {
           Refresh Triage
         </button>
       </div>
+
+      {isReprocessingRoute && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Failed Jobs</h3>
+            <button
+              type="button"
+              onClick={loadFailedJobs}
+              disabled={jobsLoading}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <RefreshCw size={12} className={jobsLoading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
+
+          {jobsLoading ? (
+            <div className="py-8 flex justify-center">
+              <Spinner />
+            </div>
+          ) : jobsError ? (
+            <ErrorState message={jobsError} onRetry={loadFailedJobs} title="Job health unavailable" />
+          ) : failedJobs.length === 0 ? (
+            <p className="pt-4 text-sm text-slate-500">No background jobs are currently in a failed state.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {failedJobs.map((job) => (
+                <div key={job.job_name} className="rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{job.display_name || job.job_name}</p>
+                      {job.last_error ? (
+                        <p className="mt-1 max-w-xl text-xs text-rose-700">{job.last_error}</p>
+                      ) : null}
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Last run: {job.last_started_at ? new Date(job.last_started_at).toLocaleString() : "unknown"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <input
+                        type="text"
+                        value={retryReasons[job.job_name] || ""}
+                        onChange={(e) =>
+                          setRetryReasons((prev) => ({ ...prev, [job.job_name]: e.target.value }))
+                        }
+                        placeholder="Reason for retry (required)"
+                        className="w-56 rounded-xl border border-slate-200 px-3 py-1.5 text-xs focus:border-brand-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRetryJob(job.job_name)}
+                        disabled={retryingJob === job.job_name}
+                        className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-50"
+                      >
+                        <Power size={12} />
+                        {retryingJob === job.job_name ? "Queuing…" : "Retry now"}
+                      </button>
+                    </div>
+                  </div>
+                  {retryMessage?.jobName === job.job_name ? (
+                    <p
+                      className={`mt-2 text-xs font-semibold ${
+                        retryMessage.type === "success" ? "text-emerald-700" : "text-rose-700"
+                      }`}
+                    >
+                      {retryMessage.text}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="py-12 flex justify-center">

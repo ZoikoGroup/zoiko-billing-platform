@@ -85,7 +85,7 @@ export default function PaymentsDisputesPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Payments & Disputes"
+        title="Payments"
         description="Failed payment recovery queue and dunning engine state across every tenant. All values are real database aggregates."
         icon={CreditCard}
       />
@@ -139,10 +139,10 @@ export default function PaymentsDisputesPage() {
           <div className="flex items-start gap-3">
             <ShieldOff size={18} className="mt-0.5 shrink-0 text-slate-400" />
             <div className="text-xs text-slate-600">
-              <p className="font-bold text-slate-700">Dispute & Chargeback Oversight — Not integrated</p>
+              <p className="font-bold text-slate-700">Chargeback Oversight — Not integrated</p>
               <p className="mt-1">
-                This codebase has no dispute/chargeback data model and no payment-gateway webhook ingestion for
-                disputes (Stripe, PayPal, Adyen). Building this section requires a new data model and gateway
+                This codebase has no chargeback/dispute data model and no payment-gateway webhook ingestion for
+                chargebacks (Stripe, PayPal, Adyen). Building this section requires a new data model and gateway
                 integration — it is not a UI-only gap.
               </p>
             </div>

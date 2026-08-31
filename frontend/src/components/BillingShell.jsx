@@ -204,6 +204,7 @@ const NAV_SECTIONS = [
       { label: "Administrators & Users", href: "/super-admin/users", icon: UserCog },
       { label: "Lifecycle & Onboarding", href: "/super-admin/platform/lifecycle", icon: Layers },
       { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
+      { label: "Job Health", href: "/super-admin/tenant-health/jobs", icon: History },
       { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
     ],
   },
@@ -224,7 +225,7 @@ const NAV_SECTIONS = [
       { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
       { label: "Invoices", href: "/super-admin/commercial/invoices?tab=invoices", icon: Receipt },
       { label: "Payments", href: "/super-admin/commercial/invoices?tab=payments", icon: CreditCard },
-      { label: "Reconciliation", href: "/super-admin/commercial/invoices?tab=reconciliation", icon: ClipboardCheck },
+      { label: "Platform Revenue Reconciliation", href: "/super-admin/commercial/invoices?tab=reconciliation", icon: ClipboardCheck },
     ],
   },
   {
@@ -234,24 +235,11 @@ const NAV_SECTIONS = [
     children: [
       { label: "Billing Command Center", href: "/super-admin/billing-command-center", icon: LayoutDashboard },
       { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: Receipt },
-      { label: "Payments & Disputes", href: "/super-admin/financial/payments", icon: WalletCards },
+      { label: "Payments", href: "/super-admin/financial/payments", icon: WalletCards },
       { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: DollarSign },
-      { label: "Reconciliation", href: "/super-admin/financial/reconciliation", icon: ClipboardCheck },
+      { label: "Tenant Ledger Reconciliation", href: "/super-admin/financial/reconciliation", icon: ClipboardCheck },
       { label: "Credits, Adjustments & Refunds", href: "/super-admin/financial/credits", icon: Undo2 },
-      { label: "Usage & Metering", href: "/super-admin/financial/usage", icon: TrendingUp },
-      { label: "Tax & E-Invoicing", href: "/super-admin/financial/tax", icon: Landmark },
-    ],
-  },
-  {
-    label: "Integrations & Automation",
-    icon: SlidersHorizontal,
-    superAdminOnly: true,
-    children: [
-      { label: "Payment Gateways", href: "/super-admin/integrations/gateways", icon: CreditCard },
-      { label: "Accounting / ERP / Tax Connectors", href: "/super-admin/integrations/connectors", icon: Landmark },
-      { label: "API & Webhooks", href: "/super-admin/integrations/webhooks", icon: FileText },
-      { label: "Jobs & Queues", href: "/super-admin/integrations/jobs", icon: History },
-      { label: "Imports & Exports", href: "/super-admin/integrations/imports-exports", icon: ScrollText },
+      { label: "Tax", href: "/super-admin/financial/tax", icon: Landmark },
     ],
   },
   {
@@ -261,7 +249,6 @@ const NAV_SECTIONS = [
     children: [
       { label: "Approval Center", href: "/super-admin/approval-queue", icon: CheckSquare },
       { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
-      { label: "Roles & Access", href: "/super-admin/governance/roles", icon: UserCog },
       { label: "Privileged Sessions", href: "/super-admin/governance/privileged-sessions", icon: ShieldCheck },
       { label: "Security Events", href: "/super-admin/governance/security-events", icon: Bell },
       { label: "Data Governance", href: "/super-admin/governance/data", icon: ClipboardList },
@@ -384,7 +371,15 @@ function SidebarContent({ onNavigate, role }) {
   const showWorkspace = role === "billing_admin";
   const showOrgNav = role === "org_admin";
 
-  const visibleFooter = role === "super_admin" || role === "org_admin" ? FOOTER_NAV_ITEMS : [];
+  // super_admin has no organization of its own — /organization-admin/users
+  // 403s for that role (see ProtectedRoute's ROLE_PATH_RULES), so it gets its
+  // own equivalent page instead of the org_admin footer link.
+  const visibleFooter =
+    role === "super_admin"
+      ? [{ label: "User Management", href: "/super-admin/users", icon: UserCog }]
+      : role === "org_admin"
+      ? FOOTER_NAV_ITEMS
+      : [];
 
   const [openSection, setOpenSection] = useState(null);
 

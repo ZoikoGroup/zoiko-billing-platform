@@ -152,7 +152,6 @@ const PaymentsDisputesPage = lazy(() => import("./modules/super-admin/PaymentsDi
 const BalancesAllocationsPage = lazy(() => import("./modules/super-admin/BalancesAllocationsPage"));
 const ReconciliationPage = lazy(() => import("./modules/super-admin/ReconciliationPage"));
 const CreditsRefundsPage = lazy(() => import("./modules/super-admin/CreditsRefundsPage"));
-const UsageMeteringPage = lazy(() => import("./modules/super-admin/UsageMeteringPage"));
 const TaxEInvoicingPage = lazy(() => import("./modules/super-admin/TaxEInvoicingPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 
@@ -256,6 +255,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/platform/lifecycle", element: <LifecycleOnboardingPage /> },
   { path: "/super-admin/support-access", element: <SupportAccessPage /> },
   { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
+  { path: "/super-admin/tenant-health/jobs", element: <TenantHealthPage /> },
   { path: "/super-admin/commercial/accounts", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
   { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
@@ -272,20 +272,12 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/financial/balances", element: <BalancesAllocationsPage /> },
   { path: "/super-admin/financial/reconciliation", element: <ReconciliationPage /> },
   { path: "/super-admin/financial/credits", element: <CreditsRefundsPage /> },
-  { path: "/super-admin/financial/usage", element: <UsageMeteringPage /> },
   { path: "/super-admin/financial/tax", element: <TaxEInvoicingPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
   { path: "/super-admin/billing-command-center", element: <BillingCommandCenterPage /> },
-  { path: "/super-admin/integrations", element: <ReliabilityPage /> },
-  { path: "/super-admin/integrations/gateways", element: <ReliabilityPage /> },
-  { path: "/super-admin/integrations/connectors", element: <ReliabilityPage /> },
-  { path: "/super-admin/integrations/webhooks", element: <ReliabilityPage /> },
-  { path: "/super-admin/integrations/jobs", element: <TenantHealthPage /> },
-  { path: "/super-admin/integrations/imports-exports", element: <ReliabilityPage /> },
   { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
   { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance", element: <GovernancePage /> },
-  { path: "/super-admin/governance/roles", element: <UsersPage /> },
   { path: "/super-admin/governance/privileged-sessions", element: <SupportAccessPage /> },
   { path: "/super-admin/governance/security-events", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance/data", element: <GovernancePage /> },
@@ -321,6 +313,19 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/command-center/financial", to: "/super-admin/financial-operations" },
   { from: "/super-admin/command-center/reliability", to: "/super-admin/reliability" },
   { from: "/super-admin/command-center/governance", to: "/super-admin/governance" },
+  // Sidebar audit cleanup: these labels had no backend feature behind them
+  // (Usage & Metering, Payment Gateways, Connectors, API & Webhooks
+  // management, Imports & Exports) or duplicated another surviving entry
+  // (Roles & Access == Administrators & Users). Redirected, not deleted, so
+  // old bookmarks/links still land somewhere sensible.
+  { from: "/super-admin/financial/usage", to: "/super-admin/financial-operations" },
+  { from: "/super-admin/integrations", to: "/super-admin/reliability" },
+  { from: "/super-admin/integrations/gateways", to: "/super-admin/reliability" },
+  { from: "/super-admin/integrations/connectors", to: "/super-admin/reliability" },
+  { from: "/super-admin/integrations/webhooks", to: "/super-admin/reliability" },
+  { from: "/super-admin/integrations/imports-exports", to: "/super-admin/reliability" },
+  { from: "/super-admin/integrations/jobs", to: "/super-admin/tenant-health/jobs" },
+  { from: "/super-admin/governance/roles", to: "/super-admin/users" },
 ];
 
 function ModuleSpinner() {

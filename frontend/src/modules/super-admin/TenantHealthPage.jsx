@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw, HelpCircle } from "lucide-react";
 import { getTenantHealthOverview, getJobTelemetry } from "../../service/privilegedAccessService";
 import { PageHeader, DataTable } from "../../components/billing-ui";
@@ -56,6 +56,8 @@ function KpiCard({ label, value, tone = "text-slate-900" }) {
 }
 
 export default function TenantHealthPage() {
+  const location = useLocation();
+  const isJobHealth = location.pathname === "/super-admin/tenant-health/jobs";
   const { user } = useAuth();
   const canReadTelemetry = canReadReliabilityTelemetry(user?.platform_role);
   const [overview, setOverview] = useState(null);
@@ -126,15 +128,100 @@ export default function TenantHealthPage() {
     { key: "last_activity_at", label: "Last Activity", width: 170, render: (row) => formatDateTime(row.last_activity_at) },
   ];
 
+  const fleetSummarySection = overview && (
+    <section aria-label="Fleet summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <KpiCard label="Open Incidents" value={overview.summary.open_incident_total} tone={overview.summary.open_incident_total > 0 ? "text-red-600" : "text-emerald-700"} />
+      <KpiCard label="Jobs With Failures (24h)" value={overview.summary.jobs_with_failures_24h} tone={overview.summary.jobs_with_failures_24h > 0 ? "text-red-600" : "text-slate-900"} />
+      <KpiCard label="Jobs Not Fresh" value={overview.summary.jobs_not_fresh} tone={overview.summary.jobs_not_fresh > 0 ? "text-amber-600" : "text-slate-900"} />
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+        <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">Organizations by Lifecycle</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {Object.entries(LIFECYCLE_STATE_BADGES).map(([state, meta]) => (
+            <span key={state} className="inline-flex items-center gap-1.5 text-xs">
+              <StatusBadge status={state} options={[{ value: state, ...meta }]} />
+              <strong className="text-slate-800">{overview.summary.counts_by_lifecycle_state?.[state] ?? 0}</strong>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const tenantTableSection = overview && (
+    <section aria-label="Organizations">
+      <div className="mb-3 flex items-center gap-2 px-1">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Tenant Operational View</h2>
+        <span className="h-px flex-1 bg-slate-200/70" />
+      </div>
+      <DataTable
+        columns={columns}
+        data={overview.organizations}
+        loading={loading}
+        rowKey={(row) => row.id}
+        emptyTitle="No organizations yet"
+        emptyMessage="Operational rows will appear here as organizations are provisioned."
+        minWidth={880}
+      />
+    </section>
+  );
+
+  const jobHealthSection = overview && (
+    <section aria-label="Background job health" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+      {isJobHealth && (
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand-600">
+          Showing background job health for the platform
+        </p>
+      )}
+      <p className="mb-1 text-sm font-bold text-slate-700">Background Job Health</p>
+      {!schedulerEnabled && (
+        <p className="mb-3 text-xs text-amber-600">
+          The recurring-billing scheduler is currently disabled
+          (ENABLE_RECURRING_BILLING_SCHEDULER=false) — no job runs are expected until it is enabled.
+        </p>
+      )}
+      {jobs.length === 0 ? (
+        <EmptyState
+          icon={Clock3}
+          title="No job runs recorded yet"
+          message="This is expected while the scheduler is disabled or has not completed its first run — not a fabricated healthy state."
+        />
+      ) : (
+        <div className="space-y-2">
+          {jobs.map((job) => (
+            <div key={job.job_name} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2.5 text-sm last:border-0">
+              <div>
+                <span className="font-semibold text-slate-800">{job.display_name || job.job_name}</span>
+                <span className="ml-2 text-xs text-slate-500">last run {formatDateTime(job.last_started_at)}</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-slate-500">
+                  {job.run_count_24h} runs / {job.failure_count_24h} failures (24h)
+                </span>
+                <JobStatusIndicator status={job.last_status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Tenant Health"
+        title={isJobHealth ? "Job Health" : "Tenant Health"}
         description={
-          <>
-            Cross-tenant operational telemetry (Domain C) — lifecycle states, user counts, open incidents and job health.
-            Counts and states only: never monetary amounts, never cross-tenant financial totals, never an invented score.
-          </>
+          isJobHealth ? (
+            <>
+              Background job health for the platform — run status and freshness for every tracked recurring
+              job. Per-tenant operational telemetry is shown below as secondary context.
+            </>
+          ) : (
+            <>
+              Cross-tenant operational telemetry (Domain C) — lifecycle states, user counts, open incidents and job health.
+              Counts and states only: never monetary amounts, never cross-tenant financial totals, never an invented score.
+            </>
+          )
         }
         icon={Activity}
         meta={overview ? `${overview.summary.total_organizations} organization(s) · plane ${overview.plane}` : ""}
@@ -166,77 +253,27 @@ export default function TenantHealthPage() {
       ) : null}
 
       {overview && !error && (
-        <>
-          {/* ── Fleet summary ────────────────────────────────────────── */}
-          <section aria-label="Fleet summary" className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard label="Open Incidents" value={overview.summary.open_incident_total} tone={overview.summary.open_incident_total > 0 ? "text-red-600" : "text-emerald-700"} />
-            <KpiCard label="Jobs With Failures (24h)" value={overview.summary.jobs_with_failures_24h} tone={overview.summary.jobs_with_failures_24h > 0 ? "text-red-600" : "text-slate-900"} />
-            <KpiCard label="Jobs Not Fresh" value={overview.summary.jobs_not_fresh} tone={overview.summary.jobs_not_fresh > 0 ? "text-amber-600" : "text-slate-900"} />
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-              <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">Organizations by Lifecycle</p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                {Object.entries(LIFECYCLE_STATE_BADGES).map(([state, meta]) => (
-                  <span key={state} className="inline-flex items-center gap-1.5 text-xs">
-                    <StatusBadge status={state} options={[{ value: state, ...meta }]} />
-                    <strong className="text-slate-800">{overview.summary.counts_by_lifecycle_state?.[state] ?? 0}</strong>
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* ── Per-tenant operational rows ──────────────────────────── */}
-          <section aria-label="Organizations" className="mt-8">
-            <div className="mb-3 flex items-center gap-2 px-1">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Tenant Operational View</h2>
-              <span className="h-px flex-1 bg-slate-200/70" />
-            </div>
-            <DataTable
-              columns={columns}
-              data={overview.organizations}
-              loading={loading}
-              rowKey={(row) => row.id}
-              emptyTitle="No organizations yet"
-              emptyMessage="Operational rows will appear here as organizations are provisioned."
-              minWidth={880}
-            />
-          </section>
-
-          {/* ── Background job health ────────────────────────────────── */}
-          <section aria-label="Background job health" className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <p className="mb-1 text-sm font-bold text-slate-700">Background Job Health</p>
-            {!schedulerEnabled && (
-              <p className="mb-3 text-xs text-amber-600">
-                The recurring-billing scheduler is currently disabled
-                (ENABLE_RECURRING_BILLING_SCHEDULER=false) — no job runs are expected until it is enabled.
-              </p>
-            )}
-            {jobs.length === 0 ? (
-              <EmptyState
-                icon={Clock3}
-                title="No job runs recorded yet"
-                message="This is expected while the scheduler is disabled or has not completed its first run — not a fabricated healthy state."
-              />
-            ) : (
-              <div className="space-y-2">
-                {jobs.map((job) => (
-                  <div key={job.job_name} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2.5 text-sm last:border-0">
-                    <div>
-                      <span className="font-semibold text-slate-800">{job.display_name || job.job_name}</span>
-                      <span className="ml-2 text-xs text-slate-500">last run {formatDateTime(job.last_started_at)}</span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-xs text-slate-500">
-                        {job.run_count_24h} runs / {job.failure_count_24h} failures (24h)
-                      </span>
-                      <JobStatusIndicator status={job.last_status} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
+        <div className="mt-6 space-y-8">
+          {isJobHealth ? (
+            <>
+              {/* ── Background job health (primary for this route) ─────── */}
+              {jobHealthSection}
+              {/* ── Fleet summary ────────────────────────────────────────── */}
+              {fleetSummarySection}
+              {/* ── Per-tenant operational rows ──────────────────────────── */}
+              {tenantTableSection}
+            </>
+          ) : (
+            <>
+              {/* ── Fleet summary ────────────────────────────────────────── */}
+              {fleetSummarySection}
+              {/* ── Per-tenant operational rows ──────────────────────────── */}
+              {tenantTableSection}
+              {/* ── Background job health ────────────────────────────────── */}
+              {jobHealthSection}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

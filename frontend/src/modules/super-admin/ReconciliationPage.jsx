@@ -271,8 +271,8 @@ export default function ReconciliationPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Reconciliation"
-        description="Internal ledger reconciliation engine (REC-01) — invoice balance and payment-allocation invariants, checked on a daily schedule or on demand."
+        title="Tenant Ledger Reconciliation"
+        description="Internal tenant ledger reconciliation engine (REC-01) — invoice balance and payment-allocation invariants, checked on a daily schedule or on demand."
         icon={ShieldCheck}
         actions={
           <Button variant="primary" icon={PlayCircle} loading={running} onClick={handleRunNow}>
