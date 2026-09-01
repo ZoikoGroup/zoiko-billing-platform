@@ -37,6 +37,7 @@ from app.modules.auth.schemas import (
     MFAStatusResponse,
     RefreshRequest,
     RegisterRequest,
+    ResendInviteResponse,
     SuccessResponse,
     TokenPasswordRequest,
     TokenResponse,
@@ -255,20 +256,30 @@ def validate_invite_token(token: str = Query(...), db: Session = Depends(get_db)
     from app.modules.auth.models import SecurityActionPurpose
     from app.modules.organizations.models import Organization
 
+    from datetime import datetime
+
     token_hash = _token_hash(token)
+    # P14 fix: expiry compared inside SQL, not against a raw-fetched
+    # `expires_at` in Python — see service.validate_action_token's comment
+    # for why the Python-side comparison raised TypeError under SQLite.
     row = db.execute(
-        sql_text("SELECT email, organization_id, expires_at, used_at, purpose FROM security_action_tokens WHERE token_hash = :hash"),
-        {"hash": token_hash},
+        sql_text(
+            """
+            SELECT email, organization_id, used_at, purpose,
+                   CASE WHEN expires_at > :now THEN 1 ELSE 0 END AS unexpired
+            FROM security_action_tokens WHERE token_hash = :hash
+            """
+        ),
+        {"hash": token_hash, "now": datetime.utcnow()},
     ).fetchone()
     if row is None:
         return {"valid": False, "error": "invalid_token"}
-    email, organization_id, expires_at, used_at, purpose_stored = row
+    email, organization_id, used_at, purpose_stored, unexpired = row
     if purpose_stored != SecurityActionPurpose.INVITE.name:
         return {"valid": False, "error": "invalid_token"}
     if used_at is not None:
         return {"valid": False, "error": "already_accepted"}
-    from datetime import datetime
-    if expires_at <= datetime.utcnow():
+    if not unexpired:
         return {"valid": False, "error": "expired"}
     org_name = ""
     if organization_id:
@@ -297,20 +308,28 @@ def validate_reset_token(token: str = Query(...), db: Session = Depends(get_db))
     from app.modules.auth.service import _token_hash
     from app.modules.auth.models import SecurityActionPurpose
 
+    from datetime import datetime
+
     token_hash = _token_hash(token)
+    # P14 fix: same SQL-side expiry comparison as validate_invite_token above.
     row = db.execute(
-        sql_text("SELECT email, organization_id, expires_at, used_at, purpose FROM security_action_tokens WHERE token_hash = :hash"),
-        {"hash": token_hash},
+        sql_text(
+            """
+            SELECT email, organization_id, used_at, purpose,
+                   CASE WHEN expires_at > :now THEN 1 ELSE 0 END AS unexpired
+            FROM security_action_tokens WHERE token_hash = :hash
+            """
+        ),
+        {"hash": token_hash, "now": datetime.utcnow()},
     ).fetchone()
     if row is None:
         return {"valid": False, "error": "invalid_token"}
-    email, organization_id, expires_at, used_at, purpose_stored = row
+    email, organization_id, used_at, purpose_stored, unexpired = row
     if purpose_stored != SecurityActionPurpose.RESET.name:
         return {"valid": False, "error": "invalid_token"}
     if used_at is not None:
         return {"valid": False, "error": "already_used"}
-    from datetime import datetime
-    if expires_at <= datetime.utcnow():
+    if not unexpired:
         return {"valid": False, "error": "expired"}
     return {"valid": True, "email": email}
 
@@ -411,11 +430,51 @@ def update_user(
             organization_id=org_id, key="security.custom_roles", actor_id=current_user.id,
         )
 
+    old_values = {}
+    new_values = {}
     for field, value in data.model_dump(exclude_unset=True).items():
+        before = user.role.value if field == "role" else getattr(user, field, None)
         if field == "role" and value is not None:
+            after = value.value if hasattr(value, "value") else value
             user.role = value
         elif value is not None or field in {"phone", "is_active"}:
+            after = value
             setattr(user, field, value)
+        else:
+            continue
+        if before != after:
+            old_values[field] = before
+            new_values[field] = after
+
+    # P15: audit every field this Organization Admin actually changed.
+    # organization_id/user_id come from the tenant-scoped query above, never
+    # from the request body, so this can't be pointed at another org.
+    if new_values:
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if "is_active" in new_values and new_values["is_active"] is True:
+            audit_action = PlatformAuditAction.ACTIVATE
+        elif "is_active" in new_values and new_values["is_active"] is False:
+            audit_action = PlatformAuditAction.DEACTIVATE
+        else:
+            audit_action = PlatformAuditAction.UPDATE
+        PlatformAuditService(db).log_no_commit(
+            actor_id=current_user.id,
+            actor_role=current_user.role.value,
+            action=audit_action,
+            entity_type="User",
+            entity_id=user.id,
+            organization_id=org_id,
+            old_values=old_values,
+            new_values=new_values,
+            metadata={
+                "field": "role_change" if "role" in new_values else "profile_modification",
+                "plane": "TENANT",
+                "source": "org_admin",
+            },
+        )
+
     db.commit()
     db.refresh(user)
     return user
@@ -437,11 +496,27 @@ def deactivate_user(
     if user.id == current_user.id:
         raise BadRequestException("You cannot deactivate your own account.")
     user.is_active = False
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action=PlatformAuditAction.DEACTIVATE,
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=org_id,
+        old_values={"is_active": True},
+        new_values={"is_active": False},
+        metadata={"field": "status", "plane": "TENANT", "source": "org_admin"},
+    )
+
     db.commit()
     return {"message": "User deactivated successfully."}
 
 
-@user_router.post("/users/{user_id}/resend-invite", response_model=SuccessResponse, summary="Resend invite email")
+@user_router.post("/users/{user_id}/resend-invite", response_model=ResendInviteResponse, summary="Resend invite email")
 def resend_invite(
     user_id: int,
     current_user=Depends(get_current_org_admin),
@@ -457,8 +532,38 @@ def resend_invite(
     if user.is_verified:
         raise BadRequestException("This user has already set up their account.")
 
+    # P15: supersede every still-unused prior invitation for this email
+    # before issuing the new one, so an old link found in an inbox after a
+    # resend no longer works (Phase 14's documented remaining gap). Atomic
+    # single UPDATE — see _invalidate_pending_action_tokens's docstring for
+    # why this doesn't need distributed locking for the rare
+    # concurrent-double-click case.
+    invalidated = service._invalidate_pending_action_tokens(db, user.email, SecurityActionPurpose.INVITE)
     raw_token, _ = service._issue_action_token(db, user.email, user.organization_id, SecurityActionPurpose.INVITE)
     link = service._action_link(SecurityActionPurpose.INVITE, raw_token)
-    service._send_invite_email(db, user, current_user, link)
+    email_sent = service._send_invite_email(db, user, current_user, link)
+
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action=PlatformAuditAction.UPDATE,
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=org_id,
+        new_values={"invite_email_sent": email_sent, "prior_tokens_invalidated": invalidated},
+        metadata={"field": "invitation_resent", "plane": "TENANT", "source": "org_admin"},
+    )
+
     db.commit()
-    return {"message": "Invite email resent."}
+    if email_sent:
+        return {"message": "Invite email resent.", "email_sent": True}
+    # P14 fix: a failed SMTP send must never be reported as success — the
+    # link/token were regenerated regardless, so the row is still usable,
+    # but the operator needs to know the email itself did not go out.
+    return {
+        "message": "Invitation link was regenerated, but the email could not be delivered. Please try again shortly.",
+        "email_sent": False,
+    }

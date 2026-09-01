@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { getAccessToken, getStoredUser, setStoredUser, clearSession } from "../api/client";
 import { ROLES, VALID_ROLES } from "../config/roles";
+import { invalidateOrganizationDetailsCache } from "../service/orgAdminService";
 
 export const AuthContext = createContext(null);
 
@@ -23,6 +24,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     clearSession();
+    invalidateOrganizationDetailsCache();
     setUser(null);
   }, []);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { KeyRound, Power, UserCog, ShieldCheck, ShieldOff, UserPlus, GitBranch, Building2 } from "lucide-react";
+import { KeyRound, Power, UserCog, ShieldCheck, ShieldOff, UserPlus, GitBranch, Building2, Mail } from "lucide-react";
 
 import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, SearchInput, Select, Modal, Field, Button } from "../components/billing-ui";
@@ -274,6 +274,30 @@ export default function UsersPage() {
     }
   }
 
+  async function resendInvite(u) {
+    // P15: closes the Phase 14 gap where a pending Organization Admin
+    // invitation had no resend action if the email failed. Reuses the same
+    // busyId loading/duplicate-request guard as every other row action here.
+    setBusyId(u.id);
+    setNotice("");
+    setError("");
+    try {
+      const res = await apiFetch(`/api/super-admin/users/${u.id}/resend-invite`, { method: "POST" });
+      // Truthful outcome from the backend's email_sent field — never a
+      // hardcoded "sent" string regardless of what actually happened.
+      if (res.email_sent === false) {
+        setError(res.message);
+      } else {
+        setNotice(res.message);
+      }
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function changePlatformRole(u, newRole) {
     setBusyId(u.id);
     setNotice("");
@@ -432,6 +456,11 @@ export default function UsersPage() {
                   Move
                 </Button>
               </>
+            )}
+            {u.role === "org_admin" && u.derived_status === "invited" && (
+              <Button size="sm" variant="secondary" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)}>
+                Resend Invite
+              </Button>
             )}
             <Button size="sm" variant="secondary" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)}>
               Reset PW
@@ -612,7 +641,7 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
     setBusy(true);
     setError(null);
     try {
-      await apiFetch("/api/super-admin/users/invite", {
+      const created = await apiFetch("/api/super-admin/users/invite", {
         method: "POST",
         body: {
           organization_id: Number(form.organization_id),
@@ -624,7 +653,16 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
           send_invite: form.send_invite,
         },
       });
-      onInvited(`Invitation created for ${form.email}.`);
+      // P14 fix: report the real SMTP outcome (invite_email_sent) instead of
+      // always claiming the invitation was sent — a 2xx here only means the
+      // user row was created.
+      if (!form.send_invite) {
+        onInvited(`${form.email} was added. No invitation email was sent.`);
+      } else if (created.invite_email_sent === false) {
+        onInvited(`${form.email} was added, but the invitation email could not be delivered. There is currently no resend action for this screen — share the setup link manually or re-check email delivery before trying again.`);
+      } else {
+        onInvited(`Invitation sent to ${form.email}.`);
+      }
     } catch (err) {
       setError(err?.message || "Failed to create invitation.");
     } finally {

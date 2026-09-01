@@ -10,11 +10,15 @@ HONEST SCOPE (mirrors FinancialConsistencyService):
     2. payment_allocation_integrity — a payment's allocations must never
        exceed its amount (over-allocation), and every allocation's invoice
        must belong to the same organization as the payment.
-- The processor leg is recorded but NOT fabricated: with no Plane-1
-  processor/bank feed connected (settings.STRIPE keys blank, ISS-017), a
-  clean run is capped at PARTIAL and never claims VERIFIED. When Stripe
-  credentials exist the source is recorded as "stripe" (live comparison
-  lands with the processor integration itself).
+- ISS-017 processor comparison (`compare_processor=True`) is a THIRD,
+  optional check: a genuine, bounded Payment<->Stripe-PaymentIntent
+  comparison (see `stripe_reconciliation.py`), never a fabricated one. A
+  clean run only claims VERIFIED when this comparison actually executed
+  against Stripe for at least one organization, with zero processor errors
+  and zero truncation. With no processor comparison requested (the
+  default) or none possible/complete, a clean run is honestly capped at
+  PARTIAL — it never claims VERIFIED merely because
+  `settings.STRIPE_SECRET_KEY` happens to be configured.
 - Exceptions carry an ownership workflow: OPEN -> ACKNOWLEDGED(owner)
   -> RESOLVED(note). A run with open exceptions is FAILED; failures feed
   the Attention Engine (source "reconciliation") like financial integrity.
@@ -22,7 +26,7 @@ HONEST SCOPE (mirrors FinancialConsistencyService):
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,6 +39,10 @@ from app.modules.super_admin.models import (
     ReconciliationExceptionStatus,
     ReconciliationRun,
     ReconciliationRunState,
+)
+from app.modules.super_admin.stripe_reconciliation import (
+    MAX_RANGE_DAYS,
+    reconcile_processor_payments,
 )
 
 logger = logging.getLogger("zoiko_billing.super_admin.reconciliation")
@@ -108,7 +116,32 @@ class ReconciliationService:
     # ------------------------------------------------------------------
     # Run lifecycle
     # ------------------------------------------------------------------
-    def run_reconciliation(self, trigger: str = "manual") -> ReconciliationRun:
+    def run_reconciliation(
+        self,
+        trigger: str = "manual",
+        compare_processor: bool = False,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> ReconciliationRun:
+        """Run the two internal ledger-invariant checks, and optionally
+        (ISS-017) a genuine bounded Payment<->Stripe-PaymentIntent
+        comparison across every organization with an active Stripe
+        connection.
+
+        `compare_processor=False` (the default) preserves the exact Phase 9
+        behavior/contract: no processor call is made, and a clean run caps
+        at PARTIAL. `compare_processor=True` requires an explicit, bounded
+        `range_start`/`range_end` (Step 20) — this never scans "all of
+        Stripe" by default.
+        """
+        if compare_processor:
+            if range_start is None or range_end is None:
+                raise ValueError("range_start and range_end are required when compare_processor=True")
+            if range_start > range_end:
+                raise ValueError("range_start must not be after range_end")
+            if (range_end - range_start) > timedelta(days=MAX_RANGE_DAYS):
+                raise ValueError(f"Reconciliation range cannot exceed {MAX_RANGE_DAYS} days")
+
         run = ReconciliationRun(plane="plane2", trigger=trigger, state=ReconciliationRunState.RUNNING)
         self.db.add(run)
         self.db.flush()
@@ -116,13 +149,58 @@ class ReconciliationService:
         found: list[ReconciliationException] = []
         found += self._check_invoice_balances()
         found += self._check_payment_allocations()
+        checks_total = 2
 
         stripe_configured = bool(settings.STRIPE_SECRET_KEY)
         if stripe_configured:
             run.processor_source = "stripe"
+        processor_result = None
+        if compare_processor and stripe_configured:
+            processor_result = reconcile_processor_payments(self.db, range_start, range_end)
+            checks_total += 1
+            run.processor_environment = processor_result["environment"]
+            run.processor_stats = {
+                k: v for k, v in processor_result.items() if k != "exceptions"
+            }
+            for exc in processor_result["exceptions"]:
+                found.append(ReconciliationException(
+                    kind=exc["kind"],
+                    organization_id=exc.get("organization_id"),
+                    entity_type=exc["entity_type"],
+                    entity_id=exc.get("entity_id"),
+                    detail=exc.get("detail"),
+                ))
+            if processor_result["fully_verified"]:
+                run.processor_note = (
+                    f"Stripe PaymentIntent comparison completed for "
+                    f"{len(processor_result['organizations_compared'])} organization(s) "
+                    f"over {range_start.isoformat()}..{range_end.isoformat()}: "
+                    f"{processor_result['records_inspected']} record(s) inspected, "
+                    "0 discrepancies, 0 processor errors."
+                )
+            elif not processor_result["any_comparison_performed"]:
+                run.processor_note = (
+                    "Stripe processor comparison was requested, but no organization has "
+                    f"an ACTIVE Stripe connection in the '{processor_result['environment']}' "
+                    "environment — no Stripe API call was made."
+                )
+            else:
+                run.processor_note = (
+                    f"Stripe PaymentIntent comparison attempted for "
+                    f"{len(processor_result['organizations_with_active_connection'])} organization(s); "
+                    f"{len(processor_result['organizations_compared'])} fully compared, "
+                    f"{len(processor_result['processor_errors'])} processor error(s)/truncation(s), "
+                    f"{len(processor_result['exceptions'])} discrepanc(y/ies) found."
+                )
+        elif compare_processor and not stripe_configured:
             run.processor_note = (
-                "Stripe credentials present; live processor comparison lands "
-                "with the Plane-1/processor integration (ISS-017)."
+                "Stripe processor comparison was requested, but Stripe is not configured "
+                "(STRIPE_SECRET_KEY is blank) — no Stripe API call was made."
+            )
+        elif stripe_configured:
+            run.processor_note = (
+                "Stripe credentials present, but processor comparison was not requested "
+                "for this run; only internal ledger invariants evaluated."
             )
         else:
             run.processor_note = (
@@ -134,13 +212,20 @@ class ReconciliationService:
             exc.run_id = run.id
             self.db.add(exc)
 
-        run.checks_total = 2
+        run.checks_total = checks_total
         run.exceptions_found = len(found)
         if found:
             run.state = ReconciliationRunState.FAILED
-        elif stripe_configured:
+        elif processor_result is not None and processor_result["fully_verified"]:
+            # A genuine, complete, bounded ledger-vs-Stripe comparison ran
+            # for at least one organization with zero discrepancies, zero
+            # processor errors, and zero truncation — this is the ONLY path
+            # that may claim VERIFIED (Step 10's mandatory rule).
             run.state = ReconciliationRunState.VERIFIED
         else:
+            # No processor comparison requested/possible/complete this run
+            # — never claim VERIFIED from credential presence alone (the
+            # exact fabrication Phase 9 removed). Cap at PARTIAL.
             run.state = ReconciliationRunState.PARTIAL
         run.finished_at = datetime.utcnow()
         self.db.flush()

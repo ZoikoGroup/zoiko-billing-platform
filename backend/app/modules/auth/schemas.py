@@ -135,6 +135,10 @@ class UserResponse(BaseModel):
     last_login_at: Optional[datetime] = None
     created_at: datetime
     platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
+    # P14: truthful invite-email outcome — None = no email was attempted
+    # (send_invite=False on creation), True/False = the actual SMTP result.
+    # Callers must not infer "invitation sent" from a 2xx response alone.
+    invite_email_sent: Optional[bool] = None
 
 
 class TokenResponse(BaseModel):
@@ -202,6 +206,14 @@ class UserUpdateRequest(BaseModel):
 class UserListResponse(BaseModel):
     users: list[UserResponse]
     total: int
+
+
+class ResendInviteResponse(BaseModel):
+    message: str
+    # P14: truthful outcome of the resend's SMTP attempt — the frontend must
+    # render this message (and style it as an error when False), not assume
+    # success from a 2xx response.
+    email_sent: bool
 
 
 class UserSummaryResponse(BaseModel):

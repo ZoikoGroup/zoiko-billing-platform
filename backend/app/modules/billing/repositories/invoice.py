@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import and_, func, case, extract, or_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import BadRequestException
 from app.modules.billing.models import (
@@ -893,6 +894,7 @@ class InvoiceRepository(BaseRepository[Invoice]):
         base_query = self._build_filtered_query(
             organization_id, active_only, **filters
         )
+        base_query = base_query.options(joinedload(Invoice.customer))
         if search_term:
             base_query = base_query.filter(
                 or_(

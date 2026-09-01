@@ -120,6 +120,9 @@ class SuperAdminUserResponse(BaseModel):
     created_at: datetime
     mfa_enabled: Optional[bool] = None  # only meaningful for role == super_admin
     platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
+    # P14: truthful invite-email outcome — None = no email attempted
+    # (send_invite=False), True/False = the actual SMTP result.
+    invite_email_sent: Optional[bool] = None
 
     # ── ZB-SA-P3 (Phase 3B) — additive, evidence-based fields ──────────────
     # derived_status: server-composed account state (active / suspended /
@@ -1184,6 +1187,11 @@ class ReconciliationRunResponse(BaseModel):
     exceptions_found: int
     processor_source: str
     processor_note: Optional[str] = None
+    # ISS-017: set only when compare_processor=True was requested for this
+    # run. processor_stats never contains secrets — range, org ids, counts,
+    # and safe error categories/messages only (see stripe_reconciliation.py).
+    processor_environment: Optional[str] = None
+    processor_stats: Optional[dict] = None
 
 
 class ReconciliationRunListResponse(BaseModel):
@@ -1192,6 +1200,15 @@ class ReconciliationRunListResponse(BaseModel):
 
 class ReconciliationRunDetailResponse(ReconciliationRunResponse):
     exceptions: list[ReconciliationExceptionResponse] = []
+
+
+class TriggerReconciliationRunRequest(BaseModel):
+    """ISS-017: optional processor-comparison extension to the existing
+    manual-trigger endpoint. Omitting this body (or `compare_processor`)
+    preserves the exact pre-Phase-11 behavior — internal checks only."""
+    compare_processor: bool = False
+    range_start: Optional[date] = None
+    range_end: Optional[date] = None
 
 
 class ReconciliationExceptionActionResponse(BaseModel):
