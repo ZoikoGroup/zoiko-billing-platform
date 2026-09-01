@@ -41,7 +41,7 @@ import {
   executeAction,
   cancelAction,
 } from "./api";
-import { useTypewriter } from "./useTypewriter";
+import { useTypewriter, splitStablePrefix } from "./useTypewriter";
 import PreviewCard from "./PreviewCard";
 import ConfirmDialog from "./ConfirmDialog";
 import { FAQ_CATEGORIES, WELCOME_MESSAGE, DEFAULT_PROMPTS, CONTEXTUAL_PROMPTS, TOPIC_KEYWORDS } from "./suggestedPrompts";
@@ -423,8 +423,18 @@ export default function AssistantPanel({ isOpen, onClose }) {
     setStatusAnnouncement(errorStatus);
   };
 
-  const handleSend = async () => {
-    const text = input.trim();
+  const handleSend = async (overrideText) => {
+    // When triggered from a suggestion chip the exact text is passed straight
+    // into the SAME submission path used by the Send button / Enter key.  This
+    // avoids the racy setInput(p); setTimeout(handleSend) pattern, where the
+    // handler read `input` from async state and could bail early on the first
+    // click (requiring a second click to actually send).  The Send button
+    // passes its click event as the first arg, so only a non-empty string is
+    // ever treated as a text override.
+    const text =
+      typeof overrideText === "string" && overrideText.trim() !== ""
+        ? overrideText.trim()
+        : input.trim();
     if (!text || loading) return;
     // A new message always resumes auto-follow and jumps to the latest
     // content — even if the user had scrolled up to read older messages.
@@ -618,26 +628,25 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setLoading(false);
       }
     } else if (action === "confirm_draft") {
-      if (previewData) {
-        setShowConfirmDialog(true);
+      // P0 guard: the confirmation dialog is ALWAYS bound to a freshly
+      // generated preview for THIS action_uid.  A stale previewData from an
+      // earlier draft must never be reused and shown as if it belonged to
+      // the action being confirmed — confirmation binds to preview id/hash.
+      try {
+        setLoading(true);
+        const preview = await generatePreview(action_uid);
+        setPreviewData(preview);
         setActiveAction(actionObj);
-      } else {
-        try {
-          setLoading(true);
-          const preview = await generatePreview(action_uid);
-          setPreviewData(preview);
-          setActiveAction(actionObj);
-          setShowConfirmDialog(true);
-        } catch (err) {
-          setMessages((prev) => [...prev, {
-            message_uid: `err-${Date.now()}`,
-            sender_type: "system",
-            message_text: `Preview failed: ${err.message}`,
-            created_at: new Date().toISOString(),
-          }]);
-        } finally {
-          setLoading(false);
-        }
+        setShowConfirmDialog(true);
+      } catch (err) {
+        setMessages((prev) => [...prev, {
+          message_uid: `err-${Date.now()}`,
+          sender_type: "system",
+          message_text: `Preview failed: ${err.message}`,
+          created_at: new Date().toISOString(),
+        }]);
+      } finally {
+        setLoading(false);
       }
     } else if (action === "cancel_draft") {
       try {
@@ -662,7 +671,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setLoading(false);
       }
     }
-  }, [previewData]);
+  }, []);
 
   const handlePreviewConfirm = useCallback(async (preview) => {
     const uid = preview.action_uid || activeAction?.action_uid;
@@ -905,7 +914,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         </header>
 
         {/* Messages viewport */}
-        <div ref={chatViewportRef} className="ab-viewport flex-1 overflow-y-auto px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
+        <div ref={chatViewportRef} className="ab-viewport flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
           {messages.length === 0 && !loading && (
             <>
               {/* Welcome message bubble */}
@@ -929,10 +938,9 @@ export default function AssistantPanel({ isOpen, onClose }) {
                           onClose();
                           return;
                         }
-                        setInput(cat.question);
-                        setTimeout(() => {
-                          handleSend();
-                        }, 100);
+                        // One-click quick question: submit the exact text
+                        // through the shared send path (no async input race).
+                        handleSend(cat.question);
                       }}
                       className={`ab-cat-btn group flex items-center gap-2.5 text-left transition-colors ${
                         isEscalate ? "ab-cat-btn--escalate" : ""
@@ -1059,7 +1067,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
                 : []
             }
             contextualPrompts={contextualFollowUps}
-            onSelect={(p) => { setInput(p); setTimeout(() => handleSend(), 100); }}
+            onSelect={(p) => handleSend(p)}
           />
         )}
 
@@ -1193,26 +1201,48 @@ function MarkdownContent({ text }) {
 }
 
 /**
- * Live body for an SSE-streaming assistant bubble: renders whatever text has
- * arrived so far plus a trailing blinking caret.  Unlike MarkdownTypewriter
- * it never re-animates — each `token` event simply renders the accumulated
- * Markdown (transient half-markup, e.g. a partially-open `**`, settles once
- * the authoritative text lands).
+ * Stable progressive renderer shared by BOTH the SSE-streaming path and the
+ * client-side typewriter path.
+ *
+ * The raw (possibly incomplete) markdown is split at a stable boundary via
+ * `splitStablePrefix`: prose renders live through ReactMarkdown, while an
+ * in-progress fenced code block is held back as a plain "tail" that grows as
+ * content arrives.  ReactMarkdown therefore never receives a half-open ```,
+ * so there is no flicker or layout jump — a code block types out progressively
+ * in the tail, then locks into a clean `<pre>` in one stable render the
+ * instant its closing fence appears.
  */
-function StreamingText({ text }) {
+function StableStreamBody({ text, showCaret }) {
+  const { prefix, tail, inCode } = splitStablePrefix(text || "");
   return (
     <div className="text-sm leading-relaxed">
-      {text ? <ReactMarkdown components={MD_COMPONENTS}>{text}</ReactMarkdown> : null}
-      <span className="ab-typing-caret ml-0.5" aria-hidden="true" />
+      {prefix ? <ReactMarkdown components={MD_COMPONENTS}>{prefix}</ReactMarkdown> : null}
+      {tail ? (
+        <span className={`ab-tail whitespace-pre-wrap block${inCode ? " ab-tail--code" : ""}`}>
+          {tail}
+        </span>
+      ) : null}
+      {showCaret && <span className="ab-typing-caret ml-0.5" aria-hidden="true" />}
     </div>
   );
 }
 
 /**
+ * Live body for an SSE-streaming assistant bubble: renders whatever text has
+ * arrived so far plus a trailing blinking caret.  Unlike MarkdownTypewriter
+ * it never re-animates — each `token` event simply re-renders the accumulated
+ * text through the stable renderer, so streaming stays progressive without
+ * ever starting a separate typewriter animation per chunk.
+ */
+function StreamingText({ text }) {
+  return <StableStreamBody text={text} showCaret />;
+}
+
+/**
  * Progressive-typing body for a single assistant bubble (ChatGPT-style).
  * ── The reveal NEVER swaps component trees: `useTypewriter` advances a
- * prefix of the token stream and this component re-renders ReactMarkdown on
- * top of it, so the completed state is byte-identical to MarkdownContent and
+ * prefix of the raw text and this component re-renders it through the stable
+ * renderer, so the completed state is byte-identical to MarkdownContent and
  * there is no flicker or layout jump at the end.
  * ── "Typing…" is shown only while waiting for the first content chunk.
  * ── A small blinking caret trails partial text; both disappear on complete.
@@ -1224,6 +1254,7 @@ function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
   const onChunkScrollRef = useRef(onChunkScroll);
   onChunkScrollRef.current = onChunkScroll;
   const firedRef = useRef(false);
+  const rafRef = useRef(null);
 
   useEffect(() => {
     if (done && !firedRef.current) {
@@ -1235,11 +1266,14 @@ function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
   // Keep the viewport pinned to the live cursor as each chunk is revealed,
   // in lock-step with the typing animation.  The callback is ref-backed so
   // this fires on every chunk without re-binding the effect; it is a no-op
-  // while the user is scrolled up reading history (stick-aware) and uses
-  // instant positioning to avoid any smooth-scroll lag behind the words.
+  // while the user is scrolled up reading history (stick-aware).  Coalesced
+  // through requestAnimationFrame to avoid scroll jitter from rapid ticks.
   useEffect(() => {
-    if (displayed) onChunkScrollRef.current?.();
+    if (!displayed) return;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => onChunkScrollRef.current?.());
   }, [displayed]);
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   const hasText = text && text.length > 0;
 
@@ -1260,11 +1294,8 @@ function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
       {isTyping && !displayed && hasText && (
         <span className="inline-block h-4" aria-hidden="true" />
       )}
-      {displayed && (
-        <ReactMarkdown components={MD_COMPONENTS}>{displayed}</ReactMarkdown>
-      )}
-      {isTyping && displayed && hasText && (
-        <span className="ab-typing-caret ml-0.5" aria-hidden="true" />
+      {hasText && (
+        <StableStreamBody text={displayed} showCaret={isTyping && displayed && hasText} />
       )}
     </div>
   );
@@ -1305,7 +1336,7 @@ function SourceFooter({ evidence, disclaimer }) {
   );
 }
 
-function MessageBubble({ message, showDisclaimer = false, animate = false, streaming = false, deferStructured = false, onChunkScroll, onDone }) {
+export function MessageBubble({ message, showDisclaimer = false, animate = false, streaming = false, deferStructured = false, onChunkScroll, onDone }) {
   const isUser = message.sender_type === "user";
   const isSystem = message.sender_type === "system";
   const mode = message.mode ? MODE_CONFIG[message.mode] : null;
@@ -1328,7 +1359,7 @@ function MessageBubble({ message, showDisclaimer = false, animate = false, strea
         )
       )}
 
-      <div className={`max-w-[85%] ${isUser ? "order-1" : ""}`}>
+      <div className={`max-w-[85%] min-w-0 ${isUser ? "order-1" : ""}`}>
         {mode && (
           <div className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full mb-1 ${mode.bg} ${mode.color} ${mode.border} border`}>
             <mode.icon size={10} />
@@ -1611,12 +1642,12 @@ function SuggestedPrompts({ prompts, contextualPrompts, onSelect }) {
 
   return (
     <div className="px-4 py-2" style={{ borderTop: `1px solid var(--ab-border-subtle)` }}>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         {merged.map((prompt, i) => (
           <button
             key={i}
             onClick={() => onSelect(prompt)}
-            className="ab-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors whitespace-nowrap"
+            className="ab-chip text-xs px-3 py-1.5 rounded-full border transition-colors whitespace-nowrap"
           >
             {prompt}
           </button>

@@ -555,6 +555,13 @@ _DEF_SHAPE_RES = (
     re.compile(r"^\s*what\s+does\s+(?:the\s+|a\s+)?(.+?)\s+mean\b.*$", re.IGNORECASE),
     # meaning of X / definition of X
     re.compile(r"^\s*(?:meaning|definition)\s+of\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$", re.IGNORECASE),
+    # tell me about X / tell me more about X  (a common definitional shape:
+    # "Tell me about the collection rate." is a concept question, not live data)
+    re.compile(
+        r"^\s*(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?tell\s+me\s+"
+        r"(?:a\s+little\s+|some\s+more\s+|more\s+)?about\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$",
+        re.IGNORECASE,
+    ),
     # how is X calculated/computed/defined
     re.compile(
         r"^\s*how\s+(?:is|are)\s+(?:the\s+)?(.+?)\s+(?:calculated|computed|derived|defined)\b.*$",
@@ -618,6 +625,20 @@ METRIC_DEFINITIONS = {
         "kpi_key": "overdue_amount",
         "live": True,
     },
+    "collection_rate": {
+        "label": "Collection rate",
+        "definition": (
+            "The collection rate is the percentage of your billed revenue that "
+            "has actually been collected from customers. It shows how effectively "
+            "you convert issued invoices into cash."
+        ),
+        "formula": (
+            "dividing collected (cleared) payments by total billed revenue, "
+            "capped at 100 percent"
+        ),
+        "kpi_key": None,
+        "live": False,
+    },
     "mrr": {
         "label": "MRR (Monthly Recurring Revenue)",
         "definition": (
@@ -679,6 +700,10 @@ _METRIC_SUBJECT_RULES = (
     ),
     ("mrr", re.compile(r"\b(?:mrr|monthly\s+recurring\s+revenue)\b", re.IGNORECASE)),
     ("arr", re.compile(r"\b(?:arr|annual\s+recurring\s+revenue)\b", re.IGNORECASE)),
+    # "collection rate" is a distinct metric; it MUST be matched before the
+    # paid_revenue rule's `\bcollections?\b` pattern or "What is the collection
+    # rate?" would wrongly resolve to "Paid revenue".
+    ("collection_rate", re.compile(r"\bcollections?\s+rates?\b|\brates?\s+of\s+collections?\b", re.IGNORECASE)),
     ("paid_revenue", re.compile(r"\bpaid\s+(?:revenue|amount|invoices?)\b|\bcash\s+collected\b|\bcollections?\b", re.IGNORECASE)),
     ("overdue", re.compile(r"\bover\s?due\b|\boverdues\b", re.IGNORECASE)),
     ("outstanding", re.compile(r"\boutstanding\b|\bunpaid\b|\breceivables?\b|\bowed?\b|\bbalance\b", re.IGNORECASE)),
@@ -686,8 +711,224 @@ _METRIC_SUBJECT_RULES = (
 )
 
 
+# ── Collections-metric disambiguation ────────────────────────────────────────
+# "collected revenue" / "revenue ... collected" / "cash collected" / "how much
+# have I collected" etc. must route to the Collections metric (cleared payments
+# received) — NEVER the Revenue/billed metric. Checked BEFORE the revenue-only
+# rule so a collection qualifier wins over a bare "revenue" match. Contexts that
+# own the word elsewhere (summary, rate, workflow, definitional) are excluded so
+# they keep their existing routes.
+_COLLECTED_REVENUE_RE = re.compile(
+    r"\bcollected\s+revenue\b"
+    r"|\brevenue\s+(?:collected|received|cleared)\b"
+    r"|\brevenue\b[^.!?]*\b(?:collected|received|cleared)\b"
+    r"|\b(?:received|cleared)\s+revenue\b"
+    r"|\bcash\s+collected\b"
+    r"|\b(?:i|we|you|i'?ve|we'?ve)\s+(?:collected|received|receive|cleared)\b"
+    r"|\bcollected\s+(?:so\s+far|this\s+month|yet|already|until\s+now|to\s+date|overall|in\s+total|all|amount|money|payments?)\b"
+    r"|\btotal\s+collections?\b"
+    r"|\bcollections?\s+(?:this|last|so\s+far|to\s+date|today|this\s+month|this\s+week|this\s+year)\b",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+# ── Authoritative how-to / product-guidance glossary ────────────────────────
+# A controlled, INTENT + TOPIC-driven fallback of SUPPORTED Zoiko Billing
+# how-to / product-guidance knowledge.  The answer text is taken VERBATIM from
+# the production knowledge-base seed (backend/seed_knowledge.py, KB_ENTRIES),
+# so it is authoritative product documentation — never invented.
+#
+# Each entry is matched by (verb-regex, noun-regex) — the ACTION the user wants
+# to perform on a DOMAIN TOPIC — NOT by enumerating exact questions.  As a
+# result, natural variations like "how do I create/make/generate an invoice?"
+# all resolve to the same topic, and future wordings work without a code change.
+#
+# Used in _handle_help for help_general (how-to) questions: it gives a grounded,
+# efficient answer even when KB retrieval is weak or the KB has not been seeded,
+# so valid questions never fall through to the generic abstention by default.
+_SOP_GLOSSARY: tuple[tuple[str, "re.Pattern", "re.Pattern", str, str], ...] = (
+    (
+        "create_invoice",
+        re.compile(r"\b(?:create|make|generate|prepare|add|produce|raise|draft)\b"),
+        re.compile(r"\binvoice|invoices|bill|bills\b"),
+        "Create an invoice",
+        "How to create an invoice: Go to Invoices, click Create Invoice, select "
+        "the customer, add line items with descriptions, quantities, and unit "
+        "prices, set the tax rate and billing period, review the total, and save "
+        "as Draft.",
+    ),
+    (
+        "issue_send_invoice",
+        re.compile(r"\b(?:send|issue|submit|dispatch|email|deliver|transmit)\b"),
+        re.compile(r"\binvoice|invoices|bill|bills\b"),
+        "Send an invoice",
+        "How to issue an invoice: Open a Draft invoice, review the details, then "
+        "click Issue. The invoice status changes to Sent and the customer "
+        "receives it. Once issued, the invoice cannot be edited.",
+    ),
+    (
+        "cancel_invoice",
+        re.compile(r"\b(?:cancel|void|delete)\b"),
+        re.compile(r"\binvoice|invoices|bill|bills\b"),
+        "Cancel an invoice",
+        "How to cancel an invoice: Open a Sent invoice, click Cancel, provide a "
+        "reason for cancellation. Cancelled invoices reduce the customer balance. "
+        "Only Sent or Overdue invoices can be cancelled.",
+    ),
+    (
+        "write_off_invoice",
+        re.compile(r"\bwrite\s*off\b|\bwrite\s*down\b|\bwrit(e)?\s*off\b"),
+        re.compile(r"\binvoice|invoices|bill|bills\b"),
+        "Write off an invoice",
+        "How to write off an invoice: For uncollectible invoices, open the "
+        "invoice, click Write Off. This marks the remaining balance as written "
+        "off for accounting purposes.",
+    ),
+    (
+        "record_payment",
+        re.compile(r"\b(?:record|log|enter|capture|book|register)\b"),
+        re.compile(r"\bpayment|payments|receipt|receipts|collection|collections\b"),
+        "Record a payment",
+        "How to record a payment: Navigate to the Payments section, click Record "
+        "Payment, select the customer, enter the payment amount, choose the "
+        "payment method (bank transfer, credit card, cash, check), enter the "
+        "transaction reference or reference number, and submit. The payment will "
+        "be created in Pending status.",
+    ),
+    (
+        "allocate_payment",
+        re.compile(r"\b(?:allocate|apply|assign|distribute)\b"),
+        re.compile(r"\bpayment|payments\b"),
+        "Allocate a payment to invoices",
+        "How to allocate a payment to invoices: After recording a payment, click "
+        "Allocate on the payment record. Select the invoices you want to apply "
+        "the payment to. You can split a single payment across multiple "
+        "invoices. The system will show the balance remaining after allocation. "
+        "Confirm the allocation to reduce the balance due on each selected "
+        "invoice.",
+    ),
+    (
+        "create_credit_note",
+        re.compile(r"\b(?:create|make|generate|add|issue|raise|prepare|produce)\b"),
+        re.compile(r"\bcredit\s*notes?\b|\bcredit\s*memos?\b"),
+        "Create a credit note",
+        "How to create a credit note: Go to Credit Notes, click Create Credit "
+        "Note, select the customer, link it to the original invoice, enter the "
+        "credit amount and reason, save as Draft, then click Issue to apply it.",
+    ),
+    (
+        "issue_refund",
+        re.compile(r"\b(?:issue|make|process|give|create|do)\b"),
+        re.compile(r"\brefund|refunds\b"),
+        "Issue a refund",
+        "How to issue a refund: Go to Payments, find the payment to refund, "
+        "click Refund, enter the refund amount, select the refund method "
+        "(original payment method or bank transfer), provide a reason, and "
+        "submit. The refund will be processed.",
+    ),
+    (
+        "create_subscription",
+        re.compile(r"\b(?:create|make|add|start|set\s*up|begin|open)\b"),
+        re.compile(r"\bsubscription|subscriptions|plan|plans\b"),
+        "Create a subscription",
+        "How to create a subscription: Go to Subscriptions, click Create "
+        "Subscription, select the customer, choose a plan, set the billing start "
+        "date, review the prorated charges, and activate.",
+    ),
+    (
+        "pause_cancel_subscription",
+        re.compile(r"\b(?:pause|cancel|suspend|stop|terminate|end)\b"),
+        re.compile(r"\bsubscription|subscriptions|plan|plans\b"),
+        "Pause or cancel a subscription",
+        "How to pause or cancel a subscription: Open the subscription, click "
+        "Pause to temporarily stop billing, or Cancel to terminate. Paused "
+        "subscriptions resume automatically. Cancelled subscriptions do not "
+        "resume.",
+    ),
+    (
+        "set_up_dunning",
+        re.compile(r"\b(?:set\s*up|configure|enable|use|create|manage)\b"),
+        re.compile(r"\bdunning\b|\breminders?\b|\bcollections?\s+workflow\b"),
+        "Set up dunning",
+        "How to set up dunning: Go to Billing Settings, open the Dunning tab, "
+        "configure reminder intervals, email templates, and escalation rules for "
+        "each dunning level. Dunning runs automatically on overdue invoices.",
+    ),
+    (
+        "view_overdue_invoices",
+        re.compile(r"\b(?:view|show|see|find|look\s*up|list|check)\b"),
+        re.compile(r"\bover\s*due\b|\boverdue\b|\boverdues\b"),
+        "View overdue invoices",
+        "How to view overdue invoices: Go to the Dashboard, check the Overdue "
+        "Invoices widget, or go to Invoices and filter by Overdue status. The "
+        "aging report shows how long each invoice has been overdue.",
+    ),
+    (
+        "invoice_status",
+        re.compile(r"\b(?:check|view|see|show|find|look\s*up|know|look)\b"),
+        re.compile(
+            r"\b(?:invoice|invoices|bill|bills)\b[\s\S]*\b(?:status|paid|overdue|over\s*due|details?)\b"
+            r"|\b(?:status|paid|overdue|over\s*due|details?)\b[\s\S]*\b(?:invoice|invoices|bill|bills)\b",
+            re.IGNORECASE,
+        ),
+        "Check an invoice's status",
+        "To check an invoice's status, search for the invoice by invoice number (for "
+        "example, INV-1001) or by customer name. The invoice details will show its status, "
+        "amount, and due date.\n\n"
+        "Supported statuses:\n"
+        "- Draft\n"
+        "- Sent\n"
+        "- Partially Paid\n"
+        "- Paid\n"
+        "- Overdue\n"
+        "- Cancelled\n"
+        "- Refunded\n"
+        "- Written Off",
+    ),
+    (
+        "customer_accounts",
+        re.compile(r"\b(?:create|add|manage|view|find|look\s*up|search|see)\b"),
+        re.compile(r"\bcustomer|customers|client|clients\b"),
+        "Customers and accounts",
+        "A customer (or billing customer) represents an organization or "
+        "individual that purchases products or services. Each customer has "
+        "contact information, billing address, and payment terms. Customer "
+        "details include company name, contact email, billing address, payment "
+        "terms (e.g., Net 30), credit limit, and current account balance. To look "
+        "up a customer, search by company name, customer code, or email address — "
+        "the customer's billing history, outstanding balance, and recent invoices "
+        "will be shown.",
+    ),
+)
+
+# "verify/check/why is X" hybrid explanation intent signals — combine a metric's
+# definition with CURRENT live data rather than either alone.  Deliberately
+# EXCLUDES a bare "what is my X" (pure financial-inspection) so "What is my
+# outstanding amount?" stays a financial-inspection question, while "Explain my
+# current outstanding amount." / "Why is my collection rate low?" become hybrids.
+_HYBRID_EXPLAIN_RE = re.compile(
+    r"\b(?:explain|describe|why|tell\s+me\s+about|more\s+about|"
+    r"mean(?:s|t)?|meaning|performance|reason|explanation|"
+    r"what\s+does[\s\S]{0,40}mean(?:s|t)?)\b",
+    re.IGNORECASE,
+)
+
+
 def _tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", text.lower())
+    """Split into lowercase word tokens, normalizing English possessive /
+    apostrophe forms so a domain noun stays recognizable: "invoice's" →
+    "invoice", "customers'" → "customers".  Without this, a perfectly valid
+    phrase like "an invoice's status" failed the domain screen because the
+    possessive token "invoice's" was never recognized as the vocabulary term
+    "invoice" — a natural-language variation that must not be rejected."""
+    cleaned: list[str] = []
+    for tok in re.findall(r"[a-z0-9']+", text.lower()):
+        if tok.endswith("'s"):
+            tok = tok[:-2]
+        tok = tok.strip("'")
+        if tok:
+            cleaned.append(tok)
+    return cleaned
 
 
 def _vocab_match(token: str) -> bool:
@@ -1171,12 +1412,31 @@ _BALANCE_CONCEPT_GUARD_RE = re.compile(
     r"|function|use\s+of)\b",
     re.IGNORECASE,
 )
+# A "balance"/account/live-now signal means the user wants THEIR current
+# figure, not a glossary definition of the metric.  Used to keep possessive /
+# account-specific "balance" phrasings ("what's the outstanding balance?") on
+# the live (account_balance / dashboard) route while letting bare definitional
+# "what is outstanding amount?" resolve as a metric definition.
+_BALANCE_LIVE_SIGNAL_RE = re.compile(
+    r"\b(?:balance|account|current|now|today|right\s+now|at\s+the\s+moment"
+    r"|as\s+of|my|our|his|her|their)\b",
+    re.IGNORECASE,
+)
 _CREDIT_NOTE_COUNT_RE = re.compile(r"\bcredit\s+notes?\b", re.IGNORECASE)
 _PAID_PERIOD_RE = re.compile(
     r"\b(?:paid|collected)(?:\s+amount)?\s+(?:this|current)\s+(?:month|week|year)\b"
     r"|\b(?:this|current)\s+(?:month|week|year)'?s?\s+(?:paid|collected)(?:\s+amount)?\b"
     r"|\b(?:paid|collected)\s+revenue\s+(?:this|current)\s+(?:month|week|year)\b"
     r"|\brevenue\s+(?:this|current)\s+(?:month|week|year)\b"
+    r"|\brevenue\s+(?:for|in|during)\s+(?:this|current)\s+(?:month|week|year)\b"
+    r"|\b(?:this|current)\s+(?:month|week|year)'?s\s+revenue\b"
+    # "monthly revenue" is the current-month figure — a temporal DATA QUERY,
+    # never a trend ask. "monthly revenue trend/breakdown/by month" stays
+    # with the growth-rate trend handler below.
+    r"|\brevenue\s+(?:for|in|during)\s+"
+    r"(?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
+    r"|\bmonthly\s+revenue\b(?!\s+(?:trend|breakdown|by\s+month))"
+    r"|\bhow\s+much\s+revenue\s+(?:did\s+we\s+)?(?:make|earn|generate|get)\b"
     r"|\bwhat\s+did\s+we\s+bill\s+(?:in|during)\s+"
     r"(?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
     r"|\b(?:paid|billed|collected)\s+(?:in|during)\s+"
@@ -1577,7 +1837,11 @@ MODULE_DASHBOARD_QUALIFIERS = {
     "taxes": "tax_dashboard",
 }
 # Qualifiers that mean the FINANCIAL/billing dashboard, not a module.
-_FINANCIAL_DASHBOARD_QUALIFIERS = ("financial", "finance", "org", "organization", "overview")
+_FINANCIAL_DASHBOARD_QUALIFIERS = (
+    "financial", "finance", "org", "organization", "overview",
+    "revenue", "collections", "collection", "metrics", "metric", "status",
+    "balance", "outstanding",
+)
 
 
 INTENT_TOOLS = [
@@ -3016,6 +3280,31 @@ class ConversationEngine:
         # §2.1: ALL branches require topic_screen — non-billing topics
         # ("Explain about me python") must still be refused by §6.0.
         if _has_what_is_how_to and not _has_account_specific:
+            # ── Financial overview / status / metrics are LIVE-DATA asks ──
+            # "What is the current dashboard status?", "What are my current
+            # financial metrics?" carry a WHAT_IS signal ("what is") but want
+            # the live financial snapshot, not a KB definition. Route them to
+            # the dashboard summary (Financial Inspection) before the generic
+            # help_general fallbacks below. Pure concept questions ("what is a
+            # dashboard?", "what does revenue mean?") are NOT matched, keeping
+            # those definitional.
+            _fin_overview = re.search(
+                r"\b(?:status|summary|summar(?:y|ize|ise)|overview|metrics?|state|health|standing)\b",
+                normalized,
+            )
+            _fin_vocab = re.search(
+                r"\b(?:dashboard|billing|financial|finance|revenue|income|earnings"
+                r"|collections?|outstanding|top\s*line|kpi|metric)\b",
+                normalized,
+            )
+            _fin_definitional = re.search(
+                r"\b(?:concept|meaning|definition|define|explain|describe|purpose|"
+                r"what\s+is\s+(?:a|an|the)\s+(?:dashboard|metric|kpi|revenue|invoice|billing))\b",
+                normalized,
+            )
+            if _fin_overview and _fin_vocab and not _fin_definitional:
+                return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
             # ── Metric-value queries bypass WHAT_IS/HOW_TO ────────────────
             # "What's the refund total?" / "What's our collection rate?" —
             # these have a WHAT_IS signal ("what's") + domain vocab, but the
@@ -3048,9 +3337,21 @@ class ConversationEngine:
                     re.match(r"^why\s+\w", normalized)
                     and not re.search(r"\bwhy\s+(?:is|are|do|does|did|was|were)\b", normalized)
                 )
+                # A pure definitional metric ask ("What is outstanding amount?")
+                # must resolve to metric_definition, NOT a live-balance lookup.
+                # Suppress the balance-value bypass when the definitional metric
+                # matcher identifies the subject AND no account/live signal
+                # ("balance", "my", "current", ...) is present.  Queries that DO
+                # carry such a signal ("what's the outstanding balance?",
+                # "what is my outstanding amount?") keep the live route.
+                _balance_def = self._match_definitional_metric(normalized)
+                _balance_value_ask = (
+                    _BALANCE_VALUE_ASK_RE.search(normalized)
+                    and not _BALANCE_CONCEPT_GUARD_RE.search(normalized)
+                    and not (_balance_def and not _BALANCE_LIVE_SIGNAL_RE.search(normalized))
+                )
                 if ((_REFUND_AGGREGATE_RE.search(normalized))
-                    or (_BALANCE_VALUE_ASK_RE.search(normalized)
-                        and not _BALANCE_CONCEPT_GUARD_RE.search(normalized))
+                    or (_balance_value_ask)
                     or (_MRR_ARR_RE.search(normalized)
                         and (_MRR_AND_ARR_RE.search(normalized)
                              or _METRIC_VALUE_FRAME_RE.search(normalized)
@@ -3187,6 +3488,20 @@ class ConversationEngine:
                 and not re.search(r"\b(create|draft|add|new|make|issue|send|write|cancel|delete|update|modify|record|apply|renew|close|void|retry)\b", normalized) \
                 and topic_screen(normalized):
             return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Hybrid metric asks (M0 Explain + M1 Inspect) ─────────────────
+        # "Explain my current outstanding amount.", "What does my current
+        # revenue performance mean?", "Why is my current collection rate
+        # low?" want the metric DEFINITION combined with the user's CURRENT
+        # live figure — neither the loose help_general RAG path nor the
+        # bare-data Inspect route alone is sufficient. Reuses the
+        # metric_definition handler, which already composes the live figure
+        # for live metrics. Guarded to fire ONLY for explanatory-framed asks
+        # about my/current data, so pure financial-inspection questions
+        # ("What is my outstanding amount?") keep their live-data routes.
+        _hybrid_metric_code = self._hybrid_metric_ask(normalized)
+        if _hybrid_metric_code:
+            return {"intent": "metric_definition", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "metric": _hybrid_metric_code, "hybrid": True}
 
         # ── Metric figure lookups (M1 Inspect) ───────────────────────────
         # Named-metric questions ("What's our collection rate?", "What's
@@ -3331,7 +3646,10 @@ class ConversationEngine:
         if _BALANCE_VALUE_ASK_RE.search(normalized) \
                 and not re.search(r"\b(?:customers?|clients?)\b", normalized) \
                 and not re.search(r"\b(?:invoice|invoices|inv\s*-?\s*\d|payments?|pmt\s*-?\s*\d|refunds?|orders?|quotation|quotations?|quotes?)\b", normalized) \
-                and not _BALANCE_CONCEPT_GUARD_RE.search(normalized):
+                and not re.search(r"\b(?:summary|summar(?:y|ize|ise)|overview)\b", normalized) \
+                and not _BALANCE_CONCEPT_GUARD_RE.search(normalized) \
+                and not (self._match_definitional_metric(normalized)
+                         and not _BALANCE_LIVE_SIGNAL_RE.search(normalized)):
             return {"intent": "account_balance", "domain": "billing", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Definitional sentence-shape guard ────────────────────────────
@@ -3461,6 +3779,7 @@ class ConversationEngine:
             "show", "list", "view", "display", "open", "see", "get", "pull",
             "bring", "give", "tell", "go", "my", "our", "me", "us", "the",
             "a", "an", "to", "whole", "full", "entire", "summary",
+            "summarize", "summarise",
         ):
             m_qual = None
         if m_qual:
@@ -3780,6 +4099,29 @@ class ConversationEngine:
         if m_details and not self._entity_from_text(m_details.group(1)):
             return {"intent": "customer_details", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── Collected-revenue / Collections disambiguation ────────────────
+        # A collection qualifier ("collected revenue", "revenue ... collected",
+        # "received/cleared revenue", "cash collected", "how much have I
+        # collected", bare "collections") must route to the Collections metric
+        # (cleared payments received) — NEVER the Revenue/billed metric. This
+        # runs BEFORE the customer-search "show me X" rule so "show me cash
+        # collected" / "show me received revenue" are not mistaken for a
+        # customer lookup, and BEFORE the revenue-only rule so a collection
+        # qualifier wins over a bare "revenue" match. Summary / rate /
+        # workflow / definitional contexts are excluded and keep their routes.
+        if (
+            _COLLECTED_REVENUE_RE.search(normalized)
+            and not _has_what_is_how_to
+            and not any(s in normalized for s in (
+                "summary", "summarize", "summarise", "overview", "report",
+                "breakdown", "dashboard", "everything", "full", "detail",
+                "kpi", "metric", "trend", "history", "by month",
+                "rate", "workflow", "ladder", "escalation", "process",
+                "definition", "meaning",
+            ))
+        ):
+            return {"intent": "metric_collections", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
         # "find Gok", "show me Gok", "do we have a customer named Gok" —
         # only when the target is a name (never 'show me the invoices').
         if not self._entity_from_text(normalized) or re.search(r"\b(customer|client)\b", normalized):
@@ -3925,9 +4267,10 @@ class ConversationEngine:
         # must route to KB, not live data.
         revenue_terms = ("revenue", "income", "earnings", "top line", "topline", "sales figure")
         summary_terms = (
-            "summary", "overview", "report", "breakdown", "dashboard",
-            "everything", "full", "detail", "kpi", "metric", "trend",
-            "history", "by month", "monthly report", "how are we doing",
+            "summary", "summarize", "summarise", "overview", "report",
+            "breakdown", "dashboard", "everything", "full", "detail",
+            "kpi", "metric", "trend", "history", "by month",
+            "monthly report", "how are we doing",
         )
         if any(t in normalized for t in revenue_terms) and not any(s in normalized for s in summary_terms) and not _has_what_is_how_to:
             return {"intent": "metric_revenue", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
@@ -3937,6 +4280,11 @@ class ConversationEngine:
         # outstanding balance concept?" must route to KB, not live data.
         balance_keywords = ("balance", "how much", "owe", "owed", "total due", "amount due", "what do i owe", "what do we owe", "outstanding amount", "unpaid amount", "amount outstanding", "money owed", "pending amount")
         if any(kw in normalized for kw in balance_keywords) and not _has_what_is_how_to:
+            # An explicit balance SUMMARY/OVERVIEW ask ("outstanding balance
+            # summary") is a financial-inspection overview, not a single-figure
+            # balance lookup.
+            if re.search(r"\b(?:summary|summar(?:y|ize|ise)|overview|status)\b", normalized):
+                return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
             return {"intent": "account_balance", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Context fallbacks ───────────────────────────────────────────
@@ -3976,7 +4324,7 @@ class ConversationEngine:
 
         # ── Dashboard / revenue summary queries (M1 Inspect) ────────────
         # §2.1: Skip if WHAT_IS/HOW_TO signal detected.
-        dashboard_keywords = ("dashboard", "revenue", "financial overview", "financial summary", "total revenue", "monthly revenue", "yearly revenue", "earnings", "income summary", "billing overview")
+        dashboard_keywords = ("dashboard", "revenue", "financial overview", "financial summary", "total revenue", "monthly revenue", "yearly revenue", "earnings", "income summary", "billing overview", "billing status", "billing metrics", "current status", "financial metrics", "collections summary", "revenue and collections", "outstanding summary")
         if any(kw in normalized for kw in dashboard_keywords) and not _has_what_is_how_to:
             return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
@@ -4569,7 +4917,11 @@ class ConversationEngine:
         # Definitional metric questions ("explain me about Revenue") compose
         # the definition-first answer with the live figure.
         if intent.get("intent") == "metric_definition":
-            return self._metric_definition_response(conv, text, ctx, metric_code=intent.get("metric"))
+            return self._metric_definition_response(
+                conv, text, ctx,
+                metric_code=intent.get("metric"),
+                include_live=intent.get("hybrid", False),
+            )
 
         # UI navigation: describe a named dashboard panel ("what are quick
         # actions?"). Canned from the product's own dashboard definition —
@@ -4674,6 +5026,26 @@ class ConversationEngine:
                 "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
             }
 
+        # Authoritative how-to glossary — procedural/product-guidance asks about
+        # a SUPPORTED topic are answered from the controlled SOP glossary
+        # (text verbatim from the production KB seed), NOT from lexically-similar
+        # retrieval chunks ("How do I create an invoice?" must not return the
+        # billing-configuration chunk) and NOT from an empty-KB abstention.
+        # Only fires for clear ACTION/how-to framing on a known topic; all other
+        # help_general questions still take the normal retrieval path.
+        sop = self._match_sop_glossary(normalized)
+        if sop:
+            _topic, label, sop_text = sop
+            return {
+                "answer": sop_text,
+                "mode": "M0_EXPLAIN",
+                "risk_class": "R0",
+                "evidence": [{"source": "Zoiko Billing Knowledge Base", "type": "sop_procedure", "topic": _topic}],
+                "qualification": "This is product guidance, not tax, legal, or accounting advice.",
+                "next_actions": [],
+                "suggested_prompts": ["Show overdue invoices", "Look up customer details", "Dashboard summary"],
+            }
+
         # Try retrieval first — but only answer from CONFIDENT matches. Weak
         # matches must abstain, never quote loosely-related chunks (this is
         # what previously served invoice content for a permissions question).
@@ -4738,11 +5110,15 @@ class ConversationEngine:
         return self._abstention_response()
 
     def _metric_definition_response(self, conv: AIConversation, text: str, ctx: AIContext,
-                                    metric_code: str | None = None) -> dict:
+                                    metric_code: str | None = None,
+                                    include_live: bool = False) -> dict:
         """Definition-first answer for a financial metric, composed with the
         live figure from the same BillingDashboardService the dashboard page
         uses (so numbers always agree). MRR/ARR are definition-only — no live
-        KPI exists yet."""
+        KPI exists yet. `include_live=True` (hybrid asks like "Why is my
+        current collection rate low?") forces the live figure even for metrics
+        whose METRIC_DEFINITIONS entry is definition-only, like collection
+        rate — giving definition + current value together."""
         from app.modules.billing.services.dashboard_service import BillingDashboardService
 
         norm = normalize_domain_text((text or "").strip().lower())
@@ -4754,7 +5130,38 @@ class ConversationEngine:
         answer = f"**{spec['label']}** — {spec['definition']}\n\nIt is calculated by {spec['formula']}."
         evidence = [{"source": "Zoiko Billing Dashboard", "type": f"metric_definition_{code}"}]
 
-        if spec.get("live"):
+        if code == "collection_rate":
+            # Collection rate is always attempted from the same live dashboard
+            # KPIs as the dashboard's Collection Rate card, even for a plain
+            # definitional/"what is" ask: if billed revenue (or cleared
+            # collections) exists we show the current rate (capped at 100%); if
+            # NO billing data is available we say so explicitly — we never
+            # fabricate or estimate the figure.
+            svc = BillingDashboardService(self.db)
+            kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+            base = self._base_currency(ctx.organization_id)
+            total_revenue = Decimal(str(kpis.get("total_revenue", 0) or 0))
+            collections = Decimal(str(kpis.get("collections", 0) or 0))
+            if total_revenue > 0 or collections > 0:
+                if total_revenue > 0:
+                    rate = min(Decimal("100"), (collections / total_revenue) * Decimal("100"))
+                else:
+                    rate = Decimal("100")
+                rate_text = f"{round(rate, 1):.1f}".rstrip("0").rstrip(".") + "%"
+                answer += (
+                    f"\n\nYour current collection rate: **{rate_text}** "
+                    f"({money(collections, base)} collected of "
+                    f"{money(total_revenue, base)} billed)."
+                )
+                evidence[0]["value"] = rate_text
+                evidence[0]["as_of"] = datetime.now(timezone.utc).isoformat()
+                answer += "\n\nAsk for the **dashboard summary** to see all figures together."
+            else:
+                answer += (
+                    "\n\nI can explain the collection rate, but the current "
+                    "collection-rate percentage is not available in the data I can access."
+                )
+        elif spec.get("live"):
             svc = BillingDashboardService(self.db)
             kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
             base = self._base_currency(ctx.organization_id)
@@ -4813,6 +5220,59 @@ class ConversationEngine:
         for code, rx in _METRIC_SUBJECT_RULES:
             if rx.search(subject):
                 return code
+        return None
+
+    def _match_sop_glossary(self, normalized: str) -> tuple | None:
+        """Return a _SOP_GLOSSARY entry (topic, label, authoritative_text) when
+        `normalized` is a how-to / product-guidance question whose ACTION VERB +
+        DOMAIN TOPIC match a SUPPORTED Zoiko Billing procedure.  Matched by
+        meaning, so every natural variation of the same procedure resolves to the
+        same authoritative text.  Never returns an entry for out-of-scope topics.
+        """
+        if not normalized:
+            return None
+        # How-to framing only: "how do I ...", "steps to ...", "guide ...",
+        # or an explicit action verb (create/make/send/manage/set up ...).
+        if not _HOWTO_LEAD_RE.search(normalized):
+            action_verb = re.search(
+                r"\b(?:create|make|generate|send|issue|record|allocate|manage|"
+                r"set\s*up|cancel|write\s*off|pause|add|view|look\s*up|see|check|where)\b",
+                normalized,
+            )
+            if not action_verb:
+                return None
+        for topic_key, verb_rx, noun_rx, label, text in _SOP_GLOSSARY:
+            if verb_rx.search(normalized) and noun_rx.search(normalized):
+                return (topic_key, label, text)
+        return None
+
+    def _hybrid_metric_ask(self, normalized: str) -> str | None:
+        """Return a METRIC_DEFINITIONS key when `normalized` asks to EXPLAIN a
+        metric ABOUT THE USER'S OWN CURRENT figure ("Explain my current
+        outstanding amount.", "Why is my collection rate low?", "What does my
+        current revenue performance mean?").  These are HYBRID asks: the answer
+        must combine the metric DEFINITION with the live CURRENT value — exactly
+        what _metric_definition_response already composes for live metrics.
+        Returns None for pure definitional ("What is outstanding amount?") and
+        pure current-data ("What is my outstanding amount?") phrasings, which
+        keep their existing single-source routes.
+        """
+        if not normalized or not _HYBRID_EXPLAIN_RE.search(normalized):
+            return None
+        # Must be about the user's own / current data to be hybrid.
+        if not re.search(r"\b(?:my|our|your|current|today|right\s+now)\b", normalized):
+            return None
+        code = self._match_definitional_metric(normalized)
+        if code:
+            return code
+        # Non-canonical shapes ("Explain my current revenue performance") resolve
+        # the metric by raw subject keywords instead of the "what is X" shape.
+        subject = re.sub(r"\b(?:explain|describe|performance|reason|about|my|our|your"
+                         r"|current|today|please|me|the)\b\s*", "", normalized)
+        subject = re.sub(r"\bwhy\s+(?:is|are|was|were|do|does|did)\b", "", subject.strip())
+        for c, rx in _METRIC_SUBJECT_RULES:
+            if rx.search(subject):
+                return c
         return None
 
     def _fuzzy_domain_suggestion(self, normalized: str) -> dict | None:
@@ -5125,7 +5585,7 @@ class ConversationEngine:
             "july", "august", "september", "october", "november", "december",
         )
         month_m = re.search(
-            r"\b(?:in|during)\s+(" + "|".join(month_names) + r")\b", text, re.IGNORECASE,
+            r"\b(?:in|during|for)\s+(" + "|".join(month_names) + r")\b", text, re.IGNORECASE,
         )
         if month_m:
             month_num = month_names.index(month_m.group(1).lower()) + 1
@@ -5369,6 +5829,53 @@ class ConversationEngine:
         # FIX #4 (Issue 2): single-metric questions return ONLY the figure —
         # never the full overview dump. Reads the same get_kpis source as the
         # dashboard page so the numbers always agree.
+        if intent.get("intent") == "metric_collections":
+            # Collections = cleared payments received, per-currency (GLB-002),
+            # via the billing adapter — never direct ledger SQL. Distinct from
+            # Revenue (billed invoice totals), so the two are never conflated.
+            col = self._billing.collected_totals(org_id)
+            rates = self._currency_rates(org_id)
+            if not col.totals:
+                answer = (
+                    "Total collections is **0** — no cleared payments received yet.\n\n"
+                    "Collections: sum of cleared payments received."
+                )
+                value = "0"
+            elif len(col.totals) == 1:
+                one_ccy, one_amt = next(iter(col.totals.items()))
+                base_amt = one_amt * Decimal(str(rates.get(one_ccy, 1.0)))
+                answer = f"Total collections is **{money_sym(base_amt, ccy)}**."
+                value = str(base_amt)
+            else:
+                base_total = sum(
+                    (amt * Decimal(str(rates.get(c, 1.0))))
+                    for c, amt in col.totals.items()
+                )
+                breakdown = self._ccy_label(col.totals)
+                answer = (
+                    f"Total collections is **{money_sym(base_total, ccy)}** across "
+                    f"currencies ({breakdown})."
+                )
+                value = str(base_total)
+            return {
+                "answer": answer,
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [{
+                    "source": "Zoiko Billing Dashboard",
+                    "type": "metric_collections",
+                    "as_of": datetime.now(timezone.utc).isoformat(),
+                    "value": value,
+                }],
+                "qualification": (
+                    "Collections: sum of cleared payments received from the payments "
+                    "ledger (per-currency, GLB-002). "
+                    "Distinct from Revenue (sum of issued invoice totals)."
+                ),
+                "next_actions": ["Dashboard summary", "Show outstanding balances"],
+                "suggested_prompts": ["Dashboard summary", "Collection rate", "Show overdue invoices"],
+            }
+
         if intent.get("intent") == "metric_revenue":
             return {
                 "answer": f"Total revenue is **{money_sym(total_revenue, ccy)}**.",
@@ -5391,14 +5898,48 @@ class ConversationEngine:
 
         overdue_count = self._billing.count_invoices_for_org(org_id, active_only=True, overdue_only=True)
 
+        # Paid Amount is the cleared (paid) portion of billed revenue.
+        paid_amount = kpis.get("paid_amount", 0)
+        # Collection Rate mirrors the dashboard's Collection Rate card exactly:
+        # cleared payments / billed revenue, capped at 100% — the same formula
+        # as _collection_rate_response, so chatbot and dashboard can't disagree.
+        collections = kpis.get("collections", 0)
+        if total_revenue > 0:
+            collection_rate = min(
+                Decimal("100"),
+                (Decimal(str(collections)) / Decimal(str(total_revenue))) * Decimal("100"),
+            )
+        else:
+            collection_rate = Decimal("100") if collections > 0 else Decimal("0")
+        collection_rate_text = f"{round(collection_rate, 1):.1f}".rstrip("0").rstrip(".") + "%"
+
+        # Business insight derived from the live KPIs — never hardcoded.
+        if outstanding > 0:
+            overdue_note = f", **{overdue_count}** of which overdue" if overdue_count else ""
+            insight = (
+                f"There's still **{money_sym(outstanding, ccy)}** outstanding to collect "
+                f"across {total_invoices} invoice(s){overdue_note}."
+            )
+        else:
+            insight = "Everything billed is fully collected — no outstanding balances."
+        if collections > 0:
+            insight += (
+                f" You've collected **{money_sym(collections, ccy)}** in cleared payments, "
+                f"a **{collection_rate_text}** collection rate."
+            )
+        else:
+            insight += f" No cleared payments yet, so your collection rate is **{collection_rate_text}**."
+
         answer = (
-            f"Financial overview for **{ctx.tenant_name or 'your organization'}**:\n\n"
-            f"**Invoices:** {total_invoices} total | **Revenue:** {money_sym(total_revenue, ccy)} | "
-            f"**Outstanding:** {money_sym(outstanding, ccy)} | **Overdue:** {overdue_count}\n\n"
-            f"**Customers:** {total_customers}"
+            f"**Dashboard Summary** for **{ctx.tenant_name or 'your organization'}**:\n\n"
+            f"- **Total Revenue:** {money_sym(total_revenue, ccy)}\n"
+            f"- **Paid Amount:** {money_sym(paid_amount, ccy)}\n"
+            f"- **Collections:** {money_sym(collections, ccy)}\n"
+            f"- **Outstanding Amount:** {money_sym(outstanding, ccy)}\n"
+            f"- **Collection Rate:** {collection_rate_text}\n"
+            f"- **Customers:** {total_customers} active | **Invoices:** {total_invoices}\n\n"
+            f"**Insight:** {insight}"
         )
-        if overdue_count > 0:
-            answer += f"\n\n**Attention:** {overdue_count} invoice(s) are overdue."
 
         return {
             "answer": answer,
@@ -5411,7 +5952,10 @@ class ConversationEngine:
                 "fields": {
                     "total_invoices": total_invoices,
                     "total_revenue": str(total_revenue),
+                    "paid_amount": str(paid_amount),
                     "outstanding": str(outstanding),
+                    "collections": str(collections),
+                    "collection_rate": collection_rate_text,
                     "overdue_count": overdue_count,
                     "total_customers": total_customers,
                 },

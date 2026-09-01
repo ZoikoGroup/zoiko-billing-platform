@@ -125,7 +125,7 @@ body {
   border-radius: 9999px;
   background: var(--ab-accent-text);
   opacity: 0.25;
-  animation: ab-typing-blink 1.2s ease-in-out infinite;
+  animation: ab-typing-blink 2.4s ease-in-out infinite;
 }
 .ab-typing-dot--2 { animation-delay: 0.2s; }
 .ab-typing-dot--3 { animation-delay: 0.4s; }
@@ -140,12 +140,34 @@ body {
   width: 7px;
   height: 14px;
   background: var(--ab-accent-text);
-  animation: ab-caret-blink 0.95s steps(2, start) infinite;
+  animation: ab-caret-blink 1.8s steps(2, start) infinite;
   vertical-align: text-bottom;
 }
 @keyframes ab-caret-blink {
   0%, 50% { opacity: 1; }
   50.01%, 100% { opacity: 0; }
+}
+
+/* Pending progressive "tail" that ReactMarkdown must not see yet (e.g. an
+   in-progress fenced code block).  Plain text, never parsed as Markdown, so
+   a half-open fence can't flicker.  When it is code, mimic the <pre> style so
+   it reads naturally while typing and locks into the real code block without
+   a visual jump. */
+.ab-tail {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ab-tail--code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--ab-surface-raised);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  color: var(--ab-assistant-bubble-text);
+}
+.ab-tail--code:first-child {
+  margin-top: 0;
 }
 
 /* Citation / evidence text */

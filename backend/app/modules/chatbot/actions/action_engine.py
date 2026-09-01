@@ -16,6 +16,9 @@ Key invariants:
   - No state may be skipped
   - Confirmation binds to preview hash
   - Execute requires valid, unexpired confirmation
+  - NO auto-execute tier: every R2+ action requires an explicit preview and
+    an explicit confirmation bound to that preview's ID/hash (READY_TO_EXECUTE
+    is unreachable for risk class R2 and above)
   - Preview from authoritative billing service (not model arithmetic)
   - Resource versions rechecked immediately before write
 """
@@ -69,15 +72,21 @@ def _hash(text: str) -> str:
 
 
 # ── Risk policy thresholds (config-driven) ───────────────────────────────────
+# There is NO auto-execute tier for governed actions: every R2+ mutation
+# (invoice, credit note, refund, payment allocation) requires an explicit
+# preview followed by an explicit confirmation bound to that preview's
+# ID/hash — the "auto_execute_threshold" concept is pinned to 0.00 so the
+# risk evaluator can never classify an R2+ action as READY_TO_EXECUTE.
+# `approval_threshold` (and above) additionally escalates to maker-checker.
 
 RISK_POLICIES = {
     "invoice_draft": {
-        "auto_execute_threshold": Decimal("100.00"),
+        "auto_execute_threshold": Decimal("0.00"),  # No auto-execute tier (R2+)
         "approval_threshold": Decimal("1000.00"),
         "max_amount": Decimal("100000.00"),
     },
     "payment_allocation": {
-        "auto_execute_threshold": Decimal("500.00"),
+        "auto_execute_threshold": Decimal("0.00"),  # No auto-execute tier (R2+)
         "approval_threshold": Decimal("5000.00"),
         "max_amount": Decimal("500000.00"),
     },
@@ -87,7 +96,7 @@ RISK_POLICIES = {
         "max_amount": Decimal("50000.00"),
     },
     "credit_note": {
-        "auto_execute_threshold": Decimal("200.00"),
+        "auto_execute_threshold": Decimal("0.00"),  # No auto-execute tier (R2+)
         "approval_threshold": Decimal("2000.00"),
         "max_amount": Decimal("200000.00"),
     },
@@ -568,7 +577,11 @@ class ActionEngine:
                     recovery="Regenerate a fresh preview and reconfirm before executing.",
                 )
 
-        # Verify confirmation exists
+        # Verify confirmation exists — AND is bound to this exact preview.
+        # P0 guard: a confirmation recorded against a DIFFERENT (stale/superseded)
+        # preview must never authorize execution of this mutation.  The hash
+        # binding is re-verified here so no flow can execute on a mismatched
+        # confirmation record.
         confirmation = (
             self.db.query(AIActionConfirmation)
             .filter(
@@ -583,6 +596,14 @@ class ActionEngine:
                 status_code=409,
                 error_code="confirmation_required",
                 recovery="Confirm the current preview before executing the action.",
+            )
+        if confirmation.confirmation_phrase_hash != preview.preview_hash:
+            raise ActionEngineError(
+                "Confirmation required. The confirmation is not bound to the current "
+                "preview. Regenerate the preview and reconfirm before executing.",
+                status_code=409,
+                error_code="confirmation_required",
+                recovery="Regenerate the preview and confirm it before executing the action.",
             )
 
         # Check approval if required
@@ -884,16 +905,24 @@ class ActionEngine:
         }
 
     def _evaluate_risk_policy(self, draft: AIActionDraft, preview_data: dict) -> dict:
-        """Evaluate risk policy to determine confirmation/approval requirements."""
+        """Evaluate risk policy to determine confirmation/approval requirements.
+
+        P0 guard (no auto-execute tier): every governed action (risk class R2
+        and above) is CONFIRMATION_REQUIRED *unless* it escalates to
+        APPROVAL_REQUIRED.  READY_TO_EXECUTE is unreachable for R2+ regardless
+        of amount, so no code path — including the chat flow and frontend —
+        can ever receive a signal that an R2+ mutation is pre-authorized.
+        """
         policy = RISK_POLICIES.get(draft.action_type, RISK_POLICIES["invoice_draft"])
 
         total = Decimal("0")
         if preview_data.get("money_summary", {}).get("total"):
             total = Decimal(preview_data["money_summary"]["total"])
 
-        if total >= policy["approval_threshold"]:
+        if draft.risk_class in (RiskClass.R2, RiskClass.R3, RiskClass.R4) \
+                and total >= policy["approval_threshold"]:
             result = "APPROVAL_REQUIRED"
-        elif total >= policy["auto_execute_threshold"]:
+        elif draft.risk_class in (RiskClass.R2, RiskClass.R3, RiskClass.R4):
             result = "CONFIRMATION_REQUIRED"
         else:
             result = "READY_TO_EXECUTE"
