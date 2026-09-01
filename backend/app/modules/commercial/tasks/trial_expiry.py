@@ -72,7 +72,10 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
         expired = (
             db.query(CommercialSubscription)
             .filter(
-                CommercialSubscription.status == CommercialSubscriptionStatus.PENDING,
+                CommercialSubscription.status.in_([
+                    CommercialSubscriptionStatus.PENDING,
+                    CommercialSubscriptionStatus.TRIALING,
+                ]),
                 CommercialSubscription.trial_ends_at.isnot(None),
                 CommercialSubscription.trial_ends_at <= datetime.utcnow(),
             )

@@ -171,7 +171,7 @@ class Settings(BaseSettings):
     # it (per the program's expiry_action) and require_active_subscription
     # blocks /billing/* access until a super admin reactivates it or the org
     # pays. OFF by default — nothing acts on an expired trial until enabled.
-    ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = False
+    ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = True
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
 
     # Plane-1 scheduled plan-change apply sweep (ZB-COM-ENT-001 Part 3) — a
