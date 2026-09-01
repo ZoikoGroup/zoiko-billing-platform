@@ -28,6 +28,7 @@ PRODUCT_NULLABLE_FIELDS = {
     "description", "category_id", "cost_price", "unit_label",
     "tax_percentage", "image_url", "brand", "invoice_description",
     "tax_category_id", "country", "gst_vat_group",
+    "default_discount", "original_price",
 }
 CATEGORY_NULLABLE_FIELDS = {"description", "parent_id", "icon", "color"}
 
@@ -64,9 +65,24 @@ class ProductService:
 
     def create_product(self, organization_id: int, created_by: int, **data: Any) -> Product:
         data = filter_allowed(data, PRODUCT_ALLOWED_FIELDS)
-        if self.repo.exists(organization_id, code=data.get("code")):
+        code = data.get("code")
+        name = data.get("name")
+        # A soft-deleted product no longer counts as a live uniqueness
+        # collision (get_by_code/exists exclude it), but its row still holds
+        # the (organization_id, code) unique constraint. Re-importing or
+        # re-creating a previously deleted catalog would otherwise fail with
+        # 409 on the underlying unique index. Restore and refresh the archived
+        # row instead, so a re-import surfaces the product again rather than
+        # erroring.
+        if code:
+            archived = self.repo.get_deleted_by_code(organization_id, code)
+            if archived:
+                return self._restore_from_data(
+                    archived, data, organization_id, created_by,
+                )
+        if self.repo.exists(organization_id, code=code):
             raise AlreadyExistsException("Product", "code")
-        if data.get("name") and self.repo.get_by_name(organization_id, data["name"]):
+        if name and self.repo.get_by_name(organization_id, name):
             raise AlreadyExistsException("Product", "name")
         if data.get("category_id"):
             self.cat_repo.get_by_id(data["category_id"], organization_id)
@@ -74,6 +90,27 @@ class ProductService:
             data["currency"] = _resolve_org_currency(self.db, organization_id)
         product = self.repo.create(organization_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Product", product.id, new_values=data)
+        return product
+
+    def _restore_from_data(
+        self, product: Product, data: Dict[str, Any], organization_id: int, user_id: int
+    ) -> Product:
+        """Rehydrate a soft-deleted product from new data and restore it."""
+        for field, value in data.items():
+            if field in ("created_by", "updated_by", "organization_id"):
+                continue
+            setattr(product, field, value)
+        product.deleted_at = None
+        if "is_active" not in data:
+            product.is_active = True
+        product.updated_by = user_id
+        self.db.commit()
+        self.db.refresh(product)
+        self.audit.log(
+            organization_id, user_id,
+            BillingAuditAction.CREATE, "Product", product.id,
+            new_values={**data, "restored_from_archive": True},
+        )
         return product
 
     def update_product(self, product_id: int, organization_id: int, updated_by: int, **data: Any) -> Product:
@@ -116,11 +153,11 @@ class ProductService:
             status=status, currency=currency,
         )
 
-    def list_subscribable(self, organization_id: int) -> List[Product]:
-        return self.repo.list_subscribable(organization_id)
+    def list_subscribable(self, organization_id: int, active_only: bool = True) -> List[Product]:
+        return self.repo.list_subscribable(organization_id, active_only=active_only)
 
-    def list_usage_billable(self, organization_id: int) -> List[Product]:
-        return self.repo.list_usage_billable(organization_id)
+    def list_usage_billable(self, organization_id: int, active_only: bool = True) -> List[Product]:
+        return self.repo.list_usage_billable(organization_id, active_only=active_only)
 
     def delete_product(self, product_id: int, organization_id: int, updated_by: int) -> None:
         self.repo.soft_delete(product_id, organization_id)
@@ -281,10 +318,15 @@ class ProductService:
         return self._attach_product_counts(self.cat_repo.list_children(organization_id, parent_id), organization_id)
 
     def delete_category(self, category_id: int, organization_id: int, updated_by: int) -> None:
-        children = self.cat_repo.list_children(organization_id, category_id)
+        # active_only=False: an inactive (but not yet deleted) child category
+        # or product must still block deletion -- otherwise deactivating a
+        # product/subcategory first, then deleting its parent category,
+        # silently orphans it (the category is gone, the row still points
+        # at it) without ever tripping this guard.
+        children = self.cat_repo.list_children(organization_id, category_id, active_only=False)
         if children:
             raise BadRequestException("Cannot delete category with child categories")
-        products = self.repo.list_by_category(organization_id, category_id)
+        products = self.repo.list_by_category(organization_id, category_id, active_only=False)
         if products:
             raise BadRequestException("Cannot delete category with associated products")
         self.cat_repo.soft_delete(category_id, organization_id)

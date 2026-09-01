@@ -590,3 +590,33 @@ class CommercialQuoteService:
         quote.tax_amount = sum(i.tax_amount for i in items) if items else Decimal("0")
         quote.total_amount = quote.subtotal - quote.discount_amount + quote.tax_amount
         self.db.flush()
+
+
+# ── Background-safe email dispatch ──────────────────────────────────────────
+# Mirrors platform_invoice_service.send_invoice_email_with_session /
+# send_invoice_in_background: a real SMTP send must never run inline in a
+# latency-sensitive request/response cycle (e.g. registration).
+
+def send_quote_email_with_session(db: Session, quote_id: int) -> None:
+    """Send a CommercialQuote email using WHATEVER session the caller gives
+    it. A transient SMTP failure is logged, never raised — the quote itself
+    already exists and is valid regardless of whether this email succeeds."""
+    try:
+        CommercialQuoteService(db).send_quote(quote_id=quote_id, actor_id=None)
+        db.commit()
+    except Exception as exc:
+        logger.warning("[quote] Send failed for quote %s: %s", quote_id, exc)
+        db.rollback()
+
+
+def send_quote_in_background(quote_id: int) -> None:
+    """FastAPI BackgroundTasks entry point — opens its OWN DB session, safe
+    to call after the request's session has already closed (the quote is
+    guaranteed committed by then)."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        send_quote_email_with_session(db, quote_id)
+    finally:
+        db.close()

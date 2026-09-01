@@ -55,6 +55,7 @@ export default function ProductsDashboard() {
 
   const [products, setProducts] = useState([]);
   const [productsTotal, setProductsTotal] = useState(0);
+  const [inactiveProductsTotal, setInactiveProductsTotal] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [errorProducts, setErrorProducts] = useState(null);
 
@@ -66,7 +67,10 @@ export default function ProductsDashboard() {
   const [revenueData, setRevenueData] = useState([]);
   const [errorRevenue, setErrorRevenue] = useState(null);
 
-  const [revenueGranularity, setRevenueGranularity] = useState("monthly");
+  // "Daily" is now the finest available bucketing (see revenueChartData) --
+  // defaulting to it keeps the initial chart showing the full 12-point
+  // series, same as before this label/bucket-count mapping was corrected.
+  const [revenueGranularity, setRevenueGranularity] = useState("daily");
 
   const [productLineItems, setProductLineItems] = useState([]); // flattened invoice line items, recent paid-invoice sample
   const [errorLineItems, setErrorLineItems] = useState(null);
@@ -76,22 +80,41 @@ export default function ProductsDashboard() {
       setRefreshing(true);
       setErrorProducts(null); setErrorCategories(null); setErrorRevenue(null); setErrorLineItems(null);
 
-      const [productsData, categoriesData, revenueRes, recentPaidInvoices, usageRes] = await Promise.allSettled([
+      const [productsData, inactiveProductsData, categoriesData, revenueRes, recentPaidInvoices, usageRes, usageInactiveRes] = await Promise.allSettled([
         productApi.list({ per_page: 200 }),
-        productApi.listCategories({ per_page: 100 }),
+        // A separate, lightweight (per_page:1) request just to read the
+        // inactive `total` count -- "Total Products"/"Active Products" used
+        // to be identical, because the main fetch above only ever returns
+        // active products (the API's own default) and nothing here ever
+        // asked for inactive ones.
+        productApi.list({ per_page: 1, is_active: false }),
+        // root_only defaults to true server-side, which hid every
+        // subcategory (and its products) from the Category Distribution
+        // chart entirely.
+        productApi.listCategories({ per_page: 100, root_only: false }),
         dashboardApi.getMonthlyRevenue(12),
         invoiceApi.list({ per_page: TOP_PRODUCTS_INVOICE_SAMPLE_SIZE, status: "paid" }),
         productApi.listUsageBillable(),
+        productApi.listUsageBillable({ is_active: false }),
       ]);
 
       let productItems = [];
+      let inactiveProductsTotal = 0;
+      if (inactiveProductsData.status === "fulfilled") {
+        inactiveProductsTotal = Number(inactiveProductsData.value?.total ?? 0);
+      }
       if (productsData.status === "fulfilled") {
         productItems = extractArray(productsData.value);
         setProducts(productItems);
-        setProductsTotal(Number(productsData.value?.total ?? productItems.length));
+        const activeTotal = Number(productsData.value?.total ?? productItems.length);
+        // Active + inactive, deliberately excluding archived/deleted
+        // products -- "catalog" here means what's still sellable-or-not,
+        // not the permanently removed history.
+        setProductsTotal(activeTotal + inactiveProductsTotal);
       } else {
         setErrorProducts(productsData.reason?.message || "Failed to load products");
       }
+      setInactiveProductsTotal(inactiveProductsTotal);
 
       if (categoriesData.status === "fulfilled") {
         setCategories(extractArray(categoriesData.value));
@@ -99,8 +122,11 @@ export default function ProductsDashboard() {
         setErrorCategories(categoriesData.reason?.message || "Failed to load categories");
       }
 
-      if (usageRes.status === "fulfilled") {
-        setUsageProducts(extractArray(usageRes.value));
+      if (usageRes.status === "fulfilled" || usageInactiveRes.status === "fulfilled") {
+        setUsageProducts([
+          ...(usageRes.status === "fulfilled" ? extractArray(usageRes.value) : []),
+          ...(usageInactiveRes.status === "fulfilled" ? extractArray(usageInactiveRes.value) : []),
+        ]);
       }
 
       if (revenueRes.status === "fulfilled" && revenueRes.value) {
@@ -167,10 +193,15 @@ export default function ProductsDashboard() {
   }, [revenueData]);
 
   // Revenue series re-bucketed by granularity — aggregates the trailing 12
-  // monthly points into coarser buckets (no synthetic sub-month data).
+  // monthly points into coarser buckets (no synthetic sub-month data, so
+  // "Daily" can't literally mean daily resolution; the best available
+  // approximation is the full 12 monthly points, i.e. the LEAST aggregation
+  // -- previously "Daily" mapped to 4 buckets (the MOST aggregation, ~3
+  // months per bar) and "Monthly" to 12, the exact opposite of what the
+  // labels promise).
   const revenueChartData = useMemo(() => {
     if (!revenueData.length) return [];
-    const buckets = revenueGranularity === "monthly" ? 12 : revenueGranularity === "weekly" ? 6 : 4;
+    const buckets = revenueGranularity === "daily" ? 12 : revenueGranularity === "weekly" ? 6 : 4;
     const size = Math.max(1, Math.ceil(revenueData.length / buckets));
     const out = [];
     for (let i = 0; i < revenueData.length; i += size) {
@@ -247,10 +278,11 @@ export default function ProductsDashboard() {
 
   const topPerformer = useMemo(() => topProductsByRevenue[0] || null, [topProductsByRevenue]);
 
-  const inactiveProductsCount = useMemo(
-    () => Math.max(filteredProducts.length - activeProducts.length, 0),
-    [filteredProducts.length, activeProducts.length]
-  );
+  // `products`/`filteredProducts` only ever contain ACTIVE products (the
+  // main list fetch's own server-side default), so filteredProducts.length
+  // - activeProducts.length was always 0 -- this never surfaced the
+  // inactive-products insight/warning no matter how many actually existed.
+  const inactiveProductsCount = inactiveProductsTotal;
 
   const topCategory = useMemo(() => {
     if (!categoryChartData.length) return null;

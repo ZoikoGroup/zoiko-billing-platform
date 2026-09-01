@@ -1,19 +1,28 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { KeyRound, Power, UserCog, ShieldCheck, ShieldOff, UserPlus, GitBranch, Building2, Mail } from "lucide-react";
+import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIcon } from "lucide-react";
 
 import { apiFetch } from "../api/client";
-import { PageHeader, DataTable, SearchInput, Select, Modal, Field, Button } from "../components/billing-ui";
-import { ErrorState, SuccessMessage, Pagination, StatusBadge, useConfirmationDialog } from "../components/billing-shared";
+import { PageHeader, DataTable, ListToolbar, Select, Modal, Field, Button } from "../components/billing-ui";
+import { ErrorState, SuccessMessage, Pagination, StatusBadge } from "../components/billing-shared";
+import { formatTrialRemaining } from "../modules/super-admin/constants";
 
-const ROLE_OPTIONS = [
-  { value: "org_admin", label: "Org Admin" },
-  { value: "billing_admin", label: "Billing Admin" },
-];
+// This page is scoped to Organization Admins only — one tenant-facing
+// administrator role per organization. Billing/finance/auditor roles are
+// invited by each tenant's own org admin, and Super Admin accounts have
+// their own platform-role tooling; neither belongs in this roster.
+const FIXED_ROLE = "org_admin";
 
 const STATUS_OPTIONS = [
   { value: "true", label: "Active" },
   { value: "false", label: "Inactive" },
 ];
+
+function initialsOf(firstName, lastName, email) {
+  const first = (firstName || "").trim();
+  const last = (lastName || "").trim();
+  if (first || last) return `${first[0] || ""}${last[0] || ""}`.toUpperCase();
+  return (email || "?").slice(0, 2).toUpperCase();
+}
 
 // ZB-SA-P3 (Phase 3B) — evidence-based derived account status computed by
 // the backend. Labels/colors only; the server is authoritative.
@@ -28,20 +37,6 @@ const DERIVED_STATUS_OPTIONS = Object.entries(DERIVED_STATUS_BADGES).map(([value
   value,
   ...badge,
 }));
-
-// §25 SoD: super admins create ORG ADMINS platform-wide; billing/finance/
-// auditor roles stay under the tenant org admin's authority.
-const SA_INVITEABLE_ROLES = [{ value: "org_admin", label: "Organization Admin" }];
-
-// ZB-SA-CMD-003 §26 — Super Admin platform-role scaffolding.
-const PLATFORM_ROLE_OPTIONS = [
-  { value: "platform_administrator", label: "Platform Administrator" },
-  { value: "support_operator", label: "Support Operator" },
-  { value: "security_operator", label: "Security Operator" },
-  { value: "reliability_operator", label: "Reliability Operator" },
-  { value: "auditor", label: "Auditor" },
-  { value: "finance_readonly", label: "Finance (Read-Only)" },
-];
 
 const PAGE_SIZE = 25;
 
@@ -96,6 +91,22 @@ function ReasonModal({ open, onClose, title, icon, description, busy, error, sub
   );
 }
 
+/** Compact icon-only secondary action, grouped inside a bordered pill row. */
+function IconAction({ icon: Icon, title, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <Icon size={14} />
+    </button>
+  );
+}
+
 function OrgSelect({ id, value, onChange, organizations, allowNone = false }) {
   return (
     <>
@@ -122,7 +133,6 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
   const [me, setMe] = useState(null);
   const [error, setError] = useState("");
@@ -134,11 +144,8 @@ export default function UsersPage() {
   const [organizations, setOrganizations] = useState([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState(null);
-  const [roleTarget, setRoleTarget] = useState(null);
   const [membershipTarget, setMembershipTarget] = useState(null);
   const [modalError, setModalError] = useState("");
-
-  const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -146,7 +153,7 @@ export default function UsersPage() {
     apiFetch("/api/super-admin/users", {
       params: {
         search,
-        role,
+        role: FIXED_ROLE,
         is_active: status === "" ? undefined : status === "true",
         skip: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
@@ -158,7 +165,7 @@ export default function UsersPage() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [search, role, status, page]);
+  }, [search, status, page]);
 
   useEffect(() => {
     load();
@@ -186,11 +193,6 @@ export default function UsersPage() {
     setStatusTarget(u);
   }
 
-  function openRole(u) {
-    setModalError("");
-    setRoleTarget(u);
-  }
-
   function openMembership(u) {
     setModalError("");
     ensureOrganizations();
@@ -214,25 +216,6 @@ export default function UsersPage() {
       });
       setNotice(`User ${u.email} ${u.is_active ? "deactivated" : "reactivated"}.`);
       setStatusTarget(null);
-      load();
-    } catch (err) {
-      setModalError(err.message);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleRoleSubmit(newRole, reason) {
-    const u = roleTarget;
-    if (!u) return;
-    setBusyId(u.id);
-    try {
-      await apiFetch(`/api/super-admin/users/${u.id}/role`, {
-        method: "PUT",
-        body: { role: newRole, reason },
-      });
-      setNotice(`Role for ${u.email} changed to ${newRole}.`);
-      setRoleTarget(null);
       load();
     } catch (err) {
       setModalError(err.message);
@@ -298,71 +281,59 @@ export default function UsersPage() {
     }
   }
 
-  async function changePlatformRole(u, newRole) {
-    setBusyId(u.id);
-    setNotice("");
-    setError("");
-    try {
-      await apiFetch(`/api/super-admin/users/${u.id}/platform-role`, {
-        method: "PUT",
-        params: { platform_role: newRole },
-      });
-      setNotice(`Platform role for ${u.email} set to ${newRole.replace(/_/g, " ")}.`);
-      load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function resetMfa(u) {
-    const ok = await confirm({
-      title: "Reset MFA?",
-      message:
-        `This disables two-factor authentication on ${u.email} and clears their recovery codes. ` +
-        "They will be required to re-enroll from scratch on their next sign-in. This is an administrative " +
-        "disaster-recovery action and is audited.",
-      confirmLabel: "Reset MFA",
-      tone: "danger",
-    });
-    if (!ok) return;
-    setBusyId(u.id);
-    setNotice("");
-    setError("");
-    try {
-      await apiFetch(`/api/super-admin/users/${u.id}/mfa/reset`, { method: "PUT" });
-      setNotice(`MFA reset for ${u.email}. They will be asked to re-enroll on their next sign-in.`);
-      load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   const columns = useMemo(
     () => [
       {
         key: "user",
-        label: "User",
+        label: "Organization Admin",
         render: (u) => (
-          <span>
-            <span className="block font-medium text-slate-800">{u.first_name} {u.last_name}</span>
-            <span className="block text-xs text-slate-500">{u.email}</span>
+          <span className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand to-brand-hover text-xs font-bold text-white shadow-sm">
+              {initialsOf(u.first_name, u.last_name, u.email)}
+            </span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-slate-800">{u.first_name} {u.last_name}</span>
+              <span className="block text-xs text-slate-500">{u.email}</span>
+            </span>
           </span>
         ),
       },
       {
-        key: "role",
-        label: "Role",
+        key: "organization",
+        label: "Organization",
         render: (u) => (
-          <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-            {u.role}
+          <span className="flex items-center gap-1.5 text-slate-600">
+            <Building2 size={13} className="shrink-0 text-slate-400" />
+            {u.organization_name || "—"}
           </span>
         ),
       },
-      { key: "organization", label: "Organization", render: (u) => <span className="text-slate-500">{u.organization_name || (u.role === "super_admin" ? "Platform" : "—")}</span> },
+      {
+        key: "plan",
+        label: "Plan",
+        render: (u) =>
+          u.subscription_plan_code ? (
+            <span>
+              <span className="block font-medium text-slate-700">
+                {u.subscription_plan_name || u.subscription_plan_code}
+              </span>
+              <span className="block text-xs text-slate-500">{u.subscription_status}</span>
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">No plan assigned</span>
+          ),
+      },
+      {
+        key: "trial_remaining",
+        label: "Free Trial Remaining",
+        render: (u) => {
+          const trial = formatTrialRemaining(u.trial_ends_at, u.subscription_status, u.recovery_ends_at);
+          if (!trial) return <span className="text-xs text-slate-400">—</span>;
+          const toneClass =
+            trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
+          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
+        },
+      },
       {
         key: "derived_status",
         label: "Status",
@@ -386,58 +357,13 @@ export default function UsersPage() {
           );
         },
       },
-      {
-        key: "mfa",
-        label: "MFA",
-        render: (u) =>
-          u.role !== "super_admin" ? (
-            <span className="text-xs text-slate-500">—</span>
-          ) : u.mfa_enabled ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              <ShieldCheck size={12} /> Enabled
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-              <ShieldOff size={12} /> Not enrolled
-            </span>
-          ),
-      },
-      {
-        key: "platform_role",
-        label: "Platform Role",
-        render: (u) => {
-          if (u.role !== "super_admin") return <span className="text-xs text-slate-500">—</span>;
-          const canManage = me && (!me.platform_role || me.platform_role === "platform_administrator");
-          const current = u.platform_role || "platform_administrator";
-          if (!canManage) {
-            return (
-              <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                {PLATFORM_ROLE_OPTIONS.find((o) => o.value === current)?.label || current}
-              </span>
-            );
-          }
-          return (
-            <select
-              aria-label={`Change platform role for ${u.email}`}
-              value={current}
-              disabled={busyId === u.id}
-              onChange={(e) => changePlatformRole(u, e.target.value)}
-              className="rounded-lg border border-slate-200 px-2 py-1 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
-            >
-              {PLATFORM_ROLE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          );
-        },
-      },
       { key: "created_at", label: "Created", render: (u) => <span className="text-xs text-slate-500">{new Date(u.created_at).toLocaleDateString()}</span> },
       {
         key: "actions",
         label: "Actions",
-        width: 330,
+        width: 220,
         render: (u) => (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               size="sm"
               variant={u.is_active ? "danger" : "secondary"}
@@ -447,29 +373,13 @@ export default function UsersPage() {
             >
               {u.is_active ? "Deactivate" : "Activate"}
             </Button>
-            {u.role !== "super_admin" && (
-              <>
-                <Button size="sm" variant="secondary" icon={UserCog} disabled={busyId === u.id} onClick={() => openRole(u)}>
-                  Role
-                </Button>
-                <Button size="sm" variant="secondary" icon={Building2} disabled={busyId === u.id} onClick={() => openMembership(u)}>
-                  Move
-                </Button>
-              </>
-            )}
-            {u.role === "org_admin" && u.derived_status === "invited" && (
-              <Button size="sm" variant="secondary" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)}>
-                Resend Invite
-              </Button>
-            )}
-            <Button size="sm" variant="secondary" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)}>
-              Reset PW
-            </Button>
-            {u.role === "super_admin" && u.mfa_enabled && (
-              <Button size="sm" variant="secondary" icon={ShieldOff} disabled={busyId === u.id} onClick={() => resetMfa(u)}>
-                Reset MFA
-              </Button>
-            )}
+            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5">
+              {u.derived_status === "invited" && (
+                <IconAction title="Resend invitation email" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)} />
+              )}
+              <IconAction title="Move to another organization" icon={GitBranch} disabled={busyId === u.id} onClick={() => openMembership(u)} />
+              <IconAction title="Send password reset link" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)} />
+            </div>
           </div>
         ),
       },
@@ -482,19 +392,15 @@ export default function UsersPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Administrators & Users"
-        description="Every org admin and billing admin across all tenants — with evidence-based status and real last-login recency."
-        icon={UserCog}
-        meta={`${total} user(s)`}
+        crumbs={[{ label: "Platform" }, { label: "Organization Admins" }]}
+        title="Organization Admins"
+        description="Every organization admin across all tenants — their organization's selected plan, remaining free-trial time, and evidence-based account status."
+        icon={UsersIcon}
+        meta={`${total} organization admin(s)`}
         actions={
-          <button
-            type="button"
-            onClick={openInvite}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-          >
-            <UserPlus size={15} />
-            Invite User
-          </button>
+          <Button variant="primary" icon={UserPlus} onClick={openInvite}>
+            Invite Organization Admin
+          </Button>
         }
       />
 
@@ -507,33 +413,38 @@ export default function UsersPage() {
 
       {!error && (
         <>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <SearchInput value={search} onChange={resetToFirstPage} placeholder="Search email or name…" />
-            <Select value={role} onChange={(v) => { setRole(v); setPage(1); }} options={ROLE_OPTIONS} placeholder="All roles" aria-label="Filter users by role" />
-            <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All statuses" aria-label="Filter users by status" />
+          <div className="mt-6">
+            <ListToolbar
+              search={search}
+              onSearchChange={resetToFirstPage}
+              searchPlaceholder="Search email, name or organization…"
+              showFilters={false}
+              onRefresh={load}
+              refreshing={loading}
+            >
+              <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All statuses" className="w-40" aria-label="Filter users by status" />
+            </ListToolbar>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-2">
             <DataTable
               columns={columns}
               data={users}
               loading={loading}
               rowKey={(u) => u.id}
-              emptyTitle="No users found"
-              emptyMessage={search || role || status ? "No users match your current filters." : "Users will appear here once organizations are provisioned."}
+              emptyTitle="No organization admins found"
+              emptyMessage={search || status ? "No organization admins match your current filters." : "Organization admins will appear here once organizations are provisioned."}
               minWidth={1080}
             />
           </div>
 
           <div className="mt-4">
             <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
-              {total} user(s)
+              {total} organization admin(s)
             </Pagination>
           </div>
         </>
       )}
-      {ConfirmationDialog}
-
       {/* ── Phase 3B mutation modals ───────────────────────────────────── */}
 
       {statusTarget && (
@@ -548,24 +459,6 @@ export default function UsersPage() {
           submitLabel={statusTarget.is_active ? "Deactivate" : "Activate"}
           onSubmit={handleStatusSubmit}
         />
-      )}
-
-      {roleTarget && (
-        <ReasonModal
-          open
-          onClose={() => setRoleTarget(null)}
-          title="Change role"
-          icon={UserCog}
-          description={`Current role: ${roleTarget.role}. Per segregation-of-duties rules, Super Admins grant Organization Admin platform-wide; billing/finance/auditor roles are managed by each tenant's own administrators.`}
-          busy={busyId === roleTarget.id}
-          error={modalError}
-          submitLabel="Apply role change"
-          onSubmit={(reason) => handleRoleSubmit("org_admin", reason)}
-        >
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            New role: <strong>Organization Admin</strong> (the only tenant role grantable by a Super Admin).
-          </div>
-        </ReasonModal>
       )}
 
       {membershipTarget && (
@@ -659,7 +552,7 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
       if (!form.send_invite) {
         onInvited(`${form.email} was added. No invitation email was sent.`);
       } else if (created.invite_email_sent === false) {
-        onInvited(`${form.email} was added, but the invitation email could not be delivered. There is currently no resend action for this screen — share the setup link manually or re-check email delivery before trying again.`);
+        onInvited(`${form.email} was added, but the invitation email could not be delivered. Use the Resend Invite action on this list to try again.`);
       } else {
         onInvited(`Invitation sent to ${form.email}.`);
       }

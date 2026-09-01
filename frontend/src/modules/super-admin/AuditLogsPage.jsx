@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ScrollText, Filter, RotateCcw, Repeat } from "lucide-react";
 import {
   listPlatformAuditLogs,
@@ -70,7 +71,21 @@ function TabBar({ tab, onChange }) {
   );
 }
 
+// Reachable from two sidebar labels ("Audit & Evidence" and, under
+// Governance & Security, "Security Events") pointing at the same audit
+// feeds. Only the heading changes per-route; the default tab (Platform
+// Events) is already the most security-relevant view available — there is
+// no action/entity filter in AUDIT_ACTION_OPTIONS / AUDIT_ENTITY_OPTIONS
+// (constants.jsx) that isolates role changes, MFA resets, kill-switch
+// toggles, or privileged-access grants specifically, so none is invented
+// here.
+const ROUTE_SECURITY_EVENTS = "/super-admin/governance/security-events";
+
 export default function AuditLogsPage() {
+  const location = useLocation();
+  const isSecurityEventsRoute = location.pathname === ROUTE_SECURITY_EVENTS;
+  const pageTitle = isSecurityEventsRoute ? "Security Events" : "Audit Logs";
+
   const [tab, setTab] = useState("platform");
 
   // ── Platform Events (PlatformAuditLog: CommercialPlan + Organization) ────
@@ -320,7 +335,7 @@ export default function AuditLogsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Audit Logs"
+        title={pageTitle}
         description="Platform-plane audit trail plus subscription lifecycle activity across all organizations."
         icon={ScrollText}
         meta={tab === "platform" ? `${displayValue(total)} log(s)` : `${displayValue(subTotal)} event(s)`}

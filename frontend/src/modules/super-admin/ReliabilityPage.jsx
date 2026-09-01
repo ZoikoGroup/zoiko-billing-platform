@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Activity, Database, HelpCircle, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../../service/api";
 import { getJobTelemetry } from "../../service/privilegedAccessService";
@@ -25,6 +25,8 @@ const FRESHNESS_STYLES = {
 };
 
 export default function ReliabilityPage() {
+  const location = useLocation();
+  const isDataQuality = location.pathname === "/super-admin/reliability/data-quality";
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState(null);
   const [jobs, setJobs] = useState(null);
@@ -47,12 +49,30 @@ export default function ReliabilityPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Reliability"
-        description="Service health, background job health and freshness. Integration health and SLO/error-budget modules are not shown — no connector abstraction or SLO policy engine exists yet in this codebase (see docs/SUPER_ADMIN_CURRENT_STATE.md)."
+        title={isDataQuality ? "Data Quality" : "Reliability"}
+        description={
+          isDataQuality
+            ? "Data-quality checks for tenant and billing records — completeness, consistency and validation issues."
+            : "Service health, background job health and freshness. Integration health and SLO/error-budget modules are not shown — no connector abstraction or SLO policy engine exists yet in this codebase (see docs/SUPER_ADMIN_CURRENT_STATE.md)."
+        }
         icon={Activity}
       />
 
-      {loading ? (
+      {isDataQuality ? (
+        <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8">
+          <div className="flex flex-col items-center text-center">
+            <HelpCircle className="mb-3 h-10 w-10 text-slate-300" />
+            <p className="text-sm font-semibold text-slate-700">Not available on this platform</p>
+            <p className="mt-2 max-w-lg text-xs text-slate-500">
+              Data quality checks are not implemented yet — there is no data-quality-specific backend
+              (validation rules, consistency checks, completeness scoring) anywhere in this codebase. The
+              database-connectivity and job-freshness signals shown on the System Health page are a
+              different, unrelated concept and are intentionally not repeated here under a "Data Quality"
+              heading, since that would misrepresent what they measure.
+            </p>
+          </div>
+        </div>
+      ) : loading ? (
         <div className="mt-6"><Spinner /></div>
       ) : (
         <div className="mt-6 space-y-6">

@@ -236,6 +236,49 @@ def _parse_xlsx(file_bytes: bytes, max_rows: Optional[int] = None) -> Tuple[List
         wb.close()
 
 
+def _detect_and_parse(
+    file_bytes: bytes, filename: str
+) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Parse CSV or XLSX bytes into (headers, rows), dispatching on the
+    file's actual content (magic bytes) rather than trusting its extension.
+
+    A legacy Excel .xls (CFB/OLE2 container) or any non-OOXML binary claiming
+    to be Excel is rejected with a clear, actionable message — openpyxl only
+    reads the modern .xlsx format, so pretending to support `.xls` produced an
+    opaque `BadZipFile: File is not a zip file` that surfaced as a generic 500
+    on the preview endpoint. Failing loudly and instructing the user to
+    re-save as .xlsx or .csv beats a confusing crash.
+    """
+    # Legacy Excel .xls (CFB/OLE2 container, magic D0 CF 11 E0 ...) is not
+    # readable by openpyxl. Catch it explicitly so the user gets a real
+    # explanation instead of "File is not a zip file".
+    if file_bytes[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise ValueError(
+            "This looks like a legacy Excel .xls file. Please open it in Excel "
+            "and re-save as .xlsx (or export as .csv), then upload again."
+        )
+
+    is_zip = file_bytes[:4] == b"PK\x03\x04"  # OOXML (.xlsx) is a ZIP container
+
+    if is_zip:
+        try:
+            return _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
+        except Exception as exc:
+            # A file that is a ZIP but not a valid .xlsx workbook (corrupt or
+            # renamed) fails with openpyxl's cryptic BadZipFile. Translate it
+            # into a clear message.
+            if isinstance(exc, ImportError):
+                raise
+            raise ValueError(
+                "This file could not be read as a valid .xlsx workbook. "
+                "Please make sure you uploaded the correct file, or re-save it "
+                "as .xlsx / .csv and try again."
+            ) from exc
+
+    # Plain-text content (CSV, whether it's named .csv or something else).
+    return _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
+
+
 def _check_file_size(file_bytes: bytes) -> None:
     size = len(file_bytes)
     if size > MAX_IMPORT_FILE_SIZE_BYTES:
@@ -314,13 +357,7 @@ class ProductImportService:
           total_data_rows: row count (excluding header)
         """
         _check_file_size(file_bytes)
-        fname_lower = filename.lower()
-        if fname_lower.endswith(".xlsx") or fname_lower.endswith(".xls"):
-            headers, rows = _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        elif fname_lower.endswith(".csv"):
-            headers, rows = _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        else:
-            raise ValueError(f"Unsupported file format. Please upload a .csv or .xlsx file.")
+        headers, rows = _detect_and_parse(file_bytes, filename)
 
         suggested_mapping = _auto_map_columns(headers)
 
@@ -360,17 +397,19 @@ class ProductImportService:
           summary_stats: dict of counts
         """
         _check_file_size(file_bytes)
-        fname_lower = filename.lower()
-        if fname_lower.endswith(".xlsx") or fname_lower.endswith(".xls"):
-            headers, raw_rows = _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        elif fname_lower.endswith(".csv"):
-            headers, raw_rows = _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        else:
-            raise ValueError("Unsupported file format")
+        headers, raw_rows = _detect_and_parse(file_bytes, filename)
 
-        # Auto-detect common/template columns, then let explicit user overrides win.
+        # Auto-detect common/template columns, then let explicit user overrides
+        # win. Only a truthy override replaces an auto-detected mapping: the
+        # column-mapping UI's "— Auto detect —" option submits "" for that
+        # column, meaning "no override, keep whatever was auto-detected" --
+        # not "map this column to nothing". Merging blindly (`.update(...)`
+        # with no filter) let selecting that option for an already
+        # correctly auto-detected column (e.g. Name/SKU) silently erase its
+        # mapping, so every row failed the required-field check and the
+        # whole file came back "No valid rows to import" despite being fine.
         effective_map = dict(_auto_map_columns(headers))
-        effective_map.update(column_map or {})
+        effective_map.update({k: v for k, v in (column_map or {}).items() if v})
 
         org_currency = _resolve_org_currency(self.db, organization_id)
 

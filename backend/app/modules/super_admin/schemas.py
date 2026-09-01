@@ -131,6 +131,15 @@ class SuperAdminUserResponse(BaseModel):
     derived_status: Optional[str] = None
     last_login_at: Optional[datetime] = None
 
+    # ── Organization's commercial subscription — only meaningful for
+    # role == org_admin (an org_admin's own tenant); None for platform
+    # accounts / users with no organization.
+    subscription_status: Optional[str] = None
+    subscription_plan_code: Optional[str] = None
+    subscription_plan_name: Optional[str] = None
+    trial_ends_at: Optional[datetime] = None
+    recovery_ends_at: Optional[datetime] = None
+
 
 class SuperAdminUserListResponse(BaseModel):
     users: list[SuperAdminUserResponse]
@@ -1240,6 +1249,9 @@ class OrganizationDirectoryItem(BaseModel):
     can_charge: bool = False
     subscription_status: Optional[str] = None
     subscription_plan_code: Optional[str] = None
+    subscription_plan_name: Optional[str] = None
+    trial_ends_at: Optional[datetime] = None
+    recovery_ends_at: Optional[datetime] = None
     total_users: int = 0
     active_users: int = 0
     org_admins: int = 0

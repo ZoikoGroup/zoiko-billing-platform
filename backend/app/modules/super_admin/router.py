@@ -256,28 +256,41 @@ def list_platform_users(
         mfa_rows = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id.in_(super_admin_ids)).all()
         mfa_enabled_by_user_id = {row.user_id: row.is_enabled for row in mfa_rows}
 
+    # Each org_admin's own tenant subscription (plan + trial window) — reuse
+    # the Organizations directory's batched lookup so this list issues a
+    # bounded number of queries regardless of page size.
+    org_ids = [u.organization_id for u, _o in rows if u.organization_id]
+    commercial_map = OrganizationDirectoryService(db)._commercial_map(org_ids) if org_ids else {}
+
     # ZB-SA-P3 (Phase 3B): evidence-based derived status for every row.
     user_admin = UserAdminService(db)
 
-    users = [
-        SuperAdminUserResponse(
-            id=u.id,
-            email=u.email,
-            role=u.role,
-            organization_id=u.organization_id,
-            organization_name=o.organization_name if o else None,
-            organization_code=o.organization_code if o else None,
-            first_name=u.first_name,
-            last_name=u.last_name,
-            is_active=u.is_active,
-            created_at=u.created_at,
-            mfa_enabled=mfa_enabled_by_user_id.get(u.id, False) if u.role == UserRole.SUPER_ADMIN else None,
-            platform_role=(u.platform_role.value if u.platform_role else "platform_administrator") if u.role == UserRole.SUPER_ADMIN else None,
-            derived_status=user_admin.derived_status(u),
-            last_login_at=u.last_login_at,
+    users = []
+    for u, o in rows:
+        _account, sub = commercial_map.get(u.organization_id, (None, None))
+        users.append(
+            SuperAdminUserResponse(
+                id=u.id,
+                email=u.email,
+                role=u.role,
+                organization_id=u.organization_id,
+                organization_name=o.organization_name if o else None,
+                organization_code=o.organization_code if o else None,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                is_active=u.is_active,
+                created_at=u.created_at,
+                mfa_enabled=mfa_enabled_by_user_id.get(u.id, False) if u.role == UserRole.SUPER_ADMIN else None,
+                platform_role=(u.platform_role.value if u.platform_role else "platform_administrator") if u.role == UserRole.SUPER_ADMIN else None,
+                derived_status=user_admin.derived_status(u),
+                last_login_at=u.last_login_at,
+                subscription_status=sub.status if sub else None,
+                subscription_plan_code=(sub.plan.plan_code if sub is not None and sub.plan else None),
+                subscription_plan_name=(sub.plan.plan_name if sub is not None and sub.plan else None),
+                trial_ends_at=sub.trial_ends_at if sub else None,
+                recovery_ends_at=sub.recovery_ends_at if sub else None,
+            )
         )
-        for u, o in rows
-    ]
     return SuperAdminUserListResponse(users=users, total=total)
 
 
@@ -3433,6 +3446,51 @@ def get_job_telemetry(
 
     jobs = TelemetryService(db).get_job_health()
     return JobHealthListResponse(jobs=jobs, scheduler_enabled=settings.ENABLE_RECURRING_BILLING_SCHEDULER)
+
+
+class JobRetryRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+@router.post("/telemetry/jobs/{job_name}/retry", response_model=SuccessResponse)
+def retry_job(
+    job_name: str,
+    data: JobRetryRequest,
+    current_user=Depends(require_capability("job.retry")),
+    db: Session = Depends(get_db),
+):
+    """Sidebar-audit followup: "Processing Failures & Reprocessing" promised
+    a retry/reprocess action that had no backend anywhere. Queues one
+    immediate, tracked re-run of the named scheduled job (see
+    core.scheduler.run_job_now) — same JobRunLog / Attention-Engine trail as
+    a normal scheduled run, no parallel execution path. Audited like every
+    other Super Admin mutation: reason mandatory, actor + target recorded."""
+    from app.core.exceptions import BadRequestException
+    from app.core.scheduler import run_job_now
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    if not run_job_now(job_name):
+        raise BadRequestException(
+            f"Cannot retry {job_name!r}: unknown job, or the background "
+            "scheduler is not running in this environment."
+        )
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.UPDATE,
+        entity_type="ScheduledJob",
+        entity_id=None,
+        new_values={"job_name": job_name, "retried": True},
+        reason=data.reason,
+    )
+    db.commit()
+    logger.info(
+        "Super admin %s manually retried job %s (reason: %s)",
+        current_user.email, job_name, data.reason,
+    )
+    return {"message": f"{job_name} has been queued for an immediate retry."}
 
 
 @router.get("/telemetry/api", response_model=dict)

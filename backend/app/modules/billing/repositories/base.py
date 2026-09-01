@@ -213,6 +213,7 @@ class BaseRepository(Generic[ModelType]):
         date_field: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        extra_conditions: Optional[List[Any]] = None,
         **filters: Any,
     ) -> Dict[str, Any]:
         per_page = min(max(per_page, 1), 200)
@@ -225,6 +226,8 @@ class BaseRepository(Generic[ModelType]):
         base_query = self._active_filter(base_query, active_only)
         if self._has_deleted_at:
             base_query = base_query.filter(self.model.deleted_at.is_(None))
+        if extra_conditions:
+            base_query = base_query.filter(*extra_conditions)
 
         for field, value in filters.items():
             if value is not None:
@@ -248,15 +251,30 @@ class BaseRepository(Generic[ModelType]):
                 )
             base_query = base_query.filter(or_(*conditions))
 
-        total = base_query.count()
-
         if sort_by and hasattr(self.model, sort_by):
             order_fn = asc if sort_order == "asc" else desc
             base_query = base_query.order_by(order_fn(getattr(self.model, sort_by)))
 
-        items = (
-            base_query.offset((page - 1) * per_page).limit(per_page).all()
-        )
+        # Fetch the page of rows and the total matching count in a single
+        # round trip via a window function, instead of two sequential
+        # queries (count() then the page select). On a remote database each
+        # round trip costs real, fixed network latency regardless of how
+        # small the result set is -- e.g. this is what made the customer
+        # search-as-you-type feel sluggish, since every keystroke paid for
+        # two full round trips back-to-back.
+        windowed_query = base_query.add_columns(func.count().over().label("__total_count"))
+        rows = windowed_query.offset((page - 1) * per_page).limit(per_page).all()
+        if rows:
+            items = [row[0] for row in rows]
+            total = rows[0][1]
+        else:
+            items = []
+            # A window function only sees rows the LIMIT/OFFSET actually
+            # returned, so zero rows is ambiguous: either there are truly no
+            # matches (page 1), or `page` overshot the last page of an
+            # otherwise non-empty result set. Only that second, uncommon
+            # case pays for a second round trip.
+            total = base_query.count() if page > 1 else 0
 
         return {
             "total": total,

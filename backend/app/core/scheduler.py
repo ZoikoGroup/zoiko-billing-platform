@@ -218,6 +218,37 @@ def get_job_interval_minutes(job_id: str) -> Optional[int]:
     return None
 
 
+def run_job_now(job_name: str) -> bool:
+    """Manually queue one immediate, tracked execution of a registered job
+    (sidebar-audit followup: real backing for the "Processing Failures &
+    Reprocessing" retry action, which previously had none). Reuses
+    _tracked_job_runner via a one-off 'date' trigger on the same
+    scheduler/executor as the periodic jobs, so a manual retry writes an
+    identical JobRunLog / Attention-Engine trail to a scheduled run — there
+    is no second execution path to keep in sync with this one.
+
+    Returns False (and does nothing) if the scheduler isn't running in this
+    environment or job_name doesn't match a registered job; the caller is
+    responsible for turning that into an HTTP error.
+    """
+    if _scheduler is None:
+        return False
+    definition = next((d for d in get_job_definitions() if d[2] == job_name), None)
+    if definition is None:
+        return False
+    func_ref, _interval_minutes, job_id, display_name = definition
+    run_at = datetime.utcnow()
+    _scheduler.add_job(
+        func=_tracked_job_runner,
+        args=[func_ref, job_id, display_name],
+        trigger="date",
+        run_date=run_at,
+        id=f"{job_id}_manual_retry_{run_at.strftime('%Y%m%d%H%M%S%f')}",
+        name=f"{display_name} (manual retry)",
+    )
+    return True
+
+
 def _register_billing_jobs(scheduler: BackgroundScheduler) -> None:
     """Register every recurring billing job.
 

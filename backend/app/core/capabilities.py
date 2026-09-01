@@ -51,6 +51,7 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     "incident.assign": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "incident.transition": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "incident.suppress": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
+    "job.retry": {PlatformRole.RELIABILITY_OPERATOR},
     "audit.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.AUDITOR},
     "launch_readiness.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR},
     "global_search.read": {

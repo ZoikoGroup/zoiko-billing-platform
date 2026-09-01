@@ -8,7 +8,7 @@ reset), change password, and org-admin user management.
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -50,6 +50,7 @@ logger = logging.getLogger("zoiko_billing.auth")
 
 TOKEN_TTL_HOURS = 24
 INVALID_TOKEN_MESSAGE = "This link is no longer valid. Please request a new one."
+INITIAL_QUOTE_VALID_DAYS = 14
 
 
 # ── Action tokens (invite / password reset) ────────────────────────────────
@@ -465,19 +466,41 @@ def register_enterprise(
         account.id, intended_plan_code=data.intended_plan,
     )
 
-    # First invoice (§B4/§F1): a PENDING subscription needs something the org
-    # can actually pay to activate it — nothing else in the system invents
-    # one otherwise (renewal invoicing only fires for already-ACTIVE
-    # subscriptions). Generated + finalized (ISSUED) in the same transaction;
-    # never invents a price — a no-op if the plan has none resolvable.
-    initial_invoice_id: Optional[int] = None
+    # First quote (§B4/§F1): a PENDING subscription needs something the org
+    # can review and accept before it's billed — nothing else in the system
+    # invents one otherwise (renewal invoicing only fires for already-ACTIVE
+    # subscriptions). The org admin must accept the quote before an invoice
+    # is ever generated/emailed (see accept_public_quote / approve_quote in
+    # commercial_billing_router.py, which convert+finalize+send the invoice
+    # at acceptance time). Created in the same transaction; never invents a
+    # price — a no-op if the plan has none resolvable.
+    initial_quote_id: Optional[int] = None
     if subscription is not None and subscription.status == CommercialSubscriptionStatus.PENDING:
-        from app.modules.commercial.platform_invoice_service import (
-            generate_initial_invoice_for_subscription,
-        )
-        initial_invoice = generate_initial_invoice_for_subscription(db, subscription)
-        if initial_invoice is not None:
-            initial_invoice_id = initial_invoice.id
+        from app.modules.commercial.quote_service import CommercialQuoteService
+
+        priced = CommercialSubscriptionService(db).resolve_price(subscription)
+        if priced is not None:
+            price_amount, currency, _interval = priced
+            plan_name = subscription.plan.plan_name if subscription.plan else "Subscription"
+
+            quote_svc = CommercialQuoteService(db)
+            quote = quote_svc.create_quote(
+                account_id=account.id,
+                actor_id=admin.id,
+                subject=f"{plan_name} subscription quote",
+                notes=f"{plan_name} - subscription (first period). Accept to activate your subscription.",
+                valid_until=date.today() + timedelta(days=INITIAL_QUOTE_VALID_DAYS),
+                currency=currency or "USD",
+                subscription_id=subscription.id,
+            )
+            quote_svc.add_item(
+                quote_id=quote.id,
+                actor_id=admin.id,
+                line_number=1,
+                description=f"{plan_name} - subscription (first period)",
+                unit_price=price_amount,
+            )
+            initial_quote_id = quote.id
 
     # BillingConfiguration is initialized inside the same transaction (PHASE 4):
     # organization + user + config commit together, so a failure rolls back the
@@ -520,18 +543,18 @@ def register_enterprise(
         # (e.g. a test's transactional fixture that never truly commits).
         _dispatch_registration_emails(db, org, admin)
 
-    # Same rule applies to the initial invoice email (if one was generated
+    # Same rule applies to the initial quote email (if one was generated
     # above): a real SMTP send must never run inline in this response.
-    if initial_invoice_id is not None:
-        from app.modules.commercial.platform_invoice_service import (
-            send_invoice_email_with_session,
-            send_invoice_in_background,
+    if initial_quote_id is not None:
+        from app.modules.commercial.quote_service import (
+            send_quote_email_with_session,
+            send_quote_in_background,
         )
 
         if background_tasks is not None:
-            background_tasks.add_task(send_invoice_in_background, initial_invoice_id)
+            background_tasks.add_task(send_quote_in_background, initial_quote_id)
         else:
-            send_invoice_email_with_session(db, initial_invoice_id)
+            send_quote_email_with_session(db, initial_quote_id)
 
     token_payload = {
         "sub": admin.email,

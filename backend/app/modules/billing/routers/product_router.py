@@ -316,6 +316,12 @@ def export_catalog(
         raise HTTPException(status_code=400, detail="format must be 'csv' or 'xlsx'")
     if data.scope not in {"all", "filtered", "selected"}:
         raise HTTPException(status_code=400, detail="scope must be 'all', 'filtered', or 'selected'")
+    if data.scope == "selected" and not data.ids:
+        # export_catalog() treats a falsy `ids` as "no id filter" and falls
+        # back to exporting the whole catalog -- reject here instead of
+        # silently exporting everything when the caller asked for a
+        # (missing/empty) specific selection.
+        raise HTTPException(status_code=400, detail="scope='selected' requires a non-empty 'ids' list")
 
     try:
         svc = ProductImportService(db)
@@ -381,6 +387,16 @@ def list_products(
     sort_by: Optional[str] = Query("name"),
     sort_order: str = Query("asc"),
 ):
+    # is_active=False with no explicit status means "show me inactive
+    # products" -- route it through the same status="inactive" branch the
+    # status filter itself uses (is_active + non-archived), rather than the
+    # active_only=False bypass, which shows literally everything including
+    # archived/soft-deleted products and made this param not actually filter
+    # by active status at all.
+    effective_status = status
+    if effective_status is None and is_active is False:
+        effective_status = "inactive"
+
     svc = ProductService(db)
     return svc.list_products(
         organization_id=current_user.organization_id,
@@ -389,7 +405,7 @@ def list_products(
         search_term=search_term,
         category_id=category_id,
         product_type=product_type,
-        status=status,
+        status=effective_status,
         currency=currency,
         active_only=is_active if is_active is not None else False,
         sort_by=sort_by or "name",
@@ -420,10 +436,12 @@ def list_subscribable(
 def list_usage_billable(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    is_active: Optional[bool] = Query(True, description="Filter by active status. Pass false to include inactive (but not archived) meters too."),
 ):
     svc = ProductService(db)
     return svc.list_usage_billable(
         organization_id=current_user.organization_id,
+        active_only=is_active if is_active is not None else False,
     )
 
 
