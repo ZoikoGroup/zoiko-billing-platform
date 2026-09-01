@@ -383,6 +383,7 @@ COMPOUND_TERM_NORMALIZERS = (
     (re.compile(r"\bwrite[\s-]?offs?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "write off")),
     (re.compile(r"\bcredit[\s-]?notes?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "credit note")),
     (re.compile(r"\bquick[\s-]?actions?\b", re.IGNORECASE), lambda m: _match_plural_to(m, "quick action")),
+    (re.compile(r"\bvoices\b", re.IGNORECASE), lambda m: "invoices"),
 )
 
 
