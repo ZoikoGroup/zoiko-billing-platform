@@ -130,6 +130,8 @@ export const ENDPOINTS = {
   SUBSCRIPTION_PLANS: `${BILLING}/subscriptions/plans`,
   SUBSCRIPTION_PLANS_PUBLIC: `${BILLING}/subscriptions/plans/public`,
   SUBSCRIPTION_PLAN: (id) => `${BILLING}/subscriptions/plans/${id}`,
+  SUBSCRIPTION_PLAN_ACTIVATE: (id) => `${BILLING}/subscriptions/plans/${id}/activate`,
+  SUBSCRIPTION_PLAN_DEACTIVATE: (id) => `${BILLING}/subscriptions/plans/${id}/deactivate`,
   SUBSCRIPTIONS: `${BILLING}/subscriptions`,
   SUBSCRIPTIONS_ACTIVE: `${BILLING}/subscriptions/active`,
   SUBSCRIPTIONS_SUMMARY: `${BILLING}/subscriptions/summary`,
