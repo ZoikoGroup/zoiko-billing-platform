@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
     AlreadyExistsException,
@@ -255,6 +255,7 @@ class SubscriptionService:
         date_from: Optional[str] = None, date_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         query = self.db.query(Subscription).filter(Subscription.organization_id == organization_id, Subscription.is_active == True)
+        query = query.options(selectinload(Subscription.plan))
         if customer_id:
             query = query.filter(Subscription.customer_id == customer_id)
         if plan_id:

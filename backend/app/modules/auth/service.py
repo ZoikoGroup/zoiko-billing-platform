@@ -113,18 +113,29 @@ def _consume_action_token(db: Session, raw_token: str, purpose) -> Optional[dict
 def validate_action_token(db: Session, raw_token: str, purpose) -> Optional[dict]:
     from sqlalchemy import text
 
+    # P14 fix: the expiry check runs INSIDE SQL (matches
+    # _consume_action_token's WHERE expires_at > :now above) instead of
+    # comparing a fetched `expires_at` against datetime.utcnow() in Python.
+    # A raw text() SELECT returns the column as whatever the driver hands
+    # back for a DateTime — on SQLite (this platform's local-dev/test
+    # fallback DB per README) that's a plain string, not a datetime, so the
+    # old `expires_at <= datetime.utcnow()` raised TypeError on every call
+    # once the dev DB was SQLite. Postgres was unaffected, which is why this
+    # was not caught by earlier Postgres-only manual testing.
     row = db.execute(
-        text("SELECT email, organization_id, expires_at, used_at, purpose FROM security_action_tokens WHERE token_hash = :hash"),
-        {"hash": _token_hash(raw_token)},
+        text(
+            """
+            SELECT email, organization_id, used_at, purpose,
+                   CASE WHEN expires_at > :now THEN 1 ELSE 0 END AS unexpired
+            FROM security_action_tokens WHERE token_hash = :hash
+            """
+        ),
+        {"hash": _token_hash(raw_token), "now": datetime.utcnow()},
     ).fetchone()
     if row is None:
         return None
-    email, organization_id, expires_at, used_at, purpose_stored = row
-    if (
-        used_at is not None
-        or purpose_stored != purpose.name
-        or expires_at <= datetime.utcnow()
-    ):
+    email, organization_id, used_at, purpose_stored, unexpired = row
+    if used_at is not None or purpose_stored != purpose.name or not unexpired:
         return None
     return {"token": raw_token, "email": email, "organization_id": organization_id}
 
@@ -138,12 +149,54 @@ def complete_action_token(db: Session, raw_token: str, purpose, new_password: st
     if user is None:
         raise BadRequestException(INVALID_TOKEN_MESSAGE)
 
+    # P15 fix: the token is already single-use-consumed above regardless of
+    # outcome, so a deactivated account cannot retry this either — a fresh
+    # invite/reset is required once an Organization/Super Admin reactivates
+    # them. Previously this unconditionally set is_active=True, which meant
+    # accepting an invite (or completing a reset) silently undid a
+    # deactivation an admin had applied in the meantime. A normal invite
+    # already starts is_active=True (set in invite_user) and
+    # request_password_reset only ever issues a RESET token for an
+    # already-active user, so this check changes nothing for the ordinary
+    # path — it only closes the deactivation-bypass gap.
+    if not user.is_active:
+        raise BadRequestException("This account has been deactivated. Contact your administrator.")
+
     user.hashed_password = hash_password(new_password)
-    user.is_active = True
     user.is_verified = True
     db.commit()
     db.refresh(user)
     return {"message": "Password set successfully. You can now sign in."}
+
+
+def _invalidate_pending_action_tokens(db: Session, email: str, purpose) -> int:
+    """Marks every currently-unused, unexpired token of this purpose for
+    this email as consumed, so a resend supersedes rather than merely
+    supplements the previous invitation. Reuses the existing
+    used_at-IS-NULL single-use gate (`_consume_action_token`,
+    `validate_action_token`) instead of adding a new column/status — nothing
+    in this codebase reads `used_at` as "accepted specifically" (it is only
+    ever tested for NULL-ness), so "consumed by acceptance" and "superseded
+    by a resend" are indistinguishable on purpose: both simply mean the
+    token instance is no longer usable. Flush-only (part of the caller's
+    transaction) and purpose-scoped, so invalidating pending INVITE tokens
+    never touches a RESET token for the same email, or vice versa.
+    Returns the number of tokens invalidated (informational, for audit
+    metadata only)."""
+    from sqlalchemy import text
+
+    result = db.execute(
+        text(
+            """
+            UPDATE security_action_tokens
+            SET used_at = CURRENT_TIMESTAMP
+            WHERE email = :email AND purpose = :purpose AND used_at IS NULL
+            """
+        ),
+        {"email": email, "purpose": purpose.name},
+    )
+    db.flush()
+    return result.rowcount or 0
 
 
 # ── Login ───────────────────────────────────────────────────────────────────
@@ -573,13 +626,46 @@ def invite_user(db: Session, actor, data) -> User:
     db.add(user)
     db.flush()
 
+    # P14: invite_email_sent is None when no email was even attempted
+    # (send_invite=False), True/False when one was. Attached as a plain
+    # (non-mapped) attribute — survives the db.refresh() below since refresh
+    # only reloads mapped columns — so the router/response layer can report
+    # the real outcome instead of always claiming "invitation sent."
+    invite_email_sent = None
     if data.send_invite:
         raw_token, _ = _issue_action_token(db, user.email, user.organization_id, SecurityActionPurpose.INVITE)
         link = _action_link(SecurityActionPurpose.INVITE, raw_token)
-        _send_invite_email(db, user, actor, link)
+        invite_email_sent = _send_invite_email(db, user, actor, link)
+
+    # P15: Organization-Admin-driven user mutations previously wrote no
+    # audit record at all (only the Super-Admin-facing UserAdminService did).
+    # Reuses the same platform-plane audit trail/service — flushed into THIS
+    # transaction so a rollback discards the audit row along with the user
+    # it describes, never a stray audit entry for a user that doesn't exist.
+    # organization_id is always the actor's own (never client input), which
+    # is what keeps this tenant-safe. Never includes the raw token/link.
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db).log_no_commit(
+        actor_id=actor.id,
+        actor_role=actor.role.value,
+        action=PlatformAuditAction.CREATE,
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=actor.organization_id,
+        new_values={
+            "email": user.email,
+            "role": user.role.value,
+            "send_invite": bool(data.send_invite),
+            "invite_email_sent": invite_email_sent,
+        },
+        metadata={"field": "user_created", "plane": "TENANT", "source": "org_admin"},
+    )
 
     db.commit()
     db.refresh(user)
+    user.invite_email_sent = invite_email_sent
     return user
 
 
@@ -597,10 +683,13 @@ def _send_reset_email(db: Session, user: User, link: str) -> None:
     )
 
 
-def _send_invite_email(db: Session, user: User, actor, link: str) -> None:
+def _send_invite_email(db: Session, user: User, actor, link: str) -> bool:
+    """Returns whether the SMTP send actually succeeded (send_approval_email's
+    own bool) — callers must not report "invitation sent" without checking
+    this; a failed send is logged (email_service) but never raises."""
     from app.services.email_service import send_user_invite_email
 
-    send_user_invite_email(
+    return send_user_invite_email(
         db=db,
         email=user.email,
         first_name=user.first_name,

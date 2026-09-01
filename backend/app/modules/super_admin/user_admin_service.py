@@ -137,6 +137,7 @@ class UserAdminService:
         self.db.flush()
 
         invite_link = None
+        invite_email_sent = None
         if send_invite:
             from app.modules.auth import service as auth_service
 
@@ -144,7 +145,7 @@ class UserAdminService:
                 self.db, user.email, org.id, SecurityActionPurpose.INVITE
             )
             invite_link = auth_service._action_link(SecurityActionPurpose.INVITE, raw_token)
-            auth_service._send_invite_email(self.db, user, actor, invite_link)
+            invite_email_sent = auth_service._send_invite_email(self.db, user, actor, invite_link)
 
         self._audit.log_no_commit(
             actor_id=getattr(actor, "id", None),
@@ -161,7 +162,62 @@ class UserAdminService:
             },
             metadata={"field": "user_created", "plane": "TENANT"},
         )
+        # P14: plain (non-mapped) attribute — survives the router's later
+        # db.commit()/db.refresh() since refresh only reloads mapped columns.
+        # None = no email attempted (send_invite=False); True/False = the
+        # actual SMTP outcome. The router must report this, not assume success.
+        user.invite_email_sent = invite_email_sent
         return user
+
+    # ── Resend (Organization Admin invitations only) ─────────────────────────
+
+    def resend_invite(self, *, actor: User, user_id: int) -> tuple[User, bool]:
+        """P15: closes the Phase 14 gap where a Super-Admin-created
+        Organization Admin whose invite email failed had no way to retry.
+
+        Deliberately narrower than the Organization Admin's own
+        resend-invite endpoint: this service only ever CREATES org_admin
+        accounts (invite_user above is already gated to
+        can_create_role('super_admin', ...) == {org_admin}), so this must
+        only ever resend for a role == ORG_ADMIN target — resending for a
+        billing_admin/finance_approver/auditor row (created by that org's
+        own Organization Admin, not by Super Admin) would let a platform
+        account reach into tenant-role invitation management, which is
+        exactly the authority boundary this system is built to keep.
+        Operates on the existing user row — never creates a second account.
+        """
+        user = self.get_user(user_id)
+        if user.role != UserRole.ORG_ADMIN:
+            raise ForbiddenException(
+                "Super Admin may only resend invitations for Organization Admin accounts "
+                "— tenant-role invitations (billing_admin/finance_approver/auditor) are "
+                "resent by that organization's own Organization Admin."
+            )
+        if user.is_verified:
+            raise BadRequestException("This user has already set up their account.")
+
+        from app.modules.auth import service as auth_service
+
+        invalidated = auth_service._invalidate_pending_action_tokens(
+            self.db, user.email, SecurityActionPurpose.INVITE
+        )
+        raw_token, _ = auth_service._issue_action_token(
+            self.db, user.email, user.organization_id, SecurityActionPurpose.INVITE
+        )
+        invite_link = auth_service._action_link(SecurityActionPurpose.INVITE, raw_token)
+        email_sent = auth_service._send_invite_email(self.db, user, actor, invite_link)
+
+        self._audit.log_no_commit(
+            actor_id=getattr(actor, "id", None),
+            actor_role="super_admin",
+            action=PlatformAuditAction.UPDATE,
+            entity_type="User",
+            entity_id=user.id,
+            organization_id=user.organization_id,
+            new_values={"invite_email_sent": email_sent, "prior_tokens_invalidated": invalidated},
+            metadata={"field": "invitation_resent", "plane": "TENANT", "source": "super_admin"},
+        )
+        return user, email_sent
 
     # ── Role change ──────────────────────────────────────────────────────────
 

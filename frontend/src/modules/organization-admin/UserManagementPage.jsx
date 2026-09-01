@@ -152,6 +152,9 @@ export default function OrgAdminUserManagementPage() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  // P15 Step 22: per-row loading guard so a resend can't be double-fired by
+  // a second click while the first request is still in flight.
+  const [resendingId, setResendingId] = useState(null);
 
   const fetchSummary = useCallback(() => {
     setSummaryLoading(true);
@@ -202,9 +205,21 @@ export default function OrgAdminUserManagementPage() {
     }
     setSubmitting(true);
     try {
-      await inviteUser(inviteForm);
+      const created = await inviteUser(inviteForm);
       setShowInvite(false);
-      showToast(`Invitation sent to ${inviteForm.email}.`);
+      // P14 fix: the backend now reports the real SMTP outcome
+      // (invite_email_sent) instead of the create call always implying
+      // success — a 2xx here only means the user row was created.
+      if (!inviteForm.send_invite) {
+        showToast(`${inviteForm.email} was added. No invitation email was sent.`);
+      } else if (created.invite_email_sent === false) {
+        showToast(
+          `${inviteForm.email} was added, but the invitation email could not be delivered. Use Resend Invitation to try again.`,
+          "error"
+        );
+      } else {
+        showToast(`Invitation sent to ${inviteForm.email}.`);
+      }
       fetchUsers(search, page * PAGE_SIZE);
       fetchSummary();
     } catch (err) {
@@ -273,11 +288,19 @@ export default function OrgAdminUserManagementPage() {
   };
 
   const doResendInvite = async (u) => {
+    if (resendingId === u.id) return; // already in flight — ignore a second click
+    setResendingId(u.id);
     try {
-      await resendInvite(u.id);
-      showToast(`Invite resent to ${u.email}.`);
+      const res = await resendInvite(u.id);
+      // P14 fix: render the backend's own truthful message/outcome instead
+      // of a hardcoded "resent" string — a regenerated link whose email
+      // failed to send must not be shown as a success.
+      showToast(res.message || `Invite resent to ${u.email}.`, res.email_sent === false ? "error" : "success");
+      fetchUsers(search, page * PAGE_SIZE);
     } catch (err) {
       showToast(err.message || "Failed to resend invite.", "error");
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -475,12 +498,14 @@ export default function OrgAdminUserManagementPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         {!u.is_verified && u.is_active && (
                           <button
-                            className="p-1.5 rounded-lg border transition-colors hover:bg-amber-50"
+                            className="p-1.5 rounded-lg border transition-colors hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ borderColor: LINE, color: WARNING }}
                             title="Resend invitation"
+                            disabled={resendingId === u.id}
+                            aria-busy={resendingId === u.id}
                             onClick={() => doResendInvite(u)}
                           >
-                            <Mail className="w-3.5 h-3.5" />
+                            <Mail className={`w-3.5 h-3.5 ${resendingId === u.id ? "animate-pulse" : ""}`} />
                           </button>
                         )}
                         <button

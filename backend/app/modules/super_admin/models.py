@@ -530,7 +530,8 @@ class ReconciliationRun(Base):
 
     HONEST SCOPE: internal ledger invariants are fully evaluated; the
     processor leg is recorded as `processor_source` and caps a clean run at
-    PARTIAL until a real processor/bank source is connected (ISS-017).
+    PARTIAL until a real processor/bank source is connected AND actually
+    compared this run (ISS-017 — see `stripe_reconciliation.py`).
     """
 
     __tablename__ = "reconciliation_runs"
@@ -547,6 +548,13 @@ class ReconciliationRun(Base):
     exceptions_found = Column(Integer, nullable=False, default=0)
     processor_source = Column(String(20), nullable=False, default="none")  # none | stripe
     processor_note = Column(String(500), nullable=True)
+    # ISS-017: which Stripe environment this run's processor comparison (if
+    # any) ran against ("test" | "live"), and a JSON snapshot of the
+    # comparison's own stats (range, orgs compared, records
+    # inspected/matched, processor errors — never secrets). Both NULL when
+    # compare_processor was not requested for this run.
+    processor_environment = Column(String(10), nullable=True)
+    processor_stats = Column(JSON, nullable=True)
 
     exceptions = relationship(
         "ReconciliationException",

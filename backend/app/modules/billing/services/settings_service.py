@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException, NotFoundException
@@ -353,7 +354,28 @@ class BillingConfigurationService:
 
         config = BillingConfiguration(organization_id=organization_id, **data)
         self.db.add(config)
-        self.db.flush()
+        try:
+            self.db.flush()
+        except IntegrityError:
+            # Concurrency race: two requests both saw "no configuration yet"
+            # before either committed (e.g. the Customers page's parallel
+            # GET /billing/settings/config and GET/POST /billing/customers,
+            # each on its own DB session) and both reached this insert.
+            # organization_id is unique, so the loser's flush fails here —
+            # not a real conflict, just two callers racing the same lazy-seed
+            # path. Roll back this session's failed insert and return the
+            # row the winner already created; never invent a second
+            # configuration for the same organization.
+            self.db.rollback()
+            existing = self.repo.get_by_organization(organization_id)
+            if existing is not None:
+                logger.info(
+                    "BillingConfiguration race detected for organization_id=%s; "
+                    "using the row created by the concurrent request instead of inserting a duplicate",
+                    organization_id,
+                )
+                return existing
+            raise
         logger.info("Seeded billing configuration for organization_id=%s (config_id=%s)", organization_id, config.id)
         return config
 

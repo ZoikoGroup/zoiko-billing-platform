@@ -19,7 +19,7 @@ from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
 from app.database import get_db
 from app.modules.auth.models import User, UserRole
-from app.modules.auth.schemas import SuccessResponse
+from app.modules.auth.schemas import ResendInviteResponse, SuccessResponse
 from app.modules.commercial.enums import (
     BillingSource,
     CommercialAccountStatus,
@@ -127,6 +127,7 @@ from app.modules.super_admin.schemas import (
     ReconciliationRunListResponse,
     ReconciliationRunDetailResponse,
     ReconciliationExceptionActionResponse,
+    TriggerReconciliationRunRequest,
     LaunchReadinessResponse,
     LifecycleTransitionRequest,
     LifecycleTransitionResponse,
@@ -382,7 +383,37 @@ def invite_super_admin_user(
         created_at=user.created_at,
         derived_status=service.derived_status(user),
         last_login_at=user.last_login_at,
+        invite_email_sent=getattr(user, "invite_email_sent", None),
     )
+
+
+@router.post(
+    "/users/{user_id}/resend-invite", response_model=ResendInviteResponse,
+    summary="Resend a pending Organization Admin invitation",
+)
+def resend_super_admin_user_invite(
+    user_id: int,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """P15: closes the Phase 14 gap where a Super-Admin-created Organization
+    Admin whose invite email failed had no resend action at all. Scoped to
+    ORG_ADMIN targets only — see UserAdminService.resend_invite's docstring
+    for why tenant-role invitations stay with that org's own Organization
+    Admin. Operates on the existing user; never creates a second account."""
+    service = UserAdminService(db)
+    user, email_sent = service.resend_invite(actor=current_user, user_id=user_id)
+    db.commit()
+    logger.info(
+        "Super admin %s resent invitation to org admin %s (email_sent=%s)",
+        current_user.email, user.email, email_sent,
+    )
+    if email_sent:
+        return {"message": "Invitation resent.", "email_sent": True}
+    return {
+        "message": "Invitation link was regenerated, but the email could not be delivered. Please try again shortly.",
+        "email_sent": False,
+    }
 
 
 @router.put("/users/{user_id}/role", response_model=SuperAdminUserResponse)
@@ -3170,7 +3201,12 @@ def get_production_acceptance_report(
     latest_run = (
         db.query(ReconciliationRun)
         .filter(ReconciliationRun.plane == "plane2")
-        .order_by(ReconciliationRun.started_at.desc())
+        # started_at (datetime.utcnow()) is not fine-grained enough to
+        # order runs created in quick succession — on some platforms it
+        # resolves to the same value for calls milliseconds apart, which
+        # made "latest run" ambiguous. id is monotonically assigned in
+        # creation order, so break ties on it.
+        .order_by(ReconciliationRun.started_at.desc(), ReconciliationRun.id.desc())
         .first()
     )
     if latest_run is None:
@@ -3768,13 +3804,28 @@ def list_billing_command_recent_activity(
 
 @router.post("/reconciliation-runs/run", response_model=ReconciliationRunResponse)
 def trigger_reconciliation_run(
+    body: TriggerReconciliationRunRequest = Body(default_factory=TriggerReconciliationRunRequest),
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
+    """Manually trigger a reconciliation run. `compare_processor=true`
+    (ISS-017) additionally runs a genuine, bounded Payment<->Stripe
+    comparison across every organization with an active Stripe connection —
+    omit it (the default) to preserve the original internal-checks-only
+    behavior exactly."""
+    from app.core.exceptions import BadRequestException
     from app.modules.super_admin.reconciliation_service import ReconciliationService
 
     service = ReconciliationService(db)
-    run = service.run_reconciliation(trigger="manual")
+    try:
+        run = service.run_reconciliation(
+            trigger="manual",
+            compare_processor=body.compare_processor,
+            range_start=body.range_start,
+            range_end=body.range_end,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
     service.report_to_attention_engine(run)
     db.commit()
     return _serialize_reconciliation_run(run)
@@ -3791,7 +3842,8 @@ def list_reconciliation_runs(
     runs = (
         db.query(ReconciliationRun)
         .filter(ReconciliationRun.plane == "plane2")
-        .order_by(ReconciliationRun.started_at.desc())
+        # See tie-break note on the REC-01 gate's latest-run query above.
+        .order_by(ReconciliationRun.started_at.desc(), ReconciliationRun.id.desc())
         .limit(limit)
         .all()
     )
@@ -3895,6 +3947,8 @@ def _serialize_reconciliation_run(run) -> dict:
         "exceptions_found": run.exceptions_found,
         "processor_source": run.processor_source,
         "processor_note": run.processor_note,
+        "processor_environment": run.processor_environment,
+        "processor_stats": run.processor_stats,
     }
 
 
