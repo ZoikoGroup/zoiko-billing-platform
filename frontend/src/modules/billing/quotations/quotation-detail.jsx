@@ -4,7 +4,7 @@ import { ArrowLeft, FileSignature, RefreshCw, AlertCircle, Loader2, Send,
   CheckCircle, XCircle, Ban, RotateCcw, FileText, DollarSign, User,
   Package, CreditCard, Clock, Activity, FileEdit, Hash, Copy } from "lucide-react"
 import HRPage from "../../../components/HRPage";
-import { quoteApi, customerApi, contractApi } from "../../../service/billingService";
+import { quoteApi, customerApi, contractApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -66,6 +66,7 @@ export default function QuotationDetailPage() {
   const { baseCurrency: orgDefaultCurrency } = useCurrency();
 
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [orgSettings, setOrgSettings] = useState(null);
   const [convertForm, setConvertForm] = useState({
     invoice_number: "",
     issue_date: new Date().toISOString().split("T")[0],
@@ -89,10 +90,12 @@ export default function QuotationDetailPage() {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const [qData, itemsData] = await Promise.all([
+      const [qData, itemsData, settingsData] = await Promise.all([
         quoteApi.get(id),
         quoteApi.listItems(id).catch(() => []),
+        settingsApi.getConfig().catch(() => null),
       ]);
+      if (settingsData) setOrgSettings(settingsData);
       setQuote(qData);
       setItems(Array.isArray(itemsData) ? itemsData : itemsData?.items || []);
       try {
@@ -166,7 +169,8 @@ export default function QuotationDetailPage() {
   }
 
   async function handleConvert() {
-    if (!convertForm.invoice_number || !convertForm.issue_date || !convertForm.due_date) return;
+    if (!convertForm.issue_date || !convertForm.due_date) return;
+    if (orgSettings?.auto_generate_invoice_number === false && !convertForm.invoice_number) return;
     try {
       setActionLoading("convert");
       setError(null);
@@ -794,11 +798,15 @@ export default function QuotationDetailPage() {
             <p className="text-sm text-slate-500 mb-4">Create an invoice from this accepted quotation.</p>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Invoice Number</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Invoice Number {orgSettings?.auto_generate_invoice_number !== false && <span className="text-slate-400 font-normal">(optional)</span>}</label>
                 <input type="text" value={convertForm.invoice_number}
                   onChange={(e) => setConvertForm((f) => ({ ...f, invoice_number: e.target.value }))}
-                  placeholder="INV-0001"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  placeholder={orgSettings?.auto_generate_invoice_number !== false ? "Auto-generated" : "INV-0001"}
+                  readOnly={orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number}
+                  className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 ${orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number ? "bg-slate-50 cursor-not-allowed" : ""}`} />
+                {orgSettings?.auto_generate_invoice_number !== false && (
+                  <p className="text-xs text-slate-400 mt-1">Invoice number will be auto-generated on convert. Leave blank to auto-generate.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Issue Date</label>
@@ -817,7 +825,7 @@ export default function QuotationDetailPage() {
               <button onClick={() => setShowConvertModal(false)}
                 className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
               <button onClick={handleConvert}
-                disabled={!convertForm.invoice_number || !convertForm.issue_date || !convertForm.due_date || isActing("convert")}
+                disabled={(orgSettings?.auto_generate_invoice_number === false && !convertForm.invoice_number) || !convertForm.issue_date || !convertForm.due_date || isActing("convert")}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
                 {isActing("convert") ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Convert
               </button>
