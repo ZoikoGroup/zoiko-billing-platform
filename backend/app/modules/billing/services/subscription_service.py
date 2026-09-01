@@ -800,6 +800,7 @@ class SubscriptionService:
 
     def create_plan(self, organization_id: int, created_by: int, **data: Any) -> SubscriptionPlan:
         data = filter_allowed(data, PLAN_ALLOWED_FIELDS)
+        self._validate_plan_financials(data)
         if self.plan_repo.exists(organization_id, plan_code=data.get("plan_code")):
             raise AlreadyExistsException("SubscriptionPlan", "plan_code")
         plan = self.plan_repo.create(organization_id, **data)
@@ -808,6 +809,7 @@ class SubscriptionService:
 
     def update_plan(self, plan_id: int, organization_id: int, updated_by: int, **data: Any) -> SubscriptionPlan:
         data = filter_allowed(data, PLAN_ALLOWED_FIELDS)
+        self._validate_plan_financials(data)
         self.plan_repo.get_by_id(plan_id, organization_id)
         if data.get("plan_code"):
             existing = self.plan_repo.get_by_code(organization_id, data["plan_code"])
@@ -816,6 +818,27 @@ class SubscriptionService:
         updated = self.plan_repo.update(plan_id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "SubscriptionPlan", plan_id)
         return updated
+
+    @staticmethod
+    def _validate_plan_financials(data: Dict[str, Any]) -> None:
+        """Backend-authoritative financial validation for plans.
+
+        Rejects negative monetary values and invalid trial/billing cycles so
+        the UI (which mirrors these rules) is never the only line of defence.
+        Financial values are handled as Decimal by the model -- never float.
+        """
+        for field in ("unit_price", "setup_fee"):
+            if data.get(field) is None:
+                continue
+            value = Decimal(str(data[field]))
+            if value < 0:
+                raise BadRequestException(f"{field} cannot be negative")
+        for field in ("trial_days", "billing_cycles", "sort_order"):
+            if data.get(field) is None:
+                continue
+            value = int(data[field])
+            if value < 0:
+                raise BadRequestException(f"{field} cannot be negative")
 
     def get_plan(self, plan_id: int, organization_id: int) -> SubscriptionPlan:
         return self.plan_repo.get_by_id(plan_id, organization_id)
@@ -827,15 +850,50 @@ class SubscriptionService:
         self, organization_id: int, page: int = 1, per_page: int = 20,
         search_term: Optional[str] = None, category: Optional[str] = None,
         sort_by: str = "sort_order", sort_order: str = "asc",
+        active_only: bool = False,
     ) -> Dict[str, Any]:
         return self.plan_repo.list_paginated(
             organization_id=organization_id, page=page, per_page=per_page,
             sort_by=sort_by, sort_order=sort_order,
-            search_term=search_term, category=category,
+            search_term=search_term, category=category, active_only=active_only,
         )
 
     def list_public_plans(self, organization_id: int) -> List[SubscriptionPlan]:
         return self.plan_repo.list_public(organization_id)
+
+    def activate_plan(self, plan_id: int, organization_id: int, updated_by: int) -> SubscriptionPlan:
+        """Safely re-activate a plan.
+
+        Only the owning organization's row is ever touched (org context is
+        server-derived and never trusted from the client). Historical
+        subscriptions are unaffected -- this only flips the catalog flag
+        that controls whether the plan is selectable in Create Subscription.
+        """
+        plan = self.plan_repo.get_by_id(plan_id, organization_id)
+        if plan.is_active:
+            return plan
+        plan.is_active = True
+        self.plan_repo.db.commit()
+        self.plan_repo.db.refresh(plan)
+        self.audit.log(organization_id, updated_by, BillingAuditAction.CREATE, "SubscriptionPlanActivate", plan.id)
+        return plan
+
+    def deactivate_plan(self, plan_id: int, organization_id: int, updated_by: int) -> SubscriptionPlan:
+        """Safely deactivate a plan.
+
+        Deactivation is non-destructive: the plan row is retained so
+        historical subscriptions that reference it continue to resolve, but
+        `is_active=False` keeps it out of the selectable catalog in Create
+        Subscription. Existing subscriptions are never silently repriced.
+        """
+        plan = self.plan_repo.get_by_id(plan_id, organization_id)
+        if not plan.is_active:
+            return plan
+        plan.is_active = False
+        self.plan_repo.db.commit()
+        self.plan_repo.db.refresh(plan)
+        self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "SubscriptionPlanDeactivate", plan.id)
+        return plan
 
     # ── Reporting Aggregation ──────────────────────────────────────────────
 

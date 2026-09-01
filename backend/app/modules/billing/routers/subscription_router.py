@@ -51,6 +51,7 @@ def list_plans(
     per_page: int = Query(20, ge=1),
     search_term: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    active_only: Optional[bool] = Query(True, description="Filter to active plans only. The Plan Management view passes False to include inactive plans."),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -61,6 +62,7 @@ def list_plans(
         per_page=per_page,
         search_term=search_term,
         category=category,
+        active_only=active_only,
     )
 
 
@@ -97,6 +99,36 @@ def update_plan(
         organization_id=current_user.organization_id,
         updated_by=current_user.id,
         **body.model_dump(exclude_unset=True),
+    )
+
+
+@router.post("/plans/{plan_id}/activate", response_model=SubscriptionPlanResponse)
+def activate_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
+):
+    svc = SubscriptionService(db)
+    return svc.activate_plan(
+        plan_id=plan_id,
+        organization_id=current_user.organization_id,
+        updated_by=current_user.id,
+    )
+
+
+@router.post("/plans/{plan_id}/deactivate", response_model=SubscriptionPlanResponse)
+def deactivate_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
+):
+    svc = SubscriptionService(db)
+    return svc.deactivate_plan(
+        plan_id=plan_id,
+        organization_id=current_user.organization_id,
+        updated_by=current_user.id,
     )
 
 

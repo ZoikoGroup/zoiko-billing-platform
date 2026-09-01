@@ -82,6 +82,7 @@ const SubscriptionsPage = lazy(() => import("./modules/billing/subscriptions/sub
 const SubscriptionDashboardPage = lazy(() => import("./modules/billing/subscriptions/dashboard"));
 const SubscriptionDetailPage = lazy(() => import("./modules/billing/subscriptions/subscription-detail"));
 const CreateSubscriptionWizardPage = lazy(() => import("./modules/billing/subscriptions/subscription-create"));
+const SubscriptionPlansPage = lazy(() => import("./modules/billing/subscriptions/subscription-plans"));
 const SubscriptionReportsPage = lazy(() => import("./modules/billing/subscriptions/reports"));
 const SubscriptionSettingsPage = lazy(() => import("./modules/billing/subscriptions/settings"));
 const InvoiceSchedulesPage = lazy(() => import("./modules/billing/subscriptions/invoice-schedules"));
@@ -201,6 +202,7 @@ const BILLING_ROUTES = [
   { path: "/billing/retainers", element: <RetainersPage /> },
   { path: "/billing/subscriptions", element: <SubscriptionsPage /> },
   { path: "/billing/subscriptions/dashboard", element: <SubscriptionDashboardPage /> },
+  { path: "/billing/subscriptions/plans", element: <SubscriptionPlansPage /> },
   { path: "/billing/subscriptions/create", element: <CreateSubscriptionWizardPage /> },
   { path: "/billing/subscriptions/:id", element: <SubscriptionDetailPage /> },
   { path: "/billing/subscriptions/reports", element: <SubscriptionReportsPage /> },
