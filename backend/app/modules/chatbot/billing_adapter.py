@@ -87,6 +87,30 @@ class BillingAdapter:
         count = sum(int(r[1] or 0) for r in rows)
         return CurrencyTotals(count, group_by_currency((r[2], r[0]) for r in rows))
 
+    def collected_totals(self, organization_id: int) -> CurrencyTotals:
+        """Cleared payments received, per currency — the Collections metric.
+
+        Matches the dashboard's collections aggregate (cleared Payment rows)
+        so the chatbot figure can never disagree with the billing dashboard's
+        Collection Amount. Refunds are cleared payments and are included here
+        exactly as the dashboard's collections aggregate includes them, keeping
+        the two figures identical."""
+        rows = (
+            self._db.query(
+                Payment.currency,
+                func.count(Payment.id),
+                func.coalesce(func.sum(Payment.amount), 0),
+            )
+            .filter(
+                Payment.organization_id == organization_id,
+                Payment.status == "cleared",
+            )
+            .group_by(Payment.currency)
+            .all()
+        )
+        count = sum(int(r[1] or 0) for r in rows)
+        return CurrencyTotals(count, group_by_currency((r[2], r[0]) for r in rows))
+
     def credit_note_totals(self, organization_id: int) -> CurrencyTotals:
         """Issued credit notes, per currency."""
         rows = (
