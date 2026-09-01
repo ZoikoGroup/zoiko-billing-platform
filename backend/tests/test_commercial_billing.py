@@ -689,9 +689,8 @@ class TestCommercialBillingCapabilities:
 class TestCommercialBillingModels:
     def test_all_tables_exist(self, db_session):
         from sqlalchemy import inspect as sa_inspect
-        from app.database import engine
 
-        inspector = sa_inspect(engine)
+        inspector = sa_inspect(db_session.get_bind())
         expected = [
             "commercial_quotes",
             "commercial_quote_items",

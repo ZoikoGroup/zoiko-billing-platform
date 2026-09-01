@@ -223,6 +223,11 @@ def refresh_exchange_rates(
             organization_id=current_user.organization_id,
             base_currency=base_currency,
         )
+        # get_db() never commits on its own, and ExchangeRateService no longer
+        # commits the shared session — the fetched rate cache is saved inside a
+        # savepoint, so THIS explicit user-triggered refresh must commit to
+        # persist it.
+        db.commit()
         logger.info("POST /billing/settings/exchange-rates/refresh -> 200, count=%s", result.get("count"))
         return result
     except Exception as e:

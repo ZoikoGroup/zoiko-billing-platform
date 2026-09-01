@@ -3056,6 +3056,49 @@ class TestOutstandingBalanceFreshFetch:
         assert f1 == 1500.0, result1["answer"]
         assert f2 == 3500.0, result2["answer"]
 
+    def test_failed_rate_refresh_keeps_flushed_pending_write(self, db, org, ctx, monkeypatch):
+        """Regression: when the live exchange-rate auto-refresh fails mid-turn,
+        the caller's session must keep its flushed-but-uncommitted writes.
+
+        Pre-fix, _build_currency_rates caught the refresh exception and called
+        self.db.rollback() — which silently discarded an invoice the caller had
+        flushed (but not yet committed) just before asking the balance question.
+        The refresh is now savepoint-scoped and a failure only warns."""
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.exchange_rate_service import ExchangeRateService
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+
+        # Config must already exist so the balance handler's base-currency
+        # lookup returns it WITHOUT an internal commit (which would otherwise
+        # persist the pending invoice before the refresh runs).
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode.INR if hasattr(CurrencyCode, "INR") else "INR"
+        db.commit()
+
+        cust = add_customer(db, org, "BAL-PEND", "Pend Co")
+        add_invoice(db, org, cust.id, "INV-PEND", InvoiceStatus.SENT, 9000, currency="INR")
+        db.flush()
+
+        # Force the auto-refresh inside the balance handler to fail.
+        monkeypatch.setattr(
+            ExchangeRateService, "_fetch_all_rates",
+            lambda self, base: ({}, {"error": "simulated outage"}),
+        )
+
+        _, _, intent, result = _run_phrase(
+            db, org, ctx, "what's the outstanding balance?", "conv-bal-pend")
+        assert intent["intent"] == "account_balance", intent
+        assert result["mode"] == "M1_INSPECT", result["mode"]
+
+        f = self._figure(result["answer"])
+        assert f == 9000.0, result["answer"]
+
+        pending = db.query(Invoice).filter(
+            Invoice.invoice_number == "INV-PEND",
+            Invoice.organization_id == org.id,
+        ).count()
+        assert pending == 1, "refresh failure rolled back a flushed-but-uncommitted invoice"
+
     @pytest.mark.parametrize("phrase", [
         "what is the outstanding balance concept?",
         "what does outstanding balance mean?",
