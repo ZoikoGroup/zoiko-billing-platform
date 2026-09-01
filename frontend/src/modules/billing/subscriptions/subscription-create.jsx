@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, CheckCircle, AlertCircle, FileText, User, Package, Eye,
-  Calendar, Loader2 } from "lucide-react"
+  Calendar, Loader2, PackageOpen } from "lucide-react"
 import { subscriptionApi, contractApi, customerApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -47,8 +47,10 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
   const [customerSearching, setCustomerSearching] = useState(false);
 
   const [planSearch, setPlanSearch] = useState("");
-  const [planResults, setPlanResults] = useState([]);
-  const [planSearching, setPlanSearching] = useState(false);
+  const [allPlans, setAllPlans] = useState([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState(null);
 
   useEffect(() => {
     settingsApi.getConfig().then((config) => {
@@ -147,27 +149,46 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
         customer_email: cust.email || "", customer_currency: cust.currency || orgCurrency,
       }));
     }
-    const plans = await subscriptionApi.listPlans({ customer_id: c.customer_id, per_page: 20 }).catch(() => ({ items: [] }));
-    setPlanResults(extractArray(plans));
   };
 
-  const searchPlans = useCallback(async (term) => {
-    if (!term.trim()) { setPlanResults([]); return; }
-    setPlanSearching(true);
+  // Subscription plans are an org-level catalog, not customer-specific, so the
+  // full active list is loaded once (the backend's default list_plans() call
+  // already scopes to active_only=True) and re-used for every visit to this
+  // step within the wizard's lifetime -- selecting a plan then just filters
+  // that same in-memory list, matching the small-catalog "prefer local
+  // filtering" guidance rather than firing a server request per keystroke.
+  const loadPlans = useCallback(async () => {
+    setPlanLoading(true);
+    setPlanError(null);
     try {
-      const data = await subscriptionApi.listPlans({ search_term: term, per_page: 10 });
-      setPlanResults(extractArray(data));
-    } catch { setPlanResults([]); }
-    finally { setPlanSearching(false); }
+      const data = await subscriptionApi.listPlans({ per_page: 100 });
+      setAllPlans(extractArray(data));
+      setPlansLoaded(true);
+    } catch (err) {
+      setPlanError(err?.detail || err?.message || "Failed to load subscription plans.");
+    } finally {
+      setPlanLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (step !== 3) return;
-    const timer = setTimeout(() => searchPlans(planSearch), 300);
-    return () => clearTimeout(timer);
-  }, [planSearch, step, searchPlans]);
+    if (step !== 3 || plansLoaded || planLoading) return;
+    loadPlans();
+  }, [step, plansLoaded, planLoading, loadPlans]);
+
+  const planResults = planSearch.trim()
+    ? allPlans.filter((p) => {
+        const term = planSearch.trim().toLowerCase();
+        return (
+          p.plan_name?.toLowerCase().includes(term) ||
+          p.plan_code?.toLowerCase().includes(term) ||
+          p.category?.toLowerCase().includes(term)
+        );
+      })
+    : allPlans;
 
   const selectPlan = (plan) => {
+    if (plan.is_active === false) return; // defensive: an inactive plan can never be used to create a subscription
     setWizardData((p) => ({
       ...p,
       plan_id: plan.id, plan_name: plan.plan_name, plan_billing_period: plan.billing_period,
@@ -175,7 +196,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
       unit_price: parseFloat(plan.unit_price || plan.flat_fee || 0),
       currency: plan.currency || orgCurrency,
     }));
-    setPlanResults([]); setPlanSearch("");
+    setPlanSearch("");
   };
 
   const computeCurrentTermEnd = (start, period) => {
@@ -521,18 +542,39 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                 onChange={(e) => setPlanSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
-            {planSearching && <p className="text-sm text-slate-500 text-center py-2">Searching plans...</p>}
-            {planResults.length > 0 && (
+            <div role="status" aria-live="polite">
+              {planLoading && (
+                <p className="text-sm text-slate-500 text-center py-6">Loading subscription plans...</p>
+              )}
+              {!planLoading && planError && (
+                <div className="flex flex-col items-center gap-2 py-6 text-center">
+                  <AlertCircle size={20} className="text-red-500" />
+                  <p className="text-sm text-red-600">{planError}</p>
+                  <button onClick={loadPlans} className="text-sm font-medium text-brand-600 hover:text-brand-700">Retry</button>
+                </div>
+              )}
+              {!planLoading && !planError && plansLoaded && allPlans.length === 0 && (
+                <div className="flex flex-col items-center gap-2 py-8 text-center border border-dashed border-slate-200 rounded-lg">
+                  <PackageOpen size={28} className="text-slate-400" />
+                  <p className="text-sm font-medium text-slate-700">No active subscription plans are available.</p>
+                  <p className="text-xs text-slate-500">Create a plan and pricing before creating a subscription.</p>
+                </div>
+              )}
+              {!planLoading && !planError && plansLoaded && allPlans.length > 0 && planResults.length === 0 && (
+                <p className="text-sm text-slate-500 text-center py-4">No plans match "{planSearch}".</p>
+              )}
+            </div>
+            {!planLoading && !planError && planResults.length > 0 && (
               <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-60 overflow-y-auto">
                 {planResults.map((plan) => (
-                  <button key={plan.id} onClick={() => selectPlan(plan)}
-                    className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${wizardData.plan_id === plan.id ? "bg-blue-50 border-l-4 border-l-blue-500" : ""}`}>
+                  <button key={plan.id} onClick={() => selectPlan(plan)} disabled={plan.is_active === false}
+                    className={`w-full text-left px-4 py-3 transition-colors ${plan.is_active === false ? "opacity-60 cursor-not-allowed" : "hover:bg-slate-50"} ${wizardData.plan_id === plan.id ? "bg-blue-50 border-l-4 border-l-blue-500" : ""}`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-slate-800">{plan.plan_name}</p>
-                        <p className="text-xs text-slate-500">{plan.category || "General"} · {plan.billing_period?.replace(/_/g, " ")} · {formatDisplayCurrency(plan.unit_price || plan.flat_fee, plan.currency)}</p>
+                        <p className="text-xs text-slate-500">{plan.category || "General"} · {plan.billing_period?.replace(/_/g, " ")} · {formatDisplayCurrency(plan.unit_price || plan.flat_fee, plan.currency || orgCurrency)}</p>
                       </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${plan.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{plan.is_active ? "Active" : "Inactive"}</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${plan.is_active !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{plan.is_active !== false ? "Active" : "Inactive"}</span>
                     </div>
                   </button>
                 ))}
@@ -643,7 +685,10 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
             className="px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
           {step < 4 ? (
             <button onClick={handleNext}
-              disabled={step === 1 && (!creationMode || (creationMode === "contract" && !wizardData.contract_id) || (creationMode === "direct" && !wizardData.customer_id))}
+              disabled={
+                (step === 1 && (!creationMode || (creationMode === "contract" && !wizardData.contract_id) || (creationMode === "direct" && !wizardData.customer_id))) ||
+                (step === 3 && (!wizardData.plan_id || planLoading))
+              }
               className="px-6 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
               Continue
             </button>

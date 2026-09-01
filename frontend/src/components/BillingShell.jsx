@@ -134,6 +134,7 @@ const NAV_SECTIONS = [
     children: [
       { label: "Dashboard", href: "/billing/subscriptions/dashboard", icon: LayoutDashboard },
       { label: "Subscription List", href: "/billing/subscriptions", icon: UserCheck },
+      { label: "Plans", href: "/billing/subscriptions/plans", icon: Package },
       { label: "Create Subscription", href: "/billing/subscriptions/create", icon: Plus },
       { label: "Reports", href: "/billing/subscriptions/reports", icon: FileText },
       { label: "Settings", href: "/billing/subscriptions/settings", icon: SlidersHorizontal },
