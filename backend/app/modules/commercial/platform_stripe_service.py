@@ -290,7 +290,10 @@ class PlatformStripeService:
 
         if cleared_count == 1:
             # PENDING: never-activated self-serve subscription paying for
-            # the first time. SUSPENDED: same, but the free trial expired
+            # the first time. TRIALING: still inside the free-trial window and
+            # paying (either converts to the paid plan or settles the first
+            # invoice ahead of expiry) — activation must not wait for the
+            # trial to lapse. SUSPENDED: same, but the free trial expired
             # before they paid (commercial/tasks/trial_expiry.py) — paying
             # now must still reinstate it, not leave it stuck suspended.
             subscription = (
@@ -299,6 +302,7 @@ class PlatformStripeService:
                     CommercialSubscription.commercial_account_id == payment.commercial_account_id,
                     CommercialSubscription.status.in_([
                         CommercialSubscriptionStatus.PENDING,
+                        CommercialSubscriptionStatus.TRIALING,
                         CommercialSubscriptionStatus.SUSPENDED,
                     ]),
                 )

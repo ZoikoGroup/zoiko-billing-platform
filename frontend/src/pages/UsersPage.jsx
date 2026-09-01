@@ -3,7 +3,8 @@ import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIc
 
 import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, ListToolbar, Select, Modal, Field, Button } from "../components/billing-ui";
-import { ErrorState, SuccessMessage, Pagination, StatusBadge } from "../components/billing-shared";
+import { ErrorState, SuccessMessage, Pagination, StatusBadge, DashboardChartCard, DashboardChartErrorBoundary } from "../components/billing-shared";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { formatTrialRemaining } from "../modules/super-admin/constants";
 
 // This page is scoped to Organization Admins only — one tenant-facing
@@ -389,6 +390,28 @@ export default function UsersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Trial Period Overview — per-org remaining trial days derived from the
+  // current page's user rows (trial_ends_at lives on the org's subscription).
+  // Most urgent first; bar color encodes urgency (red ≤3d, amber ≤7d, emerald >7d).
+  const trialChartData = useMemo(() => {
+    const byOrg = new Map();
+    for (const u of users) {
+      if (!u.organization_name || !u.trial_ends_at) continue;
+      if (u.subscription_status !== "trialing" && u.subscription_status !== "pending") continue;
+      const end = new Date(u.trial_ends_at);
+      if (Number.isNaN(end.getTime())) continue;
+      const days = Math.max(0, Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      if (!byOrg.has(u.organization_name)) {
+        byOrg.set(u.organization_name, {
+          org: u.organization_name,
+          days,
+          color: days <= 3 ? "#EF4444" : days <= 7 ? "#F59E0B" : "#10B981",
+        });
+      }
+    }
+    return Array.from(byOrg.values()).sort((a, b) => a.days - b.days);
+  }, [users]);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -425,6 +448,33 @@ export default function UsersPage() {
               <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All statuses" className="w-40" aria-label="Filter users by status" />
             </ListToolbar>
           </div>
+
+          {trialChartData.length > 0 && (
+            <div className="mt-6">
+              <DashboardChartCard
+                title="Trial Period Overview"
+                action={<span className="text-xs text-slate-400">{trialChartData.length} org(s) on trial</span>}
+              >
+                <div className="h-64 w-full" aria-label="Remaining trial days per organization">
+                  <DashboardChartErrorBoundary>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                        <XAxis dataKey="org" tick={{ fontSize: 11, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={56} />
+                        <YAxis tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
+                        <Tooltip formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
+                        <Bar dataKey="days" radius={[6, 6, 0, 0]}>
+                          {trialChartData.map((d, i) => (
+                            <Cell key={i} fill={d.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </DashboardChartErrorBoundary>
+                </div>
+              </DashboardChartCard>
+            </div>
+          )}
 
           <div className="mt-2">
             <DataTable

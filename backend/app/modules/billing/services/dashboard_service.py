@@ -64,8 +64,15 @@ class BillingDashboardService:
         try:
             if config and self.exchange_svc.is_rate_stale(organization_id, config=config):
                 self.exchange_svc.refresh_rates(organization_id)
-        except Exception:
-            self.db.rollback()
+        except Exception as exc:
+            # The refresh is savepoint-scoped in ExchangeRateService; a failure
+            # must never roll back THIS session's pending work (a bare
+            # self.db.rollback() here silently discarded uncommitted invoices
+            # flushed by the caller before the balance question ran).
+            logger.warning(
+                "Exchange-rate refresh failed for org %s (using cached/legacy rates): %s",
+                organization_id, exc,
+            )
 
         rates: Dict[str, float] = {}
         for curr in sorted(unique_currencies):

@@ -127,18 +127,20 @@ class ExchangeRateService:
                 "Please check your network connection and try again."
             )
 
-        # Cache rates in BillingConfiguration
+        # Cache rates in BillingConfiguration. Scoped to a savepoint so the
+        # refresh never commits (nor can it roll back) the caller's shared
+        # session transaction; the caller's eventual top-level commit persists
+        # the cache. On failure only the savepoint is rolled back.
         cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
         cached_rates.update(rates)
-        config.exchange_rates = cached_rates
-        config.exchange_rate_last_refreshed = datetime.now(timezone.utc)
-        if base_currency:
-            config.exchange_rate_base_currency = base
-        self.db.commit()
+        with self.db.begin_nested():
+            config.exchange_rates = cached_rates
+            config.exchange_rate_last_refreshed = datetime.now(timezone.utc)
+            if base_currency:
+                config.exchange_rate_base_currency = base
+            # Also update legacy fields for backward compatibility
+            self._update_legacy_fields(config, rates)
         self.db.refresh(config)
-
-        # Also update legacy fields for backward compatibility
-        self._update_legacy_fields(config, rates)
 
         return {
             "base_currency": base,
@@ -271,20 +273,20 @@ class ExchangeRateService:
 
             rate = (to_rate / from_rate).quantize(Decimal("0.000001"))
 
-            # Cache all rates for future lookups (store as float for JSON serialization)
+            # Cache all rates for future lookups (store as float for JSON serialization).
+            # Savepoint-scoped: never commits the caller's shared session.
             cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
             for code, val in api_rates.items():
                 try:
                     cached_rates[code] = float(Decimal(str(val)))
                 except (InvalidOperation, TypeError, ValueError):
                     pass
-            config.exchange_rates = cached_rates
-            config.exchange_rate_last_refreshed = now
-            config.exchange_rate_base_currency = base
-            self.db.commit()
-
-            # Update legacy fields
-            self._update_legacy_fields(config, api_rates)
+            with self.db.begin_nested():
+                config.exchange_rates = cached_rates
+                config.exchange_rate_last_refreshed = now
+                config.exchange_rate_base_currency = base
+                # Update legacy fields
+                self._update_legacy_fields(config, api_rates)
 
             logger.info(
                 "Live rate fetched: %s→%s = %s (base=%s)",
@@ -422,7 +424,6 @@ class ExchangeRateService:
                     pass
         if updated:
             config.exchange_rate_updated_at = datetime.now(timezone.utc)
-            self.db.commit()
 
     def _extract_legacy_rates(self, config: BillingConfiguration) -> Dict[str, Decimal]:
         """Extract rates from legacy fields into a dict."""
