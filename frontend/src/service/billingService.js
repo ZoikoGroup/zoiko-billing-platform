@@ -499,6 +499,26 @@ export const publicInvoiceApi = {
     api.post(ENDPOINTS.INVOICE_PUBLIC_CHECKOUT(token), { success_url: successUrl, cancel_url: cancelUrl }, { auth: false }),
 };
 
+export const stripeApi = {
+  getConfig: () => api.get(ENDPOINTS.STRIPE_CONFIG),
+  createCheckoutSession: (invoiceId, successUrl, cancelUrl) =>
+    api.post(ENDPOINTS.STRIPE_CHECKOUT_SESSION, {
+      invoice_id: invoiceId,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    }),
+};
+
+export const stripeConnectApi = {
+  getStatus: () => api.get(ENDPOINTS.STRIPE_CONNECT_STATUS),
+  getOnboardingUrl: (redirectUri) =>
+    api.post(ENDPOINTS.STRIPE_CONNECT_ONBOARDING_URL, { redirect_uri: redirectUri }),
+  completeOAuth: (code, state) =>
+    api.post(ENDPOINTS.STRIPE_CONNECT_CALLBACK, { code, state }),
+  sync: () => api.post(ENDPOINTS.STRIPE_CONNECT_SYNC),
+  disconnect: () => api.post(ENDPOINTS.STRIPE_CONNECT_DISCONNECT),
+};
+
 export const paymentApi = {
   listMethods: (customerId) =>
     api.get(ENDPOINTS.PAYMENT_METHODS_BY_CUSTOMER(customerId)),
@@ -783,6 +803,8 @@ export default {
   subscriptions: subscriptionApi,
   invoices: invoiceApi,
   publicInvoices: publicInvoiceApi,
+  stripe: stripeApi,
+  stripeConnect: stripeConnectApi,
   payments: paymentApi,
   tax: taxApi,
   creditNotes: creditNoteApi,
