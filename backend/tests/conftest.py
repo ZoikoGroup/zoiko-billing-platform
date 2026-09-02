@@ -15,7 +15,7 @@ everything else is left to its model-level default.
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
@@ -55,6 +55,38 @@ def db_session():
     finally:
         session.close()
         engine.dispose()
+
+
+def count_queries(db):
+    """Context manager yielding a {"n": int} counter of SELECT statements
+    issued against `db`'s bind while the block runs — the N+1-audit
+    regression tool (Task 5). Originally a private helper duplicated in
+    test_credit_note_relations_query_count.py; promoted here so every
+    query-count regression test shares one implementation.
+
+    Usage:
+        with count_queries(db_session) as counter:
+            repo.list_paginated(...)
+        assert counter["n"] <= 2
+    """
+    counter = {"n": 0}
+    engine = db.get_bind()
+
+    def _before(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().lower().startswith("select"):
+            counter["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _before)
+
+    class _Guard:
+        def __enter__(self):
+            return counter
+
+        def __exit__(self, *exc):
+            event.remove(engine, "before_cursor_execute", _before)
+            return False
+
+    return _Guard()
 
 
 @pytest.fixture(autouse=True)

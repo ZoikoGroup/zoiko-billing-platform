@@ -7,8 +7,6 @@ queries instead of scaling with N.
 """
 from datetime import date
 
-from sqlalchemy import event
-
 from app.modules.organizations.models import Organization
 from app.modules.billing.models import (
     BillingCustomer,
@@ -23,6 +21,7 @@ from app.modules.billing.repositories.invoice import InvoiceRepository
 from app.modules.billing.services.invoice_service import InvoiceService
 from app.modules.billing.schemas import CreditNoteResponse, InvoiceResponse
 from app.modules.billing.models import InvoiceStatus
+from tests.conftest import count_queries as _count_queries
 
 
 def _make_org(db):
@@ -65,27 +64,6 @@ def _create_credit_notes(db, org_id, customer_ids, count):
         notes.append(cn)
     db.commit()
     return notes
-
-
-def _count_queries(db):
-    counter = {"n": 0}
-    engine = db.get_bind()
-
-    def _before(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().lower().startswith("select"):
-            counter["n"] += 1
-
-    event.listen(engine, "before_cursor_execute", _before)
-
-    class _Guard:
-        def __enter__(self):
-            return counter
-
-        def __exit__(self, *exc):
-            event.remove(engine, "before_cursor_execute", _before)
-            return False
-
-    return _Guard()
 
 
 def test_credit_note_list_eager_loads_customer(db_session):

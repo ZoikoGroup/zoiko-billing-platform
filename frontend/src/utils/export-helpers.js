@@ -46,6 +46,14 @@ export function downloadCSV(rows, headers, filename) {
   URL.revokeObjectURL(url);
 }
 
+// `rows`/`headers` here are always data this app already fetched from its
+// own API (report/export flows) — this function never parses a user-
+// uploaded file, so it's not on the untrusted-input path. The `xlsx`
+// dependency is installed from SheetJS's own CDN tarball (package.json),
+// not the stale/vulnerable npm-registry release, so no extra guard is
+// needed here beyond that. Untrusted spreadsheet parsing (product/customer
+// import) happens server-side via openpyxl — see product_import_service.py
+// / customer_import_service.py for the size/row-count limits guarding that.
 export async function downloadExcel(rows, headers, filename, sheetName = "Sheet1") {
   assertExportsAllowed();
   const XLSX = await import("xlsx");

@@ -41,7 +41,7 @@ from app.core.exceptions import (
     generic_exception_handler,
 )
 from app.core.rate_limiter import limiter
-from app.database import initialize_database
+from app.database import initialize_database, verify_critical_columns_present
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -125,6 +125,14 @@ async def lifespan(app: FastAPI):
             "will return 503 until the database becomes reachable.",
             exc,
         )
+    # Deliberately OUTSIDE the try/except above: a database that's
+    # reachable but missing a column running code depends on is not a
+    # transient condition like the connectivity/not-yet-migrated cases
+    # tolerated above — see verify_critical_columns_present()'s docstring.
+    # Raises SystemExit (uncaught here, same as the BILLING_SECRET_KEY/
+    # MFA_ENCRYPTION_KEY checks above) rather than starting in a state that
+    # will throw confusing errors on first use of that column.
+    verify_critical_columns_present()
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:
         from app.core.scheduler import start_scheduler
         start_scheduler()

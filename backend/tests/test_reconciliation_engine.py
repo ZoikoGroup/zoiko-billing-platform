@@ -5,11 +5,15 @@ REC-01 ??? ledger reconciliation engine: run lifecycle, both internal checks,
 exception ownership workflow, and the production-acceptance gate wiring.
 """
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from app.modules.billing.models import InvoiceStatus, PaymentAllocation
 from app.modules.super_admin.models import (
+    ReconciliationException,
     ReconciliationExceptionStatus,
+    ReconciliationRun,
     ReconciliationRunState,
 )
 from app.modules.super_admin.reconciliation_service import ReconciliationService
@@ -129,3 +133,87 @@ def test_production_gate_reflects_reconciliation_state(db_session):
     _run(db_session)
     status = rec_status()["status"]
     assert status in ("WARNING", "PASS")
+
+
+def test_stale_verified_run_downgrades_to_warning_not_pass(db_session):
+    """A run that would otherwise report VERIFIED/PASS must not do so if it's
+    old enough that the scheduled job (settings.RECONCILIATION_INTERVAL_MINUTES,
+    default 24h) has plausibly stopped running since — REC-01 previously had
+    no recency check at all, so a stale clean run could hide a dead scheduler
+    behind a permanent PASS."""
+    from app.config import settings
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.VERIFIED,
+        processor_source="stripe",
+        processor_environment="test",
+        checks_total=3,
+        exceptions_found=0,
+    )
+    stale_minutes = settings.RECONCILIATION_INTERVAL_MINUTES * 2 + 60
+    run.started_at = datetime.utcnow() - timedelta(minutes=stale_minutes)
+    run.finished_at = run.started_at
+    db_session.add(run)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "WARNING"
+    assert f"#{run.id}" in rec["evidence"]
+    assert "reconciliation_job" in rec["evidence"] or "scheduler" in rec["evidence"].lower()
+
+
+def test_fresh_verified_run_reports_pass(db_session):
+    """The counterpart to the staleness test above: a VERIFIED run within
+    the expected cadence must still report PASS, proving the new staleness
+    check doesn't downgrade every clean run — only genuinely old ones."""
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.VERIFIED,
+        processor_source="stripe",
+        processor_environment="test",
+        checks_total=3,
+        exceptions_found=0,
+    )
+    db_session.add(run)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "PASS"
+
+
+def test_fail_on_open_exceptions_is_not_masked_by_staleness_logic(db_session):
+    """The FAIL branch (unresolved reconciliation exceptions on the latest
+    run) is a legitimate money-doesn't-match signal, not a miscalibrated
+    check — confirm the new staleness handling (which only touches the
+    PASS branch) never downgrades or otherwise hides it, even when the
+    failing run is itself old."""
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.FAILED,
+        processor_source="none",
+        checks_total=2,
+        exceptions_found=1,
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(ReconciliationException(
+        run_id=run.id,
+        kind="invoice_balance_mismatch",
+        entity_type="invoice",
+        entity_id=1,
+        status=ReconciliationExceptionStatus.OPEN,
+    ))
+    run.started_at = datetime.utcnow() - timedelta(days=30)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "FAIL"

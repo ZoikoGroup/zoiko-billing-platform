@@ -3130,14 +3130,30 @@ def get_production_acceptance_report(
     items.append(ProductionAcceptanceItem(
         id="PAY-01",
         criterion="Processor webhooks verify signatures/account/environment and are idempotent; replay cannot duplicate money.",
-        status="NOT_APPLICABLE",
-        evidence="Stripe webhook signature verification exists for Plane 2 tenant payments; no Plane-1 (Zoiko's own commercial subscription) processor integration exists to assess.",
+        status="PASS",
+        evidence=(
+            "Verified against platform_stripe_service.py::handle_webhook_event (Plane 1, "
+            "Zoiko's own commercial subscription — separate from Plane 2's tenant-facing "
+            "Stripe integration): signature verified via stripe.Webhook.construct_event; "
+            "environment checked via event['livemode'] against PLATFORM_STRIPE_SECRET_KEY's "
+            "test/live prefix (single non-Connect account, so environment is the correct "
+            "proxy for 'account' here, unlike Plane 2's Connect routing); idempotent via "
+            "platform_stripe_events (dedup by stripe_event_id, short-circuits before any "
+            "side effect on redelivery) — see tests/test_platform_stripe_service.py for a "
+            "duplicate-delivery proof and a signature-rejection proof."
+        ),
     ))
     items.append(ProductionAcceptanceItem(
         id="PAY-02",
         criterion="Payment collection uses tokenized/provider-hosted paths by default; no raw PAN/CVC in application logs/storage/email.",
-        status="NOT_CONFIGURED",
-        evidence="No Plane-1 payment collection exists yet (commercial subscriptions have no payment-method field). Plane 2 uses Stripe-hosted collection but was not re-verified this pass.",
+        status="PASS",
+        evidence=(
+            "Verified: create_checkout_session_for_invoice (platform_stripe_service.py) uses "
+            "Stripe-hosted Checkout Sessions exclusively (stripe.checkout.Session.create, "
+            "mode='payment') — card data is entered on Stripe's own page and never reaches "
+            "this application. The only logging call on this path (webhook failure handler) "
+            "logs event_id/event_type/exception only, no request/response payload."
+        ),
     ))
     items.append(ProductionAcceptanceItem(
         id="SEC-01",
@@ -3273,15 +3289,47 @@ def get_production_acceptance_report(
                 ),
             ))
         else:
-            items.append(ProductionAcceptanceItem(
-                id="REC-01",
-                criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
-                status="PASS",
-                evidence=(
-                    f"Latest run #{latest_run.id} fully VERIFIED including a connected "
-                    f"processor source ({latest_run.processor_source})."
-                ),
-            ))
+            from app.config import settings
+
+            # A clean VERIFIED run says nothing about *now* if the job that
+            # produces it has silently stopped running — REC-01 previously
+            # had no recency check at all, so a run from weeks ago (e.g. the
+            # scheduler process died) would still read PASS forever. Cap the
+            # staleness window at 2x the configured cadence rather than 1x:
+            # 1x would false-alarm on ordinary scheduler jitter (a slow day,
+            # a restart that shifts the run a few hours late); a much longer
+            # window would delay real detection. 2x is the safer middle
+            # ground — tune here, not by touching the FAIL/WARNING branches
+            # above, which are legitimate signals and must not be softened.
+            STALE_RUN_MULTIPLIER = 2
+            run_age = datetime.utcnow() - latest_run.started_at
+            stale_after = timedelta(minutes=settings.RECONCILIATION_INTERVAL_MINUTES * STALE_RUN_MULTIPLIER)
+            if run_age > stale_after:
+                items.append(ProductionAcceptanceItem(
+                    id="REC-01",
+                    criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                    status="WARNING",
+                    evidence=(
+                        f"Latest run #{latest_run.id} was VERIFIED (0 exceptions, processor "
+                        f"source {latest_run.processor_source}) but started {run_age} ago, "
+                        f"exceeding the expected cadence of every "
+                        f"{settings.RECONCILIATION_INTERVAL_MINUTES} minutes. The reconciliation "
+                        f"engine itself isn't in question, but nothing has re-verified the "
+                        f"ledger since then — confirm 'reconciliation_job' in core/scheduler.py "
+                        f"is still running, then re-run "
+                        f"(POST /super-admin/reconciliation-runs/run)."
+                    ),
+                ))
+            else:
+                items.append(ProductionAcceptanceItem(
+                    id="REC-01",
+                    criterion="Daily/periodic reconciliation compares Zoiko ledger to processor and downstream systems with exception ownership.",
+                    status="PASS",
+                    evidence=(
+                        f"Latest run #{latest_run.id} fully VERIFIED including a connected "
+                        f"processor source ({latest_run.processor_source})."
+                    ),
+                ))
 
     # OPS-01 — kill switch is real; the rest of this criterion is not assessed.
     items.append(ProductionAcceptanceItem(
