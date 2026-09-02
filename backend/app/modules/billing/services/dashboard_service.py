@@ -104,6 +104,7 @@ class BillingDashboardService:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         currency_rates: Optional[Dict[str, float]] = None,
+        use_cache: bool = True,
     ) -> Dict[str, Any]:
         """Single source of truth for the headline financial KPIs.
 
@@ -123,7 +124,8 @@ class BillingDashboardService:
         Every surface that shows these numbers MUST read them from here —
         never re-derive them with different filters.
         """
-        if settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
+        cache_key = None
+        if use_cache and settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
             cache_key = (organization_id, period, date_from, date_to)
             try:
                 with _KPI_CACHE_LOCK:
@@ -274,7 +276,7 @@ class BillingDashboardService:
             "period_start": str(period_start) if is_filtered else None,
             "period_end": str(period_end) if is_filtered else None,
         }
-        if settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
+        if use_cache and cache_key is not None and settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
             with _KPI_CACHE_LOCK:
                 _KPI_CACHE[cache_key] = result
         return result

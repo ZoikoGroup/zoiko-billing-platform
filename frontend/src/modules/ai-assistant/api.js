@@ -216,6 +216,24 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
   attempt();
 }
 
+/**
+ * cancelStream — best-effort signal to the backend to stop an in-flight SSE
+ * generation (the Stop button).  Fire-and-forget by design: the SSE fetch is
+ * already aborted client-side and the UI is settled regardless, this only
+ * prevents the backend's daemon pipeline from burning LLM tokens on a
+ * disconnected client.  Never throws.
+ */
+export function cancelStream(conversationUid) {
+  return fetch(
+    `${API_BASE}/sessions/${conversationUid}/messages/stream/cancel`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      keepalive: true,
+    }
+  ).catch(() => {});
+}
+
 export async function getCapabilities() {
   const res = await fetch(`${API_BASE}/capabilities`, {
     headers: authHeaders(),

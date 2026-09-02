@@ -270,9 +270,25 @@ class BillingAdapter:
             .filter(Invoice.organization_id == organization_id, Invoice.deleted_at.is_(None))
         )
         if overdue_only:
-            query = query.filter(Invoice.balance_due > 0, Invoice.due_date < date.today())
+            # Match count_invoices_for_org(overdue_only): unsettled AND past due
+            # AND not voided/pending-finalization (a stale draft must never
+            # surface as an overdue invoice).
+            query = query.filter(
+                Invoice.balance_due > 0,
+                Invoice.due_date < date.today(),
+                Invoice.status.notin_(
+                    (InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED)
+                ),
+            )
         elif balance_due_only:
-            query = query.filter(Invoice.balance_due > 0)
+            # "open" list semantics: same authoritative definition the count
+            # handler and the dashboard use (SENT/OVERDUE/PARTIALLY_PAID with
+            # a remaining balance) — never bare balance_due>0, which would
+            # leak draft/cancelled/written-off invoices into "open invoices".
+            query = query.filter(
+                Invoice.balance_due > 0,
+                Invoice.status.in_(_LEDGER_OPEN_STATUSES),
+            )
         elif statuses:
             query = query.filter(Invoice.status.in_(statuses))
         return query.order_by(Invoice.created_at.desc()).limit(limit).all()
@@ -301,6 +317,9 @@ class BillingAdapter:
                 Invoice.deleted_at.is_(None),
                 Invoice.balance_due > 0,
                 Invoice.due_date < date.today(),
+                Invoice.status.notin_(
+                    (InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED)
+                ),
             )
             .order_by(Invoice.due_date.asc())
             .limit(limit)

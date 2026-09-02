@@ -2593,6 +2593,95 @@ class TestPaymentListBareNounFallback:
         )
 
 
+# ──────────────────────────────────────────────────────────────────────
+# How-to article routing: "how to <verb> [a/an/the] <noun>" → EXPLAIN
+# ──────────────────────────────────────────────────────────────────────
+
+class TestHowToArticleRoutingRegression:
+    """INTENT ROUTING: generic "how to <verb> [a/an/the] <noun>" queries must
+    resolve to EXPLAIN (help_general / M0_EXPLAIN), NEVER to Prepare (client/
+    invoice draft creation) or Customer Search. The noun after the verb is a
+    generic concept here, so the presence/absence of an article ("a"/"an"/"the")
+    must not change routing: "how to add the customer" ≡ "how to add customer".
+    Only an actual identifiable target (name/email/company/ID) may route to
+    Prepare/Search — the anchored gate must never swallow those."""
+
+    VERBS = ["add", "create", "edit", "update", "delete", "find", "remove"]
+    NOUNS = ["customer", "invoice", "product", "quotation", "price"]
+    LEADS = ["how to {v} ", "how do I {v} ", "how can I {v} "]
+
+    @pytest.mark.parametrize("noun", NOUNS)
+    @pytest.mark.parametrize("verb", VERBS)
+    @pytest.mark.parametrize("article", ["", "a ", "an ", "the "])
+    @pytest.mark.parametrize("lead", LEADS)
+    def test_how_to_verb_noun_routes_to_explain(self, db, noun, verb, article, lead):
+        phrase = f"{lead.format(v=verb)}{article}{noun}"
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] == "help_general", (
+            f"{phrase!r} routed to {result['intent']}/{result['domain']} "
+            f"(conf={result.get('confidence')}), expected help_general/help"
+        )
+        assert result["domain"] == "help"
+        assert result["risk_class"] == "R0"
+
+    @pytest.mark.parametrize("phrase", [
+        "how to add customer",
+        "how to add the customer",
+        "how do I add a customer",
+        "how can I add the customer",
+    ])
+    def test_customer_how_to_articles_identical_explain(self, db, org, ctx, phrase):
+        engines = [ConversationEngine(db, model_gateway=None) for _ in [0, 1, 2, 3]]
+        sess = engines[0].create_conversation(
+            ctx=ctx, title="New Conversation", initial_message=phrase
+        )
+        msg = sess["messages"][0]
+        assert msg["mode"] == "M0_EXPLAIN", (
+            f"{phrase!r} ran in mode {msg.get('mode')}, expected M0_EXPLAIN"
+        )
+        assert msg.get("risk_class") == "R0"
+
+    def test_customer_how_to_article_variants_give_same_answer(self, db, org, ctx):
+        answers = {}
+        for phrase in [
+            "how to add customer",
+            "how to add the customer",
+            "how do I add a customer",
+            "how can I add the customer",
+        ]:
+            ce = ConversationEngine(db, model_gateway=None)
+            sess = ce.create_conversation(ctx=ctx, title="New Conversation", initial_message=phrase)
+            msg = sess["messages"][0]
+            assert msg["mode"] == "M0_EXPLAIN", f"{phrase!r} -> mode {msg.get('mode')}"
+            answers[phrase] = msg["answer"]
+        distinct = {a for a in answers.values() if a}
+        assert len(distinct) == 1, (
+            "article variants produced different Explain answers:\n"
+            + "\n".join(f"{p!r}: {a[:80]}" for p, a in answers.items())
+        )
+
+    @pytest.mark.parametrize("phrase,expected_intent", [
+        ("find customer john@acme.com", "customer_search"),
+        ("find invoice 123", "invoice_search"),
+        ("create customer Acme Corp", "unsupported_customer_creation"),
+    ])
+    def test_how_to_gate_never_swallows_real_targets(self, db, phrase, expected_intent):
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] == expected_intent, (
+            f"{phrase!r} routed to {result['intent']}/{result['domain']}, "
+            f"expected {expected_intent} (the anchored how-to gate must not "
+            f"swallow real target names/IDs)"
+        )
+
+    def test_direct_target_frames_not_matched_by_anchored_pattern(self, db):
+        from app.modules.chatbot.conversation import engine as engine_mod
+        for phrase in ["add customer Acme Corp", "find customer john@acme.com",
+                       "how do I add my customer", "how to add a customer to an account"]:
+            assert engine_mod._HOWTO_VERB_NOUN_RE.match(phrase) is None, (
+                f"anchored how-to pattern must NOT match real-target phrase {phrase!r}"
+            )
+
+
 class TestDomainTypoTaxReport:
     """ISSUE B: The typo 'taxi' must resolve to 'tax' via the domain
     typo correction dictionary, so ALL phrasing styles resolve to Tax Report."""
@@ -2782,7 +2871,6 @@ class TestActionDraftExpandedVerbsObjects:
         "create a quotation for Acme",
         "draft a quotation for Acme",
         "create a product",
-        "create a customer",
     ])
     def test_new_action_objects_route_to_action_draft(self, query: str):
         result = self._classify(query)
