@@ -310,15 +310,14 @@ class BaseRepository(Generic[ModelType]):
         self.db.refresh(obj)
         return obj
 
-    def bulk_update(self, items: List[Dict[str, Any]], organization_id: Optional[int] = None) -> List[ModelType]:
+    def bulk_update(self, items: List[Dict[str, Any]], organization_id: int) -> List[ModelType]:
         updated = []
         for item in items:
             obj_id = item.pop("id", None)
             if not obj_id:
                 continue
             query = self.db.query(self.model).filter(self.model.id == obj_id)
-            if organization_id is not None:
-                query = self._org_filter(query, organization_id)
+            query = self._org_filter(query, organization_id)
             obj = query.first()
             if not obj:
                 continue

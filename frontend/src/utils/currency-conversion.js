@@ -24,6 +24,12 @@ export function convertToBaseCurrency(amount, transactionCurrency, baseCurrency,
   const txnCurr = (transactionCurrency || "").toUpperCase().trim();
   const baseCurr = (baseCurrency || "").toUpperCase().trim();
 
+  // Do not treat two unset currency values as a same-currency conversion.
+  // Without a reporting currency there is no reliable aggregate to display.
+  if (!baseCurr) {
+    return { convertedAmount: 0, rateUsed: 0, isReliable: false };
+  }
+
   // Same currency — no conversion needed
   if (txnCurr === baseCurr) {
     return { convertedAmount: amt, rateUsed: 1, isReliable: true };

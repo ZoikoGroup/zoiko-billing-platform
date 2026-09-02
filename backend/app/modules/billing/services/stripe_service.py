@@ -938,12 +938,12 @@ class StripeService:
             raise
 
     def _find_payment_by_intent(self, organization_id: Optional[int], payment_intent_id: Optional[str]) -> Optional[Payment]:
-        if not payment_intent_id:
+        if not payment_intent_id or organization_id is None:
             return None
-        query = self.db.query(Payment).filter(Payment.stripe_payment_intent_id == payment_intent_id)
-        if organization_id:
-            query = query.filter(Payment.organization_id == organization_id)
-        return query.first()
+        return self.db.query(Payment).filter(
+            Payment.stripe_payment_intent_id == payment_intent_id,
+            Payment.organization_id == organization_id,
+        ).first()
 
     # ── Handler: checkout.session.completed ────────────────────────────────
 
@@ -1035,7 +1035,10 @@ class StripeService:
         if invoice is None:
             return {"action": "ignored", "reason": "no matching invoice"}
 
-        existing_payment = self._find_payment_by_intent(organization_id, payment_intent_id)
+        # The invoice fallback above may establish the tenant when legacy
+        # processor metadata is absent. Use that trusted local ownership for
+        # the duplicate-payment lookup rather than querying globally.
+        existing_payment = self._find_payment_by_intent(invoice.organization_id, payment_intent_id)
         if existing_payment:
             if existing_payment.status == PaymentStatus.PROCESSING:
                 self.payment_service.update_payment_status(
@@ -1172,8 +1175,11 @@ class StripeService:
         stripe_sub_id = data_object.get("id")
         if not stripe_sub_id:
             return {"action": "ignored"}
+        if organization_id is None:
+            return {"action": "ignored", "reason": "no verified organization for subscription event"}
         sub = self.db.query(Subscription).filter(
             Subscription.stripe_subscription_id == stripe_sub_id,
+            Subscription.organization_id == organization_id,
         ).first()
         if sub is None:
             return {"action": "ignored", "reason": "no matching local subscription"}
@@ -1200,8 +1206,11 @@ class StripeService:
         stripe_sub_id = data_object.get("id")
         if not stripe_sub_id:
             return {"action": "ignored"}
+        if organization_id is None:
+            return {"action": "ignored", "reason": "no verified organization for subscription event"}
         sub = self.db.query(Subscription).filter(
             Subscription.stripe_subscription_id == stripe_sub_id,
+            Subscription.organization_id == organization_id,
         ).first()
         if sub is None:
             return {"action": "ignored", "reason": "no matching local subscription"}

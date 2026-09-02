@@ -14,7 +14,7 @@ which creates the Organization + first org_admin in one transaction.
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,31 @@ from app.modules.super_admin.schemas import BillingClassificationUpdate
 logger = logging.getLogger("zoiko_billing.organizations")
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
+
+
+def _dispatch_org_created_notification(organization_id: int, actor_email: str) -> None:
+    """Send an org-created notification with a background-owned DB session."""
+    from app.database import SessionLocal
+    from app.modules.organizations.models import Organization
+    from app.services.email_service import notify_super_admins_org_created
+
+    db = SessionLocal()
+    try:
+        organization = db.query(Organization).filter(Organization.id == organization_id).first()
+        if organization is not None:
+            notify_super_admins_org_created(
+                db=db,
+                organization=organization,
+                actor_email=actor_email,
+            )
+    except Exception as exc:  # noqa: BLE001 - notification must never affect the committed org
+        logger.warning(
+            "[email] Super Admin org-created notification failed for org %s: %s",
+            organization_id,
+            exc,
+        )
+    finally:
+        db.close()
 
 
 # ── Org-scoped (own organization only) ──────────────────────────────────────
@@ -533,6 +558,7 @@ def get_organization(
 @router.post("/", response_model=OrganizationResponse)
 def create_organization(
     data: OrganizationBase,
+    background_tasks: BackgroundTasks = None,
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
@@ -606,15 +632,28 @@ def create_organization(
     db.refresh(org)
     logger.info("Super Admin %s created organization %s (%s)", current_user.email, org.organization_name, code)
 
-    # ZB-SA-CMD-003 v3.0: every successful organization creation notifies all
-    # active Super Admins via real email. Fire-and-forget — a transient SMTP
-    # failure never fails the already-committed creation, but it is logged.
-    try:
-        from app.services.email_service import notify_super_admins_org_created
+    # ZB-SA-CMD-003 v3.0: notification is deliberately queued only after the
+    # organization transaction commits. The background task opens its own
+    # session because the request-scoped session is closed after the response.
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _dispatch_org_created_notification,
+            organization_id=org.id,
+            actor_email=current_user.email,
+        )
+    else:
+        # Direct service-style callers in the existing test suite do not pass
+        # FastAPI's task collector; retain their synchronous notification seam.
+        try:
+            from app.services.email_service import notify_super_admins_org_created
 
-        notify_super_admins_org_created(db=db, organization=org, actor_email=current_user.email)
-    except Exception as exc:
-        logger.warning("[email] Super Admin org-created notification failed for org %s: %s", code, exc)
+            notify_super_admins_org_created(
+                db=db,
+                organization=org,
+                actor_email=current_user.email,
+            )
+        except Exception as exc:  # noqa: BLE001 - notification must never affect the committed org
+            logger.warning("[email] Super Admin org-created notification failed for org %s: %s", code, exc)
 
     return org
 
@@ -734,82 +773,22 @@ def delete_organization(
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """Hard-delete an organization and ALL of its data.
+    """Reject destructive tenant deletion in favour of governed offboarding.
 
-    Every billing/org-scoped table is deleted inside one transaction, in the
-    reverse of SQLAlchemy's FK-dependency-sorted table order (so children
-    always go before parents). This is generated from Base.metadata rather
-    than a hand-maintained table list — the billing schema has ~65 org-scoped
-    tables and every one of them carries organization_id directly (verified
-    against models.py), so there is no via-parent special case to hand-order.
-    Global tables that are NOT org-scoped (platform_settings) are untouched.
-    platform_audit_logs is likewise excluded from the sweep even though it
-    carries an optional organization_id column: it is the platform-plane
-    audit trail, not organization-owned business data, and an audit record
-    must outlive the entity it describes. Super Admin only.
+    Billing records are financial history and must remain auditable. The
+    supported offboarding path is the lifecycle endpoint, which requires an
+    explicit reason and moves the tenant through DEACTIVATING/DEACTIVATED
+    while preserving all tenant data. Keeping this legacy route explicit also
+    prevents a caller from accidentally interpreting a failed hard-delete as
+    a partially completed cleanup.
     """
-    from sqlalchemy import text
-    from app.database import Base
     from app.modules.organizations.models import Organization
 
     org = db.query(Organization).filter(Organization.id == organization_id).first()
     if org is None:
         raise NotFoundException("Organization", "id")
 
-    org_name = org.organization_name
-    org_code = org.organization_code
-
-    # organization_id is intentionally left NULL here (not organization_id=
-    # organization_id): platform_audit_logs.organization_id is FK(...,
-    # ondelete="RESTRICT"), so a row still referencing this org would block
-    # the org DELETE below within the same transaction. The org's identity is
-    # preserved in metadata_ instead.
-    from app.modules.super_admin.audit_service import PlatformAuditService
-    from app.modules.super_admin.models import PlatformAuditAction
-
-    PlatformAuditService(db).log_no_commit(
-        actor_id=current_user.id,
-        actor_role="super_admin",
-        action=PlatformAuditAction.DELETE,
-        entity_type="Organization",
-        entity_id=organization_id,
-        organization_id=None,
-        metadata={"organization_id": organization_id, "organization_name": org_name, "organization_code": org_code},
+    raise BadRequestException(
+        "Organizations cannot be hard-deleted because billing history must be retained. "
+        "Use the governed lifecycle transition endpoint to deactivate this organization."
     )
-
-    for table in reversed(Base.metadata.sorted_tables):
-        if table.name in ("organizations", "users", "security_action_tokens", "platform_audit_logs"):
-            continue
-        if "organization_id" not in table.columns:
-            continue
-        db.execute(
-            text(f'DELETE FROM "{table.name}" WHERE organization_id = :org_id'),
-            {"org_id": organization_id},
-        )
-
-    # Prior audit rows that referenced this org (CREATE/ACTIVATE/DEACTIVATE)
-    # must not dangle now that the org row is about to be deleted (RESTRICT
-    # FK) — null out the reference rather than deleting the rows, so the
-    # audit trail (actor/action/entity_id/metadata) survives intact.
-    db.execute(
-        text('UPDATE "platform_audit_logs" SET organization_id = NULL WHERE organization_id = :org_id'),
-        {"org_id": organization_id},
-    )
-
-    # Login users + their action tokens (users has ondelete CASCADE from org).
-    db.execute(
-        text('DELETE FROM "security_action_tokens" WHERE organization_id = :org_id'),
-        {"org_id": organization_id},
-    )
-    db.execute(
-        text('DELETE FROM "users" WHERE organization_id = :org_id'),
-        {"org_id": organization_id},
-    )
-
-    db.delete(org)
-    db.commit()
-    logger.info(
-        "Super Admin %s hard-deleted organization %s (%s) and all its data",
-        current_user.email, org_name, org_code,
-    )
-    return {"message": f"Organization '{org_name}' and all of its data deleted."}

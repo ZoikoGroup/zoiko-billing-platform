@@ -668,6 +668,169 @@ class TestDefinitionalRouting:
         assert "due date has passed" in answer
         assert "account balance" not in answer
 
+    @pytest.mark.parametrize("phrase", [
+        "What is the collection rate?",
+        "What does collection rate mean?",
+        "Explain collection rate.",
+        "Tell me about the collection rate.",
+    ])
+    def test_collection_rate_definition_not_paid_revenue(self, db, org, ctx, customers, phrase):
+        """'What is the collection rate?' must answer with the COLLECTION RATE
+        definition, never the 'Paid revenue' definition that the paid_revenue
+        subject matcher (its `\\bcollections?\\b` pattern) used to hijack it
+        into. Definitional ask — no live figure required."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, phrase)
+        assert intent["intent"] == "metric_definition", (
+            f"{phrase!r}: got {intent['intent']}, expected metric_definition"
+        )
+        assert intent.get("metric") == "collection_rate", (
+            f"{phrase!r}: matched {intent.get('metric')}, expected collection_rate"
+        )
+        answer = result["answer"].lower()
+        assert "collection rate" in answer, result["answer"][:200]
+        assert "percentage of your billed revenue" in answer, result["answer"][:200]
+        assert "paid revenue" not in answer, result["answer"][:200]
+
+    def test_collection_rate_definition_includes_live_value_when_available(
+            self, db, org, ctx, customers):
+        """'What is the collection rate?' must lead with the DEFINITION and ALSO
+        compose the CURRENT live collection rate (cleared/total billed, capped at
+        100%) — matching the dashboard's Collection Rate card. Live value is
+        never the sole content; the definition always comes first."""
+        from app.modules.billing.models import (Invoice, InvoiceStatus, Payment,
+                                               PaymentType, PaymentStatus)
+        cust = add_customer(db, org, "CUST-CRATE", "Rate Co")
+        add_invoice(db, org, cust.id, "INV-CRATE-1", InvoiceStatus.SENT, 1500)
+        db.add(Payment(
+            organization_id=org.id, customer_id=cust.id,
+            payment_number="PAY-CRATE-1",
+            payment_type=PaymentType.INVOICE_PAYMENT, status=PaymentStatus.CLEARED,
+            amount=1000, currency="USD", payment_date=date.today(),
+        ))
+        db.flush()
+        intent, result = self._ask(db, org, ctx, "What is the collection rate?")
+        assert intent["intent"] == "metric_definition"
+        answer = result["answer"]
+        assert "percentage of your billed revenue" in answer.lower()
+        definition_idx = answer.lower().index("percentage of your billed revenue")
+        # A live figure is composed SECOND (definition leads).
+        assert answer.lower().index("current collection rate") > definition_idx
+        # Cleared 1000 of 1500 billed -> capped at 66.7% (not '0%').
+        assert "66.7%" in answer, result["answer"]
+        assert "collected of" in answer, result["answer"]
+
+    def test_collection_rate_definition_states_unavailable_when_no_data(
+            self, db, org, ctx):
+        """With NO billing data, a 'What is the collection rate?' ask must still
+        give the DEFINITION and state, in the exact required words, that the
+        current percentage is not available — never inventing or estimating a
+        figure (no '0%', no fabricated rate)."""
+        intent, result = self._ask(db, org, ctx, "What is the collection rate?")
+        assert intent["intent"] == "metric_definition"
+        answer = result["answer"]
+        assert "percentage of your billed revenue" in answer.lower()
+        assert (
+            "the current collection-rate percentage is not available in the data I can access"
+            in answer
+        ), result["answer"]
+        import re
+        assert not re.search(r"\b0(\.0)?%", answer), result["answer"]
+
+    @pytest.mark.parametrize("phrase,expected_metric", [
+        ("Explain my current outstanding amount.", "outstanding"),
+        ("What does my current revenue performance mean?", "revenue"),
+        ("Why is my outstanding amount high?", "outstanding"),
+        ("Why is my current collection rate low?", "collection_rate"),
+    ])
+    def test_hybrid_explain_my_metric_routes_to_definition_with_live(
+            self, db, org, ctx, customers, phrase, expected_metric):
+        """HYBRID asks — "explain/why ... my current X" — must combine the
+        metric DEFINITION with the CURRENT live figure (M0 Explain + M1
+        Inspect). Previously they fell into help_general RAG (wrong chunk) or
+        the bare-data Inspection route with no explanation. They must resolve
+        to metric_definition with the correct metric and a live number."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, phrase)
+        assert intent["intent"] == "metric_definition", (
+            f"{phrase!r}: got {intent['intent']}"
+        )
+        assert intent.get("metric") == expected_metric, (
+            f"{phrase!r}: matched {intent.get('metric')}, expected {expected_metric}"
+        )
+        result["answer"] = result["answer"].replace("**", "")
+        answer = result["answer"].lower()
+        # Definition present (not a bare figure dump).
+        if expected_metric == "collection_rate":
+            assert "percentage of your billed revenue" in answer, result["answer"][:300]
+        elif expected_metric == "outstanding":
+            assert "still owe" in answer, result["answer"][:300]
+        elif expected_metric == "revenue":
+            assert "revenue" in answer, result["answer"][:300]
+        # Current live figure present too (the SENT-invoice seed yields data).
+        assert "current" in answer or "right now" in answer or "today" in answer, (
+            f"{phrase!r}: hybrid should include the live figure: {result['answer'][:300]}"
+        )
+
+    def test_hybrid_collection_rate_includes_live_percentage(self, db, org, ctx, customers):
+        """'Why is my current collection rate low?' must include a live
+        percentage — the definition-only METRIC_DEFINITIONS entry on its own
+        would omit the number. Seed: PAID 1000 + SENT 500 => rate 66.7%."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(
+            db, org, ctx, "Why is my current collection rate low?")
+        assert intent.get("metric") == "collection_rate", intent
+        answer = result["answer"]
+        assert "%" in answer, answer[:400]
+        assert "collected" in answer, answer[:400]
+
+    def test_bare_what_is_my_outstanding_stays_live(self, db, org, ctx, customers):
+        """A bare 'What is my outstanding amount?' has NO explanation framing —
+        it is a pure financial-inspection live lookup and must keep the
+        account_balance route (never the hybrid metric_definition)."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, "What is my outstanding amount?")
+        assert intent["intent"] == "account_balance", intent
+        answer = result["answer"].lower()
+        assert "500.00" in answer, result["answer"][:300]
+
+    def test_bare_outstanding_amount_is_definition_not_live(self, db, org, ctx, customers):
+        """'What is outstanding amount?' (no possessive, no live signal) is a
+        DEFINITION of the metric — it must resolve to metric_definition, not the
+        live account_balance. This is the spec's KNOWLEDGE/definition case,
+        distinct from 'What is my outstanding amount?' (financial inspection)."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, "What is outstanding amount?")
+        assert intent["intent"] == "metric_definition", (
+            f"got {intent['intent']}, expected metric_definition"
+        )
+        assert intent.get("metric") == "outstanding", intent
+        answer = result["answer"].lower()
+        assert "outstanding amount" in answer, result["answer"][:200]
+        assert "still owe" in answer, result["answer"][:200]
+
+    def test_my_outstanding_amount_stays_live_inspection(self, db, org, ctx, customers):
+        """Possessive 'my' keeps the FINANCIAL inspection route (live ledger),
+        even though the noun is 'amount'. Opposite of the bare definition above."""
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, "What is my outstanding amount?")
+        assert intent["intent"] == "account_balance", intent
+        assert intent["risk_class"] == "R1", intent
+        answer = result["answer"].lower()
+        assert "account balance" in answer, result["answer"][:200]
+
+    def test_outstanding_balance_phrasings_stay_live(self, db, org, ctx, customers):
+        """'balance'-worded stands-alone asks remain live ledger fetches
+        (ZB-PRD-ANS-001), NOT re-routed into a glossary definition by the
+        definitional-metric suppression. Guards against a regression of
+        TestOutstandingBalanceFreshFetch."""
+        self._seed(db, org, customers)
+        for phrase in ("what's the outstanding balance?",
+                       "what is the total balance due?",
+                       "What is the outstanding balance?"):
+            intent, _ = self._ask(db, org, ctx, phrase)
+            assert intent["intent"] == "account_balance", (phrase, intent)
+
     def test_mrr_definition_without_live_figure(self, db, org, ctx, customers):
         self._seed(db, org, customers)
         intent, result = self._ask(db, org, ctx, "What is MRR?")
@@ -714,6 +877,122 @@ class TestDefinitionalRouting:
             assert intent["intent"] == "help_general", (
                 f"{phrase!r}: routed to {intent['intent']} instead of help_general"
             )
+
+
+class TestSopHowToRouting:
+    """'How do I create an invoice?' and similar PROCEDURAL/product-guidance
+    asks about a SUPPORTED topic must be answered from the authoritative SOP
+    glossary (text verbatim from the production KB seed). Previously these
+    returned lexically-similar but WRONG retrieval chunks ("How do I create an
+    invoice?" → the billing-configuration chunk; "How do I create a customer?"
+    → the Invoice-statuses chunk), or fell to the generic abstention when the
+    KB was empty. They must not be treated as action-draft premises."""
+
+    def _ask(self, db, org, ctx, phrase):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, f"sop-{abs(hash(phrase))}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        handler = engine._get_handler(intent["domain"])
+        return intent, handler(conv, phrase, intent, ctx)
+
+    @pytest.mark.parametrize("phrase,needle", [
+        ("How do I create an invoice?", "How to create an invoice"),
+        ("How do I make an invoice?", "How to create an invoice"),
+        ("How do I generate an invoice?", "How to create an invoice"),
+        ("How do I send an invoice?", "How to issue an invoice"),
+        ("How do I record a payment?", "How to record a payment"),
+        ("How do I create a credit note?", "How to create a credit note"),
+        ("How do I create a subscription?", "How to create a subscription"),
+        ("How do I set up dunning?", "How to set up dunning"),
+        ("How do I create a customer?", "billing customer"),
+    ])
+    def test_supported_how_to_serves_authoritative_sop(self, db, org, ctx, customers, kb, phrase, needle):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, f"sop2-{abs(hash(phrase))}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        assert intent["intent"] == "help_general", f"{phrase!r}: {intent}"
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, phrase, intent, ctx)
+        answer = result["answer"]
+        assert needle in answer, (
+            f"{phrase!r}: SOP not served. Got: {answer[:300]!r}"
+        )
+
+    @pytest.mark.parametrize("phrase", [
+        "How do I create an invoice?",
+        "How do I generate an invoice?",
+        "How do I send an invoice?",
+        "How do I make an invoice?",
+        "How do I record a payment?",
+    ])
+    def test_supported_how_to_never_abstains_on_empty_kb(self, db, org, ctx, customers, phrase):
+        """Even with NO KB seeded (retrieval would abstain), supported how-to
+        topics must still be answered from the SOP glossary instead of the
+        generic abstention."""
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, f"sop-empty-{abs(hash(phrase))}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, phrase, intent, ctx)
+        answer = result["answer"]
+        assert "How to" in answer, (
+            f"{phrase!r}: expected SOP answer, got: {answer[:300]!r}"
+        )
+        assert "don't have specific information" not in answer.lower()
+
+    @pytest.mark.parametrize("phrase,needle", [
+        ("How do I check an invoice's status?", "search for the invoice by invoice number"),
+        ("How can I see the status of an invoice?", "search for the invoice by invoice number"),
+        ("Where can I see invoice status?", "search for the invoice by invoice number"),
+        ("How do I know whether my invoice is paid?", "search for the invoice by invoice number"),
+        ("How can I view invoice details?", "search for the invoice by invoice number"),
+    ])
+    def test_invoice_status_how_to_serves_authoritative_sop(self, db, org, ctx, customers, kb, phrase, needle):
+        """'How do I check an invoice's status?' and natural variants querying an
+        invoice's status/paid state must be answered from the authoritative,
+        concise invoice-status SOP text (verbatim from the KB seed) — never a
+        wrong chunk, the §6.0 out-of-scope refusal, or the generic abstention.
+        The answer lists every supported status (Draft, Sent, Partially Paid,
+        Paid, Overdue, Cancelled, Refunded, Written Off)."""
+        intent, result = self._ask(db, org, ctx, phrase)
+        assert intent["intent"] == "help_general", f"{phrase!r}: {intent}"
+        answer = result["answer"]
+        assert needle in answer, (
+            f"{phrase!r}: invoice-status SOP not served. Got: {answer[:300]!r}"
+        )
+        for s in ("Draft", "Sent", "Partially Paid", "Paid", "Overdue",
+                  "Cancelled", "Refunded", "Written Off"):
+            assert s in answer, f"{phrase!r}: missing status {s!r}"
+        assert "outside my scope" not in answer.lower() and "don't have specific information" not in answer.lower()
+
+    def test_invoice_overdue_how_to_serves_overdue_sop(self, db, org, ctx, customers, kb):
+        """'How do I check if an invoice is overdue?' is legitimately answered by
+        the view-overdue-invoices SOP (the authoritative how-to for overdue state)
+        — never a wrong chunk, out-of-scope refusal, or abstention."""
+        intent, result = self._ask(
+            db, org, ctx, "How do I check if an invoice is overdue?")
+        assert intent["intent"] == "help_general", f"{intent}"
+        answer = result["answer"]
+        assert "view overdue invoices" in answer.lower(), (
+            f"overdue SOP not served. Got: {answer[:300]!r}"
+        )
+        assert "outside my scope" not in answer.lower() and "don't have specific information" not in answer.lower()
+
+    @pytest.mark.parametrize("phrase", [
+        "How do I check an invoice's status?",
+        "How can I see the status of an invoice?",
+        "Where can I see invoice status?",
+    ])
+    def test_invoice_status_how_to_never_abstains_on_empty_kb(self, db, org, ctx, customers, phrase):
+        """Even with NO KB seeded, invoice-status how-to asks must be answered
+        from the SOP glossary instead of the generic abstention."""
+        intent, result = self._ask(db, org, ctx, phrase)
+        answer = result["answer"]
+        assert "search for the invoice" in answer, (
+            f"{phrase!r}: expected SOP answer, got: {answer[:300]!r}"
+        )
+        assert "don't have specific information" not in answer.lower()
+        assert "outside my scope" not in answer.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1345,6 +1624,556 @@ class TestMetricPhrasingRoutes:
             result = engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
             assert result["mode"] == "M1_INSPECT"
             assert money(250, "USD") in result["answer"] or money(0, "USD") in result["answer"]
+
+
+class TestRevenueThisMonth:
+    """Temporal revenue DATA QUERIES ("revenue this month", "monthly revenue",
+    ...) must return the live current-month figure from the same source as the
+    dashboard's Monthly Revenue card — never a generic report explanation and
+    never the all-time total. Bare "revenue" / "Total Revenue" stays total."""
+
+    def _set_base_currency(self, db, org, code="INR"):
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode[code] if hasattr(CurrencyCode, code) else code
+        db.flush()
+
+    def _ask(self, db, org, ctx, phrase):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid=f"test-rev-m-{abs(hash(phrase)) % 10**9}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        return engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
+
+    def _dashboard_monthly(self, db, org):
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        return float(BillingDashboardService(db).get_kpis(organization_id=org.id)["monthly_revenue"])
+
+    def _seed_paid_invoice(self, db, org, cust_id, amount, number="INV-REVM-1", currency="INR"):
+        from app.modules.billing.models import InvoiceStatus
+        return add_invoice(db, org, cust_id, number, InvoiceStatus.PAID, amount,
+                           paid=str(amount), currency=currency)
+
+    def test_regression_monthly_revenue_matches_dashboard_source(self, db, org, ctx, customers):
+        """Primary bug: 'revenue this month' must equal the dashboard's
+        Monthly Revenue figure (₹219,964.20 scenario), not a report
+        explanation and not the all-time total."""
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 219964.20)
+        dashboard_monthly = self._dashboard_monthly(db, org)
+
+        result = self._ask(db, org, ctx, "revenue this month")
+
+        assert result["mode"] == "M1_INSPECT", result["answer"][:200]
+        assert dashboard_monthly == 219964.20
+        assert money(dashboard_monthly, "INR") in result["answer"], result["answer"][:300]
+        assert "Revenue Report is a Zoiko report" not in result["answer"], result["answer"][:300]
+
+    def test_monthly_phrasings_return_actual_monthly_revenue(self, db, org, ctx, customers):
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 219964.20)
+        dashboard_monthly = self._dashboard_monthly(db, org)
+
+        for phrase in (
+            "what is our revenue this month?",
+            "monthly revenue",
+            "revenue for this month",
+            "show me this month's revenue",
+            "how much revenue did we make this month?",
+        ):
+            result = self._ask(db, org, ctx, phrase)
+            assert result["mode"] == "M1_INSPECT", f"{phrase!r}: {result['answer'][:200]}"
+            assert money(dashboard_monthly, "INR") in result["answer"], (
+                f"{phrase!r}: {result['answer'][:300]}"
+            )
+            assert "Total revenue" not in result["answer"], f"{phrase!r}: {result['answer'][:200]}"
+
+    def test_bare_revenue_stays_total_not_monthly(self, db, org, ctx, customers):
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 500)
+        total = self._total_revenue(db, org)
+
+        for phrase in ("revenue", "Total Revenue", "how much is our revenue?"):
+            result = self._ask(db, org, ctx, phrase)
+            assert result["mode"] == "M1_INSPECT", f"{phrase!r}: {result['answer'][:200]}"
+            assert f"Total revenue is **{money(total, 'INR')}**" in result["answer"], (
+                f"{phrase!r}: {result['answer'][:300]}"
+            )
+
+    def _total_revenue(self, db, org):
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        return float(BillingDashboardService(db).get_kpis(organization_id=org.id)["total_revenue"])
+
+    def test_report_explanation_queries_return_explanation(self, db, org, ctx, customers):
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 219964.20)
+        for phrase in ("what is the Revenue Report?", "how does the Revenue Report work?"):
+            result = self._ask(db, org, ctx, phrase)
+            assert result["mode"] == "M0_EXPLAIN", f"{phrase!r}: {result['mode']}"
+            assert "Revenue is the total value of all invoices" in result["answer"], (
+                f"{phrase!r}: {result['answer'][:300]}"
+            )
+            assert "this month is" not in result["answer"], f"{phrase!r}: {result['answer'][:300]}"
+
+    def test_no_number_hallucination_when_revenue_unavailable(self, db, org, ctx, customers):
+        """No invoices at all → assistant must not invent a figure; the live
+        aggregate is zero from the same dashboard source."""
+        self._set_base_currency(db, org, "INR")
+        dashboard_monthly = self._dashboard_monthly(db, org)
+        assert dashboard_monthly == 0.0
+
+        result = self._ask(db, org, ctx, "revenue this month")
+        assert result["mode"] == "M1_INSPECT"
+        assert money(0, "INR") in result["answer"], result["answer"][:300]
+
+    def test_org_isolation(self, db, org, ctx, customers):
+        """Org B's ask must never surface Org A's paid invoice revenue."""
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 99999.99, number="INV-REVM-A")
+        org_a_monthly = self._dashboard_monthly(db, org)
+
+        other_org = Organization(organization_name="Rev-B-Org", organization_code="REVB2")
+        db.add(other_org)
+        db.flush()
+        self._set_base_currency(db, other_org, "INR")
+
+        other_ctx = AIContext(
+            organization_id=other_org.id, user_id=200, tenant_context_id=1,
+            role="admin", permissions=[], request_id="test", tenant_name="Rev-B-Org",
+        )
+        other_result = self._ask(db, other_org, other_ctx, "revenue this month")
+        assert other_result["mode"] == "M1_INSPECT"
+        assert money(org_a_monthly, "INR") not in other_result["answer"], (
+            other_result["answer"][:300]
+        )
+        assert money(0, "INR") in other_result["answer"], (
+            other_result["answer"][:300]
+        )
+
+    def test_this_month_uses_current_calendar_month(self, db, org, ctx, customers):
+        """Only invoices issued in the current calendar month count toward the
+        monthly figure; last month's paid invoice is excluded."""
+        from datetime import datetime
+        from app.modules.billing.models import InvoiceStatus
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        self._set_base_currency(db, org, "INR")
+        go = customers["go"]
+        self._seed_paid_invoice(db, org, go.id, 1000, number="INV-REVM-THIS", currency="INR")
+        last_month_inv = self._seed_paid_invoice(db, org, go.id, 5000, number="INV-REVM-LAST", currency="INR")
+        today = datetime.utcnow().date()
+        last_month = today.replace(day=1) - timedelta(days=1)
+        last_month_inv.issue_date = last_month
+        db.flush()
+
+        kpis = BillingDashboardService(db).get_kpis(organization_id=org.id)
+        assert float(kpis["monthly_revenue"]) == 1000.0
+
+        result = self._ask(db, org, ctx, "revenue this month")
+        assert money(1000.00, "INR") in result["answer"], result["answer"][:300]
+        assert money(5000.00, "INR") not in result["answer"], result["answer"][:300]
+
+    def test_currency_preserved_from_org_base(self, db, org, ctx, customers):
+        """INR org returns the ₹ figure; nothing renders in a hardcoded USD."""
+        self._set_base_currency(db, org, "INR")
+        self._seed_paid_invoice(db, org, customers["go"].id, 1800, currency="INR")
+        dashboard_monthly = self._dashboard_monthly(db, org)
+        result = self._ask(db, org, ctx, "revenue this month")
+        assert money(dashboard_monthly, "INR") in result["answer"], result["answer"][:300]
+        assert money(dashboard_monthly, "USD") not in result["answer"]
+
+    def test_named_month_returns_that_months_figure(self, db, org, ctx, customers):
+        """'revenue for <month>' is a data query for that calendar month, and
+        returns a live figure (not a report explanation / not the current
+        month's total)."""
+        self._set_base_currency(db, org, "INR")
+        from app.modules.billing.models import InvoiceStatus
+        cust = add_customer(db, org, "CUST-NAMED", "Named Co")
+        self._seed_paid_invoice(db, org, cust.id, 300, number="INV-REVM-NAMED", currency="INR")
+        result = self._ask(db, org, ctx, f"revenue for {date.today().strftime('%B')}")
+        assert result["mode"] == "M1_INSPECT", result["answer"][:300]
+        assert money(300.00, "INR") in result["answer"], result["answer"][:300]
+
+
+class TestDashboardSummaryRouting:
+    """User report: 'Dashboard summary' and related phrasings must route to the
+    dashboard_summary intent (live financial snapshot / Financial Inspection) —
+    never a KB explanation, navigation instructions, or a single-metric/balance
+    lookup. The following overview phrasings all resolve to the financial
+    dashboard summary (including WHAT_IS-shaped asks, metric asks, and
+    balance-summary asks)."""
+
+    @pytest.mark.parametrize("phrase", [
+        "Dashboard summary",
+        "Summarize my dashboard",
+        "Summarize dashboard",
+        "Give me the dashboard summary",
+        "Give me a billing dashboard summary",
+        "Give me a revenue summary",
+        "Give me a revenue and collections summary",
+        "Revenue summary",
+        "Revenue overview",
+        "Revenue and collections summary",
+        "Financial overview",
+        "show me the dashboard",
+        "What is the current dashboard status?",
+        "Current billing status",
+        "Current billing metrics",
+        "What are my current financial metrics?",
+        "Outstanding balance summary",
+        "Outstanding balance overview",
+    ])
+    def test_dashboard_phrasings_route_to_summary(self, db, phrase):
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] == "dashboard_summary", (
+            f"{phrase!r} routed to {result['intent']} (conf={result.get('confidence')}), "
+            f"expected dashboard_summary"
+        )
+
+    @pytest.mark.parametrize("phrase", [
+        "What is a dashboard?",
+        "What does dashboard mean?",
+        "What is revenue?",
+        "What does revenue mean?",
+        "What makes a good metric?",
+        "Explain billing metrics.",
+    ])
+    def test_bare_definition_stays_definitional(self, db, phrase):
+        """Concept questions (what is a dashboard/revenue/metric, explain
+        metrics) must NOT be hijacked into the financial snapshot."""
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] != "dashboard_summary", (
+            f"{phrase!r} hijacked to dashboard_summary"
+        )
+
+    @pytest.mark.parametrize("phrase", [
+        "What's my outstanding balance?",
+        "Outstanding balance",
+        "What is the outstanding balance concept?",
+    ])
+    def test_bare_balance_asks_stay_balance(self, db, phrase):
+        """Bare balance-value / concept asks keep their own routes; only an
+        explicit balance SUMMARY/OVERVIEW becomes a dashboard summary."""
+        result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
+        assert result["intent"] == "account_balance" or result["intent"] == "metric_definition", (
+            f"{phrase!r} routed to {result['intent']}, expected account_balance/metric_definition"
+        )
+
+
+class TestDashboardSummaryContent:
+    """The dashboard summary must return a LIVE financial snapshot with Total
+    Revenue, Paid Amount, Outstanding Amount and Collection Rate (plus a
+    business insight) — never a generic KB explanation or navigation text.
+    Figures always come from get_kpis (the dashboard's source of truth)."""
+
+    def _set_base_currency(self, db, org, code="INR"):
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode[code] if hasattr(CurrencyCode, code) else code
+        db.flush()
+
+    def _kpis(self, db, org):
+        return BillingDashboardService(db).get_kpis(organization_id=org.id)
+
+    def _ask(self, db, org, ctx, phrase):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid=f"test-dashsum-{abs(hash(phrase)) % 10**9}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        assert intent["intent"] == "dashboard_summary", intent
+        return engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
+
+    def _assert_no_kb_fallback(self, answer):
+        low = answer.lower()
+        for forbidden in (
+            "i don't have specific information",
+            "go to dashboard",
+            "click invoices",
+            "navigate to",
+            "open the dashboard",
+            "explains what the dashboard",
+        ):
+            assert forbidden not in low, (
+                f"dashboard summary fell back to KB/navigation text ({forbidden!r}) in: {answer[:400]}"
+            )
+
+    def test_summary_includes_required_metrics_from_live_kpis(self, db, org, ctx, customers):
+        """1 SENT ₹2400 + 1 PAID ₹700 (INR org) → the summary must carry the
+        live Total Revenue, Paid Amount, Outstanding Amount, Collection Rate
+        and an Insight — never a KB explanation."""
+        self._set_base_currency(db, org, "INR")
+        add_invoice(db, org, customers["go"].id, "INV-DS-SENT", InvoiceStatus.SENT,
+                    2400, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-DS-PAID", InvoiceStatus.PAID,
+                    700, paid="700", currency="INR")
+        kpis = self._kpis(db, org)
+
+        assert abs(kpis["total_revenue"] - 3100.0) < 0.01
+        assert abs(kpis["paid_amount"] - 700.0) < 0.01
+        assert abs(kpis["outstanding_amount"] - 2400.0) < 0.01
+
+        result = self._ask(db, org, ctx, "Dashboard summary")
+
+        answer = result["answer"]
+        assert "**Dashboard Summary**" in answer, answer[:200]
+        assert money(kpis["total_revenue"], "INR") in answer, answer[:300]
+        assert money(kpis["paid_amount"], "INR") in answer, answer[:300]
+        assert money(kpis["outstanding_amount"], "INR") in answer, answer[:300]
+        assert "Collection Rate" in answer, answer[:300]
+        assert "**Insight:**" in answer, answer[:300]
+        self._assert_no_kb_fallback(answer)
+
+    def test_dashboard_status_phrasing_returns_same_live_summary(self, db, org, ctx, customers):
+        """The exact reported miss: 'What is the current dashboard status?'
+        previously fell into the KB help fallback. It must now return the same
+        live dashboard summary."""
+        self._set_base_currency(db, org, "INR")
+        add_invoice(db, org, customers["go"].id, "INV-DS2-SENT", InvoiceStatus.SENT,
+                    2400, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-DS2-PAID", InvoiceStatus.PAID,
+                    700, paid="700", currency="INR")
+        kpis = self._kpis(db, org)
+
+        result = self._ask(db, org, ctx, "What is the current dashboard status?")
+
+        answer = result["answer"]
+        assert "**Dashboard Summary**" in answer, answer[:200]
+        assert money(kpis["total_revenue"], "INR") in answer, answer[:300]
+        assert money(kpis["paid_amount"], "INR") in answer, answer[:300]
+        assert money(kpis["outstanding_amount"], "INR") in answer, answer[:300]
+        assert "Collection Rate" in answer, answer[:300]
+        assert result["mode"] == "M1_INSPECT", answer[:200]
+        self._assert_no_kb_fallback(answer)
+
+    def test_summarize_revenue_and_collections_returns_live_summary(self, db, org, ctx, customers):
+        self._set_base_currency(db, org, "INR")
+        add_invoice(db, org, customers["go"].id, "INV-DS3-SENT", InvoiceStatus.SENT,
+                    2400, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-DS3-PAID", InvoiceStatus.PAID,
+                    700, paid="700", currency="INR")
+        kpis = self._kpis(db, org)
+
+        result = self._ask(db, org, ctx, "Summarize revenue and collections")
+
+        answer = result["answer"]
+        assert "**Dashboard Summary**" in answer, answer[:200]
+        assert money(kpis["total_revenue"], "INR") in answer, answer[:300]
+        assert "Collection Rate" in answer, answer[:300]
+        assert "Insight" in answer, answer[:300]
+        self._assert_no_kb_fallback(answer)
+
+    def test_outstanding_balance_summary_returns_live_summary(self, db, org, ctx, customers):
+        """'Outstanding balance summary' is a financial-overview ask, not a
+        single-figure balance lookup — it must return the full live summary."""
+        self._set_base_currency(db, org, "INR")
+        add_invoice(db, org, customers["go"].id, "INV-DS4-SENT", InvoiceStatus.SENT,
+                    2400, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-DS4-PAID", InvoiceStatus.PAID,
+                    700, paid="700", currency="INR")
+        kpis = self._kpis(db, org)
+
+        result = self._ask(db, org, ctx, "Outstanding balance summary")
+
+        answer = result["answer"]
+        assert "**Dashboard Summary**" in answer, answer[:200]
+        assert money(kpis["total_revenue"], "INR") in answer, answer[:300]
+        assert money(kpis["outstanding_amount"], "INR") in answer, answer[:300]
+        assert "Collection Rate" in answer, answer[:300]
+        self._assert_no_kb_fallback(answer)
+
+    def test_metric_phrase_current_billing_metrics_returns_live_summary(self, db, org, ctx, customers):
+        self._set_base_currency(db, org, "INR")
+        add_invoice(db, org, customers["go"].id, "INV-DS5-SENT", InvoiceStatus.SENT,
+                    2400, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-DS5-PAID", InvoiceStatus.PAID,
+                    700, paid="700", currency="INR")
+        kpis = self._kpis(db, org)
+
+        result = self._ask(db, org, ctx, "Current billing metrics")
+
+        answer = result["answer"]
+        assert "**Dashboard Summary**" in answer, answer[:200]
+        assert money(kpis["total_revenue"], "INR") in answer, answer[:300]
+        assert "Collection Rate" in answer, answer[:300]
+        self._assert_no_kb_fallback(answer)
+
+    def test_summary_collection_rate_matches_dashboard_formula(self, db, org, ctx, customers):
+        """When there are CLEARED payments, the summary's Collection Rate must
+        equal the dashboard's formula (collections / billed revenue), i.e. the
+        same value the dedicated collection-rate metric reports — never a
+        hardcoded or divergent figure."""
+        from app.modules.billing.models import Payment, PaymentType, PaymentStatus
+        self._set_base_currency(db, org, "INR")
+        cust = add_customer(db, org, "CUST-DS-RATE", "Rate Co")
+        add_invoice(db, org, cust.id, "INV-DS-RATE", InvoiceStatus.SENT, 1000, currency="INR")
+        db.add(Payment(
+            organization_id=org.id, customer_id=cust.id,
+            payment_number="PAY-DS-RATE-1",
+            payment_type=PaymentType.INVOICE_PAYMENT, status=PaymentStatus.CLEARED,
+            amount=250, currency="INR", payment_date=date.today(),
+        ))
+        db.flush()
+        kpis = self._kpis(db, org)
+
+        billed = float(kpis["total_revenue"])
+        collected = float(kpis["collections"])
+        expected_rate = (
+            min(100.0, collected / billed * 100.0) if billed > 0
+            else (100.0 if collected > 0 else 0.0)
+        )
+        rate_text = f"{round(expected_rate, 1):.1f}".rstrip("0").rstrip(".") + "%"
+
+        result = self._ask(db, org, ctx, "Dashboard summary")
+
+        assert f"**Collection Rate:** {rate_text}" in result["answer"], result["answer"][:300]
+
+
+class TestCollectedRevenueDisambiguation:
+    """Collected-revenue vs revenue conflation bug: 'collected revenue' /
+    'received revenue' / 'cleared revenue' / 'how much have I collected' must
+    route to the Collections metric (cleared payments received) — NEVER the
+    Revenue/billed metric — and each answer's label must match the selected
+    metric. Billed revenue (₹219,964.20) and cleared payments (₹47,600.91)
+    must never be shown interchangeably."""
+
+    def _set_base_currency(self, db, org, code="INR"):
+        from app.modules.billing.models import CurrencyCode
+        from app.modules.billing.services.settings_service import BillingConfigurationService
+        config = BillingConfigurationService(db).get_configuration(org.id)
+        config.base_currency = CurrencyCode[code] if hasattr(CurrencyCode, code) else code
+        db.flush()
+
+    def _seed(self, db, org, customers):
+        from app.modules.billing.models import Payment, PaymentStatus, PaymentType
+        add_invoice(db, org, customers["go"].id, "INV-CRC-1", InvoiceStatus.SENT,
+                    119964.20, currency="INR")
+        add_invoice(db, org, customers["acme"].id, "INV-CRC-2", InvoiceStatus.SENT,
+                    100000.00, currency="INR")
+        db.add_all([
+            Payment(organization_id=org.id, customer_id=customers["go"].id,
+                    payment_number="PAY-CRC-1", payment_type=PaymentType.INVOICE_PAYMENT,
+                    status=PaymentStatus.CLEARED, amount=20000.00, currency="INR",
+                    payment_date=date.today()),
+            Payment(organization_id=org.id, customer_id=customers["go"].id,
+                    payment_number="PAY-CRC-2", payment_type=PaymentType.INVOICE_PAYMENT,
+                    status=PaymentStatus.CLEARED, amount=15000.00, currency="INR",
+                    payment_date=date.today()),
+            Payment(organization_id=org.id, customer_id=customers["acme"].id,
+                    payment_number="PAY-CRC-3", payment_type=PaymentType.INVOICE_PAYMENT,
+                    status=PaymentStatus.CLEARED, amount=12600.91, currency="INR",
+                    payment_date=date.today()),
+        ])
+        db.flush()
+
+    def _ask(self, db, org, ctx, phrase):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid=f"test-crc-{abs(hash(phrase)) % 10**9}")
+        intent = engine._classify_intent(conv, phrase, ctx)
+        return intent, engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
+
+    def _kpis(self, db, org):
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        return BillingDashboardService(db).get_kpis(organization_id=org.id)
+
+    @pytest.mark.parametrize("phrase", [
+        "What is my current collected revenue?",
+        "What is my collected revenue?",
+        "How much revenue have I collected?",
+        "How much revenue have we collected?",
+        "How much have we collected?",
+        "What have I collected so far?",
+        "what i have collected so far",
+        "Show me cash collected.",
+        "How much revenue did we receive?",
+        "How much revenue has been cleared?",
+        "Show me received revenue.",
+        "What is my cleared revenue?",
+        "What are our total collections?",
+        "collections this month",
+    ])
+    def test_collected_revenue_routes_to_collections(self, db, org, ctx, customers, phrase):
+        """Every collection-qualified / pure-collections phrasing must route to
+        the Collections metric, never Revenue — and label the answer
+        'Total collections', never 'Total revenue'."""
+        self._set_base_currency(db, org)
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, phrase)
+        assert intent["intent"] == "metric_collections", (
+            f"{phrase!r} routed to {intent['intent']}, expected metric_collections"
+        )
+        assert "Total collections is" in result["answer"], (
+            f"{phrase!r} answer: {result['answer'][:200]}"
+        )
+
+    @pytest.mark.parametrize("phrase", [
+        "What's my total revenue?",
+        "What is my revenue?",
+        "Show me revenue.",
+        "Total Revenue",
+    ])
+    def test_plain_revenue_stays_revenue(self, db, org, ctx, customers, phrase):
+        """Plain revenue phrasings (no collection qualifier) must keep routing
+        to the Revenue/billed metric with the 'Total revenue' label."""
+        self._set_base_currency(db, org)
+        self._seed(db, org, customers)
+        intent, result = self._ask(db, org, ctx, phrase)
+        assert intent["intent"] == "metric_revenue", (
+            f"{phrase!r} routed to {intent['intent']}, expected metric_revenue"
+        )
+        assert "Total revenue is" in result["answer"], result["answer"][:200]
+
+    def test_collections_value_is_cleared_payments_not_billed_revenue(
+            self, db, org, ctx, customers):
+        """Hard regression: Collections must equal the cleared-payments figure
+        (₹47,600.91 from the fixture), Revenue the billed figure
+        (₹219,964.20) — and the two must never be shown interchangeably."""
+        self._set_base_currency(db, org)
+        self._seed(db, org, customers)
+        kpis = self._kpis(db, org)
+        assert abs(float(kpis["collections"]) - 47600.91) < 0.01, kpis["collections"]
+        assert abs(float(kpis["total_revenue"]) - 219964.20) < 0.01, kpis["total_revenue"]
+
+        collections_answer = self._ask(
+            db, org, ctx, "What is my current collected revenue?")[1]["answer"]
+        revenue_answer = self._ask(db, org, ctx, "What's my total revenue?")[1]["answer"]
+
+        col_fig = money(kpis["collections"], "INR")
+        rev_fig = money(kpis["total_revenue"], "INR")
+        assert col_fig != rev_fig, "billed revenue and cleared payments are identical — fixture broken"
+
+        assert "Total collections is" in collections_answer, collections_answer
+        assert col_fig in collections_answer, (
+            f"collections answer missing cleared figure {col_fig}: {collections_answer}"
+        )
+        assert rev_fig not in collections_answer, (
+            f"collections answer leaked billed revenue {rev_fig}: {collections_answer}"
+        )
+
+        assert "Total revenue is" in revenue_answer, revenue_answer
+        assert rev_fig in revenue_answer, (
+            f"revenue answer missing billed figure {rev_fig}: {revenue_answer}"
+        )
+        assert col_fig not in revenue_answer, (
+            f"revenue answer leaked cleared figure {col_fig}: {revenue_answer}"
+        )
+
+    def test_revenue_and_collections_summary_shows_both_distinctly(
+            self, db, org, ctx, customers):
+        """The compound 'revenue and collections summary' must surface BOTH
+        figures with distinct labels (Total Revenue vs Collections), never just
+        one of them."""
+        self._set_base_currency(db, org)
+        self._seed(db, org, customers)
+        kpis = self._kpis(db, org)
+
+        intent, result = self._ask(db, org, ctx, "give me a revenue and collections summary")
+        assert intent["intent"] == "dashboard_summary", intent
+        answer = result["answer"]
+        assert "**Total Revenue:**" in answer, answer
+        assert "**Collections:**" in answer, answer
+        assert money(kpis["total_revenue"], "INR") in answer, answer
+        assert money(kpis["collections"], "INR") in answer, answer
+        assert money(kpis["total_revenue"], "INR") != money(kpis["collections"], "INR")
+        assert result["mode"] == "M1_INSPECT", answer[:200]
 
 
 class TestDomainGuardrails:
@@ -2468,6 +3297,8 @@ class TestDuplicateExecutionGuard(unittest.TestCase):
 
         confirmation = MagicMock()
         confirmation.status = ConfirmationStatus.CONFIRMED
+        # Real confirm_action stores the preview hash on the confirmation.
+        confirmation.confirmation_phrase_hash = "hash123"
 
         prior_execution = MagicMock()
         prior_execution.execution_uid = "exec-001"
@@ -2549,6 +3380,8 @@ class TestTerminalStateAfterExecution(unittest.TestCase):
         preview.expires_at = None
 
         confirmation = MagicMock()
+        # Real confirm_action stores the preview hash on the confirmation.
+        confirmation.confirmation_phrase_hash = "hash"
 
         # Standard query chain: db.query().filter().first()
         # Order: _get_draft, preview, confirmation, idempotency check
@@ -3201,3 +4034,165 @@ class TestRefundIntentRegression:
         assert result["mode"] == "M2_PREPARE", result["mode"]
         assert "Refund" in result["answer"], result["answer"][:200]
         assert db.query(AIActionDraft).count() == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# P0 regression — the sanitised exact phrase actress reported.  Toll-call
+# "Create an invoice for TOM for consulting, ₹500" must STOP at M2/PREPARE —
+# it must render an offering (Preview/Cancel) and explicitly require a preview
+# followed by a hash-bound confirmation.  EXECUTION MUST NEVER HAPPEN WITHOUT
+# AN EXPLICIT PREVIEW + CONFIRM.  (This is the Guardrail §9 stages-5/6 bound.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestInvoiceDraftP0StopAtPreview:
+    """User report: the exact phrasing "Create an invoice for TOM for
+    consulting, ₹500" skipped the Preview (M3) card and confirmation, going
+    Prepare→"Invoice Draft — Completed/executed".  Guards enforced here:
+      (1) the handler synthesises a draft card whose only actions are
+          Preview + Cancel — no confirm/execute shortcut appears in the
+          chat response;
+      (2) preview of that draft REQUIRES confirmation (policy result
+          CONFIRMATION_REQUIRED, never READY_TO_EXECUTE for R2);
+      (3) calling execute BEFORE any confirmation raises
+          ActionEngineError("Confirmation required...") and writes nothing;
+      (4) the legitimate Preview→Confirm→Execute path still succeeds,
+          proving the guard doesn't just break action execution."""
+
+    EXACT_PHRASE = "Create an invoice for TOM for consulting, \u20b9500"
+
+    @pytest.fixture()
+    def tom(self, db, org):
+        cust = add_customer(db, org, "CUST-P0-TOM", "TOM")
+        cust.currency = "INR"
+        db.flush()
+        return cust
+
+    def _draft(self, db, org, ctx, phrase, uid):
+        from app.modules.chatbot.conversation.engine import ConversationEngine
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, uid=uid)
+        intent = engine._classify_intent(conv, phrase, ctx)
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, phrase, intent, ctx)
+        return engine, conv, intent, result
+
+    def test_exact_phrase_lands_m2_and_offers_preview_only(self, db, org, ctx, tom):
+        """(1)(2) The sanitised phrase lands M2_PREPARE, its action list offers
+        ONLY Preview/Cancel, and there is no confirm_draft/execute shortcut in
+        the response."""
+        from app.modules.chatbot.models import AIActionExecution
+
+        _, _, intent, result = self._draft(
+            db, org, ctx, self.EXACT_PHRASE, "conv-p0-exact")
+
+        assert intent["intent"] == "action_draft", intent
+        assert intent["risk_class"] == "R2", intent
+        assert result["mode"] == "M2_PREPARE", result["mode"]
+
+        draft_card = result["draft_card"]
+        assert draft_card["action_type"] == "invoice_draft"
+        assert draft_card["customer_name"] == "TOM"
+        assert draft_card["subtotal"] == "500"
+        assert draft_card["total"] == "500"
+
+        actions = result["actions"]
+        labels = [a["label"] for a in actions]
+        assert labels == ["Preview", "Cancel"], (
+            f"draft card must offer ONLY Preview/Cancel, got {labels}")
+        assert all(a["action"].endswith("_draft") for a in actions)
+        assert not any(a["action"].startswith("confirm_") or
+                       a["action"].startswith("execute_")
+                       for a in actions)
+        assert "not confirm_required" not in result["answer"].lower()
+        assert db.query(AIActionExecution).count() == 0
+
+    def test_execute_without_confirm_after_preview_raises(self, db, org, ctx, tom):
+        """(3) Even after a valid preview, execute with NO confirmation record
+        must raise 'Confirmation required' and must not write any execution."""
+        from app.modules.chatbot.actions.action_engine import (
+            ActionEngine, ActionEngineError)
+        from app.modules.chatbot.models import AIActionExecution
+
+        _, _, _, result = self._draft(
+            db, org, ctx, self.EXACT_PHRASE, "conv-p0-exec-no-conf")
+        action_uid = result["draft_card"]["action_uid"]
+
+        engine = ActionEngine(db)
+        preview = engine.generate_preview(ctx=ctx, action_uid=action_uid, commit=False)
+        assert preview["requires_confirmation"] is True
+        policy = preview["policy_result"]
+        assert policy["result"] == "CONFIRMATION_REQUIRED", policy
+        assert policy["result"] != "READY_TO_EXECUTE", policy
+
+        with pytest.raises(ActionEngineError, match="Confirmation required"):
+            engine.execute_action(
+                ctx=ctx, action_uid=action_uid, idempotency_key="p0-no-conf")
+
+        assert db.query(AIActionExecution).count() == 0
+
+    def test_unbound_confirmation_does_not_authorize_execution(
+            self, db, org, ctx, tom):
+        """(3b) A confirmation recorded against a DIFFERENT preview hash must
+        never authorize execution — the binding is re-checked at execute time."""
+        from app.modules.chatbot.actions.action_engine import (
+            ActionEngine, ActionEngineError)
+        from app.modules.chatbot.models import AIActionConfirmation, AIActionExecution
+
+        _, _, _, result = self._draft(
+            db, org, ctx, self.EXACT_PHRASE, "conv-p0-unbound-conf")
+        action_uid = result["draft_card"]["action_uid"]
+
+        engine = ActionEngine(db)
+        preview = engine.generate_preview(ctx=ctx, action_uid=action_uid, commit=True)
+
+        # Simulate a confirmation that genuinely exists in the DB but was
+        # written for some other preview/hash.
+        stale_confirmation = AIActionConfirmation(
+            confirmation_uid="p0-stale-conf",
+            action_preview_id=0,
+            confirmed_by_user_id=ctx.user_id,
+            confirmation_phrase_hash="stale-hash-does-not-match",
+            status="CONFIRMED",
+        )
+        db.add(stale_confirmation)
+        db.flush()
+
+        with pytest.raises(ActionEngineError, match="Confirmation required"):
+            engine.execute_action(
+                ctx=ctx, action_uid=action_uid, idempotency_key="p0-unbound")
+
+        assert db.query(AIActionExecution).count() == 0
+
+    def test_confirm_then_execute_still_creates_invoice(self, db, org, ctx, tom):
+        """(4) The legitimate Preview→Confirm→Execute path is preserved —
+        this guard is about the missing confirmation, not about blocking
+        governed actions entirely."""
+        from app.modules.chatbot.actions.action_engine import ActionEngine
+        from app.modules.chatbot.models import AIActionExecution
+        from app.modules.billing.models import Invoice, InvoiceStatus
+
+        _, _, _, result = self._draft(
+            db, org, ctx, self.EXACT_PHRASE, "conv-p0-legit")
+        action_uid = result["draft_card"]["action_uid"]
+
+        engine = ActionEngine(db)
+        preview = engine.generate_preview(ctx=ctx, action_uid=action_uid, commit=True)
+        assert preview["requires_confirmation"] is True
+
+        engine.confirm_action(
+            ctx=ctx,
+            action_uid=action_uid,
+            preview_uid=preview["preview_uid"],
+            preview_hash=preview["preview_hash"],
+        )
+
+        execution = engine.execute_action(
+            ctx=ctx, action_uid=action_uid, idempotency_key="p0-legit")
+        assert execution["status"] == "succeeded"
+        assert db.query(AIActionExecution).count() == 1
+
+        invoice = db.query(Invoice).filter(
+            Invoice.customer_id == tom.id).first()
+        assert invoice is not None
+        assert invoice.status == InvoiceStatus.SENT
+        assert str(invoice.total_amount) == "500.00", str(invoice.total_amount)
