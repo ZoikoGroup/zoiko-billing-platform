@@ -6,12 +6,13 @@ modules/billing/routers/invoice_router.py
 from typing import Optional
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.exceptions import BadRequestException
 from app.modules.billing.services import InvoiceService
 from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
@@ -37,10 +38,28 @@ router = APIRouter(prefix="/invoices", tags=["🧾 Invoices"])
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=InvoiceResponse)
 def create_invoice(
     body: InvoiceCreate,
+    idempotency_key_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
 ):
+    body_key = (body.idempotency_key or "").strip() or None
+    header_key = (idempotency_key_header or "").strip() or None
+    if body_key and header_key and body_key != header_key:
+        raise BadRequestException("Body idempotency_key and Idempotency-Key header must match")
+
+    svc = InvoiceService(db)
+    request_key = header_key or body_key
+    replay = svc.find_idempotent_invoice(
+        organization_id=current_user.organization_id,
+        customer_id=body.customer_id,
+        invoice_number=body.invoice_number,
+        idempotency_key=request_key,
+        data=body.model_dump(exclude={"customer_id", "invoice_number", "idempotency_key"}),
+    )
+    if replay is not None:
+        return replay
+
     # AC-01 (ZB-COM-ENT-001 Part 2): billing.invoice.monthly_limit — a limit
     # check via get_limit-style resolution, not a boolean gate. Window is the
     # current UTC calendar month, matching the key's own name.
@@ -65,13 +84,13 @@ def create_invoice(
         actor_id=current_user.id,
     )
 
-    svc = InvoiceService(db)
     return svc.create_invoice(
         organization_id=current_user.organization_id,
         created_by=current_user.id,
         customer_id=body.customer_id,
         invoice_number=body.invoice_number,
-        **body.model_dump(exclude={"customer_id", "invoice_number"}),
+        idempotency_key=header_key or body_key,
+        **body.model_dump(exclude={"customer_id", "invoice_number", "idempotency_key"}),
     )
 
 

@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import json
 import logging
 from datetime import date, datetime
 from decimal import Decimal
@@ -274,8 +275,103 @@ class InvoiceService:
             "total_amount": totals["total_amount"],
         }
 
-    def create_invoice(self, organization_id: int, created_by: int, customer_id: int, invoice_number: str, _skip_recalculate: bool = False, **data: Any) -> Invoice:
+    @staticmethod
+    def _invoice_request_hash(
+        customer_id: int,
+        invoice_number: Optional[str],
+        data: Dict[str, Any],
+    ) -> str:
+        """Return a stable fingerprint for an idempotent draft-invoice request."""
+        payload = {
+            "customer_id": customer_id,
+            "invoice_number": invoice_number,
+            **data,
+        }
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def find_idempotent_invoice(
+        self,
+        organization_id: int,
+        customer_id: int,
+        invoice_number: Optional[str],
+        idempotency_key: Optional[str],
+        data: Dict[str, Any],
+        request_hash: Optional[str] = None,
+    ) -> Optional[Invoice]:
+        """Return a prior draft for a matching retry, or raise on reuse.
+
+        Routers can call this before entitlement/quota checks so a retry of an
+        already-committed request still receives its original response rather
+        than being rejected by a later monthly limit.
+        """
+        idempotency_key = (idempotency_key or "").strip() or None
+        if not idempotency_key:
+            return None
+        if len(idempotency_key) > 255:
+            raise BadRequestException("Idempotency-Key must be 255 characters or fewer")
+
+        request_hash = request_hash or self._invoice_request_hash(
+            customer_id,
+            invoice_number,
+            filter_allowed(data, INVOICE_ALLOWED_FIELDS),
+        )
+        existing = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.organization_id == organization_id,
+                Invoice.idempotency_key == idempotency_key,
+            )
+            .first()
+        )
+        if existing is None:
+            return None
+        if (
+            existing.idempotency_request_hash
+            and existing.idempotency_request_hash != request_hash
+        ):
+            raise BadRequestException(
+                "Idempotency-Key was already used with a different invoice request"
+            )
+        return existing
+
+    def create_invoice(
+        self,
+        organization_id: int,
+        created_by: int,
+        customer_id: int,
+        invoice_number: Optional[str],
+        _skip_recalculate: bool = False,
+        idempotency_key: Optional[str] = None,
+        **data: Any,
+    ) -> Invoice:
         data = filter_allowed(data, INVOICE_ALLOWED_FIELDS)
+        idempotency_key = (idempotency_key or "").strip() or None
+        if idempotency_key and len(idempotency_key) > 255:
+            raise BadRequestException("Idempotency-Key must be 255 characters or fewer")
+        request_hash = (
+            self._invoice_request_hash(customer_id, invoice_number, data)
+            if idempotency_key
+            else None
+        )
+
+        if idempotency_key:
+            existing = self.find_idempotent_invoice(
+                organization_id,
+                customer_id,
+                invoice_number,
+                idempotency_key,
+                data,
+                request_hash=request_hash,
+            )
+            if existing is not None:
+                return existing
+
         customer = self.customer_service.get_customer(customer_id, organization_id)
 
         # Use customer's currency if not explicitly provided, else org default
@@ -328,8 +424,27 @@ class InvoiceService:
             )
 
         try:
-            inv = self.repo.create(organization_id, customer_id=customer_id, invoice_number=invoice_number, status=InvoiceStatus.DRAFT, **data)
+            inv = self.repo.create(
+                organization_id,
+                customer_id=customer_id,
+                invoice_number=invoice_number,
+                idempotency_key=idempotency_key,
+                idempotency_request_hash=request_hash,
+                status=InvoiceStatus.DRAFT,
+                **data,
+            )
         except AlreadyExistsException:
+            if idempotency_key:
+                existing = self.find_idempotent_invoice(
+                    organization_id,
+                    customer_id,
+                    invoice_number,
+                    idempotency_key,
+                    data,
+                    request_hash=request_hash,
+                )
+                if existing is not None:
+                    return existing
             if not auto_numbering:
                 # Manual number: exists() passed but the DB unique constraint
                 # (organization_id, invoice_number) fired between check and insert.
@@ -344,7 +459,15 @@ class InvoiceService:
                 if self.repo.exists(organization_id, invoice_number=invoice_number):
                     continue
                 try:
-                    inv = self.repo.create(organization_id, customer_id=customer_id, invoice_number=invoice_number, status=InvoiceStatus.DRAFT, **data)
+                    inv = self.repo.create(
+                        organization_id,
+                        customer_id=customer_id,
+                        invoice_number=invoice_number,
+                        idempotency_key=idempotency_key,
+                        idempotency_request_hash=request_hash,
+                        status=InvoiceStatus.DRAFT,
+                        **data,
+                    )
                     break
                 except AlreadyExistsException:
                     continue

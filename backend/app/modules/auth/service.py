@@ -207,7 +207,25 @@ def login_user(db: Session, email: str, password: str) -> dict:
     except sa_exc.OperationalError:
         logger.error("Database connection failed during login for %s", email)
         raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
+
+    now = datetime.utcnow()
+    if user is not None and user.login_locked_until is not None:
+        if user.login_locked_until > now:
+            # Keep the response indistinguishable from a bad credential so a
+            # caller cannot use the lockout state to enumerate accounts.
+            raise UnauthorizedException("Invalid email or password.")
+        user.failed_login_attempts = 0
+        user.login_locked_until = None
+
     if user is None or not verify_password(password, user.hashed_password):
+        if user is not None:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            max_attempts = max(1, settings.LOGIN_MAX_FAILED_ATTEMPTS)
+            if user.failed_login_attempts >= max_attempts:
+                user.login_locked_until = now + timedelta(
+                    minutes=max(1, settings.LOGIN_LOCKOUT_MINUTES)
+                )
+            db.commit()
         raise UnauthorizedException("Invalid email or password.")
 
     if user.organization_id:
@@ -224,7 +242,9 @@ def login_user(db: Session, email: str, password: str) -> dict:
     # successful credential check; committed with the request so the
     # Administrators & Users directory can show genuine recency (NULL =
     # never logged in, surfaced as UNKNOWN — never inferred).
-    user.last_login_at = datetime.utcnow()
+    user.failed_login_attempts = 0
+    user.login_locked_until = None
+    user.last_login_at = now
     db.commit()
 
     token_payload = {

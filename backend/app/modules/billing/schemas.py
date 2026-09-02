@@ -2108,6 +2108,12 @@ class SubscriptionCreate(BaseModel):
     pricing_plan_id: Optional[int] = None
     price_source: Optional[str] = None
     subscription_number: str = Field(..., min_length=1, max_length=50)
+    idempotency_key: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="Stable key used to safely retry this creation request.",
+    )
     currency: Optional[str] = Field(None, max_length=3)
     quantity: int = 1
     unit_price: Decimal
@@ -2203,6 +2209,12 @@ class InvoiceCreate(BaseModel):
     quotation_id: Optional[int] = None
     contract_id: Optional[int] = None
     invoice_number: Optional[str] = Field(None, min_length=1, max_length=50)
+    idempotency_key: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="Stable key used to safely retry draft invoice creation.",
+    )
     invoice_type: InvoiceType = InvoiceType.STANDARD
     issue_date: date
     due_date: date

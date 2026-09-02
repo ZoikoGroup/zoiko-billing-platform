@@ -88,12 +88,32 @@ warnings.filterwarnings(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not settings.DEBUG and settings.BILLING_SECRET_KEY == "change-me-billing-platform-secret":
+    _SECRET_PLACEHOLDERS = frozenset({
+        "change-me-billing-platform-secret",
+        "change-me-to-a-long-random-string",
+    })
+    if not settings.DEBUG and settings.BILLING_SECRET_KEY in _SECRET_PLACEHOLDERS:
         logger.critical(
-            "BILLING_SECRET_KEY is still the default placeholder. "
-            "Set a unique secret in .env before running in production."
+            "BILLING_SECRET_KEY is still a default placeholder (%r). "
+            "Set a unique secret in .env before running in production.",
+            settings.BILLING_SECRET_KEY,
         )
         raise SystemExit("BILLING_SECRET_KEY must be overridden in production.")
+    if not settings.DEBUG:
+        mfa_key = (settings.MFA_ENCRYPTION_KEY or "").strip()
+        if not mfa_key:
+            logger.critical(
+                "MFA_ENCRYPTION_KEY is not configured. Set a Fernet key before "
+                "running Super Admin MFA in production."
+            )
+            raise SystemExit("MFA_ENCRYPTION_KEY must be configured in production.")
+        try:
+            from cryptography.fernet import Fernet
+
+            Fernet(mfa_key.encode("utf-8"))
+        except (TypeError, ValueError):
+            logger.critical("MFA_ENCRYPTION_KEY is not a valid Fernet key.")
+            raise SystemExit("MFA_ENCRYPTION_KEY must be a valid Fernet key in production.")
     validate_production_cors(_cors_origins, settings.DEBUG)
     try:
         initialize_database()
@@ -129,6 +149,35 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(ZoikoException, zoiko_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Standard, safe security headers appropriate for a SPA + JSON API.
+
+    - X-Content-Type-Options: nosniff — prevents MIME-type sniffing (no
+      CSP dependency, safe for any deployment).
+    - Referrer-Policy: strict-origin-when-cross-origin — modern browsers send
+      full URL same-origin, only origin cross-origin. Safe and default-y.
+    - X-Frame-Options: DENY — prevents clickjacking of any page that renders
+      in a browser (the SPA never legitimately embeds in an <iframe>).
+    - X-XSS-Protection: 0 — the legacy XSS filter is disabled by modern
+      browsers and can introduce cross-site issues; CSP is the real defense
+      (deliberately not set to 1;mode=block).
+
+    HSTS is intentionally NOT set here: it must only be enabled when the
+    deployment topology is known to be HTTPS-only across the board (set it
+    at the proxy/edge instead). CSP is not set on API responses because the
+    frontend serves its own CSP headers via the static host; adding one here
+    risks breaking the app without validation.
+    """
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["X-Request-ID"] = getattr(request.state, "request_id", "")
+    return response
 
 
 @app.middleware("http")
@@ -174,7 +223,12 @@ app.add_middleware(
     allow_origin_regex=r".*" if settings.DEBUG else None,
     allow_credentials=True,
     allow_methods=["*"] if settings.DEBUG else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"] if settings.DEBUG else ["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["*"] if settings.DEBUG else [
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "X-Request-ID",
+    ],
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────

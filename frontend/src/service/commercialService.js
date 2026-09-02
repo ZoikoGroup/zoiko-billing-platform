@@ -40,9 +40,6 @@ export const setOrganizationStatus = (organizationId, isActive) =>
     params: { is_active: isActive },
   });
 
-export const deleteOrganization = (organizationId) =>
-  api.delete(`/api/organizations/${organizationId}`);
-
 // ── Billing classification (ZB-COM-BILL-001 Phase 2) ────────────────────
 export const updateBillingClassification = (organizationId, billingClassification, reason) =>
   api.patch(`/api/organizations/${organizationId}/billing-classification`, {

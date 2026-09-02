@@ -27,6 +27,7 @@ HONEST SCOPE (mirrors FinancialConsistencyService):
 import logging
 import uuid
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,8 +66,9 @@ class ReconciliationService:
             select(Invoice).where(Invoice.status.in_(NON_DRAFT_INVOICE_STATUSES))
         ).scalars().all()
         for inv in rows:
-            expected = float((inv.total_amount or 0) - (inv.paid_amount or 0))
-            if abs(expected - float(inv.balance_due or 0)) > 0.005:
+            expected = Decimal(str(inv.total_amount or 0)) - Decimal(str(inv.paid_amount or 0))
+            actual = Decimal(str(inv.balance_due or 0))
+            if abs(expected - actual) > Decimal("0.005"):
                 exceptions.append(
                     ReconciliationException(
                         kind="invoice_balance_mismatch",
@@ -91,12 +93,13 @@ class ReconciliationService:
         alloc_rows = self.db.execute(
             select(PaymentAllocation.payment_id, PaymentAllocation.amount)
         ).all()
-        totals: dict[int, float] = {}
+        totals: dict[int, Decimal] = {}
         for payment_id, amount in alloc_rows:
-            totals[payment_id] = totals.get(payment_id, 0.0) + float(amount or 0)
+            totals[payment_id] = totals.get(payment_id, Decimal("0")) + Decimal(str(amount or 0))
         for pay in payments:
-            allocated = totals.get(pay.id, 0.0)
-            if allocated > float(pay.amount or 0) + 0.005:
+            allocated = totals.get(pay.id, Decimal("0"))
+            payment_amount = Decimal(str(pay.amount or 0))
+            if allocated > payment_amount + Decimal("0.005"):
                 exceptions.append(
                     ReconciliationException(
                         kind="payment_over_allocation",
@@ -106,8 +109,8 @@ class ReconciliationService:
                         detail={
                             "payment_number": pay.payment_number,
                             "currency": pay.currency,
-                            "payment_amount": float(pay.amount or 0),
-                            "allocated_total": round(allocated, 2),
+                            "payment_amount": float(payment_amount),
+                            "allocated_total": round(float(allocated), 2),
                         },
                     )
                 )
@@ -116,6 +119,70 @@ class ReconciliationService:
     # ------------------------------------------------------------------
     # Run lifecycle
     # ------------------------------------------------------------------
+    @staticmethod
+    def _exception_identity(exception: ReconciliationException) -> tuple:
+        """Return the stable business identity of a detected discrepancy."""
+        return (
+            exception.kind,
+            exception.organization_id,
+            exception.entity_type,
+            exception.entity_id,
+        )
+
+    def _upsert_run_exceptions(
+        self,
+        run: ReconciliationRun,
+        candidates: list[ReconciliationException],
+    ) -> list[ReconciliationException]:
+        """Keep one active exception row per financial discrepancy.
+
+        A reconciliation run is still recorded every time, but an unresolved
+        discrepancy is superseded onto the latest run instead of producing a
+        new ownership row on every scheduled execution. Resolved exceptions
+        intentionally start a new occurrence if the defect returns.
+        """
+        active_statuses = (
+            ReconciliationExceptionStatus.OPEN,
+            ReconciliationExceptionStatus.ACKNOWLEDGED,
+        )
+        resolved: list[ReconciliationException] = []
+        seen: dict[tuple, ReconciliationException] = {}
+
+        for candidate in candidates:
+            identity = self._exception_identity(candidate)
+            existing = seen.get(identity)
+            if existing is None:
+                query = self.db.query(ReconciliationException).filter(
+                    ReconciliationException.kind == candidate.kind,
+                    ReconciliationException.entity_type == candidate.entity_type,
+                    ReconciliationException.status.in_(active_statuses),
+                )
+                if candidate.organization_id is None:
+                    query = query.filter(ReconciliationException.organization_id.is_(None))
+                else:
+                    query = query.filter(ReconciliationException.organization_id == candidate.organization_id)
+                if candidate.entity_id is None:
+                    query = query.filter(ReconciliationException.entity_id.is_(None))
+                else:
+                    query = query.filter(ReconciliationException.entity_id == candidate.entity_id)
+                existing = query.order_by(ReconciliationException.id.desc()).first()
+
+            if existing is not None:
+                # The latest run owns the currently actionable row. Preserve
+                # acknowledgement/ownership state while refreshing evidence.
+                existing.run_id = run.id
+                existing.detail = candidate.detail
+                resolved.append(existing)
+                seen[identity] = existing
+                continue
+
+            candidate.run_id = run.id
+            self.db.add(candidate)
+            resolved.append(candidate)
+            seen[identity] = candidate
+
+        return resolved
+
     def run_reconciliation(
         self,
         trigger: str = "manual",
@@ -208,9 +275,7 @@ class ReconciliationService:
                 "invariants evaluated this run."
             )
 
-        for exc in found:
-            exc.run_id = run.id
-            self.db.add(exc)
+        found = self._upsert_run_exceptions(run, found)
 
         run.checks_total = checks_total
         run.exceptions_found = len(found)
@@ -267,31 +332,78 @@ class ReconciliationService:
     ATTENTION_SOURCE = "ledger_reconciliation"
 
     @classmethod
-    def _run_key(cls, run_id: int) -> str:
-        return f"{cls.ATTENTION_SOURCE}:run-{run_id}"
+    def _exception_attention_key(cls, exception: ReconciliationException) -> str:
+        return ":".join(
+            (
+                cls.ATTENTION_SOURCE,
+                "exception",
+                exception.kind,
+                str(exception.organization_id or "none"),
+                exception.entity_type,
+                str(exception.entity_id or "none"),
+            )
+        )
 
     def report_to_attention_engine(self, run: ReconciliationRun) -> None:
         from app.modules.super_admin.attention_service import AttentionService
+        from app.modules.super_admin.models import AttentionItem, AttentionStatus
 
         attention = AttentionService(self.db)
+        seen_keys: set[str] = set()
         if run.state == ReconciliationRunState.FAILED:
-            kinds = sorted({e.kind for e in run.exceptions})
-            attention.report_or_update(
-                source=self.ATTENTION_SOURCE,
-                source_key=self._run_key(run.id),
-                title=f"Ledger reconciliation failed ({run.exceptions_found} exception(s))",
-                description=(
-                    f"Reconciliation run #{run.id} found {run.exceptions_found} "
-                    f"discrepanc(y|ies) of kind {kinds}. Processor source: "
-                    f"'{run.processor_source}'. Assign owners in the "
-                    f"reconciliation console."
-                ),
-                base_severity=AttentionSeverity.P1,
+            for exception in run.exceptions:
+                key = self._exception_attention_key(exception)
+                seen_keys.add(key)
+                attention.report_or_update(
+                    source=self.ATTENTION_SOURCE,
+                    source_key=key,
+                    title=f"Ledger discrepancy: {exception.kind}",
+                    description=(
+                        f"Reconciliation run #{run.id} detected {exception.kind} "
+                        f"for {exception.entity_type} {exception.entity_id or 'without an entity id'} "
+                        f"in organization {exception.organization_id or 'unknown'}. "
+                        "Assign an owner in the reconciliation console."
+                    ),
+                    base_severity=AttentionSeverity.P1,
+                    organization_id=exception.organization_id,
+                )
+
+        # A clean/partial run means previously observed discrepancies are no
+        # longer present. Resolve only reconciliation-generated open items and
+        # leave human mitigation/monitoring states untouched via auto_resolve.
+        open_items = (
+            self.db.query(AttentionItem)
+            .filter(
+                AttentionItem.source == self.ATTENTION_SOURCE,
+                AttentionItem.source_key.like(f"{self.ATTENTION_SOURCE}:exception:%"),
+                AttentionItem.status.in_([AttentionStatus.OPEN, AttentionStatus.ACKNOWLEDGED]),
             )
-        elif run.state in (ReconciliationRunState.VERIFIED, ReconciliationRunState.PARTIAL):
+            .all()
+        )
+        for item in open_items:
+            if item.source_key not in seen_keys:
+                attention.auto_resolve(
+                    source=self.ATTENTION_SOURCE,
+                    source_key=item.source_key,
+                    resolution_note=f"Reconciliation run #{run.id} no longer found this discrepancy.",
+                )
+
+        # Close summary items produced by versions that keyed attention to a
+        # run id. New runs use the stable discrepancy key above, so retaining
+        # those legacy rows would leave stale duplicate alerts visible.
+        legacy_items = (
+            self.db.query(AttentionItem)
+            .filter(
+                AttentionItem.source == self.ATTENTION_SOURCE,
+                AttentionItem.source_key.like(f"{self.ATTENTION_SOURCE}:run-%"),
+                AttentionItem.status.in_([AttentionStatus.OPEN, AttentionStatus.ACKNOWLEDGED]),
+            )
+            .all()
+        )
+        for item in legacy_items:
             attention.auto_resolve(
                 source=self.ATTENTION_SOURCE,
-                source_key=self._run_key(run.id),
-                resolution_note="Latest ledger reconciliation run found no exceptions.",
+                source_key=item.source_key,
+                resolution_note=f"Reconciliation attention key migrated by run #{run.id}.",
             )
         self.db.flush()

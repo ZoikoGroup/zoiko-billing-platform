@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -143,11 +145,65 @@ class SubscriptionService:
             )
         return org.currency
 
+    @staticmethod
+    def _subscription_request_hash(
+        customer_id: int,
+        plan_id: int,
+        subscription_number: str,
+        data: dict,
+    ) -> str:
+        """Return a stable fingerprint for an idempotent create request."""
+        payload = {
+            "customer_id": customer_id,
+            "plan_id": plan_id,
+            "subscription_number": subscription_number,
+            **data,
+        }
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     def create_subscription(
         self, organization_id: int, created_by: int, customer_id: int,
-        plan_id: int, subscription_number: str, **data: Any,
+        plan_id: int, subscription_number: str,
+        idempotency_key: Optional[str] = None,
+        **data: Any,
     ) -> Subscription:
         data = filter_allowed(data, SUB_ALLOWED_FIELDS)
+        idempotency_key = (idempotency_key or "").strip() or None
+        if idempotency_key and len(idempotency_key) > 255:
+            raise BadRequestException("Idempotency-Key must be 255 characters or fewer")
+
+        request_hash = self._subscription_request_hash(
+            customer_id,
+            plan_id,
+            subscription_number,
+            data,
+        ) if idempotency_key else None
+
+        if idempotency_key:
+            existing = (
+                self.db.query(Subscription)
+                .filter(
+                    Subscription.organization_id == organization_id,
+                    Subscription.idempotency_key == idempotency_key,
+                )
+                .first()
+            )
+            if existing is not None:
+                if (
+                    existing.idempotency_request_hash
+                    and existing.idempotency_request_hash != request_hash
+                ):
+                    raise BadRequestException(
+                        "Idempotency-Key was already used with a different subscription request"
+                    )
+                return existing
+
         self.customer_service.get_customer(customer_id, organization_id)
         plan = self.plan_repo.get_by_id(plan_id, organization_id)
         if not plan.is_active:
@@ -200,12 +256,41 @@ class SubscriptionService:
                 except (NotFoundException, BadRequestException) as e:
                     raise
 
-        sub = self.repo.create(
-            organization_id,
-            customer_id=customer_id, plan_id=plan_id,
-            subscription_number=subscription_number,
-            **data,
-        )
+        try:
+            sub = self.repo.create(
+                organization_id,
+                customer_id=customer_id,
+                plan_id=plan_id,
+                subscription_number=subscription_number,
+                idempotency_key=idempotency_key,
+                idempotency_request_hash=request_hash,
+                **data,
+            )
+        except AlreadyExistsException:
+            # The unique (organization_id, idempotency_key) constraint closes
+            # the pre-check race between concurrent requests. Re-read only
+            # when a key was supplied; ordinary duplicate numbers retain their
+            # existing error semantics.
+            if not idempotency_key:
+                raise
+            existing = (
+                self.db.query(Subscription)
+                .filter(
+                    Subscription.organization_id == organization_id,
+                    Subscription.idempotency_key == idempotency_key,
+                )
+                .first()
+            )
+            if existing is None:
+                raise
+            if (
+                existing.idempotency_request_hash
+                and existing.idempotency_request_hash != request_hash
+            ):
+                raise BadRequestException(
+                    "Idempotency-Key was already used with a different subscription request"
+                )
+            return existing
         self._log_event(organization_id, sub.id, "created", None, {"subscription_number": subscription_number, "plan_id": plan_id, "currency": data["currency"]}, created_by=created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Subscription", sub.id)
         return sub

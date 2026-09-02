@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -97,6 +98,11 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            # Multiple app replicas can start at once during a rollout. Keep
+            # the migration transaction itself serialized so two processes
+            # cannot race on the same alembic_version row or DDL.
+            if connection.dialect.name == "postgresql":
+                connection.execute(text("SELECT pg_advisory_xact_lock(73519001)"))
             context.run_migrations()
 
 
