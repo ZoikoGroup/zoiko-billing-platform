@@ -59,6 +59,14 @@ def _to_cents(amount) -> int:
     return int((value * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
 
 
+def _expected_livemode() -> bool:
+    """Whether this deployment is configured for Stripe *live* mode, inferred
+    from the configured secret key's prefix (Stripe's own convention:
+    sk_live_... vs sk_test_...). There's no separate "environment" setting to
+    check against — the key IS the environment here."""
+    return settings.PLATFORM_STRIPE_SECRET_KEY.startswith("sk_live_")
+
+
 def _stripe_module():
     try:
         import stripe
@@ -175,6 +183,22 @@ class PlatformStripeService:
             raise BadRequestException(f"Invalid Stripe webhook signature: {e}")
 
         event = event.to_dict() if hasattr(event, "to_dict") else event
+
+        # Environment check (PAY-01): Plane 1 uses a single, non-Connect
+        # Stripe account (unlike Plane 2's Connect flow, which resolves the
+        # tenant via the event's connected-account envelope) — there's no
+        # "account id" to check here, only test vs. live. Reject a
+        # live-mode event delivered to a test-configured deployment (or
+        # vice versa): a valid signature only proves the payload came from
+        # *some* Stripe webhook endpoint secret we hold, not that it's for
+        # the environment this process is actually running as.
+        event_livemode = event.get("livemode")
+        if event_livemode is not None and event_livemode != _expected_livemode():
+            raise BadRequestException(
+                f"Stripe webhook environment mismatch: event livemode={event_livemode}, "
+                f"this deployment is configured for livemode={_expected_livemode()}"
+            )
+
         event_id = event.get("id")
         event_type = event.get("type")
         data_object = (event.get("data") or {}).get("object") or {}

@@ -393,10 +393,29 @@ class OrganizationDirectoryService:
         )
         result: dict[int, Optional[datetime]] = {}
         for org in self.db.query(Organization).filter(Organization.id.in_(org_ids)).all():
-            candidates = [
-                c
-                for c in (org.updated_at, audit_max.get(org.id), attention_max.get(org.id))
-                if isinstance(c, datetime)
-            ]
-            result[org.id] = max(candidates) if candidates else None
+            result[org.id] = self._max_activity_datetime(
+                (org.updated_at, audit_max.get(org.id), attention_max.get(org.id))
+            )
         return result
+
+    @staticmethod
+    def _max_activity_datetime(candidates) -> Optional[datetime]:
+        """max() over a mix of naive/aware datetimes.
+
+        PlatformAuditLog.created_at is DateTime(timezone=True) (server-side
+        func.now(), tz-aware on Postgres — though SQLite silently strips
+        tzinfo on round-trip, which is why this never surfaced in the
+        SQLite-backed test suite) while Organization.updated_at /
+        AttentionItem.last_seen_at are naive DateTime (Python-side
+        datetime.utcnow()). max() over a mix of aware/naive datetimes
+        raises TypeError. Normalize every candidate to naive UTC (the
+        convention the rest of this codebase uses, e.g.
+        billing/services/admin_service.py's staleness check) before
+        comparing.
+        """
+        normalized = [
+            c.replace(tzinfo=None) if c.tzinfo is not None else c
+            for c in candidates
+            if isinstance(c, datetime)
+        ]
+        return max(normalized) if normalized else None

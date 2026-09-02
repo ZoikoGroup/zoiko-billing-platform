@@ -142,6 +142,9 @@ FIELD_ALIASES: Dict[str, str] = {
 }
 
 # Enterprise-scale safety limits — same rationale as the product importer.
+# This is the real untrusted-spreadsheet defense in this codebase — see the
+# matching comment in product_import_service.py for why (openpyxl parses
+# attacker-controlled bytes here; the frontend's `xlsx` package never does).
 MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_IMPORT_ROWS = 20_000
 

@@ -1,6 +1,9 @@
 # Zoiko Billing Platform — backend dependencies
 # Standalone platform: no payroll/HR modules.
-fastapi==0.111.0
+# fastapi pinned to latest stable as of 2026-09 (0.141.1) to pull in a fully
+# patched starlette transitively (9 advisories against the starlette resolved
+# by fastapi==0.111.0, including a multipart-parsing DoS) — see pip-audit.
+fastapi==0.141.1
 uvicorn[standard]==0.29.0
 sqlalchemy>=2.0.31
 psycopg[binary]>=3.1.18
@@ -10,13 +13,29 @@ psycopg[binary]>=3.1.18
 # create_all (see migrations/create_all/README.md for why).
 alembic>=1.13.0
 
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 pydantic[email]>=2.7.1
 pydantic-settings>=2.2.1
-python-jose[cryptography]==3.3.0
+# 3.4.0 fixes PYSEC-2024-232/233 and PYSEC-2025-185 (algorithm-confusion and
+# DoS). Pinned to 3.4.0 rather than the newer 3.5.0 since that's the vetted
+# fix version for these CVEs and hasn't itself been separately verified here.
+#
+# ACCEPTED RESIDUAL RISK (pyasn1, ecdsa): python-jose unconditionally
+# requires `ecdsa!=0.15` and `pyasn1<0.5.0,>=0.4.1` even with the
+# [cryptography] extra installed — these aren't optional. pyasn1<0.5.0
+# carries PYSEC-2026-2263/3455/3456/3457 (fixed in 0.6.3/0.6.4) and the
+# latest ecdsa (0.19.2, no fix available yet) carries PYSEC-2026-1325.
+# Pinning either package higher here makes `pip install -r requirements.txt`
+# fail outright (verified: jose's own resolver rejects pyasn1>=0.5.0 — see
+# pip-audit output from 2026-09). We accept this because our JWTs are HS256
+# only (settings.ALGORITHM, security.py), so jose's `cryptography` backend
+# does HMAC directly and never exercises ecdsa/pyasn1's RSA/EC ASN.1 code
+# paths — dead dependencies for us, not a reachable vulnerability. Re-check
+# this the next time python-jose cuts a release that relaxes the pyasn1 pin.
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-python-multipart==0.0.9
+python-multipart==0.0.32
 pillow>=10.0.0
 
 # Invoice/quote/credit-note/refund/write-off PDF generation (pdf_service.py),
@@ -30,7 +49,10 @@ stripe>=9.0.0
 
 slowapi
 cachetools
-openpyxl
+# Pinned (was unpinned) — this is the server-side parser for uploaded
+# product/customer spreadsheets (product_import_service.py,
+# customer_import_service.py); a security-relevant dependency shouldn't float.
+openpyxl==3.1.5
 email-validator
 apscheduler>=3.10,<4
 certifi>=2024.2.2

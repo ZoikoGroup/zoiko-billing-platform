@@ -8,7 +8,8 @@
     "start": "npm run dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "lucide-react": "^1.17.0",
@@ -18,13 +19,14 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@vitest/coverage-v8": "^4.1.11",
     "axe-core": "^4.13.0",
     "jest-axe": "^11.0.0",
     "jsdom": "^25.0.1",

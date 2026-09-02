@@ -310,6 +310,100 @@ def _verify_postgres_schema_is_migrated() -> None:
         )
 
 
+# Safety net for the manually-applied migrations in backend/migrations/ (27
+# hand-written scripts, superseded-but-still-real for a database that
+# predates the Alembic chain) — a small, explicit, hand-maintained list of
+# (table, column) pairs that CURRENTLY-RUNNING code paths actively depend
+# on. Deliberately not inferred from the ORM models: not every model column
+# maps to a manual migration, and an automatic model-vs-DB diff would flag
+# every future/optional column too, defeating the "loud but rare" point of
+# this check. Add an entry here only when a code path added in this
+# codebase's history would misbehave (not just look incomplete) without it.
+CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
+    # (table, column, migration script that introduced it, why current code needs it)
+    (
+        "reconciliation_runs", "plane",
+        "add_reconciliation_run_plane_column.py",
+        "REC-01 (super_admin/router.py) filters ReconciliationRun.plane == 'plane2'",
+    ),
+    (
+        "commercial_accounts", "stripe_customer_id",
+        "add_commercial_account_stripe_customer_id_column.py",
+        "platform_stripe_service.get_or_create_customer reads/writes this column",
+    ),
+    (
+        "platform_invoices", "public_token",
+        "add_platform_invoice_public_token_column.py",
+        "the public Stripe checkout endpoint (platform_stripe_router.py) routes by public_token",
+    ),
+    (
+        "commercial_subscriptions", "trial_ends_at",
+        "add_commercial_subscription_trial_ends_at_column.py",
+        "trial-eligibility/recovery-window checks in commercial subscription service",
+    ),
+    (
+        "platform_audit_logs", "actor_role",
+        "add_platform_audit_log_columns.py",
+        "PlatformAuditService.log writes actor_role on every platform audit entry",
+    ),
+]
+
+
+def verify_critical_columns_present(bind=None) -> None:
+    """Detect (never repair) a database that's missing a column the
+    currently-running code actively depends on, and fail startup loudly.
+
+    This is stricter than _verify_postgres_schema_is_migrated()'s missing
+    *table* check just above, which main.py's lifespan swallows into a
+    503-degraded start — a DB that hasn't connected/migrated at all yet is
+    a tolerated, transient state. A table that exists but is missing a
+    column the code touches is not transient: every request touching that
+    column will misbehave in a confusing way rather than cleanly 503. So
+    this is called from lifespan OUTSIDE the try/except around
+    initialize_database(), mirroring the existing BILLING_SECRET_KEY /
+    MFA_ENCRYPTION_KEY checks there (logger.critical + raise SystemExit) —
+    a stale-schema deploy is worse than a slow-to-connect database.
+
+    Never runs the migration itself (these are explicitly manual/reviewed
+    scripts) and never flags a column that isn't on CRITICAL_COLUMNS above,
+    so a database that's ahead of this list (newer columns not yet added
+    here) can never false-positive.
+    """
+    try:
+        inspector = inspect(bind or engine)
+        existing_tables = set(inspector.get_table_names())
+    except Exception as exc_info:
+        # Can't even connect — the existing "DB unreachable at boot" case,
+        # already logged/tolerated by initialize_database()'s own try/except
+        # in main.py. Don't duplicate or escalate that here.
+        logger.warning("Could not verify critical columns (database unreachable?): %s", exc_info)
+        return
+
+    columns_by_table: dict[str, set[str]] = {}
+    for table, column, script, reason in CRITICAL_COLUMNS:
+        if table not in existing_tables:
+            # The table itself doesn't exist -- that's the missing-table
+            # case _verify_postgres_schema_is_migrated() already warns
+            # about (same root cause: DB never migrated at all). Don't pile
+            # a second, more alarming error on top of the same condition.
+            continue
+        if table not in columns_by_table:
+            columns_by_table[table] = {c["name"] for c in inspector.get_columns(table)}
+        if column not in columns_by_table[table]:
+            logger.critical(
+                "CRITICAL: column '%s.%s' is missing from the connected database, but "
+                "running code depends on it (%s). Run migration script "
+                "backend/migrations/%s (or apply the equivalent schema change) before "
+                "starting this application.",
+                table, column, reason, script,
+            )
+            raise SystemExit(
+                f"Missing required database column: {table}.{column}. "
+                f"Run backend/migrations/{script} — see docs/DATABASE_MIGRATION_GUIDE.md."
+            )
+    logger.info("Critical-column safety net: all %d tracked column(s) present.", len(CRITICAL_COLUMNS))
+
+
 def get_db():
     """Yield a database session per request.
 
