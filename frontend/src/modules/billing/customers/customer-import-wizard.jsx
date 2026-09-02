@@ -16,7 +16,6 @@ const STEPS = [
 ];
 
 const CUSTOMER_FIELDS = [
-  { value: "customer_code",     label: "Customer Code *",       required: true },
   { value: "company_name",      label: "Company Name *",        required: true },
   { value: "display_name",      label: "Display Name",          required: false },
   { value: "legal_name",        label: "Legal Name",            required: false },
@@ -158,6 +157,10 @@ export default function CustomerImportWizard({ onClose, onImported }) {
       setError("Only CSV and XLSX files are supported.");
       return;
     }
+    if (ext === "xls") {
+      setError("Legacy Excel .xls is not supported. Please open the file in Excel and re-save as .xlsx (or export as .csv), then upload again.");
+      return;
+    }
     if (f.size > MAX_IMPORT_FILE_SIZE_BYTES) {
       setError(`File is too large (${(f.size / (1024 * 1024)).toFixed(1)} MB). The maximum allowed size is ${MAX_IMPORT_FILE_SIZE_BYTES / (1024 * 1024)} MB — please split it into smaller files.`);
       return;
@@ -295,7 +298,7 @@ export default function CustomerImportWizard({ onClose, onImported }) {
                      : file ? "border-emerald-400 bg-emerald-50"
                              : "border-slate-300 hover:border-brand-400 hover:bg-brand-50/50 bg-slate-50"}`}
       >
-        <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileSelect} />
+        <input ref={fileInputRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={handleFileSelect} />
         {file ? (
           <>
             <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">

@@ -194,18 +194,18 @@ def _resolve_target_plan_price(db: Session, target_plan: CommercialPlan):
     """Same two-tier version->plan price fallback resolve_price() applies to
     a real subscription, inlined here for a hypothetical target plan (no
     subscription row exists for it yet)."""
-    from app.modules.commercial.enums import CommercialPlanVersionStatus
+    from app.modules.commercial.cache import get_latest_published_version_id
     from app.modules.commercial.models import CommercialPlanVersion
 
-    latest_published = (
-        db.query(CommercialPlanVersion)
-        .filter(
-            CommercialPlanVersion.plan_id == target_plan.id,
-            CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+    version_id = get_latest_published_version_id(db, target_plan.id)
+    if version_id is not None:
+        latest_published = (
+            db.query(CommercialPlanVersion)
+            .filter(CommercialPlanVersion.id == version_id)
+            .first()
         )
-        .order_by(CommercialPlanVersion.version_number.desc())
-        .first()
-    )
+    else:
+        latest_published = None
     if latest_published is not None and latest_published.price_amount is not None:
         return (latest_published.price_amount, latest_published.currency, latest_published.billing_interval, latest_published.id)
     if target_plan.price_amount is not None:

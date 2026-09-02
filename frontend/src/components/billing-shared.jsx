@@ -1,13 +1,16 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles } from "lucide-react";
-import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { formatCompactMoney, formatCompactNumber } from "../utils/billing-helpers";
 // ZB-SA-CMD-003 §17 — Domain B containment: shared export entry points are
 // gated on the privileged-session suppression flag owned by
 // CommandCenterContext (see utils/export-helpers.js).
 import { assertExportsAllowed, getExportSuppression } from "../utils/export-helpers";
-import { ExecutiveSummary } from "./billing-ui";
+// NOTE: billing-shared must stay free of chart libraries (recharts) — it is
+// imported by ~100+ pages, and a recharts dep here would ship a chart bundle
+// to every one of them. The stat-card sparkline below is hand-rolled SVG for
+// exactly this reason; ExecutiveSummary is likewise recharts-free by design.
+import { ExecutiveSummary } from "./executive-summary";
 
 export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2-digit" }) {
   if (value === null || value === undefined || value === "") return null;
@@ -465,7 +468,7 @@ export function DashboardHeader({
 /**
  * BusinessInsights — the "Business Insights" section every Billing
  * dashboard leads with, right under the header. Thin wrapper over
- * `ExecutiveSummary` (billing-ui.jsx) so every dashboard shares one
+ * `ExecutiveSummary` (executive-summary.jsx) so every dashboard shares one
  * heading + pill-strip implementation instead of hand-rolling the section.
  * `items` is `[{ text, tone?: 'up'|'down'|'neutral'|'warning', icon? }]`
  * built from data the page already fetched — never a new API call.
@@ -611,6 +614,33 @@ export function QuickActions({ title = "Quick Actions", actions = [] }) {
   );
 }
 
+function Sparkline({ data, name }) {
+  const w = 120;
+  const h = 32;
+  const pad = 2;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const step = data.length > 1 ? (w / (data.length - 1)) : 0;
+  const line = data
+    .map((v, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(2)},${(pad + (1 - (v - min) / range) * (h - pad * 2)).toFixed(2)}`)
+    .join(" ");
+  const area = `${line} L${w},${h} L0,${h} Z`;
+  const gradientId = `sparkline-${String(name).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-8 w-full text-brand-500" aria-hidden="true">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="currentColor" stopOpacity={0.25} />
+          <stop offset="95%" stopColor="currentColor" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gradientId})`} />
+      <path d={line} fill="none" stroke="currentColor" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 export function DashboardStatCard({
   title,
   value,
@@ -641,10 +671,7 @@ export function DashboardStatCard({
   }, [value, compact, currency]);
 
   const fullValue = typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : value;
-  const sparklineData = useMemo(
-    () => (sparkline && sparkline.length > 1 ? sparkline.map((v, i) => ({ i, v })) : null),
-    [sparkline]
-  );
+  const hasSparkline = sparkline && sparkline.length > 1;
 
   return (
     <div
@@ -693,19 +720,9 @@ export function DashboardStatCard({
           {Icon && <Icon size={20} />}
         </div>
       </div>
-      {sparklineData && (
+      {hasSparkline && (
         <div className="mt-3 h-8 w-full" aria-hidden="true">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sparklineData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id={`sparkline-${title}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="currentColor" stopOpacity={0.25} className="text-brand-500" />
-                  <stop offset="95%" stopColor="currentColor" stopOpacity={0} className="text-brand-500" />
-                </linearGradient>
-              </defs>
-              <Area type="monotone" dataKey="v" stroke="#2563EB" strokeWidth={1.5} fill={`url(#sparkline-${title})`} isAnimationActive={false} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <Sparkline data={sparkline} name={title} />
         </div>
       )}
     </div>

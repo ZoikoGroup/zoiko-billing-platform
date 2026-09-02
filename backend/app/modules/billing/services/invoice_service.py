@@ -1371,7 +1371,11 @@ class InvoiceService:
     # ── Queries ────────────────────────────────────────────────────────────
 
     def list_overdue(self, organization_id: int) -> List[Invoice]:
-        return self.repo.list_overdue(organization_id)
+        # The /overdue endpoint serializes these through InvoiceResponse, whose
+        # customer_* fields are model properties that lazy-load Invoice.customer
+        # per row. Eager-load the relationship so N invoices don't trigger N
+        # extra queries (N+1).
+        return self.repo.list_overdue_with_customer(organization_id)
 
     def list_due_between(self, organization_id: int, start_date: str, end_date: str) -> List[Invoice]:
         return self.repo.list_due_between(organization_id, start_date, end_date)

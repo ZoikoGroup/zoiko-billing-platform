@@ -733,6 +733,8 @@ class CommercialPlanVersionService:
         version.status = CommercialPlanVersionStatus.PUBLISHED
         version.published_at = datetime.utcnow()
         self.db.flush()
+        from app.modules.commercial.cache import invalidate_latest_published_version
+        invalidate_latest_published_version(version.plan_id)
         logger.info("CommercialPlanVersion %s published by %s", version.id, approver_user_id)
 
         PlatformAuditService(self.db).log_no_commit(
@@ -787,6 +789,9 @@ class CommercialPlanVersionService:
             )
         version.status = CommercialPlanVersionStatus.ARCHIVED
         self.db.flush()
+
+        from app.modules.commercial.cache import invalidate_latest_published_version
+        invalidate_latest_published_version(version.plan_id)
 
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,
@@ -1005,20 +1010,9 @@ class CommercialSubscriptionService:
         # still get a reproducible catalog reference wherever a published
         # version actually exists.
         if catalog_version_id is None:
-            from app.modules.commercial.enums import CommercialPlanVersionStatus
-            from app.modules.commercial.models import CommercialPlanVersion
+            from app.modules.commercial.cache import get_latest_published_version_id
 
-            latest_published = (
-                self.db.query(CommercialPlanVersion)
-                .filter(
-                    CommercialPlanVersion.plan_id == plan.id,
-                    CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-                )
-                .order_by(CommercialPlanVersion.version_number.desc())
-                .first()
-            )
-            if latest_published is not None:
-                catalog_version_id = latest_published.id
+            catalog_version_id = get_latest_published_version_id(self.db, plan.id)
 
         subscription = CommercialSubscription(
             commercial_account_id=account_id,
@@ -1322,24 +1316,16 @@ class CommercialSubscriptionService:
         other value_type (SET/ENUM) or a cap_value of None passes through
         unclamped (no defined clamp semantics for those types yet).
         """
-        from app.modules.commercial.enums import CommercialPlanVersionStatus, EntitlementValueType
+        from app.modules.commercial.cache import get_latest_published_version_id
+        from app.modules.commercial.enums import EntitlementValueType
         from app.modules.commercial.models import (
             CommercialEvaluationProgramCap,
-            CommercialPlanVersion,
             EntitlementDefinition,
             PlanEntitlement,
         )
 
-        latest_published = (
-            self.db.query(CommercialPlanVersion)
-            .filter(
-                CommercialPlanVersion.plan_id == plan_id,
-                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-            )
-            .order_by(CommercialPlanVersion.version_number.desc())
-            .first()
-        )
-        if latest_published is None:
+        latest_published_id = get_latest_published_version_id(self.db, plan_id)
+        if latest_published_id is None:
             return []
 
         rows = (
@@ -1349,7 +1335,7 @@ class CommercialSubscriptionService:
                 PlanEntitlement.entitlement_definition_id == EntitlementDefinition.id,
             )
             .filter(
-                PlanEntitlement.plan_version_id == latest_published.id,
+                PlanEntitlement.plan_version_id == latest_published_id,
             )
             .all()
         )
@@ -1556,19 +1542,9 @@ class CommercialSubscriptionService:
         fallback used inline by create_subscription/resolve_price/
         EntitlementSnapshotService — factored out here for the new plan-
         change methods rather than duplicated a fourth time."""
-        from app.modules.commercial.enums import CommercialPlanVersionStatus
-        from app.modules.commercial.models import CommercialPlanVersion
+        from app.modules.commercial.cache import get_latest_published_version_id
 
-        latest_published = (
-            self.db.query(CommercialPlanVersion)
-            .filter(
-                CommercialPlanVersion.plan_id == plan_id,
-                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-            )
-            .order_by(CommercialPlanVersion.version_number.desc())
-            .first()
-        )
-        return latest_published.id if latest_published is not None else None
+        return get_latest_published_version_id(self.db, plan_id)
 
     def _set_plan_fields(
         self, subscription: CommercialSubscription, target_plan: CommercialPlan,
