@@ -202,8 +202,7 @@ def _resolve_L5_snapshot(ctx: EntitlementResolutionContext) -> ResolverResult:
 
 
 def _resolve_L6_live_plan_entitlement(ctx: EntitlementResolutionContext) -> ResolverResult:
-    from app.modules.commercial.enums import CommercialPlanVersionStatus
-    from app.modules.commercial.models import CommercialPlanVersion
+    from app.modules.commercial.cache import get_latest_published_version_id
 
     subscription = ctx.subscription
     if subscription is None:
@@ -211,16 +210,7 @@ def _resolve_L6_live_plan_entitlement(ctx: EntitlementResolutionContext) -> Reso
 
     version_id = subscription.catalog_version_id
     if version_id is None and subscription.commercial_plan_id is not None:
-        latest_published = (
-            ctx.db.query(CommercialPlanVersion)
-            .filter(
-                CommercialPlanVersion.plan_id == subscription.commercial_plan_id,
-                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-            )
-            .order_by(CommercialPlanVersion.version_number.desc())
-            .first()
-        )
-        version_id = latest_published.id if latest_published is not None else None
+        version_id = get_latest_published_version_id(ctx.db, subscription.commercial_plan_id)
 
     if version_id is None:
         return False, None

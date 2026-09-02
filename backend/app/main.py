@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -230,6 +231,14 @@ app.add_middleware(
         "X-Request-ID",
     ],
 )
+
+# ── Response compression ─────────────────────────────────────────────────────
+# gzip-compress JSON responses that clear the minimum size threshold. Added
+# AFTER (i.e. its middleware runs outside) CORSMiddleware, so CORS headers set
+# on the response are preserved across the gzip transform. The frontend serves
+# its own static assets; this only applies to the JSON API body.
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 

@@ -158,6 +158,17 @@ class Settings(BaseSettings):
     FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
     # REC-01 — ledger reconciliation cadence.
     RECONCILIATION_INTERVAL_MINUTES: int = 1440
+    # Scheduled live exchange-rate refresh cadence. The request path never
+    # calls the live FX API (see billing/tasks/exchange_rates.py); this job
+    # keeps cached rates fresh instead. Conservative by design — FX rates move
+    # little within an hour and the platform already treats 24h as acceptable
+    # (EXCHANGE_RATE_MAX_AGE_HOURS).
+    EXCHANGE_RATE_REFRESH_INTERVAL_MINUTES: int = 60
+    # Page-load caching (in-process, cachetools — no Redis in this
+    # deployment): headline dashboard KPIs are cached this many seconds so
+    # rapid dashboard polls don't rerun the invoice aggregate. 0 disables it.
+    # See modules/billing/services/dashboard_service.py.
+    DASHBOARD_KPI_CACHE_TTL_SECONDS: int = 30
     # Commercial (Plane 1) recurring invoice generation on subscription
     # renewal — see commercial/tasks/recurring_invoice.py. OFF by default,
     # independent of ENABLE_RECURRING_BILLING_SCHEDULER's Plane-2 jobs.

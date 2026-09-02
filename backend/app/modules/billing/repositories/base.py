@@ -79,6 +79,12 @@ class BaseRepository(Generic[ModelType]):
                 return query.filter(col.in_(parts))
         return query.filter(col == value)
 
+    def _apply_eager_loads(self, query):
+        """Subclasses override to add joinedload/selectinload options so list
+        paths that serialize relationship-backed model properties (e.g.
+        CreditNote.customer_*) don't trigger a per-row lazy-load query (N+1)."""
+        return query
+
     # ── Exists / Count ───────────────────────────────────────────────────────
 
     def exists(self, organization_id: int, **filters: Any) -> bool:
@@ -254,6 +260,8 @@ class BaseRepository(Generic[ModelType]):
         if sort_by and hasattr(self.model, sort_by):
             order_fn = asc if sort_order == "asc" else desc
             base_query = base_query.order_by(order_fn(getattr(self.model, sort_by)))
+
+        base_query = self._apply_eager_loads(base_query)
 
         # Fetch the page of rows and the total matching count in a single
         # round trip via a window function, instead of two sequential

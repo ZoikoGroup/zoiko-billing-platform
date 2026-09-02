@@ -1,10 +1,14 @@
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
+from cachetools import TTLCache
 from sqlalchemy import func, case, and_
 from sqlalchemy.orm import Session
+
+from app.config import settings
 
 from app.modules.billing.repositories.customer import CustomerRepository
 from app.modules.billing.repositories.invoice import Invoice, InvoiceRepository
@@ -25,6 +29,18 @@ from app.modules.billing.utils.date_utils import (  # noqa: F401
 )
 
 logger = logging.getLogger("zoiko_billing")
+
+# Headline-KPI result cache (dict keyed by the get_kpis arguments). Page-load
+# cache: rapid dashboard polls reuse the last computed aggregates instead of
+# re-scanning the org's active invoices. TTL is short (DASHBOARD_KPI_CACHE_TTL_SECONDS;
+# 0 disables) so headline numbers are never more than a few seconds behind
+# committed data — the numbers still come from THIS single source of truth
+# (get_kpis), never re-derived elsewhere, so the T05 "surfaces agree" guarantee
+# is only relaxed by the bounded staleness window, not by divergence.
+_KPI_CACHE: TTLCache[tuple, dict] = TTLCache(
+    maxsize=256, ttl=max(settings.DASHBOARD_KPI_CACHE_TTL_SECONDS, 1)
+)
+_KPI_CACHE_LOCK = RLock()
 
 
 class BillingDashboardService:
@@ -58,34 +74,24 @@ class BillingDashboardService:
         ).distinct().all()
         unique_currencies.update(row[0] for row in pmt_currencies if row[0])
 
-        # If the cached rates are stale, attempt ONE batch refresh so a slow or
-        # unreachable live API is hit at most once instead of once per currency.
         config = self.exchange_svc.repo.get_by_organization(organization_id)
-        try:
-            if config and self.exchange_svc.is_rate_stale(organization_id, config=config):
-                self.exchange_svc.refresh_rates(organization_id)
-        except Exception as exc:
-            # The refresh is savepoint-scoped in ExchangeRateService; a failure
-            # must never roll back THIS session's pending work (a bare
-            # self.db.rollback() here silently discarded uncommitted invoices
-            # flushed by the caller before the balance question ran).
-            logger.warning(
-                "Exchange-rate refresh failed for org %s (using cached/legacy rates): %s",
-                organization_id, exc,
-            )
 
+        # NOTE: this request path NEVER performs a live exchange-rate API call.
+        # Refreshing stale rates is a scheduled background job (see
+        # core/scheduler.py → billing/tasks/exchange_rates.py), NOT something
+        # done here. A slow/unreachable live API must not add latency to a
+        # dashboard/balance request. We only read the cached (or legacy) rates
+        # and fall back to 1.0 when one is missing — the background job will
+        # populate a real rate on its next run.
         rates: Dict[str, float] = {}
         for curr in sorted(unique_currencies):
             if curr == base:
                 rates[curr] = 1.0
             else:
                 try:
-                    if config and not self.exchange_svc.is_rate_stale(organization_id, config=config):
-                        rate, _, _ = self.exchange_svc.get_rate(organization_id, curr, base, config=config)
-                    else:
-                        rate, _, _ = self.exchange_svc._get_cached_rate(config, curr, base)
-                        if rate is None:
-                            rate, _, _ = self.exchange_svc._get_legacy_rate(config, curr, base)
+                    rate, _, _ = self.exchange_svc._get_cached_rate(config, curr, base)
+                    if rate is None:
+                        rate, _, _ = self.exchange_svc._get_legacy_rate(config, curr, base)
                     rates[curr] = float(rate) if rate is not None else 1.0
                 except Exception:
                     rates[curr] = 1.0
@@ -117,6 +123,13 @@ class BillingDashboardService:
         Every surface that shows these numbers MUST read them from here —
         never re-derive them with different filters.
         """
+        if settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
+            cache_key = (organization_id, period, date_from, date_to)
+            try:
+                with _KPI_CACHE_LOCK:
+                    return dict(_KPI_CACHE[cache_key])
+            except KeyError:
+                pass
         now = datetime.utcnow()
         month_start = date(now.year, now.month, 1)
         today = date.today()
@@ -246,7 +259,7 @@ class BillingDashboardService:
         period_total_revenue = period_summary["total_revenue"]
         period_paid_revenue = period_summary["paid_revenue"]
 
-        return {
+        result = {
             "total_revenue": period_total_revenue if is_filtered else summary["total_revenue"],
             "paid_revenue": period_paid_revenue if is_filtered else summary["paid_revenue"],
             "paid_amount": period_paid_revenue if is_filtered else summary["paid_revenue"],
@@ -261,6 +274,10 @@ class BillingDashboardService:
             "period_start": str(period_start) if is_filtered else None,
             "period_end": str(period_end) if is_filtered else None,
         }
+        if settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
+            with _KPI_CACHE_LOCK:
+                _KPI_CACHE[cache_key] = result
+        return result
 
     def get_monthly_revenue(
         self,

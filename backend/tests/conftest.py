@@ -57,6 +57,21 @@ def db_session():
         engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _clear_in_process_caches():
+    """Every test gets a fresh in-memory DB (above) with auto-increment ids
+    restarting at 1 — so any in-process TTL cache from a previous test would
+    serve stale cross-test results under a colliding key. Reset them here."""
+    from app.modules.billing.services.dashboard_service import _KPI_CACHE
+    from app.modules.commercial.cache import _latest_published_cache
+
+    _KPI_CACHE.clear()
+    _latest_published_cache.clear()
+    yield
+    _KPI_CACHE.clear()
+    _latest_published_cache.clear()
+
+
 def make_organization(db, code="ORG1", name="Test Org"):
     org = Organization(organization_name=name, organization_code=code)
     db.add(org)

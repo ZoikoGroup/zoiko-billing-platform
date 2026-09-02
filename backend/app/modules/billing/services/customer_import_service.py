@@ -244,6 +244,49 @@ def _parse_xlsx(file_bytes: bytes, max_rows: Optional[int] = None) -> Tuple[List
         wb.close()
 
 
+def _detect_and_parse(
+    file_bytes: bytes, filename: str
+) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Parse CSV or XLSX bytes into (headers, rows), dispatching on the
+    file's actual content (magic bytes) rather than trusting its extension.
+
+    A legacy Excel .xls (CFB/OLE2 container) or any non-OOXML binary claiming
+    to be Excel is rejected with a clear, actionable message — openpyxl only
+    reads the modern .xlsx format, so pretending to support `.xls` produced an
+    opaque `BadZipFile: File is not a zip file` that surfaced as a generic 500
+    on the preview endpoint. Failing loudly and instructing the user to
+    re-save as .xlsx or .csv beats a confusing crash.
+    """
+    # Legacy Excel .xls (CFB/OLE2 container, magic D0 CF 11 E0 ...) is not
+    # readable by openpyxl. Catch it explicitly so the user gets a real
+    # explanation instead of "File is not a zip file".
+    if file_bytes[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise ValueError(
+            "This looks like a legacy Excel .xls file. Please open it in Excel "
+            "and re-save as .xlsx (or export as .csv), then upload again."
+        )
+
+    is_zip = file_bytes[:4] == b"PK\x03\x04"  # OOXML (.xlsx) is a ZIP container
+
+    if is_zip:
+        try:
+            return _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
+        except ImportError:
+            raise
+        except Exception as exc:
+            # A file that is a ZIP but not a valid .xlsx workbook (corrupt or
+            # renamed) fails with openpyxl's cryptic BadZipFile. Translate it
+            # into a clear message.
+            raise ValueError(
+                "This file could not be read as a valid .xlsx workbook. "
+                "Please make sure you uploaded the correct file, or re-save it "
+                "as .xlsx / .csv and try again."
+            ) from exc
+
+    # Plain-text content (CSV, whether it's named .csv or something else).
+    return _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
+
+
 def _check_file_size(file_bytes: bytes) -> None:
     size = len(file_bytes)
     if size > MAX_IMPORT_FILE_SIZE_BYTES:
@@ -339,13 +382,7 @@ class CustomerImportService:
           total_data_rows: row count (excluding header)
         """
         _check_file_size(file_bytes)
-        fname_lower = filename.lower()
-        if fname_lower.endswith(".xlsx") or fname_lower.endswith(".xls"):
-            headers, rows = _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        elif fname_lower.endswith(".csv"):
-            headers, rows = _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        else:
-            raise ValueError(f"Unsupported file format. Please upload a .csv or .xlsx file.")
+        headers, rows = _detect_and_parse(file_bytes, filename)
 
         suggested_mapping = _auto_map_columns(headers)
 
@@ -373,13 +410,7 @@ class CustomerImportService:
         Caches the parsed+validated rows under a session_id (30 min TTL).
         """
         _check_file_size(file_bytes)
-        fname_lower = filename.lower()
-        if fname_lower.endswith(".xlsx") or fname_lower.endswith(".xls"):
-            headers, raw_rows = _parse_xlsx(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        elif fname_lower.endswith(".csv"):
-            headers, raw_rows = _parse_csv(file_bytes, max_rows=MAX_IMPORT_ROWS)
-        else:
-            raise ValueError("Unsupported file format")
+        headers, raw_rows = _detect_and_parse(file_bytes, filename)
 
         # Auto-detect common/template columns, then let explicit user overrides
         # win. Only a truthy override replaces an auto-detected mapping: the
@@ -667,7 +698,7 @@ class CustomerImportService:
         Returns (file_bytes, mimetype).
         """
         headers = [
-            "Customer Code *", "Company Name *", "Display Name", "Legal Name",
+            "Company Name *", "Display Name", "Legal Name",
             "Email", "Alternate Email", "First Name", "Last Name",
             "Mobile", "Phone", "Website", "Designation", "Industry",
             "Employee Count", "Customer Type", "Status",
@@ -678,7 +709,7 @@ class CustomerImportService:
         ]
         example_rows = [
             [
-                "CUST-1001", "Acme Corp", "Acme Corp", "Acme Corporation",
+                "Acme Corp", "Acme Corp", "Acme Corporation",
                 "billing@acme.com", "finance@acme.com", "", "",
                 "+1-555-0100", "+1-555-0199", "https://acme.example",
                 "Procurement", "Technology", "250",
@@ -686,11 +717,11 @@ class CustomerImportService:
                 "100 Market St, San Francisco", "100 Market St, San Francisco",
                 "US", "US",
                 "net_30", "USD", "25000.00", "30", "Standard",
-                "GSTIN1234", "", "", "", "standard", "", "",
+                "", "", "", "", "standard", "", "",
                 "Key enterprise account", '{"priority":"high"}',
             ],
             [
-                "CUST-1002", "Bright Startups Inc", "Bright Startups", "",
+                "Bright Startups Inc", "Bright Startups", "",
                 "", "", "Jane", "Doe",
                 "+1-555-0200", "", "https://bright.example", "CEO", "Software",
                 "12",
@@ -704,8 +735,7 @@ class CustomerImportService:
         ]
         notes = [
             [
-                "Required. Unique per org.",
-                "Required. Company / account name.",
+                "Required. Company / account name. Customer Code is auto-generated from this.",
                 "Optional. Defaults to Company Name.",
                 "Optional.",
                 "Optional. Must be a valid email. Duplicate emails are flagged.",
@@ -847,17 +877,24 @@ class CustomerImportService:
             mapped[customer_field] = value
 
         # --- Required fields ---
-        customer_code = mapped.get("customer_code", "")
-        if not customer_code:
-            errors.append("Row is missing required field: Customer Code")
-        if len(customer_code) > 50:
-            errors.append("Customer Code exceeds 50 characters")
-
         company_name = mapped.get("company_name", "")
         if not company_name:
             errors.append("Row is missing required field: Company Name")
-        if len(company_name) > 255:
+        elif len(company_name) > 255:
             errors.append("Company Name exceeds 255 characters")
+
+        # Customer code is OPTIONAL on import: if absent it is auto-generated
+        # from the company name (uniqueness enforced per org). This removes
+        # the common duplicate-id problem where the importer data carried its
+        # own customer id column.
+        customer_code = mapped.get("customer_code", "")
+        if customer_code and len(customer_code) > 50:
+            errors.append("Customer Code exceeds 50 characters")
+        elif not customer_code and company_name and not errors:
+            # Generate now so preview shows the real code that will be stored,
+            # and duplicate detection against existing/existing-map stays accurate.
+            customer_code = self._generate_customer_code(company_name, organization_id)
+            mapped["customer_code"] = customer_code
 
         # --- Customer type ---
         ctype = (mapped.get("customer_type") or "").lower().strip()
@@ -868,7 +905,6 @@ class CustomerImportService:
                 mapped["customer_type"] = ctype
         else:
             mapped["customer_type"] = "business"
-            warnings.append("Customer type not specified — defaulted to 'business'")
 
         # --- Status → status + is_active ---
         status_raw = (mapped.get("status") or "").strip()
@@ -913,10 +949,8 @@ class CustomerImportService:
         else:
             if tax_profile:
                 mapped["currency"] = tax_profile.currency
-                warnings.append(f"Currency not specified — defaulted to country currency '{tax_profile.currency}' based on Billing Country.")
             else:
                 mapped["currency"] = org_currency
-                warnings.append(f"Currency not specified — defaulted to organization currency '{org_currency}'")
 
         # --- Tax Configuration ---
         if tax_profile:
@@ -957,7 +991,6 @@ class CustomerImportService:
                 mapped["payment_terms"] = terms
         else:
             mapped["payment_terms"] = "net_30"
-            warnings.append("Payment terms not specified — defaulted to 'net_30'")
 
         # --- Numeric fields ---
         for field_name, display_name, check in [
@@ -1041,6 +1074,23 @@ class CustomerImportService:
             updated_by=user_id,
             **data,
         )
+
+    def _generate_customer_code(self, company_name: str, organization_id: int) -> str:
+        """
+        Auto-generate a unique customer_code from a company name.
+        Converts to uppercase, keeps only alphanumerics, truncates to 20 chars,
+        then appends -2, -3 … if the code already exists in the org.
+        """
+        # Build base slug from company name
+        slug = re.sub(r"[^A-Z0-9]", "", company_name.upper())[:20].rstrip("-")
+        if not slug:
+            slug = "CUST"
+        code = slug
+        suffix = 2
+        while self.repo.exists(organization_id, customer_code=code):
+            code = f"{slug}-{suffix}"
+            suffix += 1
+        return code
 
     def _make_unique_code(self, mapped: Dict[str, Any], organization_id: int) -> Dict[str, Any]:
         """Generate a unique customer_code for 'create_copy' duplicate strategy."""

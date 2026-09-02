@@ -310,7 +310,11 @@ class InvoiceRepository(BaseRepository[Invoice]):
         start_date: str,
         end_date: str,
     ) -> List[Invoice]:
-        return self.db.query(Invoice).filter(
+        # The /invoices/due-between endpoint serializes these through
+        # InvoiceResponse, whose customer_* fields are model properties that
+        # lazy-load Invoice.customer per row. Eager-load to avoid N+1.
+        from sqlalchemy.orm import joinedload
+        return self.db.query(Invoice).options(joinedload(Invoice.customer)).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
             Invoice.due_date >= start_date,

@@ -149,6 +149,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Recurring Subscription Billing",
         ),
         (
+            "app.modules.billing.tasks.exchange_rates:run_exchange_rate_refresh_job",
+            settings.EXCHANGE_RATE_REFRESH_INTERVAL_MINUTES,
+            "exchange_rate_refresh_job",
+            "Scheduled Exchange-Rate Refresh",
+        ),
+        (
             "app.modules.billing.tasks.overdue_invoices:run_overdue_invoice_job",
             settings.OVERDUE_INVOICE_CHECK_INTERVAL_MINUTES,
             "overdue_invoice_job",

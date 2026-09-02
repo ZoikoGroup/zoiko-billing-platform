@@ -60,10 +60,9 @@ def _resolve_target_plan_value(db: Session, organization_id: int, target_plan_id
     PlanEntitlement value, same fallback pattern used by create_subscription/
     resolve_price/EntitlementSnapshotService.
     """
+    from app.modules.commercial.cache import get_latest_published_version_id
     from app.modules.commercial.entitlement_snapshot_service import EntitlementSnapshotService
-    from app.modules.commercial.enums import CommercialPlanVersionStatus
     from app.modules.commercial.models import (
-        CommercialPlanVersion,
         EntitlementDefinition,
         PlanEntitlement,
     )
@@ -87,22 +86,14 @@ def _resolve_target_plan_value(db: Session, organization_id: int, target_plan_id
     if override is not None:
         return override.value
 
-    latest_published = (
-        db.query(CommercialPlanVersion)
-        .filter(
-            CommercialPlanVersion.plan_id == target_plan_id,
-            CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-        )
-        .order_by(CommercialPlanVersion.version_number.desc())
-        .first()
-    )
-    if latest_published is None:
+    version_id = get_latest_published_version_id(db, target_plan_id)
+    if version_id is None:
         return None
 
     row = (
         db.query(PlanEntitlement)
         .filter(
-            PlanEntitlement.plan_version_id == latest_published.id,
+            PlanEntitlement.plan_version_id == version_id,
             PlanEntitlement.entitlement_definition_id == definition.id,
         )
         .first()
