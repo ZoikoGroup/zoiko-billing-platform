@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getOrganizationDetails, updateOrganizationDetails } from "../../service/orgAdminService";
+import { stripeConnectApi } from "../../service/billingService";
 import { X, CheckCircle, AlertTriangle } from "lucide-react";
 
 // Palette + type match the Login page: Inter/JetBrains Mono, blue/navy primary,
@@ -208,6 +209,42 @@ const styles = `
     border-radius:6px; margin-left:2px;
   }
   .org-dash .toast button:hover{ background:rgba(255,255,255,0.18); }
+
+  /* ── Stripe panel ── */
+  .org-dash .btn-sm{ padding:9px 16px; font-size:12.5px; border-radius:8px; }
+  .org-dash .btn-danger{
+    background:var(--glass-solid); color:var(--danger); border-color:rgba(220,38,38,0.35); border-radius:8px;
+  }
+  .org-dash .btn-danger:hover{ background:#FEF2F2; border-color:rgba(220,38,38,0.5); }
+
+  .org-dash .stripe-panel{ padding:0; margin-top:16px; overflow:hidden; }
+  .org-dash .stripe-panel-head{
+    display:flex; align-items:center; gap:12px; padding:20px 24px; border-bottom:1px solid var(--glass-border);
+    flex-wrap:wrap;
+  }
+  .org-dash .stripe-panel-title-wrap{ flex:1; min-width:200px; }
+  .org-dash .stripe-panel-actions{ display:flex; gap:8px; flex:none; }
+  .org-dash .stripe-panel-body{ padding:6px 24px 20px; }
+  .org-dash .stripe-loading{ padding:16px 0; font-size:13px; color:var(--ink-faint); }
+  .org-dash .stripe-status-summary{
+    display:flex; align-items:center; gap:10px; margin:10px 0 4px; flex-wrap:wrap;
+  }
+  .org-dash .env-tag{
+    font-size:11px; font-weight:600; padding:3px 9px; border-radius:100px;
+    background:var(--primary-soft); color:var(--primary-deep); border:1px solid rgba(37,99,235,0.22);
+  }
+  .org-dash .env-tag--live{ background:rgba(5,150,105,0.10); color:var(--success); border-color:rgba(5,150,105,0.25); }
+  .org-dash .stripe-hint{
+    margin-top:10px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.5;
+    background:var(--primary-soft); border:1px solid rgba(37,99,235,0.15); color:var(--ink-soft);
+  }
+  .org-dash .stripe-warning{
+    margin-top:10px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.6;
+    background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.28); color:#7C2D12;
+  }
+  .org-dash .stripe-warning-title{ font-weight:700; margin-bottom:4px; color:#B45309; }
+  .org-dash .stripe-warning-item{ margin:2px 0; }
+  .org-dash .stripe-warning-btn{ margin-top:8px; }
 `;
 
 const STATUS_STYLES = {
@@ -222,6 +259,28 @@ function StatusPill({ status }) {
     <span className="status-pill" style={{ background: s.bg, color: s.color, borderColor: s.border }}>
       <span className="dot" />
       {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+const STRIPE_STATUS_STYLES = {
+  pending_onboarding:    { bg: "rgba(37,99,235,0.10)", color: "#2563EB", border: "rgba(37,99,235,0.22)" },
+  onboarding_incomplete: { bg: "rgba(245,158,11,0.10)", color: "#B45309", border: "rgba(245,158,11,0.25)" },
+  action_required:       { bg: "rgba(245,158,11,0.12)", color: "#B45309", border: "rgba(245,158,11,0.3)" },
+  active:                { bg: "rgba(5,150,105,0.10)", color: "#059669", border: "rgba(5,150,105,0.22)" },
+  restricted:            { bg: "rgba(220,38,38,0.10)", color: "#DC2626", border: "rgba(220,38,38,0.22)" },
+  disabled:              { bg: "#F3F4F6", color: "#374151", border: "#E5E7EB" },
+  disconnected:          { bg: "#F3F4F6", color: "#6B7280", border: "#E5E7EB" },
+};
+
+function StripeStatusPill({ status }) {
+  if (!status) return <span className="dim">Not connected</span>;
+  const s = STRIPE_STATUS_STYLES[status] || { bg: "#F3F4F6", color: "#374151", border: "#E5E7EB" };
+  const label = status.replace(/_/g, " ");
+  return (
+    <span className="status-pill" style={{ background: s.bg, color: s.color, borderColor: s.border }}>
+      <span className="dot" />
+      {label.charAt(0).toUpperCase() + label.slice(1)}
     </span>
   );
 }
@@ -254,6 +313,78 @@ export default function OrgAdminOrganizationPage() {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ msg: null, type: "success" });
+  const [stripe, setStripe] = useState(null);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeBusy, setStripeBusy] = useState(null);
+
+  const fetchStripeStatus = () => {
+    setStripeLoading(true);
+    return stripeConnectApi.getStatus()
+      .then(setStripe)
+      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to load Stripe status.", type: "error" }))
+      .finally(() => setStripeLoading(false));
+  };
+
+  const refreshStripeStatus = () => {
+    setStripeBusy("sync");
+    stripeConnectApi.sync()
+      .then(setStripe)
+      .then(() => setToast({ msg: "Stripe status refreshed.", type: "success" }))
+      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to refresh Stripe status.", type: "error" }))
+      .finally(() => setStripeBusy(null));
+  };
+
+  const handleConnectStripe = async () => {
+    setStripeBusy("connect");
+    try {
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      const result = await stripeConnectApi.getOnboardingUrl(redirectUri);
+      if (result?.url) {
+        window.location.href = result.url;
+        return;
+      }
+      setToast({ msg: "Stripe onboarding URL could not be generated.", type: "error" });
+    } catch (err) {
+      setToast({ msg: err?.detail || err?.message || "Failed to start Stripe onboarding.", type: "error" });
+    } finally {
+      setStripeBusy(null);
+    }
+  };
+
+  const handleDisconnectStripe = async () => {
+    const ok = window.confirm(
+      "Disconnect Stripe? Online payments for this organization will stop until you reconnect."
+    );
+    if (!ok) return;
+    setStripeBusy("disconnect");
+    try {
+      await stripeConnectApi.disconnect();
+      await fetchStripeStatus();
+      setToast({ msg: "Stripe disconnected.", type: "success" });
+    } catch (err) {
+      setToast({ msg: err?.detail || err?.message || "Failed to disconnect Stripe.", type: "error" });
+    } finally {
+      setStripeBusy(null);
+    }
+  };
+
+  // Handle the Stripe Connect OAuth callback (returns here with ?code=&state=)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (!code || !state) return;
+    setStripeBusy("callback");
+    stripeConnectApi.completeOAuth(code, state)
+      .then((status) => { setStripe(status); setToast({ msg: "Stripe connected successfully.", type: "success" }); })
+      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to complete Stripe connection.", type: "error" }))
+      .finally(() => {
+        setStripeBusy(null);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      });
+  }, []);
+
+  useEffect(() => { fetchStripeStatus(); }, []);
 
   const fetchOrg = () => {
     setLoading(true);
@@ -446,6 +577,86 @@ export default function OrgAdminOrganizationPage() {
               <DetailRow label="Timezone" value={org.timezone || "UTC"} mono />
               <DetailRow label="Registration Date" value={regDate} mono />
             </div>
+          </div>
+        </div>
+
+        {/* ── STRIPE PAYMENTS ── */}
+        <div className="glass stripe-panel rise" style={{ animationDelay: ".3s" }}>
+          <div className="stripe-panel-head">
+            <div className="panel-icon icon-violet">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" /><circle cx="8" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="16" cy="12" r="1.4" fill="currentColor" /></svg>
+            </div>
+            <div className="stripe-panel-title-wrap">
+              <p className="panel-title">Stripe Payments</p>
+              <p className="panel-sub">Connect your Stripe account to accept online invoice payments</p>
+            </div>
+            <div className="stripe-panel-actions">
+              {stripe?.connected ? (
+                <>
+                  <button className="btn btn-ghost btn-sm" onClick={refreshStripeStatus} disabled={stripeBusy === "sync"}>
+                    {stripeBusy === "sync" ? "Syncing..." : "Refresh Status"}
+                  </button>
+                  <button className="btn btn-danger btn-sm" onClick={handleDisconnectStripe} disabled={stripeBusy === "disconnect"}>
+                    {stripeBusy === "disconnect" ? "Disconnecting..." : "Disconnect"}
+                  </button>
+                </>
+              ) : (
+                <button className="btn btn-primary btn-sm" onClick={handleConnectStripe} disabled={stripeBusy === "connect" || stripeBusy === "callback"}>
+                  {stripeBusy === "connect" || stripeBusy === "callback" ? "Connecting..." : "Connect Stripe"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="stripe-panel-body">
+            {stripeLoading && !stripe ? (
+              <div className="stripe-loading">Loading Stripe connection status…</div>
+            ) : (
+              <>
+                <div className="stripe-status-summary">
+                  <StripeStatusPill status={stripe?.status} />
+                  {stripe?.environment && (
+                    <span className={`env-tag ${stripe.environment === "live" ? "env-tag--live" : ""}`}>
+                      {stripe.environment === "live" ? "Live" : "Test"} mode
+                    </span>
+                  )}
+                </div>
+
+                <div className="rows">
+                  <DetailRow label="Account ID" value={stripe?.connected_account_id} mono faint />
+                  <DetailRow label="Country" value={stripe?.country} mono />
+                  <DetailRow label="Default Currency" value={stripe?.default_currency} mono />
+                  <DetailRow label="Charges" value={stripe?.charges_enabled ? "Enabled" : "Disabled"} />
+                  <DetailRow label="Payouts" value={stripe?.payouts_enabled ? "Enabled" : "Disabled"} />
+                  {stripe?.connected_at && (
+                    <DetailRow label="Connected At" value={new Date(stripe.connected_at).toLocaleDateString()} mono />
+                  )}
+                </div>
+
+                {!stripe?.connected && (
+                  <div className="stripe-hint">
+                    {stripe?.status === "pending_onboarding" || !stripe?.status
+                      ? "Connect your Stripe account to start accepting card payments on invoices."
+                      : "Complete the remaining Stripe requirements to activate online payments."}
+                  </div>
+                )}
+
+                {(stripe?.requirements_currently_due?.length > 0 || stripe?.disabled_reason) && (
+                  <div className="stripe-warning">
+                    <p className="stripe-warning-title">Action needed</p>
+                    {stripe?.disabled_reason && <p className="stripe-warning-item">Reason: {stripe.disabled_reason}</p>}
+                    {stripe?.requirements_currently_due?.length > 0 && (
+                      <p className="stripe-warning-item">Requirements due: {stripe.requirements_currently_due.join(", ")}</p>
+                    )}
+                    {stripe?.connected && (
+                      <button className="btn btn-ghost btn-sm stripe-warning-btn" onClick={refreshStripeStatus} disabled={stripeBusy === "sync"}>
+                        {stripeBusy === "sync" ? "Syncing..." : "Refresh Status"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 

@@ -324,6 +324,15 @@ export const ENDPOINTS = {
   INVOICE_PUBLIC_VIEW: (token) => `${BILLING}/invoices/public/${token}`,
   INVOICE_PUBLIC_CHECKOUT: (token) => `${BILLING}/invoices/public/${token}/checkout`,
 
+  // ── Stripe (authenticated) ────────────────────────────────────────────────
+  STRIPE_CONFIG: `${BILLING}/stripe/config`,
+  STRIPE_CHECKOUT_SESSION: `${BILLING}/stripe/checkout/session`,
+  STRIPE_CONNECT_STATUS: `${BILLING}/stripe/connect/status`,
+  STRIPE_CONNECT_ONBOARDING_URL: `${BILLING}/stripe/connect/onboarding-url`,
+  STRIPE_CONNECT_CALLBACK: `${BILLING}/stripe/connect/callback`,
+  STRIPE_CONNECT_SYNC: `${BILLING}/stripe/connect/sync`,
+  STRIPE_CONNECT_DISCONNECT: `${BILLING}/stripe/connect/disconnect`,
+
   // ── Phase 5C.4: Admin / Diagnostics ──────────────────────────────────────
   SETTINGS_ADMIN_SMTP_TEST: `${BILLING}/settings/smtp/test`,
   SETTINGS_ADMIN_EMAIL_TEMPLATES: `${BILLING}/settings/email-templates`,

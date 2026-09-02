@@ -141,22 +141,38 @@ class BillingAdminService:
         try:
             start = time.time()
             connection_result.message = f"Connecting to {smtp_host}:{smtp_port}..."
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-            elapsed = (time.time() - start) * 1000
-            connection_result.ok = True
-            connection_result.message = f"Connected to {smtp_host}:{smtp_port}"
-            connection_result.response_time_ms = round(elapsed, 2)
-
-            if use_tls:
-                tls_start = time.time()
-                server.starttls(context=ssl.create_default_context())
-                tls_elapsed = (time.time() - tls_start) * 1000
+            # Port 465 is implicit TLS (SMTPS) — the TLS handshake happens as part
+            # of the socket connection itself, before any SMTP command is sent.
+            # Calling STARTTLS on a port-465 connection (as this function used to,
+            # matching email_service.py's own SMTP_SSL branch) talks plaintext SMTP
+            # to a TLS-only socket and fails before authentication is ever
+            # attempted — misreporting a real "auth rejected" as "TLS failed".
+            if use_tls and smtp_port == 465:
+                server = smtplib.SMTP_SSL(smtp_host, smtp_port, context=ssl.create_default_context(), timeout=10)
+                elapsed = (time.time() - start) * 1000
+                connection_result.ok = True
+                connection_result.message = f"Connected to {smtp_host}:{smtp_port}"
+                connection_result.response_time_ms = round(elapsed, 2)
                 tls_result.ok = True
-                tls_result.message = "TLS/STARTTLS negotiation succeeded"
-                tls_result.response_time_ms = round(tls_elapsed, 2)
+                tls_result.message = "Implicit TLS (SSL) negotiated on connect"
+                tls_result.response_time_ms = round(elapsed, 2)
             else:
-                tls_result.message = "TLS not configured (plain-text connection)"
-                tls_result.ok = True
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+                elapsed = (time.time() - start) * 1000
+                connection_result.ok = True
+                connection_result.message = f"Connected to {smtp_host}:{smtp_port}"
+                connection_result.response_time_ms = round(elapsed, 2)
+
+                if use_tls:
+                    tls_start = time.time()
+                    server.starttls(context=ssl.create_default_context())
+                    tls_elapsed = (time.time() - tls_start) * 1000
+                    tls_result.ok = True
+                    tls_result.message = "TLS/STARTTLS negotiation succeeded"
+                    tls_result.response_time_ms = round(tls_elapsed, 2)
+                else:
+                    tls_result.message = "TLS not configured (plain-text connection)"
+                    tls_result.ok = True
 
             auth_start = time.time()
             server.login(smtp_user, smtp_pass)

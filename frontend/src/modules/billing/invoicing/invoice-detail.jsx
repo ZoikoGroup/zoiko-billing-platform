@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, Loader2, Send, CheckCircle, Ban, Repeat, Printer, Copy, CreditCard, Undo2, Mail, X, Receipt, Trash2, RotateCcw, Bell, ShieldAlert, Edit3 } from "lucide-react";
 import { PageHeader, Button, Modal, StickyFooter, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
-import { invoiceApi, auditApi, paymentApi } from "../../../service/billingService";
+import { invoiceApi, auditApi, paymentApi, stripeApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
 
@@ -207,6 +207,31 @@ export default function InvoiceDetailPage() {
       setShowSendModal(false);
       setFlashMessage({ type: "warning", text: err?.detail || err?.message || "Failed to send invoice email" });
     } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePayNow = async () => {
+    if (actionLoading) return;
+    setActionLoading("pay-now");
+    try {
+      const successUrl = `${window.location.origin}/billing/invoices/${id}?paid=true`;
+      const cancelUrl = `${window.location.origin}/billing/invoices/${id}`;
+      const result = await stripeApi.createCheckoutSession(Number(id), successUrl, cancelUrl);
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
+      } else {
+        throw new Error(result?.message || "Stripe checkout did not return a payment link.");
+      }
+    } catch (err) {
+      const msg = err?.detail || err?.message || "Unable to start Stripe checkout. Please try again later.";
+      const missingConnect = /not connected|not active|connect|onboarding/i.test(msg);
+      setFlashMessage({
+        type: "warning",
+        text: missingConnect
+          ? `${msg} Connect Stripe in Organization settings before accepting online payments.`
+          : msg,
+      });
       setActionLoading(null);
     }
   };
@@ -471,6 +496,11 @@ export default function InvoiceDetailPage() {
                 </button>
               )}
               {canRecordPayment && (
+                <button onClick={handlePayNow} disabled={actionLoading === "pay-now"} className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-linear-to-r from-brand to-brand-hover px-3 py-2 text-xs font-semibold text-white hover:shadow-lg disabled:opacity-50" aria-label="Pay this invoice online via Stripe">
+                  {actionLoading === "pay-now" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />} Pay Now
+                </button>
+              )}
+              {canRecordPayment && (
                 <button onClick={() => navigate(`/billing/payments?create=1&invoice_id=${id}`)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Record payment for this invoice">
                   <CreditCard className="h-3.5 w-3.5" /> Record Payment
                 </button>
@@ -677,6 +707,14 @@ export default function InvoiceDetailPage() {
                 <div className="border-t border-slate-100 pt-2">
                   <p className="text-xs text-red-400">Cancelled on {formatDisplayDate(invoice.cancelled_at)}</p>
                   {invoice.cancellation_reason && <p className="text-xs text-slate-500">Reason: {invoice.cancellation_reason}</p>}
+                </div>
+              )}
+              {(invoice.stripe_payment_intent_id || invoice.stripe_checkout_session_id || invoice.stripe_invoice_id) && (
+                <div className="border-t border-slate-100 pt-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Stripe Reference</p>
+                  {invoice.stripe_payment_intent_id && <p className="text-[11px] text-slate-400 font-mono break-all">Intent: {invoice.stripe_payment_intent_id}</p>}
+                  {invoice.stripe_checkout_session_id && <p className="text-[11px] text-slate-400 font-mono break-all">Checkout: {invoice.stripe_checkout_session_id}</p>}
+                  {invoice.stripe_invoice_id && <p className="text-[11px] text-slate-400 font-mono break-all">Invoice: {invoice.stripe_invoice_id}</p>}
                 </div>
               )}
             </div>
