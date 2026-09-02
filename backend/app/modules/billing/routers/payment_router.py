@@ -6,11 +6,12 @@ modules/billing/routers/payment_router.py
 from typing import Optional
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.rate_limiter import limit_route
 from app.modules.billing.models import PaymentStatus
 from app.modules.billing.services import PaymentService
 from app.modules.billing.schemas import (
@@ -35,8 +36,10 @@ router = APIRouter(prefix="/payments", tags=["🧾 Payments"])
 # ── Payment Methods ───────────────────────────────────────────────────────────
 
 @router.post("/methods", status_code=status.HTTP_201_CREATED, response_model=PaymentMethodResponse)
+@limit_route("20/minute")
 def add_payment_method(
     body: PaymentMethodCreate,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -64,9 +67,11 @@ def list_payment_methods(
 
 
 @router.put("/methods/{method_id}", response_model=PaymentMethodResponse)
+@limit_route("30/minute")
 def update_payment_method(
     method_id: int,
     body: PaymentMethodUpdate,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -81,8 +86,10 @@ def update_payment_method(
 
 
 @router.delete("/methods/{method_id}", response_model=SuccessResponse)
+@limit_route("20/minute")
 def remove_payment_method(
     method_id: int,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -97,8 +104,10 @@ def remove_payment_method(
 
 
 @router.put("/methods/{method_id}/default", response_model=PaymentMethodResponse)
+@limit_route("20/minute")
 def set_default_payment_method(
     method_id: int,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -114,8 +123,10 @@ def set_default_payment_method(
 # ── Payments ──────────────────────────────────────────────────────────────────
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentResponse)
+@limit_route("30/minute")
 def record_payment(
     body: PaymentCreate,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -195,9 +206,11 @@ def get_payment(
 
 
 @router.put("/{payment_id}/status", response_model=PaymentResponse)
+@limit_route("30/minute")
 def update_payment_status(
     payment_id: int,
     status: PaymentStatus = Query(...),
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -212,9 +225,11 @@ def update_payment_status(
 
 
 @router.post("/{payment_id}/allocate", status_code=status.HTTP_201_CREATED, response_model=PaymentAllocationResponse)
+@limit_route("30/minute")
 def allocate_payment(
     payment_id: int,
     body: PaymentAllocationCreate,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -256,8 +271,10 @@ def list_attempts(
 
 
 @router.post("/{payment_id}/reconcile", response_model=PaymentResponse)
+@limit_route("10/minute")
 def reconcile_payment(
     payment_id: int,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
@@ -285,8 +302,10 @@ def get_unallocated_amount(
 
 
 @router.delete("/allocations/{allocation_id}", response_model=DeallocationResponse)
+@limit_route("30/minute")
 def deallocate_payment(
     allocation_id: int,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),

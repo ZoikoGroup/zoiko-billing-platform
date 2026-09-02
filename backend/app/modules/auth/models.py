@@ -99,6 +99,12 @@ class User(Base):
     # reported honestly as UNKNOWN — never inferred or fabricated.
     last_login_at = Column(DateTime, nullable=True)
 
+    # Account-level brute-force protection complements the IP-based SlowAPI
+    # limit. The counter is persisted so rotating source IPs cannot bypass a
+    # lockout for one account.
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    login_locked_until = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

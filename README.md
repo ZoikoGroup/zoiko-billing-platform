@@ -121,6 +121,11 @@ Visit `http://localhost:5173`, register an organization, and you're in.
 docker compose up --build
 ```
 
+This repository compose file is a local development stack (`DEBUG=true`) with
+placeholder secrets. A production deployment must override `DEBUG=false`,
+inject real `BILLING_SECRET_KEY` and `MFA_ENCRYPTION_KEY` values, and run the
+Alembic chain through its current head before serving traffic.
+
 Starts Postgres, the backend (on `localhost:8001`, matching the frontend's
 baked-in `VITE_API_BASE_URL`), and the frontend (on `localhost:5173`, served
 by nginx with SPA fallback routing). If you change the backend's port mapping
@@ -151,11 +156,11 @@ All six were exercised manually while building this extraction.
   Billing was a paid add-on inside a bigger platform. Removed; the standalone
   equivalent (`core/dependencies.py`) only checks that the caller's
   organization exists and isn't suspended.
-- **Alembic migration history** — the monorepo has 115 versioned migrations
-  and a documented orphaned/duplicate-revision bug (see its `TODO.md`).
-  Irrelevant here: this platform generates its schema directly from the
-  current models via `create_all`, with no migration history to carry
-  forward or repair.
+- **The monorepo's Alembic history** — the source monorepo has 115 versioned
+  migrations and a documented orphaned/duplicate-revision bug (see its
+  `TODO.md`). This standalone platform has its own linear Alembic chain under
+  `backend/alembic/`; only its SQLite development fallback uses
+  `Base.metadata.create_all()`. See `docs/DATABASE_MIGRATION_GUIDE.md`.
 - **OCR-based document scanning** (`pytesseract`) — never referenced by the
   billing module; not included.
 - **Full HR `Employee` model** (40+ fields) — replaced by a minimal `User`

@@ -6,10 +6,11 @@ modules/billing/routers/subscription_router.py
 from typing import Optional
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.exceptions import BadRequestException
 from app.core.dependencies import get_current_user, get_current_billing_admin, get_organization_id
 from app.modules.billing.services import SubscriptionService
 from app.modules.billing.models import BillingSubscriptionStatus
@@ -137,10 +138,16 @@ def deactivate_plan(
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=SubscriptionResponse)
 def create_subscription(
     body: SubscriptionCreate,
+    idempotency_key_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
 ):
+    body_key = (body.idempotency_key or "").strip() or None
+    header_key = (idempotency_key_header or "").strip() or None
+    if body_key and header_key and body_key != header_key:
+        raise BadRequestException("Body idempotency_key and Idempotency-Key header must match")
+
     svc = SubscriptionService(db)
     return svc.create_subscription(
         organization_id=current_user.organization_id,
@@ -148,7 +155,10 @@ def create_subscription(
         customer_id=body.customer_id,
         plan_id=body.plan_id,
         subscription_number=body.subscription_number,
-        **body.model_dump(exclude={"customer_id", "plan_id", "subscription_number"}),
+        idempotency_key=header_key or body_key,
+        **body.model_dump(
+            exclude={"customer_id", "plan_id", "subscription_number", "idempotency_key"}
+        ),
     )
 
 

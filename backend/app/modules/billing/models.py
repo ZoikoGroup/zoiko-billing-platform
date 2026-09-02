@@ -1504,6 +1504,10 @@ class Subscription(Base):
     stripe_price_id     = Column(String(255), nullable=True)
     cancel_at_period_end = Column(Boolean, default=False)
     stripe_cancel_at    = Column(DateTime, nullable=True)
+    # Client-supplied key for retry-safe subscription creation. It is scoped
+    # by organization so one tenant cannot consume another tenant's key.
+    idempotency_key      = Column(String(255), nullable=True)
+    idempotency_request_hash = Column(String(64), nullable=True)
     notes               = Column(Text, nullable=True)
     is_active           = Column(Boolean, default=True)
     created_by          = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -1518,6 +1522,7 @@ class Subscription(Base):
 
     __table_args__ = (
         UniqueConstraint("organization_id", "subscription_number", name="uq_subscriptions_org_number"),
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_subscriptions_org_idempotency_key"),
     )
 
     def __repr__(self):
@@ -1592,6 +1597,10 @@ class Invoice(Base):
     is_recurring        = Column(Boolean, default=False)
     is_active           = Column(Boolean, default=True)
     deleted_at          = Column(DateTime, nullable=True)
+    # Client-supplied key for retry-safe draft invoice creation. It is scoped
+    # by organization so a tenant cannot consume another tenant's key.
+    idempotency_key      = Column(String(255), nullable=True)
+    idempotency_request_hash = Column(String(64), nullable=True)
     created_by          = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_by          = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at          = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -1609,6 +1618,7 @@ class Invoice(Base):
 
     __table_args__ = (
         UniqueConstraint("organization_id", "invoice_number", name="uq_invoices_org_number"),
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_invoices_org_idempotency_key"),
         CheckConstraint("total_amount >= 0", name="ck_invoices_total"),
         CheckConstraint("paid_amount >= 0", name="ck_invoices_paid"),
         CheckConstraint("discount_percentage BETWEEN 0 AND 100", name="ck_invoices_discount_pct"),

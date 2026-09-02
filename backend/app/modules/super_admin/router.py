@@ -10,13 +10,14 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
 from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
+from app.core.rate_limiter import limit_route
 from app.database import get_db
 from app.modules.auth.models import User, UserRole
 from app.modules.auth.schemas import ResendInviteResponse, SuccessResponse
@@ -3803,8 +3804,10 @@ def list_billing_command_recent_activity(
 # 
 
 @router.post("/reconciliation-runs/run", response_model=ReconciliationRunResponse)
+@limit_route("5/minute")
 def trigger_reconciliation_run(
     body: TriggerReconciliationRunRequest = Body(default_factory=TriggerReconciliationRunRequest),
+    request: Request = None,
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
@@ -3893,9 +3896,11 @@ class ReconciliationExceptionActionRequest(BaseModel):
 
 
 @router.post("/reconciliation-exceptions/{exception_id}/acknowledge", response_model=ReconciliationExceptionActionResponse)
+@limit_route("30/minute")
 def acknowledge_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest = Body(default=None),
+    request: Request = None,
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
@@ -3914,9 +3919,11 @@ def acknowledge_reconciliation_exception(
 
 
 @router.post("/reconciliation-exceptions/{exception_id}/resolve", response_model=ReconciliationExceptionActionResponse)
+@limit_route("30/minute")
 def resolve_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest,
+    request: Request = None,
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):

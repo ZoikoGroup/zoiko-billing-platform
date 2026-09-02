@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "zoiko-billing-platform"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    LOGIN_MAX_FAILED_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
 
     # ── App Info ──────────────────────────────────────────────────────
     APP_NAME: str = "Zoiko Billing Platform Backend"

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.dependencies import get_current_org_admin, get_current_user
 from app.core.exceptions import BadRequestException
-from app.core.rate_limiter import limiter
+from app.core.rate_limiter import limit_route, limiter
 from app.database import get_db
 from app.modules.auth import service
 from app.modules.auth.country_currency import country_defaults
@@ -391,8 +391,10 @@ def get_user_summary(
 
 
 @user_router.post("/users", response_model=UserResponse, summary="Invite a user into your organization")
+@limit_route("20/minute")
 def create_user(
     data: UserCreateRequest,
+    request: Request = None,
     current_user=Depends(get_current_org_admin),
     db: Session = Depends(get_db),
 ):
@@ -400,9 +402,11 @@ def create_user(
 
 
 @user_router.put("/users/{user_id}", response_model=UserResponse, summary="Update a user in your organization")
+@limit_route("30/minute")
 def update_user(
     user_id: int,
     data: UserUpdateRequest,
+    request: Request = None,
     current_user=Depends(get_current_org_admin),
     db: Session = Depends(get_db),
 ):
@@ -481,8 +485,10 @@ def update_user(
 
 
 @user_router.delete("/users/{user_id}", response_model=SuccessResponse, summary="Deactivate a user")
+@limit_route("20/minute")
 def deactivate_user(
     user_id: int,
+    request: Request = None,
     current_user=Depends(get_current_org_admin),
     db: Session = Depends(get_db),
 ):
@@ -517,8 +523,10 @@ def deactivate_user(
 
 
 @user_router.post("/users/{user_id}/resend-invite", response_model=ResendInviteResponse, summary="Resend invite email")
+@limit_route("5/minute")
 def resend_invite(
     user_id: int,
+    request: Request = None,
     current_user=Depends(get_current_org_admin),
     db: Session = Depends(get_db),
 ):

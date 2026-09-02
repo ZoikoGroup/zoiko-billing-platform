@@ -5,6 +5,11 @@ services:
       POSTGRES_USER: billing
       POSTGRES_PASSWORD: billing
       POSTGRES_DB: zoiko_billing
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d zoiko_billing"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     ports:
       - "5432:5432"
     volumes:
@@ -28,16 +33,27 @@ services:
       BILLING_SECRET_KEY: change-me-to-a-long-random-string
       FRONTEND_URL: http://localhost:5173
       BILLING_CORS_ORIGINS: http://localhost:5173
+      # This compose file is the local development stack. Production must set
+      # DEBUG=false and inject real secrets through the deployment platform.
+      DEBUG: "true"
       APP_PORT: 8001
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
   frontend:
     build: ./frontend
     ports:
       - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   billing_db_data:
