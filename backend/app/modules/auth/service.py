@@ -201,7 +201,9 @@ def _invalidate_pending_action_tokens(db: Session, email: str, purpose) -> int:
 
 # ── Login ───────────────────────────────────────────────────────────────────
 
-def login_user(db: Session, email: str, password: str) -> dict:
+def login_user(
+    db: Session, email: str, password: str, background_tasks: Optional["BackgroundTasks"] = None
+) -> dict:
     try:
         user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
     except sa_exc.OperationalError:
@@ -221,11 +223,19 @@ def login_user(db: Session, email: str, password: str) -> dict:
         if user is not None:
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
             max_attempts = max(1, settings.LOGIN_MAX_FAILED_ATTEMPTS)
+            just_locked = False
             if user.failed_login_attempts >= max_attempts:
+                # Reaching here means the account was NOT already locked (an
+                # active lock returns earlier, at the login_locked_until
+                # check above) — so this is always a fresh lock transition,
+                # never a refire on a subsequent attempt while still locked.
                 user.login_locked_until = now + timedelta(
                     minutes=max(1, settings.LOGIN_LOCKOUT_MINUTES)
                 )
+                just_locked = True
             db.commit()
+            if just_locked:
+                _dispatch_account_locked_email(db, user, background_tasks=background_tasks)
         raise UnauthorizedException("Invalid email or password.")
 
     if user.organization_id:
@@ -592,20 +602,28 @@ def register_enterprise(
 
 # ── Password flows ──────────────────────────────────────────────────────────
 
-def request_password_reset(db: Session, email: str) -> dict:
+def request_password_reset(
+    db: Session, email: str, background_tasks: Optional["BackgroundTasks"] = None
+) -> dict:
     user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
     if user is not None and user.is_active:
         raw_token, _ = _issue_action_token(db, user.email, user.organization_id, SecurityActionPurpose.RESET)
         link = _action_link(SecurityActionPurpose.RESET, raw_token)
         db.commit()
-        _send_reset_email(db, user, link)
+        _send_reset_email(db, user, link, background_tasks=background_tasks)
     else:
         db.rollback()
     # Always return the same message to avoid email enumeration.
     return {"message": "If that email is registered, a password reset link has been sent."}
 
 
-def change_password(db: Session, user_id: int, current_password: str, new_password: str) -> dict:
+def change_password(
+    db: Session,
+    user_id: int,
+    current_password: str,
+    new_password: str,
+    background_tasks: Optional["BackgroundTasks"] = None,
+) -> dict:
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise NotFoundException("User", "id")
@@ -613,6 +631,7 @@ def change_password(db: Session, user_id: int, current_password: str, new_passwo
         raise BadRequestException("Current password is incorrect.")
     user.hashed_password = hash_password(new_password)
     db.commit()
+    _dispatch_password_changed_email(db, user, background_tasks=background_tasks)
     return {"message": "Password changed successfully."}
 
 
@@ -691,15 +710,71 @@ def invite_user(db: Session, actor, data) -> User:
 
 # ── Email notifications ─────────────────────────────────────────────────────
 
-def _send_reset_email(db: Session, user: User, link: str) -> None:
-    from app.services.email_service import send_org_admin_password_reset_email
+def _send_reset_email(
+    db: Session, user: User, link: str, background_tasks: Optional["BackgroundTasks"] = None
+) -> None:
+    """ZB-SEC-003 (Password reset requested) — dark T0 shell."""
+    from app.modules.notifications.service import dispatch_email
 
-    send_org_admin_password_reset_email(
-        db=db,
-        email=user.email,
-        first_name=user.first_name,
-        reset_link=link,
+    dispatch_email(
+        template_id="ZB-SEC-003",
+        recipient_email=user.email,
+        context={
+            "recipient_first_name": user.first_name or "there",
+            "reset_url": link,
+        },
+        event_name="identity.password_reset_requested",
+        entity_type="User",
+        entity_id=user.id,
         organization_id=user.organization_id,
+        db=db,
+        background_tasks=background_tasks,
+    )
+
+
+def _dispatch_password_changed_email(
+    db: Session, user: User, background_tasks: Optional["BackgroundTasks"] = None
+) -> None:
+    """ZB-SEC-004 (Password changed) — dark T0 shell."""
+    from app.modules.notifications.service import dispatch_email
+
+    dispatch_email(
+        template_id="ZB-SEC-004",
+        recipient_email=user.email,
+        context={"recipient_first_name": user.first_name or "there"},
+        event_name="identity.password_changed",
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=user.organization_id,
+        db=db,
+        background_tasks=background_tasks,
+        # A password change is a distinct occurrence each time — dedupe on
+        # a fresh key per call so a legitimate second change isn't
+        # suppressed as a "duplicate" of the first.
+        idempotency_key=f"identity.password_changed:User:{user.id}:{datetime.utcnow().isoformat()}",
+    )
+
+
+def _dispatch_account_locked_email(
+    db: Session, user: User, background_tasks: Optional["BackgroundTasks"] = None
+) -> None:
+    """ZB-SEC-010 (Account temporarily locked) — dark T0 shell."""
+    from app.modules.notifications.service import dispatch_email
+
+    dispatch_email(
+        template_id="ZB-SEC-010",
+        recipient_email=user.email,
+        context={"recipient_first_name": user.first_name or "there"},
+        event_name="identity.account_locked",
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=user.organization_id,
+        db=db,
+        background_tasks=background_tasks,
+        # Each lockout is a distinct occurrence — dedupe per-call, not
+        # per-user, so a later relock after the previous one expired isn't
+        # suppressed as a duplicate of the first.
+        idempotency_key=f"identity.account_locked:User:{user.id}:{datetime.utcnow().isoformat()}",
     )
 
 

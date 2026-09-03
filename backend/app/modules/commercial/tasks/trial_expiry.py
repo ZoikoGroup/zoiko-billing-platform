@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from app.database import SessionLocal
+from app.services.email_service import send_trial_expired_email
 
 logger = logging.getLogger("zoiko_billing.commercial.trial_expiry")
 
@@ -129,6 +130,28 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
                     "Suspended subscription %s — trial expired (trial_ends_at=%s) with no payment.",
                     subscription.id, subscription.trial_ends_at,
                 )
+
+                # Send ZB-COM-004: Trial Expired Notification
+                try:
+                    from app.modules.auth.models import User
+                    from app.modules.commercial.models import CommercialAccount
+                    from app.services.email_service import send_trial_expired_email
+
+                    acct = db.query(CommercialAccount).filter(CommercialAccount.id == subscription.commercial_account_id).first()
+                    if acct and acct.organization_id:
+                        org_id = acct.organization_id
+                        org_name = getattr(acct.organization, "name", "Your Organization")
+                        admin_user = db.query(User).filter(User.organization_id == org_id, User.is_active == True).first()
+                        if admin_user and admin_user.email:
+                            send_trial_expired_email(
+                                email=admin_user.email,
+                                recipient_first_name=admin_user.first_name or "there",
+                                organization_name=org_name,
+                                organization_id=org_id,
+                                db=db,
+                            )
+                except Exception as mail_exc:
+                    logger.warning("Failed to dispatch trial expired email for subscription %s: %s", subscription.id, mail_exc)
             except Exception as row_exc:  # noqa: BLE001 - one subscription's failure must not block the rest
                 db.rollback()
                 summary["errors"].append(f"subscription {subscription.id}: {row_exc}")

@@ -462,3 +462,6 @@ import app.modules.super_admin.models  # noqa: F401,E402
 import app.modules.commercial.models  # noqa: F401,E402
 import app.modules.billing.models  # noqa: F401,E402
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
+import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation
+import app.services.email_foundation.models  # noqa: F401,E402 — Email System Foundation Infrastructure
+

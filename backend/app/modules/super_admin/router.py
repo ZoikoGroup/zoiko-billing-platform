@@ -10,7 +10,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
@@ -586,6 +586,7 @@ def admin_reset_password(
 @router.put("/users/{user_id}/mfa/reset", response_model=SuccessResponse)
 def admin_reset_mfa(
     user_id: int,
+    background_tasks: BackgroundTasks,
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
@@ -597,7 +598,7 @@ def admin_reset_mfa(
     Always audited (MFA_ADMIN_RESET) with both actor and target identity."""
     from app.modules.auth import mfa_service
 
-    return mfa_service.admin_reset_mfa(db, current_user, user_id)
+    return mfa_service.admin_reset_mfa(db, current_user, user_id, background_tasks=background_tasks)
 
 
 # ── Commercial accounts ────────────────────────────────────────────────────
@@ -3399,6 +3400,7 @@ def _grant_to_response(grant) -> PrivilegedAccessGrantResponse:
 @router.post("/privileged-access/request", response_model=PrivilegedAccessGrantResponse)
 def request_privileged_access(
     payload: PrivilegedAccessRequestCreate,
+    background_tasks: BackgroundTasks,
     current_user=Depends(require_capability('tenant_support.request')),
     db: Session = Depends(get_db),
 ):
@@ -3408,6 +3410,7 @@ def request_privileged_access(
         reason=payload.reason,
         ticket_reference=payload.ticket_reference,
         requested_minutes=payload.requested_minutes,
+        background_tasks=background_tasks,
     )
     return _grant_to_response(grant)
 

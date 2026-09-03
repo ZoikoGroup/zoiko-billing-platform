@@ -206,5 +206,19 @@ class Settings(BaseSettings):
     PLATFORM_STRIPE_PUBLISHABLE_KEY: str = ""
     PLATFORM_STRIPE_WEBHOOK_SECRET: str = ""
 
+    # ── ZB-INV-011: Invoice pre-due reminder (Prompt 4) ──────────────────
+    # Number of days before an invoice's due_date to send the reminder email.
+    # Per-tenant override is a future enhancement (would require a
+    # BillingConfiguration column); this is platform-wide for now.
+    INVOICE_REMINDER_LEAD_DAYS: int = 3
+    ENABLE_INVOICE_PRE_DUE_REMINDER: bool = True
+    INVOICE_REMINDER_INTERVAL_MINUTES: int = 1440  # daily sweep
+
+    # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
+    # Days before trial_ends_at to fire the proactive warning email.
+    TRIAL_WARNING_LEAD_DAYS: int = 3
+    ENABLE_TRIAL_WARNING_JOB: bool = True
+    COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES: int = 1440  # daily sweep
+
 
 settings = Settings()

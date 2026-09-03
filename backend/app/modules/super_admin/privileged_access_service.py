@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
 from app.modules.auth.mfa_service import verify_step_up
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserRole
 from app.modules.organizations.models import Organization
 from app.modules.super_admin.audit_service import PlatformAuditService
 from app.modules.super_admin.models import (
@@ -69,6 +69,7 @@ class PrivilegedAccessService:
         reason: str,
         ticket_reference: str,
         requested_minutes: int = MAX_GRANT_MINUTES,
+        background_tasks=None,
     ) -> PrivilegedTenantAccessGrant:
         reason = (reason or "").strip()
         ticket_reference = (ticket_reference or "").strip()
@@ -121,7 +122,48 @@ class PrivilegedAccessService:
             "Privileged tenant access requested: grant=%s org=%s actor=%s ticket=%s",
             grant.id, organization_id, actor.email, ticket_reference,
         )
+        self._notify_org_admins_of_access_request(org, grant, background_tasks=background_tasks)
         return grant
+
+    def _notify_org_admins_of_access_request(
+        self, org: Organization, grant: PrivilegedTenantAccessGrant, background_tasks=None
+    ) -> None:
+        """ZB-SEC-018 (Privileged/support access requested — gap closure).
+        Notifies every active org-admin user of the affected tenant, not
+        the requesting Super Admin."""
+        from app.modules.notifications.service import dispatch_email
+
+        admins = (
+            self.db.query(User)
+            .filter(
+                User.organization_id == org.id,
+                User.role == UserRole.ORG_ADMIN,
+                User.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+        for admin in admins:
+            dispatch_email(
+                template_id="ZB-SEC-018",
+                recipient_email=admin.email,
+                context={
+                    "recipient_first_name": admin.first_name or "there",
+                    "organization_name": org.display_name or org.organization_name,
+                    "reason": grant.reason,
+                    "ticket_reference": grant.ticket_reference,
+                },
+                event_name="privileged_access.requested",
+                entity_type="PrivilegedTenantAccessGrant",
+                entity_id=grant.id,
+                organization_id=org.id,
+                db=self.db,
+                background_tasks=background_tasks,
+                correlation_id=grant.correlation_id,
+                # One notification per admin per grant, not per-org — the
+                # default dedupe key would collapse multiple admins' sends
+                # into one, so scope it by recipient too.
+                idempotency_key=f"privileged_access.requested:PrivilegedTenantAccessGrant:{grant.id}:{admin.id}",
+            )
 
     def activate(
         self,
