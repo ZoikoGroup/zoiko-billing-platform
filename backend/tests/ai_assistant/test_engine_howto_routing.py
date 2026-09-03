@@ -85,24 +85,40 @@ def classify_response(db_session, text):
 @pytest.mark.parametrize("article", ARTICLES)
 def test_modal_pronoun_matrix_routes_to_explain(db_session, noun, verb, lead, article):
     """Every Step-2 phrasing variant × verb × noun × article-option resolves
-    to EXPLAIN at ≥0.9 confidence (the rules fast-path skips the LLM)."""
+    to EXPLAIN at ≥0.9 confidence (the rules fast-path skips the LLM).
+
+    Exception: ``add/create a customer`` is a customer-CREATION ask and
+    resolves to the honest capability-gap intent (unsupported_customer_creation)
+    instead of the customer glossary definition — there is no governed
+    in-chat action to create a customer, so the definition would not answer
+    the user's "how" question."""
     phrase = f"{lead} {verb} {article}{noun}"
     res = classify(db_session, phrase)
-    assert res["domain"] == "help", f"{phrase!r} -> {res['intent']}/{res['domain']}"
-    assert res["intent"] == "help_general", f"{phrase!r} -> {res['intent']}/{res['domain']}"
-    assert res["confidence"] >= 0.9, f"{phrase!r} conf={res['confidence']}"
-    assert res["risk_class"] == "R0"
+    if noun == "customer" and verb in ("add", "create"):
+        assert res["domain"] == "help", f"{phrase!r} -> {res['intent']}/{res['domain']}"
+        assert res["intent"] == "unsupported_customer_creation", f"{phrase!r} -> {res['intent']}/{res['domain']}"
+        assert res["confidence"] >= 0.9, f"{phrase!r} conf={res['confidence']}"
+        assert res["risk_class"] == "R0"
+    else:
+        assert res["domain"] == "help", f"{phrase!r} -> {res['intent']}/{res['domain']}"
+        assert res["intent"] == "help_general", f"{phrase!r} -> {res['intent']}/{res['domain']}"
+        assert res["confidence"] >= 0.9, f"{phrase!r} conf={res['confidence']}"
+        assert res["risk_class"] == "R0"
 
 
 @pytest.mark.parametrize("noun", NOUNS)
-@pytest.mark.parametrize("verb", VERBS)
-def test_plural_noun_forms_still_explain(db_session, noun, verb):
+def test_plural_noun_forms_still_explain(db_session, noun):
+    # The phrase always uses the verb "add", so the outcome depends on the noun:
+    # plural "customers" is a customer-creation ask -> capability gap; other
+    # plural nouns stay on help_general.
     phrase = f"how would one add the {noun}s"
     res = classify(db_session, phrase)
-    assert res["intent"] == "help_general"
+    if noun == "customer":
+        assert res["intent"] == "unsupported_customer_creation"
+    else:
+        assert res["intent"] == "help_general"
     assert res["domain"] == "help"
     assert res["confidence"] >= 0.9
-
 
 # ── STEP-4 #2: previously-fixed cases still pass ─────────────────────────────
 
@@ -112,11 +128,17 @@ def test_plural_noun_forms_still_explain(db_session, noun, verb):
     "how do I add a customer",
     "how can I add the customer",
 ])
-def test_article_variant_howto_cases_still_explain(db_session, phrase):
+def test_article_variant_howto_add_customer_is_capability_gap(db_session, phrase):
+    """Article-invariant 'how to add/create the customer' now answers the
+    honest capability gap (use Customers > Add Customer) instead of the
+    customer glossary definition — the gloss text does not tell the user HOW
+    to create a customer."""
     res = classify(db_session, phrase)
     assert res["domain"] == "help"
-    assert res["intent"] == "help_general"
+    assert res["intent"] == "unsupported_customer_creation"
     assert res["confidence"] >= 0.9
+    answer = classify_response(db_session, phrase)
+    assert "can't create new customer records" in answer
 
 
 def test_collected_revenue_is_metric_collections_not_metric_revenue(db_session):
@@ -201,13 +223,14 @@ def test_how_to_gate_independence(db_session):
     the deictic clause of _ACCOUNT_SPECIFIC_RE fires on bare 'the customer'
     (it is a standalone alternative), so the primary _HOWTO_LEAD_RE gate is
     BLOCKED for this phrase and the anchored _HOWTO_VERB_NOUN_RE gate is the
-    layer that keeps it on EXPLAIN. Routing must stay help_general ≥0.95
-    even if either regex is tightened later."""
+    layer that routes customer-CREATION how-tos to the honest capability-gap
+    intent. Routing must stay unsupported_customer_creation ≥0.95 even if
+    either regex is tightened later."""
     n = engine_mod.normalize_classification_input("how to add the customer")
     assert engine_mod._HOWTO_LEAD_RE.search(n) is not None
     assert engine_mod._ACCOUNT_SPECIFIC_RE.search(n) is not None  # deictic fires
     assert engine_mod._HOWTO_VERB_NOUN_RE.match(n) is not None
     res = classify(db_session, "how to add the customer")
-    assert res["intent"] == "help_general"
+    assert res["intent"] == "unsupported_customer_creation"
     assert res["domain"] == "help"
     assert res["confidence"] >= 0.95

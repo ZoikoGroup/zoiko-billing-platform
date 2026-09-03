@@ -31,6 +31,7 @@ from app.modules.chatbot.conversation.engine import ConversationEngine
 from app.modules.chatbot.context.ai_context import AIContext
 
 _sort_chunks_by_type = ConversationEngine._sort_chunks_by_type
+_format_rag_fallback = ConversationEngine._format_rag_fallback
 
 
 KB_DOCS = {
@@ -264,3 +265,50 @@ class TestChunkSorting:
         for line in result.strip().split("\n"):
             if line.strip():
                 assert line.strip().startswith("•"), f"Missing bullet prefix: {line}"
+
+
+class TestRagFallbackFormatter:
+    """ISSUE: the RAG fallback served flat \"• \" KB text verbatim, which
+    ReactMarkdown rendered as one dense wall of raw <p> paragraphs (a \"• \" line
+    is not Markdown list syntax). _format_rag_fallback normalizes it into a
+    proper Markdown answer so the fallback renders as a clean list."""
+
+    def test_converts_raw_bullets_to_markdown_list(self):
+        raw = (
+            "• Revenue Report: shows total billed revenue over a chosen period.\n"
+            "• Invoice Report: itemized records of every invoice issued."
+        )
+        result = _format_rag_fallback(raw)
+        lines = result.split("\n")
+        assert lines == [
+            "- Revenue Report: shows total billed revenue over a chosen period.",
+            "- Invoice Report: itemized records of every invoice issued.",
+        ]
+
+    def test_consecutive_items_are_one_continuous_list(self):
+        # No blank line between list items -> ReactMarkdown renders a single list.
+        raw = (
+            "• Dunning is the systematic process of collecting overdue payments.\n"
+            "• Level 1 is a gentle reminder at 7 days past due.\n"
+            "• Level 2 is a firm notice at 14 days past due."
+        )
+        result = _format_rag_fallback(raw)
+        assert "\n- " in result and "\n\n- " not in result, result
+
+    def test_preserves_prose_lines_as_paragraphs(self):
+        raw = (
+            "Some introductory prose paragraph.\n"
+            "• A key definition chunk."
+        )
+        result = _format_rag_fallback(raw)
+        assert "Some introductory prose paragraph." in result
+        assert "- A key definition chunk." in result
+
+    def test_separates_prose_and_list_with_blank_line(self):
+        raw = "Prose line.\n• Bullet item."
+        result = _format_rag_fallback(raw)
+        assert "\n\n- Bullet item." in result, result
+
+    def test_empty_input_returns_empty(self):
+        assert _format_rag_fallback("") == ""
+        assert _format_rag_fallback(None) is None

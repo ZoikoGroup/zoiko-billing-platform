@@ -280,6 +280,30 @@ class TestIssue2_CustomerLookup:
             f"Expected customer_id={customers['go'].id} but got {params.get('customer_id')}"
         )
 
+    def test_extract_action_params_at_amount_after_customer(self, db, org, customers, ctx):
+        """'invoice for <customer> at <amount>' phrasing must still resolve the
+        customer — the 'at' + amount must NOT be absorbed into the customer name.
+
+        Regression: 'draft an invoice for Acme at $500' previously resolved no
+        customer (the '$' broke the capture), and '... at 500' treated the whole
+        'Acme at 500' string as the customer name, so no draft was created for
+        the intended customer.
+        """
+        engine = ConversationEngine(db, model_gateway=None)
+        for phrase, expected in [
+            ("Create an invoice for Acme at $250", customers["acme"].id),
+            ("Create an invoice for Acme at 250", customers["acme"].id),
+            ("draft an invoice for Go at $500", customers["go"].id),
+        ]:
+            params = engine._extract_action_params(phrase, "invoice_draft", ctx)
+            assert params.get("customer_id") == expected, (
+                f"Expected customer_id={expected} for {phrase!r} "
+                f"but got {params.get('customer_id')} (customer_name={params.get('customer_name')!r})"
+            )
+            assert params.get("amount") in ("250", "500"), (
+                f"Expected amount for {phrase!r} but got {params.get('amount')}"
+            )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ISSUE 3 — "Delivered" status response

@@ -182,6 +182,16 @@ body {
   color: var(--ab-text-secondary, #6b7280);
 }
 
+/* Financial emphasis in assistant markdown: a **bolded currency amount**
+   (e.g. **$1,234.56**) is rendered in the brand accent so the figure — the
+   one number a billing answer leads with — stands out from prose. Pure
+   presentation; inherits weight from the <strong> it always accompanies. */
+.ab-financial {
+  color: var(--ab-accent, #f5841f);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* Suggested prompt chips */
 .ab-chip {
   color: var(--ab-accent-text);

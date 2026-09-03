@@ -117,6 +117,7 @@ class TestMasterPromptRouting:
         ("tell me our customers", "customer_list", "billing"),
         ("which customers do we have", "customer_list", "billing"),
         ("what customers do we have", "customer_list", "billing"),
+        ("which customers have invoices", "customer_list", "billing"),
         # ── Count variants ──
         ("how many customers are there", "customer_count", "dashboard"),
         ("how many customers do we have", "customer_count", "dashboard"),

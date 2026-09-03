@@ -231,11 +231,20 @@ class TestInvoiceStatusParaphrases:
             assert not any(bad.lower() in str(src).lower() for bad in FORBIDDEN_SOURCES), (
                 f"{question!r}: forbidden evidence source {src!r}"
             )
-        # No duplicated content blocks in one answer
-        blocks = [
-            " ".join(b.strip().lower().split())
-            for b in answer.split("\u2022") if len(b.strip()) > 40
-        ]
+        # No duplicated content blocks in one answer. Blocks are the individual
+        # bullet items — the retrieval path may emit them with a raw "• " glyph
+        # (pre-format fallback) or as proper Markdown "- " list items (after the
+        # RAG fallback is normalized into a clean list). Split on either so the
+        # de-duplication guard holds for both representations.
+        blocks = []
+        for line in answer.split("\n"):
+            seg = line.strip()
+            for glyph in ("\u2022", "-", "*", "+"):
+                if seg.startswith(glyph) and len(seg) > 1:
+                    seg = seg[1:].lstrip()
+                    break
+            if len(seg) > 40:
+                blocks.append(" ".join(seg.lower().split()))
         assert len(blocks) == len(set(blocks)), (
             f"{question!r}: duplicated content blocks in answer:\n{answer}"
         )
@@ -365,3 +374,59 @@ class TestStatusMeaningValidation:
             message="What does 'Delivered' mean for invoice status?", ctx=ctx,
         )
         assert "not a valid invoice status" in (result["answer"] or "").lower()
+
+
+# ── No-KB fallback: status list is a live system fact, never a refusal ───────
+
+class TestStatusListFallbackNoKb:
+    """When the knowledge base is empty / unseeded, list-status questions must
+    fall back to the authoritative InvoiceStatus enum — a dependable system
+    fact — instead of the generic 'I don't have specific information' refusal
+    (reported bug: 'What do the different invoice statuses mean?' → R0
+    abstention)."""
+
+    @pytest.mark.parametrize("question", [
+        "What do the different invoice statuses mean?",
+        "What are the valid invoice statuses?",
+        "What statuses can an invoice have?",
+        "Explain invoice statuses to me",
+    ])
+    def test_status_list_returns_enum_not_refusal(self, db, org, ctx, question):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = _make_conv(db, org, f"test-conv-nokb-{abs(hash(question))}")
+        result = engine.send_message(
+            conversation_uid=conv.conversation_uid, message=question, ctx=ctx,
+        )
+        answer = (result["answer"] or "").lower()
+        # Must NOT be the knowledge-base abstention.
+        assert "knowledge base" not in answer, (
+            f"{question!r}: fell back to refusal:\n{result['answer']}"
+        )
+        assert "would you like me to connect you" not in answer, (
+            f"{question!r}: fell back to escalation:\n{result['answer']}"
+        )
+        # A real, complete status list is present.
+        for word in STATUS_WORDS:
+            assert word.lower() in answer, (
+                f"{question!r}: missing status {word!r}:\n{result['answer']}"
+            )
+        # Evidence is labeled honestly as the invoice-status model, and the
+        # original fabricated "Schema" citation is never reintroduced.
+        sources = [str(e.get("source")) for e in result.get("evidence", [])]
+        assert sources, f"{question!r}: expected honest evidence source"
+        for src in sources:
+            assert not any(bad.lower() in src.lower() for bad in FORBIDDEN_SOURCES), (
+                f"{question!r}: forbidden evidence source {src!r}"
+            )
+
+    def test_status_list_fallback_cites_model_not_schema(self, db, org, ctx):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = _make_conv(db, org, "test-conv-nokb-source")
+        result = engine.send_message(
+            conversation_uid=conv.conversation_uid,
+            message="What are the invoice statuses?", ctx=ctx,
+        )
+        sources = [str(e.get("source")) for e in result.get("evidence", [])]
+        assert any("invoice status model" in s.lower() for s in sources), (
+            f"expected real invoice-status-model source, got {sources!r}"
+        )
