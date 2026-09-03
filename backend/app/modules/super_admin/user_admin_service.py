@@ -258,6 +258,23 @@ class UserAdminService:
             metadata={"field": "role", "plane": "TENANT"},
             reason=self._clean(reason),
         )
+
+        # ZB-GAP-007: Notify the affected user of their new role
+        try:
+            from app.services.email_service import send_user_role_changed_email
+            if target.email:
+                send_user_role_changed_email(
+                    email=target.email,
+                    recipient_first_name=getattr(target, "first_name", None) or "there",
+                    user_email=target.email,
+                    new_role=new_role.value,
+                    organization_id=target.organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            import logging as _logging
+            _logging.getLogger("zoiko_billing").warning("Failed to send role changed email: %s", mail_exc)
+
         return target
 
     # ── Membership move ──────────────────────────────────────────────────────
@@ -321,6 +338,24 @@ class UserAdminService:
             metadata={"field": "status", "plane": "TENANT"},
             reason=self._clean(reason),
         )
+
+        # ZB-GAP-008: Security notice — notify the affected user of their account status change
+        try:
+            from app.services.email_service import send_user_status_changed_email
+            if target.email:
+                send_user_status_changed_email(
+                    email=target.email,
+                    recipient_first_name=getattr(target, "first_name", None) or "there",
+                    user_email=target.email,
+                    status="active" if is_active else "deactivated",
+                    reason=self._clean(reason),
+                    organization_id=target.organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            import logging as _logging
+            _logging.getLogger("zoiko_billing").warning("Failed to send user status changed email: %s", mail_exc)
+
         return target
 
     # ── helpers ──────────────────────────────────────────────────────────────

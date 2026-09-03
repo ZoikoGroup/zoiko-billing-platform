@@ -158,6 +158,32 @@ class TenantLifecycleService:
             reason=reason.strip(),
             correlation_id=correlation_id,
         )
+
+        # ZB-GAP-006: Notify org admin on manual suspension or reactivation
+        if target in (LifecycleState.SUSPENDED, LifecycleState.ACTIVE):
+            try:
+                from app.services.email_service import send_org_lifecycle_changed_email
+                admin = (
+                    self.db.query(User)
+                    .filter(User.organization_id == organization.id, User.is_active == True)
+                    .first()
+                )
+                if admin and admin.email:
+                    send_org_lifecycle_changed_email(
+                        email=admin.email,
+                        recipient_first_name=getattr(admin, "first_name", None) or "there",
+                        organization_name=getattr(organization, "name", "Your Organization"),
+                        target_state=target.value,
+                        reason=reason.strip(),
+                        organization_id=organization.id,
+                        db=self.db,
+                    )
+            except Exception as mail_exc:
+                import logging as _logging
+                _logging.getLogger("zoiko_billing").warning(
+                    "Failed to send lifecycle changed email: %s", mail_exc
+                )
+
         return organization, previous
 
     # ── Evidence-based onboarding readiness ─────────────────────────────────

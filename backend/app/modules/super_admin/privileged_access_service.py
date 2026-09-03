@@ -249,6 +249,30 @@ class PrivilegedAccessService:
                 correlation_id=grant.correlation_id,
             )
             self.db.commit()
+
+            # ZB-GAP-009: Security notice — notify org admin that privileged session has ended
+            try:
+                from app.modules.auth.models import User as AuthUser
+                from app.modules.organizations.models import Organization
+                from app.services.email_service import send_privileged_access_ended_email
+                org = self.db.query(Organization).filter(Organization.id == grant.organization_id).first()
+                admin = self.db.query(AuthUser).filter(
+                    AuthUser.organization_id == grant.organization_id, AuthUser.is_active == True
+                ).first()
+                if admin and admin.email and org:
+                    send_privileged_access_ended_email(
+                        email=admin.email,
+                        recipient_first_name=getattr(admin, "first_name", None) or "there",
+                        organization_name=getattr(org, "name", "Your Organization"),
+                        organization_id=grant.organization_id,
+                        db=self.db,
+                    )
+            except Exception as mail_exc:
+                import logging as _logging
+                _logging.getLogger("zoiko_billing").warning(
+                    "Failed to send privileged access ended email: %s", mail_exc
+                )
+
         return grant
 
     def _expire_if_stale(self, grant: PrivilegedTenantAccessGrant) -> PrivilegedTenantAccessGrant:
