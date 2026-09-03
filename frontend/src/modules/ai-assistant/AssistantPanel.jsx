@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Send,
+  Square,
   X,
   User,
   AlertTriangle,
@@ -25,6 +26,7 @@ import {
   Moon,
   LifeBuoy,
   ArrowRight,
+  ArrowLeft,
   Info,
   Maximize2,
   Minimize2,
@@ -36,6 +38,7 @@ import {
   listSessions,
   getSession,
   sendMessageStreamed,
+  cancelStream,
   generatePreview,
   confirmAction,
   executeAction,
@@ -245,6 +248,46 @@ function deriveTitle(text, maxLen = 48) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// ── Message identity / merge ─────────────────────────────────────────────────
+// Optimistic messages must carry a UNIQUE, STABLE client UID so they keep a
+// stable React identity across optimistic creation → streaming → reconciliation.
+// A timestamp-only UID (`temp-${Date.now()}`) can collide when two sends land in
+// the same millisecond and shares nothing stable to reconcile against.
+function newClientUid(prefix) {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Content identity used to match a local (possibly optimistic) message to its
+// server-persisted twin, which carries a DIFFERENT server-assigned message_uid.
+// sender_type + message_text uniquely identifies a logical message well enough
+// to (a) de-dupe a persisted twin and (b) never drop a local message the server
+// has not persisted yet. Timestamps are NEVER part of this key — ordering and
+// identity are sequence/content based, never display-clock based.
+function messageContentKey(m) {
+  return `${m?.sender_type || ""}|${m?.message_text || ""}`;
+}
+
+// Safely reconcile a server snapshot into local state WITHOUT losing newer local
+// messages (BUG 2).  Ordering principle: the server snapshot is the authoritative,
+// correctly-ordered base (the backend now tie-breaks equal created_at by row id);
+// any local message the server has NOT persisted yet is re-appended in its
+// original relative order so an in-flight/optimistic turn is never dropped.  A
+// local message whose content is already present in the snapshot is suppressed —
+// its persisted twin (with the server's message_uid) already renders, so this
+// never duplicates either.  Only ever returns a superset-preserving array.
+function mergeServerMessages(local, server) {
+  const serverMsgs = Array.isArray(server) ? server : [];
+  const serverKeys = new Set(serverMsgs.map(messageContentKey));
+  const extras = (Array.isArray(local) ? local : []).filter(
+    (m) => !serverKeys.has(messageContentKey(m))
+  );
+  if (extras.length === 0) return serverMsgs;
+  return [...serverMsgs, ...extras];
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function AssistantPanel({ isOpen, onClose }) {
@@ -298,6 +341,19 @@ export default function AssistantPanel({ isOpen, onClose }) {
   // re-types) and defers structured blocks; cleared when the stream's
   // terminal `done` event reconciles the authoritative reply.
   const [streamingUid, setStreamingUid] = useState(null);
+  // Anchored main menu: index in `messages` BEFORE which the main menu is
+  // displayed as a frontend-only conversation UI item (never sent to the
+  // backend, no message ID, no timestamp).  The menu is rendered inline at
+  // this fixed boundary, so it stays put while new user/assistant messages are
+  // appended below it.  `null` = no menu shown.
+  const [mainMenuAt, setMainMenuAt] = useState(0);
+  // Stop-generation (ChatGPT/Claude UX): handleStop must reach into the
+  // fire-and-forget streaming closure to (a) abort the in-flight SSE fetch,
+  // (b) freeze further token appends, and (c) mark the partial bubble
+  // complete — so the AbortController and the closure's mutable state live
+  // in refs instead of being trapped inside handleSend.
+  const streamCtlRef = useRef(null);
+  const streamStateRef = useRef({ respUid: null, targetUid: null, pendingTokens: [], flushTimer: null, done: false });
 
   useEffect(() => {
     if (isOpen) {
@@ -351,11 +407,21 @@ export default function AssistantPanel({ isOpen, onClose }) {
         // Pre-fetch first session data in parallel with setting sessions
         const firstSession = data[0];
         getSession(firstSession.conversation_uid).then((session) => {
+          // Guard against a LATE resolve clobbering a newer view: this pre-fetch
+          // is only safe to apply while the user is still on the untouched
+          // initial state (no active session yet). If by now they have started a
+          // new conversation or switched sessions, discard the stale snapshot —
+          // otherwise it would silently overwrite the in-flight messages.
+          if (activeSession) return;
           console.warn("[assistant-cx] session restored:", firstSession.conversation_uid, `(${session.messages?.length || 0} messages)`);
           setActiveSession(session);
           setMessages(session.messages || []);
           setAnimatingUid(null);
           setAnimDoneUid(null);
+          // A restored session with saved messages shows no main menu (the
+          // conversation is already underway); a brand-new empty session
+          // shows the anchored main menu at its initial position.
+          setMainMenuAt((session.messages?.length || 0) > 0 ? null : 0);
           setStatusAnnouncement(`Loaded conversation: ${session.title || "Untitled"}`);
         }).catch((err) => {
           console.warn("[assistant-cx] session restore FAILED:", firstSession.conversation_uid, err?.name, err?.message);
@@ -371,13 +437,23 @@ export default function AssistantPanel({ isOpen, onClose }) {
   };
 
   const selectSession = async (uid) => {
-    if (activeSession?.conversation_uid === uid) return;
     try {
       const session = await getSession(uid);
+      const sameSession = activeSession?.conversation_uid === session.conversation_uid;
       setActiveSession(session);
-      setMessages(session.messages || []);
+      // Restoring the SAME conversation merges the server snapshot with any
+      // newer local (optimistic/streaming) messages so an in-flight turn is
+      // never silently dropped (BUG 2). Switching to a DIFFERENT conversation
+      // is an intentional navigation — the snapshot replaces local state.
+      setMessages((prev) =>
+        sameSession ? mergeServerMessages(prev, session.messages || []) : session.messages || []
+      );
       setAnimatingUid(null);
       setAnimDoneUid(null);
+      // Switching conversations gets that session's normal menu state. A
+      // same-session refresh/reconcile preserves the current anchor so Back to
+      // Main Menu does not disappear just because history was refreshed.
+      if (!sameSession) setMainMenuAt((session.messages?.length || 0) > 0 ? null : 0);
       setStatusAnnouncement(`Loaded conversation: ${session.title || "Untitled"}`);
     } catch (err) {
       console.error("Failed to load session:", err);
@@ -415,7 +491,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
       errorStatus = err?.status != null ? `HTTP ${err.status}` : "Connection issue";
     }
     setMessages((prev) => [...prev, {
-      message_uid: `error-${Date.now()}`,
+      message_uid: newClientUid("error"),
       sender_type: "system",
       message_text: errorText,
       created_at: new Date().toISOString(),
@@ -436,6 +512,11 @@ export default function AssistantPanel({ isOpen, onClose }) {
         ? overrideText.trim()
         : input.trim();
     if (!text || loading) return;
+    // A new question continues BELOW any anchored main menu — the menu keeps
+    // its position and the new user/assistant messages are appended after it.
+    // Nothing to clear here: the menu anchor (`mainMenuAt`, read at render
+    // time) is unaffected by message growth, so the menu never moves, hides,
+    // or reappears below the answer.
     // A new message always resumes auto-follow and jumps to the latest
     // content — even if the user had scrolled up to read older messages.
     stickRef.current = true;
@@ -452,7 +533,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
     let streamSettled = false;
     try {
       if (!targetUid) {
-        const userMsg = { message_uid: `temp-${Date.now()}`, sender_type: "user", message_text: text, created_at: new Date().toISOString() };
+        const userMsg = { message_uid: newClientUid("temp"), sender_type: "user", message_text: text, created_at: new Date().toISOString() };
         setMessages([userMsg]);
         try {
           // Title is derived server-side from the first user message; pass the
@@ -462,7 +543,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
           setSessions((prev) => [session, ...prev]);
           const initResp = session.messages?.[0];
           const assistantMsg = {
-            message_uid: initResp?.message_uid || `resp-${Date.now()}`,
+            message_uid: initResp?.message_uid || newClientUid("resp"),
             sender_type: "assistant",
             message_text: initResp?.answer || "",
             mode: initResp?.mode || "M0_EXPLAIN",
@@ -481,7 +562,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         }
         return;
       }
-      const userMsg = { message_uid: `temp-${Date.now()}`, sender_type: "user", message_text: text, created_at: new Date().toISOString() };
+      const userMsg = { message_uid: newClientUid("temp"), sender_type: "user", message_text: text, created_at: new Date().toISOString() };
       setMessages((prev) => [...prev, userMsg]);
       // Mirror the backend's first-message titling locally so the history
       // dropdown reflects the new title without a refetch.
@@ -500,7 +581,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
 
       // Optimistic streaming bubble: text fills in as SSE `token` events
       // arrive; the authoritative reply reconciles on the `done` event.
-      const respUid = `resp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const respUid = newClientUid("resp");
       setMessages((prev) => [...prev, {
         message_uid: respUid,
         sender_type: "assistant",
@@ -514,14 +595,20 @@ export default function AssistantPanel({ isOpen, onClose }) {
       setAnimatingUid(null);
       setAnimDoneUid(null);
 
-      let done = false;
-      let pendingTokens = [];
-      let flushTimer = null;
+      // Wire the AbortController and mutable streaming state into refs so the
+      // Stop button can abort the fetch / freeze the stream from OUTSIDE this
+      // closure (the stream itself is fire-and-forget — SSE callbacks settle
+      // later, see comment above the try block).  `didStartStream` /
+      // `streamSettled` are declared OUTSIDE the try and owned by its
+      // catch/finally, so we only assign them, never redeclare.
+      streamCtlRef.current = new AbortController();
+      const streamState = { respUid, targetUid, pendingTokens: [], flushTimer: null, done: false };
+      streamStateRef.current = streamState;
       const flushTokens = () => {
-        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-        if (!pendingTokens.length) return;
-        const chunk = pendingTokens.join("");
-        pendingTokens = [];
+        if (streamState.flushTimer) { clearTimeout(streamState.flushTimer); streamState.flushTimer = null; }
+        if (!streamState.pendingTokens.length) return;
+        const chunk = streamState.pendingTokens.join("");
+        streamState.pendingTokens = [];
         setMessages((prev) => prev.map((m) =>
           m.message_uid === respUid ? { ...m, message_text: (m.message_text || "") + chunk } : m
         ));
@@ -529,27 +616,35 @@ export default function AssistantPanel({ isOpen, onClose }) {
       };
       const settle = () => {
         streamSettled = true;
-        if (done) return;
-        done = true;
-        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        if (streamState.done) return;
+        streamState.done = true;
+        if (streamState.flushTimer) { clearTimeout(streamState.flushTimer); streamState.flushTimer = null; }
+        streamCtlRef.current = null;
         setLoading(false);
       };
 
       didStartStream = true;
       sendMessageStreamed(targetUid, text, undefined, {
+        signal: streamCtlRef.current.signal,
         onToken: (delta) => {
-          if (done) return;
-          pendingTokens.push(delta);
-          if (!flushTimer) flushTimer = setTimeout(flushTokens, 40);
+          if (streamState.done) return;
+          streamState.pendingTokens.push(delta);
+          if (!streamState.flushTimer) streamState.flushTimer = setTimeout(flushTokens, 40);
         },
         onDone: (payload) => {
-          if (done) return;
+          if (streamState.done) return;
           const response = payload.response || {};
           const streamed = payload.streamed === true;
           // Sweep any token stragglers into the bubble, then overwrite with
           // the authoritative answer so partial text can never drift from it.
-          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-          pendingTokens = [];
+          // NOTE: do NOT mark streamState.done here — settle() owns the
+          // terminal transition (setting done AND clearing `loading`), so the
+          // loading lifecycle must reach its end.  Marking done first makes
+          // settle() early-return and leaves `loading` stuck true after a
+          // successful response, keeping the "Checking records..." indicator
+          // and the disabled composer on screen forever.
+          if (streamState.flushTimer) { clearTimeout(streamState.flushTimer); streamState.flushTimer = null; }
+          streamState.pendingTokens = [];
           setMessages((prev) => prev.map((m) =>
             m.message_uid === respUid
               ? {
@@ -587,6 +682,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
           settle();
         },
         onError: (err) => {
+          if (streamState.done) return;
           console.error("[CHATBOT-DIAG] stream FAILED:", err?.name, err?.message);
           setStreamingUid(null);
           settle();
@@ -605,6 +701,110 @@ export default function AssistantPanel({ isOpen, onClose }) {
     }
   };
 
+  const handleStop = () => {
+    // Stop-generation (ChatGPT/Claude UX): replaces the send button while a
+    // response is streaming.  Only reachable then — `streamStateRef` is reset
+    // on every send and cleared when the stream settles, and the button is
+    // hidden once `streamingUid` is null.
+    const state = streamStateRef.current;
+    if (!state?.respUid || state.done) return;
+    // (c) Sweep any buffered tokens into the bubble and mark it complete
+    // FIRST, synchronously — so no queued onToken/onDone repaint that was
+    // already in flight can re-open it after we tear the stream down.  The
+    // partial answer stays visible and renders like a normal finished message
+    // (no caret, no spinner).
+    if (state.flushTimer) { clearTimeout(state.flushTimer); state.flushTimer = null; }
+    if (state.pendingTokens.length) {
+      const chunk = state.pendingTokens.join("");
+      state.pendingTokens = [];
+      setMessages((prev) => prev.map((m) =>
+        m.message_uid === state.respUid ? { ...m, message_text: (m.message_text || "") + chunk } : m
+      ));
+    }
+    state.done = true;
+    setStreamingUid(null);
+    setAnimDoneUid(state.respUid);
+    setLoading(false);
+    setStatusAnnouncement("Response generation stopped");
+    // (a) Abort the in-flight fetch.  sendMessageStreamed swallows AbortError
+    // without firing onDone/onError, so the stream officially ends here.
+    const ctl = streamCtlRef.current;
+    if (ctl) { ctl.abort(); streamCtlRef.current = null; }
+    // Tell the backend to stop generating too (best-effort): its pipeline runs
+    // on a daemon thread and would otherwise keep burning LLM tokens for a
+    // client that already closed the connection.
+    if (state.targetUid) cancelStream(state.targetUid);
+    requestAnimationFrame(scrollChatToBottom);
+    inputRef.current?.focus();
+  };
+
+  const handleBackToMenu = () => {
+    // Back-to-Main-Menu: keeps the ENTIRE conversation visible on screen and
+    // appends the existing welcome/main menu as the NEXT section BELOW it.
+    // Unlike New Conversation, the backend session and message history are
+    // left untouched (no createSession, no delete, no refetch) and the
+    // on-screen messages are NOT cleared.  In-flight streaming is torn down
+    // with the same safety guarantees as the Stop button so completed (and
+    // partial) messages stay and no loading/"Checking records..." state can
+    // survive the switch.
+    const state = streamStateRef.current;
+    if (state?.respUid && !state.done) {
+      // Sweep any buffered tokens into the bubble and mark it complete FIRST,
+      // synchronously — so no queued onToken/onDone repaint that was already
+      // in flight can re-open it after we tear the stream down.
+      if (state.flushTimer) { clearTimeout(state.flushTimer); state.flushTimer = null; }
+      if (state.pendingTokens.length) {
+        const chunk = state.pendingTokens.join("");
+        state.pendingTokens = [];
+        setMessages((prev) => prev.map((m) =>
+          m.message_uid === state.respUid ? { ...m, message_text: (m.message_text || "") + chunk } : m
+        ));
+      }
+      state.done = true;
+      setStreamingUid(null);
+      setAnimDoneUid(state.respUid);
+      const ctl = streamCtlRef.current;
+      if (ctl) { ctl.abort(); streamCtlRef.current = null; }
+      if (state.targetUid) cancelStream(state.targetUid);
+    }
+    streamStateRef.current = { respUid: null, targetUid: null, pendingTokens: [], flushTimer: null, done: false };
+    setAnimatingUid(null);
+    setLoading(false);
+    // Anchor the menu at the current end of the conversation.  New messages
+    // are appended AFTER this index, so the menu stays in place; multiple
+    // Back-to-Main-Menu clicks simply scroll to the latest anchor if one
+    // already exists at the very end.
+    const anchor = messages.length;
+    setMainMenuAt(anchor);
+    setStatusAnnouncement("Main menu shown below your conversation");
+    stickRef.current = true;
+    requestAnimationFrame(() => {
+      const el = chatViewportRef.current;
+      if (!el) return;
+      // Scroll so the anchored menu is visible at its position.
+      const items = el.querySelectorAll("[data-main-menu]");
+      const last = items[items.length - 1];
+      if (last?.scrollIntoView) {
+        try { last.scrollIntoView({ behavior: "smooth", block: "start" }); return; } catch { /* fall through */ }
+      }
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
+    inputRef.current?.focus();
+  };
+
+  const handleMenuSelect = (cat) => {
+    // Shared by the initial welcome state and the bottom menu appended by
+    // Back-to-Main-Menu.  Escalation routes out of the panel; every other
+    // category submits its question through the normal send flow (single
+    // request, single user message) and hides the transient bottom menu.
+    if (cat.action === "escalate") {
+      navigate("/billing/workspace/help");
+      onClose();
+      return;
+    }
+    handleSend(cat.question);
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -619,7 +819,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setActiveAction(actionObj);
       } catch (err) {
         setMessages((prev) => [...prev, {
-          message_uid: `err-${Date.now()}`,
+          message_uid: newClientUid("err"),
           sender_type: "system",
           message_text: `Preview failed: ${err.message}`,
           created_at: new Date().toISOString(),
@@ -640,7 +840,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setShowConfirmDialog(true);
       } catch (err) {
         setMessages((prev) => [...prev, {
-          message_uid: `err-${Date.now()}`,
+          message_uid: newClientUid("err"),
           sender_type: "system",
           message_text: `Preview failed: ${err.message}`,
           created_at: new Date().toISOString(),
@@ -655,14 +855,14 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setPreviewData(null);
         setActiveAction(null);
         setMessages((prev) => [...prev, {
-          message_uid: `sys-${Date.now()}`,
+          message_uid: newClientUid("sys"),
           sender_type: "system",
           message_text: "Draft has been cancelled and discarded.",
           created_at: new Date().toISOString(),
         }]);
       } catch (err) {
         setMessages((prev) => [...prev, {
-          message_uid: `err-${Date.now()}`,
+          message_uid: newClientUid("err"),
           sender_type: "system",
           message_text: `Cancel failed: ${err.message}`,
           created_at: new Date().toISOString(),
@@ -692,7 +892,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
       }
       setPreviewData(null);
       setActiveAction(null);
-      const execUid = `exec-${Date.now()}`;
+      const execUid = newClientUid("exec");
       setMessages((prev) => [...prev, {
         message_uid: execUid,
         sender_type: "assistant",
@@ -716,7 +916,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
       setAnimDoneUid(null);
     } catch (err) {
       setMessages((prev) => [...prev, {
-        message_uid: `err-${Date.now()}`,
+        message_uid: newClientUid("err"),
         sender_type: "system",
         message_text: `Execution failed: ${err.message}`,
         created_at: new Date().toISOString(),
@@ -748,7 +948,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
       setPreviewData(preview);
     } catch (err) {
       setMessages((prev) => [...prev, {
-        message_uid: `err-${Date.now()}`,
+        message_uid: newClientUid("err"),
         sender_type: "system",
         message_text: `Preview refresh failed: ${err.message}`,
         created_at: new Date().toISOString(),
@@ -767,6 +967,10 @@ export default function AssistantPanel({ isOpen, onClose }) {
       setMessages(session.messages || []);
       setAnimatingUid(null);
       setAnimDoneUid(null);
+      // New Conversation always resets to the anchored main menu at its
+      // initial boundary (position 0) — the menu stays above whatever the
+      // user types next and while the answer streams/completes.
+      setMainMenuAt(0);
       setSessions((prev) => [session, ...prev]);
       setStatusAnnouncement("New conversation started");
       inputRef.current?.focus();
@@ -832,6 +1036,21 @@ export default function AssistantPanel({ isOpen, onClose }) {
             >
               <Plus size={16} strokeWidth={2} />
             </button>
+
+            {/* Back to Main Menu — header-level navigation control. Appends the
+                main menu BELOW the existing conversation without clearing
+                messages or touching the backend. */}
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={handleBackToMenu}
+                className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
+                aria-label="Back to Main Menu"
+                title="Back to Main Menu"
+              >
+                <ArrowLeft size={16} strokeWidth={2} />
+              </button>
+            )}
 
             {/* Recent Conversations */}
             <div className="relative" ref={recentRef}>
@@ -915,56 +1134,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
 
         {/* Messages viewport */}
         <div ref={chatViewportRef} className="ab-viewport flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
-          {messages.length === 0 && !loading && (
-            <>
-              {/* Welcome message bubble */}
-              <div className="flex items-start gap-2">
-                <ZoikoMark size={28} rounded="rounded-lg" />
-                <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[85%]">
-                  <div className="whitespace-pre-wrap">{WELCOME_MESSAGE}</div>
-                </div>
-              </div>
-
-              {/* Category menu — 2 per row */}
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {FAQ_CATEGORIES.map((cat) => {
-                  const isEscalate = cat.action === "escalate";
-                  return (
-                    <button
-                      key={cat.num}
-                      onClick={() => {
-                        if (isEscalate) {
-                          navigate("/billing/workspace/help");
-                          onClose();
-                          return;
-                        }
-                        // One-click quick question: submit the exact text
-                        // through the shared send path (no async input race).
-                        handleSend(cat.question);
-                      }}
-                      className={`ab-cat-btn group flex items-center gap-2.5 text-left transition-colors ${
-                        isEscalate ? "ab-cat-btn--escalate" : ""
-                      }`}
-                    >
-                      <span className="ab-cat-num inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-bold">
-                        {isEscalate ? <LifeBuoy size={12} strokeWidth={2.5} /> : cat.num}
-                      </span>
-                      <span className="text-[13px] font-medium leading-tight flex-1" style={{ color: "var(--ab-text)" }}>
-                        {cat.label}
-                      </span>
-                      <ArrowRight
-                        size={12}
-                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ color: "var(--ab-accent-text)" }}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {messages.map((msg) => {
+          {messages.map((msg, idx) => {
             const animating =
               msg.sender_type === "assistant" && msg.message_uid === animatingUid;
             const isStreaming =
@@ -979,6 +1149,17 @@ export default function AssistantPanel({ isOpen, onClose }) {
               !!msg.message_text;
             return (
               <div key={msg.message_uid}>
+                {/* Anchored main menu: rendered INLINE at its fixed boundary
+                    (just BEFORE message index `mainMenuAt`).  Frontend-only UI
+                    item — no backend message, no ID, no timestamp.  It stays
+                    put here while the message below/after streams; new user +
+                    assistant messages continue BELOW the menu; nothing moves it
+                    to the bottom or re-creates it after an answer. */}
+                {mainMenuAt === idx && (
+                  <div className="mt-2" data-main-menu>
+                    <AssistantMenuSection onSelectCategory={handleMenuSelect} />
+                  </div>
+                )}
                 <MessageBubble
                   message={msg}
                   showDisclaimer={
@@ -1027,6 +1208,19 @@ export default function AssistantPanel({ isOpen, onClose }) {
             );
           })}
 
+          {/* When the anchor is exactly at the very end there is no following
+              message to host the menu, so render it as the last section.  This
+              is also the path the initial New Conversation menu uses (anchor 0
+              with an empty message list) — the SAME anchored architecture as
+              Back to Main Menu, never a separate empty-state branch.  The menu
+              is intentionally NOT gated on `!loading`, so it stays visible
+              above while the user's first question is still streaming. */}
+          {mainMenuAt === messages.length && (
+            <div className="mt-2" data-main-menu>
+              <AssistantMenuSection onSelectCategory={handleMenuSelect} />
+            </div>
+          )}
+
           {previewData && (
             <div className="pl-9 mt-2">
               <PreviewCard
@@ -1054,8 +1248,10 @@ export default function AssistantPanel({ isOpen, onClose }) {
         </div>
 
         {/* Suggested prompts — contextual follow-ups or server-side suggestions.
-            Suppress when action buttons are present on the last assistant message. */}
-        {messages.length > 0 && !loading && !messages[messages.length - 1]?.structured_payload?.actions?.length && !messages[messages.length - 1]?.structured_payload?.draft_card && !messages[messages.length - 1]?.structured_payload?.preview_card && (
+            Suppress when action buttons are present on the last assistant message.
+            Also suppressed while an anchored menu sits at the very end (that menu
+            is the interactive surface; the chip bar would be redundant). */}
+        {messages.length > 0 && !loading && mainMenuAt !== messages.length && !messages[messages.length - 1]?.structured_payload?.actions?.length && !messages[messages.length - 1]?.structured_payload?.draft_card && !messages[messages.length - 1]?.structured_payload?.preview_card && (
           <SuggestedPrompts
             prompts={
               messages[messages.length - 1]?.sender_type === "assistant"
@@ -1094,14 +1290,27 @@ export default function AssistantPanel({ isOpen, onClose }) {
               aria-label="Type your billing question"
               disabled={loading || initializing}
             />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || loading}
-              className="p-2.5 rounded-xl bg-brand text-white hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              aria-label="Send message"
-            >
-              <Send size={16} />
-            </button>
+            {streamingUid ? (
+              <button
+                type="button"
+                onClick={handleStop}
+                className="p-2.5 rounded-xl bg-brand text-white hover:bg-brand-hover transition-colors"
+                aria-label="Stop generating"
+                title="Stop generating"
+              >
+                <Square size={16} className="fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!input.trim() || loading}
+                className="p-2.5 rounded-xl bg-brand text-white hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label="Send message"
+              >
+                <Send size={16} />
+              </button>
+            )}
           </div>
           <p className="mt-2 text-[10px] text-center" style={{ color: "var(--ab-text-muted)" }}>
             AI-assisted. Verify financial data in billing records.
@@ -1134,18 +1343,84 @@ function CaptionTimestamp({ iso, label }) {
   );
 }
 
+// ── Welcome / main menu ──────────────────────────────────────────────────────
+// Single source of truth for the main menu, rendered in TWO places without
+// duplicating the menu system:
+//   1. the initial empty conversation (messages.length === 0), and
+//   2. below an existing conversation after "Back to Main Menu".
+// It reuses WELCOME_MESSAGE + FAQ_CATEGORIES so both states present the same
+// branded greeting and 2-per-row category grid.
+function AssistantMenuSection({ onSelectCategory }) {
+  return (
+    <>
+      <div className="flex items-start gap-2">
+        <ZoikoMark size={28} rounded="rounded-lg" />
+        <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[85%]">
+          <div className="whitespace-pre-wrap">{WELCOME_MESSAGE}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        {FAQ_CATEGORIES.map((cat) => {
+          const isEscalate = cat.action === "escalate";
+          return (
+            <button
+              key={cat.num}
+              onClick={() => onSelectCategory(cat)}
+              className={`ab-cat-btn group flex items-center gap-2.5 text-left transition-colors ${
+                isEscalate ? "ab-cat-btn--escalate" : ""
+              }`}
+            >
+              <span className="ab-cat-num inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-bold">
+                {isEscalate ? <LifeBuoy size={12} strokeWidth={2.5} /> : cat.num}
+              </span>
+              <span className="text-[13px] font-medium leading-tight flex-1" style={{ color: "var(--ab-text)" }}>
+                {cat.label}
+              </span>
+              <ArrowRight
+                size={12}
+                className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ color: "var(--ab-accent-text)" }}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Small, subtle timestamp shown under every user/assistant message.  Uses the
+// browser's local time in the fixed "h:mm AM/PM" format; the value comes from
+// the message's `created_at` (persisted server time when available, otherwise
+// the optimistic local time already on the message) so it is stable — it never
+// re-computes while a streaming response is in flight.
+function MessageTimeStamp({ message }) {
+  const d = formatChatTimestamp(message.created_at);
+  if (!d) return null;
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const isUser = message.sender_type === "user";
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mt-1`}>
+      <span className="text-[10px] leading-none" style={{ color: "var(--ab-text-muted)" }} title={d.toLocaleString()}>
+        {time}
+      </span>
+    </div>
+  );
+}
+
 // ── Markdown body renderer (assistant / system messages) ─────────────────────
 // The engine answers in markdown (**bold**, "- item" lists, sections separated
 // by blank lines). react-markdown parses it into React elements — it never
 // touches innerHTML and raw HTML in the content is escaped by default (no
 // rehype-raw), so AI/user-generated content is XSS-safe by construction.
 const MD_COMPONENTS = {
-  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0 leading-relaxed">{children}</p>,
   ul: ({ children }) => (
-    <ul className="list-disc pl-5 my-2 space-y-1 first:mt-0 last:mb-0">{children}</ul>
+    <ul className="list-disc pl-5 my-2 space-y-1.5 first:mt-0 last:mb-0">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal pl-5 my-2 space-y-1 first:mt-0 last:mb-0">{children}</ol>
+    <ol className="list-decimal pl-5 my-2 space-y-1.5 first:mt-0 last:mb-0">{children}</ol>
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
@@ -1177,10 +1452,10 @@ const MD_COMPONENTS = {
       {children}
     </pre>
   ),
-  h1: ({ children }) => <h3 className="text-base font-semibold my-2 first:mt-0">{children}</h3>,
-  h2: ({ children }) => <h3 className="text-sm font-semibold my-2 first:mt-0">{children}</h3>,
-  h3: ({ children }) => <h4 className="text-sm font-semibold my-2 first:mt-0">{children}</h4>,
-  h4: ({ children }) => <h4 className="text-sm font-semibold my-2 first:mt-0">{children}</h4>,
+  h1: ({ children }) => <h3 className="text-base font-semibold leading-snug my-2.5 first:mt-0">{children}</h3>,
+  h2: ({ children }) => <h3 className="text-sm font-semibold leading-snug my-2.5 first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="text-sm font-semibold leading-snug my-2.5 first:mt-0">{children}</h4>,
+  h4: ({ children }) => <h4 className="text-sm font-semibold leading-snug my-2.5 first:mt-0">{children}</h4>,
   blockquote: ({ children }) => (
     <blockquote
       className="border-l-2 pl-3 my-2 italic opacity-80"
@@ -1194,7 +1469,7 @@ const MD_COMPONENTS = {
 
 function MarkdownContent({ text }) {
   return (
-    <div className="text-sm leading-relaxed">
+    <div className="text-sm leading-relaxed" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <ReactMarkdown components={MD_COMPONENTS}>{text || ""}</ReactMarkdown>
     </div>
   );
@@ -1215,7 +1490,7 @@ function MarkdownContent({ text }) {
 function StableStreamBody({ text, showCaret }) {
   const { prefix, tail, inCode } = splitStablePrefix(text || "");
   return (
-    <div className="text-sm leading-relaxed">
+    <div className="text-sm leading-relaxed" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       {prefix ? <ReactMarkdown components={MD_COMPONENTS}>{prefix}</ReactMarkdown> : null}
       {tail ? (
         <span className={`ab-tail whitespace-pre-wrap block${inCode ? " ab-tail--code" : ""}`}>
@@ -1278,7 +1553,7 @@ function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
   const hasText = text && text.length > 0;
 
   return (
-    <div className="text-sm leading-relaxed">
+    <div className="text-sm leading-relaxed" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       {isTyping && !displayed && hasText && (
         <span
           className="inline-flex items-center gap-1 uppercase tracking-wider text-[10px]"
@@ -1376,9 +1651,10 @@ export function MessageBubble({ message, showDisclaimer = false, animate = false
               ? "ab-bubble-system rounded-bl-sm"
               : "ab-bubble-assistant rounded-bl-sm"
           }`}
+          style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
         >
           {isUser ? (
-            <div className="whitespace-pre-wrap">{message.message_text}</div>
+            <div className="whitespace-pre-wrap leading-relaxed">{message.message_text}</div>
           ) : streaming ? (
             <StreamingText text={message.message_text} />
           ) : animate ? (
@@ -1404,6 +1680,8 @@ export function MessageBubble({ message, showDisclaimer = false, animate = false
             )}
           </div>
         )}
+
+        {!isSystem && <MessageTimeStamp message={message} />}
 
         {evidence.length > 0 && !isUser && !deferStructured && (
           <SourceFooter

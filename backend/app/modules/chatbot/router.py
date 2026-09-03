@@ -9,6 +9,8 @@ Endpoints per ZB-AI-API-001:
   GET    /chatbot/sessions/{uid}              - Get conversation with messages
   DELETE /chatbot/sessions/{uid}              - Close conversation
   POST   /chatbot/sessions/{uid}/messages     - Send message (main endpoint)
+  POST   /chatbot/sessions/{uid}/messages/stream    - Send message (SSE stream)
+  POST   /chatbot/sessions/{uid}/messages/stream/cancel - Stop in-flight generation
   POST   /chatbot/actions/draft               - Create action draft (M2)
   POST   /chatbot/actions/{uid}/preview       - Generate preview (M3)
   POST   /chatbot/actions/{uid}/confirm       - Confirm action (M3)
@@ -245,6 +247,16 @@ def send_message(
 # "token" event *while the pipeline is still running*, so the client sees
 # words appear instead of a static "Checking records..." wait.
 
+# Cancellation registry: conversation_uid -> threading.Event.  The Stop button
+# sets the event via POST .../messages/stream/cancel; the producer thread's
+# engine checks it between LLM deltas and stops generating immediately, so the
+# provider is never asked to keep streaming for a client that already closed
+# the connection (avoids wasted LLM tokens).  Entries live only for the
+# lifetime of a stream — removed when the SSE generator closes.  NOTE: closing
+# the SSE connection alone does NOT cancel the pipeline; the client must call
+# the cancel endpoint when the user presses Stop.
+_STREAM_STOPS: dict[str, threading.Event] = {}
+
 async def _sse_events(conversation_uid: str, message: str, ctx: AIContext, page_path: str | None):
     """Async generator bridging a producer thread to an SSE stream.
 
@@ -257,47 +269,61 @@ async def _sse_events(conversation_uid: str, message: str, ctx: AIContext, page_
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
     tokens: list[str] = []
+    # Stop-generation signal (see description above / POST .../stream/cancel).
+    stop_event = threading.Event()
+    _STREAM_STOPS[conversation_uid] = stop_event
+    try:
+        def sink(token: str) -> None:
+            if stop_event.is_set():
+                # Cancelled — drop any token that raced the Stop click; the
+                # generator's own loop also stops on the event.
+                return
+            tokens.append(token)
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
+            except RuntimeError:
+                pass  # event loop already shutting down
 
-    def sink(token: str) -> None:
-        tokens.append(token)
-        try:
-            loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
-        except RuntimeError:
-            pass  # event loop already shutting down
-
-    def run_pipeline() -> None:
-        try:
-            with SessionLocal() as sess:
-                engine = ConversationEngine(sess, model_gateway=_get_gateway())
-                engine._token_sink = sink
-                result = engine.send_message(
-                    conversation_uid=conversation_uid,
-                    message=message,
-                    ctx=ctx,
-                    page_path=page_path,
+        def run_pipeline() -> None:
+            try:
+                with SessionLocal() as sess:
+                    engine = ConversationEngine(sess, model_gateway=_get_gateway())
+                    engine._token_sink = sink
+                    engine._stop_event = stop_event
+                    result = engine.send_message(
+                        conversation_uid=conversation_uid,
+                        message=message,
+                        ctx=ctx,
+                        page_path=page_path,
+                    )
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    ("done", {"response": result, "streamed": bool(tokens)}),
                 )
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                ("done", {"response": result, "streamed": bool(tokens)}),
-            )
-        except Exception as exc:
-            _logger.error("[CHATBOT-DIAG] STREAM pipeline failed: %s: %s", type(exc).__name__, exc)
-            loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
+            except Exception as exc:
+                _logger.error("[CHATBOT-DIAG] STREAM pipeline failed: %s: %s", type(exc).__name__, exc)
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
 
-    threading.Thread(target=run_pipeline, daemon=True).start()
+        threading.Thread(target=run_pipeline, daemon=True).start()
 
-    # Flush headers immediately so the client switches to "streaming" state.
-    yield "event: ready\ndata: {}\n\n"
-    while True:
-        kind, payload = await queue.get()
-        if kind == "token":
-            yield f"event: token\ndata: {json.dumps({'delta': payload})}\n\n"
-        elif kind == "done":
-            yield f"event: done\ndata: {json.dumps(payload)}\n\n"
-            break
-        elif kind == "error":
-            yield f"event: error\ndata: {json.dumps({'message': payload})}\n\n"
-            break
+        # Flush headers immediately so the client switches to "streaming" state.
+        yield "event: ready\ndata: {}\n\n"
+        while True:
+            kind, payload = await queue.get()
+            if stop_event.is_set():
+                # User pressed Stop — stop relaying; the client already shows
+                # the partial answer it received before clicking.
+                break
+            if kind == "token":
+                yield f"event: token\ndata: {json.dumps({'delta': payload})}\n\n"
+            elif kind == "done":
+                yield f"event: done\ndata: {json.dumps(payload)}\n\n"
+                break
+            elif kind == "error":
+                yield f"event: error\ndata: {json.dumps({'message': payload})}\n\n"
+                break
+    finally:
+        _STREAM_STOPS.pop(conversation_uid, None)
 
 
 @router.post("/sessions/{conversation_uid}/messages/stream")
@@ -338,6 +364,26 @@ async def stream_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/sessions/{conversation_uid}/messages/stream/cancel")
+def cancel_stream(conversation_uid: str, request: Request):
+    """Best-effort cancellation of an in-flight SSE generation (Stop button).
+
+    Sets the stop event registered by the streaming request; the producer
+    thread's engine checks it between LLM deltas and stops immediately,
+    keeping the partial answer already streamed.  Safe to call after the
+    stream has finished (returns ``{"cancelled": false}`` and is a no-op).
+
+    Closing the SSE connection alone does NOT stop generation — the pipeline
+    runs on a daemon thread that would otherwise finish (burning LLM tokens), so
+    the client must call this endpoint when the user presses Stop.
+    """
+    event = _STREAM_STOPS.get(conversation_uid)
+    if event is not None:
+        event.set()
+        return {"cancelled": True}
+    return {"cancelled": False}
 
 
 # ── Action Lifecycle Endpoints ───────────────────────────────────────────────

@@ -364,6 +364,38 @@ _DEFINITIONAL_SHAPE_RE = re.compile(
     r"|\bwhat\s+does\b[^?]*\bmeans?\b"
 )
 
+# ── Capability / meta-request classification ───────────────────────────────
+# "What can you help me with?", "What can you do?", "How can you help me?",
+# "What are you able to help with?", "What can this assistant do?",
+# "What kind of questions can I ask?", "What can I ask you?", "Capabilities" —
+# the user asks what the ASSISTANT ITSELF can help with.  These MUST classify
+# as the capacity/help meta intent (help_general) BEFORE the §6.0
+# OUT_OF_DOMAIN gates and BEFORE retrieval, and MUST be answered from the
+# canonical capability response — never routed to KB retrieval, never given
+# the generic "I don't have specific information…" abstention, and never
+# served from live financial data.  Strict FULLTEXT matching (call sites use
+# .fullmatch()) so a real billing question that merely echoes one of these
+# phrases ("What can you do with a line item?") is never hijacked.
+_CAPABILITY_ASK_RE = re.compile(
+    r"(?:"
+    r"what\s+can\s+(?:you|this\s+(?:(?:billing\s+)?assistant|chatbot|bot))\s+(?:do\b|help\s+(?:me\s+)?(?:with|on)\b)"
+    r"|what\s+can\s+(?:you|(?:(?:billing\s+)?assistant|chatbot|bot))\s+help\s+(?:me\s+)?(?:with|on)\b"
+    r"|how\s+(?:can|could|would|do)\s+you\s+(?:help|assist)\s+me?\b"
+    r"|what\s+are\s+you\s+able\s+to\s+(?:do\b|help\s+(?:me\s+)?(?:with|on)\b)"
+    r"|what\s+kind\s+of\s+questions\s+can\s+i\s+ask\b"
+    r"|what\s+(?:questions?|things)\s+can\s+i\s+ask(?:\s+you)?\b"
+    r"|what\s+can\s+i\s+ask\s+you\b"
+    r"|what\s+can\s+i\s+ask\b"
+    r"|what\s+(?:kind\s+of\s+)?help\s+can\s+you\s+(?:provide|offer|give)\b"
+    r"|what\s+are\s+your\s+capabilit(?:y|ies)\b"
+    r"|what\s+capabilit(?:y|ies)\s+do\s+you\s+(?:have|offer)\b"
+    r"|what\s+do\s+you\s+(?:do\b|help\s+me\s+with\b)"
+    r"|can\s+you\s+help\s+me\b"
+    r"|capabilit(?:y|ies)\b"
+    r")[\s.!?]*(?:for\s+(?:me|us))?[\s.!?]*(?:today|tonight)?[\s.!?]*(?:exactly|actually)?[\s.!?]*",
+    re.IGNORECASE,
+)
+
 # ── Compound-term normalization (tokenization drift) ────────────────────────
 # Users (and speech-to-text) split or fuse compound billing terms:
 # "dash board", "sub scription", "creditnote". Substring keyword matching
@@ -709,6 +741,130 @@ _METRIC_SUBJECT_RULES = (
     ("overdue", re.compile(r"\bover\s?due\b|\boverdues\b", re.IGNORECASE)),
     ("outstanding", re.compile(r"\boutstanding\b|\bunpaid\b|\breceivables?\b|\bowed?\b|\bbalance\b", re.IGNORECASE)),
     ("revenue", re.compile(r"\brevenue\b|\bincome\b|\bearnings\b|\bsales\b|\btop\s?line\b", re.IGNORECASE)),
+)
+
+
+# ── Metric comparison ─────────────────────────────────────────────────────
+# "X vs Y" / "compare X and Y" / "X versus Y" must answer with BOTH figures,
+# checked BEFORE every single-metric gate so a two-metric query is never
+# swallowed by one-metric rules ("collected revenue vs total revenue" today
+# silently returns just Collections).  Subjects reuse the EXISTING
+# _METRIC_SUBJECT_RULES ordered matchers — augmented by the EXISTING
+# _COLLECTED_REVENUE_RE disjunction so "collected revenue" resolves to
+# Collections (never Revenue).  Supported pairs are scoped NARROWLY to
+# {revenue, collections}: the two headline dashboard figures that have
+# existing single-metric handlers on the SAME data sources (get_kpis
+# total_revenue / BillingAdapter collected_totals), so a comparison can
+# never disagree with a one-number query.  Other pairs ("MRR vs ARR",
+# "outstanding vs overdue") return None and keep their existing routing.
+_METRIC_COMPARISON_SUPPORTED_PAIRS = frozenset({("revenue", "collections"), ("collections", "revenue")})
+
+
+def _comparison_metric_code(side: str):
+    """Map one side of a comparison phrase to a metric code understood by the
+    comparison handler.  Collections-qualified phrasing is checked FIRST (the
+    existing collections disjunction) so "collected revenue"/"cash collected"/
+    bare "collections" resolve to collections rather than the generic revenue
+    rule, and the subject matcher's own "paid_revenue" code (paid revenue /
+    bare "collections" via `\bcollections?\b`) is folded onto the same
+    collections handler code."""
+    norm = side.strip()
+    if not norm:
+        return None
+    if _COLLECTED_REVENUE_RE.search(norm):
+        return "collections"
+    for code, rx in _METRIC_SUBJECT_RULES:
+        if rx.search(norm):
+            return "collections" if code == "paid_revenue" else code
+    return None
+
+
+# Comparison connectors.  Deliberately NOT bare "and" — "revenue and
+# collections summary" is the existing dashboard_summary ask, not a comparison.
+_METRIC_COMPARE_CONNECTOR_RE = re.compile(
+    r"\bvs\.?|\bversus\b|\b(?:as\s+)?compared\s+to\b|\bcompare[d]?\s+(?:with|to)\b",
+    re.IGNORECASE,
+)
+# Leading comparison verb: "compare revenue and collections", "comparison of X and Y".
+_METRIC_COMPARE_LEAD_RE = re.compile(
+    r"^\s*(?:compare|comparing|comparison\s+(?:between|of))\s+",
+    re.IGNORECASE,
+)
+_METRIC_COMPARE_SEPARATOR_RE = re.compile(r"\s+(?:and|&|with|to)\s+", re.IGNORECASE)
+# Trailing comparison noun: "revenue and collections comparison", "collections
+# and revenue comparison".  NOT "summary" — that remains the dashboard_summary
+# ask and must never be captured here.
+_METRIC_COMPARE_TRAIL_RE = re.compile(
+    r"\b(?:comparison|compared|comparing|compare)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _split_comparison_pair(rest: str):
+    """Split a bare 'X and Y' remainder and return its order-preserving
+    supported metric-code pair, else None."""
+    sep = _METRIC_COMPARE_SEPARATOR_RE.search(rest)
+    if not sep:
+        return None
+    left, right = rest[:sep.start()].strip(), rest[sep.end():].strip()
+    if not left or not right:
+        return None
+    code_a = _comparison_metric_code(left)
+    code_b = _comparison_metric_code(right)
+    if code_a is None or code_b is None or code_a == code_b:
+        return None
+    if (code_a, code_b) not in _METRIC_COMPARISON_SUPPORTED_PAIRS:
+        return None
+    return (code_a, code_b)
+
+
+def _metric_comparison_sides(normalized: str):
+    """Return an ordered ('revenue', 'collections') metric-code pair when the
+    normalized text is a supported two-metric comparison, else None.  Order
+    follows the user's phrasing ('collections vs revenue' lists Collections
+    first, mirroring how they asked).  Every phrasing shape is handled —
+    leading compare verb ('compare X and Y'), connector (X vs Y / X versus Y /
+    X compared to Y), and trailing comparison noun ('X and Y comparison') —
+    so the ORDERING rule is the same regardless of sentence shape."""
+    n = normalized.strip()
+    if not n:
+        return None
+    lead = _METRIC_COMPARE_LEAD_RE.match(n)
+    if lead:
+        return _split_comparison_pair(n[lead.end():])
+    trail = _METRIC_COMPARE_TRAIL_RE.search(n)
+    if trail:
+        return _split_comparison_pair(_METRIC_COMPARE_TRAIL_RE.sub("", n))
+    sep = _METRIC_COMPARE_CONNECTOR_RE.search(n)
+    if not sep:
+        return None
+    left, right = n[:sep.start()].strip(), n[sep.end():].strip()
+    if not left or not right:
+        return None
+    code_a = _comparison_metric_code(left)
+    code_b = _comparison_metric_code(right)
+    if code_a is None or code_b is None or code_a == code_b:
+        return None
+    if (code_a, code_b) not in _METRIC_COMPARISON_SUPPORTED_PAIRS:
+        return None
+    return (code_a, code_b)
+
+
+# ── Unsupported customer-creation ─────────────────────────────────────────
+# "add a customer", "create a customer", "register a client", "new customer
+# Acme" — there is no governed M2 action for creating a customer record, so
+# these MUST NOT fall through to the action_draft invoice default (which
+# answers about an invoice) nor to the weak help fallback (which ignores
+# them).  Includes the article form ("add a customer") that never matched
+# the action-verb list ('add' is not a drafting verb) and the 'new customer
+# <Name>' form.  "New customers this month" (plural + caption) is NOT a
+# creation ask and stays a listing.
+_ADD_CUSTOMER_RE = re.compile(
+    r"\b(?:add|create|make|set\s+up|register|onboard(?:ed)?)\s+"
+    r"(?:(?:a|an|the)\s+)?(?:new\s+)?(?:customer|client)\b"
+    r"|^new\s+(?:customer|client)\s+[A-Z][\w.' -]*"
+    r"|\bnew\s+(?:customer|client)\s+(?:named|called)\b",
+    re.IGNORECASE,
 )
 
 
@@ -1204,6 +1360,33 @@ _HOWTO_LEAD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Article-invariant "how to <verb> [a/an/the] <noun>" how-to gate.
+# Anchored so the presence or absence of an article can never change routing:
+# "how to add customer", "how to add the customer", "how do I add a customer",
+# "how can I add the customer" ALL resolve to the same EXPLAIN intent. Runs
+# BEFORE entity/name extraction — the trailing noun ("customer"/"the customer")
+# is a generic noun here, never a literal name/ID to create or search.
+# STEP-2 EXPANDED: accept modal ∈ {do, does, can, could, should, would}
+# and pronoun ∈ {i, we, you, one}, OR the bare "how to" + verb form with no
+# pronoun required. Article-optional noun list unchanged.
+#
+# STEP-3(b): this gate is the deliberate SECOND layer for the
+# "how to add the customer" class of inputs, kept independent of the primary
+# _HOWTO_LEAD_RE gate AND of _ACCOUNT_SPECIFIC_RE. On the fixed regex the
+# deictic "this/that/the" clause fires for bare "the customer" (it is a
+# standalone alternative), so the primary lead gate is BLOCKED for "how to
+# add the customer" and THIS anchored gate is what keeps that phrase on
+# EXPLAIN. The gate stays independently tested so that tightening either
+# regex later can never silently change this routing (see
+# test_how_to_gate_independence in tests/ai_assistant/test_engine_howto_routing.py).
+_HOWTO_VERB_NOUN_RE = re.compile(
+    r"^(?:how\s+(?:do|does|can|could|should|would)\s+(?:i|we|you|one)|how\s+to)\s*"
+    r"(?:add|create|edit|update|delete|find|remove)\s+"
+    r"(?:a|an|the)?\s*"
+    r"(?:customer|invoice|product|quotation|price)s?\s*\??$",
+    re.IGNORECASE,
+)
+
 def _detect_what_is_how_to(normalized: str) -> bool:
     """Structural WHAT_IS/HOW_TO detection: signal word present AND domain
     vocabulary present.  Two-part match covers ALL phrasing styles without
@@ -1235,10 +1418,13 @@ _ACCOUNT_SPECIFIC_RE = re.compile(
     r"|\blist\s+(?:my|our)\b"
     # Specific document references (INV-123, PAY-456, etc.)
     r"|\b(?:inv|pay|pmt|cust|ref|cn|sub|con)[-\s]?\d{2,}\b"
-    # "this invoice", "that payment", "the invoice"
+    # "this invoice", "that payment", "the invoice" — deictic reference
     r"|\b(?:this|that|the)\s+(?:invoice|payment|subscription|customer|account|credit\s*note|refund|contract)\b"
-    # "current" / "now" / "today" / "this month" — temporal specificity
-    r"\b(?:current|right\s+now|today|this\s+(?:month|week|year|quarter))\b"
+    # "current" / "now" / "today" / "this month" — temporal specificity.
+    # (Independent alternative: the two clauses are separate signals — the
+    # missing `|` previously forced a temporal word to directly follow the
+    # deictic noun, so neither signal ever fired alone.)
+    r"|\b(?:current|right\s+now|today|this\s+(?:month|week|year|quarter))\b"
     # Deictic: "overdue on invoice INV-123"
     r"|\boverdue\s+on\s+(?:invoice|inv)\b"
     # "what's my", "what's our"
@@ -1247,6 +1433,32 @@ _ACCOUNT_SPECIFIC_RE = re.compile(
     r"|\bwhat(?:'s| is| are) the status\b"
     # "why did my" — account-specific causal
     r"|\bwhy\s+(?:did|does|is|was)\s+(?:my|our)\b"
+    , re.IGNORECASE,
+)
+
+# Explicit LIVE-DATA financial-inspection request frames.  These are
+# self-sufficient asks for the user's current billing data — an invoice
+# list/status/count, or the dashboard summary surface.  They must NEVER be
+# demoted to `help_general` by conversation-history domain inheritance (e.g.
+# "Dashboard summary" typed after a prior "How do I view overdue invoices?"
+# turn).  Only matched for clear request shapes; definitional/conceptual
+# phrasings ("What is a dashboard summary?", "How do I use the dashboard?",
+# "types of dunning") deliberately do NOT match so they stay knowledge/as-is.
+_EXPLICIT_FIN_INSPECT_RE = re.compile(
+    # invoice noun followed by a status word ("show the paid invoices",
+    # "which invoices are overdue?")
+    r"\binvoic(?:es|e|ing)?\b[\s\S]{0,40}\b(?:overdue|past\s*due|open|unpaid|pending|outstanding|paid|cancelled|canceled|draft|written\s*off)\b"
+    # bare status-prefixed invoice noun-phrase ("overdue invoices", "open invoices")
+    r"|\b(?:overdue|open|unpaid|pending|outstanding|paid|cancelled|canceled|draft)\s+invoic(?:es|e|ing)?\b"
+    # explicit list/show/find verb + invoice noun ("list overdue invoices",
+    # "show me all invoices", "display the invoices")
+    r"|\b(?:show|list|display|find|fetch|return|give|get|see|view|summarize|make|generate)\b[\s\S]{0,40}\binvoic(?:es|e|ing)?\b"
+    # count queries ("how many overdue invoices", "invoice count")
+    r"|\b(?:how\s+many|count|number\s+of|total)\b[\s\S]{0,30}\binvoic(?:es|e|ing)?\b"
+    # dashboard summary surface ("dashboard summary", "give me my dashboard
+    # summary", "summarize the dashboard", "show my dashboard")
+    r"|\b(?:billing\s+)?dashboard\s*(?:summary|overview)\b"
+    r"|\b(?:summarize|summarise|show|give|get|see)\b\s*(?:my|our|the)?\s*(?:billing\s+)?dashboard\b"
     , re.IGNORECASE,
 )
 
@@ -2004,6 +2216,12 @@ class ConversationEngine:
         # partial answers before the pipeline finishes.  Anonymous callable,
         # no state of its own — engines stay thread-safe to construct.
         self._token_sink = None
+        # Optional stop signal for SSE streaming (request-scoped, by the
+        # streaming endpoint): a threading.Event the router sets when the user
+        # presses Stop.  _generate_llm_answer_stream checks it between deltas
+        # and breaks immediately, so the provider is never asked to generate
+        # more tokens for a disconnected client (partial answer is kept).
+        self._stop_event = None
 
     # ── Retrieval helper ──────────────────────────────────────────────
 
@@ -2038,6 +2256,22 @@ class ConversationEngine:
                 terms.add(seg.rstrip("s"))
         return [t for t in terms if len(t) >= 4]
 
+    def _page_domains(self) -> list[str]:
+        """Resolve domain tokens for the current app route, e.g.
+        '/billing/invoices' → ['invoices', 'invoice']. Passed to retrieval so
+        namespaces that declare allowed_domains/blocked_domains are scoped to
+        the surface the user is actually on (Section 11 access restrictions)."""
+        raw = getattr(self, "_current_page_path", None)
+        if not raw:
+            return []
+        domains: set[str] = set()
+        for seg in str(raw).lower().split("/"):
+            seg = seg.strip()
+            if len(seg) >= 4 and seg not in self._GENERIC_PAGE_SEGMENTS:
+                domains.add(seg)
+                domains.add(seg.rstrip("s"))
+        return sorted(domains)
+
     def _retrieve(self, query: str, ctx: AIContext, top_k: int = 5) -> dict:
         """Retrieve knowledge chunks and build a retrieval-backed response dict."""
         logger.info("topic_screen: RAG retrieve called query=%r top_k=%s", query, top_k)
@@ -2045,6 +2279,7 @@ class ConversationEngine:
             results, citations = self._retriever.retrieve(
                 query=query, ctx=ctx, top_k=top_k, min_score=0.2,
                 boost_terms=self._page_boost_terms(),
+                domains=self._page_domains(),
             )
         except Exception:
             logger.warning("Knowledge retrieval failed, returning empty results")
@@ -2360,6 +2595,14 @@ class ConversationEngine:
             max_tokens=config.max_tokens,
             temperature=config.temperature,
         ):
+            # Stop-generation: the streaming router sets `_stop_event` when the
+            # user presses Stop.  Break between deltas so the provider is never
+            # asked to continue generating for a disconnected client — saving
+            # LLM tokens/cost.  The partial answer accumulated so far is kept
+            # (that is what the client already showed).
+            stop_event = getattr(self, "_stop_event", None)
+            if stop_event is not None and stop_event.is_set():
+                break
             if not delta:
                 continue
             if first and not parts:
@@ -2544,7 +2787,16 @@ class ConversationEngine:
         if not conv:
             return None
 
-        db_messages = conv.messages.order_by(AIConversationMessage.created_at.asc()).all()
+        # Order by created_at, then by the monotonically-increasing primary key
+        # as a deterministic tie-breaker. `created_at` is CURRENT_TIMESTAMP
+        # (transaction start), so a user message and its assistant reply —
+        # persisted in the same commit — can share an identical timestamp.
+        # Without the id tie-breaker the DB may return those rows in undefined
+        # order, letting an answer render above its triggering question.
+        db_messages = conv.messages.order_by(
+            AIConversationMessage.created_at.asc(),
+            AIConversationMessage.id.asc(),
+        ).all()
         return {
             "conversation_uid": conv.conversation_uid,
             "title": conv.title,
@@ -2732,6 +2984,16 @@ class ConversationEngine:
                 if cached:
                     now = time.monotonic()
                     if now - cached[0] > _ANSWER_CACHE_TTL_SECONDS:
+                        _ANSWER_CACHE.pop(cache_key, None)
+                        cached = None
+                    elif not (
+                        cached[2].get("risk_class") in ("R0",)
+                        and cached[2].get("mode") in ("M0_EXPLAIN",)
+                        and cached[1].get("intent") in _CACHEABLE_INTENTS
+                    ):
+                        # Defensive read-side gate: never serve a stale live-data
+                        # answer even if an older process/test populated the
+                        # cache before the current write-side restrictions.
                         _ANSWER_CACHE.pop(cache_key, None)
                         cached = None
                     else:
@@ -3194,6 +3456,21 @@ class ConversationEngine:
         if any(kw in normalized for kw in out_of_scope_keywords):
             return {"intent": "out_of_scope", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── Capability / help / meta asks ─────────────────────────────────
+        # "What can you help me with?", "What can you do?", "How can you
+        # help me?", "What can this assistant do?", "What can I ask you?",
+        # "Capabilities" — meta-requests about the assistant's OWN abilities.
+        # Classified here, BEFORE the §6.0 OUT_OF_DOMAIN gates and before any
+        # metric/balance/dashboard routing, so they are recognized as the
+        # capability/help intent with high confidence (fast-path) instead of
+        # falling through to out_of_scope or a weak KB/abstention path.  The
+        # pattern is FULL-TEXT anchored, so real billing questions that merely
+        # echo one of these phrases ("What can you do with a line item?") are
+        # not hijacked.
+        if _CAPABILITY_ASK_RE.fullmatch(normalized) \
+                or _CAPABILITY_ASK_RE.fullmatch(text.strip().lower()):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
         # ── UI navigation topics: Quick Actions panel ────────────────────
         # "Explain about me quick actions" names a real dashboard section;
         # it must describe the panel, not fall through to the §6.0 gate
@@ -3231,6 +3508,15 @@ class ConversationEngine:
         if _HOWTO_LEAD_RE.search(normalized) and topic_screen(normalized):
             if not _ACCOUNT_SPECIFIC_RE.search(normalized):
                 return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+
+        # ── Article-invariant generic how-to gate ─────────────────────────
+        # Anchored "how to <verb> [a/an/the] <noun>" forms MUST resolve to
+        # EXPLAIN before entity extraction runs, so "the customer"/"customer"
+        # is never treated as a literal name/ID to create or search. Article
+        # presence/absence is deliberately ignored here (same intent, same KB
+        # result): "how to add the customer" ≡ "how to add customer".
+        if _HOWTO_VERB_NOUN_RE.match(normalized):
+            return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
         # ── Protected: invoice status vocabulary question ─────────────────
         # "What are the valid invoice statuses?" is a deterministic help
@@ -3402,12 +3688,20 @@ class ConversationEngine:
         # the help domain.  This prevents short follow-ups like "types of
         # dunning" (after "what is dunning?") from falling into the ambiguous
         # model-classifier band.
+        #
+        # CRITICAL: an explicit LIVE-DATA financial-inspection request is
+        # SELF-SUFFICIENT and must NEVER inherit the help domain — it must
+        # keep routing to its live billing/dashboard handler even when the
+        # previous turn was a help/how-to question.  "Show overdue invoices"
+        # and "Dashboard summary" typed after "How do I view overdue
+        # invoices?" must still return live data, not the KB abstention.
         prev_domain = context.get("prev_intent_domain")
         prev_code = context.get("prev_intent_code")
         prev_conf = context.get("prev_intent_confidence") or 0
         if (prev_domain == "help" and prev_code == "help_general"
                 and prev_conf >= 0.85
                 and not _has_account_specific
+                and not _EXPLICIT_FIN_INSPECT_RE.search(normalized)
                 and topic_screen(normalized)):
             return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
 
@@ -3503,6 +3797,18 @@ class ConversationEngine:
         _hybrid_metric_code = self._hybrid_metric_ask(normalized)
         if _hybrid_metric_code:
             return {"intent": "metric_definition", "domain": "help", "risk_class": "R0", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "metric": _hybrid_metric_code, "hybrid": True}
+
+        # ── Metric comparison (two-figure answer) ────────────────────────
+        # "collected revenue vs total revenue", "revenue vs collections",
+        # "compare revenue and collections" name TWO metrics.  Must be
+        # resolved BEFORE every single-metric gate (collections disambig,
+        # paid-period, revenue terms) so a two-metric query is never answered
+        # with only one figure.  Definitional phrasing ("what is the
+        # difference between revenue and collections?") already routed to the
+        # knowledge path above, so reaching here means it is a data ask.
+        _comparison_pair = _metric_comparison_sides(normalized)
+        if _comparison_pair:
+            return {"intent": "metric_comparison", "domain": "dashboard", "risk_class": "R1", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES, "comparison_a": _comparison_pair[0], "comparison_b": _comparison_pair[1]}
 
         # ── Metric figure lookups (M1 Inspect) ───────────────────────────
         # Named-metric questions ("What's our collection rate?", "What's
@@ -3725,6 +4031,19 @@ class ConversationEngine:
         if m_bare_cust:
             return {"intent": "customer_details", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES, "subject": m_bare_cust.group(1).strip()}
 
+        # ── Unsupported customer-creation (honest capability gap) ───────
+        # "add a customer", "create a customer", "new customer Acme" must NOT
+        # fall into the action_draft invoice default (answers about an
+        # invoice) nor the weak help fallback.  The "add a customer" article
+        # form never even matched action_verbs ('add' is not a drafting verb),
+        # so it silently landed on the 0.7 help fallback; "create a customer"
+        # matched action_verbs and was answered as an invoice draft.  Both
+        # are wrong — declare the capability gap at R0.  How-to phrasing
+        # ("how do I add a customer") was already routed to EXPLAIN earlier,
+        # so it is never hijacked here.
+        if _ADD_CUSTOMER_RE.search(normalized):
+            return {"intent": "unsupported_customer_creation", "domain": "help", "risk_class": "R0", "confidence": 0.9, "classified_by": IntentClassifiedBy.RULES}
+
         # ── FIX #1b: Action intent (draft/create/issue + billing object) ──
         # An interrogative aggregate ask ("What's the refund total?") is a
         # data question, never a draft request — the aggregate-question
@@ -3776,11 +4095,14 @@ class ConversationEngine:
         ) or re.search(r"\b(?:dashboard|overview)\s+(?:for|of)\s+([a-z]+)\b", normalized)
         # "Show dashboard" / "open billing overview" — a command VERB before
         # the noun is not an entity qualifier; treat as unqualified.
+        # Adjective-only qualifiers ("current dashboard", "up-to-date") are
+        # likewise not a real module/surface, so they must not trigger D-11
+        # clarification ("current dashboard status" → dashboard_summary).
         if m_qual and m_qual.group(1) in (
             "show", "list", "view", "display", "open", "see", "get", "pull",
             "bring", "give", "tell", "go", "my", "our", "me", "us", "the",
             "a", "an", "to", "whole", "full", "entire", "summary",
-            "summarize", "summarise",
+            "summarize", "summarise", "current", "up-to-date", "latest",
         ):
             m_qual = None
         if m_qual:
@@ -4165,6 +4487,8 @@ class ConversationEngine:
             "show bills", "list bills", "what invoices", "what bills do we have",
             "show the invoices", "display the invoices", "fetch invoices",
             "give me the invoices", "give me invoices",
+            "recent invoices", "recent invoice", "unpaid invoice", "pending invoice",
+            "outstanding invoice", "overdue invoice", "past due invoice",
         )
         if any(p in normalized for p in invoice_list_patterns):
             return {"intent": "invoice_list", "domain": "billing", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
@@ -4329,8 +4653,12 @@ class ConversationEngine:
         if any(kw in normalized for kw in dashboard_keywords) and not _has_what_is_how_to:
             return {"intent": "dashboard_summary", "domain": "dashboard", "risk_class": "R1", "confidence": 0.85, "classified_by": IntentClassifiedBy.RULES}
 
-        # Help/capabilities keywords
-        help_keywords = ("what can you do", "capabilities")
+        # Help/capabilities keywords — note "what can you do" is intentionally
+        # NOT a substring here: exact capability phrasing is caught earlier by
+        # _CAPABILITY_ASK_RE (fullmatch, line above), and a substring would
+        # hijack compound billing questions like "What can you do with a line
+        # item?" into the canned capability overview.
+        help_keywords = ("capabilities",)
         if any(kw in normalized for kw in help_keywords):
             return {"intent": "help_general", "domain": "help", "risk_class": "R0", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
 
@@ -4914,6 +5242,46 @@ class ConversationEngine:
             "clarify_state": state,
         }
 
+    def _unsupported_customer_creation_response(self, text: str, ctx: AIContext) -> dict:
+        """Honest capability-gap answer for 'add/create a customer ...'.
+        Acknowledges whatever name/amount the user supplied (it is echoed back
+        but deliberately NOT consumed into any draft or record), explains that
+        customer records need the UI flow, and offers the existing actions the
+        bot CAN draft for an existing customer."""
+        name_m = re.search(r"\b(?:named|called)\s+([A-Za-z][\w.'-]*)", text)
+        for_m = re.search(r"\bfor\s+([A-Za-z][\w.'-]*)", text)
+        amount_m = re.search(r"\bat\s+(\$?[\d.,]+)", text)
+        name = (name_m or for_m).group(1) if (name_m or for_m) else None
+        amount = amount_m.group(1) if amount_m else None
+        ack_parts = []
+        if name:
+            ack_parts.append(f"**{name}**")
+        if amount:
+            ack_parts.append(f"at **{amount}**")
+        ack = (
+            f"You asked to add a customer{' ' + ' '.join(ack_parts) if ack_parts else ''} — "
+            "I haven't created or changed anything.\n\n"
+        ) if ack_parts else ""
+        answer = (
+            "I can't create new customer records through chat yet — that needs to be "
+            "done from **Customers > Add Customer** in the app.\n\n"
+            + ack
+            + "I **can** draft an invoice or other billing action for an **existing** "
+            "customer, though — would you like that instead?"
+        )
+        return {
+            "answer": answer,
+            "mode": "M0_EXPLAIN",
+            "risk_class": "R0",
+            "evidence": [],
+            "qualification": (
+                "Capability-gap acknowledgment — no draft prepared and no record "
+                "created (customer-creation M2 action does not exist)."
+            ),
+            "next_actions": ["Draft an invoice for an existing customer"],
+            "suggested_prompts": ["Draft an invoice for Acme Corp", "Dashboard summary"],
+        }
+
     def _handle_help(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
         # Definitional metric questions ("explain me about Revenue") compose
         # the definition-first answer with the live figure.
@@ -4923,6 +5291,12 @@ class ConversationEngine:
                 metric_code=intent.get("metric"),
                 include_live=intent.get("hybrid", False),
             )
+
+        # Customer-creation capability gap: no governed M2 action exists for
+        # creating customer records, so answer honestly instead of routing to
+        # the invoice-draft default or ignoring the request.
+        if intent.get("intent") == "unsupported_customer_creation":
+            return self._unsupported_customer_creation_response(text, ctx)
 
         # UI navigation: describe a named dashboard panel ("what are quick
         # actions?"). Canned from the product's own dashboard definition —
@@ -4954,33 +5328,35 @@ class ConversationEngine:
                 "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "Look up customer details"],
             }
 
-        # Self-identification: "who are you", "what are you", etc.
-        normalized = text.strip().lower()
+        # Self-identification: "who are you", "what are you", "what do you do", etc.
+        normalized = _strip_courtesy_frame(text.strip().lower())
         self_id_keywords = ("who are you", "who are u", "what are you", "what are u",
                             "who am i talking to", "who am i speaking to", "who is this",
                             "what is your name", "tell me about yourself", "introduce yourself",
                             "what do you do", "what is your purpose", "describe yourself")
-        if any(kw in normalized for kw in self_id_keywords):
-            return {
-                "answer": (
-                    "I am the Zoiko Billing AI Assistant — a governed billing operations helper.\n\n"
-                    "**What I can do (M0 Explain / M1 Inspect):**\n"
-                    "- Look up invoices, payments, customers, subscriptions, contracts, products, and quotations\n"
-                    "- Explain invoice balances, payment allocations, overdue status, and aging\n"
-                    "- Summarize your financial dashboard and KPIs\n"
-                    "- Explain billing workflows, policies, and dunning processes\n\n"
-                    "**Governed by design:**\n"
-                    "- Every answer grounded in authoritative Zoiko Billing records\n"
-                    "- Your tenant context is enforced — no cross-organization data access\n"
-                    "- Full audit trail for every interaction"
-                ),
-                "mode": "M0_EXPLAIN",
-                "risk_class": "R0",
-                "evidence": [{"source": "Zoiko Billing Knowledge Base", "summary": "Capability overview"}],
-                "qualification": "This is product guidance, not tax, legal, or accounting advice.",
-                "next_actions": [],
-                "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "Look up customer details"],
-            }
+        # Each self-id keyword must match WHOLE-WORD (word-boundary tail), not
+        # as a bare substring — otherwise a compound billing question like
+        # "What do you do with a line item?" would be hijacked into the canned
+        # self-identification overview.
+        if any(
+            kw in normalized and re.search(rf"\b{re.escape(kw)}\b[\s.!?]*$", normalized)
+            for kw in self_id_keywords
+        ):
+            return self._capability_response()
+
+        # Capability / meta asks ("What can you help me with?", "How can you
+        # help me?", "What can you do?", "Capabilities", …) are answered from
+        # the CANONICAL capability response BEFORE any SOP-glossary lookup or
+        # KB retrieval.  These are meta-requests about the assistant itself —
+        # they must never go to knowledge retrieval, never require billing
+        # records, never trigger financial inspection, and never fall through
+        # to the generic "I don't have specific information…" abstention.
+        # The regex is FULLTEXT anchored and the courtesy frame is stripped, so
+        # "how can you help me please" still resolves while compound billing
+        # questions ("What can you do with a line item?") do not.
+        if _CAPABILITY_ASK_RE.fullmatch(normalized) \
+                or _CAPABILITY_ASK_RE.fullmatch(text.strip().lower()):
+            return self._capability_response()
 
         # Invoice/status definition questions: "what does X mean for invoice status?"
         # NOTE: "what are the valid invoice statuses?"-style questions are NOT
@@ -5078,37 +5454,54 @@ class ConversationEngine:
             }
         # Fallback: explicit capability/meta asks get the capabilities dump;
         # anything else that reaches here had no confident KB match, so it
-        # must abstain rather than dump unrelated marketing copy.
+        # must abstain rather than dump unrelated marketing copy.  Phrases
+        # like "what can you do", "what do you do", "what can i ask" and "how
+        # can you help" are deliberately NOT substrings here — the exact
+        # capability phrasing is caught by _CAPABILITY_ASK_RE (fullmatch) at
+        # the top of this handler, and a substring would hijack compound
+        # billing questions ("What can you do with a line item?", "What do
+        # you do with a line item?") into the canned overview.
         capability_ask = any(kw in normalized for kw in (
-            "what can you do", "what can i ask", "what do you do",
-            "capabilities", "features", "how can you help",
+            "capabilities", "features",
             "how can i use you", "your purpose",
         ))
         if capability_ask:
-            return {
-                "answer": (
-                    "I am the Zoiko Billing AI Assistant — a governed billing operations helper.\n\n"
-                    "**What I can do (M0 Explain / M1 Inspect):**\n"
-                    "- Look up invoices, payments, customers, subscriptions, contracts, products, and quotations\n"
-                    "- Explain invoice balances, payment allocations, overdue status, and aging\n"
-                    "- Summarize your financial dashboard and KPIs\n"
-                    "- Explain billing workflows, policies, and dunning processes\n\n"
-                    "**Governed by design:**\n"
-                    "- Every answer grounded in authoritative Zoiko Billing records\n"
-                    "- Your tenant context is enforced — no cross-organization data access\n"
-                    "- Full audit trail for every interaction"
-                ),
-                "mode": "M0_EXPLAIN",
-                "risk_class": "R0",
-                "evidence": [{"source": "Zoiko Billing Knowledge Base", "summary": "Capability overview"}],
-                "qualification": "This is product guidance, not tax, legal, or accounting advice.",
-                "next_actions": [],
-                "suggested_prompts": ["Show overdue invoices", "Look up customer details", "Dashboard summary"],
-            }
+            return self._capability_response()
         floor = self._fuzzy_domain_suggestion(normalized)
         if floor:
             return floor
         return self._abstention_response()
+
+    def _capability_response(self) -> dict:
+        """Canonical capability/meta-request answer.
+
+        Single source of truth for "What can you help me with?", self-
+        identification ("who are you", "what do you do") and the capabilities
+        fallback.  It only ever lists the REAL supported surfaces (M0 Explain /
+        M1 Inspect read operations) — it never claims mutation abilities the
+        assistant does not have, never requires billing records, and never
+        triggers financial inspection.
+        """
+        return {
+            "answer": (
+                "I am the Zoiko Billing AI Assistant — a governed billing operations helper.\n\n"
+                "**What I can do (M0 Explain / M1 Inspect):**\n"
+                "- Look up invoices, payments, customers, subscriptions, contracts, products, and quotations\n"
+                "- Explain invoice balances, payment allocations, overdue status, and aging\n"
+                "- Summarize your financial dashboard and KPIs\n"
+                "- Explain billing workflows, policies, and dunning processes\n\n"
+                "**Governed by design:**\n"
+                "- Every answer grounded in authoritative Zoiko Billing records\n"
+                "- Your tenant context is enforced — no cross-organization data access\n"
+                "- Full audit trail for every interaction"
+            ),
+            "mode": "M0_EXPLAIN",
+            "risk_class": "R0",
+            "evidence": [{"source": "Zoiko Billing Knowledge Base", "summary": "Capability overview"}],
+            "qualification": "This is product guidance, not tax, legal, or accounting advice.",
+            "next_actions": [],
+            "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "Look up customer details"],
+        }
 
     def _metric_definition_response(self, conv: AIConversation, text: str, ctx: AIContext,
                                     metric_code: str | None = None,
@@ -5139,7 +5532,7 @@ class ConversationEngine:
             # NO billing data is available we say so explicitly — we never
             # fabricate or estimate the figure.
             svc = BillingDashboardService(self.db)
-            kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+            kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
             base = self._base_currency(ctx.organization_id)
             total_revenue = Decimal(str(kpis.get("total_revenue", 0) or 0))
             collections = Decimal(str(kpis.get("collections", 0) or 0))
@@ -5164,7 +5557,7 @@ class ConversationEngine:
                 )
         elif spec.get("live"):
             svc = BillingDashboardService(self.db)
-            kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+            kpis = svc.get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
             base = self._base_currency(ctx.organization_id)
             value = kpis.get(spec["kpi_key"], 0)
             if code == "overdue":
@@ -5326,7 +5719,7 @@ class ConversationEngine:
         cleared payments / billed revenue, capped at 100% (dashboard.jsx).
         Same get_kpis source, so chatbot and dashboard can never disagree."""
         from app.modules.billing.services.dashboard_service import BillingDashboardService
-        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
         total_revenue = Decimal(str(kpis.get("total_revenue", 0) or 0))
         collections = Decimal(str(kpis.get("collections", 0) or 0))
         # Mirror the dashboard formula including its zero-billed edge case.
@@ -5505,7 +5898,7 @@ class ConversationEngine:
         """Average invoice value exactly as the dashboard computes it:
         total billed revenue / total invoices issued (dashboard.jsx)."""
         from app.modules.billing.services.dashboard_service import BillingDashboardService
-        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
         total_revenue = Decimal(str(kpis.get("total_revenue", 0) or 0))
         total_invoices = int(kpis.get("total_invoices", 0) or 0)
         if total_invoices == 0:
@@ -5630,7 +6023,7 @@ class ConversationEngine:
             _multi_ccy = len(totals) > 1
         else:
             from app.modules.billing.services.dashboard_service import BillingDashboardService
-            kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+            kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
             amount = Decimal(str(kpis.get("monthly_revenue", 0) or 0))
             amount_fmt = money(amount, self._base_currency(ctx.organization_id))
             _ev_value = str(amount)
@@ -5672,7 +6065,7 @@ class ConversationEngine:
         the dashboard page reads — answers 'total paid amount' / 'paid amount'
         with the live figure, never a definition."""
         from app.modules.billing.services.dashboard_service import BillingDashboardService
-        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id))
+        kpis = BillingDashboardService(self.db).get_kpis(organization_id=ctx.organization_id, currency_rates=self._currency_rates(ctx.organization_id), use_cache=False)
         amount = Decimal(str(kpis.get("paid_amount", 0) or 0))
         base = self._base_currency(ctx.organization_id)
         return {
@@ -5774,12 +6167,84 @@ class ConversationEngine:
             "suggested_prompts": ["What's our collection rate?", "Dashboard summary"],
         }
 
+    def _handle_metric_comparison(self, ctx: AIContext, intent: dict) -> dict:
+        """Two-metric comparison ('revenue vs collections').  Reads BOTH figures
+        from the SAME sources as the single-metric handlers — metric_revenue
+        (BillingDashboardService.get_kpis total_revenue) and metric_collections
+        (BillingAdapter collected_totals) — so the comparison can never disagree
+        with what a one-number query reports for either metric."""
+        org_id = ctx.organization_id
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        svc = BillingDashboardService(self.db)
+        kpis = svc.get_kpis(organization_id=org_id, currency_rates=self._currency_rates(org_id), use_cache=False)
+        base = self._base_currency(org_id)
+        rates = self._currency_rates(org_id)
+
+        total_revenue = Decimal(str(kpis.get("total_revenue", 0) or 0))
+        col = self._billing.collected_totals(org_id)
+        if not col.totals:
+            collections = Decimal("0")
+        elif len(col.totals) == 1:
+            one_ccy, one_amt = next(iter(col.totals.items()))
+            collections = one_amt * Decimal(str(rates.get(one_ccy, 1.0)))
+        else:
+            collections = sum(
+                (amt * Decimal(str(rates.get(c, 1.0))))
+                for c, amt in col.totals.items()
+            )
+
+        figures = {
+            "revenue": ("Revenue", total_revenue),
+            "collections": ("Collections", collections),
+        }
+        label_a, value_a = figures[intent.get("comparison_a") or "revenue"]
+        label_b, value_b = figures[intent.get("comparison_b") or "collections"]
+
+        answer = (
+            f"**{label_a}:** {money_sym(value_a, base)} | "
+            f"**{label_b}:** {money_sym(value_b, base)}"
+        )
+        if total_revenue > 0:
+            pct = (collections / total_revenue) * Decimal("100")
+            pct_text = f"{round(pct, 1):.1f}".rstrip("0").rstrip(".") + "%"
+            answer += f"\nYou've collected {pct_text} of what you've billed."
+        elif collections > 0:
+            answer += "\nYou've collected funds, but there is no billed revenue to compare against yet."
+        return {
+            "answer": answer,
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [
+                {
+                    "source": "Zoiko Billing Dashboard",
+                    "type": "metric_total_revenue",
+                    "as_of": datetime.now(timezone.utc).isoformat(),
+                    "value": str(total_revenue),
+                },
+                {
+                    "source": "Zoiko Billing Adapter",
+                    "type": "metric_collections",
+                    "as_of": datetime.now(timezone.utc).isoformat(),
+                    "value": str(collections),
+                },
+            ],
+            "qualification": (
+                "Revenue and Collections are read from the same sources as the "
+                "single-metric answers (get_kpis total_revenue / collected_totals), "
+                "so the two figures always agree with a one-number query."
+            ),
+            "next_actions": ["Dashboard summary", "Show outstanding balances"],
+            "suggested_prompts": ["What's my total revenue?", "How much have I collected?", "Dashboard summary"],
+        }
+
     def _handle_dashboard(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
         org_id = ctx.organization_id
 
         # Named-metric figure lookups (M1 Inspect) — answered before any
         # overview composition so they return ONLY the requested figures.
         intent_code = intent.get("intent")
+        if intent_code == "metric_comparison":
+            return self._handle_metric_comparison(ctx, intent)
         if intent_code == "metric_collection_rate":
             return self._collection_rate_response(ctx)
         if intent_code == "metric_mrr_arr":
@@ -5798,7 +6263,7 @@ class ConversationEngine:
         # Use the same BillingDashboardService as the billing page so numbers always match
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         svc = BillingDashboardService(self.db)
-        kpis = svc.get_kpis(organization_id=org_id, currency_rates=self._currency_rates(org_id))
+        kpis = svc.get_kpis(organization_id=org_id, currency_rates=self._currency_rates(org_id), use_cache=False)
         # Currency label is derived from the SAME source as the KPI figures
         # (get_kpis values are expressed in the org base currency), and the
         # dashboard renders symbols (₹) — never an independent "USD" label.
@@ -7177,7 +7642,7 @@ class ConversationEngine:
         invoice_ref = self._extract_reference(text, prefixes=("INV", "INVOICE"))
         if invoice_ref or "invoice" in normalized:
             is_list = (
-                any(w in normalized for w in ("show", "list", "my", "all", "outstanding", "overdue"))
+                any(w in normalized for w in ("show", "list", "my", "all", "outstanding", "overdue", "open", "pending", "unpaid"))
                 or "invoices" in normalized
             )
             if is_list and not invoice_ref:
@@ -7262,7 +7727,7 @@ class ConversationEngine:
 
         from app.modules.billing.services.dashboard_service import BillingDashboardService
         svc = BillingDashboardService(self.db)
-        kpis = svc.get_kpis(organization_id=org_id, currency_rates=self._currency_rates(org_id))
+        kpis = svc.get_kpis(organization_id=org_id, currency_rates=self._currency_rates(org_id), use_cache=False)
 
         total_outstanding = kpis.get("outstanding_amount", 0)
         total_overdue = kpis.get("overdue_amount", 0)
@@ -8090,6 +8555,7 @@ class ConversationEngine:
             kpis = svc.get_kpis(
                 organization_id=org_id,
                 currency_rates=self._currency_rates(org_id),
+                use_cache=False,
             )
             total = kpis.get("total_invoices", 0)
             label = "invoice(s)"
