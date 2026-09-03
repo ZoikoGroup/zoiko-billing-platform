@@ -27,12 +27,12 @@ import {
   LifeBuoy,
   ArrowRight,
   ArrowLeft,
-  Info,
   Maximize2,
   Minimize2,
 } from "lucide-react";
 import ZoikoMark from "../../components/ZoikoMark";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   createSession,
   listSessions,
@@ -1414,6 +1414,21 @@ function MessageTimeStamp({ message }) {
 // by blank lines). react-markdown parses it into React elements — it never
 // touches innerHTML and raw HTML in the content is escaped by default (no
 // rehype-raw), so AI/user-generated content is XSS-safe by construction.
+
+// Currency symbols that mark a bolded run as a financial figure.
+const CURRENCY_SYMBOLS = ["$", "€", "£", "¥", "₹", "₩", "₺", "₽", "₴", "₱", "₫", "฿", "₦"];
+
+// "Financial emphasis": a **bolded** amount (e.g. **$1,234.56**) is the one
+// piece of a billing answer the eye should land on first. Renders it in the
+// brand accent colour (in addition to the existing bold) so figures read as
+// distinct from ordinary prose — ChatGPT-style visual hierarchy. Pure
+// presentation; content and layout are unchanged.
+function isFinancialEmphasis(children) {
+  const text = (Array.isArray(children) ? children.join("") : String(children ?? "")).trim();
+  if (!text) return false;
+  return CURRENCY_SYMBOLS.some((sym) => text.startsWith(sym));
+}
+
 const MD_COMPONENTS = {
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0 leading-relaxed">{children}</p>,
   ul: ({ children }) => (
@@ -1423,7 +1438,11 @@ const MD_COMPONENTS = {
     <ol className="list-decimal pl-5 my-2 space-y-1.5 first:mt-0 last:mb-0">{children}</ol>
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  strong: ({ children }) => (
+    <strong className={isFinancialEmphasis(children) ? "ab-financial" : "font-semibold"}>
+      {children}
+    </strong>
+  ),
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ children, href }) => (
     <a
@@ -1465,12 +1484,40 @@ const MD_COMPONENTS = {
     </blockquote>
   ),
   hr: () => <hr className="my-3 border-t" style={{ borderColor: "var(--ab-border)" }} />,
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto first:mt-0 last:mb-0">
+      <table
+        className="w-full text-left text-xs border-collapse min-w-[420px]"
+        style={{ borderColor: "var(--ab-border)" }}
+      >
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead
+      className="font-semibold"
+      style={{ background: "var(--ab-surface-raised)", color: "var(--ab-text)" }}
+    >
+      {children}
+    </thead>
+  ),
+  th: ({ children }) => (
+    <th className="px-2.5 py-1.5 font-semibold border-b align-text-top whitespace-nowrap" style={{ borderColor: "var(--ab-border)" }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-2.5 py-1.5 align-top" style={{ borderColor: "var(--ab-border)" }}>
+      {children}
+    </td>
+  ),
 };
 
 function MarkdownContent({ text }) {
   return (
     <div className="text-sm leading-relaxed" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <ReactMarkdown components={MD_COMPONENTS}>{text || ""}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text || ""}</ReactMarkdown>
     </div>
   );
 }
@@ -1491,7 +1538,7 @@ function StableStreamBody({ text, showCaret }) {
   const { prefix, tail, inCode } = splitStablePrefix(text || "");
   return (
     <div className="text-sm leading-relaxed" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      {prefix ? <ReactMarkdown components={MD_COMPONENTS}>{prefix}</ReactMarkdown> : null}
+      {prefix ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{prefix}</ReactMarkdown> : null}
       {tail ? (
         <span className={`ab-tail whitespace-pre-wrap block${inCode ? " ab-tail--code" : ""}`}>
           {tail}
@@ -1576,48 +1623,12 @@ function MarkdownTypewriter({ text, onChunkScroll, onDone }) {
   );
 }
 
-function SourceFooter({ evidence, disclaimer }) {
-  const [open, setOpen] = useState(false);
-  const primary = evidence[0] || {};
-  const label = primary.source || primary.type || "Source";
-  const extra = evidence.length > 1 ? ` +${evidence.length - 1}` : "";
-
-  return (
-    <div className="mt-1">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        title="Show sources"
-        className="ab-citation text-[10px] inline-flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
-      >
-        <Info size={10} className="flex-shrink-0" />
-        <span>{label}{extra}</span>
-      </button>
-      {open && (
-        <div className="mt-1 space-y-1">
-          {evidence.map((ev, i) => (
-            <div key={i} className="ab-citation text-[10px] flex items-start gap-1">
-              <FileText size={10} className="mt-0.5 flex-shrink-0" />
-              <span>{ev.source || ev.type}{ev.reference && ` — ${ev.reference}`}</span>
-            </div>
-          ))}
-          {disclaimer && (
-            <p className="ab-citation text-[10px] italic">{disclaimer}</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function MessageBubble({ message, showDisclaimer = false, animate = false, streaming = false, deferStructured = false, onChunkScroll, onDone }) {
+export function MessageBubble({ message, animate = false, streaming = false, deferStructured = false, onChunkScroll, onDone }) {
   const isUser = message.sender_type === "user";
   const isSystem = message.sender_type === "system";
   const mode = message.mode ? MODE_CONFIG[message.mode] : null;
   const riskClass = message.risk_class || "R0";
   const evidence = message.structured_payload?.evidence || [];
-  const qualifications = message.structured_payload?.qualification;
 
   const primaryEvidence = evidence[0] || {};
   const evType = primaryEvidence.type;
@@ -1682,22 +1693,6 @@ export function MessageBubble({ message, showDisclaimer = false, animate = false
         )}
 
         {!isSystem && <MessageTimeStamp message={message} />}
-
-        {evidence.length > 0 && !isUser && !deferStructured && (
-          <SourceFooter
-            evidence={evidence}
-            disclaimer={qualifications}
-            defaultOpen={false}
-          />
-        )}
-
-        {/* Provenance notice: shown in full only on the first assistant
-            answer of a conversation; afterwards it stays available inside
-            the collapsed source footer (and always in the response payload,
-            per FRS traceability / Guardrail §13 Output Policy). */}
-        {showDisclaimer && qualifications && !isUser && !deferStructured && (
-          <p className="ab-citation text-[10px] mt-1 italic">{qualifications}</p>
-        )}
       </div>
 
       {isUser && (

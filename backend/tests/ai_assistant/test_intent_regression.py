@@ -904,7 +904,6 @@ class TestSopHowToRouting:
         ("How do I create a credit note?", "How to create a credit note"),
         ("How do I create a subscription?", "How to create a subscription"),
         ("How do I set up dunning?", "How to set up dunning"),
-        ("How do I create a customer?", "billing customer"),
     ])
     def test_supported_how_to_serves_authoritative_sop(self, db, org, ctx, customers, kb, phrase, needle):
         engine = ConversationEngine(db, model_gateway=None)
@@ -917,6 +916,20 @@ class TestSopHowToRouting:
         assert needle in answer, (
             f"{phrase!r}: SOP not served. Got: {answer[:300]!r}"
         )
+
+    def test_how_to_create_customer_is_capability_gap_not_glossary(self, db, org, ctx, customers, kb):
+        """Customer creation has no governed in-chat action, so 'How do I
+        create a customer?' must answer the honest capability gap (use
+        Customers > Add Customer) rather than the customer glossary definition,
+        which does not explain HOW to create a customer record."""
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org, "sop-cust-create")
+        intent = engine._classify_intent(conv, "How do I create a customer?", ctx)
+        assert intent["intent"] == "unsupported_customer_creation", f"got {intent}"
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "How do I create a customer?", intent, ctx)
+        assert "can't create new customer records" in result["answer"]
+        assert "Customers > Add Customer" in result["answer"]
 
     @pytest.mark.parametrize("phrase", [
         "How do I create an invoice?",
@@ -1624,6 +1637,26 @@ class TestMetricPhrasingRoutes:
             result = engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
             assert result["mode"] == "M1_INSPECT"
             assert money(250, "USD") in result["answer"] or money(0, "USD") in result["answer"]
+
+    def test_paid_period_last_month_routes_and_computes_window(self, db, org, ctx, customers):
+        """'revenue last month' must route to metric_paid_period and compute
+        the previous calendar month from the shared period resolver — never
+        falling to the dashboard 'this month' figure or a definition."""
+        today = date.today()
+        last_month_day1 = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        inv = add_invoice(db, org, customers["go"].id, "INV-LAST", InvoiceStatus.PAID, 500, paid="500.00")
+        inv.issue_date = last_month_day1
+        db.flush()
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org)
+        phrase = "revenue last month"
+        intent = engine._classify_intent(conv, phrase, ctx)
+        assert intent["intent"] == "metric_paid_period"
+        result = engine._get_handler(intent["domain"])(conv, phrase, intent, ctx)
+        assert result["mode"] == "M1_INSPECT"
+        assert "last month" in result["answer"]
+        assert money(500, "USD") in result["answer"]
+        assert "this month is" not in result["answer"]
 
 
 class TestRevenueThisMonth:
@@ -2617,9 +2650,14 @@ class TestHowToArticleRoutingRegression:
     def test_how_to_verb_noun_routes_to_explain(self, db, noun, verb, article, lead):
         phrase = f"{lead.format(v=verb)}{article}{noun}"
         result = ConversationEngine(db, model_gateway=None)._rules_classify_intent(phrase)
-        assert result["intent"] == "help_general", (
+        expected = (
+            "unsupported_customer_creation"
+            if noun == "customer" and verb in ("add", "create")
+            else "help_general"
+        )
+        assert result["intent"] == expected, (
             f"{phrase!r} routed to {result['intent']}/{result['domain']} "
-            f"(conf={result.get('confidence')}), expected help_general/help"
+            f"(conf={result.get('confidence')}), expected {expected}/help"
         )
         assert result["domain"] == "help"
         assert result["risk_class"] == "R0"
