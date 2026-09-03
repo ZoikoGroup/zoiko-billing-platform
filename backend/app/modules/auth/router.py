@@ -116,12 +116,12 @@ def _action_form_page(title: str, token: str, action_path: str) -> HTMLResponse:
 
 @router.post("/login", response_model=TokenResponse, summary="Login and get access token")
 @limiter.limit("10/minute")
-def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, data: LoginRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # ZB-SA-CMD-003 v3.0 master directive: a valid password yields tokens for
     # EVERY role, including super_admin. There is no login-time MFA challenge
     # and no enrollment redirect; MFA is enforced only as a step-up at the
     # moment of privileged actions (see /auth/mfa/* below).
-    return service.login_user(db, data.email, data.password)
+    return service.login_user(db, data.email, data.password, background_tasks=background_tasks)
 
 
 # ── Super Admin MFA (step-up factor management) ─────────────────────────────
@@ -148,11 +148,17 @@ def mfa_setup_start(request: Request, current_user=Depends(get_current_user), db
     summary="Confirm Super Admin MFA enrollment with a TOTP code",
 )
 @limiter.limit("10/minute")
-def mfa_setup_verify(request: Request, data: MFASetupVerifyRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def mfa_setup_verify(
+    request: Request,
+    data: MFASetupVerifyRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from app.modules.auth import mfa_service
 
     _require_super_admin(current_user)
-    return mfa_service.verify_enrollment(db, current_user, data.code)
+    return mfa_service.verify_enrollment(db, current_user, data.code, background_tasks=background_tasks)
 
 
 @router.get(
@@ -171,11 +177,17 @@ def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get
     summary="Disable MFA on your own Super Admin account (requires current password)",
 )
 @limiter.limit("3/minute")
-def mfa_disable(request: Request, data: MFADisableRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def mfa_disable(
+    request: Request,
+    data: MFADisableRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from app.modules.auth import mfa_service
 
     _require_super_admin(current_user)
-    return mfa_service.disable_mfa_self(db, current_user, data.current_password)
+    return mfa_service.disable_mfa_self(db, current_user, data.current_password, background_tasks=background_tasks)
 
 
 def _require_super_admin(user) -> None:
@@ -228,16 +240,19 @@ def logout(current_user=Depends(get_current_user), request: Request = None):
 def change_password(
     request: Request,
     data: ChangePasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return service.change_password(db, current_user.id, data.current_password, data.new_password)
+    return service.change_password(
+        db, current_user.id, data.current_password, data.new_password, background_tasks=background_tasks
+    )
 
 
 @router.post("/forgot-password", response_model=SuccessResponse, summary="Request password reset link")
 @limiter.limit("5/minute")
-def forgot_password(request: Request, data: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    return service.request_password_reset(db, data.email)
+def forgot_password(request: Request, data: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    return service.request_password_reset(db, data.email, background_tasks=background_tasks)
 
 
 @router.get("/accept-invite", response_class=HTMLResponse, summary="Account-setup form from invite link", include_in_schema=False)

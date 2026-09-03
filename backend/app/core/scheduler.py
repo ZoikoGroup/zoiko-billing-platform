@@ -214,6 +214,18 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "reconciliation_job",
             "Ledger Reconciliation (REC-01)",
         ),
+        (
+            "app.modules.billing.tasks.invoice_reminder:run_invoice_reminder_job",
+            settings.INVOICE_REMINDER_INTERVAL_MINUTES,
+            "invoice_reminder_job",
+            "Invoice Pre-Due Reminder (ZB-INV-011)",
+        ),
+        (
+            "app.modules.commercial.tasks.trial_warning:run_commercial_trial_warning_job",
+            settings.COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES,
+            "commercial_trial_warning_job",
+            "Commercial Trial Ending Warning (ZB-COM-003)",
+        ),
     ]
 
 

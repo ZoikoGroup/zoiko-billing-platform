@@ -115,6 +115,8 @@ async def lifespan(app: FastAPI):
         except (TypeError, ValueError):
             logger.critical("MFA_ENCRYPTION_KEY is not a valid Fernet key.")
             raise SystemExit("MFA_ENCRYPTION_KEY must be a valid Fernet key in production.")
+    from app.modules.notifications.template_registry import validate_template_registry
+    validate_template_registry()
     validate_production_cors(_cors_origins, settings.DEBUG)
     try:
         initialize_database()
