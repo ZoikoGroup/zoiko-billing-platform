@@ -431,11 +431,13 @@ def send_user_invite_email(
     workspace = _get_org_branding(organization_id, db=db).get("company_name", "your organization")
     return send_approval_email(email, "org_admin_invite.html", {
         "subject": "You have been invited to {{workspace_name}}",
+        "recipient_name": first_name,
         "first_name": first_name,
         "inviter_name": invited_by or "your administrator",
         "workspace_name": workspace,
         "expires_at_local": "24 hours",
         "timezone": "UTC",
+        "invite_link": invite_link,
         "action_url": invite_link,
         "support_email": "",
     }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER)
@@ -1431,3 +1433,185 @@ def send_preference_updated_email(
         "recipient_first_name": recipient_first_name or "there",
         "template_id": "ZB-PRF-001",
     }, db=db, organization_id=organization_id, event_name="preferences.updated")
+
+
+# ── Full Audit Gap Closure Dispatches (ZB-GAP-001..009) ───────────────────────
+
+def send_tenant_subscription_cancelled_email(
+    email: str,
+    recipient_first_name: str,
+    subscription_number: str,
+    cancellation_reason: str = "",
+    initiated_by: str = "Self-Service",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-001: Tenant subscription cancelled notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Subscription {subscription_number} Has Been Cancelled",
+        "preheader": f"Your subscription {subscription_number} was cancelled ({initiated_by}).",
+        "recipient_first_name": recipient_first_name or "there",
+        "subscription_number": subscription_number,
+        "cancellation_reason": cancellation_reason or "None provided",
+        "initiated_by": initiated_by,
+        "template_id": "ZB-GAP-001",
+    }, db=db, organization_id=organization_id, event_name="subscription.cancelled")
+
+
+def send_invoice_voided_email(
+    email: str,
+    customer_name: str,
+    invoice_number: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-002: Customer invoice voided notification (T1)."""
+    return send_approval_email(email, "invoice_sent.html", {
+        "subject": f"Notice: Invoice {invoice_number} Has Been Voided",
+        "preheader": f"Invoice {invoice_number} is void and no longer requires payment.",
+        "customer_name": customer_name,
+        "recipient_first_name": customer_name,
+        "invoice_number": invoice_number,
+        "reason": reason or "Voided",
+        "template_id": "ZB-GAP-002",
+    }, db=db, organization_id=organization_id, event_name="invoice.voided")
+
+
+def send_commercial_plan_changed_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    plan_name: str,
+    change_type: str = "Update",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-003: Commercial platform plan changed notification (T1)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Your Zoiko Billing Commercial Plan Has Been Updated ({plan_name})",
+        "preheader": f"Plan change ({change_type}) applied for {organization_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "plan_name": plan_name,
+        "change_type": change_type,
+        "template_id": "ZB-GAP-003",
+    }, db=db, organization_id=organization_id, event_name="commercial.plan_changed")
+
+
+def send_plan_version_published_digest_email(
+    email: str,
+    recipient_first_name: str,
+    plan_name: str,
+    version_number: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-004: New commercial plan version published digest (T1)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Notice: New Catalog Version Published for Plan '{plan_name}'",
+        "preheader": f"Catalog version {version_number} published for plan {plan_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "plan_name": plan_name,
+        "version_number": version_number,
+        "template_id": "ZB-GAP-004",
+    }, db=db, organization_id=organization_id, event_name="commercial.plan_version_published")
+
+
+def send_entitlement_override_decided_email(
+    email: str,
+    recipient_first_name: str,
+    override_id: int,
+    status: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-005: Entitlement override decision notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Entitlement Override Request #{override_id} [{status.upper()}]",
+        "preheader": f"Your entitlement override request has been {status}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "override_id": str(override_id),
+        "status": status,
+        "reason": reason or "No detail provided",
+        "template_id": "ZB-GAP-005",
+    }, db=db, organization_id=organization_id, event_name="override.decided")
+
+
+def send_org_lifecycle_changed_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    target_state: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-006: Manual organization lifecycle transition notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Important Notice: Organization Status Updated to {target_state}",
+        "preheader": f"Lifecycle status update for {organization_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "target_state": target_state,
+        "reason": reason or "Administrative update",
+        "template_id": "ZB-GAP-006",
+    }, db=db, organization_id=organization_id, event_name="organization.lifecycle_changed")
+
+
+def send_user_role_changed_email(
+    email: str,
+    recipient_first_name: str,
+    user_email: str,
+    new_role: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-007: User role changed by admin notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Your Role in Zoiko Billing Has Been Updated to {new_role}",
+        "preheader": f"An administrator updated your account role to {new_role}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "user_email": user_email,
+        "new_role": new_role,
+        "template_id": "ZB-GAP-007",
+    }, db=db, organization_id=organization_id, event_name="user.role_changed_by_admin")
+
+
+def send_user_status_changed_email(
+    email: str,
+    recipient_first_name: str,
+    user_email: str,
+    status: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-008: User account status changed by admin notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Security Alert: Your Zoiko Billing Account Status Is Now {status}",
+        "preheader": f"Account status update for {user_email}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "user_email": user_email,
+        "status": status,
+        "reason": reason or "Administrative action",
+        "template_id": "ZB-GAP-008",
+    }, db=db, organization_id=organization_id, event_name="user.status_changed_by_admin")
+
+
+def send_privileged_access_ended_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-009: Privileged support session exited notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Security Notice: Privileged support access session ended for {organization_name}",
+        "preheader": "Support operator session has concluded.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "template_id": "ZB-GAP-009",
+    }, db=db, organization_id=organization_id, event_name="support.privileged_access_exited")

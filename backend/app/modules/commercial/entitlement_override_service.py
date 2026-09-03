@@ -192,6 +192,23 @@ class CommercialOverrideService:
         EntitlementSnapshotService(self.db).recompute_snapshot(
             override.organization_id, reason="override_approved",
         )
+
+        try:
+            from app.modules.auth.models import User
+            from app.services.email_service import send_entitlement_override_decided_email
+            admin = self.db.query(User).filter(User.organization_id == override.organization_id, User.is_active == True).first()
+            if admin and admin.email:
+                send_entitlement_override_decided_email(
+                    email=admin.email,
+                    recipient_first_name=admin.first_name or "there",
+                    override_id=override.id,
+                    status="approved",
+                    organization_id=override.organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to send override approved email: %s", mail_exc)
+
         return override
 
     def reject(self, override: CommercialOverride, *, approver_user_id: int, rejection_reason: str) -> CommercialOverride:
@@ -223,6 +240,24 @@ class CommercialOverrideService:
             reason=rejection_reason,
             correlation_id=f"commercial_override:{override.id}",
         )
+
+        try:
+            from app.modules.auth.models import User
+            from app.services.email_service import send_entitlement_override_decided_email
+            admin = self.db.query(User).filter(User.organization_id == override.organization_id, User.is_active == True).first()
+            if admin and admin.email:
+                send_entitlement_override_decided_email(
+                    email=admin.email,
+                    recipient_first_name=admin.first_name or "there",
+                    override_id=override.id,
+                    status="rejected",
+                    reason=rejection_reason,
+                    organization_id=override.organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to send override rejected email: %s", mail_exc)
+
         return override
 
     def revoke(self, override: CommercialOverride, *, actor_id: int | None, reason: str) -> CommercialOverride:
@@ -255,6 +290,24 @@ class CommercialOverrideService:
         EntitlementSnapshotService(self.db).recompute_snapshot(
             override.organization_id, reason="override_revoked",
         )
+
+        try:
+            from app.modules.auth.models import User
+            from app.services.email_service import send_entitlement_override_decided_email
+            admin = self.db.query(User).filter(User.organization_id == override.organization_id, User.is_active == True).first()
+            if admin and admin.email:
+                send_entitlement_override_decided_email(
+                    email=admin.email,
+                    recipient_first_name=admin.first_name or "there",
+                    override_id=override.id,
+                    status="revoked",
+                    reason=reason,
+                    organization_id=override.organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to send override revoked email: %s", mail_exc)
+
         return override
 
 

@@ -170,6 +170,17 @@ TEMPLATE_REGISTRY: Dict[str, TemplateDefinition] = {
 
     # PRF family — Preferences (T3 consent-aware)
     "ZB-PRF-001": TemplateDefinition("ZB-PRF-001", TemplateTier.T3, "PRF", ["recipient_first_name"], ActivationState.ACTIVE, "Email communication preferences updated"),
+
+    # --- ZB-GAP Family — Full Email Coverage Audit Gap Closures ---
+    "ZB-GAP-001": TemplateDefinition("ZB-GAP-001", TemplateTier.T1, "GAP", ["subscription_number"], ActivationState.ACTIVE, "Tenant subscription cancelled notification"),
+    "ZB-GAP-002": TemplateDefinition("ZB-GAP-002", TemplateTier.T1, "GAP", ["invoice_number"], ActivationState.ACTIVE, "Customer invoice voided notification"),
+    "ZB-GAP-003": TemplateDefinition("ZB-GAP-003", TemplateTier.T1, "GAP", ["organization_name", "plan_name"], ActivationState.ACTIVE, "Commercial platform plan changed notification"),
+    "ZB-GAP-004": TemplateDefinition("ZB-GAP-004", TemplateTier.T1, "GAP", ["plan_name", "version_number"], ActivationState.ACTIVE, "New commercial plan version published digest"),
+    "ZB-GAP-005": TemplateDefinition("ZB-GAP-005", TemplateTier.T1, "GAP", ["override_id", "status"], ActivationState.ACTIVE, "Entitlement override decision notification"),
+    "ZB-GAP-006": TemplateDefinition("ZB-GAP-006", TemplateTier.T0, "GAP", ["organization_name", "target_state"], ActivationState.ACTIVE, "Manual organization lifecycle transition notification"),
+    "ZB-GAP-007": TemplateDefinition("ZB-GAP-007", TemplateTier.T1, "GAP", ["user_email", "new_role"], ActivationState.ACTIVE, "User role changed by admin notification"),
+    "ZB-GAP-008": TemplateDefinition("ZB-GAP-008", TemplateTier.T0, "GAP", ["user_email", "status"], ActivationState.ACTIVE, "User account status changed by admin notification"),
+    "ZB-GAP-009": TemplateDefinition("ZB-GAP-009", TemplateTier.T0, "GAP", ["organization_name"], ActivationState.ACTIVE, "Privileged support session exited notification"),
 }
 
 
@@ -246,6 +257,17 @@ EVENT_REGISTRY: Dict[str, str] = {
     "commercial.demo_requested": "ZB-ACQ-001",
     "marketing.newsletter": "ZB-MKT-001",
     "preferences.updated": "ZB-PRF-001",
+
+    # GAP Closure Events
+    "subscription.cancelled": "ZB-GAP-001",
+    "invoice.voided": "ZB-GAP-002",
+    "commercial.plan_changed": "ZB-GAP-003",
+    "commercial.plan_version_published": "ZB-GAP-004",
+    "override.decided": "ZB-GAP-005",
+    "organization.lifecycle_changed": "ZB-GAP-006",
+    "user.role_changed_by_admin": "ZB-GAP-007",
+    "user.status_changed_by_admin": "ZB-GAP-008",
+    "support.privileged_access_exited": "ZB-GAP-009",
 }
 
 

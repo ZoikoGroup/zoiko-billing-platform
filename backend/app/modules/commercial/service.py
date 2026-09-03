@@ -746,6 +746,38 @@ class CommercialPlanVersionService:
             new_values=_version_snapshot(version),
             correlation_id=f"commercial_plan_version:{version.id}",
         )
+
+        # Batch notify active subscribers of this plan
+        try:
+            from app.modules.auth.models import User
+            from app.modules.commercial.models import CommercialAccount, CommercialSubscription
+            from app.services.email_service import send_plan_version_published_digest_email
+
+            active_subs = (
+                self.db.query(CommercialSubscription)
+                .filter(
+                    CommercialSubscription.commercial_plan_id == version.plan_id,
+                    CommercialSubscription.status == CommercialSubscriptionStatus.ACTIVE,
+                )
+                .all()
+            )
+            account_ids = {s.commercial_account_id for s in active_subs}
+            for acct_id in account_ids:
+                acct = self.db.query(CommercialAccount).filter(CommercialAccount.id == acct_id).first()
+                if acct and acct.organization_id:
+                    admin = self.db.query(User).filter(User.organization_id == acct.organization_id, User.is_active == True).first()
+                    if admin and admin.email:
+                        send_plan_version_published_digest_email(
+                            email=admin.email,
+                            recipient_first_name=admin.first_name or "there",
+                            plan_name=f"Plan #{version.plan_id}",
+                            version_number=str(version.version_number),
+                            organization_id=acct.organization_id,
+                            db=self.db,
+                        )
+        except Exception as mail_exc:
+            logger.warning("Failed to dispatch plan version published digest emails: %s", mail_exc)
+
         return version
 
     def reject(self, version, *, approver_user_id: int, rejection_reason: str):
@@ -1633,9 +1665,28 @@ class CommercialSubscriptionService:
             reason=reason,
         )
         logger.info(
-            "Applied in-place plan change on subscription %s: plan %s -> %s",
-            subscription.id, old_plan_id, target_plan.plan_code,
+            "CommercialSubscription %s plan changed from %s to %s by actor %s (reason=%r).",
+            subscription.id, old_plan_id, target_plan.id, actor_id, reason,
         )
+
+        try:
+            from app.modules.auth.models import User
+            from app.services.email_service import send_commercial_plan_changed_email
+            if account and account.organization_id:
+                org_admin = self.db.query(User).filter(User.organization_id == account.organization_id, User.is_active == True).first()
+                if org_admin and org_admin.email:
+                    send_commercial_plan_changed_email(
+                        email=org_admin.email,
+                        recipient_first_name=org_admin.first_name or "there",
+                        organization_name=getattr(account.organization, "name", "Your Organization"),
+                        plan_name=getattr(target_plan, "name", target_plan.plan_code),
+                        change_type="Update",
+                        organization_id=account.organization_id,
+                        db=self.db,
+                    )
+        except Exception as mail_exc:
+            logger.warning("Failed to dispatch commercial plan changed email: %s", mail_exc)
+
         return subscription
 
     def reverse_scheduled_change(self, change, *, actor_id: int | None = None, reason: str = ""):
