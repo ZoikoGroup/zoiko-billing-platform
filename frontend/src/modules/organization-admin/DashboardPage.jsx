@@ -56,15 +56,24 @@ function greeting() {
   return "Good evening";
 }
 
+// Matches backend's COMMERCIAL_DEFAULT_TRIAL_DAYS (config.py) — the
+// reference scale for the progress bar's fill (see super-admin/constants.jsx
+// TrialProgressBar for the same convention on the platform side).
+const TRIAL_PROGRESS_REFERENCE_DAYS = 14;
+
 function trialRemaining(trialEndsAt, status) {
-  if (status === "suspended") return { label: "Your free trial ended without payment", expired: true };
-  if (status !== "pending" || !trialEndsAt) return null;
+  if (status === "suspended") return { label: "Your free trial ended without payment", expired: true, percent: 0 };
+  // "trialing" is the live status for both program-granted and default
+  // trials; "pending" only remains meaningful for subscriptions provisioned
+  // before the automatic default trial existed.
+  if ((status !== "pending" && status !== "trialing") || !trialEndsAt) return null;
   const diffMs = new Date(trialEndsAt).getTime() - Date.now();
-  if (diffMs <= 0) return { label: "Your free trial has ended", expired: true };
+  if (diffMs <= 0) return { label: "Your free trial has ended", expired: true, percent: 0 };
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const label = days >= 1 ? `${days} day${days === 1 ? "" : "s"} ${hours}h left in your free trial` : `${hours}h left in your free trial`;
-  return { label, expired: false };
+  const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
+  return { label, expired: false, percent };
 }
 
 function SkeletonCard({ className = "" }) {
@@ -249,10 +258,17 @@ export default function OrgAdminDashboardPage() {
             : { background: PRIMARY_100, borderColor: "#BFDBFE" }}
         >
           <Clock className="w-4 h-4 shrink-0" style={{ color: trial.expired ? DANGER : PRIMARY }} />
-          <p className="text-[13px] font-semibold" style={{ color: trial.expired ? DANGER : PRIMARY_DEEP }}>
-            {trial.label}
-          </p>
-          <span className="ml-auto text-[12px] font-semibold underline" style={{ color: trial.expired ? DANGER : PRIMARY }}>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold" style={{ color: trial.expired ? DANGER : PRIMARY_DEEP }}>
+              {trial.label}
+            </p>
+            {!trial.expired && (
+              <div className="mt-1.5 h-1.5 w-full max-w-[240px] overflow-hidden rounded-full" style={{ background: "rgba(37,99,235,0.15)" }}>
+                <div className="h-full rounded-full transition-[width]" style={{ width: `${trial.percent}%`, background: PRIMARY }} />
+              </div>
+            )}
+          </div>
+          <span className="ml-auto shrink-0 text-[12px] font-semibold underline" style={{ color: trial.expired ? DANGER : PRIMARY }}>
             {trial.expired ? "Pay now to restore access →" : "Pay now to activate →"}
           </span>
         </div>

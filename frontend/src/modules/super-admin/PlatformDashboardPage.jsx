@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import {
@@ -19,9 +20,10 @@ import {
   listApprovalRequests,
   getProductionAcceptanceReport,
   getSaasCommercialReporting,
+  listOrganizations,
 } from "../../service/commercialService";
 import { getTriageSummary, getFinancialOperationsSummary } from "../../service/commandCenterService";
-import { Spinner } from "../../components/billing-shared";
+import { Spinner, DashboardChartErrorBoundary } from "../../components/billing-shared";
 import CommandCenterContextBar from "../../components/CommandCenterContextBar";
 
 const POLL_INTERVAL_MS = 60000;
@@ -42,6 +44,7 @@ export default function PlatformDashboardPage() {
   const [approvals, setApprovals] = useState(null);
   const [readiness, setReadiness] = useState(null);
   const [activity, setActivity] = useState(null);
+  const [trialOrgs, setTrialOrgs] = useState([]);
 
   const [sourceErrors, setSourceErrors] = useState({});
   const [loading, setLoading] = useState(true);
@@ -84,14 +87,20 @@ export default function PlatformDashboardPage() {
       return null;
     });
 
-    Promise.all([triagePromise, finopsPromise, mrrPromise, approvalsPromise, readinessPromise, activityPromise]).then(
-      ([triage, finopsReport, mrrReport, pendingApprovals, readinessReport, logs]) => {
+    const orgsPromise = listOrganizations({ skip: 0, limit: 200 }).catch((e) => {
+      nextErrors.trialOrgs = e?.message || "Organizations unavailable";
+      return null;
+    });
+
+    Promise.all([triagePromise, finopsPromise, mrrPromise, approvalsPromise, readinessPromise, activityPromise, orgsPromise]).then(
+      ([triage, finopsReport, mrrReport, pendingApprovals, readinessReport, logs, orgsReport]) => {
         setTriageData(triage);
         setFinops(finopsReport);
         setMrr(mrrReport?.mrr ?? null);
         setApprovals(pendingApprovals ? pendingApprovals.requests || [] : null);
         setReadiness(readinessReport);
         setActivity(logs ? logs.logs || [] : null);
+        setTrialOrgs(orgsReport ? orgsReport.organizations || [] : []);
         setSourceErrors(nextErrors);
         loadedOnceRef.current = true;
         setLoading(false);
@@ -156,6 +165,22 @@ export default function PlatformDashboardPage() {
 
   const sourceErrorCount = Object.keys(sourceErrors).length;
   const telemetryStale = worstFreshness === "stale" || worstFreshness === "unknown";
+
+  // Trial Period Overview — remaining trial days per org across the
+  // platform (trial_ends_at lives on each org's commercial subscription).
+  // Most urgent first; all bars rendered blue.
+  const trialChartData = useMemo(() => {
+    const data = [];
+    for (const row of trialOrgs) {
+      if (!row.organization_name || !row.trial_ends_at) continue;
+      if (row.subscription_status !== "trialing" && row.subscription_status !== "pending") continue;
+      const end = new Date(row.trial_ends_at);
+      if (Number.isNaN(end.getTime())) continue;
+      const days = Math.max(0, Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      data.push({ org: row.organization_name, days, color: "#3B82F6" });
+    }
+    return data.sort((a, b) => a.days - b.days);
+  }, [trialOrgs]);
 
   function formatMrr() {
     if (!mrr) return "—";
@@ -326,6 +351,33 @@ export default function PlatformDashboardPage() {
           }
         />
       </div>
+
+      {/* Trial Period Overview */}
+      {trialChartData.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-semibold text-slate-800 text-xs">Trial Period Overview</div>
+            <span className="text-[11px] text-slate-400">{trialChartData.length} org(s) on trial</span>
+          </div>
+          <div className="h-64 w-full" aria-label="Remaining trial days per organization">
+            <DashboardChartErrorBoundary>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                  <XAxis dataKey="org" tick={{ fontSize: 11, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={56} />
+                  <YAxis tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
+                  <Tooltip formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
+                  <Bar dataKey="days" radius={[6, 6, 0, 0]}>
+                    {trialChartData.map((d, i) => (
+                      <Cell key={i} fill={d.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </DashboardChartErrorBoundary>
+          </div>
+        </div>
+      )}
 
       {/* Pipeline & Safety Controls */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
