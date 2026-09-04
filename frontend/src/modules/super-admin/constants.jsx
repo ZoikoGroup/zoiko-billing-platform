@@ -340,22 +340,31 @@ export const TRANSITION_LABELS = {
 };
 
 /**
- * Free-trial remaining-time helper (COMMERCIAL_TRIAL_PERIOD_DAYS, see
- * commercial/tasks/trial_expiry.py). Meaningful while status is "pending"
- * (legacy ad-hoc trial) or "trialing" (ZB-COM-ENT-001 trial under a
- * CommercialEvaluationProgram) — and "suspended" (trial expired unpaid).
- * ACTIVE/CANCELLED/etc subscriptions have no trial countdown to show.
- * Returns null when there's nothing trial-related to display.
+ * Free-trial remaining-time helper. Every eligible new subscription is
+ * provisioned straight into "trialing" (backend/app/config.py's
+ * COMMERCIAL_DEFAULT_TRIAL_DAYS, overridden per-plan by an active
+ * CommercialEvaluationProgram — see commercial/service.py
+ * provision_default_subscription) — "pending" only remains meaningful for
+ * subscriptions provisioned before this default trial existed. "suspended"
+ * covers a trial that expired unpaid. ACTIVE/CANCELLED/etc subscriptions
+ * have no trial countdown to show. Returns null when there's nothing
+ * trial-related to display.
  */
+// Reference scale for the trial progress bar's fill — matches backend's
+// COMMERCIAL_DEFAULT_TRIAL_DAYS (config.py). A program-granted trial longer
+// than this shows a full bar until its final stretch, rather than needing
+// the trial's original start date (not sent to the frontend).
+const TRIAL_PROGRESS_REFERENCE_DAYS = 14;
+
 export function formatTrialRemaining(trialEndsAt, status, recoveryEndsAt = null) {
-  if (status === "suspended") return { label: "Trial expired", tone: "risk" };
+  if (status === "suspended") return { label: "Trial expired", tone: "risk", percent: 0 };
   if (status !== "pending" && status !== "trialing") return null;
   if (!trialEndsAt) return null;
 
   const end = new Date(trialEndsAt);
   if (Number.isNaN(end.getTime())) return null;
   const diffMs = end.getTime() - Date.now();
-  if (diffMs <= 0) return { label: "Trial expired", tone: "risk" };
+  if (diffMs <= 0) return { label: "Trial expired", tone: "risk", percent: 0 };
 
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -368,7 +377,28 @@ export function formatTrialRemaining(trialEndsAt, status, recoveryEndsAt = null)
       label += ` · recovery ${rDays}d`;
     }
   }
-  return { label, tone: days === 0 ? "attention" : "default" };
+  const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
+  return { label, tone: days === 0 ? "attention" : "default", percent };
+}
+
+/**
+ * Blue progress bar for the "Free Trial Remaining" column — fill length is
+ * `trial.percent` (from formatTrialRemaining). Shared by UsersPage and
+ * OrganizationsPage so both trial columns render identically.
+ */
+export function TrialProgressBar({ trial }) {
+  if (!trial) return <span className="text-xs text-slate-400">—</span>;
+  return (
+    <div className="w-28">
+      <div className="mb-1 text-[11px] font-semibold text-slate-600">{trial.label}</div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-blue-500 transition-[width]"
+          style={{ width: `${trial.percent ?? 0}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 /**

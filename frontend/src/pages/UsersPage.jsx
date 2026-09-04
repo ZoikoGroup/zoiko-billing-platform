@@ -5,7 +5,7 @@ import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, ListToolbar, Select, Modal, Field, Button } from "../components/billing-ui";
 import { ErrorState, SuccessMessage, Pagination, StatusBadge, DashboardChartCard, DashboardChartErrorBoundary } from "../components/billing-shared";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { formatTrialRemaining } from "../modules/super-admin/constants";
+import { formatTrialRemaining, TrialProgressBar } from "../modules/super-admin/constants";
 
 // This page is scoped to Organization Admins only — one tenant-facing
 // administrator role per organization. Billing/finance/auditor roles are
@@ -327,13 +327,9 @@ export default function UsersPage() {
       {
         key: "trial_remaining",
         label: "Free Trial Remaining",
-        render: (u) => {
-          const trial = formatTrialRemaining(u.trial_ends_at, u.subscription_status, u.recovery_ends_at);
-          if (!trial) return <span className="text-xs text-slate-400">—</span>;
-          const toneClass =
-            trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
-          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
-        },
+        render: (u) => (
+          <TrialProgressBar trial={formatTrialRemaining(u.trial_ends_at, u.subscription_status, u.recovery_ends_at)} />
+        ),
       },
       {
         key: "derived_status",
@@ -392,7 +388,7 @@ export default function UsersPage() {
 
   // Trial Period Overview — per-org remaining trial days derived from the
   // current page's user rows (trial_ends_at lives on the org's subscription).
-  // Most urgent first; bar color encodes urgency (red ≤3d, amber ≤7d, emerald >7d).
+  // Most urgent first; all bars rendered blue.
   const trialChartData = useMemo(() => {
     const byOrg = new Map();
     for (const u of users) {
@@ -405,7 +401,7 @@ export default function UsersPage() {
         byOrg.set(u.organization_name, {
           org: u.organization_name,
           days,
-          color: days <= 3 ? "#EF4444" : days <= 7 ? "#F59E0B" : "#10B981",
+          color: "#3B82F6",
         });
       }
     }

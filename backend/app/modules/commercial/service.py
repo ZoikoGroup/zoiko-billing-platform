@@ -30,6 +30,9 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.modules.commercial.enums import (
+    CommercialEvaluationConversionPolicy,
+    CommercialEvaluationExpiryAction,
+    CommercialEvaluationPaymentRequirement,
     CommercialPlanStatus,
     CommercialSubscriptionStatus,
 )
@@ -1170,16 +1173,21 @@ class CommercialSubscriptionService:
 
         The resulting subscription starts PENDING (CommercialSubscription's
         default status) — provisioning never auto-charges or auto-activates;
-        entitlement must not race ahead of payment (§B4). Idempotent: if an
-        open subscription already exists, it is returned untouched.
+        entitlement must not race ahead of payment (§B4). It immediately
+        moves to TRIALING below unless the org has already used its one
+        standard trial. Idempotent: if an open subscription already exists,
+        it is returned untouched.
 
-        When an active CommercialEvaluationProgram exists for the resolved
-        plan and the org is eligible (§5: one standard trial per verified
+        Whenever the org is eligible (§5: one standard trial per verified
         organization), the subscription starts as TRIALING with:
-          - trial_ends_at computed from the program's duration_days
+          - trial_ends_at computed from an active CommercialEvaluationProgram's
+            duration_days when one exists for the resolved plan, otherwise
+            from settings.COMMERCIAL_DEFAULT_TRIAL_DAYS — every new account
+            gets a trial automatically, program or not
           - recovery_ends_at = trial_ends_at + 14 days
           - trial_granted_entitlements snapshot from granted_plan_id's
-            PlanEntitlement rows (Professional by default, per §5)
+            PlanEntitlement rows when a program applies (Professional by
+            default, per §5); the plan's own entitlements otherwise
         """
         existing = self.get_active_subscription(account_id)
         if existing is not None:
@@ -1216,15 +1224,41 @@ class CommercialSubscriptionService:
             return None
 
         subscription = self.create_subscription(account_id, plan)
+        self.start_trial_if_eligible(subscription, plan)
 
-        # §B3 + §5: a trial is granted ONLY when an explicitly-activated
-        # CommercialEvaluationProgram exists for THIS plan AND the org is
-        # eligible (one standard trial per verified organization).
-        from app.modules.commercial.models import (
-            CommercialEvaluationProgram,
-            EntitlementDefinition,
-            PlanEntitlement,
-        )
+        # Recompute once, after any TRIALING branch above has set its final
+        # state — create_subscription() already recomputed against the
+        # pre-trial state, so this second call is what actually captures the
+        # trial grant (or confirms no trial applied).
+        self._recompute_snapshot_for_account(account_id, reason="provisioning")
+        return subscription
+
+    def start_trial_if_eligible(
+        self, subscription: CommercialSubscription, plan: CommercialPlan,
+    ) -> bool:
+        """Grants `subscription` a trial (TRIALING) if its account hasn't
+        already used its one standard trial (§5). Uses an active
+        CommercialEvaluationProgram for `plan` when one exists, otherwise
+        settings.COMMERCIAL_DEFAULT_TRIAL_DAYS with default terms.
+
+        Shared by provision_default_subscription() (new signups) and
+        scripts/backfill_default_trials.py (accounts provisioned before this
+        default existed). Caller owns db.commit()/snapshot recompute.
+
+        Returns True if a trial was granted, False if the account was
+        already ineligible (leaves subscription untouched in that case).
+        """
+        if not self._is_trial_eligible(subscription.commercial_account_id):
+            logger.warning(
+                "Subscription %s: account %s already had a trial — second "
+                "trial blocked per §5 (one per org).",
+                subscription.id, subscription.commercial_account_id,
+            )
+            return False
+
+        # An explicitly-activated CommercialEvaluationProgram for THIS plan
+        # (if any) overrides the default trial length/terms below.
+        from app.modules.commercial.models import CommercialEvaluationProgram
 
         program = (
             self.db.query(CommercialEvaluationProgram)
@@ -1234,24 +1268,13 @@ class CommercialSubscriptionService:
             )
             .first()
         )
+
+        now = datetime.utcnow()
         if program is not None:
-            # §5 eligibility: one standard trial per verified organization.
-            # Check whether this org (or any prior org on the same account)
-            # has ever previously had trial_ends_at set on any subscription.
-            if not self._is_trial_eligible(account_id):
-                logger.warning(
-                    "Subscription %s: evaluation program %s found but org already "
-                    "had a trial — second trial blocked per §5 (one per org).",
-                    subscription.id, program.id,
-                )
-                return subscription
-
-            now = datetime.utcnow()
-            trial_ends = now + timedelta(days=program.duration_days)
-
-            # Compute recovery window: trial_ends_at + 14 days (§5).
-            recovery_ends = trial_ends + timedelta(days=14)
-
+            duration_days = program.duration_days
+            payment_requirement = program.payment_requirement
+            conversion_policy = program.conversion_policy
+            expiry_action = program.expiry_action
             # Snapshot entitlements from the granted_plan_id's PlanEntitlement
             # rows, not the signup plan's own. Per §5, the standard trial
             # grants Professional's entitlement bundle regardless of signup plan.
@@ -1260,28 +1283,37 @@ class CommercialSubscriptionService:
                 granted_entitlements = self._snapshot_entitlements_for_plan(
                     program.granted_plan_id, cap_source_program=program,
                 )
+        else:
+            # No admin-configured evaluation program for this plan — every
+            # self-serve signup still starts a default trial automatically
+            # rather than being left without one.
+            from app.config import settings
 
-            subscription.trial_ends_at = trial_ends
-            subscription.recovery_ends_at = recovery_ends
-            subscription.status = CommercialSubscriptionStatus.TRIALING
-            subscription.evaluation_payment_requirement = program.payment_requirement
-            subscription.evaluation_conversion_policy = program.conversion_policy
-            subscription.evaluation_expiry_action = program.expiry_action
-            subscription.trial_granted_entitlements = granted_entitlements
-            self.db.flush()
-            logger.info(
-                "Subscription %s: TRIALING under program %s (%s-day trial, "
-                "granted_plan_id=%s, recovery_ends_at=%s).",
-                subscription.id, program.id, program.duration_days,
-                program.granted_plan_id, recovery_ends,
-            )
+            duration_days = settings.COMMERCIAL_DEFAULT_TRIAL_DAYS
+            payment_requirement = CommercialEvaluationPaymentRequirement.NONE
+            conversion_policy = CommercialEvaluationConversionPolicy.MANUAL
+            expiry_action = CommercialEvaluationExpiryAction.SUSPEND
+            granted_entitlements = None
 
-        # Recompute once, after any TRIALING branch above has set its final
-        # state — create_subscription() already recomputed against the
-        # pre-trial state, so this second call is what actually captures the
-        # trial grant (or confirms no trial applied).
-        self._recompute_snapshot_for_account(account_id, reason="provisioning")
-        return subscription
+        trial_ends = now + timedelta(days=duration_days)
+        # Compute recovery window: trial_ends_at + 14 days (§5).
+        recovery_ends = trial_ends + timedelta(days=14)
+
+        subscription.trial_ends_at = trial_ends
+        subscription.recovery_ends_at = recovery_ends
+        subscription.status = CommercialSubscriptionStatus.TRIALING
+        subscription.evaluation_payment_requirement = payment_requirement
+        subscription.evaluation_conversion_policy = conversion_policy
+        subscription.evaluation_expiry_action = expiry_action
+        subscription.trial_granted_entitlements = granted_entitlements
+        self.db.flush()
+        logger.info(
+            "Subscription %s: TRIALING (%s-day trial, program_id=%s, "
+            "recovery_ends_at=%s).",
+            subscription.id, duration_days, program.id if program else None,
+            recovery_ends,
+        )
+        return True
 
     def is_trial_eligible(self, account_id: int) -> bool:
         """Public wrapper around _is_trial_eligible — ZB-COM-ENT-001 Part 3

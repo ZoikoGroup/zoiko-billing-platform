@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Building2, ChevronRight, Plus } from "lucide-react";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   createOrganization,
   listOrganizations,
 } from "../../service/commercialService";
 import { PageHeader, DataTable, SearchInput, Modal, Field, Button } from "../../components/billing-ui";
-import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage } from "../../components/billing-shared";
+import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage, DashboardChartCard, DashboardChartErrorBoundary } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
   LIFECYCLE_STATE_BADGES,
@@ -16,6 +17,7 @@ import {
   CommercialClassificationBadge,
   LifecycleStateBadge,
   formatTrialRemaining,
+  TrialProgressBar,
 } from "./constants";
 
 const EMPTY_ORG_FORM = {
@@ -243,13 +245,9 @@ export default function OrganizationsPage() {
       {
         key: "trial_remaining",
         label: "Free Trial Remaining",
-        render: (row) => {
-          const trial = formatTrialRemaining(row.trial_ends_at, row.subscription_status, row.recovery_ends_at);
-          if (!trial) return <span className="text-xs text-slate-400">—</span>;
-          const toneClass =
-            trial.tone === "risk" ? "text-red-600" : trial.tone === "attention" ? "text-amber-600" : "text-slate-600";
-          return <span className={`text-xs font-semibold ${toneClass}`}>{trial.label}</span>;
-        },
+        render: (row) => (
+          <TrialProgressBar trial={formatTrialRemaining(row.trial_ends_at, row.subscription_status, row.recovery_ends_at)} />
+        ),
       },
       {
         key: "users",
@@ -303,6 +301,22 @@ export default function OrganizationsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Trial Period Overview — remaining trial days per org on the current
+  // page (trial_ends_at lives on the org's commercial subscription). Most
+  // urgent first; all bars rendered blue.
+  const trialChartData = useMemo(() => {
+    const data = [];
+    for (const row of orgs) {
+      if (!row.organization_name || !row.trial_ends_at) continue;
+      if (row.subscription_status !== "trialing" && row.subscription_status !== "pending") continue;
+      const end = new Date(row.trial_ends_at);
+      if (Number.isNaN(end.getTime())) continue;
+      const days = Math.max(0, Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      data.push({ org: row.organization_name, days, color: "#3B82F6" });
+    }
+    return data.sort((a, b) => a.days - b.days);
+  }, [orgs]);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -342,6 +356,33 @@ export default function OrganizationsPage() {
           ))}
         </select>
       </div>
+
+      {trialChartData.length > 0 && (
+        <div className="mt-6">
+          <DashboardChartCard
+            title="Trial Period Overview"
+            action={<span className="text-xs text-slate-400">{trialChartData.length} org(s) on trial</span>}
+          >
+            <div className="h-64 w-full" aria-label="Remaining trial days per organization">
+              <DashboardChartErrorBoundary>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="org" tick={{ fontSize: 11, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={56} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
+                    <Tooltip formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
+                    <Bar dataKey="days" radius={[6, 6, 0, 0]}>
+                      {trialChartData.map((d, i) => (
+                        <Cell key={i} fill={d.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </DashboardChartErrorBoundary>
+            </div>
+          </DashboardChartCard>
+        </div>
+      )}
 
       <div className="mt-4">
         {error ? (

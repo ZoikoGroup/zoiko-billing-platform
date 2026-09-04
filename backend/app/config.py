@@ -176,16 +176,18 @@ class Settings(BaseSettings):
     COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
 
     # ── Commercial (Plane 1) free-trial enforcement (§B3) ───────────────
-    # A self-serve subscription only gets a trial_ends_at deadline when an
-    # is_active=True CommercialEvaluationProgram exists for its plan — the
-    # program's own duration_days sets the length, not a global setting (no
-    # program is seeded, so no plan grants a trial out of the box). If a
-    # granted trial expires unpaid, commercial/tasks/trial_expiry.py acts on
-    # it (per the program's expiry_action) and require_active_subscription
+    # A self-serve subscription gets a trial_ends_at deadline either from an
+    # is_active=True CommercialEvaluationProgram's own duration_days (super
+    # admin configured, takes precedence), or — if no such program exists for
+    # its plan — from this default, so every new account still starts a
+    # trial automatically instead of being left without one. If a granted
+    # trial expires unpaid, commercial/tasks/trial_expiry.py acts on it (per
+    # the subscription's expiry_action) and require_active_subscription
     # blocks /billing/* access until a super admin reactivates it or the org
     # pays. OFF by default — nothing acts on an expired trial until enabled.
     ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = True
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
+    COMMERCIAL_DEFAULT_TRIAL_DAYS: int = 14
 
     # Plane-1 scheduled plan-change apply sweep (ZB-COM-ENT-001 Part 3) — a
     # SCHEDULED downgrade's effective_at is applied by this job. OFF by
