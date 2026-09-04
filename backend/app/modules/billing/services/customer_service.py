@@ -190,9 +190,7 @@ class CustomerService:
         svc = BillingDashboardService(self.db)
         by_customer = svc.get_outstanding_by_customer(organization_id)
         outstanding = float(next((r["outstanding"] for r in by_customer if r["customer_id"] == customer_id), 0.0))
-        customer.outstanding_balance = Decimal(str(outstanding))
-        safe_commit_and_refresh(self.db, customer)
-        return customer
+        return self.repo.save(customer, outstanding_balance=Decimal(str(outstanding)))
 
     def get_customer_by_code(self, organization_id: int, code: str) -> Optional[BillingCustomer]:
         return self.repo.get_by_code(organization_id, code)
@@ -249,9 +247,7 @@ class CustomerService:
         customer = self.repo.get_by_id(customer_id, organization_id)
         if customer.status == CustomerStatus.ACTIVE:
             raise BadRequestException("Customer is already active")
-        customer.status = CustomerStatus.ACTIVE
-        customer.is_active = True
-        safe_commit_and_refresh(self.db, customer)
+        customer = self.repo.save(customer, status=CustomerStatus.ACTIVE, is_active=True)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return customer
 
@@ -259,17 +255,13 @@ class CustomerService:
         customer = self.repo.get_by_id(customer_id, organization_id)
         if customer.status == CustomerStatus.INACTIVE:
             raise BadRequestException("Customer is already inactive")
-        customer.status = CustomerStatus.INACTIVE
-        customer.is_active = False
-        safe_commit_and_refresh(self.db, customer)
+        customer = self.repo.save(customer, status=CustomerStatus.INACTIVE, is_active=False)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return customer
 
     def suspend_customer(self, customer_id: int, organization_id: int, updated_by: int) -> BillingCustomer:
         customer = self.repo.get_by_id(customer_id, organization_id)
-        customer.status = CustomerStatus.SUSPENDED
-        customer.is_active = False
-        safe_commit_and_refresh(self.db, customer)
+        customer = self.repo.save(customer, status=CustomerStatus.SUSPENDED, is_active=False)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return customer
 
@@ -343,7 +335,7 @@ class CustomerService:
         customers = self.repo.get_by_ids(ids, organization_id)
         now = datetime.now(timezone.utc)
         for customer in customers:
-            customer.status = CustomerStatus(status)
+            self.repo._apply(customer, status=CustomerStatus(status))
             customer.updated_at = now
         safe_commit_and_refresh(self.db, *customers)
         for customer in customers:
@@ -695,17 +687,16 @@ class CustomerService:
         prev = Decimal(str(customer.credit_balance or 0))
         adj = Decimal(str(amount))
         if adj_type == "increase":
-            customer.credit_balance = prev + adj
+            new_balance = prev + adj
         elif adj_type == "decrease":
-            new_val = prev - adj
-            if new_val < 0:
+            new_balance = prev - adj
+            if new_balance < 0:
                 raise BadRequestException("Credit balance cannot be negative")
-            customer.credit_balance = new_val
         else:
             if adj < 0:
                 raise BadRequestException("Adjusted balance cannot be negative")
-            customer.credit_balance = adj
-        safe_commit_and_refresh(self.db, customer)
+            new_balance = adj
+        self.repo.save(customer, credit_balance=new_balance)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "BillingCustomer", customer_id)
         return {
             "customer_id": customer_id,

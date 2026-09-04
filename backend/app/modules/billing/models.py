@@ -597,6 +597,7 @@ class BillingCustomer(Base):
     updated_by        = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at        = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at        = Column(DateTime(timezone=True), onupdate=func.now())
+    version           = Column(Integer, nullable=False, default=1, server_default="1")
 
     organization      = relationship("Organization", foreign_keys=[organization_id])
     contacts          = relationship("CustomerContact", back_populates="customer", lazy="selectin")
@@ -823,7 +824,7 @@ class PriceList(Base):
     name                = Column(String(255), nullable=False)
     code                = Column(String(50), nullable=False)
     description         = Column(Text, nullable=True)
-    version             = Column(Integer, default=1)
+    version             = Column(Integer, nullable=False, default=1, server_default="1")
     status              = Column(CaseInsensitiveEnum(PriceListStatus), default=PriceListStatus.DRAFT, nullable=False, index=True)
     currency            = Column(String(3), default="USD")
     is_default          = Column(Boolean, default=False)
@@ -3133,6 +3134,7 @@ class BillingConfiguration(Base):
     updated_by   = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
     updated_at   = Column(DateTime(timezone=True), onupdate=func.now())
+    version      = Column(Integer, nullable=False, default=1, server_default="1")
 
     organization = relationship("Organization", foreign_keys=[organization_id])
 

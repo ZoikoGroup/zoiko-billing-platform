@@ -1521,6 +1521,24 @@ _GREETING_RESPONSE_RE = re.compile(
     r"|^\s*what'?s\s+up\b[\s!.?]*$",
     re.IGNORECASE,
 )
+# ── Gratitude/farewell: distinct from greetings ──────────────────────────────
+# Gratitude and farewell phrases are smalltalk but should NOT return the full
+# onboarding intro — they get a short acknowledgment or closing instead.
+_GRATITUDE_RE = re.compile(
+    r"^\s*(?:thanks?|thank\s+(?:you|ya)|thx|ty"
+    r"|thanks\s+(?:a\s+lot|so\s+much|very\s+much|a\s+bunch)"
+    r"|many\s+thanks)"
+    r"(?:[\s,]+(?:that|was|is|really|so|very|indeed|for|everything|all|help|it|a\s+lot|a\s+bunch|great|nice|good|awesome|perfect|alright|cool|ok|okay|sure|fine|well|helpful))*"
+    r"[\s!.?,]*$",
+    re.IGNORECASE,
+)
+_FAREWELL_RE = re.compile(
+    r"^\s*(?:bye+|(?:good)?bye|see\s+(?:ya|you)(?:\s+later)?|later|cheers)"
+    r"(?:[\s,]+(?:bye|(?:good)?bye|see|you|ya|later|now|soon|again|cheers|that|was|is|really|so|very|indeed|for|everything|all|help|it))*"
+    r"[\s!.?,]*$",
+    re.IGNORECASE,
+)
+
 # ── Courtesy/filler framing stripper ─────────────────────────────────────────
 # Politeness wrappers ("Please show invoices", "Could you possibly list
 # payments?", "umm so like... invoices i guess") must not change what the
@@ -3629,7 +3647,14 @@ class ConversationEngine:
         # ── Small talk: greetings/fillers get a friendly welcome ─────────
         # Without this, bare "Hi"/"Thanks" fall through to weak RAG matches
         # or the §6.0 gate. Anything carrying a real request still passes.
-        if _GREETING_RESPONSE_RE.search(normalized.strip()):
+        # Gratitude and farewell are smalltalk but get distinct short
+        # acknowledgments — NOT the full onboarding intro (PRD §06 clarity).
+        stripped = normalized.strip()
+        if _GRATITUDE_RE.search(stripped):
+            return {"intent": "gratitude", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+        if _FAREWELL_RE.search(stripped):
+            return {"intent": "farewell", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
+        if _GREETING_RESPONSE_RE.search(stripped):
             return {"intent": "greeting", "domain": "smalltalk", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
         # Courtesy/filler framing ("please", "could you possibly…", "umm so
@@ -4764,11 +4789,24 @@ class ConversationEngine:
                 r"(?:a|an|the|my|our)?\s*(?:customer|client)?\s*(?:named|called\s+)?([A-Za-z][\w@.' -]*?)\s*$",
                 normalized,
             )
-            if m_search and not self._entity_from_text(m_search.group(2)) \
-                    and m_search.group(2).split()[0].lower() not in ("everything", "all", "it", "this", "that", "them", "me", "us", "your", "my", "our", "his", "her", "their", "its") \
-                    and not self._looks_like_domain_term(m_search.group(2).split()[0].lower()) \
-                    and not re.search(r"\b(guardrail|specification|spec|policy|policies|documentation|architecture|schema|frs|prd|wireframe)\b", normalized):
-                return {"intent": "customer_search", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
+            if m_search:
+                captured = m_search.group(2)
+                first_tok = captured.split()[0].lower()
+                # A real customer whose name matches the captured phrase always
+                # wins over the domain-term guard — "show Billing Inc" must find
+                # a customer actually named "Billing Inc", even though "billing"
+                # is a billing surface noun.  The guard only applies when there
+                # is NO matching customer record in this org.
+                matches_real_customer = self._has_matching_customer(captured, ctx)
+                safe_to_search = (
+                    captured
+                    and not self._entity_from_text(captured)
+                    and first_tok not in ("everything", "all", "it", "this", "that", "them", "me", "us", "your", "my", "our", "his", "her", "their", "its")
+                    and not self._looks_like_domain_term(first_tok)
+                    and not re.search(r"\b(guardrail|specification|spec|policy|policies|documentation|architecture|schema|frs|prd|wireframe)\b", normalized)
+                )
+                if matches_real_customer or safe_to_search:
+                    return {"intent": "customer_search", "domain": "billing", "risk_class": "R1", "confidence": 0.8, "classified_by": IntentClassifiedBy.RULES}
 
         # "find a customer", "look for a customer", "search for a customer"
         # (no name yet — the handler will ask which customer)
@@ -5277,11 +5315,48 @@ class ConversationEngine:
         """True when `token` is (or is within one edit of) a core billing
         surface noun — such words are never customer NAMES ("show me the
         dashboard" must not become a customer search for 'dashboard')."""
-        if token.lower() in _CUSTOMER_NAME_BLOCKLIST:
+        tok = token.lower()
+        if tok in _CUSTOMER_NAME_BLOCKLIST:
+            return True
+        # Billing surface vocabulary from the normalizer lexicon is also never
+        # a customer name. Without this, "show financial year" (after a failed
+        # invoice search) is trapped by the customer-search regex as a lookup
+        # for a customer literally named "financial" — a silent mis-route.
+        # Treating canonical billing vocabulary as a possible customer name is
+        # the root cause; adding it here lets the query fall through to the
+        # clarify/abstention path instead of guessing "customer search".
+        if tok in _FUZZY_CANONICAL_LEXICON:
             return True
         if len(token) < 5:
             return False
-        return any(_within_edit_distance_1(token, term) for term in FUZZY_INTENT_KEYWORDS)
+        return any(_within_edit_distance_1(tok, term) for term in FUZZY_INTENT_KEYWORDS)
+
+    def _has_matching_customer(self, name: str, ctx: "AIContext | None") -> bool:
+        """True when an active customer in this org has a name that matches the
+        captured phrase. Used to let a REAL customer record override the
+        domain-term guard in the customer-search rule — ``show Billing Inc``
+        must find a customer actually named "Billing Inc" even though
+        "billing" is a billing surface noun.  Returns False when there is no
+        org context yet (pre-classification, ctx may be None)."""
+        if ctx is None or not getattr(ctx, "organization_id", None):
+            return False
+        if not name or not name.strip():
+            return False
+        from app.modules.billing.models import BillingCustomer
+        pattern = f"%{name.strip()}%"
+        return (
+            self.db.query(BillingCustomer.id)
+            .filter(
+                BillingCustomer.organization_id == ctx.organization_id,
+                BillingCustomer.deleted_at.is_(None),
+                or_(
+                    BillingCustomer.display_name.ilike(pattern),
+                    BillingCustomer.company_name.ilike(pattern),
+                ),
+            )
+            .first()
+            is not None
+        )
 
     @staticmethod
     def _count_intent_for_entity(entity: str) -> tuple[str, str]:
@@ -6563,8 +6638,8 @@ class ConversationEngine:
             )
 
         figures = {
-            "revenue": ("Revenue", total_revenue),
-            "collections": ("Collections", collections),
+            "revenue": ("Revenue (billed invoices)", total_revenue),
+            "collections": ("Collections (cleared payments)", collections),
         }
         label_a, value_a = figures[intent.get("comparison_a") or "revenue"]
         label_b, value_b = figures[intent.get("comparison_b") or "collections"]
@@ -6768,13 +6843,16 @@ class ConversationEngine:
         answer = (
             f"**Dashboard Summary** for **{ctx.tenant_name or 'your organization'}**:\n\n"
             f"- **Total Revenue:** {money_sym(total_revenue, ccy)}\n"
-            f"- **Paid Amount:** {money_sym(paid_amount, ccy)}\n"
-            f"- **Collections:** {money_sym(collections, ccy)}\n"
+            f"- **Paid Amount (value of paid invoices):** {money_sym(paid_amount, ccy)}\n"
+            f"- **Collections (cleared payments received):** {money_sym(collections, ccy)}\n"
             f"- **Outstanding Amount:** {money_sym(outstanding, ccy)}\n"
             f"- **Collection Rate:** {collection_rate_text}\n"
             f"- **Customers:** {total_customers} active | **Invoices:** {total_invoices}\n\n"
             f"**Insight:** {insight}"
         )
+        # FX staleness disclosure: never present converted figures as current
+        # when the underlying rates are past the refresh threshold.
+        answer += self._fx_staleness_disclosure(org_id)
 
         return {
             "answer": answer,
@@ -6795,14 +6873,45 @@ class ConversationEngine:
                     "total_customers": total_customers,
                 },
             }],
-            "qualification": "Figures are current aggregates from authoritative records.",
+            "qualification": (
+                "Live aggregates from authoritative records (drafts and cancelled "
+                "excluded). Converted figures use the org's stored exchange rates."
+            ),
             "next_actions": ["Drill into overdue invoices", "Review customer aging"],
             "suggested_prompts": ["Show overdue invoices", "List recent payments"],
         }
 
     def _handle_smalltalk(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
-        """Greetings, thanks and farewells get a friendly welcome instead of
-        a weak RAG match or an out-of-scope refusal."""
+        """Greetings get the full onboarding intro; gratitude and farewell get
+        distinct short acknowledgments (PRD §06 clarity — "Thanks" should not
+        dump the capabilities list)."""
+        intent_code = intent.get("intent")
+        if intent_code == "gratitude":
+            return {
+                "answer": (
+                    "You're welcome! Let me know if you need anything else — "
+                    "invoices, payments, customers, or your billing dashboard."
+                ),
+                "mode": "M0_EXPLAIN",
+                "risk_class": "R0",
+                "evidence": [],
+                "qualification": None,
+                "next_actions": [],
+                "suggested_prompts": ["Show overdue invoices", "What's our collection rate?", "How do refunds work?"],
+            }
+        if intent_code == "farewell":
+            return {
+                "answer": (
+                    "Goodbye! Feel free to come back anytime if you have billing questions."
+                ),
+                "mode": "M0_EXPLAIN",
+                "risk_class": "R0",
+                "evidence": [],
+                "qualification": None,
+                "next_actions": [],
+                "suggested_prompts": ["Show overdue invoices", "What's our collection rate?"],
+            }
+        # Default: greeting / filler — full onboarding intro
         return {
             "answer": (
                 "Hi! I'm the Zoiko Billing AI Assistant. I can help you with:\n\n"
@@ -7250,8 +7359,8 @@ class ConversationEngine:
                     "answer": (
                         "I can prepare a refund for you. **Which payment should it be refunded from?**\n\n"
                         "Refunds are linked to the original payment, so I need its reference:\n"
-                        "  *Refund $50 from payment PAY-1001*\n"
-                        "  *Refund payment PMT-1*\n\n"
+                        "- *Refund $50 from payment PAY-1001*\n"
+                        "- *Refund payment PMT-1*\n\n"
                         "You can find the payment reference on the payments or reconciliation screen."
                     ),
                     "mode": "M2_PREPARE",
@@ -7559,7 +7668,58 @@ class ConversationEngine:
             cache[org_id] = BillingDashboardService(self.db)._build_currency_rates(
                 org_id, base_currency=self._base_currency(org_id)
             )
+            # Record FX freshness once per org alongside the rates so the
+            # handle_* answer builders can disclose stale rates without paying
+            # another billing_configurations round trip.
+            staleness = getattr(self, "_rates_staleness_cache", None)
+            if staleness is None:
+                staleness = self._rates_staleness_cache = {}
+            staleness[org_id] = self._exchange_rate_staleness(org_id)
         return cache[org_id]
+
+    def _exchange_rate_staleness(self, org_id) -> dict:
+        """Report whether the org's cached exchange rates are past the system
+        staleness threshold (EXCHANGE_RATE_MAX_AGE_HOURS=24h).
+
+        Returns {"is_stale": bool, "age_hours": float|None}.  A None age means
+        no cached rates exist yet (treated as stale-by-default so we never
+        claim converted figures are current without a refresh timestamp).
+        """
+        from app.modules.billing.services.exchange_rate_service import (
+            ExchangeRateService,
+            EXCHANGE_RATE_MAX_AGE_HOURS,
+        )
+        from datetime import timezone as _tz
+        svc = ExchangeRateService(self.db)
+        config = svc.repo.get_by_organization(org_id)
+        if not config or not config.exchange_rate_last_refreshed:
+            return {"is_stale": True, "age_hours": None}
+        last = config.exchange_rate_last_refreshed
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=_tz.utc)
+        age_hours = (datetime.now(_tz.utc) - last).total_seconds() / 3600
+        return {"is_stale": age_hours > EXCHANGE_RATE_MAX_AGE_HOURS, "age_hours": round(age_hours, 1)}
+
+    def _fx_staleness_disclosure(self, org_id) -> str:
+        """Return a disclosure line when the org's FX rates are stale, else ''.
+        Only applicable when converted (multi-currency) figures are involved;
+        single-currency orgs with no non-base currency produce no disclosure."""
+        rates = self._currency_rates(org_id)
+        if all(float(r) == 1.0 for r in rates.values()):
+            return ""
+        info = getattr(self, "_rates_staleness_cache", {}).get(org_id) or self._exchange_rate_staleness(org_id)
+        if not info.get("is_stale"):
+            return ""
+        age = info.get("age_hours")
+        if age is None:
+            return (
+                "\n\n*Note: no exchange-rate refresh time is recorded, so converted "
+                "figures may be based on outdated rates. Please refresh rates in Billing Settings.*"
+            )
+        return (
+            f"\n\n*Note: converted figures use exchange rates last updated "
+            f"{int(age)} hour(s) ago (max {24} before a refresh is due).*"
+        )
 
     def _build_confirm_label(self, action_type: str, params: dict, money_summary: dict, org_id=None) -> str:
         """Build §8.3 restated-value confirm label: [Verb] + [material value] + [recipient].
@@ -8130,6 +8290,7 @@ class ConversationEngine:
             answer += f"\n\n**Overdue:** {money(total_overdue, base)} — immediate attention recommended."
         else:
             answer += "\n\nAll invoices are within their payment terms."
+        answer += self._fx_staleness_disclosure(org_id)
 
         return {
             "answer": answer,
@@ -8143,7 +8304,10 @@ class ConversationEngine:
                 "overdue": str(total_overdue),
                 "invoice_count": invoice_count,
             }],
-            "qualification": "Figures are current aggregates from authoritative records.",
+            "qualification": (
+                "Live aggregates from authoritative records (drafts and cancelled "
+                "excluded). Converted figures use the org's stored exchange rates."
+            ),
             "next_actions": ["Drill into overdue invoices", "Review customer aging"],
             "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
         }

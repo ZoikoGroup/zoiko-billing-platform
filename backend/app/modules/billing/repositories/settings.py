@@ -13,12 +13,21 @@ class BillingConfigurationRepository(BaseRepository[BillingConfiguration]):
             BillingConfiguration.organization_id == organization_id,
         ).first()
 
+    def _apply(self, obj: BillingConfiguration, **data: Any) -> BillingConfiguration:
+        """Set fields AND bump the optimistic-lock version in the same
+        transaction. Explicit, not an ORM `onupdate` hook — so a future bulk
+        `Query.update()` or raw-SQL path can never silently skip the bump.
+        `version` itself is never settable through this helper."""
+        for field, value in data.items():
+            if hasattr(obj, field) and field != "version":
+                setattr(obj, field, value)
+        obj.version = (obj.version or 0) + 1
+        return obj
+
     def upsert(self, organization_id: int, updated_by: Optional[int] = None, **data: Any) -> BillingConfiguration:
         existing = self.get_by_organization(organization_id)
         if existing:
-            for field, value in data.items():
-                if hasattr(existing, field):
-                    setattr(existing, field, value)
+            self._apply(existing, **data)
             if updated_by is not None:
                 existing.updated_by = updated_by
             self.db.commit()
