@@ -173,8 +173,8 @@ class TestMetricComparison:
         assert intent["domain"] == "dashboard"
         assert intent["risk_class"] == "R1"
         assert response["mode"] == "M1_INSPECT"
-        assert "**Revenue:**" in response["answer"], response["answer"][:200]
-        assert "**Collections:**" in response["answer"], response["answer"][:200]
+        assert "**Revenue (billed invoices):**" in response["answer"], response["answer"][:200]
+        assert "**Collections (cleared payments):**" in response["answer"], response["answer"][:200]
         assert "You've collected" in response["answer"], response["answer"][:200]
 
     def test_comparison_figures_equal_single_metric_figures(self, harness):
@@ -236,7 +236,7 @@ class TestMetricComparison:
             assert "**Revenue:**" not in response["answer"]
         else:
             assert "Total revenue is" in response["answer"]
-            assert "**Collections:**" not in response["answer"]
+            assert "**Collections (cleared payments received):**" not in response["answer"]
 
     def test_metric_definition_phrase_not_captured_as_comparison(self, harness):
         """'what is the difference between X and Y' is a definitional/KB ask —
