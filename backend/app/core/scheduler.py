@@ -197,6 +197,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Commercial (Plane-1) Free-Trial Expiry Sweep",
         ),
         (
+            "app.modules.commercial.tasks.recovery_window_expiry:run_commercial_recovery_window_expiry_job",
+            settings.COMMERCIAL_RECOVERY_WINDOW_CHECK_INTERVAL_MINUTES,
+            "commercial_recovery_window_expiry_job",
+            "Commercial (Plane-1) Trial Recovery-Window Expiry Sweep",
+        ),
+        (
             "app.modules.commercial.tasks.apply_scheduled_change:run_scheduled_plan_change_job",
             settings.SCHEDULED_PLAN_CHANGE_CHECK_INTERVAL_MINUTES,
             "scheduled_plan_change_job",

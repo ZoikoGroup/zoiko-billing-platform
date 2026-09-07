@@ -226,6 +226,10 @@ class PlatformStripeService:
             record.status = "processed"
             record.processed_at = datetime.utcnow()
             self.db.commit()
+            if result.get("trial_converted"):
+                # ZB-COM-015 confirmation — only after the conversion is
+                # durably committed (see complete_trial_conversion).
+                self._dispatch_trial_converted_email(result["trial_converted"])
             return {"received": True, **result}
         except Exception as exc:
             self.db.rollback()
@@ -317,7 +321,9 @@ class PlatformStripeService:
             # the first time. TRIALING: still inside the free-trial window and
             # paying (either converts to the paid plan or settles the first
             # invoice ahead of expiry) — activation must not wait for the
-            # trial to lapse. SUSPENDED: same, but the free trial expired
+            # trial to lapse. TRIAL_RECOVERY: §5.2 — inside the read/export
+            # recovery window and paying: this is the self-serve trial->paid
+            # conversion commit. SUSPENDED: same, but the free trial expired
             # before they paid (commercial/tasks/trial_expiry.py) — paying
             # now must still reinstate it, not leave it stuck suspended.
             subscription = (
@@ -327,17 +333,53 @@ class PlatformStripeService:
                     CommercialSubscription.status.in_([
                         CommercialSubscriptionStatus.PENDING,
                         CommercialSubscriptionStatus.TRIALING,
+                        CommercialSubscriptionStatus.TRIAL_RECOVERY,
                         CommercialSubscriptionStatus.SUSPENDED,
                     ]),
                 )
                 .first()
             )
             if subscription is not None:
+                if subscription.status in (
+                    CommercialSubscriptionStatus.TRIALING,
+                    CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                ):
+                    # §5.2 — a trial paying its first cleared invoice converts
+                    # through the genuine CONVERTED marker (state + snapshot +
+                    # audit in the caller's transaction). The ZB-COM-015
+                    # confirmation email is dispatched post-commit by
+                    # handle_webhook_event.
+                    from app.modules.commercial.trial_conversion_service import (
+                        TrialConversionService,
+                    )
+
+                    TrialConversionService(self.db).complete_trial_conversion(
+                        subscription=subscription,
+                    )
+                    return {
+                        "action": "payment_recorded",
+                        "payment_id": payment.id,
+                        "trial_converted": subscription.id,
+                    }
                 CommercialSubscriptionService(self.db).transition(
                     subscription, CommercialSubscriptionStatus.ACTIVE,
                 )
 
         return {"action": "payment_recorded", "payment_id": payment.id}
+
+    def _dispatch_trial_converted_email(self, subscription_id: int) -> None:
+        from app.modules.commercial.models import CommercialSubscription
+        from app.modules.commercial.trial_conversion_service import (
+            notify_trial_converted_after_commit,
+        )
+
+        subscription = (
+            self.db.query(CommercialSubscription)
+            .filter(CommercialSubscription.id == subscription_id)
+            .first()
+        )
+        if subscription is not None:
+            notify_trial_converted_after_commit(self.db, subscription)
 
     def _handle_payment_failed(self, data_object: dict) -> Dict[str, Any]:
         payment = self._find_pending_payment(data_object)

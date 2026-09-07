@@ -187,7 +187,16 @@ class Settings(BaseSettings):
     # pays. OFF by default — nothing acts on an expired trial until enabled.
     ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = True
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
+    # §5: how often the recovery-window expiry sweep
+    # (commercial/tasks/recovery_window_expiry.py) checks for TRIAL_RECOVERY
+    # subscriptions past their recovery_ends_at and moves them to SUSPENDED.
+    COMMERCIAL_RECOVERY_WINDOW_CHECK_INTERVAL_MINUTES: int = 60
     COMMERCIAL_DEFAULT_TRIAL_DAYS: int = 14
+    # §5: length of the read/export-only recovery window after a trial expires
+    # unpaid. recovery_ends_at = trial_ends_at + this; trial_expiry.py and
+    # recovery_window_expiry.py both read from the subscription's stored value,
+    # this constant only drives computation at grant time.
+    COMMERCIAL_RECOVERY_WINDOW_DAYS: int = 14
 
     # Plane-1 scheduled plan-change apply sweep (ZB-COM-ENT-001 Part 3) — a
     # SCHEDULED downgrade's effective_at is applied by this job. OFF by

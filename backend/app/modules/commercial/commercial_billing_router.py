@@ -59,6 +59,57 @@ from app.modules.super_admin.kill_switch_service import (
 
 logger = logging.getLogger("zoiko_billing.commercial.router")
 
+
+def _maybe_complete_trial_conversion_on_allocation(db: Session, invoice_id: int, actor_id: int) -> Optional[int]:
+    """§5.2 manual-invoicing path: a just-allocated payment that makes a
+    trial-conversion invoice fully paid completes the conversion in the
+    caller's transaction (same commit governs payment + subscription state).
+    Mirrors the Stripe webhook trigger (first cleared payment) for orgs paid
+    outside Stripe. Returns the converted subscription id, or None."""
+    from app.modules.commercial.enums import CommercialSubscriptionStatus
+    from app.modules.commercial.models import CommercialSubscription, PlatformInvoice
+    from app.modules.commercial.trial_conversion_service import TrialConversionService
+
+    invoice = db.query(PlatformInvoice).filter(PlatformInvoice.id == invoice_id).first()
+    if (
+        invoice is None
+        or invoice.balance_due != 0
+        or invoice.commercial_subscription_id is None
+    ):
+        return None
+
+    subscription = (
+        db.query(CommercialSubscription)
+        .filter(CommercialSubscription.id == invoice.commercial_subscription_id)
+        .first()
+    )
+    if subscription is None or subscription.status not in (
+        CommercialSubscriptionStatus.TRIALING,
+        CommercialSubscriptionStatus.TRIAL_RECOVERY,
+    ):
+        return None
+
+    TrialConversionService(db).complete_trial_conversion(
+        subscription=subscription, actor_id=actor_id,
+    )
+    return subscription.id
+
+
+def _notify_trial_converted(db: Session, subscription_id: int) -> None:
+    from app.modules.commercial.models import CommercialSubscription
+    from app.modules.commercial.trial_conversion_service import (
+        notify_trial_converted_after_commit,
+    )
+
+    subscription = (
+        db.query(CommercialSubscription)
+        .filter(CommercialSubscription.id == subscription_id)
+        .first()
+    )
+    if subscription is not None:
+        notify_trial_converted_after_commit(db, subscription)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Schemas
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -590,7 +641,10 @@ def allocate_payment(
         amount=data.amount,
         actor_id=current_user.id,
     )
+    trial_converted_id = _maybe_complete_trial_conversion_on_allocation(db, data.invoice_id, current_user.id)
     db.commit()
+    if trial_converted_id is not None:
+        _notify_trial_converted(db, trial_converted_id)
     return allocation
 
 

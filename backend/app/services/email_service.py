@@ -1289,9 +1289,79 @@ def send_trial_expired_email(
         "preheader": f"Your trial for {organization_name} has expired. Upgrade now to restore access.",
         "recipient_first_name": recipient_first_name or "there",
         "organization_name": organization_name,
+        # §5: the trial-expired email describes the 14-day READ/EXPORT-only
+        # recovery window — the recipient has 14 days to view/export their
+        # data or convert to a paid plan, NOT an immediate total lockout.
+        "recovery_days": "14",
+        "recovery_url": _settings.FRONTEND_URL.rstrip("/") + "/billing/plans",
         "upgrade_url": upgrade_url,
         "template_id": "ZB-COM-004",
     }, db=db, organization_id=organization_id, event_name="commercial.trial_expired")
+
+
+# ── §5 gap closure: Recovery window expired (TRIAL_RECOVERY -> SUSPENDED) ─────
+
+def send_recovery_window_expired_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """Gap-closure: recovery window expired, subscription now fully suspended.
+
+    Sent exactly once when commercial/tasks/recovery_window_expiry.py moves a
+    subscription from TRIAL_RECOVERY to SUSPENDED — recovery_ends_at passed
+    with no conversion. The org can no longer self-serve; retention follows
+    the applicable account/data-retention policy.
+    """
+    from app.config import settings as _settings
+
+    org = None
+    if db is not None and organization_id is not None:
+        try:
+            from app.modules.organizations.models import Organization
+            org = db.query(Organization).filter(Organization.id == organization_id).first()
+        except Exception:
+            org = None
+    support_url = _settings.FRONTEND_URL.rstrip("/") + "/support"
+    return send_approval_email(email, "org_created.html", {
+        "subject": "Your Zoiko Billing recovery window has ended",
+        "preheader": f"Your recovery window for {organization_name} has ended. Contact support to restore access.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name or (org.organization_name if org else "your organization"),
+        "support_url": support_url,
+        "template_id": "ZB-COM-014",
+    }, db=db, organization_id=organization_id, event_name="commercial.recovery_window_expired")
+
+
+# ── §5.2 gap closure: Trial->paid conversion confirmation ─────────────────────
+
+def send_trial_converted_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    plan_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """Gap-closure: trial converted to a paid plan, confirmation sent.
+
+    Sent by the self-service conversion sequence (Part 2, step 9) when a
+    trialing/recovery subscription successfully converts to ACTIVE.
+    """
+    from app.config import settings as _settings
+
+    billing_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Your Zoiko Billing subscription is now on {plan_name}",
+        "preheader": f"Your trial for {organization_name} has been converted to {plan_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "plan_name": plan_name,
+        "billing_url": billing_url,
+        "template_id": "ZB-COM-015",
+    }, db=db, organization_id=organization_id, event_name="commercial.trial_converted")
 
 
 # ── ZB-COM-011: Past-due paid subscription suspension warning ─────────────────

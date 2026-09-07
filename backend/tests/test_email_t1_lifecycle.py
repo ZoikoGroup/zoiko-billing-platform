@@ -197,7 +197,7 @@ def test_commercial_trial_warning_job_fires_at_lead_days(db_session, monkeypatch
 
 
 def test_commercial_trial_expiry_job_sends_zb_com_004(db_session, monkeypatch):
-    """ZB-COM-004: Trial expiry job suspends sub and dispatches ZB-COM-004 email."""
+    """ZB-COM-004: Trial expiry job moves sub into §5 TRIAL_RECOVERY (not SUSPENDED) and dispatches ZB-COM-004 email."""
     from app.modules.commercial.tasks import trial_expiry
     monkeypatch.setattr(trial_expiry, "SessionLocal", lambda: db_session)
 
@@ -221,9 +221,24 @@ def test_commercial_trial_expiry_job_sends_zb_com_004(db_session, monkeypatch):
          patch("app.config.settings.ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT", True):
         mock_send.return_value = True
         summary = trial_expiry.run_commercial_trial_expiry_job()
-        assert summary["suspended"] == 1
+        assert summary["recovery"] == 1
         assert mock_send.called
         assert mock_send.call_args[1]["email"] == "admin@expiredco.com"
+
+    # §5: trial expiry enters the read/export-only recovery window, NOT a full
+    # suspension. recovery_ends_at is backfilled to trial_ends_at + 14 days.
+    # (The job closes its SessionLocal in a finally block — reopen a fresh
+    # session on the same in-memory engine to read post-job state.)
+    from sqlalchemy.orm import Session as _ReopenSession
+
+    reopened = _ReopenSession(bind=db_session.get_bind())
+    fresh = reopened.query(CommercialSubscription).filter_by(
+        commercial_account_id=acct.id
+    ).first()
+    assert fresh.status == CommercialSubscriptionStatus.TRIAL_RECOVERY
+    assert fresh.recovery_ends_at is not None
+    assert fresh.recovery_ends_at > datetime.utcnow()
+    reopened.close()
 
 
 def test_commercial_dunning_sweep_sends_zb_com_011(db_session):
