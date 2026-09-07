@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.exceptions import BadRequestException
-from app.core.dependencies import get_current_user, get_current_billing_admin, get_organization_id
+from app.core.dependencies import (
+    get_current_user,
+    get_current_billing_admin,
+    get_organization_id,
+    require_new_revenue_generation_allowed,
+)
 from app.modules.billing.services import SubscriptionService
 from app.modules.billing.models import BillingSubscriptionStatus
 from app.modules.billing.schemas import (
@@ -142,6 +147,7 @@ def create_subscription(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     body_key = (body.idempotency_key or "").strip() or None
     header_key = (idempotency_key_header or "").strip() or None
@@ -265,6 +271,7 @@ def process_billing(
     organization_id: Optional[int] = Query(None, alias="organization_id"),
     current_user=Depends(get_current_billing_admin),
     db: Session = Depends(get_db),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     """Process all subscriptions due for billing on a given date."""
     role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
@@ -405,6 +412,7 @@ def renew_subscription(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     svc = SubscriptionService(db)
     return svc.renew_subscription(
@@ -420,6 +428,7 @@ def generate_subscription_invoice(
     organization_id: Optional[int] = Query(None, alias="organization_id"),
     current_user=Depends(get_current_billing_admin),
     db: Session = Depends(get_db),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     """Generate an invoice for a specific subscription (manual generation)."""
     role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)

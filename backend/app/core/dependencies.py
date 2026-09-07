@@ -211,6 +211,15 @@ def require_active_subscription(product_code: str):
     onboarded organization is entitled to the one product it runs on. This
     gate now simply verifies the organization exists and is not suspended.
     Super Admin bypasses it.
+
+    §5 (Free Trial Standard): a subscription in TRIAL_RECOVERY (the 14-day
+    read/export-only window after a trial expires unpaid) is NOT treated as
+    suspended here — the org keeps read-only / export access so it can view
+    its data and still self-serve convert to a paid plan. The write-side
+    blocking (new revenue-generating state) is enforced separately by
+    require_new_revenue_generation_allowed(), which the write sub-routers
+    add. Only true SUSPENDED (recovery window also over) blocks the whole
+    product.
     """
     async def _check_subscription(
         current_user=Depends(get_current_user),
@@ -236,12 +245,15 @@ def require_active_subscription(product_code: str):
             )
 
         # Plane 1 gate: a SUSPENDED CommercialSubscription (free-trial expired
-        # with no payment, or N1 day-20 payment-failure escalation) blocks
-        # the whole Billing product — but NOT the self-service "your Zoiko
-        # subscription" page or the public invoice/checkout links (those live
-        # outside billing_router, so an org can still see why it's suspended
-        # and pay to get reinstated). A super admin can also reactivate
-        # directly (PATCH .../commercial-subscriptions/{id}/status).
+        # and recovery window over, or N1 day-20 payment-failure escalation)
+        # blocks the whole Billing product — but NOT the self-service "your
+        # Zoiko subscription" page or the public invoice/checkout links (those
+        # live outside billing_router, so an org can still see why it's
+        # suspended and pay to get reinstated). A super admin can also
+        # reactivate directly (PATCH .../commercial-subscriptions/{id}/status).
+        #
+        # TRIAL_RECOVERY is explicitly NOT in the blocking set: per §5 the org
+        # keeps read/export access for the 14-day recovery window.
         from app.modules.commercial.enums import CommercialSubscriptionStatus
         from app.modules.commercial.models import CommercialAccount, CommercialSubscription
 
@@ -268,3 +280,61 @@ def require_active_subscription(product_code: str):
         return current_user
 
     return _check_subscription
+
+
+def require_new_revenue_generation_allowed(product_code: str):
+    """Dependency factory for write endpoints that create revenue-generating
+    state.
+
+    §5 (Free Trial Standard): "new revenue-generating actions are disabled"
+    during the TRIAL_RECOVERY window. The base require_active_subscription
+    gate lets TRIAL_RECOVERY through for read/export access; THIS gate is the
+    write-side half — it blocks specific endpoints whose actions would create
+    new charged state (new invoices, new customers, new subscriptions, new
+    quotes, sending invoices/quotes) while the org is in TRIAL_RECOVERY.
+    Ambiguous endpoints are BLOCKED (fail closed) — a product decision can
+    loosen this later, but no ambiguous action is silently permitted.
+
+    In trialing or fully-active subscriptions this gate passes (a trial can
+    still create invoices/customers/quotes — trial caps govern volume, not
+    this binary gate). Super Admin bypasses it.
+    """
+    async def _check_write_allowed(
+        current_user=Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ):
+        role = _role_value(current_user)
+        if role == ROLE_SUPER_ADMIN:
+            return current_user
+        if current_user.organization_id is None:
+            raise ForbiddenException("User is not associated with any organization.")
+
+        from app.modules.commercial.enums import CommercialSubscriptionStatus
+        from app.modules.commercial.models import CommercialAccount, CommercialSubscription
+
+        account = (
+            db.query(CommercialAccount)
+            .filter(CommercialAccount.organization_id == current_user.organization_id)
+            .first()
+        )
+        if account is None:
+            return current_user
+
+        recovery = (
+            db.query(CommercialSubscription)
+            .filter(
+                CommercialSubscription.commercial_account_id == account.id,
+                CommercialSubscription.status == CommercialSubscriptionStatus.TRIAL_RECOVERY,
+            )
+            .order_by(CommercialSubscription.id.desc())
+            .first()
+        )
+        if recovery is not None:
+            raise ForbiddenException(
+                "Your trial has ended and your organization is in its read/export-only "
+                "recovery window. New revenue-generating actions (invoices, customers, "
+                "subscriptions, quotes) are disabled until you convert to a paid plan."
+            )
+        return current_user
+
+    return _check_write_allowed

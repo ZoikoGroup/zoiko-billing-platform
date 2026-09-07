@@ -569,6 +569,12 @@ class CommercialSubscription(Base):
     # the data at trial-grant time.
     trial_granted_entitlements = Column(JSON, nullable=True)
 
+    # §5.2: timestamp of the trial->paid conversion (TRIALING/TRIAL_RECOVERY
+    # -> CONVERTED -> ACTIVE), set inside the conversion transaction together
+    # with the CONVERTED->ACTIVE transition. NULL until a self-serve or
+    # super-admin-initiated conversion actually runs.
+    converted_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import (
+    get_current_user,
+    get_current_billing_admin,
+    require_new_revenue_generation_allowed,
+)
 from app.modules.billing.services import CustomerService
 from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
@@ -51,7 +55,7 @@ router = APIRouter(prefix="/customers", tags=["🧾 Customers"])
     response_model=CustomerResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a billing customer",
-    dependencies=[Depends(get_current_billing_admin)],
+    dependencies=[Depends(get_current_billing_admin), Depends(require_new_revenue_generation_allowed("billing"))],
 )
 def create_customer(
     data: CustomerCreate,
@@ -253,6 +257,7 @@ def get_customer_analytics(
     "/import",
     response_model=CustomerImportResponse,
     summary="Import customers from CSV/JSON",
+    dependencies=[Depends(require_new_revenue_generation_allowed("billing"))],
 )
 def import_customers(
     items: list[dict],
@@ -271,6 +276,7 @@ def import_customers(
     "/import/file",
     response_model=CustomerImportResponse,
     summary="Import customers from uploaded file (CSV/JSON)",
+    dependencies=[Depends(require_new_revenue_generation_allowed("billing"))],
 )
 def import_customers_file(
     file: UploadFile,

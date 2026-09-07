@@ -143,6 +143,10 @@ TEMPLATE_REGISTRY: Dict[str, TemplateDefinition] = {
     "ZB-COM-004": TemplateDefinition("ZB-COM-004", TemplateTier.T1, "COM", ["recipient_first_name", "organization_name"], ActivationState.ACTIVE, "Trial expired / account suspended"),
     # ZB-COM-011 = past-due suspension warning for paid subscriptions (T1)
     "ZB-COM-011": TemplateDefinition("ZB-COM-011", TemplateTier.T1, "COM", ["recipient_first_name", "organization_name", "days_overdue"], ActivationState.ACTIVE, "Past-due subscription suspension warning"),
+    # ZB-COM-014 = §5 recovery window expired → fully suspended (T1, gap closure)
+    "ZB-COM-014": TemplateDefinition("ZB-COM-014", TemplateTier.T1, "COM", ["recipient_first_name", "organization_name", "support_url"], ActivationState.ACTIVE, "Recovery window expired / subscription suspended"),
+    # ZB-COM-015 = §5.2 trial→paid conversion confirmed (T1, gap closure)
+    "ZB-COM-015": TemplateDefinition("ZB-COM-015", TemplateTier.T1, "COM", ["recipient_first_name", "organization_name", "plan_name", "billing_url"], ActivationState.ACTIVE, "Trial converted to paid plan"),
 
     # CON family — Contracts
     "ZB-CON-001": TemplateDefinition("ZB-CON-001", TemplateTier.T1, "CON", ["contract_number"], ActivationState.ACTIVE, "Contract activated"),
@@ -239,6 +243,8 @@ EVENT_REGISTRY: Dict[str, str] = {
     "commercial.admin_invited": "ZB-COM-002",
     "commercial.trial_ending_soon": "ZB-COM-003",
     "commercial.trial_expired": "ZB-COM-004",
+    "commercial.recovery_window_expired": "ZB-COM-014",
+    "commercial.trial_converted": "ZB-COM-015",
     "commercial.past_due_suspension_warning": "ZB-COM-011",
 
     # Contracts
