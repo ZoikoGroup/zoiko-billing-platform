@@ -64,7 +64,7 @@ QUERY_STOPWORDS = frozenset((
     "they", "them", "their", "this", "that", "these", "those",
     "have", "has", "had", "having", "not", "no", "yes",
     "please", "tell", "show", "get", "give", "need", "want", "know",
-    "work", "works", "working", "use", "using", "used", "like", "also",
+    "work", "works", "working", "use", "using", "used", "explain", "like", "also",
     "just", "some", "any", "each", "every", "all", "more", "most", "other",
     "only", "own", "same", "so", "too", "very", "again", "once", "when",
 ))
@@ -166,6 +166,50 @@ class KnowledgeRetriever:
         cache_key = (namespace_ids, freshness_policy)
         self._doc_obj_cache[cache_key] = (docs, time.time())
 
+    def _validate_cached_docs(
+        self,
+        namespace_ids: tuple[int, ...],
+        freshness_policy: str,
+        cached_docs: list,
+    ) -> list | None:
+        """RT-022: a document can be revoked/expired while it still sits in the
+        retriever's document cache (TTL 300s). On a cache hit we re-verify the
+        cached set against the DB so a revoked chunk is never served from the
+        cache. Returns the original list if still valid, ``[]`` for an empty
+        (valid) hit, or ``None`` when a stored document is stale — in which case
+        the caller evicts the cache and rebuilds from the DB.
+        """
+        if not cached_docs:
+            return cached_docs
+        ids = [d.id for d in cached_docs]
+        invalid = (
+            self.db.query(KnowledgeDocument.id)
+            .filter(
+                KnowledgeDocument.id.in_(ids),
+                KnowledgeDocument.status != "approved",
+            )
+        )
+        if freshness_policy == "current_only":
+            invalid = invalid.union(
+                self.db.query(KnowledgeDocument.id).filter(
+                    KnowledgeDocument.id.in_(ids),
+                    KnowledgeDocument.freshness_status == FreshnessStatus.EXPIRED,
+                )
+            )
+        if invalid.count():
+            cache_key = (namespace_ids, freshness_policy)
+            self._doc_obj_cache.pop(cache_key, None)
+            self._doc_cache.pop(cache_key, None)
+            return None
+        return cached_docs
+
+    def invalidate(self) -> None:
+        """Drop all cached documents/IDs so the next retrieve rebuilds from the
+        DB. Called when knowledge-base documents are revoked, expired, or
+        otherwise changed out-of-band (ingestion/admin pipeline)."""
+        self._doc_cache.clear()
+        self._doc_obj_cache.clear()
+
     def retrieve(
         self,
         *,
@@ -204,9 +248,15 @@ class KnowledgeRetriever:
         # Try cache first for document objects
         approved_docs = self._get_cached_docs(namespace_ids, freshness_policy)
         if approved_docs is not None:
-            doc_ids = [d.id for d in approved_docs]
-            cache_hit = True
-        else:
+            # RT-022: a document can be revoked/expired while it sits in the
+            # cache. On a cache hit we re-verify the cached set is still
+            # approved/current; if not, the cache is evicted and we rebuild
+            # from the DB so a revoked chunk is never served from the cache.
+            approved_docs = self._validate_cached_docs(namespace_ids, freshness_policy, approved_docs)
+            if approved_docs is not None:
+                doc_ids = [d.id for d in approved_docs]
+                cache_hit = True
+        if approved_docs is None:
             # Get approved, current documents with sources in one query.
             # KnowledgeDocument has no 'source' relationship (only source_id FK),
             # so we filter source titles directly in SQL via the join.
