@@ -222,8 +222,11 @@ class PriceListService:
             self.product_repo.get_by_id(product_id, organization_id)
 
     def add_item(self, organization_id: int, price_list_id: int, created_by: int, **data: Any) -> PriceListItem:
-        self.repo.get_by_id(price_list_id, organization_id)
+        price_list = self.repo.get_by_id(price_list_id, organization_id)
         self._validate_item_product_ownership(organization_id, data.get("product_id"))
+        # Adding an item changes the list's effective pricing content — bump the
+        # parent PriceList.version so consumers that pinned it are invalidated.
+        self.repo._apply(price_list)
         item = self.item_repo.create(organization_id, price_list_id=price_list_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "PriceListItem", item.id)
         return item
@@ -233,16 +236,20 @@ class PriceListService:
         return self.item_repo.list_by_price_list(organization_id, price_list_id, active_only)
 
     def update_item(self, price_list_id: int, item_id: int, organization_id: int, updated_by: int, **data: Any) -> PriceListItem:
-        self.repo.get_by_id(price_list_id, organization_id)
+        price_list = self.repo.get_by_id(price_list_id, organization_id)
         self._validate_item_product_ownership(organization_id, data.get("product_id"))
         item = self.item_repo.get_by_id_and_price_list(item_id, organization_id, price_list_id)
+        # Editing an item changes the list's effective pricing — bump the parent.
+        self.repo._apply(price_list)
         updated = self.item_repo.update(item.id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "PriceListItem", item_id)
         return updated
 
     def remove_item(self, price_list_id: int, item_id: int, organization_id: int, updated_by: int) -> None:
-        self.repo.get_by_id(price_list_id, organization_id)
+        price_list = self.repo.get_by_id(price_list_id, organization_id)
         item = self.item_repo.get_by_id_and_price_list(item_id, organization_id, price_list_id)
+        # Removing an item changes the list's effective pricing — bump the parent.
+        self.repo._apply(price_list)
         self.db.delete(item)
         safe_commit_and_refresh(self.db)
         self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "PriceListItem", item_id)

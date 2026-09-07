@@ -35,7 +35,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.modules.billing.models import Invoice, InvoiceItem, BillingCustomer
+from app.modules.billing.models import Invoice, InvoiceItem, BillingCustomer, BillingConfiguration
 
 from ..context.ai_context import AIContext
 from ..models import (
@@ -874,6 +874,28 @@ class ActionEngine:
         if not customer:
             warnings.append("Customer not found — preview is based on provided parameters only.")
 
+        # Capture the REAL current optimistic-lock versions of the resources this
+        # preview depends on (customer + billing config), so the confirm/execute
+        # guards can detect any change since the preview was recorded. Empty
+        # dict never happens here: invoice_draft always pins the config row it
+        # reads for the authoritative base currency.
+        resource_versions: dict = {}
+        if customer:
+            resource_versions["customer"] = {
+                "id": customer.id,
+                "version": customer.version if customer.version is not None else 1,
+            }
+        config = (
+            self.db.query(BillingConfiguration)
+            .filter(BillingConfiguration.organization_id == draft.organization_id)
+            .first()
+        )
+        if config:
+            resource_versions["config"] = {
+                "id": config.id,
+                "version": config.version if config.version is not None else 1,
+            }
+
         return {
             "preview_payload": {
                 "action_type": "invoice_draft",
@@ -900,7 +922,7 @@ class ActionEngine:
                 "tax": str(tax_amount),
                 "total": str(total),
             },
-            "resource_versions": {},
+            "resource_versions": resource_versions,
             "warnings": warnings,
         }
 
@@ -952,10 +974,41 @@ class ActionEngine:
         }
 
     def _check_resource_versions(self, preview: AIActionPreview) -> bool:
-        """Check if resource versions have changed since preview. Returns True if stale."""
-        # In production, this queries the authoritative service for current versions
-        # and compares against preview.resource_version_vector
-        return False
+        """Check if resource versions have changed since preview. Returns True if stale.
+
+        Re-queries the SAME authoritative rows captured at preview time
+        (customer + billing config) and compares their CURRENT optimistic-lock
+        `version` against the vector stored on the preview. Any change — human
+        edit or automatic recalc (e.g. `sync_outstanding_balance` or an FX
+        refresh) — bumps the column, so a mismatch here means the preview is
+        based on stale inputs and the write must be blocked with 412.
+        """
+        vector = preview.resource_version_vector or {}
+        if not vector:
+            return False
+
+        stale = False
+        customer_capture = vector.get("customer")
+        if customer_capture and isinstance(customer_capture, dict):
+            current = (
+                self.db.query(BillingCustomer)
+                .filter(BillingCustomer.id == customer_capture.get("id"))
+                .first()
+            )
+            if current is None or (current.version if current.version is not None else 1) != customer_capture.get("version"):
+                stale = True
+
+        config_capture = vector.get("config")
+        if config_capture and isinstance(config_capture, dict):
+            current = (
+                self.db.query(BillingConfiguration)
+                .filter(BillingConfiguration.id == config_capture.get("id"))
+                .first()
+            )
+            if current is None or (current.version if current.version is not None else 1) != config_capture.get("version"):
+                stale = True
+
+        return stale
 
     def _execute_billing_action(self, draft: AIActionDraft, preview: AIActionPreview, ctx: AIContext) -> dict:
         """Execute the action through canonical billing service."""
