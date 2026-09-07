@@ -1,11 +1,12 @@
 """
 commercial/tasks/trial_expiry.py
 -----------------------------------
-Plane 1 — free-trial expiry sweep (§B3). A self-serve CommercialSubscription
-only ever gets a trial_ends_at deadline when provision_default_subscription()
-finds an is_active=True CommercialEvaluationProgram for its plan — no program,
-no trial, by default. If a trial expires unpaid, this job acts according to
-the subscription's snapshotted evaluation_expiry_action:
+Plane 1 — free-trial expiry sweep (§B3). provision_default_subscription()
+grants every eligible new CommercialSubscription a trial_ends_at deadline —
+from an is_active=True CommercialEvaluationProgram's duration_days when one
+exists for its plan, otherwise from settings.COMMERCIAL_DEFAULT_TRIAL_DAYS
+(one standard trial per org, per §5). If a trial expires unpaid, this job
+acts according to the subscription's snapshotted evaluation_expiry_action:
   - SUSPEND (default)   — transition to SUSPENDED; require_active_subscription
                            then blocks /billing/* access until a super admin
                            reactivates it (PATCH .../status) or the org pays.

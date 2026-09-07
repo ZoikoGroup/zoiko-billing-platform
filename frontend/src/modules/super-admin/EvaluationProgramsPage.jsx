@@ -242,9 +242,12 @@ export default function EvaluationProgramsPage() {
 
       <div className="mt-6 space-y-4">
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
-          No program is seeded. Creating one is a deliberate business decision, and a program with an{" "}
-          <span className="font-semibold">unset grant plan</span> falls back to the §5 default (Professional bundle) at
-          provision time. Activation is blocked without <span className="font-semibold">approved_by</span>.
+          Every new self-serve signup already gets an automatic default trial (see COMMERCIAL_DEFAULT_TRIAL_DAYS)
+          even with no program configured here. Create a program only when a specific plan needs custom trial
+          terms (duration, payment requirement, conversion policy) — it then overrides the default for that plan.
+          A program with an <span className="font-semibold">unset grant plan</span> falls back to the §5 default
+          (Professional bundle) at provision time. Activation is blocked without{" "}
+          <span className="font-semibold">approved_by</span>.
         </div>
 
         {error && <ErrorState message={error} onRetry={load} title="Unable to load evaluation programs" />}
