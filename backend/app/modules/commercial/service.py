@@ -861,6 +861,7 @@ class CommercialSubscriptionService:
             # to a subscription that was never activated in the first place.
             CommercialSubscriptionStatus.SUSPENDED,
             CommercialSubscriptionStatus.TRIALING,
+            CommercialSubscriptionStatus.TRIAL_RECOVERY,
             CommercialSubscriptionStatus.ENTERPRISE_PENDING,
         },
         CommercialSubscriptionStatus.ACTIVE: {
@@ -891,7 +892,36 @@ class CommercialSubscriptionService:
             CommercialSubscriptionStatus.ACTIVE,
             CommercialSubscriptionStatus.CANCELLED,
             CommercialSubscriptionStatus.SUSPENDED,
+            CommercialSubscriptionStatus.TRIAL_RECOVERY,
             CommercialSubscriptionStatus.EXPIRED,
+            # §5.2: self-serve trial->paid conversion (TRIALING -> CONVERTED
+            # -> ACTIVE). The CONVERTED marker is written and immediately
+            # followed by ACTIVE inside one transaction (see
+            # trial_conversion_service.complete_trial_conversion).
+            CommercialSubscriptionStatus.CONVERTED,
+        },
+        # §5: the recovery window is itself pre-conversion state — an org in
+        # TRIAL_RECOVERY may still self-serve convert to a paid plan (TRIAL_
+        # RECOVERY -> ACTIVE, via the self-service conversion sequence) before
+        # recovery_ends_at passes; once the window is over the recovery sweep
+        # moves it to SUSPENDED.
+        CommercialSubscriptionStatus.TRIAL_RECOVERY: {
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+            CommercialSubscriptionStatus.SUSPENDED,
+            CommercialSubscriptionStatus.EXPIRED,
+            # §5.2: same conversion path as TRIALING.
+            CommercialSubscriptionStatus.CONVERTED,
+        },
+        # §5.2: CONVERTED is the in-flight conversion marker. The consuming
+        # transaction immediately moves it to ACTIVE (real charging + kill
+        # switch), but CANCELLED/SUSPENDED remain legal escapes so an
+        # interrupted conversion can be finished or parked by an operator —
+        # never silently wedged.
+        CommercialSubscriptionStatus.CONVERTED: {
+            CommercialSubscriptionStatus.ACTIVE,
+            CommercialSubscriptionStatus.CANCELLED,
+            CommercialSubscriptionStatus.SUSPENDED,
         },
         CommercialSubscriptionStatus.SCHEDULED_CHANGE: {
             CommercialSubscriptionStatus.ACTIVE,
@@ -915,6 +945,13 @@ class CommercialSubscriptionService:
         CommercialSubscriptionStatus.RESTRICTED,
         CommercialSubscriptionStatus.SUSPENDED,
         CommercialSubscriptionStatus.TRIALING,
+        # §5: TRIAL_RECOVERY is still an open, account-holding subscription —
+        # the org retains its trial entitlements as READ/EXPORT-only during
+        # the recovery window, so the entitlement resolver, usage-diagnostics
+        # and the self-service conversion surface all still resolve against
+        # it rather than silently zeroing the org's view. Only once
+        # recovery_ends_at passes (-> SUSPENDED) does it leave this set.
+        CommercialSubscriptionStatus.TRIAL_RECOVERY,
         # ZB-COM-ENT-001 Part 3 fix: SCHEDULED_CHANGE means "a downgrade is
         # pending at the next period boundary; current entitlements unchanged
         # until the change takes effect" (enums.py docstring) — omitting it
@@ -1297,7 +1334,8 @@ class CommercialSubscriptionService:
 
         trial_ends = now + timedelta(days=duration_days)
         # Compute recovery window: trial_ends_at + 14 days (§5).
-        recovery_ends = trial_ends + timedelta(days=14)
+        from app.config import settings as _settings
+        recovery_ends = trial_ends + timedelta(days=_settings.COMMERCIAL_RECOVERY_WINDOW_DAYS)
 
         subscription.trial_ends_at = trial_ends
         subscription.recovery_ends_at = recovery_ends

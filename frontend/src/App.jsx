@@ -25,6 +25,7 @@ const BillingAdminWorkspaceDashboard = lazy(() => import("./modules/billing-admi
 const BillingAdminWorkspaceOrganization = lazy(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
 const BillingAdminWorkspaceSubscription = lazy(() => import("./modules/billing-admin/WorkspaceSubscriptionPage"));
 const BillingAdminWorkspaceZoikoSubscription = lazy(() => import("./modules/billing-admin/WorkspaceZoikoSubscriptionPage"));
+const BillingAdminWorkspaceUsage = lazy(() => import("./modules/billing-admin/WorkspaceUsagePage"));
 const BillingAdminWorkspaceActivity = lazy(() => import("./modules/billing-admin/WorkspaceActivityPage"));
 const BillingAdminWorkspaceNotifications = lazy(() => import("./modules/billing-admin/WorkspaceNotificationsPage"));
 const BillingAdminWorkspaceHelp = lazy(() => import("./modules/billing-admin/WorkspaceHelpPage"));
@@ -471,6 +472,14 @@ export default function App() {
             element={
               <BillingShell>
                 <BillingAdminWorkspaceZoikoSubscription />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/billing/workspace/usage"
+            element={
+              <BillingShell>
+                <BillingAdminWorkspaceUsage />
               </BillingShell>
             }
           />

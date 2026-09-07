@@ -7,9 +7,18 @@ from an is_active=True CommercialEvaluationProgram's duration_days when one
 exists for its plan, otherwise from settings.COMMERCIAL_DEFAULT_TRIAL_DAYS
 (one standard trial per org, per §5). If a trial expires unpaid, this job
 acts according to the subscription's snapshotted evaluation_expiry_action:
-  - SUSPEND (default)   — transition to SUSPENDED; require_active_subscription
-                           then blocks /billing/* access until a super admin
+  - SUSPEND (default)   — transition to TRIAL_RECOVERY (§5). The org keeps
+                           read/export access for a 14-day recovery window
+                           (recovery_ends_at = trial_ends_at + 14 days, set by
+                           start_trial_if_eligible), and may still self-serve
+                           convert to a paid plan. Full suspension happens only
+                           after the window passes — commercial/tasks/
+                           recovery_window_expiry.py moves TRIAL_RECOVERY ->
+                           SUSPENDED, after which require_active_subscription
+                           blocks /billing/* access until a super admin
                            reactivates it (PATCH .../status) or the org pays.
+                           The trial-expired email sent here must describe the
+                           recovery window, not an immediate lockout.
   - DOWNGRADE            — NOT implemented (no downgrade-target plan exists
                            anywhere in the schema yet); skipped and logged,
                            never silently suspended instead.
@@ -27,7 +36,7 @@ true.
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from app.database import SessionLocal
@@ -44,7 +53,7 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
     start_time = time.monotonic()
     summary: Dict[str, Any] = {
         "started_at": datetime.utcnow().isoformat(),
-        "suspended": 0,
+        "recovery": 0,
         "skipped_auto_charge_unimplemented": 0,
         "skipped_downgrade_unimplemented": 0,
         "errors": [],
@@ -71,6 +80,11 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
         sub_svc = CommercialSubscriptionService(db)
         audit = PlatformAuditService(db)
 
+        # §5: an expired trial that is already in its recovery window (or a
+        # legacy row that somehow skipped it) must not be re-swept on every
+        # run — only PENDING/TRIALING rows whose trial_ends_at is past are
+        # this job's entry point. TRIAL_RECOVERY -> SUSPENDED belongs to
+        # commercial/tasks/recovery_window_expiry.py.
         expired = (
             db.query(CommercialSubscription)
             .filter(
@@ -116,23 +130,35 @@ def run_commercial_trial_expiry_job() -> Dict[str, Any]:
                     )
                     continue
 
-                sub_svc.transition(subscription, CommercialSubscriptionStatus.SUSPENDED)
+                # §5: transition to TRIAL_RECOVERY, NOT directly to SUSPENDED.
+                # The subscription has its 14-day recovery window (recovery_
+                # ends_at) to be read/export-only and to still self-convert.
+                # Guarantee recovery_ends_at is set even for rows created
+                # before the column existed.
+                if subscription.recovery_ends_at is None and subscription.trial_ends_at is not None:
+                    subscription.recovery_ends_at = subscription.trial_ends_at + timedelta(days=14)
+                sub_svc.transition(subscription, CommercialSubscriptionStatus.TRIAL_RECOVERY)
                 audit.log_no_commit(
                     actor_id=None,
                     action=PlatformAuditAction.UPDATE,
                     entity_type="commercial_subscription",
                     entity_id=subscription.id,
-                    new_values={"status": "suspended", "reason": "trial_expired"},
-                    reason="Free-trial period ended with no payment.",
+                    new_values={
+                        "status": "trial_recovery",
+                        "reason": "trial_expired",
+                        "recovery_ends_at": subscription.recovery_ends_at.isoformat() if subscription.recovery_ends_at else None,
+                    },
+                    reason="Free-trial period ended with no payment; entering 14-day §5 recovery window.",
                 )
                 db.commit()
-                summary["suspended"] += 1
+                summary["recovery"] += 1
                 logger.info(
-                    "Suspended subscription %s — trial expired (trial_ends_at=%s) with no payment.",
-                    subscription.id, subscription.trial_ends_at,
+                    "Moved subscription %s into TRIAL_RECOVERY — trial expired (trial_ends_at=%s, recovery_ends_at=%s).",
+                    subscription.id, subscription.trial_ends_at, subscription.recovery_ends_at,
                 )
 
-                # Send ZB-COM-004: Trial Expired Notification
+                # Send ZB-COM-004: Trial Expired Notification — copy describes
+                # the 14-day recovery window per §5.
                 try:
                     from app.modules.auth.models import User
                     from app.modules.commercial.models import CommercialAccount

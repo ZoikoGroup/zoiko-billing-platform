@@ -11,7 +11,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import (
+    get_current_user,
+    get_current_billing_admin,
+    require_new_revenue_generation_allowed,
+)
 from app.core.exceptions import BadRequestException
 from app.modules.billing.services import InvoiceService
 from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
@@ -42,6 +46,7 @@ def create_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     body_key = (body.idempotency_key or "").strip() or None
     header_key = (idempotency_key_header or "").strip() or None
@@ -326,6 +331,7 @@ def finalize_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     svc = InvoiceService(db)
     return svc.finalize_invoice(
@@ -341,6 +347,7 @@ def mark_sent(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     svc = InvoiceService(db)
     return svc.mark_sent(
@@ -356,6 +363,7 @@ def send_invoice_email(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
+    _revenue_gate=Depends(require_new_revenue_generation_allowed("billing")),
 ):
     svc = InvoiceService(db)
     return svc.send_invoice_via_email(

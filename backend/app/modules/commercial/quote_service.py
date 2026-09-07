@@ -388,16 +388,25 @@ class CommercialQuoteService:
         quote_id: int,
         actor_id: int,
         due_date: Optional[date] = None,
+        allow_draft: bool = False,
     ) -> PlatformInvoice:
         """Convert an ACCEPTED quote to a PlatformInvoice (DRAFT).
 
         Creates the invoice + line items from quote items. The invoice starts
         as DRAFT; finalize is a separate action.
+
+        allow_draft=True is used ONLY by the §5.2 self-serve trial->paid
+        conversion: the org admin clicking "Convert to paid plan" IS the
+        acceptance, so a machine-generated DRAFT quote (never SENT) converts
+        directly without a separate ACCEPTED hop. The audit trail records the
+        same QUOTE_CONVERTED action with metadata {"via": "trial_conversion"}.
         """
         quote = self._get_quote(quote_id)
         self._require_status(quote, CommercialQuoteStatus.CONVERTED, invert=True)
 
-        if quote.status not in (
+        if quote.status in (CommercialQuoteStatus.DRAFT,) and allow_draft:
+            pass
+        elif quote.status not in (
             CommercialQuoteStatus.ACCEPTED,
             CommercialQuoteStatus.CONVERTED,
         ):
@@ -457,7 +466,9 @@ class CommercialQuoteService:
             entity_id=quote.id,
             old_values=old,
             new_values=_quote_snapshot(quote),
-            metadata={"platform_invoice_id": invoice.id},
+            metadata={"platform_invoice_id": invoice.id, "via": "trial_conversion"}
+            if allow_draft
+            else {"platform_invoice_id": invoice.id},
         )
 
         return invoice
