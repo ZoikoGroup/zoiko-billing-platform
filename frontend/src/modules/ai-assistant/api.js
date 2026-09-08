@@ -22,12 +22,34 @@ function authHeaders() {
 }
 
 export async function createSession(title, initialMessage) {
-  const res = await fetch(`${API_BASE}/sessions`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ title, initial_message: initialMessage }),
-  });
-  if (!res.ok) throw new Error(`Create session failed: ${res.status}`);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/sessions`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ title, initial_message: initialMessage }),
+    });
+  } catch (networkErr) {
+    const err = new Error("network_failure");
+    err.cause = networkErr;
+    err.status = 0;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(`Create session failed: ${res.status}`);
+    err.status = res.status;
+    try {
+      const data = await res.json();
+      err.code = data?.code;
+      err.detail = data?.message || data?.detail || data?.error || "";
+    } catch { /* non-JSON error body is fine */ }
+    if (res.status === 401 || res.status === 403) err.sessionExpired = true;
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      err.retryAfter = retryAfter ? parseInt(retryAfter, 10) || 10 : 10;
+    }
+    throw err;
+  }
   return res.json();
 }
 

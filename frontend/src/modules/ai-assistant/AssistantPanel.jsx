@@ -976,6 +976,15 @@ export default function AssistantPanel({ isOpen, onClose }) {
       inputRef.current?.focus();
     } catch (err) {
       console.error("Failed to create session:", err);
+      setMessages((prev) => [...prev, {
+        message_uid: newClientUid("error"),
+        sender_type: "system",
+        message_text:
+          import.meta.env.MODE === "development" && err?.detail
+            ? `Couldn't start a new conversation right now. (${err.status ?? "network"} ${err.detail})`
+            : "Couldn't start a new conversation right now. Please try again.",
+        created_at: new Date().toISOString(),
+      }]);
     } finally {
       setInitializing(false);
     }

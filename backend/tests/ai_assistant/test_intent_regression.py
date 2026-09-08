@@ -1549,7 +1549,7 @@ class TestNewDashboardMetricsLive:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestGreetingSmalltalk:
-    @pytest.mark.parametrize("phrase", ["Hi", "hey", "Good morning!", "Thanks", "thank you", "bye"])
+    @pytest.mark.parametrize("phrase", ["Hi", "hey", "Good morning!"])
     def test_pure_greetings_get_welcome(self, db, org, ctx, phrase):
         engine = ConversationEngine(db, model_gateway=None)
         conv = make_conv(db, org)
@@ -1558,6 +1558,27 @@ class TestGreetingSmalltalk:
         handler = engine._get_handler(intent["domain"])
         result = handler(conv, phrase, intent, ctx)
         assert "Zoiko Billing AI Assistant" in result["answer"]
+
+    @pytest.mark.parametrize("phrase", ["Thanks", "thank you"])
+    def test_gratitude_gets_short_acknowledgment(self, db, org, ctx, phrase):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org)
+        intent = engine._classify_intent(conv, phrase, ctx)
+        assert intent["intent"] == "gratitude"
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, phrase, intent, ctx)
+        assert "You're welcome" in result["answer"]
+        assert "Zoiko Billing AI Assistant" not in result["answer"]
+
+    def test_farewell_gets_short_closing(self, db, org, ctx):
+        engine = ConversationEngine(db, model_gateway=None)
+        conv = make_conv(db, org)
+        intent = engine._classify_intent(conv, "bye", ctx)
+        assert intent["intent"] == "farewell"
+        handler = engine._get_handler(intent["domain"])
+        result = handler(conv, "bye", intent, ctx)
+        assert "Goodbye" in result["answer"]
+        assert "Zoiko Billing AI Assistant" not in result["answer"]
 
     def test_greeting_with_request_stays_request(self, db):
         result = ConversationEngine(db, model_gateway=None)._rules_classify_intent("Hi, show overdue invoices")
@@ -2202,7 +2223,7 @@ class TestCollectedRevenueDisambiguation:
         assert intent["intent"] == "dashboard_summary", intent
         answer = result["answer"]
         assert "**Total Revenue:**" in answer, answer
-        assert "**Collections:**" in answer, answer
+        assert "**Collections (cleared payments received):**" in answer, answer
         assert money(kpis["total_revenue"], "INR") in answer, answer
         assert money(kpis["collections"], "INR") in answer, answer
         assert money(kpis["total_revenue"], "INR") != money(kpis["collections"], "INR")
@@ -2298,10 +2319,16 @@ class TestExploratoryFixes:
         assert "400.00" in result["answer"]
 
     def test_smalltalk_variants_get_welcome(self, db, org, ctx):
-        for phrase in ("How are you doing today?", "Thanks, that was helpful", "What's up?"):
+        for phrase in ("How are you doing today?", "What's up?"):
             result, _ = self._ask(db, org, ctx, phrase)
             assert "outside my scope" not in result["answer"], (phrase, result["answer"][:120])
             assert "Zoiko Billing AI Assistant" in result["answer"]
+
+    def test_gratitude_gets_short_acknowledgment(self, db, org, ctx):
+        result, _ = self._ask(db, org, ctx, "Thanks, that was helpful")
+        assert "outside my scope" not in result["answer"], result["answer"][:120]
+        assert "You're welcome" in result["answer"]
+        assert "Zoiko Billing AI Assistant" not in result["answer"]
 
     def test_refund_question_forms(self, db, org, ctx):
         for phrase in ("Did we receive any refunds?", "Any refunds?"):

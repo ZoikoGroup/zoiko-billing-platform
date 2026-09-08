@@ -169,6 +169,14 @@ PENDING | Durable async operation awaiting terminal event/status. | SUCCEEDED / 
 SUCCEEDED | Authoritative receipt confirms effect. | Terminal
 FAILED / FAILED_UNKNOWN | Known failure or ambiguous external outcome. | RECOVERY / RECONCILIATION / Terminal per policy
 [END TABLE]
+IMPLEMENTATION STATUS (CURRENT CODE) — this action-state table is a design proposal. The authoritative state machine shipped in the codebase (backend/app/modules/chatbot/GOVERNANCE.md:14-20 and actions/action_engine.py:7-10) is:
+
+  DRAFT -> VALIDATING -> READY_FOR_PREVIEW -> PREVIEWED ->
+    { CONFIRMATION_REQUIRED | APPROVAL_REQUIRED | READY_TO_EXECUTE } ->
+    EXECUTING -> { SUCCEEDED | FAILED | PENDING_EXTERNAL | EXCEPTION }
+  Terminal/cancel states: CANCELLED, EXPIRED, REJECTED
+
+Persisted enums (models.py:146-185) are DraftStatus {PROPOSED, VALIDATED, REJECTED, EXPIRED}, PreviewStatus {VALID, EXPIRED, SUPERSEDED, REJECTED}, ConfirmationStatus {CONFIRMED, REVOKED, EXPIRED}, ApprovalRequestStatus {PENDING, APPROVED, REJECTED, EXPIRED, CANCELLED} and ExecutionStatus {PENDING, SUCCEEDED, FAILED, COMPENSATED, UNKNOWN}. The architecture is a single FastAPI monolith module (backend/app/modules/chatbot/), not separate ChatbotService microservices; the orchestrator is conversation/engine.py (~9,600 lines) and actions/action_engine.py. Model routing is config-driven (model_gateway/router_config.py) with a Groq gateway as default provider.
 8.2 Hard technical controls
 Action execution API requires an action_id, valid preview_id/hash, confirmation evidence, approval evidence where required, actor/context snapshot and idempotency key.
 Preview payload is generated from authoritative Billing services, not model arithmetic.

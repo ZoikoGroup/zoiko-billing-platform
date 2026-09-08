@@ -27,7 +27,8 @@ All endpoints gated by:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 import asyncio
@@ -152,12 +153,51 @@ def create_session(
     db: Session = Depends(get_db),
     ctx: AIContext = Depends(get_ai_context),
 ):
-    result = _engine(db).create_conversation(
-        ctx=ctx,
-        title=body.title,
-        initial_message=body.initial_message,
-    )
-    return result
+    try:
+        result = _engine(db).create_conversation(
+            ctx=ctx,
+            title=body.title,
+            initial_message=body.initial_message,
+        )
+        return result
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _logger.error(
+            "create_session database failure [session_create] user=%s: %s",
+            ctx.user_id, exc,
+        )
+        return JSONResponse(
+            status_code=502,
+            content={
+                "success": False,
+                "error": "Could not create the conversation right now. "
+                         "Please try again in a moment.",
+                "message": "Could not create the conversation right now. "
+                           "Please try again in a moment.",
+                "code": "SESSION_CREATION_FAILED",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — safe, human-readable response
+        db.rollback()
+        _logger.error(
+            "create_session unexpected failure [session_create] user=%s: %s",
+            ctx.user_id, exc,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "Something went wrong while starting this conversation. "
+                         "Your message is safe — please try again.",
+                "message": "Something went wrong while starting this conversation. "
+                           "Your message is safe — please try again.",
+                "code": "SESSION_CREATION_FAILED",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
 
 
 @router.get("/sessions")

@@ -10,6 +10,15 @@ __pycache__/
 *.pyc
 node_modules/
 .venv/
+
+# IDE / editor
+.idea/
+.vscode/
+
+# Local dev-scratch chatbot scripts (contain hardcoded dev credentials, not for shipping)
+backend/search_code.py
+backend/test_chatbot.py
+backend/test_chatbot_api.py
 venv/
 dist/
 build/
