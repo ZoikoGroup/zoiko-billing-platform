@@ -184,9 +184,12 @@ TEMPLATE_NAME_TO_ID = {
     "subscription_renewed.html": "ZB-SUB-005",
     "dunning_reminder.html": "ZB-COL-001",
     "write_off_executed.html": "ZB-COL-011",
-    "org_created.html": "ZB-COM-001",
+    "org_created.html": "ZB-ORG-001",
+    "product_welcome.html": "ZB-ONB-001",
     "org_admin_invite.html": "ZB-COM-002",
     "org_admin_password_reset.html": "ZB-COM-003",
+    "registration_received.html": "ZB-ORG-002",
+    "platform_quote_sent.html": "ZB-CHG-008",
     "contract_activated.html": "ZB-CON-001",
     "contract_renewed.html": "ZB-CON-002",
 }
@@ -238,28 +241,6 @@ def send_approval_email(
     if family == "OPS" or template_id.startswith("ZB-OPS-"):
         email = _settings.SMTP_FROM_EMAIL or "ops@zoikobilling.com"
 
-    # 1. Variable Contract Validation
-    if template_def:
-        validate_variable_contract(template_def, context)
-
-    # 2. Template Loading & Render
-    if template_body is not None:
-        template = template_body
-    else:
-        template = _load_template(template_name)
-    if not template:
-        logger.warning(f"Cannot send email to {email}: template {template_name} not found")
-        return False
-
-    from app.config import settings as _settings
-
-    branding = _get_org_branding(organization_id, db=db)
-    full_context = {**branding, "login_url": _settings.FRONTEND_URL.rstrip("/") + "/login", **context}
-    body = _render_template(template, full_context)
-
-    # 3. Tier Compliance Check (T0 Restrictions)
-    validate_tier_compliance(tier, full_context, body)
-
     # Database Session for Engine Checks & Logging
     own_session = False
     if db is None:
@@ -271,7 +252,9 @@ def send_approval_email(
         eff_target_id = target_record_id or context.get("target_record_id")
         dedupe_key = IdempotencySupersessionEngine.generate_dedupe_key(eff_event_id, template_id, email)
 
-        # 4. Consent & Suppression Check
+        # 1. Consent & Suppression Check (recipient-level short-circuit: runs
+        # before template render/validation so a suppressed recipient returns
+        # False without requiring a complete template context)
         eligible, suppression_reason = ConsentSuppressionEngine.check_send_eligibility(
             db, email, organization_id, tier, family
         )
@@ -292,7 +275,7 @@ def send_approval_email(
             )
             return False
 
-        # 5. Idempotency Check
+        # 2. Idempotency Check
         if IdempotencySupersessionEngine.is_duplicate(db, dedupe_key):
             logger.info(f"[EMAIL_FOUNDATION] Duplicate send blocked for {email} | DedupeKey: {dedupe_key}")
             CommunicationAuditLogger.log_attempt(
@@ -309,8 +292,29 @@ def send_approval_email(
             )
             return False
 
-        # 6. Apply Supersession
+        # 3. Apply Supersession
         IdempotencySupersessionEngine.apply_supersession(db, email, eff_target_id, eff_event_name)
+
+        # 4. Template Loading & Render
+        if template_body is not None:
+            template = template_body
+        else:
+            template = _load_template(template_name)
+        if not template:
+            logger.warning(f"Cannot send email to {email}: template {template_name} not found")
+            return False
+
+        branding = _get_org_branding(organization_id, db=db)
+        full_context = {**branding, "login_url": _settings.FRONTEND_URL.rstrip("/") + "/login", **context}
+        body = _render_template(template, full_context)
+
+        # 5. Variable Contract Validation (after branding merge so templates
+        # requiring company_name receive it from branding, not raw caller context)
+        if template_def:
+            validate_variable_contract(template_def, full_context)
+
+        # 6. Tier Compliance Check (T0 Restrictions)
+        validate_tier_compliance(tier, full_context, body)
 
         # Inner SMTP delivery function
         def _deliver_smtp():
@@ -887,7 +891,7 @@ def send_platform_quote_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
-    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override)
+    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override, event_id=str(quote_number), target_record_id=str(quote_number))
 
 
 def send_quote_email(
@@ -934,7 +938,7 @@ def send_quote_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
-    }, db=db, organization_id=organization_id, attachments=attachments, event_name="quote.sent")
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="quote.sent", event_id=str(quote_number), target_record_id=str(quote_number))
 
 
 def send_quote_response_notification_email(

@@ -342,6 +342,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "trial-eligibility/recovery-window checks in commercial subscription service",
     ),
     (
+        "commercial_subscriptions", "converted_at",
+        "add_commercial_subscription_converted_at_column.py",
+        "trial_conversion_service stamps converted_at on trial->paid conversion",
+    ),
+    (
         "platform_audit_logs", "actor_role",
         "add_platform_audit_log_columns.py",
         "PlatformAuditService.log writes actor_role on every platform audit entry",
