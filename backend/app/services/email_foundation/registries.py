@@ -66,6 +66,7 @@ TEMPLATE_REGISTRY: Dict[str, TemplateDefinition] = {
     # ORG / ONB family
     "ZB-ORG-001": TemplateDefinition("ZB-ORG-001", TemplateTier.T1, "ORG", ["organization_name", "recipient_first_name"], ActivationState.ACTIVE, "Organization provisioned / account created"),
     "ZB-ONB-001": TemplateDefinition("ZB-ONB-001", TemplateTier.T1, "ONB", ["organization_name", "recipient_first_name"], ActivationState.ACTIVE, "Product welcome / onboarding started"),
+    "ZB-ORG-002": TemplateDefinition("ZB-ORG-002", TemplateTier.T1, "ORG", ["organization_name"], ActivationState.ACTIVE, "Registration received acknowledgement"),
 
     # CUS family — Customer Portal
     "ZB-CUS-001": TemplateDefinition("ZB-CUS-001", TemplateTier.T1, "CUS", ["recipient_first_name"], ActivationState.STUB, "Customer portal account created"),
@@ -102,6 +103,7 @@ TEMPLATE_REGISTRY: Dict[str, TemplateDefinition] = {
     "ZB-CHG-005": TemplateDefinition("ZB-CHG-005", TemplateTier.T1, "CHG", ["quote_number"], ActivationState.STUB, "Estimate expired"),
     "ZB-CHG-006": TemplateDefinition("ZB-CHG-006", TemplateTier.T1, "CHG", ["quote_number", "company_name"], ActivationState.ACTIVE, "Estimate / Quote sent to customer"),
     "ZB-CHG-007": TemplateDefinition("ZB-CHG-007", TemplateTier.T1, "CHG", ["quote_number"], ActivationState.STUB, "Estimate voided"),
+    "ZB-CHG-008": TemplateDefinition("ZB-CHG-008", TemplateTier.T1, "CHG", ["quote_number"], ActivationState.ACTIVE, "Platform (Plane 1) quote sent"),
 
     # PAY family — Payment events
     "ZB-PAY-001": TemplateDefinition("ZB-PAY-001", TemplateTier.T1, "PAY", ["payment_number"], ActivationState.STUB, "Payment initiated"),
