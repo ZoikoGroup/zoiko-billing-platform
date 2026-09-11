@@ -35,6 +35,7 @@ from app.modules.commercial.enums import (
     CommercialBillingInterval,
     CommercialPlanStatus,
     CommercialSubscriptionStatus,
+    PlatformPaymentStatus,
 )
 from app.modules.commercial.models import (
     CommercialAccount,
@@ -426,6 +427,47 @@ def test_webhook_pending_subscription_plain_activation(db_session):
     assert "trial_converted" not in result
     assert pending.status == CommercialSubscriptionStatus.ACTIVE
     assert pending.converted_at is None
+
+
+def test_webhook_converts_when_not_first_cleared_payment(db_session):
+    """§5.2 invoice-linkage hardening: an account that already has a cleared
+    payment (manual record, earlier invoice) must STILL auto-convert on the
+    Stripe payment of its conversion invoice. The old `cleared_count == 1`
+    gate alone would leave the subscription TRIALING forever."""
+    from app.modules.commercial.platform_payment_service import PlatformPaymentService
+    from app.modules.commercial.platform_stripe_service import PlatformStripeService
+
+    _, user, account, _, sub = _trial_setup(db_session, code="WH4")
+    _conversion_invoice(db_session, account, sub, user)
+    invoice = db_session.query(PlatformInvoice).filter(
+        PlatformInvoice.commercial_account_id == account.id,
+    ).first()
+
+    # A prior cleared payment NOT tied to the conversion checkout — this makes
+    # the conversion payment the account's SECOND cleared payment.
+    prior = PlatformPaymentService(db_session).record(
+        account_id=account.id,
+        actor_id=user.id,
+        amount=Decimal("5.00"),
+        currency="USD",
+        payment_method="wire_transfer",  # clears immediately
+        notes="Unrelated earlier payment",
+    )
+    assert prior.status == PlatformPaymentStatus.CLEARED
+    _pending_payment(db_session, account, invoice, session_id="cs_test_wh4")
+    db_session.commit()
+
+    result = PlatformStripeService(db_session)._handle_checkout_completed({
+        "id": "cs_test_wh4",
+        "payment_intent": "pi_test_wh4",
+        "metadata": {"platform_invoice_id": str(invoice.id)},
+    })
+    db_session.commit()
+
+    assert result["trial_converted"] == sub.id
+    assert sub.status == CommercialSubscriptionStatus.ACTIVE
+    assert sub.converted_at is not None
+    assert invoice.balance_due == 0
 
 
 # ── 5. Manual-invoicing path (allocation drives conversion) ──────────────────
