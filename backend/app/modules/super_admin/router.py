@@ -3866,7 +3866,9 @@ def trigger_reconciliation_run(
     (ISS-017) additionally runs a genuine, bounded Payment<->Stripe
     comparison across every organization with an active Stripe connection —
     omit it (the default) to preserve the original internal-checks-only
-    behavior exactly."""
+    behavior exactly. `organization_id`, when given, scopes the entire run
+    (internal checks and the Stripe comparison) to that one organization
+    instead of the whole platform."""
     from app.core.exceptions import BadRequestException
     from app.modules.super_admin.reconciliation_service import ReconciliationService
 
@@ -3877,6 +3879,7 @@ def trigger_reconciliation_run(
             compare_processor=body.compare_processor,
             range_start=body.range_start,
             range_end=body.range_end,
+            organization_id=body.organization_id,
         )
     except ValueError as exc:
         raise BadRequestException(str(exc))
