@@ -124,6 +124,12 @@ class TrialConversionService:
     def _prepare_paid(self, *, account, subscription, plan, price, actor_id: int) -> dict:
         from decimal import Decimal
 
+        from app.modules.commercial.models import (
+            CommercialQuote,
+            CommercialQuoteStatus,
+            PlatformInvoice,
+            PlatformInvoiceStatus,
+        )
         from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
         from app.modules.commercial.platform_stripe_service import PlatformStripeService
         from app.modules.commercial.quote_service import CommercialQuoteService
@@ -133,27 +139,69 @@ class TrialConversionService:
         interval_label = getattr(interval, "value", None) or str(interval)
 
         quote_svc = CommercialQuoteService(self.db)
-        quote = quote_svc.create_quote(
-            account_id=account.id,
-            actor_id=actor_id,
-            subscription_id=subscription.id,
-            subject=f"Trial conversion — {plan_name}",
-            currency=(currency or "USD"),
-        )
-        quote_svc.add_item(
-            quote_id=quote.id,
-            actor_id=actor_id,
-            line_number=1,
-            description=f"{plan_name} ({interval_label}) — trial conversion",
-            quantity=Decimal("1"),
-            unit_price=price_amount,
+        invoice_svc = PlatformInvoiceService(self.db)
+
+        # Dedup (§B4 initial quote): registration now creates a first-period
+        # quote for every open subscription (TRIALING included). If this
+        # subscription already has an invoice or an open quote, REUSE it rather
+        # than minting a second first-period bill — otherwise an org that both
+        # accepts the registration quote AND clicks the in-app convert CTA gets
+        # charged twice for the same period.
+        invoice = (
+            self.db.query(PlatformInvoice)
+            .filter(
+                PlatformInvoice.commercial_subscription_id == subscription.id,
+                PlatformInvoice.status.in_([
+                    PlatformInvoiceStatus.DRAFT,
+                    PlatformInvoiceStatus.ISSUED,
+                ]),
+            )
+            .order_by(PlatformInvoice.id.desc())
+            .first()
         )
 
-        invoice_svc = PlatformInvoiceService(self.db)
-        invoice = quote_svc.convert_to_invoice(
-            quote_id=quote.id, actor_id=actor_id, allow_draft=True,
-        )
-        invoice = invoice_svc.finalize(invoice_id=invoice.id, actor_id=actor_id)
+        if invoice is None:
+            quote = (
+                self.db.query(CommercialQuote)
+                .filter(
+                    CommercialQuote.commercial_subscription_id == subscription.id,
+                    CommercialQuote.status.in_([
+                        CommercialQuoteStatus.DRAFT,
+                        CommercialQuoteStatus.SENT,
+                        CommercialQuoteStatus.ACCEPTED,
+                    ]),
+                )
+                .order_by(CommercialQuote.id.desc())
+                .first()
+            )
+            if quote is None:
+                quote = quote_svc.create_quote(
+                    account_id=account.id,
+                    actor_id=actor_id,
+                    subscription_id=subscription.id,
+                    subject=f"Trial conversion — {plan_name}",
+                    currency=(currency or "USD"),
+                )
+                quote_svc.add_item(
+                    quote_id=quote.id,
+                    actor_id=actor_id,
+                    line_number=1,
+                    description=f"{plan_name} ({interval_label}) — trial conversion",
+                    quantity=Decimal("1"),
+                    unit_price=price_amount,
+                )
+            elif quote.status == CommercialQuoteStatus.SENT:
+                # The in-app convert click IS the acceptance (§5.2) — the
+                # registration quote was never formally accepted, but the org's
+                # intent is explicit now.
+                quote.status = CommercialQuoteStatus.ACCEPTED
+                self.db.flush()
+
+            invoice = quote_svc.convert_to_invoice(
+                quote_id=quote.id, actor_id=actor_id, allow_draft=True,
+            )
+            invoice = invoice_svc.finalize(invoice_id=invoice.id, actor_id=actor_id)
+
         if invoice.public_token is None:
             invoice.public_token = secrets.token_urlsafe(32)
         self.db.flush()

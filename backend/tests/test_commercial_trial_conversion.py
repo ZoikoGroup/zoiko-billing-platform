@@ -589,3 +589,193 @@ def test_resolve_org_subscription_only_returns_trial_states(db_session):
         organization_id=account.organization_id,
     )
     assert resolved is None
+
+
+# ── 8. Registration initial quote for TRIALING orgs (§B4 fix) ────────────────
+
+
+def test_registration_trialing_org_creates_initial_quote(db_session):
+    """Fresh (trial-eligible) orgs provisioned TRIALING must STILL get a
+    first-period quote — the old PENDING-only gate left them without a
+    quote and therefore without an invoice path."""
+    from unittest.mock import patch as _patch
+
+    from app.modules.auth.schemas import RegisterRequest
+    from app.modules.auth.service import register_enterprise
+    from app.modules.commercial.models import CommercialQuote
+    from app.modules.commercial.enums import CommercialQuoteStatus
+
+    _plan(db_session, "essentials", price=Decimal("39.00"))
+
+    with _patch("app.services.email_service.send_platform_quote_email", return_value=True):
+        register_enterprise(
+            db_session,
+            RegisterRequest(
+                organization="Initial Quote Co",
+                name="Ada Admin",
+                email="admin@iq1.co",
+                password="StrongPass123!",
+                currency="USD",
+                intended_plan="essentials",
+            ),
+        )
+    db_session.commit()
+
+    sub = (
+        db_session.query(CommercialSubscription)
+        .join(CommercialAccount)
+        .filter(CommercialAccount.organization_id ==
+                db_session.query(User).filter_by(email="admin@iq1.co").first().organization_id)
+        .first()
+    )
+    assert sub.status == CommercialSubscriptionStatus.TRIALING
+
+    quote = (
+        db_session.query(CommercialQuote)
+        .filter(CommercialQuote.commercial_subscription_id == sub.id)
+        .first()
+    )
+    assert quote is not None
+    assert quote.status == CommercialQuoteStatus.SENT
+    assert len(quote.items) == 1
+    assert quote.items[0].unit_price == Decimal("39.00")
+
+
+def test_registration_trialing_quote_acceptance_generates_invoice(db_session):
+    """Accepting the registration initial quote on a TRIALING subscription
+    produces a PlatformInvoice — the full end-to-end billing path."""
+    from unittest.mock import patch as _patch
+
+    from app.modules.auth.schemas import RegisterRequest
+    from app.modules.auth.service import register_enterprise
+    from app.modules.commercial.commercial_billing_router import _convert_and_invoice_accepted_quote
+    from app.modules.commercial.enums import CommercialQuoteStatus
+    from app.modules.commercial.models import CommercialQuote
+    from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
+    from app.modules.commercial.quote_service import CommercialQuoteService
+
+    _plan(db_session, "essentials", price=Decimal("39.00"))
+
+    with _patch("app.services.email_service.send_platform_quote_email", return_value=True):
+        register_enterprise(
+            db_session,
+            RegisterRequest(
+                organization="Accept Quote Co",
+                name="Ada Admin",
+                email="admin@iq2.co",
+                password="StrongPass123!",
+                currency="USD",
+                intended_plan="essentials",
+            ),
+        )
+    db_session.commit()
+
+    admin = db_session.query(User).filter_by(email="admin@iq2.co").first()
+    account = (
+        db_session.query(CommercialAccount)
+        .filter_by(organization_id=admin.organization_id)
+        .first()
+    )
+    sub = (
+        db_session.query(CommercialSubscription)
+        .filter_by(commercial_account_id=account.id)
+        .first()
+    )
+    quote = (
+        db_session.query(CommercialQuote)
+        .filter_by(commercial_subscription_id=sub.id)
+        .first()
+    )
+    assert quote.status == CommercialQuoteStatus.SENT
+
+    quote_svc = CommercialQuoteService(db_session)
+    quote = quote_svc.accept_public_quote(quote.public_token)
+    db_session.commit()
+
+    with _patch.object(PlatformInvoiceService, "send", return_value=None):
+        _convert_and_invoice_accepted_quote(db_session, quote, admin.id)
+    db_session.commit()
+
+    invoice = (
+        db_session.query(PlatformInvoice)
+        .filter(PlatformInvoice.commercial_subscription_id == sub.id)
+        .first()
+    )
+    assert invoice is not None
+    assert invoice.status.value == "issued"
+    assert invoice.balance_due == Decimal("39.00")
+    assert quote.status == CommercialQuoteStatus.CONVERTED
+
+
+def test_trial_convert_reuses_registration_quote_no_duplicate(db_session):
+    """When a registration initial quote already exists (SENT), clicking
+    the in-app 'Convert to paid' banner reuses that quote and its invoice
+    rather than creating a second first-period bill."""
+    from unittest.mock import patch as _patch
+
+    from app.core.exceptions import BadRequestException
+    from app.modules.auth.schemas import RegisterRequest
+    from app.modules.auth.service import register_enterprise
+    from app.modules.commercial.models import CommercialQuote
+    from app.modules.commercial.platform_stripe_service import PlatformStripeService
+
+    _plan(db_session, "essentials", price=Decimal("49.00"))
+
+    with _patch("app.services.email_service.send_platform_quote_email", return_value=True):
+        register_enterprise(
+            db_session,
+            RegisterRequest(
+                organization="Dedup Co",
+                name="Ada Admin",
+                email="admin@dedup1.co",
+                password="StrongPass123!",
+                currency="USD",
+                intended_plan="essentials",
+            ),
+        )
+    db_session.commit()
+
+    admin = db_session.query(User).filter_by(email="admin@dedup1.co").first()
+    account = (
+        db_session.query(CommercialAccount)
+        .filter_by(organization_id=admin.organization_id)
+        .first()
+    )
+    sub = (
+        db_session.query(CommercialSubscription)
+        .filter_by(commercial_account_id=account.id)
+        .first()
+    )
+
+    quotes_before = (
+        db_session.query(CommercialQuote)
+        .filter(CommercialQuote.commercial_subscription_id == sub.id)
+        .count()
+    )
+    assert quotes_before == 1
+
+    with _patch.object(
+        PlatformStripeService,
+        "create_checkout_session_for_invoice",
+        side_effect=BadRequestException("Stripe not configured"),
+    ):
+        result = TrialConversionService(db_session).prepare_trial_conversion(
+            account=account, subscription=sub, actor_id=admin.id,
+        )
+    db_session.commit()
+
+    assert result["mode"] == "invoice_due"
+
+    quotes_after = (
+        db_session.query(CommercialQuote)
+        .filter(CommercialQuote.commercial_subscription_id == sub.id)
+        .count()
+    )
+    assert quotes_after == 1  # reuses registration quote, no duplicate
+
+    invoices = (
+        db_session.query(PlatformInvoice)
+        .filter(PlatformInvoice.commercial_subscription_id == sub.id)
+        .all()
+    )
+    assert len(invoices) == 1

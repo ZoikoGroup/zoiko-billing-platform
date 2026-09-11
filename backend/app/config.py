@@ -141,6 +141,17 @@ class Settings(BaseSettings):
     ANTHROPIC_MAX_TOKENS: int = 2048
     ANTHROPIC_TEMPERATURE: float = 0.1
 
+    # ── Redis (distributed cache + rate limiting) ──────────────────────
+    # Empty string disables Redis: falls back to in-process cachetools.TTLCache
+    # and slowapi MemoryStorage. Works for single-worker dev/test.
+    REDIS_URL: str = ""
+    REDIS_KEY_PREFIX: str = "zb"
+    REDIS_DEFAULT_TTL: int = 60
+    REDIS_GATE_TTL: int = 20
+    REDIS_CONFIG_TTL: int = 60
+    REDIS_ENTITLEMENT_TTL: int = 60
+    REDIS_DASHBOARD_TTL: int = 30
+
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
     # is explicitly enabled — see app/core/scheduler.py.
