@@ -357,28 +357,84 @@ export const TRANSITION_LABELS = {
 const TRIAL_PROGRESS_REFERENCE_DAYS = 14;
 
 export function formatTrialRemaining(trialEndsAt, status, recoveryEndsAt = null) {
-  if (status === "suspended") return { label: "Trial expired", tone: "risk", percent: 0 };
-  if (status !== "pending" && status !== "trialing") return null;
-  if (!trialEndsAt) return null;
+  const s = (status || "").toLowerCase();
 
-  const end = new Date(trialEndsAt);
-  if (Number.isNaN(end.getTime())) return null;
-  const diffMs = end.getTime() - Date.now();
-  if (diffMs <= 0) return { label: "Trial expired", tone: "risk", percent: 0 };
+  if (s === "suspended") return { label: "Trial expired", tone: "risk", percent: 0 };
 
-  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  let label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
-
-  if (recoveryEndsAt) {
+  if (s === "trial_recovery") {
+    if (!recoveryEndsAt) return { label: "Recovery window", tone: "attention", percent: 25 };
     const rEnd = new Date(recoveryEndsAt);
-    if (!Number.isNaN(rEnd.getTime()) && rEnd.getTime() > Date.now()) {
-      const rDays = Math.ceil((rEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      label += ` · recovery ${rDays}d`;
-    }
+    if (Number.isNaN(rEnd.getTime())) return { label: "Recovery window", tone: "attention", percent: 25 };
+    const rDiffMs = rEnd.getTime() - Date.now();
+    if (rDiffMs <= 0) return { label: "Recovery ended", tone: "risk", percent: 0 };
+    const rDays = Math.floor(rDiffMs / (1000 * 60 * 60 * 24));
+    const rHours = Math.floor((rDiffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const rLabel = rDays >= 1 ? `Recovery ${rDays}d ${rHours}h` : `Recovery ${rHours}h`;
+    const rPercent = Math.min(100, Math.max(0, (rDiffMs / (14 * 24 * 60 * 60 * 1000)) * 100));
+    return { label: rLabel, tone: rDays <= 2 ? "risk" : "attention", percent: rPercent };
   }
-  const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
-  return { label, tone: days === 0 ? "attention" : "default", percent };
+
+  if (s === "trialing" || s === "pending") {
+    if (!trialEndsAt) return { label: s === "trialing" ? "Trial active" : "Awaiting activation", tone: "attention", percent: 25 };
+    const end = new Date(trialEndsAt);
+    if (Number.isNaN(end.getTime())) return { label: "Trial active", tone: "attention", percent: 25 };
+    const diffMs = end.getTime() - Date.now();
+    if (diffMs <= 0) return { label: "Trial expired", tone: "risk", percent: 0 };
+
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    let label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
+
+    if (recoveryEndsAt) {
+      const rEnd = new Date(recoveryEndsAt);
+      if (!Number.isNaN(rEnd.getTime()) && rEnd.getTime() > Date.now()) {
+        const rDays = Math.ceil((rEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        label += ` · recovery ${rDays}d`;
+      }
+    }
+    const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
+    return { label, tone: days === 0 ? "attention" : "default", percent };
+  }
+
+  if (s === "active") {
+    if (trialEndsAt) {
+      const end = new Date(trialEndsAt);
+      if (!Number.isNaN(end.getTime())) {
+        const diffMs = end.getTime() - Date.now();
+        if (diffMs > 0) {
+          const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const label = days >= 1 ? `${days}d ${hours}h eval left` : `${hours}h eval left`;
+          const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
+          return { label, tone: days === 0 ? "attention" : "default", percent };
+        }
+      }
+    }
+    return { label: "Converted", tone: "default", percent: 100 };
+  }
+
+  if (s === "cancelled" || s === "expired") {
+    return { label: "No active trial", tone: "default", percent: 0 };
+  }
+
+  if (s === "past_due") {
+    if (trialEndsAt) {
+      const end = new Date(trialEndsAt);
+      if (!Number.isNaN(end.getTime())) {
+        const diffMs = end.getTime() - Date.now();
+        if (diffMs > 0) {
+          const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const label = days >= 1 ? `${days}d ${hours}h left` : `${hours}h left`;
+          const percent = Math.min(100, Math.max(0, (diffMs / (TRIAL_PROGRESS_REFERENCE_DAYS * 24 * 60 * 60 * 1000)) * 100));
+          return { label, tone: "attention", percent };
+        }
+      }
+    }
+    return { label: "Payment overdue", tone: "attention", percent: 0 };
+  }
+
+  return null;
 }
 
 /**

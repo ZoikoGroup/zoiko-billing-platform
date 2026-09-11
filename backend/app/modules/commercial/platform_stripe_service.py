@@ -302,6 +302,7 @@ class PlatformStripeService:
 
         metadata = data_object.get("metadata") or {}
         invoice_id = metadata.get("platform_invoice_id")
+        invoice = None
         if invoice_id:
             invoice = (
                 self.db.query(PlatformInvoice)
@@ -315,6 +316,53 @@ class PlatformStripeService:
                     amount=min(payment.amount, invoice.balance_due),
                     actor_id=None,
                 )
+
+            # §5.2 invoice-linkage trigger (mirrors
+            # _maybe_complete_trial_conversion_on_allocation): this payment
+            # settled an invoice tied to a trial-conversion subscription. The
+            # conversion is bound to THAT subscription's state, not to whether
+            # this is the account's first-ever cleared payment — an account
+            # with a prior cleared payment (manual record, earlier invoice)
+            # must still auto-convert on the Stripe payment of its conversion
+            # invoice rather than staying TRIALING forever.
+            if (
+                invoice is not None
+                and not invoice.balance_due
+                and invoice.commercial_subscription_id is not None
+            ):
+                invoice_subscription = (
+                    self.db.query(CommercialSubscription)
+                    .filter(
+                        CommercialSubscription.id == invoice.commercial_subscription_id,
+                        CommercialSubscription.status.in_([
+                            CommercialSubscriptionStatus.PENDING,
+                            CommercialSubscriptionStatus.TRIALING,
+                            CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                            CommercialSubscriptionStatus.SUSPENDED,
+                        ]),
+                    )
+                    .first()
+                )
+                if invoice_subscription is not None:
+                    if invoice_subscription.status in (
+                        CommercialSubscriptionStatus.TRIALING,
+                        CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                    ):
+                        from app.modules.commercial.trial_conversion_service import (
+                            TrialConversionService,
+                        )
+
+                        TrialConversionService(self.db).complete_trial_conversion(
+                            subscription=invoice_subscription,
+                        )
+                        return {
+                            "action": "payment_recorded",
+                            "payment_id": payment.id,
+                            "trial_converted": invoice_subscription.id,
+                        }
+                    CommercialSubscriptionService(self.db).transition(
+                        invoice_subscription, CommercialSubscriptionStatus.ACTIVE,
+                    )
 
         if cleared_count == 1:
             # PENDING: never-activated self-serve subscription paying for
