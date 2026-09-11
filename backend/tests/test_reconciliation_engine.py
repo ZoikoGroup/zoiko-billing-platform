@@ -217,3 +217,78 @@ def test_fail_on_open_exceptions_is_not_masked_by_staleness_logic(db_session):
     rep = get_production_acceptance_report(current_user=None, db=db_session)
     rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
     assert rec["status"] == "FAIL"
+
+
+def test_organization_id_scopes_internal_checks_to_one_org(db_session):
+    """The Super Admin Reconciliation page's new Organization selector must
+    actually narrow the run, not just decorate the request — a discrepancy
+    in an org the operator did NOT select must never show up in their
+    scoped run."""
+    org_a = make_organization(db_session, code="ORGA", name="Org A")
+    org_b = make_organization(db_session, code="ORGB", name="Org B")
+    inv_a = make_invoice(db_session, org_a.id, make_customer(db_session, org_a.id).id)
+    inv_a.balance_due = "999.00"
+    inv_b = make_invoice(db_session, org_b.id, make_customer(db_session, org_b.id).id)
+    inv_b.balance_due = "999.00"
+    db_session.flush()
+
+    svc = ReconciliationService(db_session)
+    run = svc.run_reconciliation(trigger="manual", organization_id=org_a.id)
+
+    assert run.exceptions_found == 1
+    assert run.exceptions[0].entity_id == inv_a.id
+    assert run.exceptions[0].organization_id == org_a.id
+
+    # Sanity check: the same corrupted ledger, unscoped, catches both orgs —
+    # proving the scoped run above narrowed the result rather than merely
+    # having nothing to find in org_b.
+    db_session.expire_all()
+    unscoped = ReconciliationService(db_session).run_reconciliation(trigger="manual")
+    assert unscoped.exceptions_found == 2
+
+
+def test_organization_id_scopes_stripe_comparison_to_one_org(db_session, monkeypatch):
+    """Same guarantee as above, for the ISS-017 Stripe-comparison sweep
+    (`stripe_reconciliation.reconcile_processor_payments`): selecting one
+    organization on the page must limit the Stripe-connected-account sweep
+    to that org, never silently fall back to comparing every connected
+    organization. `reconcile_organization_payments` (the only piece that
+    would make a real Stripe API call) is stubbed out so this stays a fast,
+    network-free unit test."""
+    from app.modules.billing.models import IntegrationConnectionStatus, IntegrationEnvironment, StripeConnectedAccount
+    from app.modules.super_admin import stripe_reconciliation
+
+    org_a = make_organization(db_session, code="SORGA", name="Stripe Org A")
+    org_b = make_organization(db_session, code="SORGB", name="Stripe Org B")
+    for org in (org_a, org_b):
+        db_session.add(StripeConnectedAccount(
+            organization_id=org.id,
+            environment=IntegrationEnvironment.TEST,
+            connected_account_id=f"acct_fake_{org.id}",
+            status=IntegrationConnectionStatus.ACTIVE,
+        ))
+    db_session.flush()
+
+    monkeypatch.setattr(stripe_reconciliation, "_resolve_environment", lambda: IntegrationEnvironment.TEST)
+    called_with = []
+
+    def fake_reconcile_organization_payments(db, organization_id, range_start, range_end):
+        called_with.append(organization_id)
+        return stripe_reconciliation.OrgReconciliationResult(organization_id=organization_id, compared=True)
+
+    monkeypatch.setattr(stripe_reconciliation, "reconcile_organization_payments", fake_reconcile_organization_payments)
+
+    range_end = datetime.utcnow().date()
+    range_start = range_end - timedelta(days=1)
+
+    scoped = stripe_reconciliation.reconcile_processor_payments(
+        db_session, range_start, range_end, organization_id=org_a.id,
+    )
+    assert called_with == [org_a.id]
+    assert scoped["organizations_with_active_connection"] == [org_a.id]
+    assert scoped["organizations_compared"] == [org_a.id]
+
+    called_with.clear()
+    unscoped = stripe_reconciliation.reconcile_processor_payments(db_session, range_start, range_end)
+    assert set(called_with) == {org_a.id, org_b.id}
+    assert set(unscoped["organizations_with_active_connection"]) == {org_a.id, org_b.id}

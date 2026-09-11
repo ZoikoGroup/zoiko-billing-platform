@@ -1218,6 +1218,10 @@ class TriggerReconciliationRunRequest(BaseModel):
     compare_processor: bool = False
     range_start: Optional[date] = None
     range_end: Optional[date] = None
+    # Optional scope: when set, both internal-invariant checks and the
+    # Stripe comparison are limited to this one organization instead of
+    # sweeping every organization (the default when omitted).
+    organization_id: Optional[int] = None
 
 
 class ReconciliationExceptionActionResponse(BaseModel):
