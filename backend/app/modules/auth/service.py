@@ -496,16 +496,28 @@ def register_enterprise(
         account.id, intended_plan_code=data.intended_plan,
     )
 
-    # First quote (§B4/§F1): a PENDING subscription needs something the org
-    # can review and accept before it's billed — nothing else in the system
+    # First quote (§B4/§F1): any open subscription needs something the org can
+    # review and accept before it's billed — nothing else in the system
     # invents one otherwise (renewal invoicing only fires for already-ACTIVE
     # subscriptions). The org admin must accept the quote before an invoice
     # is ever generated/emailed (see accept_public_quote / approve_quote in
     # commercial_billing_router.py, which convert+finalize+send the invoice
     # at acceptance time). Created in the same transaction; never invents a
     # price — a no-op if the plan has none resolvable.
+    #
+    # Condition is any OPEN status, not just PENDING: a fresh org's subscription
+    # is provisioned as TRIALING (start_trial_if_eligible moves it out of
+    # PENDING), so gating on PENDING left every trial-eligible new org without a
+    # quote and therefore without an invoice path. TRIALING / TRIAL_RECOVERY /
+    # SUSPENDED are all still-billable states that must show the first-period
+    # price.
     initial_quote_id: Optional[int] = None
-    if subscription is not None and subscription.status == CommercialSubscriptionStatus.PENDING:
+    if subscription is not None and subscription.status in (
+        CommercialSubscriptionStatus.PENDING,
+        CommercialSubscriptionStatus.TRIALING,
+        CommercialSubscriptionStatus.TRIAL_RECOVERY,
+        CommercialSubscriptionStatus.SUSPENDED,
+    ):
         from app.modules.commercial.quote_service import CommercialQuoteService
 
         priced = CommercialSubscriptionService(db).resolve_price(subscription)
