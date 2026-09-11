@@ -92,16 +92,14 @@ def count_queries(db):
 @pytest.fixture(autouse=True)
 def _clear_in_process_caches():
     """Every test gets a fresh in-memory DB (above) with auto-increment ids
-    restarting at 1 — so any in-process TTL cache from a previous test would
-    serve stale cross-test results under a colliding key. Reset them here."""
-    from app.modules.billing.services.dashboard_service import _KPI_CACHE
-    from app.modules.commercial.cache import _latest_published_cache
+    restarting at 1 — so any cache from a previous test would serve stale
+    cross-test results under a colliding key. Reset the shared cache service
+    (Redis when configured, in-process fallback otherwise) here."""
+    from app.core import cache_service
 
-    _KPI_CACHE.clear()
-    _latest_published_cache.clear()
+    cache_service.cache_flush()
     yield
-    _KPI_CACHE.clear()
-    _latest_published_cache.clear()
+    cache_service.cache_flush()
 
 
 def make_organization(db, code="ORG1", name="Test Org"):

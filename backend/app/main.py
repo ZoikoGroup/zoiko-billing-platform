@@ -118,6 +118,14 @@ async def lifespan(app: FastAPI):
     from app.modules.notifications.template_registry import validate_template_registry
     validate_template_registry()
     validate_production_cors(_cors_origins, settings.DEBUG)
+    from app.core import cache_service
+    if cache_service.cache_ping():
+        logger.info("Redis cache backend active (REDIS_URL configured).")
+    else:
+        logger.info(
+            "Redis cache backend unavailable; using in-process fallback "
+            "(set REDIS_URL to enable a shared cache)."
+        )
     try:
         initialize_database()
     except Exception as exc:

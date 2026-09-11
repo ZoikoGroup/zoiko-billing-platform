@@ -49,6 +49,7 @@ stripe>=9.0.0
 
 slowapi
 cachetools
+redis>=5.0.0
 # Pinned (was unpinned) — this is the server-side parser for uploaded
 # product/customer spreadsheets (product_import_service.py,
 # customer_import_service.py); a security-relevant dependency shouldn't float.

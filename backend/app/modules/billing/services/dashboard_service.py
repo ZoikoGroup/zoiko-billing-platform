@@ -1,10 +1,8 @@
 import logging
 from datetime import date, datetime
 from decimal import Decimal
-from threading import RLock
 from typing import Any, Dict, List, Optional
 
-from cachetools import TTLCache
 from sqlalchemy import func, case, and_
 from sqlalchemy.orm import Session
 
@@ -30,17 +28,18 @@ from app.modules.billing.utils.date_utils import (  # noqa: F401
 
 logger = logging.getLogger("zoiko_billing")
 
-# Headline-KPI result cache (dict keyed by the get_kpis arguments). Page-load
-# cache: rapid dashboard polls reuse the last computed aggregates instead of
-# re-scanning the org's active invoices. TTL is short (DASHBOARD_KPI_CACHE_TTL_SECONDS;
-# 0 disables) so headline numbers are never more than a few seconds behind
-# committed data — the numbers still come from THIS single source of truth
-# (get_kpis), never re-derived elsewhere, so the T05 "surfaces agree" guarantee
-# is only relaxed by the bounded staleness window, not by divergence.
-_KPI_CACHE: TTLCache[tuple, dict] = TTLCache(
-    maxsize=256, ttl=max(settings.DASHBOARD_KPI_CACHE_TTL_SECONDS, 1)
-)
-_KPI_CACHE_LOCK = RLock()
+# Headline-KPI result cache keyed by the get_kpis arguments, stored in the
+# shared cache (Redis when REDIS_URL is set, in-process fallback otherwise —
+# see core/cache_service.py). Page-load cache: rapid dashboard polls reuse
+# the last computed aggregates instead of re-scanning the org's active
+# invoices. TTL is short (DASHBOARD_KPI_CACHE_TTL_SECONDS; 0 disables) so
+# headline numbers are never more than a few seconds behind committed data —
+# the numbers still come from THIS single source of truth (get_kpis), never
+# re-derived elsewhere, so the T05 "surfaces agree" guarantee is only relaxed
+# by the bounded staleness window, not by divergence.
+
+_KPI_CACHE_KEY = "dash:kpis:{org}:{period}:{date_from}:{date_to}"
+_FULL_DASHBOARD_KEY = "dash:full:{org}:{period}:{date_from}:{date_to}"
 
 
 class BillingDashboardService:
@@ -126,12 +125,14 @@ class BillingDashboardService:
         """
         cache_key = None
         if use_cache and settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
-            cache_key = (organization_id, period, date_from, date_to)
-            try:
-                with _KPI_CACHE_LOCK:
-                    return dict(_KPI_CACHE[cache_key])
-            except KeyError:
-                pass
+            cache_key = _KPI_CACHE_KEY.format(
+                org=organization_id, period=period, date_from=date_from, date_to=date_to
+            )
+            from app.core import cache_service
+
+            hit = cache_service.cache_get(cache_key)
+            if hit is not None:
+                return hit
         now = datetime.utcnow()
         month_start = date(now.year, now.month, 1)
         today = date.today()
@@ -277,8 +278,11 @@ class BillingDashboardService:
             "period_end": str(period_end) if is_filtered else None,
         }
         if use_cache and cache_key is not None and settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0:
-            with _KPI_CACHE_LOCK:
-                _KPI_CACHE[cache_key] = result
+            from app.core import cache_service
+
+            cache_service.cache_set(
+                cache_key, result, ttl=settings.DASHBOARD_KPI_CACHE_TTL_SECONDS
+            )
         return result
 
     def get_monthly_revenue(
@@ -394,6 +398,15 @@ class BillingDashboardService:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
     ) -> Dict[str, Any]:
+        from app.core import cache_service
+
+        cache_key = _FULL_DASHBOARD_KEY.format(
+            org=organization_id, period=period, date_from=date_from, date_to=date_to
+        )
+        hit = cache_service.cache_get(cache_key)
+        if hit is not None:
+            return hit
+
         # Computed once and shared with get_kpis/get_monthly_revenue below —
         # see the comment on get_kpis for why this matters (each call is a
         # real cost: 2 DB round trips plus, when the org's cached rates are
@@ -437,7 +450,7 @@ class BillingDashboardService:
             "by_status": sub_by_status,
         }
 
-        return {
+        result = {
             "kpis": kpis,
             "monthly_revenue": monthly,
             "invoice_summary": inv_summary,
@@ -453,3 +466,5 @@ class BillingDashboardService:
             "paid_invoices": inv_summary.get("paid_count", 0),
             "overdue_invoices": inv_summary.get("overdue_count", 0),
         }
+        cache_service.cache_set(cache_key, result, ttl=settings.REDIS_DASHBOARD_TTL)
+        return result

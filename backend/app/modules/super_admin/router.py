@@ -174,6 +174,13 @@ router = APIRouter(prefix="/super-admin", tags=["Super Admin"])
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session = Depends(get_db)):
+    from app.config import settings as _settings
+    from app.core import cache_service
+
+    cached = cache_service.cache_get("sa:stats:global")
+    if cached is not None:
+        return DashboardStats(**cached)
+
     total_orgs = db.query(Organization).count()
     active_orgs = db.query(Organization).filter(Organization.is_active == True).count()
     total_users = db.query(User).count()
@@ -196,7 +203,7 @@ def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session =
         total_customers = 0
         total_invoices = 0
 
-    return DashboardStats(
+    stats = DashboardStats(
         total_organizations=total_orgs,
         active_organizations=active_orgs,
         total_users=total_users,
@@ -215,6 +222,12 @@ def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session =
             for o in recent_orgs
         ],
     )
+    cache_service.cache_set(
+        "sa:stats:global",
+        stats.model_dump(mode="json"),
+        ttl=_settings.REDIS_DASHBOARD_TTL,
+    )
+    return stats
 
 
 @router.get("/users", response_model=SuperAdminUserListResponse)
