@@ -8,9 +8,13 @@ name: CI — Test Gate
 # on main can still deploy. This workflow does not change deploy.yml's
 # behavior; it only adds an independent, required-check-eligible signal.
 #
-# Backend tests run against an in-memory SQLite database (see
-# backend/tests/conftest.py) -- no Postgres/Redis service container is
-# needed for this suite.
+# Backend tests mostly run against an in-memory SQLite database created
+# per-test by tests/conftest.py's db_session fixture -- but the backend-tests
+# job still needs a real Postgres service container for module-import-time
+# resolution, Alembic's Postgres-only DDL, and one test that opens its own
+# DB session outside that fixture. See the backend-tests job below for the
+# exact, individually-confirmed reasons. No Redis is needed (the app falls
+# back to an in-process cache when REDIS_URL is unset).
 #
 # The Plane 2 release gate explicitly excludes backend/tests/ai_assistant/:
 # a 2026-09-19 investigation found a single test in that directory
@@ -30,6 +34,79 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    # A REAL, ephemeral Postgres service container -- not a fake/unreachable
+    # URL -- because this repo genuinely needs one for CI, for three
+    # independent, each-individually-confirmed reasons (all three found by
+    # actually running this workflow's commands locally against candidate
+    # envs, not assumed):
+    #
+    # 1. app/database.py resolves BILLING_DATABASE_URL and calls
+    #    create_engine() at MODULE IMPORT TIME (a top-level statement, not
+    #    lazily inside a fixture) -- resolve_database_url() deliberately
+    #    raises RuntimeError when the URL is empty and the process isn't a
+    #    recognized development environment, so that a misconfigured
+    #    production deploy fails loudly instead of silently falling back to
+    #    SQLite. A GitHub Actions runner has no backend/.env (gitignored,
+    #    never committed), so plain `pytest tests/` crashed at collection
+    #    for every module that transitively imports app.database --
+    #    confirmed against this exact commit's real CI run.
+    # 2. This repo's Alembic chain contains genuinely Postgres-only DDL
+    #    (ALTER TABLE ADD CONSTRAINT for foreign keys, added post-baseline),
+    #    which Alembic's SQLite backend cannot render at all
+    #    ("NotImplementedError: No support for ALTER of constraints in
+    #    SQLite dialect") -- confirmed by actually running `alembic upgrade
+    #    head --sql` against a sqlite+pysqlite:///:memory: URL locally.
+    # 3. At least one real test (test_email_t0_security.py::
+    #    test_ops_t0_alerts_route_to_internal_channels) calls
+    #    send_approval_email() without dependency-injecting a `db` session,
+    #    so it opens its own via the global SessionLocal and genuinely
+    #    queries it (consent/suppression + audit-log checks) -- confirmed by
+    #    running the full suite against a fake, unreachable Postgres URL and
+    #    finding exactly this one real connection-refused failure once the
+    #    other 47 (see MFA_ENCRYPTION_KEY below) were fixed. A fake URL is
+    #    therefore not enough; the database must actually accept
+    #    connections and hold the real schema.
+    #
+    # tests/conftest.py's db_session fixture still creates its own separate
+    # in-memory SQLite engine for the vast majority of tests -- this service
+    # container exists for module-import-time resolution, Alembic's dialect,
+    # and the rare test that deliberately exercises the app's own
+    # self-managed-session path, not because most tests need it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    # Separately: app/core/mfa_crypto.py's get_fernet() deliberately raises
+    # ("Refusing to derive a fallback key in a non-DEBUG environment") when
+    # MFA_ENCRYPTION_KEY is unset and DEBUG is not truthy -- a real,
+    # intentional production-safety control (Super Admin TOTP secrets must
+    # never be encrypted with a guessable key), confirmed by reading the
+    # code this control lives in. Without DEBUG=true or a real key, every
+    # test that exercises actual TOTP enrollment/verification fails --
+    # confirmed by running with this exact env and finding 47 real failures
+    # across test_mfa_service.py, test_super_admin_command_center.py, and
+    # several other Super-Admin/MFA-step-up test files. Rather than set
+    # DEBUG=true (which would silently bypass this and any other
+    # DEBUG-gated production-safety check pytest might one day exercise),
+    # CI supplies its own throwaway Fernet key below -- generated once with
+    # `Fernet.generate_key()` purely for this workflow. It protects nothing
+    # (every TOTP secret it ever encrypts lives only inside this same
+    # ephemeral, discarded-after-the-job database), so committing it in
+    # plain text here is not a secret exposure; it exists only so these
+    # tests exercise their real encryption code path instead of skipping it.
+    env:
+      BILLING_DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+      MFA_ENCRYPTION_KEY: "_Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo="
     defaults:
       run:
         working-directory: backend
@@ -42,13 +119,17 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Apply Alembic migrations to the CI Postgres service
+        # Real execution against a real Postgres, not the offline --sql
+        # dry-run this step used to be -- strictly stronger verification of
+        # the same migration chain, and what makes step 3 above pass for
+        # real rather than merely not crash.
+        run: python -m alembic upgrade head
       - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
         run: python -m pytest tests/ --ignore=tests/ai_assistant -q
       - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)
         run: python -m pytest tests/ai_assistant/ -q
         continue-on-error: true
-      - name: Alembic migration chain sanity check (offline, no live DB)
-        run: python -m alembic upgrade head --sql
 
   frontend-tests:
     runs-on: ubuntu-latest
