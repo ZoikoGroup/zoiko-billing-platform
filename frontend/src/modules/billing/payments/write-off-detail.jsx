@@ -137,7 +137,8 @@ export default function WriteOffDetailPage() {
 
   useEffect(() => { fetchWriteOff(); }, [fetchWriteOff]);
 
-  const handleAction = async (action, actionFn) => {
+  const handleAction = async (action, actionFn, confirmMessage) => {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
     setActionLoading(action);
     setError(null);
     try {
@@ -308,7 +309,7 @@ export default function WriteOffDetailPage() {
               )}
               {isPendingApproval && (
                 canApprove ? (
-                  <button onClick={() => handleAction("approve", () => writeOffApi.approve(writeOff.id))} disabled={actionLoading === "approve"}
+                  <button onClick={() => handleAction("approve", () => writeOffApi.approve(writeOff.id), `Approve writing off ${formatDisplayCurrency(writeOff.amount, "—", currency)}? This reduces the customer's outstanding balance and cannot be undone from here.`)} disabled={actionLoading === "approve"}
                     className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
                     {actionLoading === "approve" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Approve
                   </button>

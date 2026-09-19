@@ -1,0 +1,77 @@
+name: CI — Test Gate
+
+# Fast, mandatory checks that must pass before code merges to main. This is
+# intentionally separate from deploy.yml (which only builds/restarts on push
+# to main and, as of the 2026-09-19 production-readiness audit, applies
+# pending Alembic migrations) -- deploy.yml has no test step of its own, so
+# until branch protection requires this workflow's checks, a broken commit
+# on main can still deploy. This workflow does not change deploy.yml's
+# behavior; it only adds an independent, required-check-eligible signal.
+#
+# Backend tests run against an in-memory SQLite database (see
+# backend/tests/conftest.py) -- no Postgres/Redis service container is
+# needed for this suite.
+#
+# The Plane 2 release gate explicitly excludes backend/tests/ai_assistant/:
+# a 2026-09-19 investigation found a single test in that directory
+# (test_capability_meta_routing.py) fails only when run as part of the full
+# ~3600-test suite and passes 100% (2582/2582) when that directory runs in
+# isolation -- a cross-test-file state-pollution issue confined to the
+# ai-assistant feature (neither Plane 1 nor Plane 2 billing), not a Plane 2
+# regression. It is run here as its own separate, non-blocking step so a
+# regression there is still visible without gating the Plane 2 release.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main] # push to main is covered by deploy.yml's own path; avoid double-running the same commit here.
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
+        run: python -m pytest tests/ --ignore=tests/ai_assistant -q
+      - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)
+        run: python -m pytest tests/ai_assistant/ -q
+        continue-on-error: true
+      - name: Alembic migration chain sanity check (offline, no live DB)
+        run: python -m alembic upgrade head --sql
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        # Pinned to a single worker: this repo's vitest suite has been
+        # observed to OOM/crash worker processes under the default parallel
+        # pool on memory-constrained runners (2026-09-19 audit finding).
+        # Single-worker is slower but was the only configuration that ran
+        # the full 34-file / 327-test suite to completion without dropping
+        # tests. Revisit if GitHub-hosted runner memory or vitest's pool
+        # behavior changes.
+        run: npx vitest run --pool=forks --maxWorkers=1
+      - name: Production build
+        run: npm run build
