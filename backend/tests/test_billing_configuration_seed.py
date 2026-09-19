@@ -7,6 +7,8 @@ overwritten and operational defaults always remain.
 These exercise the real BillingConfigurationService and register_enterprise
 paths against the shared in-memory SQLite fixtures.
 """
+from unittest.mock import patch
+
 from app.modules.auth.models import User
 from app.modules.auth.schemas import RegisterRequest
 from app.modules.auth.service import register_enterprise
@@ -17,6 +19,7 @@ from app.modules.billing.models import (
     NumberFormat,
     PaymentTerm,
 )
+from app.modules.billing.repositories.settings import BillingConfigurationRepository
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.organizations.models import Organization
 from tests.conftest import make_organization
@@ -182,6 +185,47 @@ def test_unsupported_org_currency_falls_back_to_default(db_session):
     assert config.default_currency == CurrencyCode.USD
     assert config.home_currency == CurrencyCode.USD
     assert config.base_currency == CurrencyCode.USD
+
+
+def test_seed_billing_configuration_survives_concurrent_insert_race(db_session):
+    """Phase 5 — Billing configuration seeding race regression.
+
+    Reproduces the exact race proven live via the Billing revenue-lifecycle
+    E2E test: a brand-new organization's Customers page fires several
+    concurrent requests on mount (GET /billing/settings/config, GET
+    /billing/customers, GET /billing/customers/kpi — each on its own DB
+    session), more than one of which lazily seeds BillingConfiguration.
+    Both sessions' existence check can observe "no configuration yet"
+    before either commits; organization_id is unique, so the loser's insert
+    used to raise an uncaught IntegrityError (a real 500 the frontend
+    displayed as an error boundary). Simulated here by forcing the
+    existence check to report "not found" while a configuration—inserted
+    by the "other" concurrent session—already exists in the database.
+    """
+    org = make_organization(db_session, code="RACE1", name="Race Co")
+    db_session.commit()
+
+    # The "winning" concurrent request's row, already committed.
+    winning_config = BillingConfiguration(organization_id=org.id, company_name="Race Co")
+    db_session.add(winning_config)
+    db_session.commit()
+    winning_id = winning_config.id
+
+    svc = BillingConfigurationService(db_session)
+    # First call = the pre-insert existence check (reports "not found",
+    # reproducing the race window). Second call = the fix's post-conflict
+    # fallback re-query, which must see the real, already-committed row.
+    with patch.object(
+        BillingConfigurationRepository, "get_by_organization",
+        side_effect=[None, winning_config],
+    ):
+        result = svc.seed_billing_configuration(org.id)
+
+    assert result.id == winning_id
+    assert db_session.query(BillingConfiguration).filter_by(organization_id=org.id).count() == 1
+    # The session must remain usable after the internal rollback (a prior,
+    # unrelated bug in a naive fix could leave the session unusable).
+    db_session.commit()
 
 
 def test_organization_update_does_not_unintentionally_overwrite_billing_config(db_session):
