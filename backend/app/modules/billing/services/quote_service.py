@@ -210,9 +210,13 @@ class QuoteService:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
         self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         quote = self.repo.get_by_id(quote_id, organization_id)
+        if quote.status != QuoteStatus.DRAFT:
+            raise BadRequestException("Only draft quotes can have items added")
         price_semantics = self._resolve_item_fields(quote, organization_id, data)
         self._compute_item_amounts(quote, data, price_semantics)
-        return self.item_repo.create(organization_id, quotation_id=quote_id, **data)
+        item = self.item_repo.create(organization_id, quotation_id=quote_id, **data)
+        self.recalculate_quote(quote_id, organization_id)
+        return item
 
     def bulk_add_items(
         self, quote_id: int, organization_id: int, items: List[Dict[str, Any]],

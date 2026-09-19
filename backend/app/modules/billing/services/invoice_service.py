@@ -638,7 +638,9 @@ class InvoiceService:
         # are 100% consistent with the price resolution semantics (unit vs
         # graduated/lump-sum), exactly like bulk_set_items does.
         data = self._calculate_populate_item_financials_or_use(data)
-        return self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        item = self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        self.recalculate_invoice(invoice_id, organization_id)
+        return item
 
     def _calculate_line_total(self, item_data: Dict[str, Any]) -> Decimal:
         """Calculate line item total: (qty * unit_price) - discount + tax"""
