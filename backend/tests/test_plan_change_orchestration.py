@@ -385,6 +385,7 @@ def test_upgrade_audit_chain_end_to_end(db_session):
         EntitlementSnapshot.organization_id == org.id
     ).first()
     computed_at_before = snapshot_before.computed_at
+    version_before = snapshot_before.snapshot_version
 
     CommercialSubscriptionService(db_session).apply_plan_change(sub, to_plan, actor_id=1, reason="upgrade")
     db_session.commit()
@@ -403,7 +404,14 @@ def test_upgrade_audit_chain_end_to_end(db_session):
     snapshot_after = db_session.query(EntitlementSnapshot).filter(
         EntitlementSnapshot.organization_id == org.id
     ).first()
-    assert snapshot_after.computed_at > computed_at_before
+    # snapshot_version is a discrete counter and the reliable signal that a
+    # recompute actually happened; computed_at is wall-clock and can land in
+    # the same tick as computed_at_before on a fast run/coarse OS clock
+    # resolution (observed: two back-to-back datetime.utcnow() calls
+    # returning an identical value on this Windows dev machine), which made
+    # a strict `>` here flaky independent of any real product behavior.
+    assert snapshot_after.snapshot_version > version_before
+    assert snapshot_after.computed_at >= computed_at_before
     assert sub.commercial_plan_id == to_plan.id
 
 

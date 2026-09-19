@@ -101,6 +101,30 @@ jobs:
             source venv/bin/activate
             echo "pip: $(pip --version 2>&1)"
             retry 2 pip install -r requirements.txt
+            # Apply pending schema migrations BEFORE the restart picks up new code.
+            # Without this, a PR that ships a new Alembic revision deploys code that
+            # expects the new schema while the database stays on the old one -- the
+            # app still boots (initialize_database() only warns, not fails, on
+            # missing-but-non-critical tables/columns) so /ready reports healthy
+            # while any endpoint touching the new column/table 500s in production.
+            # `set -euo pipefail` (top of this script) aborts the deploy here if the
+            # migration fails, before the old code is ever restarted against a
+            # half-migrated schema.
+            echo "Alembic: $(alembic --version 2>&1)"
+            alembic upgrade head
+            # Phase 16 go-live rehearsal finding: a freshly migrated database
+            # (new environment, disaster-recovery restore-to-empty, etc.) has
+            # no commercial-plan/entitlement catalog rows, and
+            # billing/routers/customer_router.py's org.entity.max entitlement
+            # check 500s/403s on the very first customer-creation attempt
+            # until scripts/seed_commercial_plans.py and
+            # scripts/seed_entitlement_definitions.py have been run manually.
+            # Both scripts are explicitly documented as idempotent ("safe to
+            # run any number of times"), so running them on every deploy is a
+            # no-op against an already-seeded database (existing production)
+            # and closes the gap for any future fresh environment.
+            python -m scripts.seed_commercial_plans
+            python -m scripts.seed_entitlement_definitions
             deactivate
             sudo systemctl restart zoiko-billing-backend
             sudo systemctl is-active --quiet zoiko-billing-backend \
