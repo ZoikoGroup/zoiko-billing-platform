@@ -22,12 +22,34 @@ function authHeaders() {
 }
 
 export async function createSession(title, initialMessage) {
-  const res = await fetch(`${API_BASE}/sessions`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ title, initial_message: initialMessage }),
-  });
-  if (!res.ok) throw new Error(`Create session failed: ${res.status}`);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/sessions`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ title, initial_message: initialMessage }),
+    });
+  } catch (networkErr) {
+    const err = new Error("network_failure");
+    err.cause = networkErr;
+    err.status = 0;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(`Create session failed: ${res.status}`);
+    err.status = res.status;
+    try {
+      const data = await res.json();
+      err.code = data?.code;
+      err.detail = data?.message || data?.detail || data?.error || "";
+    } catch { /* non-JSON error body is fine */ }
+    if (res.status === 401 || res.status === 403) err.sessionExpired = true;
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      err.retryAfter = retryAfter ? parseInt(retryAfter, 10) || 10 : 10;
+    }
+    throw err;
+  }
   return res.json();
 }
 
@@ -218,6 +240,24 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
       });
   };
   attempt();
+}
+
+/**
+ * cancelStream — best-effort signal to the backend to stop an in-flight SSE
+ * generation (the Stop button).  Fire-and-forget by design: the SSE fetch is
+ * already aborted client-side and the UI is settled regardless, this only
+ * prevents the backend's daemon pipeline from burning LLM tokens on a
+ * disconnected client.  Never throws.
+ */
+export function cancelStream(conversationUid) {
+  return fetch(
+    `${API_BASE}/sessions/${conversationUid}/messages/stream/cancel`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      keepalive: true,
+    }
+  ).catch(() => {});
 }
 
 export async function getCapabilities() {

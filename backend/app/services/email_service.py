@@ -174,6 +174,27 @@ def _get_org_branding(organization_id=None, db=None) -> dict:
         return dict(_BRANDING_DEFAULTS)
 
 
+TEMPLATE_NAME_TO_ID = {
+    "invoice_sent.html": "ZB-INV-006",
+    "past_due_notice.html": "ZB-INV-013",
+    "credit_note_issued.html": "ZB-INV-018",
+    "quote_sent.html": "ZB-CHG-006",
+    "payment_received.html": "ZB-PAY-002",
+    "refund_processed.html": "ZB-PAY-013",
+    "subscription_renewed.html": "ZB-SUB-005",
+    "dunning_reminder.html": "ZB-COL-001",
+    "write_off_executed.html": "ZB-COL-011",
+    "org_created.html": "ZB-ORG-001",
+    "product_welcome.html": "ZB-ONB-001",
+    "org_admin_invite.html": "ZB-COM-002",
+    "org_admin_password_reset.html": "ZB-COM-003",
+    "registration_received.html": "ZB-ORG-002",
+    "platform_quote_sent.html": "ZB-CHG-008",
+    "contract_activated.html": "ZB-CON-001",
+    "contract_renewed.html": "ZB-CON-002",
+}
+
+
 def send_approval_email(
     email: str,
     template_name: str,
@@ -184,76 +205,211 @@ def send_approval_email(
     from_email_override=None,
     from_display_name_override=None,
     template_body: str = None,
+    event_name: str = None,
+    event_id: str = None,
+    target_record_id: str = None,
+    async_send: bool = False,
 ) -> bool:
-    """Send an email via SMTP.
+    """Send an email via SMTP passing through the Email Foundation Infrastructure.
 
-    attachments: optional list of (filename, bytes) tuples, attached as
-    application/pdf parts.
-    template_body: optional raw HTML body that overrides the on-disk
-    template (e.g. BillingConfiguration.dunning_email_template /
-    final_notice_template overrides).
+    Includes consent/suppression checks, tier enforcement (T0 restriction),
+    variable contract validation, idempotency deduplication, supersession handling,
+    audit logging, and optional async dispatch.
     """
-    if template_body is not None:
-        template = template_body
-    else:
-        template = _load_template(template_name)
-    if not template:
-        logger.warning(f"Cannot send email to {email}: template {template_name} not found")
-        return False
+    from app.services.email_foundation import (
+        TemplateTier,
+        SendStatus,
+        get_template_definition,
+        validate_tier_compliance,
+        validate_variable_contract,
+        ConsentSuppressionEngine,
+        IdempotencySupersessionEngine,
+        CommunicationAuditLogger,
+        submit_email_task,
+    )
+    from app.database import SessionLocal
+
+    template_id = context.get("template_id") or TEMPLATE_NAME_TO_ID.get(template_name, "ZB-GEN-000")
+    template_def = get_template_definition(template_id)
+    tier = template_def.tier if template_def else TemplateTier.T1
+    family = template_def.family if template_def else "GEN"
+    eff_event_name = event_name or context.get("event_name") or f"email.{template_id.lower()}"
 
     from app.config import settings as _settings
 
-    branding = _get_org_branding(organization_id, db=db)
-    full_context = {**branding, "login_url": _settings.FRONTEND_URL.rstrip("/") + "/login", **context}
-    body = _render_template(template, full_context)
-    smtp = _get_smtp_settings(db=db)
+    # Internal Operator Alerts (ZB-OPS-*) MUST route to internal ops channel, never tenants
+    if family == "OPS" or template_id.startswith("ZB-OPS-"):
+        email = _settings.SMTP_FROM_EMAIL or "ops@zoikobilling.com"
 
-    subject = context.get("subject", "Zoiko Billing — Notification")
-    if "{{" in subject:
-        subject = _render_template(subject, full_context)
-
-    envelope_from = smtp["from_email"]
-    header_from = from_email_override or envelope_from
-    sender_name = from_display_name_override or full_context.get("company_name") or "Zoiko Billing"
-    reply_to = full_context.get("support_email")
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"{sender_name} <{header_from}>"
-    msg["To"] = email
-    if reply_to:
-        msg["Reply-To"] = reply_to
-    msg.attach(MIMEText(_html_to_text(body), "plain", "utf-8"))
-    msg.attach(MIMEText(body, "html", "utf-8"))
-
-    if attachments:
-        for filename, data in attachments:
-            part = MIMEApplication(data, _subtype="pdf")
-            part.add_header("Content-Disposition", "attachment", filename=filename)
-            msg.attach(part)
+    # Database Session for Engine Checks & Logging
+    own_session = False
+    if db is None:
+        db = SessionLocal()
+        own_session = True
 
     try:
-        port = int(smtp["port"])
-        use_tls = str(smtp.get("use_tls", "true")).strip().lower() in ("1", "true", "yes")
-        context_ssl = ssl.create_default_context(cafile=certifi.where())
+        eff_event_id = event_id or context.get("event_id")
+        eff_target_id = target_record_id or context.get("target_record_id")
+        dedupe_key = IdempotencySupersessionEngine.generate_dedupe_key(eff_event_id, template_id, email)
 
-        if use_tls and port != 465:
-            with smtplib.SMTP(smtp["host"], port, timeout=30) as server:
-                server.starttls(context=context_ssl)
-                if smtp["username"] and smtp["password"]:
-                    server.login(smtp["username"], smtp["password"])
-                server.sendmail(envelope_from, email, msg.as_string())
+        # 1. Consent & Suppression Check (recipient-level short-circuit: runs
+        # before template render/validation so a suppressed recipient returns
+        # False without requiring a complete template context)
+        eligible, suppression_reason = ConsentSuppressionEngine.check_send_eligibility(
+            db, email, organization_id, tier, family
+        )
+        if not eligible:
+            logger.info(f"[EMAIL_FOUNDATION] Suppressing email to {email} ({template_id}) | Reason: {suppression_reason}")
+            CommunicationAuditLogger.log_attempt(
+                db=db,
+                dedupe_key=dedupe_key,
+                recipient=email,
+                organization_id=organization_id,
+                template_id=template_id,
+                event_name=eff_event_name,
+                event_id=eff_event_id,
+                target_record_id=eff_target_id,
+                tier=tier,
+                status=SendStatus.SUPPRESSED,
+                suppression_reason=suppression_reason,
+            )
+            return False
+
+        # 2. Idempotency Check
+        if IdempotencySupersessionEngine.is_duplicate(db, dedupe_key):
+            logger.info(f"[EMAIL_FOUNDATION] Duplicate send blocked for {email} | DedupeKey: {dedupe_key}")
+            CommunicationAuditLogger.log_attempt(
+                db=db,
+                dedupe_key=dedupe_key,
+                recipient=email,
+                organization_id=organization_id,
+                template_id=template_id,
+                event_name=eff_event_name,
+                event_id=eff_event_id,
+                target_record_id=eff_target_id,
+                tier=tier,
+                status=SendStatus.DUPLICATE,
+            )
+            return False
+
+        # 3. Apply Supersession
+        IdempotencySupersessionEngine.apply_supersession(db, email, eff_target_id, eff_event_name)
+
+        # 4. Template Loading & Render
+        if template_body is not None:
+            template = template_body
         else:
-            with smtplib.SMTP_SSL(smtp["host"], port, context=context_ssl, timeout=30) as server:
-                if smtp["username"] and smtp["password"]:
-                    server.login(smtp["username"], smtp["password"])
-                server.sendmail(envelope_from, email, msg.as_string())
+            template = _load_template(template_name)
+        if not template:
+            logger.warning(f"Cannot send email to {email}: template {template_name} not found")
+            return False
 
-        logger.info(f"[email] Sent to {email} | template={template_name}")
-        return True
-    except Exception as e:
-        logger.error(f"[email] Failed to send to {email} | template={template_name} | error={e}")
-        return False
+        branding = _get_org_branding(organization_id, db=db)
+        full_context = {**branding, "login_url": _settings.FRONTEND_URL.rstrip("/") + "/login", **context}
+        body = _render_template(template, full_context)
+
+        # 5. Variable Contract Validation (after branding merge so templates
+        # requiring company_name receive it from branding, not raw caller context)
+        if template_def:
+            validate_variable_contract(template_def, full_context)
+
+        # 6. Tier Compliance Check (T0 Restrictions)
+        validate_tier_compliance(tier, full_context, body)
+
+        # Inner SMTP delivery function
+        def _deliver_smtp():
+            task_db = db
+            task_own_db = False
+            if async_send:
+                task_db = SessionLocal()
+                task_own_db = True
+
+            try:
+                smtp = _get_smtp_settings(db=task_db)
+                subject = context.get("subject", "Zoiko Billing — Notification")
+                if "{{" in subject:
+                    subject = _render_template(subject, full_context)
+
+                envelope_from = smtp["from_email"]
+                header_from = from_email_override or envelope_from
+                sender_name = from_display_name_override or full_context.get("company_name") or "Zoiko Billing"
+                reply_to = full_context.get("support_email")
+
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = f"{sender_name} <{header_from}>"
+                msg["To"] = email
+                if reply_to:
+                    msg["Reply-To"] = reply_to
+                msg.attach(MIMEText(_html_to_text(body), "plain", "utf-8"))
+                msg.attach(MIMEText(body, "html", "utf-8"))
+
+                if attachments:
+                    for filename, data in attachments:
+                        part = MIMEApplication(data, _subtype="pdf")
+                        part.add_header("Content-Disposition", "attachment", filename=filename)
+                        msg.attach(part)
+
+                try:
+                    port = int(smtp["port"])
+                    use_tls = str(smtp.get("use_tls", "true")).strip().lower() in ("1", "true", "yes")
+                    context_ssl = ssl.create_default_context(cafile=certifi.where())
+
+                    if use_tls and port != 465:
+                        with smtplib.SMTP(smtp["host"], port, timeout=30) as server:
+                            server.starttls(context=context_ssl)
+                            if smtp["username"] and smtp["password"]:
+                                server.login(smtp["username"], smtp["password"])
+                            server.sendmail(envelope_from, email, msg.as_string())
+                    else:
+                        with smtplib.SMTP_SSL(smtp["host"], port, context=context_ssl, timeout=30) as server:
+                            if smtp["username"] and smtp["password"]:
+                                server.login(smtp["username"], smtp["password"])
+                            server.sendmail(envelope_from, email, msg.as_string())
+
+                    logger.info(f"[email] Sent to {email} | template={template_name}")
+                    CommunicationAuditLogger.log_attempt(
+                        db=task_db,
+                        dedupe_key=dedupe_key,
+                        recipient=email,
+                        organization_id=organization_id,
+                        template_id=template_id,
+                        event_name=eff_event_name,
+                        event_id=eff_event_id,
+                        target_record_id=eff_target_id,
+                        tier=tier,
+                        status=SendStatus.SENT,
+                    )
+                    return True
+                except Exception as e:
+                    logger.error(f"[email] Failed to send to {email} | template={template_name} | error={e}")
+                    CommunicationAuditLogger.log_attempt(
+                        db=task_db,
+                        dedupe_key=dedupe_key,
+                        recipient=email,
+                        organization_id=organization_id,
+                        template_id=template_id,
+                        event_name=eff_event_name,
+                        event_id=eff_event_id,
+                        target_record_id=eff_target_id,
+                        tier=tier,
+                        status=SendStatus.FAILED,
+                        error_message=str(e),
+                    )
+                    return False
+            finally:
+                if task_own_db and task_db:
+                    task_db.close()
+
+        if async_send:
+            submit_email_task(_deliver_smtp)
+            return True
+        else:
+            return _deliver_smtp()
+
+    finally:
+        if own_session:
+            db.close()
 
 
 # ── Org / auth lifecycle emails ─────────────────────────────────────────────
@@ -279,11 +435,13 @@ def send_user_invite_email(
     workspace = _get_org_branding(organization_id, db=db).get("company_name", "your organization")
     return send_approval_email(email, "org_admin_invite.html", {
         "subject": "You have been invited to {{workspace_name}}",
+        "recipient_name": first_name,
         "first_name": first_name,
         "inviter_name": invited_by or "your administrator",
         "workspace_name": workspace,
         "expires_at_local": "24 hours",
         "timezone": "UTC",
+        "invite_link": invite_link,
         "action_url": invite_link,
         "support_email": "",
     }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER)
@@ -597,7 +755,7 @@ def send_invoice_email(
     balance_due = balance_due or total_amount
     cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
     return send_approval_email(email, "invoice_sent.html", {
-        "subject": f"Invoice {invoice_number} from {{{{company_name}}}} — {currency} {balance_due} due {due_date}",
+        "subject": f"Invoice {invoice_number} — payment of {currency} {balance_due} due {due_date}",
         "customer_name": customer_name,
         "recipient_first_name": recipient_first_name or customer_name,
         "invoice_number": invoice_number,
@@ -614,7 +772,7 @@ def send_invoice_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_invoice_totals_html(subtotal, tax_amount, amount_paid, balance_due, currency),
-    }, db=db, organization_id=organization_id, attachments=attachments)
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="invoice.sent")
 
 
 def _get_platform_commercial_from_email(db=None):
@@ -733,7 +891,7 @@ def send_platform_quote_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
-    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override)
+    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override, event_id=str(quote_number), target_record_id=str(quote_number))
 
 
 def send_quote_email(
@@ -762,7 +920,7 @@ def send_quote_email(
     attachments = [(pdf_filename or f"{quote_number}.pdf", pdf_bytes)] if pdf_bytes else None
     cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
     return send_approval_email(email, "quote_sent.html", {
-        "subject": f"Estimate {quote_number} from {{{{company_name}}}}",
+        "subject": f"Estimate {quote_number} from {{{{company_name}}}} — {currency} {total_amount}",
         "customer_name": customer_name,
         "recipient_first_name": recipient_first_name or customer_name,
         "quote_number": quote_number,
@@ -780,7 +938,7 @@ def send_quote_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
-    }, db=db, organization_id=organization_id, attachments=attachments)
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="quote.sent", event_id=str(quote_number), target_record_id=str(quote_number))
 
 
 def send_quote_response_notification_email(
@@ -827,14 +985,14 @@ def send_dunning_reminder_email(
     subject_override: str = None,
 ) -> bool:
     return send_approval_email(email, template_name, {
-        "subject": subject_override or f"Collection workflow started for invoice {invoice_number}",
+        "subject": subject_override or f"Payment reminder: Invoice {invoice_number} is {days_overdue} days overdue",
         "customer_name": customer_name,
         "invoice_number": invoice_number,
         "days_overdue": days_overdue,
         "overdue_amount": overdue_amount,
         "currency": currency,
         "late_fee": late_fee,
-    }, db=db, organization_id=organization_id, template_body=custom_body)
+    }, db=db, organization_id=organization_id, template_body=custom_body, event_name="dunning.reminder")
 
 
 def send_contract_activated_email(
@@ -915,14 +1073,14 @@ def send_past_due_notice_email(
     db=None,
 ) -> bool:
     return send_approval_email(email, "past_due_notice.html", {
-        "subject": f"Invoice {subscription_number} is overdue",
+        "subject": f"Invoice {subscription_number} from {{{{company_name}}}} is {days_overdue} days overdue",
         "customer_name": customer_name,
         "subscription_number": subscription_number,
         "plan_name": plan_name,
         "days_overdue": days_overdue,
         "overdue_amount": overdue_amount,
         "currency": currency,
-    }, db=db, organization_id=organization_id)
+    }, db=db, organization_id=organization_id, event_name="invoice.past_due")
 
 
 def send_collections_notice_email(
@@ -1045,4 +1203,489 @@ def send_credit_note_email(
         "total_amount": total_amount,
         "currency": currency,
         "reason": reason,
-    }, db=db, organization_id=organization_id, attachments=attachments)
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="credit_note.issued")
+
+
+# ── ZB-INV-011: Invoice pre-due reminder ─────────────────────────────────────
+
+def send_invoice_reminder_email(
+    email: str,
+    customer_name: str,
+    invoice_number: str,
+    due_date: str,
+    days_until_due: int,
+    balance_due: str,
+    currency: str = "USD",
+    organization_id=None,
+    db=None,
+    review_url: str = "",
+) -> bool:
+    """ZB-INV-011: Pre-due invoice reminder.
+
+    Sent N days before an invoice's due_date (where N = settings.INVOICE_REMINDER_LEAD_DAYS).
+    Subject and preheader match the catalog spec verbatim.
+    """
+    from app.config import settings as _settings
+    cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/billing/invoices"
+    return send_approval_email(email, "invoice_sent.html", {
+        "subject": f"Reminder: Invoice {invoice_number} from {{{{company_name}}}} is due in {days_until_due} day{'s' if days_until_due != 1 else ''}",
+        "preheader": f"Payment of {currency} {balance_due} is due on {due_date}.",
+        "customer_name": customer_name,
+        "recipient_first_name": customer_name,
+        "invoice_number": invoice_number,
+        "due_date": due_date,
+        "days_until_due": days_until_due,
+        "balance_due": balance_due,
+        "currency": currency,
+        "cta_url": cta_url,
+        "template_id": "ZB-INV-011",
+    }, db=db, organization_id=organization_id, event_name="invoice.pre_due_reminder")
+
+
+# ── ZB-COM-003: Trial ending soon warning ─────────────────────────────────────
+
+def send_trial_ending_warning_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    trial_ends_at: str,
+    days_remaining: int,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-COM-003: Trial ending soon — proactive warning N days before trial_ends_at.
+
+    T3 template: consent-aware; the pipeline suppresses if org has opted out of
+    lifecycle communications. Subject and body copy match catalog spec.
+    """
+    from app.config import settings as _settings
+    upgrade_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Your Zoiko Billing trial ends in {days_remaining} day{'s' if days_remaining != 1 else ''} — upgrade to keep access",
+        "preheader": f"Your free trial expires on {trial_ends_at}. Upgrade now to avoid interruption.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "trial_ends_at": trial_ends_at,
+        "days_remaining": days_remaining,
+        "upgrade_url": upgrade_url,
+        "template_id": "ZB-COM-003",
+    }, db=db, organization_id=organization_id, event_name="commercial.trial_ending_soon")
+
+
+# ── ZB-COM-004: Trial expired / account suspended ─────────────────────────────
+
+def send_trial_expired_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-COM-004: Trial expired and account suspended.
+
+    T1 template: critical — sent immediately after trial_expiry.py transitions
+    the subscription to SUSPENDED. Includes payment/upgrade CTA.
+    """
+    from app.config import settings as _settings
+    upgrade_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
+    return send_approval_email(email, "org_created.html", {
+        "subject": "Your Zoiko Billing trial has ended — reactivate to restore access",
+        "preheader": f"Your trial for {organization_name} has expired. Upgrade now to restore access.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        # §5: the trial-expired email describes the 14-day READ/EXPORT-only
+        # recovery window — the recipient has 14 days to view/export their
+        # data or convert to a paid plan, NOT an immediate total lockout.
+        "recovery_days": "14",
+        "recovery_url": _settings.FRONTEND_URL.rstrip("/") + "/billing/plans",
+        "upgrade_url": upgrade_url,
+        "template_id": "ZB-COM-004",
+    }, db=db, organization_id=organization_id, event_name="commercial.trial_expired")
+
+
+# ── §5 gap closure: Recovery window expired (TRIAL_RECOVERY -> SUSPENDED) ─────
+
+def send_recovery_window_expired_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """Gap-closure: recovery window expired, subscription now fully suspended.
+
+    Sent exactly once when commercial/tasks/recovery_window_expiry.py moves a
+    subscription from TRIAL_RECOVERY to SUSPENDED — recovery_ends_at passed
+    with no conversion. The org can no longer self-serve; retention follows
+    the applicable account/data-retention policy.
+    """
+    from app.config import settings as _settings
+
+    org = None
+    if db is not None and organization_id is not None:
+        try:
+            from app.modules.organizations.models import Organization
+            org = db.query(Organization).filter(Organization.id == organization_id).first()
+        except Exception:
+            org = None
+    support_url = _settings.FRONTEND_URL.rstrip("/") + "/support"
+    return send_approval_email(email, "org_created.html", {
+        "subject": "Your Zoiko Billing recovery window has ended",
+        "preheader": f"Your recovery window for {organization_name} has ended. Contact support to restore access.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name or (org.organization_name if org else "your organization"),
+        "support_url": support_url,
+        "template_id": "ZB-COM-014",
+    }, db=db, organization_id=organization_id, event_name="commercial.recovery_window_expired")
+
+
+# ── §5.2 gap closure: Trial->paid conversion confirmation ─────────────────────
+
+def send_trial_converted_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    plan_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """Gap-closure: trial converted to a paid plan, confirmation sent.
+
+    Sent by the self-service conversion sequence (Part 2, step 9) when a
+    trialing/recovery subscription successfully converts to ACTIVE.
+    """
+    from app.config import settings as _settings
+
+    billing_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Your Zoiko Billing subscription is now on {plan_name}",
+        "preheader": f"Your trial for {organization_name} has been converted to {plan_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "plan_name": plan_name,
+        "billing_url": billing_url,
+        "template_id": "ZB-COM-015",
+    }, db=db, organization_id=organization_id, event_name="commercial.trial_converted")
+
+
+# ── ZB-COM-011: Past-due paid subscription suspension warning ─────────────────
+
+def send_past_due_suspension_warning_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    days_overdue: int,
+    amount_due: str,
+    currency: str = "USD",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-COM-011: Past-due suspension warning for paid subscriptions.
+
+    T1 template: sent by the commercial dunning job before suspending a paid
+    subscription that has been past-due for enough days. Copy matches catalog spec.
+    """
+    from app.config import settings as _settings
+    pay_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/payments"
+    return send_approval_email(email, "past_due_notice.html", {
+        "subject": f"Action required: Your Zoiko Billing subscription is {days_overdue} days past due",
+        "preheader": f"Pay {currency} {amount_due} now to avoid suspension of {organization_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "days_overdue": days_overdue,
+        "overdue_amount": amount_due,
+        "currency": currency,
+        "pay_url": pay_url,
+        "template_id": "ZB-COM-011",
+    }, db=db, organization_id=organization_id, event_name="commercial.past_due_suspension_warning")
+
+
+# ── Tier 2 Operational & Support Email Dispatches ────────────────────────────
+
+def send_report_ready_email(
+    email: str,
+    recipient_first_name: str,
+    report_name: str,
+    report_url: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-RPT-001: Scheduled financial or audit report is ready for download (T2)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Your scheduled report '{report_name}' is ready",
+        "preheader": f"Download your {report_name} from Zoiko Billing.",
+        "recipient_first_name": recipient_first_name or "there",
+        "report_name": report_name,
+        "report_url": report_url,
+        "template_id": "ZB-RPT-001",
+    }, db=db, organization_id=organization_id, event_name="reports.scheduled_ready")
+
+
+def send_support_ticket_updated_email(
+    email: str,
+    recipient_first_name: str,
+    ticket_id: str,
+    subject: str,
+    status: str = "Updated",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-SUP-001: Support ticket status update (T2)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Support Ticket #{ticket_id}: {subject} [{status}]",
+        "preheader": f"Your support ticket #{ticket_id} has been updated.",
+        "recipient_first_name": recipient_first_name or "there",
+        "ticket_id": ticket_id,
+        "status": status,
+        "template_id": "ZB-SUP-001",
+    }, db=db, organization_id=organization_id, event_name="support.ticket_updated")
+
+
+def send_service_maintenance_email(
+    email: str,
+    recipient_first_name: str,
+    incident_title: str,
+    scheduled_time: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-SUP-005: Service incident or scheduled maintenance notice (T2)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Maintenance Notice: {incident_title}",
+        "preheader": f"Scheduled maintenance update for Zoiko Billing.",
+        "recipient_first_name": recipient_first_name or "there",
+        "incident_title": incident_title,
+        "scheduled_time": scheduled_time,
+        "template_id": "ZB-SUP-005",
+    }, db=db, organization_id=organization_id, event_name="support.service_maintenance")
+
+
+# ── Tier 3 & Tier 4 Consent-Gated Email Dispatches ───────────────────────────
+
+def send_demo_request_received_email(
+    email: str,
+    recipient_first_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ACQ-001: Demo request received confirmation (T3 — consent-aware)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": "We received your Zoiko Billing demo request",
+        "preheader": "Thank you for requesting a demo of Zoiko Billing.",
+        "recipient_first_name": recipient_first_name or "there",
+        "template_id": "ZB-ACQ-001",
+    }, db=db, organization_id=organization_id, event_name="commercial.demo_requested")
+
+
+def send_marketing_newsletter_email(
+    email: str,
+    recipient_first_name: str,
+    campaign_title: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-MKT-001: Promotional newsletter / product announcement (T4 — REQUIRES EXPLICIT OPT-IN CONSENT)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Zoiko Billing Updates: {campaign_title}",
+        "preheader": f"Latest features and updates: {campaign_title}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "campaign_title": campaign_title,
+        "template_id": "ZB-MKT-001",
+    }, db=db, organization_id=organization_id, event_name="marketing.newsletter")
+
+
+def send_preference_updated_email(
+    email: str,
+    recipient_first_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-PRF-001: Email preference updated confirmation (T3 — consent-aware)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": "Your email communication preferences have been updated",
+        "preheader": "Confirmation of your updated communication settings.",
+        "recipient_first_name": recipient_first_name or "there",
+        "template_id": "ZB-PRF-001",
+    }, db=db, organization_id=organization_id, event_name="preferences.updated")
+
+
+# ── Full Audit Gap Closure Dispatches (ZB-GAP-001..009) ───────────────────────
+
+def send_tenant_subscription_cancelled_email(
+    email: str,
+    recipient_first_name: str,
+    subscription_number: str,
+    cancellation_reason: str = "",
+    initiated_by: str = "Self-Service",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-001: Tenant subscription cancelled notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Subscription {subscription_number} Has Been Cancelled",
+        "preheader": f"Your subscription {subscription_number} was cancelled ({initiated_by}).",
+        "recipient_first_name": recipient_first_name or "there",
+        "subscription_number": subscription_number,
+        "cancellation_reason": cancellation_reason or "None provided",
+        "initiated_by": initiated_by,
+        "template_id": "ZB-GAP-001",
+    }, db=db, organization_id=organization_id, event_name="subscription.cancelled")
+
+
+def send_invoice_voided_email(
+    email: str,
+    customer_name: str,
+    invoice_number: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-002: Customer invoice voided notification (T1)."""
+    return send_approval_email(email, "invoice_sent.html", {
+        "subject": f"Notice: Invoice {invoice_number} Has Been Voided",
+        "preheader": f"Invoice {invoice_number} is void and no longer requires payment.",
+        "customer_name": customer_name,
+        "recipient_first_name": customer_name,
+        "invoice_number": invoice_number,
+        "reason": reason or "Voided",
+        "template_id": "ZB-GAP-002",
+    }, db=db, organization_id=organization_id, event_name="invoice.voided")
+
+
+def send_commercial_plan_changed_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    plan_name: str,
+    change_type: str = "Update",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-003: Commercial platform plan changed notification (T1)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Your Zoiko Billing Commercial Plan Has Been Updated ({plan_name})",
+        "preheader": f"Plan change ({change_type}) applied for {organization_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "plan_name": plan_name,
+        "change_type": change_type,
+        "template_id": "ZB-GAP-003",
+    }, db=db, organization_id=organization_id, event_name="commercial.plan_changed")
+
+
+def send_plan_version_published_digest_email(
+    email: str,
+    recipient_first_name: str,
+    plan_name: str,
+    version_number: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-004: New commercial plan version published digest (T1)."""
+    return send_approval_email(email, "product_welcome.html", {
+        "subject": f"Notice: New Catalog Version Published for Plan '{plan_name}'",
+        "preheader": f"Catalog version {version_number} published for plan {plan_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "plan_name": plan_name,
+        "version_number": version_number,
+        "template_id": "ZB-GAP-004",
+    }, db=db, organization_id=organization_id, event_name="commercial.plan_version_published")
+
+
+def send_entitlement_override_decided_email(
+    email: str,
+    recipient_first_name: str,
+    override_id: int,
+    status: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-005: Entitlement override decision notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Entitlement Override Request #{override_id} [{status.upper()}]",
+        "preheader": f"Your entitlement override request has been {status}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "override_id": str(override_id),
+        "status": status,
+        "reason": reason or "No detail provided",
+        "template_id": "ZB-GAP-005",
+    }, db=db, organization_id=organization_id, event_name="override.decided")
+
+
+def send_org_lifecycle_changed_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    target_state: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-006: Manual organization lifecycle transition notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Important Notice: Organization Status Updated to {target_state}",
+        "preheader": f"Lifecycle status update for {organization_name}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "target_state": target_state,
+        "reason": reason or "Administrative update",
+        "template_id": "ZB-GAP-006",
+    }, db=db, organization_id=organization_id, event_name="organization.lifecycle_changed")
+
+
+def send_user_role_changed_email(
+    email: str,
+    recipient_first_name: str,
+    user_email: str,
+    new_role: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-007: User role changed by admin notification (T1)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Your Role in Zoiko Billing Has Been Updated to {new_role}",
+        "preheader": f"An administrator updated your account role to {new_role}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "user_email": user_email,
+        "new_role": new_role,
+        "template_id": "ZB-GAP-007",
+    }, db=db, organization_id=organization_id, event_name="user.role_changed_by_admin")
+
+
+def send_user_status_changed_email(
+    email: str,
+    recipient_first_name: str,
+    user_email: str,
+    status: str,
+    reason: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-008: User account status changed by admin notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Security Alert: Your Zoiko Billing Account Status Is Now {status}",
+        "preheader": f"Account status update for {user_email}.",
+        "recipient_first_name": recipient_first_name or "there",
+        "user_email": user_email,
+        "status": status,
+        "reason": reason or "Administrative action",
+        "template_id": "ZB-GAP-008",
+    }, db=db, organization_id=organization_id, event_name="user.status_changed_by_admin")
+
+
+def send_privileged_access_ended_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-GAP-009: Privileged support session exited notification (T0)."""
+    return send_approval_email(email, "org_created.html", {
+        "subject": f"Security Notice: Privileged support access session ended for {organization_name}",
+        "preheader": "Support operator session has concluded.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "template_id": "ZB-GAP-009",
+    }, db=db, organization_id=organization_id, event_name="support.privileged_access_exited")

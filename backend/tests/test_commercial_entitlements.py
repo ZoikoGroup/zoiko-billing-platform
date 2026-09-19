@@ -435,6 +435,12 @@ def test_resolver_L3_override_beats_plan_entitlement(db_session):
     db_session.add(override)
     db_session.commit()
 
+    # This test writes the override out-of-band (raw SQLAlchemy commit). In
+    # production the override-approve service path invalidates the resolver
+    # cache; mirror that here so the stale baseline isn't served.
+    from app.core import cache_service
+    cache_service.cache_flush()
+
     resolved = resolve_entitlement(db_session, org.id, "p2.l3.key")
     assert resolved.source_level == 3
     assert resolved.value is True

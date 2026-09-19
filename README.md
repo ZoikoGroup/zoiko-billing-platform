@@ -126,6 +126,12 @@ placeholder secrets. A production deployment must override `DEBUG=false`,
 inject real `BILLING_SECRET_KEY` and `MFA_ENCRYPTION_KEY` values, and run the
 Alembic chain through its current head before serving traffic.
 
+The compose file also starts a Redis instance (`localhost:6379`) that the
+backend uses as a distributed cache and rate-limiter storage. If Redis is
+unavailable (e.g. when running without Docker), the backend transparently
+falls back to an in-process TTL cache so nothing breaks — see `REDIS_URL` in
+`backend/.env.example`.
+
 Starts Postgres, the backend (on `localhost:8001`, matching the frontend's
 baked-in `VITE_API_BASE_URL`), and the frontend (on `localhost:5173`, served
 by nginx with SPA fallback routing). If you change the backend's port mapping

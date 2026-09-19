@@ -120,6 +120,9 @@ REQUIRED_FIELDS = {"name", "code", "jurisdiction", "rate", "tax_type"}
 
 # Enterprise-scale safety limits -- mirrors product_import_service.py so a
 # huge or maliciously crafted file can never be fully materialized in memory.
+# Same untrusted-input note applies: openpyxl (pinned in requirements.txt)
+# parses this attacker-controlled upload; the frontend's `xlsx` package is
+# never involved on this path.
 MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_IMPORT_ROWS = 20_000
 

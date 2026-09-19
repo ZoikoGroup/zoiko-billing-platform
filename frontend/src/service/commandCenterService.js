@@ -177,14 +177,16 @@ export const getTaxSummary = (dateFrom, dateTo) =>
 
 // ── Reconciliation (REC-01 / ISS-017) ────────────────────────────────────
 
-// `compareProcessor`/`rangeStart`/`rangeEnd` are all optional — omitting
-// them preserves the original internal-checks-only run exactly, matching
-// the backend's TriggerReconciliationRunRequest defaults.
-export const triggerReconciliationRun = ({ compareProcessor = false, rangeStart, rangeEnd } = {}) =>
+// `compareProcessor`/`rangeStart`/`rangeEnd`/`organizationId` are all
+// optional — omitting them preserves the original internal-checks-only,
+// platform-wide run exactly, matching the backend's
+// TriggerReconciliationRunRequest defaults.
+export const triggerReconciliationRun = ({ compareProcessor = false, rangeStart, rangeEnd, organizationId } = {}) =>
   api.post("/api/super-admin/reconciliation-runs/run", {
     compare_processor: compareProcessor,
     range_start: compareProcessor ? rangeStart : undefined,
     range_end: compareProcessor ? rangeEnd : undefined,
+    organization_id: organizationId ? Number(organizationId) : undefined,
   });
 
 export const listReconciliationRuns = (limit = 10) =>

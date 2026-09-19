@@ -202,8 +202,7 @@ def _resolve_L5_snapshot(ctx: EntitlementResolutionContext) -> ResolverResult:
 
 
 def _resolve_L6_live_plan_entitlement(ctx: EntitlementResolutionContext) -> ResolverResult:
-    from app.modules.commercial.enums import CommercialPlanVersionStatus
-    from app.modules.commercial.models import CommercialPlanVersion
+    from app.modules.commercial.cache import get_latest_published_version_id
 
     subscription = ctx.subscription
     if subscription is None:
@@ -211,16 +210,7 @@ def _resolve_L6_live_plan_entitlement(ctx: EntitlementResolutionContext) -> Reso
 
     version_id = subscription.catalog_version_id
     if version_id is None and subscription.commercial_plan_id is not None:
-        latest_published = (
-            ctx.db.query(CommercialPlanVersion)
-            .filter(
-                CommercialPlanVersion.plan_id == subscription.commercial_plan_id,
-                CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-            )
-            .order_by(CommercialPlanVersion.version_number.desc())
-            .first()
-        )
-        version_id = latest_published.id if latest_published is not None else None
+        version_id = get_latest_published_version_id(ctx.db, subscription.commercial_plan_id)
 
     if version_id is None:
         return False, None
@@ -258,7 +248,34 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
     return the first level that resolves. L7 always resolves, so this never
     returns without a value for a KNOWN key — it only raises
     EntitlementKeyNotFoundError when the key itself doesn't exist in the
-    catalog."""
+    catalog.
+
+    The resolved (value, source_level) is cached in Redis/in-process cache
+    for REDIS_ENTITLEMENT_TTL seconds: entitlement resolution costs up to 9
+    queries per check and is on the request path of every feature-gated
+    endpoint. The EntitlementDefinition row is re-fetched (1 indexed query)
+    on a cache hit so the returned ResolvedEntitlement always carries a live
+    definition. Invalidation: cache_service.invalidate_entitlement_caches()
+    on override approve/revoke, snapshot recompute and plan publish.
+    """
+    from app.config import settings
+    from app.core import cache_service
+
+    cache_entry = cache_service.cache_get(f"ent:resolved:{organization_id}:{key}")
+    if cache_entry is not None:
+        definition = (
+            db.query(EntitlementDefinition).filter(EntitlementDefinition.key == key).first()
+        )
+        if definition is None:
+            raise EntitlementKeyNotFoundError(f"No EntitlementDefinition for key {key!r}.")
+        return ResolvedEntitlement(
+            key=key,
+            value=cache_entry.get("value"),
+            value_type=definition.value_type,
+            source_level=cache_entry.get("source_level", 7),
+            definition=definition,
+        )
+
     definition = (
         db.query(EntitlementDefinition).filter(EntitlementDefinition.key == key).first()
     )
@@ -270,6 +287,11 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
     for level, resolver in enumerate(_RESOLVER_CHAIN, start=1):
         resolved, value = resolver(ctx)
         if resolved:
+            cache_service.cache_set(
+                f"ent:resolved:{organization_id}:{key}",
+                {"value": value, "source_level": level},
+                ttl=settings.REDIS_ENTITLEMENT_TTL,
+            )
             return ResolvedEntitlement(
                 key=key, value=value, value_type=definition.value_type,
                 source_level=level, definition=definition,

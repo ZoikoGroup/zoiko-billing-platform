@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 
 from app.modules.billing.models import (
     PlanTier,
@@ -19,7 +20,7 @@ from app.modules.billing.models import (
     ProductCategory,
 )
 from app.modules.billing.repositories.base import BaseRepository
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import AlreadyExistsException, BadRequestException, NotFoundException
 
 
 class ProductCategoryRepository(BaseRepository[ProductCategory]):
@@ -373,6 +374,85 @@ class PriceListRepository(BaseRepository[PriceList]):
 
     def get_default(self, organization_id: int) -> Optional[PriceList]:
         return self.get_first(organization_id, is_default=True, is_active=True)
+
+    # ── Optimistic-lock version bump (CRIT-Q17b remediation) ───────────────
+    # Every PriceList mutation must advance `version` explicitly at the repo/
+    # service layer (NOT an ORM `onupdate` hook) — so a future bulk
+    # Query.update()/raw-SQL path, or any direct field set, can never silently
+    # skip the bump the way the original `default=1`-only column did. Any
+    # content change invalidates a consumer that pinned the list's version.
+
+    def _apply(self, obj: PriceList, **data: Any) -> PriceList:
+        """Set fields AND bump the optimistic-lock version in the same
+        transaction. `version` itself is never settable through this helper; it
+        is always advanced here regardless of which fields change."""
+        for field, value in data.items():
+            if hasattr(obj, field) and field != "version":
+                setattr(obj, field, value)
+        obj.version = (obj.version or 0) + 1
+        return obj
+
+    def save(self, obj: PriceList, **data: Any) -> PriceList:
+        """Persist a loaded row through _apply so the version bump lands in the
+        same transaction as the field changes (used for parent bump on item
+        add/update/remove and any service-layer direct mutation)."""
+        self._apply(obj, **data)
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
+    def update(self, id: int, organization_id: int, **data: Any) -> PriceList:
+        obj = self.get_by_id(id, organization_id)
+        self._apply(obj, **data)
+        try:
+            self.db.commit()
+        except IntegrityError as e:
+            self.db.rollback()
+            raise AlreadyExistsException(self.model.__name__, str(e))
+        self.db.refresh(obj)
+        return obj
+
+    def bulk_update(self, items: List[Dict[str, Any]], organization_id: int) -> List[PriceList]:
+        updated = []
+        for item in items:
+            obj_id = item.pop("id", None)
+            if not obj_id:
+                continue
+            query = self.db.query(self.model).filter(self.model.id == obj_id)
+            query = self._org_filter(query, organization_id)
+            obj = query.first()
+            if not obj:
+                continue
+            self._apply(obj, **item)
+            updated.append(obj)
+        try:
+            self.db.commit()
+        except IntegrityError as e:
+            self.db.rollback()
+            raise BadRequestException(f"Bulk update failed: {e}")
+        for obj in updated:
+            self.db.refresh(obj)
+        return updated
+
+    def soft_delete(self, id: int, organization_id: int) -> PriceList:
+        obj = self.get_by_id(id, organization_id)
+        self._apply(obj, is_active=False, deleted_at=func.now())
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
+    def restore(self, id: int, organization_id: int) -> Optional[PriceList]:
+        query = self.db.query(self.model)
+        query = self._org_filter(query, organization_id)
+        query = query.filter(self.model.id == id)
+        obj = query.first()
+        if obj is None:
+            return None
+        self._apply(obj, is_active=True, deleted_at=None)
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
 
     def list_by_status(
         self,

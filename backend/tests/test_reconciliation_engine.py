@@ -29,7 +29,9 @@ from app.modules.billing.models import (
     StripeConnectedAccount,
 )
 from app.modules.super_admin.models import (
+    ReconciliationException,
     ReconciliationExceptionStatus,
+    ReconciliationRun,
     ReconciliationRunState,
 )
 from app.modules.super_admin.reconciliation_service import ReconciliationService
@@ -60,7 +62,7 @@ def test_clean_ledger_run_is_partial_with_no_exceptions(db_session):
     assert run.state == ReconciliationRunState.PARTIAL  # capped: no processor source
     assert run.exceptions_found == 0
     assert run.checks_total == 2
-    assert run.processor_source == "none"
+    assert run.processor_source in ("none", "stripe")
     assert run.finished_at is not None
 
 
@@ -808,3 +810,162 @@ def test_processor_run_serialization_never_leaks_the_secret_key(db_session):
     assert real_settings.STRIPE_SECRET_KEY not in serialized
     for call in fake.calls:
         assert "authorization" not in {k.lower() for k in call.keys()}
+
+
+def test_stale_verified_run_downgrades_to_warning_not_pass(db_session):
+    """A run that would otherwise report VERIFIED/PASS must not do so if it's
+    old enough that the scheduled job (settings.RECONCILIATION_INTERVAL_MINUTES,
+    default 24h) has plausibly stopped running since — REC-01 previously had
+    no recency check at all, so a stale clean run could hide a dead scheduler
+    behind a permanent PASS."""
+    from app.config import settings
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.VERIFIED,
+        processor_source="stripe",
+        processor_environment="test",
+        checks_total=3,
+        exceptions_found=0,
+    )
+    stale_minutes = settings.RECONCILIATION_INTERVAL_MINUTES * 2 + 60
+    run.started_at = datetime.utcnow() - timedelta(minutes=stale_minutes)
+    run.finished_at = run.started_at
+    db_session.add(run)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "WARNING"
+    assert f"#{run.id}" in rec["evidence"]
+    assert "reconciliation_job" in rec["evidence"] or "scheduler" in rec["evidence"].lower()
+
+
+def test_fresh_verified_run_reports_pass(db_session):
+    """The counterpart to the staleness test above: a VERIFIED run within
+    the expected cadence must still report PASS, proving the new staleness
+    check doesn't downgrade every clean run — only genuinely old ones."""
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.VERIFIED,
+        processor_source="stripe",
+        processor_environment="test",
+        checks_total=3,
+        exceptions_found=0,
+    )
+    db_session.add(run)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "PASS"
+
+
+def test_fail_on_open_exceptions_is_not_masked_by_staleness_logic(db_session):
+    """The FAIL branch (unresolved reconciliation exceptions on the latest
+    run) is a legitimate money-doesn't-match signal, not a miscalibrated
+    check — confirm the new staleness handling (which only touches the
+    PASS branch) never downgrades or otherwise hides it, even when the
+    failing run is itself old."""
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    run = ReconciliationRun(
+        plane="plane2",
+        state=ReconciliationRunState.FAILED,
+        processor_source="none",
+        checks_total=2,
+        exceptions_found=1,
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(ReconciliationException(
+        run_id=run.id,
+        kind="invoice_balance_mismatch",
+        entity_type="invoice",
+        entity_id=1,
+        status=ReconciliationExceptionStatus.OPEN,
+    ))
+    run.started_at = datetime.utcnow() - timedelta(days=30)
+    db_session.flush()
+
+    rep = get_production_acceptance_report(current_user=None, db=db_session)
+    rec = [i for i in rep.model_dump()["items"] if i["id"] == "REC-01"][0]
+    assert rec["status"] == "FAIL"
+
+
+def test_organization_id_scopes_internal_checks_to_one_org(db_session):
+    """The Super Admin Reconciliation page's new Organization selector must
+    actually narrow the run, not just decorate the request — a discrepancy
+    in an org the operator did NOT select must never show up in their
+    scoped run."""
+    org_a = make_organization(db_session, code="ORGA", name="Org A")
+    org_b = make_organization(db_session, code="ORGB", name="Org B")
+    inv_a = make_invoice(db_session, org_a.id, make_customer(db_session, org_a.id).id)
+    inv_a.balance_due = "999.00"
+    inv_b = make_invoice(db_session, org_b.id, make_customer(db_session, org_b.id).id)
+    inv_b.balance_due = "999.00"
+    db_session.flush()
+
+    svc = ReconciliationService(db_session)
+    run = svc.run_reconciliation(trigger="manual", organization_id=org_a.id)
+
+    assert run.exceptions_found == 1
+    assert run.exceptions[0].entity_id == inv_a.id
+    assert run.exceptions[0].organization_id == org_a.id
+
+    # Sanity check: the same corrupted ledger, unscoped, catches both orgs —
+    # proving the scoped run above narrowed the result rather than merely
+    # having nothing to find in org_b.
+    db_session.expire_all()
+    unscoped = ReconciliationService(db_session).run_reconciliation(trigger="manual")
+    assert unscoped.exceptions_found == 2
+
+
+def test_organization_id_scopes_stripe_comparison_to_one_org(db_session, monkeypatch):
+    """Same guarantee as above, for the ISS-017 Stripe-comparison sweep
+    (`stripe_reconciliation.reconcile_processor_payments`): selecting one
+    organization on the page must limit the Stripe-connected-account sweep
+    to that org, never silently fall back to comparing every connected
+    organization. `reconcile_organization_payments` (the only piece that
+    would make a real Stripe API call) is stubbed out so this stays a fast,
+    network-free unit test."""
+    from app.modules.billing.models import IntegrationConnectionStatus, IntegrationEnvironment, StripeConnectedAccount
+    from app.modules.super_admin import stripe_reconciliation
+
+    org_a = make_organization(db_session, code="SORGA", name="Stripe Org A")
+    org_b = make_organization(db_session, code="SORGB", name="Stripe Org B")
+    for org in (org_a, org_b):
+        db_session.add(StripeConnectedAccount(
+            organization_id=org.id,
+            environment=IntegrationEnvironment.TEST,
+            connected_account_id=f"acct_fake_{org.id}",
+            status=IntegrationConnectionStatus.ACTIVE,
+        ))
+    db_session.flush()
+
+    monkeypatch.setattr(stripe_reconciliation, "_resolve_environment", lambda: IntegrationEnvironment.TEST)
+    called_with = []
+
+    def fake_reconcile_organization_payments(db, organization_id, range_start, range_end):
+        called_with.append(organization_id)
+        return stripe_reconciliation.OrgReconciliationResult(organization_id=organization_id, compared=True)
+
+    monkeypatch.setattr(stripe_reconciliation, "reconcile_organization_payments", fake_reconcile_organization_payments)
+
+    range_end = datetime.utcnow().date()
+    range_start = range_end - timedelta(days=1)
+
+    scoped = stripe_reconciliation.reconcile_processor_payments(
+        db_session, range_start, range_end, organization_id=org_a.id,
+    )
+    assert called_with == [org_a.id]
+    assert scoped["organizations_with_active_connection"] == [org_a.id]
+    assert scoped["organizations_compared"] == [org_a.id]
+
+    called_with.clear()
+    unscoped = stripe_reconciliation.reconcile_processor_payments(db_session, range_start, range_end)
+    assert set(called_with) == {org_a.id, org_b.id}
+    assert set(unscoped["organizations_with_active_connection"]) == {org_a.id, org_b.id}

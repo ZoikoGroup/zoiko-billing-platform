@@ -19,7 +19,9 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
+from app.core.cache_service import ORG_GATE_KEY, cache_delete, cache_get, cache_set
 from app.core.security import decode_access_token
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 
@@ -153,6 +155,76 @@ def get_current_auditor_or_above(current_user=Depends(get_current_user)):
     return current_user
 
 
+def _org_gate_snapshot(db: Session, organization_id: int) -> dict:
+    """Build the {org_exists, org_active, subscription_suspended,
+    subscription_recovery} gate snapshot (primary source of truth) — the
+    cached form of the three-to-five queries both subscription gates run.
+    """
+    from app.modules.organizations.models import Organization
+    from app.modules.commercial.enums import CommercialSubscriptionStatus
+    from app.modules.commercial.models import CommercialAccount, CommercialSubscription
+
+    snapshot = {
+        "org_exists": True,
+        "org_active": False,
+        "subscription_suspended": False,
+        "subscription_recovery": False,
+    }
+    org = db.query(Organization).filter(Organization.id == organization_id).first()
+    if org is None:
+        return {"org_exists": False, "org_active": False,
+                "subscription_suspended": False, "subscription_recovery": False}
+    snapshot["org_active"] = bool(org.is_active)
+    account = (
+        db.query(CommercialAccount)
+        .filter(CommercialAccount.organization_id == organization_id)
+        .first()
+    )
+    if account is not None:
+        sub = (
+            db.query(CommercialSubscription)
+            .filter(
+                CommercialSubscription.commercial_account_id == account.id,
+                CommercialSubscription.status.in_([
+                    CommercialSubscriptionStatus.SUSPENDED,
+                    CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                ]),
+            )
+            .order_by(CommercialSubscription.id.desc())
+            .first()
+        )
+        if sub is not None:
+            if sub.status == CommercialSubscriptionStatus.SUSPENDED:
+                snapshot["subscription_suspended"] = True
+            else:
+                snapshot["subscription_recovery"] = True
+    return snapshot
+
+
+def _get_org_gate(db: Session, organization_id: int) -> dict:
+    """Cached org access-gate snapshot used by both subscription gates.
+
+    Bounds a freshly-suspended org's ability to keep writing in the same
+    request flow without querying on every request. TTL is short
+    (REDIS_GATE_TTL); subscription status transitions invalidate the entry
+    proactively (see cache_service.invalidate_subscription_caches).
+    """
+    cached = cache_get(ORG_GATE_KEY.format(org_id=organization_id))
+    if cached is not None:
+        return cached
+    snapshot = _org_gate_snapshot(db, organization_id)
+    cache_set(
+        ORG_GATE_KEY.format(org_id=organization_id),
+        snapshot,
+        ttl=settings.REDIS_GATE_TTL,
+    )
+    return snapshot
+
+
+def invalidate_org_gate(organization_id: int) -> None:
+    cache_delete(ORG_GATE_KEY.format(org_id=organization_id))
+
+
 def get_organization_id(current_user=Depends(get_current_user)) -> int:
     """Return the current user's organization_id.
 
@@ -211,6 +283,15 @@ def require_active_subscription(product_code: str):
     onboarded organization is entitled to the one product it runs on. This
     gate now simply verifies the organization exists and is not suspended.
     Super Admin bypasses it.
+
+    §5 (Free Trial Standard): a subscription in TRIAL_RECOVERY (the 14-day
+    read/export-only window after a trial expires unpaid) is NOT treated as
+    suspended here — the org keeps read-only / export access so it can view
+    its data and still self-serve convert to a paid plan. The write-side
+    blocking (new revenue-generating state) is enforced separately by
+    require_new_revenue_generation_allowed(), which the write sub-routers
+    add. Only true SUSPENDED (recovery window also over) blocks the whole
+    product.
     """
     async def _check_subscription(
         current_user=Depends(get_current_user),
@@ -222,49 +303,62 @@ def require_active_subscription(product_code: str):
         if current_user.organization_id is None:
             raise ForbiddenException("User is not associated with any organization.")
 
-        from app.modules.organizations.models import Organization
-
         try:
-            org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+            gate = _get_org_gate(db, current_user.organization_id)
         except sa_exc.OperationalError:
             raise ForbiddenException("The database is temporarily unavailable. Please try again in a moment.")
-        if org is None:
+        if not gate["org_exists"]:
             raise ForbiddenException("Your organization no longer exists.")
-        if not org.is_active:
+        if not gate["org_active"]:
             raise ForbiddenException(
                 "Your organization is suspended. Please contact support to regain access."
             )
-
-        # Plane 1 gate: a SUSPENDED CommercialSubscription (free-trial expired
-        # with no payment, or N1 day-20 payment-failure escalation) blocks
-        # the whole Billing product — but NOT the self-service "your Zoiko
-        # subscription" page or the public invoice/checkout links (those live
-        # outside billing_router, so an org can still see why it's suspended
-        # and pay to get reinstated). A super admin can also reactivate
-        # directly (PATCH .../commercial-subscriptions/{id}/status).
-        from app.modules.commercial.enums import CommercialSubscriptionStatus
-        from app.modules.commercial.models import CommercialAccount, CommercialSubscription
-
-        account = (
-            db.query(CommercialAccount)
-            .filter(CommercialAccount.organization_id == current_user.organization_id)
-            .first()
-        )
-        if account is not None:
-            suspended = (
-                db.query(CommercialSubscription)
-                .filter(
-                    CommercialSubscription.commercial_account_id == account.id,
-                    CommercialSubscription.status == CommercialSubscriptionStatus.SUSPENDED,
-                )
-                .order_by(CommercialSubscription.id.desc())
-                .first()
+        if gate["subscription_suspended"]:
+            raise ForbiddenException(
+                "Your organization's Zoiko subscription is suspended. "
+                "Pay the outstanding invoice from the Zoiko Subscription page to regain access."
             )
-            if suspended is not None:
-                raise ForbiddenException(
-                    "Your organization's Zoiko subscription is suspended. "
-                    "Pay the outstanding invoice from the Zoiko Subscription page to regain access."
-                )
         return current_user
 
     return _check_subscription
+
+
+def require_new_revenue_generation_allowed(product_code: str):
+    """Dependency factory for write endpoints that create revenue-generating
+    state.
+
+    §5 (Free Trial Standard): "new revenue-generating actions are disabled"
+    during the TRIAL_RECOVERY window. The base require_active_subscription
+    gate lets TRIAL_RECOVERY through for read/export access; THIS gate is the
+    write-side half — it blocks specific endpoints whose actions would create
+    new charged state (new invoices, new customers, new subscriptions, new
+    quotes, sending invoices/quotes) while the org is in TRIAL_RECOVERY.
+    Ambiguous endpoints are BLOCKED (fail closed) — a product decision can
+    loosen this later, but no ambiguous action is silently permitted.
+
+    In trialing or fully-active subscriptions this gate passes (a trial can
+    still create invoices/customers/quotes — trial caps govern volume, not
+    this binary gate). Super Admin bypasses it.
+    """
+    async def _check_write_allowed(
+        current_user=Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ):
+        role = _role_value(current_user)
+        if role == ROLE_SUPER_ADMIN:
+            return current_user
+        if current_user.organization_id is None:
+            raise ForbiddenException("User is not associated with any organization.")
+
+        gate = _get_org_gate(db, current_user.organization_id)
+        if not gate["org_exists"]:
+            return current_user
+        if gate["subscription_recovery"]:
+            raise ForbiddenException(
+                "Your trial has ended and your organization is in its read/export-only "
+                "recovery window. New revenue-generating actions (invoices, customers, "
+                "subscriptions, quotes) are disabled until you convert to a paid plan."
+            )
+        return current_user
+
+    return _check_write_allowed

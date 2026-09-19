@@ -60,11 +60,12 @@ class ReconciliationService:
     # ------------------------------------------------------------------
     # Checks
     # ------------------------------------------------------------------
-    def _check_invoice_balances(self) -> list[ReconciliationException]:
+    def _check_invoice_balances(self, organization_id: int | None = None) -> list[ReconciliationException]:
         exceptions = []
-        rows = self.db.execute(
-            select(Invoice).where(Invoice.status.in_(NON_DRAFT_INVOICE_STATUSES))
-        ).scalars().all()
+        query = select(Invoice).where(Invoice.status.in_(NON_DRAFT_INVOICE_STATUSES))
+        if organization_id is not None:
+            query = query.where(Invoice.organization_id == organization_id)
+        rows = self.db.execute(query).scalars().all()
         for inv in rows:
             expected = Decimal(str(inv.total_amount or 0)) - Decimal(str(inv.paid_amount or 0))
             actual = Decimal(str(inv.balance_due or 0))
@@ -87,9 +88,15 @@ class ReconciliationService:
                 )
         return exceptions
 
-    def _check_payment_allocations(self) -> list[ReconciliationException]:
+    def _check_payment_allocations(self, organization_id: int | None = None) -> list[ReconciliationException]:
         exceptions = []
-        payments = self.db.execute(select(Payment)).scalars().all()
+        payment_query = select(Payment)
+        if organization_id is not None:
+            payment_query = payment_query.where(Payment.organization_id == organization_id)
+        payments = self.db.execute(payment_query).scalars().all()
+        # Allocation totals are only ever compared against payments already
+        # scoped above, so it is safe to sum every allocation row here
+        # regardless of organization_id filtering.
         alloc_rows = self.db.execute(
             select(PaymentAllocation.payment_id, PaymentAllocation.amount)
         ).all()
@@ -189,6 +196,7 @@ class ReconciliationService:
         compare_processor: bool = False,
         range_start: date | None = None,
         range_end: date | None = None,
+        organization_id: int | None = None,
     ) -> ReconciliationRun:
         """Run the two internal ledger-invariant checks, and optionally
         (ISS-017) a genuine bounded Payment<->Stripe-PaymentIntent
@@ -200,6 +208,10 @@ class ReconciliationService:
         at PARTIAL. `compare_processor=True` requires an explicit, bounded
         `range_start`/`range_end` (Step 20) — this never scans "all of
         Stripe" by default.
+
+        `organization_id`, when given, scopes every check (internal
+        invariants and the Stripe comparison) to that one organization
+        instead of the whole platform.
         """
         if compare_processor:
             if range_start is None or range_end is None:
@@ -214,8 +226,8 @@ class ReconciliationService:
         self.db.flush()
 
         found: list[ReconciliationException] = []
-        found += self._check_invoice_balances()
-        found += self._check_payment_allocations()
+        found += self._check_invoice_balances(organization_id)
+        found += self._check_payment_allocations(organization_id)
         checks_total = 2
 
         stripe_configured = bool(settings.STRIPE_SECRET_KEY)
@@ -223,7 +235,7 @@ class ReconciliationService:
             run.processor_source = "stripe"
         processor_result = None
         if compare_processor and stripe_configured:
-            processor_result = reconcile_processor_payments(self.db, range_start, range_end)
+            processor_result = reconcile_processor_payments(self.db, range_start, range_end, organization_id)
             checks_total += 1
             run.processor_environment = processor_result["environment"]
             run.processor_stats = {

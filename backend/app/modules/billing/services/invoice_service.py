@@ -1329,6 +1329,23 @@ class InvoiceService:
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason or "Voided")
         self.audit.log(organization_id, updated_by, BillingAuditAction.VOID, "Invoice", invoice_id)
+
+        try:
+            from app.services.email_service import send_invoice_voided_email
+            recipient_email = getattr(inv.customer, "email", None) if inv.customer else None
+            customer_name = getattr(inv.customer, "display_name", "Valued Customer") if inv.customer else "Valued Customer"
+            if recipient_email:
+                send_invoice_voided_email(
+                    email=recipient_email,
+                    customer_name=customer_name,
+                    invoice_number=inv.invoice_number,
+                    reason=reason or "Voided",
+                    organization_id=organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to dispatch void_invoice email: %s", mail_exc)
+
         return inv
 
     def mark_overdue(self, invoice_id: int, organization_id: int, updated_by: int) -> Invoice:
@@ -1385,7 +1402,11 @@ class InvoiceService:
     # ── Queries ────────────────────────────────────────────────────────────
 
     def list_overdue(self, organization_id: int) -> List[Invoice]:
-        return self.repo.list_overdue(organization_id)
+        # The /overdue endpoint serializes these through InvoiceResponse, whose
+        # customer_* fields are model properties that lazy-load Invoice.customer
+        # per row. Eager-load the relationship so N invoices don't trigger N
+        # extra queries (N+1).
+        return self.repo.list_overdue_with_customer(organization_id)
 
     def list_due_between(self, organization_id: int, start_date: str, end_date: str) -> List[Invoice]:
         return self.repo.list_due_between(organization_id, start_date, end_date)

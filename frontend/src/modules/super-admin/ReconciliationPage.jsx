@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ShieldCheck, PlayCircle, Check, X, ExternalLink, Calendar, CreditCard } from "lucide-react";
+import { ShieldCheck, PlayCircle, Check, X, ExternalLink, Calendar, CreditCard, Building2 } from "lucide-react";
 import {
   listReconciliationRuns,
   getReconciliationRun,
@@ -7,9 +7,15 @@ import {
   acknowledgeReconciliationException,
   resolveReconciliationException,
 } from "../../service/commandCenterService";
-import { PageHeader, DataTable, Button, Modal, Field } from "../../components/billing-ui";
+import { listOrganizations } from "../../service/commercialService";
+import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import { RECONCILIATION_RUN_STATE_OPTIONS, RECONCILIATION_EXCEPTION_STATUS_OPTIONS } from "./constants";
+
+function orgLabel(org) {
+  if (!org) return null;
+  return `${org.organization_code} — ${org.organization_name}`;
+}
 
 function formatDateTime(value) {
   if (!value) return "—";
@@ -129,7 +135,7 @@ function ResolveModal({ open, onClose, onSubmit }) {
   );
 }
 
-function RunDetailModal({ run, onClose, onRefreshRun, onNotify }) {
+function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
   const [resolveTarget, setResolveTarget] = useState(null);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
@@ -198,7 +204,9 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify }) {
               <ul className="space-y-1 text-xs text-red-700">
                 {run.processor_stats.processor_errors.map((err, idx) => (
                   <li key={idx}>
-                    <span className="font-semibold">Org {err.organization_id ?? "—"}:</span>{" "}
+                    <span className="font-semibold">
+                      {orgLabel(orgById[err.organization_id]) || `Org ${err.organization_id ?? "—"}`}:
+                    </span>{" "}
                     {err.category || err.error_type} — {err.message}
                   </li>
                 ))}
@@ -226,7 +234,9 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify }) {
                 {run.exceptions.map((exc) => (
                   <tr key={exc.id} className="border-t border-slate-100">
                     <td className="px-3 py-2 font-medium text-slate-700">{EXCEPTION_KIND_LABELS[exc.kind] || exc.kind}</td>
-                    <td className="px-3 py-2 text-slate-600">{exc.organization_id ?? "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {orgLabel(orgById[exc.organization_id]) || (exc.organization_id ?? "—")}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">
                       {exc.entity_type} #{exc.entity_id}
                     </td>
@@ -329,10 +339,28 @@ export default function ReconciliationPage() {
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
 
+  // Organization scope. Empty string ("") means "All organizations" — the
+  // original platform-wide sweep — matching the backend's
+  // organization_id=None default exactly.
+  const [organizations, setOrganizations] = useState([]);
+  const [orgsError, setOrgsError] = useState(null);
+  const [organizationId, setOrganizationId] = useState("");
+
   const rangeValidationError = useMemo(
     () => validateReconciliationRange(compareProcessor, rangeStart, rangeEnd),
     [compareProcessor, rangeStart, rangeEnd]
   );
+
+  const orgOptions = useMemo(
+    () => organizations.map((o) => ({ value: String(o.id), label: orgLabel(o) })),
+    [organizations]
+  );
+
+  const orgById = useMemo(() => {
+    const m = {};
+    for (const o of organizations) m[o.id] = o;
+    return m;
+  }, [organizations]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -347,6 +375,12 @@ export default function ReconciliationPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    listOrganizations({ limit: 200 })
+      .then((data) => setOrganizations(data.organizations || []))
+      .catch((e) => setOrgsError(e?.message || "Failed to load organizations."));
+  }, []);
+
   const handleRunNow = useCallback(async () => {
     if (running) return; // belt-and-suspenders against a double-click race; the button is also disabled while running
     const validationError = validateReconciliationRange(compareProcessor, rangeStart, rangeEnd);
@@ -357,7 +391,7 @@ export default function ReconciliationPage() {
     setRunning(true);
     setActionError(null);
     try {
-      const run = await triggerReconciliationRun({ compareProcessor, rangeStart, rangeEnd });
+      const run = await triggerReconciliationRun({ compareProcessor, rangeStart, rangeEnd, organizationId });
       setSuccess(summarizeRunResult(run));
       load();
     } catch (err) {
@@ -365,7 +399,7 @@ export default function ReconciliationPage() {
     } finally {
       setRunning(false);
     }
-  }, [running, compareProcessor, rangeStart, rangeEnd, load]);
+  }, [running, compareProcessor, rangeStart, rangeEnd, organizationId, load]);
 
   const openRun = useCallback((runId) => {
     getReconciliationRun(runId)
@@ -395,7 +429,25 @@ export default function ReconciliationPage() {
       />
 
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-        <label className="flex items-start gap-2 text-sm text-slate-700">
+        <Field label="Organization" hint="Leave as “All organizations” to sweep the whole platform.">
+          <div className="flex items-center gap-2">
+            <Building2 size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
+            <Select
+              value={organizationId}
+              onChange={setOrganizationId}
+              options={orgOptions}
+              placeholder="All organizations"
+              className="max-w-xs"
+            />
+          </div>
+        </Field>
+        {orgsError && (
+          <p role="alert" className="mt-1 text-xs text-red-600">
+            {orgsError}
+          </p>
+        )}
+
+        <label className="mt-4 flex items-start gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
             checked={compareProcessor}
@@ -406,9 +458,10 @@ export default function ReconciliationPage() {
           <span>
             <span className="font-medium text-slate-800">Compare with Stripe</span>
             <span className="block text-xs text-slate-500">
-              Also compares ledger payments against your organization's connected Stripe account for the
-              selected range (ISS-017). Read-only — no invoice, payment, or balance is ever changed
-              automatically.
+              Also compares ledger payments against{" "}
+              {organizationId ? "the selected organization's connected Stripe account" : "every organization's connected Stripe account"}{" "}
+              for the selected range (ISS-017). Read-only — no invoice, payment, or balance is ever
+              changed automatically.
             </span>
           </span>
         </label>
@@ -501,6 +554,7 @@ export default function ReconciliationPage() {
         onClose={() => setDetailRun(null)}
         onRefreshRun={openRun}
         onNotify={handleNotify}
+        orgById={orgById}
       />
     </div>
   );

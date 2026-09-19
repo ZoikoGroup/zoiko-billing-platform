@@ -44,6 +44,8 @@ def _serialize_subscription(subscription) -> dict | None:
         "current_period_start": subscription.current_period_start.isoformat() if subscription.current_period_start else None,
         "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
         "trial_ends_at": subscription.trial_ends_at.isoformat() if subscription.trial_ends_at else None,
+        "recovery_ends_at": subscription.recovery_ends_at.isoformat() if subscription.recovery_ends_at else None,
+        "converted_at": subscription.converted_at.isoformat() if subscription.converted_at else None,
     }
 
 
@@ -96,19 +98,34 @@ def get_zoiko_subscription(
             detail="This view requires an organization context.",
         )
 
+    # Fired by the TrialBanner on every route change — cache the 5-query
+    # payload. Invalidation: invalidate_subscription_caches() clears this key
+    # on subscription status transitions; a short TTL bounds invoice/payment
+    # staleness for a dashboard read.
+    from app.config import settings as _settings
+    from app.core import cache_service
+
+    org_id = current_user.organization_id
+    cache_key = "org:zoiko_sub:{org_id}".format(org_id=org_id)
+    cached = cache_service.cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     account = (
         db.query(CommercialAccount)
-        .filter(CommercialAccount.organization_id == current_user.organization_id)
+        .filter(CommercialAccount.organization_id == org_id)
         .first()
     )
     if account is None:
-        return {
+        result = {
             "account": None,
             "subscription": None,
             "invoices": [],
             "payments": [],
             "quotes": [],
         }
+        cache_service.cache_set(cache_key, result, ttl=_settings.REDIS_DASHBOARD_TTL)
+        return result
 
     subscription = None
     from app.modules.commercial.service import CommercialSubscriptionService
@@ -137,12 +154,94 @@ def get_zoiko_subscription(
         .all()
     )
 
-    return {
+    result = {
         "account": {"id": account.id, "status": account.status.value, "intended_plan_code": account.intended_plan_code},
         "subscription": _serialize_subscription(subscription),
         "invoices": [_serialize_invoice(i) for i in invoices],
         "payments": [_serialize_payment(p) for p in payments],
         "quotes": [_serialize_quote(q) for q in quotes],
+    }
+    cache_service.cache_set(cache_key, result, ttl=_settings.REDIS_DASHBOARD_TTL)
+    return result
+
+
+@router.get("/usage", summary="The organization's usage counters against its resolved entitlement limits")
+def get_org_usage(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    """Org-scoped usage diagnostics (mirror of the Super Admin
+    /super-admin/commercial-usage-counters view, scoped to the caller's own
+    organization). Real UsageCounter rows only — a budget key with no row has
+    simply not been exercised, never invented. The resolved limit is computed
+    through the standard 7-level entitlement chain; broken resolution fails
+    OPEN per §14 (an unreadable limit never breaks the usage view)."""
+    from app.modules.commercial.entitlement_resolver import resolve_entitlement
+    from app.modules.commercial.models import EntitlementDefinition, UsageCounter
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This view requires an organization context.",
+        )
+
+    account = (
+        db.query(CommercialAccount)
+        .filter(CommercialAccount.organization_id == current_user.organization_id)
+        .first()
+    )
+    if account is None:
+        return {
+            "account": None,
+            "subscription": None,
+            "plan_code": None,
+            "plan_name": None,
+            "counters": [],
+        }
+
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    subscription = CommercialSubscriptionService(db).get_active_subscription(account.id)
+
+    rows = (
+        db.query(UsageCounter, EntitlementDefinition)
+        .join(EntitlementDefinition, EntitlementDefinition.id == UsageCounter.entitlement_definition_id)
+        .filter(UsageCounter.organization_id == current_user.organization_id)
+        .order_by(UsageCounter.updated_at.desc())
+        .all()
+    )
+
+    counters = []
+    for counter, definition in rows:
+        limit = None
+        enforcement_type = None
+        try:
+            resolved = resolve_entitlement(db, current_user.organization_id, definition.key)
+            limit = resolved.value
+            enforcement_type = resolved.definition.enforcement_type.value
+        except Exception:  # noqa: BLE001 - fail-open read (§14)
+            limit = None
+            enforcement_type = None
+        counters.append(
+            {
+                "id": counter.id,
+                "entitlement_key": definition.key,
+                "window_key": counter.window_key,
+                "count": counter.count,
+                "soft_warned_at": counter.soft_warned_at.isoformat() if counter.soft_warned_at else None,
+                "updated_at": counter.updated_at.isoformat() if counter.updated_at else None,
+                "limit": limit,
+                "enforcement_type": enforcement_type,
+            }
+        )
+
+    plan = subscription.plan if subscription is not None else None
+    return {
+        "account": {"id": account.id, "status": account.status.value},
+        "subscription": _serialize_subscription(subscription),
+        "plan_code": plan.plan_code if plan is not None else None,
+        "plan_name": plan.plan_name if plan is not None else None,
+        "counters": counters,
     }
 
 
@@ -194,18 +293,18 @@ def _resolve_target_plan_price(db: Session, target_plan: CommercialPlan):
     """Same two-tier version->plan price fallback resolve_price() applies to
     a real subscription, inlined here for a hypothetical target plan (no
     subscription row exists for it yet)."""
-    from app.modules.commercial.enums import CommercialPlanVersionStatus
+    from app.modules.commercial.cache import get_latest_published_version_id
     from app.modules.commercial.models import CommercialPlanVersion
 
-    latest_published = (
-        db.query(CommercialPlanVersion)
-        .filter(
-            CommercialPlanVersion.plan_id == target_plan.id,
-            CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
+    version_id = get_latest_published_version_id(db, target_plan.id)
+    if version_id is not None:
+        latest_published = (
+            db.query(CommercialPlanVersion)
+            .filter(CommercialPlanVersion.id == version_id)
+            .first()
         )
-        .order_by(CommercialPlanVersion.version_number.desc())
-        .first()
-    )
+    else:
+        latest_published = None
     if latest_published is not None and latest_published.price_amount is not None:
         return (latest_published.price_amount, latest_published.currency, latest_published.billing_interval, latest_published.id)
     if target_plan.price_amount is not None:
@@ -455,4 +554,77 @@ def commit_plan_change(
         "subscription_change_id": change.id,
         "effective_at": change.effective_at.isoformat() if change.effective_at else None,
         "blockers": preview["blockers"],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZB-COM §5.2 — self-serve trial -> paid conversion
+#
+# Callable only from TRIALING / TRIAL_RECOVERY; enterprise / quote-only /
+# unresolvable-price plans route to an assisted quote instead of a self-serve
+# charge. The payment is completed out-of-band (Stripe webhook first cleared
+# payment, or a manually allocated payment), which drives the subscription
+# through the genuine CONVERTED marker into ACTIVE.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TrialConvertRequest(BaseModel):
+    payment_method: str | None = "card"
+
+
+@router.post(
+    "/trial/convert",
+    summary="Convert the org's free trial to a paid plan",
+)
+def convert_trial_to_paid(
+    data: TrialConvertRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    from app.modules.commercial.enums import CommercialSubscriptionStatus
+    from app.modules.commercial.plan_change_compatibility import run_compatibility_checks
+    from app.modules.commercial.trial_conversion_service import TrialConversionService
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This action requires an organization context.",
+        )
+
+    account, subscription = TrialConversionService(db).resolve_org_subscription(
+        organization_id=current_user.organization_id,
+    )
+    if account is None:
+        raise NotFoundException("Commercial Account", "organization_id")
+    if subscription is None:
+        raise BadRequestException(
+            "Only a TRIALING or TRIAL_RECOVERY subscription can be converted to a paid plan."
+        )
+
+    # Steps 1-2 — compatibility checklist runs in full and is surfaced to the
+    # caller (informational; a self-serve conversion does not force a downgrade
+    # so no check can veto it — the price is never invented).
+    checklist = run_compatibility_checks(
+        db, current_user.organization_id, subscription, subscription.plan,
+    ) if subscription.plan is not None else []
+    blockers = [c.__dict__ for c in checklist if c.severity == "blocker"]
+    warnings = [c.__dict__ for c in checklist if c.severity == "warning"]
+
+    try:
+        route = TrialConversionService(db).prepare_trial_conversion(
+            account=account,
+            subscription=subscription,
+            actor_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+
+    return {
+        **route,
+        "compatibility": {
+            "checklist": [c.__dict__ for c in checklist],
+            "blockers": blockers,
+            "warnings": warnings,
+        },
     }

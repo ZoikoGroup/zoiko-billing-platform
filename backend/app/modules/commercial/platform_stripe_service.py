@@ -59,6 +59,14 @@ def _to_cents(amount) -> int:
     return int((value * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
 
 
+def _expected_livemode() -> bool:
+    """Whether this deployment is configured for Stripe *live* mode, inferred
+    from the configured secret key's prefix (Stripe's own convention:
+    sk_live_... vs sk_test_...). There's no separate "environment" setting to
+    check against — the key IS the environment here."""
+    return settings.PLATFORM_STRIPE_SECRET_KEY.startswith("sk_live_")
+
+
 def _stripe_module():
     try:
         import stripe
@@ -175,6 +183,22 @@ class PlatformStripeService:
             raise BadRequestException(f"Invalid Stripe webhook signature: {e}")
 
         event = event.to_dict() if hasattr(event, "to_dict") else event
+
+        # Environment check (PAY-01): Plane 1 uses a single, non-Connect
+        # Stripe account (unlike Plane 2's Connect flow, which resolves the
+        # tenant via the event's connected-account envelope) — there's no
+        # "account id" to check here, only test vs. live. Reject a
+        # live-mode event delivered to a test-configured deployment (or
+        # vice versa): a valid signature only proves the payload came from
+        # *some* Stripe webhook endpoint secret we hold, not that it's for
+        # the environment this process is actually running as.
+        event_livemode = event.get("livemode")
+        if event_livemode is not None and event_livemode != _expected_livemode():
+            raise BadRequestException(
+                f"Stripe webhook environment mismatch: event livemode={event_livemode}, "
+                f"this deployment is configured for livemode={_expected_livemode()}"
+            )
+
         event_id = event.get("id")
         event_type = event.get("type")
         data_object = (event.get("data") or {}).get("object") or {}
@@ -202,6 +226,10 @@ class PlatformStripeService:
             record.status = "processed"
             record.processed_at = datetime.utcnow()
             self.db.commit()
+            if result.get("trial_converted"):
+                # ZB-COM-015 confirmation — only after the conversion is
+                # durably committed (see complete_trial_conversion).
+                self._dispatch_trial_converted_email(result["trial_converted"])
             return {"received": True, **result}
         except Exception as exc:
             self.db.rollback()
@@ -274,6 +302,7 @@ class PlatformStripeService:
 
         metadata = data_object.get("metadata") or {}
         invoice_id = metadata.get("platform_invoice_id")
+        invoice = None
         if invoice_id:
             invoice = (
                 self.db.query(PlatformInvoice)
@@ -288,12 +317,61 @@ class PlatformStripeService:
                     actor_id=None,
                 )
 
+            # §5.2 invoice-linkage trigger (mirrors
+            # _maybe_complete_trial_conversion_on_allocation): this payment
+            # settled an invoice tied to a trial-conversion subscription. The
+            # conversion is bound to THAT subscription's state, not to whether
+            # this is the account's first-ever cleared payment — an account
+            # with a prior cleared payment (manual record, earlier invoice)
+            # must still auto-convert on the Stripe payment of its conversion
+            # invoice rather than staying TRIALING forever.
+            if (
+                invoice is not None
+                and not invoice.balance_due
+                and invoice.commercial_subscription_id is not None
+            ):
+                invoice_subscription = (
+                    self.db.query(CommercialSubscription)
+                    .filter(
+                        CommercialSubscription.id == invoice.commercial_subscription_id,
+                        CommercialSubscription.status.in_([
+                            CommercialSubscriptionStatus.PENDING,
+                            CommercialSubscriptionStatus.TRIALING,
+                            CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                            CommercialSubscriptionStatus.SUSPENDED,
+                        ]),
+                    )
+                    .first()
+                )
+                if invoice_subscription is not None:
+                    if invoice_subscription.status in (
+                        CommercialSubscriptionStatus.TRIALING,
+                        CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                    ):
+                        from app.modules.commercial.trial_conversion_service import (
+                            TrialConversionService,
+                        )
+
+                        TrialConversionService(self.db).complete_trial_conversion(
+                            subscription=invoice_subscription,
+                        )
+                        return {
+                            "action": "payment_recorded",
+                            "payment_id": payment.id,
+                            "trial_converted": invoice_subscription.id,
+                        }
+                    CommercialSubscriptionService(self.db).transition(
+                        invoice_subscription, CommercialSubscriptionStatus.ACTIVE,
+                    )
+
         if cleared_count == 1:
             # PENDING: never-activated self-serve subscription paying for
             # the first time. TRIALING: still inside the free-trial window and
             # paying (either converts to the paid plan or settles the first
             # invoice ahead of expiry) — activation must not wait for the
-            # trial to lapse. SUSPENDED: same, but the free trial expired
+            # trial to lapse. TRIAL_RECOVERY: §5.2 — inside the read/export
+            # recovery window and paying: this is the self-serve trial->paid
+            # conversion commit. SUSPENDED: same, but the free trial expired
             # before they paid (commercial/tasks/trial_expiry.py) — paying
             # now must still reinstate it, not leave it stuck suspended.
             subscription = (
@@ -303,17 +381,53 @@ class PlatformStripeService:
                     CommercialSubscription.status.in_([
                         CommercialSubscriptionStatus.PENDING,
                         CommercialSubscriptionStatus.TRIALING,
+                        CommercialSubscriptionStatus.TRIAL_RECOVERY,
                         CommercialSubscriptionStatus.SUSPENDED,
                     ]),
                 )
                 .first()
             )
             if subscription is not None:
+                if subscription.status in (
+                    CommercialSubscriptionStatus.TRIALING,
+                    CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                ):
+                    # §5.2 — a trial paying its first cleared invoice converts
+                    # through the genuine CONVERTED marker (state + snapshot +
+                    # audit in the caller's transaction). The ZB-COM-015
+                    # confirmation email is dispatched post-commit by
+                    # handle_webhook_event.
+                    from app.modules.commercial.trial_conversion_service import (
+                        TrialConversionService,
+                    )
+
+                    TrialConversionService(self.db).complete_trial_conversion(
+                        subscription=subscription,
+                    )
+                    return {
+                        "action": "payment_recorded",
+                        "payment_id": payment.id,
+                        "trial_converted": subscription.id,
+                    }
                 CommercialSubscriptionService(self.db).transition(
                     subscription, CommercialSubscriptionStatus.ACTIVE,
                 )
 
         return {"action": "payment_recorded", "payment_id": payment.id}
+
+    def _dispatch_trial_converted_email(self, subscription_id: int) -> None:
+        from app.modules.commercial.models import CommercialSubscription
+        from app.modules.commercial.trial_conversion_service import (
+            notify_trial_converted_after_commit,
+        )
+
+        subscription = (
+            self.db.query(CommercialSubscription)
+            .filter(CommercialSubscription.id == subscription_id)
+            .first()
+        )
+        if subscription is not None:
+            notify_trial_converted_after_commit(self.db, subscription)
 
     def _handle_payment_failed(self, data_object: dict) -> Dict[str, Any]:
         payment = self._find_pending_payment(data_object)

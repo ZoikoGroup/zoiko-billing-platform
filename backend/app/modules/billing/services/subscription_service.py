@@ -506,6 +506,30 @@ class SubscriptionService:
         sub = self.repo.cancel(sub_id, organization_id, reason)
         self._log_event(organization_id, sub_id, "cancelled", {"status": sub.status.value if hasattr(sub, "status") else None}, {"status": "cancelled", "reason": reason}, created_by=updated_by)
         self.audit.log(organization_id, updated_by, BillingAuditAction.CANCEL, "Subscription", sub_id)
+
+        try:
+            from app.services.email_service import send_tenant_subscription_cancelled_email
+            recipient_email = None
+            if sub.customer and getattr(sub.customer, "email", None):
+                recipient_email = sub.customer.email
+            else:
+                from app.modules.auth.models import User
+                admin = self.db.query(User).filter(User.organization_id == organization_id, User.is_active == True).first()
+                if admin:
+                    recipient_email = admin.email
+            if recipient_email:
+                send_tenant_subscription_cancelled_email(
+                    email=recipient_email,
+                    recipient_first_name="Customer",
+                    subscription_number=sub.subscription_number or str(sub.id),
+                    cancellation_reason=reason or "",
+                    initiated_by="Admin" if updated_by else "Self-Service",
+                    organization_id=organization_id,
+                    db=self.db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to send subscription cancelled email: %s", mail_exc)
+
         return sub
 
     # ── Plan Changes ──────────────────────────────────────────────────────

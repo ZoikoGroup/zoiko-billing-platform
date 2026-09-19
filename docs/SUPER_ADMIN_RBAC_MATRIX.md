@@ -16,7 +16,7 @@ UserRole.SUPER_ADMIN          <- unchanged floor every endpoint still requires
         ▼
 PlatformRole (NULL = full access = PLATFORM_ADMINISTRATOR)
     ├── PLATFORM_ADMINISTRATOR   full access to every capability below
-    ├── SUPPORT_OPERATOR         tenant_support.* + read-only triage/governance/search
+    ├── SUPPORT_OPERATOR         tenant_support.* + read-only triage/reliability/governance/search
     ├── SECURITY_OPERATOR        governance/incident/circuit_breaker + audit.read
     ├── RELIABILITY_OPERATOR     reliability/incident + governance.read
     ├── AUDITOR                  read-only across governance/reliability/financial/launch-readiness — no ACT capabilities
@@ -31,7 +31,7 @@ Source: `backend/app/modules/auth/models.py:PlatformRole`,
 | Capability | Meaning | Roles that hold it (+ PLATFORM_ADMINISTRATOR always) | Endpoint(s) |
 |---|---|---|---|
 | `triage.read` | View triage-relevant state | SUPPORT_OPERATOR, SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /triage/summary` (session 7 — standalone endpoint composing attention + jobs + breakers + audit tail) |
-| `reliability.read` | View Reliability lens | RELIABILITY_OPERATOR, SECURITY_OPERATOR, AUDITOR | `GET /telemetry/organizations`, `GET /telemetry/jobs` |
+| `reliability.read` | View Reliability lens | RELIABILITY_OPERATOR, SECURITY_OPERATOR, AUDITOR, SUPPORT_OPERATOR | `GET /telemetry/organizations`, `GET /telemetry/jobs` |
 | `governance.read` | View Governance lens | SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR, SUPPORT_OPERATOR | `GET /attention`, `GET /attention/counts` |
 | `tenant_support.request` | Request a Domain B grant | SUPPORT_OPERATOR only | `POST /privileged-access/request`, `GET .../active`, `GET .../mine`, `GET .../{id}/tenant-summary` |
 | `tenant_support.activate` | Complete MFA step-up on a grant | SUPPORT_OPERATOR only | `POST /privileged-access/{id}/activate` |
@@ -51,9 +51,14 @@ Source: `backend/app/modules/auth/models.py:PlatformRole`,
 | `commercial_quote.write` | Create, send, and convert commercial quotes | SUPPORT_OPERATOR | `POST /commercial-billing/quotes`, `POST .../send`, `POST .../convert` |
 | `commercial_quote.approve` | Approve/reject commercial quotes (enforces approver != creator) | AUDITOR | `POST /commercial-billing/quotes/{id}/approve`, `POST .../reject` |
 | `commercial_payment.write` | Record platform payments, allocate/deallocate | SECURITY_OPERATOR | `POST /commercial-billing/payments`, `POST .../allocate`, `POST .../deallocate` |
-| `commercial_financial.read` | Read platform invoices, payments, reconciliation, quote lists | AUDITOR, FINANCE_READONLY | `GET /commercial-billing/quotes`, `GET .../invoices`, `GET .../payments`, `POST .../finalize`, `POST .../void`, `POST .../reconciliation/run` |
+| `commercial_financial.read` | Read platform invoices, payments, reconciliation, quote lists | AUDITOR, FINANCE_READONLY | `GET /commercial-billing/quotes`, `GET .../invoices`, `GET .../payments`, `POST .../reconciliation/run` |
+| `commercial_financial.write` | Create, finalize, and void platform invoices; add invoice items | SECURITY_OPERATOR | `POST /commercial-billing/invoices`, `POST .../invoices/{id}/finalize`, `POST .../invoices/{id}/void`, `POST .../invoices/{id}/items` |
+| `commercial_evaluation_program.write` | Activate or manage evaluation/trial programs | **PLATFORM_ADMINISTRATOR only** — no operator role holds it | `POST /commercial-billing/evaluation-programs`, `PATCH .../evaluation-programs/{id}/status` |
+| `job.retry` | Retry a failed telemetry job | RELIABILITY_OPERATOR | `POST /telemetry/jobs/{job_name}/retry` |
+| `platform_config.read` | View the platform configuration inventory | SUPPORT_OPERATOR, SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /configuration`, `GET /settings` |
+| `platform_config.manage` | Mutate platform settings (audited) | SECURITY_OPERATOR | `POST /settings`, `PUT /settings/{key}` |
 
-**Deliberately not built**: `tenant_support.break_glass` (privileged access keeps its request→activate flow; there is no bypass), `commercial.read`/`financial_ops.read` (Domain A / not-built lens, out of scope). Session 7 note: the previously-missing breaker maker-checker capabilities now EXIST (`circuit_breaker.manage` covers both direct break-glass engage and proposal; `approval.decide` is the checker role) — the old "single toggle, no workflow" limitation is closed.
+**Deliberately not built**: `tenant_support.break_glass` (privileged access keeps its request→activate flow; there is no bypass), `commercial.read`/`financial_ops.read` (Domain A / not-built lens, out of scope). Session 7 note: the previously-missing breaker maker-checker capabilities now EXIST (`circuit_breaker.manage` covers both direct break-glass engage and proposal; the checker path is also gated by `circuit_breaker.manage` — the old "single toggle, no workflow" limitation is closed).
 
 ## What IS real authorization beyond the capability check
 

@@ -130,6 +130,32 @@ class CommercialDunningService:
                         summary["suspended"] += 1
                     elif next_status == CommercialSubscriptionStatus.CANCELLED:
                         summary["terminated"] += 1
+
+                    # Send ZB-COM-011: Past-Due Subscription Warning email
+                    if next_status in (CommercialSubscriptionStatus.PAST_DUE, CommercialSubscriptionStatus.RESTRICTED):
+                        try:
+                            from app.modules.auth.models import User
+                            from app.modules.commercial.models import CommercialAccount
+                            from app.services.email_service import send_past_due_suspension_warning_email
+
+                            acct = db.query(CommercialAccount).filter(CommercialAccount.id == subscription.commercial_account_id).first()
+                            if acct and acct.organization_id:
+                                org_id = acct.organization_id
+                                org_name = getattr(acct.organization, "name", "Your Organization")
+                                admin_user = db.query(User).filter(User.organization_id == org_id, User.is_active == True).first()
+                                if admin_user and admin_user.email:
+                                    send_past_due_suspension_warning_email(
+                                        email=admin_user.email,
+                                        recipient_first_name=admin_user.first_name or "there",
+                                        organization_name=org_name,
+                                        days_overdue=days,
+                                        amount_due="0.00",
+                                        currency="USD",
+                                        organization_id=org_id,
+                                        db=db,
+                                    )
+                        except Exception as mail_exc:
+                            logger.warning("Failed to dispatch ZB-COM-011 warning email for subscription %s: %s", subscription.id, mail_exc)
             except Exception as exc:
                 summary["errors"].append(f"subscription {subscription.id}: {exc}")
                 logger.error(

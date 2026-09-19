@@ -123,6 +123,13 @@ class PlatformAuditAction(str, enum.Enum):
     SUBSCRIPTION_PLAN_CHANGE_APPLIED = "subscription_plan_change_applied"
     SUBSCRIPTION_PLAN_CHANGE_BLOCKED = "subscription_plan_change_blocked"
     SUBSCRIPTION_PLAN_CHANGE_REVERSED = "subscription_plan_change_reversed"
+
+    # ── ZB-COM-§5.2 — trial->paid conversion (self-serve + manual paths) ────
+    # Recorded when a TRIALING/TRIAL_RECOVERY subscription completes its
+    # conversion (CONVERTED -> ACTIVE) — the proof point that the account
+    # reached ACTIVE through the trial-conversion sequence, not a fresh
+    # activation.
+    SUBSCRIPTION_TRIAL_CONVERTED = "subscription_trial_converted"
     CREDIT_NOTE_APPROVED = "credit_note_approved"
     CREDIT_NOTE_ISSUED = "credit_note_issued"
     CREDIT_NOTE_VOIDED = "credit_note_voided"

@@ -17,6 +17,28 @@ Language | American English
 Classification | Confidential — Internal Use
 [END TABLE]
 API paths, service names, quotas and latency targets in this document are contract-design requirements or proposed defaults unless explicitly marked authoritative. Engineering must bind them to deployed services before production release.
+
+IMPLEMENTATION STATUS (CURRENT CODE) — the shipped chatbot lives inside the Zoiko Billing monolith and is served at base path /api/chatbot (not the /v1/chat|/v1/actions namespaces below). The actual implemented contract is:
+
+  POST    /api/chatbot/sessions          - Create conversation (201)
+  GET     /api/chatbot/sessions          - List user's conversations
+  GET     /api/chatbot/sessions/{uid}    - Read conversation with messages
+  DELETE  /api/chatbot/sessions/{uid}    - Close conversation (204)
+  POST    /api/chatbot/sessions/{uid}/messages          - Send message (main endpoint)
+  POST    /api/chatbot/sessions/{uid}/messages/stream    - Send message, Server-Sent Events
+  POST    /api/chatbot/sessions/{uid}/messages/stream/cancel - Best-effort stop of in-flight generation
+  POST    /api/chatbot/actions/draft                     - Create action draft (M2)
+  POST    /api/chatbot/actions/{uid}/preview             - Generate authoritative preview (M3)
+  POST    /api/chatbot/actions/{uid}/confirm             - Record user confirmation bound to preview uid+hash
+  POST    /api/chatbot/actions/{uid}/approval-request    - Create maker-checker approval request
+  POST    /api/chatbot/actions/{uid}/approve             - Decide approval (approve/reject/request_changes)
+  POST    /api/chatbot/actions/{uid}/execute             - Execute action (M4; body requires idempotency_key; 503 in safe mode)
+  POST    /api/chatbot/actions/{uid}/cancel              - Discard/cancel pending action
+  GET     /api/chatbot/capabilities         - Resolve effective modes/risk classes/capabilities
+  GET     /api/chatbot/metrics              - Module metrics
+  GET     /api/chatbot/health               - Health check (reports safe_mode + gateway)
+
+Request bodies differ from §10.1 below: conversation send uses {message, page?} (not "content"); confirm uses {preview_uid, preview_hash}; draft uses {action_type, proposed_params}; execute uses {idempotency_key}. SSE events are: ready, token {delta}, done {response, streamed}, error {message}. Reference: backend/app/modules/chatbot/router.py + schemas.py; the autoritative (machine-readable) contract is the FastAPI OpenAPI schema at /api/chatbot/openapi.json in a running instance.
 Document Control & Approval
 [TABLE: 8 rows x 2 cols]
 Role | Approval responsibility

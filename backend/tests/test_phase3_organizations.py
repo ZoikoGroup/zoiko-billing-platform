@@ -266,6 +266,31 @@ def test_directory_last_activity_uses_latest_audit_evidence(db_session):
     assert after.last_activity_at >= before.last_activity_at
 
 
+def test_last_activity_handles_mixed_aware_and_naive_datetimes():
+    """Regression: PlatformAuditLog.created_at is DateTime(timezone=True)
+    (tz-aware on real Postgres) while Organization.updated_at/
+    AttentionItem.last_seen_at are naive — max() over the mix used to raise
+    'TypeError: can't compare offset-naive and offset-aware datetimes' in
+    production (SQLite silently strips tzinfo on round-trip, so this never
+    reproduced against the SQLite-backed test DB — construct the aware
+    datetime directly in Python instead)."""
+    from datetime import datetime, timezone
+
+    naive_older = datetime(2026, 1, 1, 10, 0, 0)
+    aware_newer = datetime(2026, 1, 2, 10, 0, 0, tzinfo=timezone.utc)
+
+    result = OrganizationDirectoryService._max_activity_datetime((naive_older, aware_newer, None))
+    assert result == datetime(2026, 1, 2, 10, 0, 0)
+    assert result.tzinfo is None
+
+    # Order-independence: the naive-vs-aware TypeError depends on which pair
+    # max() compares first, so also check the reverse ordering.
+    result2 = OrganizationDirectoryService._max_activity_datetime((aware_newer, naive_older))
+    assert result2 == datetime(2026, 1, 2, 10, 0, 0)
+
+    assert OrganizationDirectoryService._max_activity_datetime((None, None)) is None
+
+
 # ── 7 Registration stamps ONBOARDING ────────────────────────────────────────
 
 def _register(db, email, organization="Onboard Co"):

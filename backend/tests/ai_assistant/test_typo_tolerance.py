@@ -54,7 +54,7 @@ TRIGGER_PHRASE_CASES = [
     (
         "how to add the customer",
         ["how to add the custmer", "how to add custmer"],
-        "help", "help_general",
+        "help", "unsupported_customer_creation",
     ),
     (
         "how many open invoices",

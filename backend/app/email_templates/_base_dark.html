@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{heading}}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    table, td, p, a, h1, h2, div { font-family: Arial, sans-serif !important; }
+  </style>
+  <![endif]-->
+</head>
+<body bgcolor="#0B1220" style="margin: 0; padding: 0; min-width: 100%; background-color: #0B1220; background: linear-gradient(164.56deg, #0B1220 0%, #101B33 60%, #0A0F1F 100%); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <!-- Hidden Preheader -->
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #0B1220;">
+    {{preheader}}
+  </div>
+
+  <!-- Main Background Table (Full-Bleed Dark) -->
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#0B1220" style="background-color: #0B1220; background: linear-gradient(164.56deg, #0B1220 0%, #101B33 60%, #0A0F1F 100%); padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <!-- Outer Shell Table -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px;">
+          
+          <!-- Top Header / Logo -->
+          <tr>
+            <td align="left" style="padding-bottom: 28px;">
+              <table border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background: #2563EB; border-radius: 8px; width: 28px; height: 28px; text-align: center; color: #FFFFFF; font-weight: 800; font-size: 16px; line-height: 28px;">
+                    Z
+                  </td>
+                  <td style="padding-left: 10px; font-size: 18px; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px;">
+                    Zoiko Billing
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content Card -->
+          <tr>
+            <td bgcolor="#131D31" style="background-color: #131D31; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 44px 36px; box-shadow: 0 8px 32px rgba(0,0,0,0.36);">
+              
+              <!-- Decorative Radial Glow (T3/T4) -->
+              {{#if show_radial_glow}}
+              <div style="height: 0; width: 0; position: relative;">
+                <div style="position: absolute; top: -20px; right: -20px; width: 140px; height: 140px; background: radial-gradient(circle, rgba(96,165,250,0.15) 0%, transparent 70%); border-radius: 50%;"></div>
+              </div>
+              {{/if}}
+
+              <!-- Eyebrow Label -->
+              {{#if eyebrow}}
+              <p style="font-family: 'JetBrains Mono', Courier, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: {{eyebrow_color}}; margin: 0 0 16px 0;">
+                — {{eyebrow}}
+              </p>
+              {{/if}}
+
+              <!-- Heading -->
+              <h1 style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 26px; font-weight: 800; color: #FFFFFF; line-height: 1.25; letter-spacing: -0.5px; margin: 0 0 20px 0;">
+                {{heading}}
+              </h1>
+
+              <!-- Main Body Content -->
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #B0C4DE; color: rgba(255,255,255,0.7); line-height: 1.7; margin: 0 0 28px 0;">
+                {{body_content}}
+              </div>
+
+              <!-- Secondary Content Block (Tables / Line Items) -->
+              {{#if secondary_content}}
+              <div style="margin: 0 0 28px 0;">
+                {{secondary_content}}
+              </div>
+              {{/if}}
+
+              <!-- Primary Action CTA Button -->
+              {{#if primary_action_url}}
+              <table border="0" cellspacing="0" cellpadding="0" style="margin-top: 8px; margin-bottom: 12px;">
+                <tr>
+                  <td align="center" bgcolor="#2563EB" style="border-radius: 50px; background: linear-gradient(135deg, #2563EB, #1D4ED8); box-shadow: 0 4px 16px rgba(37,99,235,0.35);">
+                    <a href="{{primary_action_url}}" target="_blank" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; color: #FFFFFF; text-decoration: none; padding: 14px 32px; border-radius: 50px; display: inline-block;">
+                      {{primary_action_label}} &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback Plain-Text URL -->
+              <p style="font-family: monospace; font-size: 12px; color: #60A5FA; margin: 12px 0 0 0; word-break: break-all;">
+                <a href="{{primary_action_url}}" style="color: #60A5FA; text-decoration: underline;">{{primary_action_url}}</a>
+              </p>
+              {{/if}}
+
+            </td>
+          </tr>
+
+          <!-- Footer Area -->
+          <tr>
+            <td style="padding-top: 32px; padding-bottom: 24px; text-align: center; font-size: 12px; color: #8899A6; color: rgba(255,255,255,0.5); line-height: 1.6;">
+              <p style="margin: 0 0 8px 0; font-weight: 600; color: rgba(255,255,255,0.7);">
+                {{legal_entity}}
+              </p>
+              {{#if billing_address}}
+              <p style="margin: 0 0 8px 0;">
+                {{billing_address}}
+              </p>
+              {{/if}}
+              <p style="margin: 0 0 8px 0;">
+                Automated billing notification sent by {{company_name}}. Need help? Contact <a href="mailto:{{support_email}}" style="color: #60A5FA; text-decoration: underline;">{{support_email}}</a>.
+              </p>
+              {{#if show_unsubscribe}}
+              <p style="margin: 12px 0 0 0;">
+                <a href="{{unsubscribe_url}}" style="color: #60A5FA; text-decoration: underline;">Unsubscribe from promotional emails</a>
+              </p>
+              {{/if}}
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

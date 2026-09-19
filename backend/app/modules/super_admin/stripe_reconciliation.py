@@ -384,27 +384,29 @@ def reconcile_organization_payments(
 
 
 def reconcile_processor_payments(
-    db: Session, range_start: date, range_end: date,
+    db: Session, range_start: date, range_end: date, organization_id: Optional[int] = None,
 ) -> dict:
     """Top-level orchestrator: iterate every organization with an ACTIVE
     Stripe connection in the current environment, reconcile each one
     independently (tenant-isolated), and aggregate the results.
+
+    `organization_id`, when given, scopes the sweep to that one organization
+    instead of every connected organization.
 
     Returns a dict shaped for storage in `ReconciliationRun.processor_stats`
     plus a flat list of exception dicts ready to become
     `ReconciliationException` rows.
     """
     environment = _resolve_environment()
+    connection_filters = [
+        StripeConnectedAccount.environment == environment,
+        StripeConnectedAccount.status == IntegrationConnectionStatus.ACTIVE,
+    ]
+    if organization_id is not None:
+        connection_filters.append(StripeConnectedAccount.organization_id == organization_id)
     connected_org_ids = [
         row.organization_id
-        for row in (
-            db.query(StripeConnectedAccount)
-            .filter(
-                StripeConnectedAccount.environment == environment,
-                StripeConnectedAccount.status == IntegrationConnectionStatus.ACTIVE,
-            )
-            .all()
-        )
+        for row in db.query(StripeConnectedAccount).filter(*connection_filters).all()
     ]
 
     all_exceptions: list[dict] = []

@@ -24,6 +24,13 @@ class CreditNoteRepository(BaseRepository[CreditNote]):
     def __init__(self, db):
         super().__init__(db, CreditNote)
 
+    def _apply_eager_loads(self, query):
+        # /credit-notes serializes CreditNoteResponse, whose customer_* fields
+        # are hybrid properties that lazy-load CreditNote.customer per row.
+        # Eager-load so a page of credit notes doesn't trigger N+1 queries.
+        from sqlalchemy.orm import joinedload
+        return query.options(joinedload(CreditNote.customer))
+
     def get_by_number(self, organization_id: int, number: str) -> Optional[CreditNote]:
         return self.get_first(organization_id, credit_note_number=number)
 

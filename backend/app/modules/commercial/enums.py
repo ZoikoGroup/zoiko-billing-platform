@@ -113,6 +113,20 @@ class CommercialSubscriptionStatus(str, enum.Enum):
     EXPIRED              — terminal; period ended without renewal; preserved.
     TRIALING             — trial is active under a CommercialEvaluationProgram;
                            entitlements sourced from the granted plan's bundle.
+    TRIAL_RECOVERY       — §5: the 14-day read/export-only window AFTER the
+                           trial expired unpaid (trial_ends_at passed without
+                           payment). The org may still view invoices/customers/
+                           reports/exports and may still self-serve convert to a
+                           paid plan; it may NOT create new revenue-generating
+                           state (new invoices/customers/quotes/subscriptions),
+                           because it no longer has a live trial entitlement.
+                           Distinct from SUSPENDED: TRIAL_RECOVERY keeps the
+                           conversion + read/export surface open (see
+                           require_active_subscription's tiering), while
+                           SUSPENDED (reached when recovery_ends_at passes) is
+                           the fully-suspended access state. Recovery-window
+                           expiry is enforced by commercial/tasks/
+                           recovery_window_expiry.py.
     SCHEDULED_CHANGE     — a plan change (upgrade/downgrade) is pending at the
                            next period boundary; current entitlements unchanged
                            until the change takes effect.
@@ -121,6 +135,18 @@ class CommercialSubscriptionStatus(str, enum.Enum):
                            then.
     ENTERPRISE_PENDING   — enterprise onboarding in progress; awaiting
                            signed order form / contract before activation.
+    CONVERTED            — §5.2: the trial subscription converted to a paid
+                           plan. A transient-but-genuine marker recorded in
+                           the SAME transaction as the conversion
+                           (TRIALING/TRIAL_RECOVERY -> CONVERTED -> ACTIVE) —
+                           it proves the account reached ACTIVE through the
+                           self-serve trial->paid conversion sequence
+                           (ZB-COM-015) rather than a fresh activation. The
+                           two writes share one commit, so CONVERTED is never
+                           observed outside its transaction; a surviving
+                           CONVERTED row (interrupted commit) is still
+                           re-drivable: complete_trial_conversion and the
+                           entitlement resolver treat it like a paid plan.
     """
     PENDING = "pending"
     ACTIVE = "active"
@@ -130,6 +156,8 @@ class CommercialSubscriptionStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     TRIALING = "trialing"
+    TRIAL_RECOVERY = "trial_recovery"
+    CONVERTED = "converted"
     SCHEDULED_CHANGE = "scheduled_change"
     CANCEL_AT_PERIOD_END = "cancel_at_period_end"
     ENTERPRISE_PENDING = "enterprise_pending"

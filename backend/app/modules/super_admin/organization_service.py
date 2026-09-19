@@ -52,23 +52,6 @@ _OPEN_ATTENTION_STATUSES = {
 _TENANT_ADMIN_ROLES = {UserRole.ORG_ADMIN}
 
 
-def _as_naive_utc(value: datetime) -> datetime:
-    """Strip tzinfo so mixed-column max()/comparisons never raise.
-
-    PlatformAuditLog.created_at is DateTime(timezone=True) while
-    Organization.updated_at / AttentionItem.last_seen_at are naive DateTime
-    columns populated via datetime.utcnow(). On Postgres, SQLAlchemy hands
-    back a tz-aware datetime for the former, so comparing/max()-ing it
-    against the naive ones raises "can't compare offset-naive and
-    offset-aware datetimes" the moment an org has at least one audit log row
-    (e.g. right after inviting an org admin — see
-    tests/test_phase3_organizations.py::test_last_activity_map_handles_tz_aware_audit_timestamps).
-    All values here already represent UTC wall-clock time, so dropping
-    tzinfo is a safe normalization, not a timezone conversion.
-    """
-    return value.replace(tzinfo=None) if value.tzinfo is not None else value
-
-
 class OrganizationDirectoryService:
     def __init__(self, db: Session):
         self.db = db
@@ -410,10 +393,29 @@ class OrganizationDirectoryService:
         )
         result: dict[int, Optional[datetime]] = {}
         for org in self.db.query(Organization).filter(Organization.id.in_(org_ids)).all():
-            candidates = [
-                _as_naive_utc(c)
-                for c in (org.updated_at, audit_max.get(org.id), attention_max.get(org.id))
-                if isinstance(c, datetime)
-            ]
-            result[org.id] = max(candidates) if candidates else None
+            result[org.id] = self._max_activity_datetime(
+                (org.updated_at, audit_max.get(org.id), attention_max.get(org.id))
+            )
         return result
+
+    @staticmethod
+    def _max_activity_datetime(candidates) -> Optional[datetime]:
+        """max() over a mix of naive/aware datetimes.
+
+        PlatformAuditLog.created_at is DateTime(timezone=True) (server-side
+        func.now(), tz-aware on Postgres — though SQLite silently strips
+        tzinfo on round-trip, which is why this never surfaced in the
+        SQLite-backed test suite) while Organization.updated_at /
+        AttentionItem.last_seen_at are naive DateTime (Python-side
+        datetime.utcnow()). max() over a mix of aware/naive datetimes
+        raises TypeError. Normalize every candidate to naive UTC (the
+        convention the rest of this codebase uses, e.g.
+        billing/services/admin_service.py's staleness check) before
+        comparing.
+        """
+        normalized = [
+            c.replace(tzinfo=None) if c.tzinfo is not None else c
+            for c in candidates
+            if isinstance(c, datetime)
+        ]
+        return max(normalized) if normalized else None

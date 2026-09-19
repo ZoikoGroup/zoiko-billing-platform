@@ -34,9 +34,13 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Optional
 
 import pyotp
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
 
 from app.config import settings
 from app.core.exceptions import BadRequestException, UnauthorizedException
@@ -126,7 +130,9 @@ def start_enrollment(db: Session, user: User) -> dict:
     return {"secret": raw_secret, "otpauth_url": otpauth_url, "issuer": settings.MFA_ISSUER_NAME}
 
 
-def verify_enrollment(db: Session, user: User, code: str) -> dict:
+def verify_enrollment(
+    db: Session, user: User, code: str, background_tasks: Optional["BackgroundTasks"] = None
+) -> dict:
     """Confirms enrollment with a real TOTP code from the authenticator app
     and enables MFA for step-up verification. Called from an already-
     authenticated session — it NEVER mints tokens (login does not involve
@@ -172,6 +178,9 @@ def verify_enrollment(db: Session, user: User, code: str) -> dict:
     db.commit()
     db.refresh(user)
 
+    _dispatch_mfa_state_email(
+        db, user, "ZB-SEC-005", "identity.mfa_enabled", background_tasks=background_tasks
+    )
     logger.info("Super Admin %s completed MFA enrollment", user.email)
     return {"recovery_codes": raw_codes}
 
@@ -257,7 +266,12 @@ def verify_step_up(db: Session, user: User, code: str | None, recovery_code: str
 
 # ── Self-service disable + administrative reset ─────────────────────────────
 
-def disable_mfa_self(db: Session, user: User, current_password: str) -> dict:
+def disable_mfa_self(
+    db: Session,
+    user: User,
+    current_password: str,
+    background_tasks: Optional["BackgroundTasks"] = None,
+) -> dict:
     """A fully-authenticated Super Admin may disable their own MFA —
     confirmed by re-entering their current password, since this reduces
     their own account's security posture (step-up will then fail until they
@@ -286,10 +300,18 @@ def disable_mfa_self(db: Session, user: User, current_password: str) -> dict:
         metadata={"initiated_by": "self"},
     )
     db.commit()
+    _dispatch_mfa_state_email(
+        db, user, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks
+    )
     return {"message": "MFA has been disabled on your account. Privileged actions will require re-enrolling first."}
 
 
-def admin_reset_mfa(db: Session, actor: User, target_user_id: int) -> dict:
+def admin_reset_mfa(
+    db: Session,
+    actor: User,
+    target_user_id: int,
+    background_tasks: Optional["BackgroundTasks"] = None,
+) -> dict:
     """Disaster-recovery path: another Super Admin resets a locked-out
     colleague's MFA (lost device + lost recovery codes) so they can
     re-enroll from Settings. Strongly authorized (caller must already hold
@@ -326,4 +348,44 @@ def admin_reset_mfa(db: Session, actor: User, target_user_id: int) -> dict:
     )
     db.commit()
     logger.warning("Super Admin %s administratively reset MFA for %s", actor.email, target.email)
+
+    from app.modules.notifications.service import dispatch_email
+
+    dispatch_email(
+        template_id="ZB-SEC-017",
+        recipient_email=target.email,
+        context={
+            "recipient_first_name": target.first_name or "there",
+            "settings_url": settings.FRONTEND_URL.rstrip("/") + "/settings",
+        },
+        event_name="identity.mfa_reset_by_admin",
+        entity_type="User",
+        entity_id=target.id,
+        organization_id=target.organization_id,
+        db=db,
+        background_tasks=background_tasks,
+    )
     return {"message": f"MFA has been reset for {target.email}. They can re-enroll from Settings."}
+
+
+def _dispatch_mfa_state_email(
+    db: Session,
+    user: User,
+    template_id: str,
+    event_name: str,
+    background_tasks: Optional["BackgroundTasks"] = None,
+) -> None:
+    from app.modules.notifications.service import dispatch_email
+
+    dispatch_email(
+        template_id=template_id,
+        recipient_email=user.email,
+        context={"recipient_first_name": user.first_name or "there"},
+        event_name=event_name,
+        entity_type="User",
+        entity_id=user.id,
+        organization_id=user.organization_id,
+        db=db,
+        background_tasks=background_tasks,
+        idempotency_key=f"{event_name}:User:{user.id}:{datetime.utcnow().isoformat()}",
+    )

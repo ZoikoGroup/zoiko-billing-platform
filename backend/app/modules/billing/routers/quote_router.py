@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.dependencies import (
+    get_current_user,
+    get_current_billing_admin,
+    require_new_revenue_generation_allowed,
+)
 from app.modules.billing.services import QuoteService
 from app.modules.billing.schemas import (
     QuotationCreate,
@@ -34,7 +38,7 @@ router = APIRouter(prefix="/quotations", tags=["🧾 Quotations"])
     response_model=QuotationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a quotation",
-    dependencies=[Depends(get_current_billing_admin)],
+    dependencies=[Depends(get_current_billing_admin), Depends(require_new_revenue_generation_allowed("billing"))],
 )
 def create_quote(
     data: QuotationCreate,
@@ -273,7 +277,7 @@ def remove_item(
     "/{quote_id}/send",
     response_model=QuotationResponse,
     summary="Send quotation",
-    dependencies=[Depends(get_current_billing_admin)],
+    dependencies=[Depends(get_current_billing_admin), Depends(require_new_revenue_generation_allowed("billing"))],
 )
 def send_quote(
     quote_id: int,

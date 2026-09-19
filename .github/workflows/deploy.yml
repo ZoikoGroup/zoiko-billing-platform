@@ -24,6 +24,9 @@ jobs:
             # the HTTP /ready probe (e.g. 8000 or 8001). If empty, backend health is
             # verified authoritatively via `systemctl is-active`.
             BACKEND_HEALTH_PORT="${{ vars.BACKEND_HEALTH_PORT }}"
+            # SSH remote used to sync the deployment checkouts; defaults to the
+            # backend alias. Override with a GIT_DEPLOY_REMOTE repo variable.
+            GIT_DEPLOY_REMOTE="${{ vars.GIT_DEPLOY_REMOTE }}"
 
             # Bounded retry for transient install/build failures (registry/network/OOM).
             # Final failure still aborts the deployment; it never suppresses errors.
@@ -49,8 +52,25 @@ jobs:
             # drift was. These checkouts only ever exist to mirror origin/main, so we
             # log any drift for the record, then force them back onto it and verify the
             # commit that lands is the one actually intended.
+            #
+            # The backend checkout's origin is the SSH host alias
+            # "github.com-billingbackend" (configured in the VM's ~/.ssh/config with a
+            # deploy key), which is the only URL that can authenticate from the server.
+            # The frontend checkout was cloned with the plain "git@github.com" URL and
+            # has no usable key for it, so its fetch fails with "Permission denied
+            # (publickey)".  Normalize every checkout to that working alias before
+            # fetching so both directories self-heal regardless of how they were
+            # originally cloned.  Override via a GIT_DEPLOY_REMOTE repo variable if the
+            # host alias ever changes.
+            GIT_DEPLOY_REMOTE="${GIT_DEPLOY_REMOTE:-github.com-billingbackend:ZoikoGroup/zoiko-billing-platform}"
             git_sync_to_main() {
               echo "HEAD before sync: $(git rev-parse HEAD)"
+              local configured
+              configured="$(git remote get-url origin 2>/dev/null || echo 'none')"
+              if [ "$configured" != "$GIT_DEPLOY_REMOTE" ]; then
+                echo "::notice::origin is '$configured' - pointing deployment checkout at '$GIT_DEPLOY_REMOTE'"
+                git remote set-url origin "$GIT_DEPLOY_REMOTE"
+              fi
               local drift
               drift="$(git status --porcelain)"
               if [ -n "$drift" ]; then

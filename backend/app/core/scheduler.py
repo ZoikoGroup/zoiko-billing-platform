@@ -149,6 +149,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Recurring Subscription Billing",
         ),
         (
+            "app.modules.billing.tasks.exchange_rates:run_exchange_rate_refresh_job",
+            settings.EXCHANGE_RATE_REFRESH_INTERVAL_MINUTES,
+            "exchange_rate_refresh_job",
+            "Scheduled Exchange-Rate Refresh",
+        ),
+        (
             "app.modules.billing.tasks.overdue_invoices:run_overdue_invoice_job",
             settings.OVERDUE_INVOICE_CHECK_INTERVAL_MINUTES,
             "overdue_invoice_job",
@@ -191,6 +197,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Commercial (Plane-1) Free-Trial Expiry Sweep",
         ),
         (
+            "app.modules.commercial.tasks.recovery_window_expiry:run_commercial_recovery_window_expiry_job",
+            settings.COMMERCIAL_RECOVERY_WINDOW_CHECK_INTERVAL_MINUTES,
+            "commercial_recovery_window_expiry_job",
+            "Commercial (Plane-1) Trial Recovery-Window Expiry Sweep",
+        ),
+        (
             "app.modules.commercial.tasks.apply_scheduled_change:run_scheduled_plan_change_job",
             settings.SCHEDULED_PLAN_CHANGE_CHECK_INTERVAL_MINUTES,
             "scheduled_plan_change_job",
@@ -207,6 +219,18 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             settings.RECONCILIATION_INTERVAL_MINUTES,
             "reconciliation_job",
             "Ledger Reconciliation (REC-01)",
+        ),
+        (
+            "app.modules.billing.tasks.invoice_reminder:run_invoice_reminder_job",
+            settings.INVOICE_REMINDER_INTERVAL_MINUTES,
+            "invoice_reminder_job",
+            "Invoice Pre-Due Reminder (ZB-INV-011)",
+        ),
+        (
+            "app.modules.commercial.tasks.trial_warning:run_commercial_trial_warning_job",
+            settings.COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES,
+            "commercial_trial_warning_job",
+            "Commercial Trial Ending Warning (ZB-COM-003)",
         ),
     ]
 

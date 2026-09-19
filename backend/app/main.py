@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -40,7 +41,7 @@ from app.core.exceptions import (
     generic_exception_handler,
 )
 from app.core.rate_limiter import limiter
-from app.database import initialize_database
+from app.database import initialize_database, verify_critical_columns_present
 
 logger = logging.getLogger("zoiko_billing")
 
@@ -114,7 +115,17 @@ async def lifespan(app: FastAPI):
         except (TypeError, ValueError):
             logger.critical("MFA_ENCRYPTION_KEY is not a valid Fernet key.")
             raise SystemExit("MFA_ENCRYPTION_KEY must be a valid Fernet key in production.")
+    from app.modules.notifications.template_registry import validate_template_registry
+    validate_template_registry()
     validate_production_cors(_cors_origins, settings.DEBUG)
+    from app.core import cache_service
+    if cache_service.cache_ping():
+        logger.info("Redis cache backend active (REDIS_URL configured).")
+    else:
+        logger.info(
+            "Redis cache backend unavailable; using in-process fallback "
+            "(set REDIS_URL to enable a shared cache)."
+        )
     try:
         initialize_database()
     except Exception as exc:
@@ -124,6 +135,14 @@ async def lifespan(app: FastAPI):
             "will return 503 until the database becomes reachable.",
             exc,
         )
+    # Deliberately OUTSIDE the try/except above: a database that's
+    # reachable but missing a column running code depends on is not a
+    # transient condition like the connectivity/not-yet-migrated cases
+    # tolerated above — see verify_critical_columns_present()'s docstring.
+    # Raises SystemExit (uncaught here, same as the BILLING_SECRET_KEY/
+    # MFA_ENCRYPTION_KEY checks above) rather than starting in a state that
+    # will throw confusing errors on first use of that column.
+    verify_critical_columns_present()
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:
         from app.core.scheduler import start_scheduler
         start_scheduler()
@@ -230,6 +249,14 @@ app.add_middleware(
         "X-Request-ID",
     ],
 )
+
+# ── Response compression ─────────────────────────────────────────────────────
+# gzip-compress JSON responses that clear the minimum size threshold. Added
+# AFTER (i.e. its middleware runs outside) CORSMiddleware, so CORS headers set
+# on the response are preserved across the gzip transform. The frontend serves
+# its own static assets; this only applies to the JSON API body.
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 

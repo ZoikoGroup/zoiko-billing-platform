@@ -141,6 +141,17 @@ class Settings(BaseSettings):
     ANTHROPIC_MAX_TOKENS: int = 2048
     ANTHROPIC_TEMPERATURE: float = 0.1
 
+    # ── Redis (distributed cache + rate limiting) ──────────────────────
+    # Empty string disables Redis: falls back to in-process cachetools.TTLCache
+    # and slowapi MemoryStorage. Works for single-worker dev/test.
+    REDIS_URL: str = ""
+    REDIS_KEY_PREFIX: str = "zb"
+    REDIS_DEFAULT_TTL: int = 60
+    REDIS_GATE_TTL: int = 20
+    REDIS_CONFIG_TTL: int = 60
+    REDIS_ENTITLEMENT_TTL: int = 60
+    REDIS_DASHBOARD_TTL: int = 30
+
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
     # is explicitly enabled — see app/core/scheduler.py.
@@ -158,6 +169,17 @@ class Settings(BaseSettings):
     FINANCIAL_CONSISTENCY_INTERVAL_MINUTES: int = 60
     # REC-01 — ledger reconciliation cadence.
     RECONCILIATION_INTERVAL_MINUTES: int = 1440
+    # Scheduled live exchange-rate refresh cadence. The request path never
+    # calls the live FX API (see billing/tasks/exchange_rates.py); this job
+    # keeps cached rates fresh instead. Conservative by design — FX rates move
+    # little within an hour and the platform already treats 24h as acceptable
+    # (EXCHANGE_RATE_MAX_AGE_HOURS).
+    EXCHANGE_RATE_REFRESH_INTERVAL_MINUTES: int = 60
+    # Page-load caching (in-process, cachetools — no Redis in this
+    # deployment): headline dashboard KPIs are cached this many seconds so
+    # rapid dashboard polls don't rerun the invoice aggregate. 0 disables it.
+    # See modules/billing/services/dashboard_service.py.
+    DASHBOARD_KPI_CACHE_TTL_SECONDS: int = 30
     # Commercial (Plane 1) recurring invoice generation on subscription
     # renewal — see commercial/tasks/recurring_invoice.py. OFF by default,
     # independent of ENABLE_RECURRING_BILLING_SCHEDULER's Plane-2 jobs.
@@ -165,16 +187,27 @@ class Settings(BaseSettings):
     COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
 
     # ── Commercial (Plane 1) free-trial enforcement (§B3) ───────────────
-    # A self-serve subscription only gets a trial_ends_at deadline when an
-    # is_active=True CommercialEvaluationProgram exists for its plan — the
-    # program's own duration_days sets the length, not a global setting (no
-    # program is seeded, so no plan grants a trial out of the box). If a
-    # granted trial expires unpaid, commercial/tasks/trial_expiry.py acts on
-    # it (per the program's expiry_action) and require_active_subscription
+    # A self-serve subscription gets a trial_ends_at deadline either from an
+    # is_active=True CommercialEvaluationProgram's own duration_days (super
+    # admin configured, takes precedence), or — if no such program exists for
+    # its plan — from this default, so every new account still starts a
+    # trial automatically instead of being left without one. If a granted
+    # trial expires unpaid, commercial/tasks/trial_expiry.py acts on it (per
+    # the subscription's expiry_action) and require_active_subscription
     # blocks /billing/* access until a super admin reactivates it or the org
     # pays. OFF by default — nothing acts on an expired trial until enabled.
     ENABLE_COMMERCIAL_TRIAL_ENFORCEMENT: bool = True
     COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES: int = 60
+    # §5: how often the recovery-window expiry sweep
+    # (commercial/tasks/recovery_window_expiry.py) checks for TRIAL_RECOVERY
+    # subscriptions past their recovery_ends_at and moves them to SUSPENDED.
+    COMMERCIAL_RECOVERY_WINDOW_CHECK_INTERVAL_MINUTES: int = 60
+    COMMERCIAL_DEFAULT_TRIAL_DAYS: int = 14
+    # §5: length of the read/export-only recovery window after a trial expires
+    # unpaid. recovery_ends_at = trial_ends_at + this; trial_expiry.py and
+    # recovery_window_expiry.py both read from the subscription's stored value,
+    # this constant only drives computation at grant time.
+    COMMERCIAL_RECOVERY_WINDOW_DAYS: int = 14
 
     # Plane-1 scheduled plan-change apply sweep (ZB-COM-ENT-001 Part 3) — a
     # SCHEDULED downgrade's effective_at is applied by this job. OFF by
@@ -194,6 +227,20 @@ class Settings(BaseSettings):
     PLATFORM_STRIPE_SECRET_KEY: str = ""
     PLATFORM_STRIPE_PUBLISHABLE_KEY: str = ""
     PLATFORM_STRIPE_WEBHOOK_SECRET: str = ""
+
+    # ── ZB-INV-011: Invoice pre-due reminder (Prompt 4) ──────────────────
+    # Number of days before an invoice's due_date to send the reminder email.
+    # Per-tenant override is a future enhancement (would require a
+    # BillingConfiguration column); this is platform-wide for now.
+    INVOICE_REMINDER_LEAD_DAYS: int = 3
+    ENABLE_INVOICE_PRE_DUE_REMINDER: bool = True
+    INVOICE_REMINDER_INTERVAL_MINUTES: int = 1440  # daily sweep
+
+    # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
+    # Days before trial_ends_at to fire the proactive warning email.
+    TRIAL_WARNING_LEAD_DAYS: int = 3
+    ENABLE_TRIAL_WARNING_JOB: bool = True
+    COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES: int = 1440  # daily sweep
 
 
 settings = Settings()

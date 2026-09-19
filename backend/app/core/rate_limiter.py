@@ -12,7 +12,21 @@ from slowapi import Limiter
 from starlette.requests import Request
 from slowapi.util import get_remote_address
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/hour", "60/minute"])
+from app.config import settings
+
+# When REDIS_URL is configured the counters live in Redis, so rate limits are
+# shared across all API workers. in_memory_fallback_enabled keeps the limiter
+# usable (per-process MemoryStorage) if Redis is temporarily unreachable
+# instead of failing every request; when REDIS_URL is empty this is a
+# single-process in-memory limiter exactly as before.
+_redis_url = settings.REDIS_URL or None
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200/hour", "60/minute"],
+    storage_uri=_redis_url,
+    in_memory_fallback_enabled=bool(_redis_url),
+    swallow_errors=True,
+)
 
 
 def limit_route(limit_value: str) -> Callable:

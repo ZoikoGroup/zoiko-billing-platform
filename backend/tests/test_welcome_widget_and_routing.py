@@ -109,6 +109,18 @@ def test_welcome_widget_matches_billing_dashboard(db_session):
 # to EXPLAIN (help_general) BEFORE PREPARE, INSPECT, or any customer-name
 # extraction — regardless of articles ("the"/"a") or the verb that follows.
 class TestHowToHardGate:
+    @pytest.mark.parametrize("phrase,expected_intent", [
+        ("how to create an invoice", "help_general"),         # guided verb, still EXPLAIN
+        ("guide to refund a payment", "help_general"),
+    ])
+    def test_how_to_leads_route_to_explain(self, db_session, phrase, expected_intent):
+        org, conv, ctx = _make_ctx(db_session)
+        ce = ConversationEngine(db_session, model_gateway=None)
+        r = ce._classify_intent(conv, phrase, ctx)
+        assert r["intent"] == expected_intent, f"{phrase!r} -> {r['intent']}"
+        assert r["domain"] == "help"
+        assert r["risk_class"] == "R0"
+
     @pytest.mark.parametrize("phrase", [
         "how to add the customer",          # the original bug
         "how to add customer",
@@ -116,14 +128,15 @@ class TestHowToHardGate:
         "how can i add the customer",
         "steps to add a customer",
         "how to add a customer",
-        "how to create an invoice",         # guided verb, still EXPLAIN
-        "guide to refund a payment",
     ])
-    def test_how_to_leads_route_to_explain(self, db_session, phrase):
+    def test_how_to_add_customer_leads_to_capability_gap(self, db_session, phrase):
+        """How-to phrasing about ADDING a customer asks how to create a
+        customer record — there is no governed in-chat action, so it answers
+        the honest capability gap instead of the customer glossary definition."""
         org, conv, ctx = _make_ctx(db_session)
         ce = ConversationEngine(db_session, model_gateway=None)
         r = ce._classify_intent(conv, phrase, ctx)
-        assert r["intent"] == "help_general", f"{phrase!r} -> {r['intent']}"
+        assert r["intent"] == "unsupported_customer_creation", f"{phrase!r} -> {r['intent']}"
         assert r["domain"] == "help"
         assert r["risk_class"] == "R0"
 
@@ -155,9 +168,9 @@ class TestHowToHardGate:
 # ── Regression: the 6 phrases from the report must all route correctly ──────
 class TestReportedRegressionPhrases:
     @pytest.mark.parametrize("phrase,expected_intent,expected_handler", [
-        ("how to add the customer", "help_general", "EXPLAIN"),
-        ("how to add customer", "help_general", "EXPLAIN"),
-        ("how do I add a customer", "help_general", "EXPLAIN"),
+        ("how to add the customer", "unsupported_customer_creation", "EXPLAIN"),
+        ("how to add customer", "unsupported_customer_creation", "EXPLAIN"),
+        ("how do I add a customer", "unsupported_customer_creation", "EXPLAIN"),
         ("create an invoice for TOM for a Consulting Service, Rs500", "action_draft", "PREPARE"),
         ("show me TOM", "customer_search", "LOOKUP"),
         ("TOM's balance", "account_balance", "LOOKUP"),

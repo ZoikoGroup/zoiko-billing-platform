@@ -58,6 +58,11 @@ class EntitlementSnapshotService:
         # transaction (e.g. a plan-change commit) without relying on
         # computed_at's timestamp resolution.
         snapshot.snapshot_version = (snapshot.snapshot_version or 0) + 1
+        # Recompute is the single choke point for every entitlement mutation
+        # (override approve/revoke, subscription transitions, provisioning,
+        # plan publish) — invalidate derived caches here once.
+        from app.core import cache_service
+        cache_service.invalidate_entitlement_caches(organization_id)
         self.db.flush()
         return snapshot
 
@@ -79,25 +84,15 @@ class EntitlementSnapshotService:
         return values
 
     def _values_from_plan_entitlements(self, subscription) -> dict:
-        from app.modules.commercial.enums import CommercialPlanVersionStatus
+        from app.modules.commercial.cache import get_latest_published_version_id
         from app.modules.commercial.models import (
-            CommercialPlanVersion,
             EntitlementDefinition,
             PlanEntitlement,
         )
 
         version_id = subscription.catalog_version_id
         if version_id is None and subscription.commercial_plan_id is not None:
-            latest_published = (
-                self.db.query(CommercialPlanVersion)
-                .filter(
-                    CommercialPlanVersion.plan_id == subscription.commercial_plan_id,
-                    CommercialPlanVersion.status == CommercialPlanVersionStatus.PUBLISHED,
-                )
-                .order_by(CommercialPlanVersion.version_number.desc())
-                .first()
-            )
-            version_id = latest_published.id if latest_published is not None else None
+            version_id = get_latest_published_version_id(self.db, subscription.commercial_plan_id)
 
         if version_id is None:
             return {}

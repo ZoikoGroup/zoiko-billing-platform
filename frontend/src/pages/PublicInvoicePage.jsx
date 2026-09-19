@@ -491,11 +491,10 @@ export default function PublicInvoicePage() {
                 />
               </div>
 
-              {/* Card form placeholder — Stripe Elements will mount here */}
               {payMethod === "card" && (
                 <div className="pub-stripe-form">
                   <div className="pub-stripe-header">
-                    <span className="pub-stripe-title">Card Details</span>
+                    <span className="pub-stripe-title">Checkout</span>
                     <div className="pub-stripe-brands">
                       <span className="pub-card-chip">VISA</span>
                       <span className="pub-card-chip">MC</span>
@@ -503,41 +502,10 @@ export default function PublicInvoicePage() {
                     </div>
                   </div>
 
-                  {/* Stripe CardElement mounts here */}
-                  <div className="pub-stripe-mount-placeholder" id="stripe-card-element">
-                    <div className="pub-stripe-mock-field">
-                      <label className="pub-stripe-mock-label">Card Number</label>
-                      <div className="pub-stripe-mock-input">
-                        <span className="pub-stripe-mock-placeholder">•••• •••• •••• ••••</span>
-                        <span className="pub-stripe-mock-icon">💳</span>
-                      </div>
-                    </div>
-                    <div className="pub-stripe-mock-row">
-                      <div className="pub-stripe-mock-field pub-stripe-mock-field--half">
-                        <label className="pub-stripe-mock-label">Expiry Date</label>
-                        <div className="pub-stripe-mock-input">
-                          <span className="pub-stripe-mock-placeholder">MM / YY</span>
-                        </div>
-                      </div>
-                      <div className="pub-stripe-mock-field pub-stripe-mock-field--half">
-                        <label className="pub-stripe-mock-label">CVC</label>
-                        <div className="pub-stripe-mock-input">
-                          <span className="pub-stripe-mock-placeholder">•••</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="pub-stripe-mock-field">
-                      <label className="pub-stripe-mock-label">Cardholder Name</label>
-                      <div className="pub-stripe-mock-input">
-                        <span className="pub-stripe-mock-placeholder">Full name on card</span>
-                      </div>
-                    </div>
-                    <div className="pub-stripe-integration-note">
-                      <span className="pub-stripe-note-icon">ℹ</span>
-                      Stripe payment integration will be connected here. This UI is ready for
-                      <code> &lt;CardElement /&gt;</code> from <code>@stripe/react-stripe-js</code>.
-                    </div>
-                  </div>
+                  <p className="pub-stripe-hosted-note">
+                    You will be taken to Stripe's secure checkout page to complete your
+                    payment. Your card details are never stored on our servers.
+                  </p>
 
                   <button
                     type="button"
@@ -552,7 +520,7 @@ export default function PublicInvoicePage() {
                     By clicking "Pay Securely", you agree to our&nbsp;
                     <span className="pub-pay-link">Terms of Service</span> and&nbsp;
                     <span className="pub-pay-link">Privacy Policy</span>.
-                    Your card details are never stored on our servers.
+                    Payments are processed securely by Stripe.
                   </p>
                 </div>
               )}
@@ -881,30 +849,10 @@ export default function PublicInvoicePage() {
           border-radius: 4px; color: #94a3b8; letter-spacing: 0.05em;
         }
 
-        .pub-stripe-mount-placeholder { display: flex; flex-direction: column; gap: 1rem; }
-        .pub-stripe-mock-field { display: flex; flex-direction: column; gap: 0.35rem; }
-        .pub-stripe-mock-field--half { flex: 1; }
-        .pub-stripe-mock-row { display: flex; gap: 1rem; }
-        .pub-stripe-mock-label { font-size: 0.72rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.07em; }
-        .pub-stripe-mock-input {
-          display: flex; align-items: center; justify-content: space-between;
+        .pub-stripe-hosted-note {
           padding: 0.75rem 1rem; border-radius: 0.6rem;
-          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
-          min-height: 48px; cursor: text;
-          transition: border-color 0.2s;
-        }
-        .pub-stripe-mock-input:focus-within { border-color: rgba(245,158,11,0.5); }
-        .pub-stripe-mock-placeholder { color: #334155; font-size: 0.9rem; font-family: monospace; }
-        .pub-stripe-mock-icon { color: #334155; font-size: 1.1rem; }
-        .pub-stripe-integration-note {
-          padding: 0.75rem 1rem; border-radius: 0.6rem;
-          background: rgba(99,102,241,0.06); border: 1px dashed rgba(99,102,241,0.3);
-          font-size: 0.78rem; color: #94a3b8; line-height: 1.5;
-        }
-        .pub-stripe-note-icon { font-style: normal; color: #a5b4fc; margin-right: 0.3rem; }
-        .pub-stripe-integration-note code {
-          background: rgba(255,255,255,0.07); border-radius: 3px; padding: 0.1rem 0.3rem;
-          font-size: 0.75rem; color: #a5b4fc;
+          background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.18);
+          font-size: 0.8rem; color: #94a3b8; line-height: 1.6;
         }
 
         /* pay button */

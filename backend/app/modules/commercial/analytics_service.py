@@ -253,6 +253,7 @@ class CommercialEntitlementAnalyticsService:
 
     # ── 8. Revenue leakage exceptions (target zero) ─────────────────────────
     def revenue_leakage_exceptions(self) -> Dict[str, Any]:
+        from app.modules.commercial.cache import get_latest_published_version_id
         from app.modules.commercial.service import CommercialSubscriptionService
 
         sub_svc = CommercialSubscriptionService(self.db)
@@ -271,18 +272,16 @@ class CommercialEntitlementAnalyticsService:
                 continue
             if sub.catalog_version_id is None:
                 continue
-            latest_published = (
-                self.db.query(CommercialPlanVersion)
-                .filter(
-                    CommercialPlanVersion.plan_id == sub.commercial_plan_id,
-                    CommercialPlanVersion.status == "published",
+            latest_version_id = get_latest_published_version_id(self.db, sub.commercial_plan_id)
+            latest_published = None
+            if latest_version_id is not None and latest_version_id != sub.catalog_version_id:
+                latest_published = (
+                    self.db.query(CommercialPlanVersion)
+                    .filter(CommercialPlanVersion.id == latest_version_id)
+                    .first()
                 )
-                .order_by(CommercialPlanVersion.version_number.desc())
-                .first()
-            )
             if (
                 latest_published is not None
-                and latest_published.id != sub.catalog_version_id
                 and latest_published.price_amount is not None
                 and resolved[0] != latest_published.price_amount
             ):

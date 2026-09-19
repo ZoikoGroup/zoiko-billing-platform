@@ -11,4 +11,6 @@ import { api } from "./api";
 
 export const platformSelfServiceApi = {
   getZoikoSubscription: () => api.get("/billing/workspace/zoiko-subscription"),
+  getWorkspaceUsage: () => api.get("/billing/workspace/usage"),
+  convertTrialToPaid: (payload = {}) => api.post("/billing/workspace/trial/convert", payload),
 };

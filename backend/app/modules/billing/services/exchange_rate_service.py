@@ -140,6 +140,10 @@ class ExchangeRateService:
                 config.exchange_rate_base_currency = base
             # Also update legacy fields for backward compatibility
             self._update_legacy_fields(config, rates)
+            # Bump the optimistic-lock version after all field mutations so a
+            # stale invoice_draft preview (which pins config.version) is
+            # invalidated by an automatic FX refresh — not just a human edit.
+            config.version = (config.version or 1) + 1
         self.db.refresh(config)
 
         return {
@@ -287,6 +291,7 @@ class ExchangeRateService:
                 config.exchange_rate_base_currency = base
                 # Update legacy fields
                 self._update_legacy_fields(config, api_rates)
+                config.version = (config.version or 1) + 1
 
             logger.info(
                 "Live rate fetched: %s→%s = %s (base=%s)",

@@ -54,6 +54,7 @@ import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
+import TrialBanner from "./TrialBanner";
 
 const NAV_SECTIONS = [
   {
@@ -281,6 +282,7 @@ const WORKSPACE_NAV_ITEMS = [
   { label: "Organization Profile", href: "/billing/workspace/organization", icon: Building2 },
   { label: "Billing Subscription", href: "/billing/workspace/subscription", icon: CreditCard },
   { label: "Zoiko Subscription", href: "/billing/workspace/zoiko-subscription", icon: CreditCard },
+  { label: "Usage", href: "/billing/workspace/usage", icon: Gauge },
   { label: "Activity Timeline", href: "/billing/workspace/activity", icon: Activity },
   { label: "Notifications", href: "/billing/workspace/notifications", icon: Bell },
   { label: "Help & Documentation", href: "/billing/workspace/help", icon: HelpCircle },
@@ -544,6 +546,7 @@ export default function BillingShell({ children }) {
               <TriageStrip />
             </>
           )}
+          <TrialBanner />
           {/* Single source of truth for the sidebar-to-content gutter and page
               margins — every page renders here as {children} with no need to
               (and no longer any reason to) set its own horizontal padding. */}

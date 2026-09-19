@@ -15,6 +15,7 @@ Key rules per ZB-AI-KB-001:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -63,7 +64,7 @@ QUERY_STOPWORDS = frozenset((
     "they", "them", "their", "this", "that", "these", "those",
     "have", "has", "had", "having", "not", "no", "yes",
     "please", "tell", "show", "get", "give", "need", "want", "know",
-    "work", "works", "working", "use", "using", "used", "like", "also",
+    "work", "works", "working", "use", "using", "used", "explain", "like", "also",
     "just", "some", "any", "each", "every", "all", "more", "most", "other",
     "only", "own", "same", "so", "too", "very", "again", "once", "when",
 ))
@@ -165,6 +166,50 @@ class KnowledgeRetriever:
         cache_key = (namespace_ids, freshness_policy)
         self._doc_obj_cache[cache_key] = (docs, time.time())
 
+    def _validate_cached_docs(
+        self,
+        namespace_ids: tuple[int, ...],
+        freshness_policy: str,
+        cached_docs: list,
+    ) -> list | None:
+        """RT-022: a document can be revoked/expired while it still sits in the
+        retriever's document cache (TTL 300s). On a cache hit we re-verify the
+        cached set against the DB so a revoked chunk is never served from the
+        cache. Returns the original list if still valid, ``[]`` for an empty
+        (valid) hit, or ``None`` when a stored document is stale — in which case
+        the caller evicts the cache and rebuilds from the DB.
+        """
+        if not cached_docs:
+            return cached_docs
+        ids = [d.id for d in cached_docs]
+        invalid = (
+            self.db.query(KnowledgeDocument.id)
+            .filter(
+                KnowledgeDocument.id.in_(ids),
+                KnowledgeDocument.status != "approved",
+            )
+        )
+        if freshness_policy == "current_only":
+            invalid = invalid.union(
+                self.db.query(KnowledgeDocument.id).filter(
+                    KnowledgeDocument.id.in_(ids),
+                    KnowledgeDocument.freshness_status == FreshnessStatus.EXPIRED,
+                )
+            )
+        if invalid.count():
+            cache_key = (namespace_ids, freshness_policy)
+            self._doc_obj_cache.pop(cache_key, None)
+            self._doc_cache.pop(cache_key, None)
+            return None
+        return cached_docs
+
+    def invalidate(self) -> None:
+        """Drop all cached documents/IDs so the next retrieve rebuilds from the
+        DB. Called when knowledge-base documents are revoked, expired, or
+        otherwise changed out-of-band (ingestion/admin pipeline)."""
+        self._doc_cache.clear()
+        self._doc_obj_cache.clear()
+
     def retrieve(
         self,
         *,
@@ -176,8 +221,16 @@ class KnowledgeRetriever:
         freshness_policy: str = "current_only",
         message_id: int | None = None,
         boost_terms: list[str] | None = None,
+        domains: list[str] | None = None,
     ) -> tuple[list[RetrievalResult], list[dict]]:
         """Retrieve knowledge chunks relevant to a query.
+
+        Args:
+            domains: Current app-page domain segments (e.g. ['invoices'] for
+                '/billing/invoices'). When non-empty, namespaces that declare
+                allowed_domains/blocked_domains are restricted to the current
+                surface. When empty or None, no domain restriction is applied
+                (matches pre-restriction behavior).
 
         Returns:
             (results, citations_dict) — results for grounding, citations for DB storage
@@ -185,7 +238,7 @@ class KnowledgeRetriever:
         start_time = time.monotonic()
         
         # Resolve allowed namespaces
-        namespaces = self._resolve_namespaces(ctx, namespace_codes)
+        namespaces = self._resolve_namespaces(ctx, namespace_codes, domains=domains)
         if not namespaces:
             return [], []
 
@@ -195,9 +248,15 @@ class KnowledgeRetriever:
         # Try cache first for document objects
         approved_docs = self._get_cached_docs(namespace_ids, freshness_policy)
         if approved_docs is not None:
-            doc_ids = [d.id for d in approved_docs]
-            cache_hit = True
-        else:
+            # RT-022: a document can be revoked/expired while it sits in the
+            # cache. On a cache hit we re-verify the cached set is still
+            # approved/current; if not, the cache is evicted and we rebuild
+            # from the DB so a revoked chunk is never served from the cache.
+            approved_docs = self._validate_cached_docs(namespace_ids, freshness_policy, approved_docs)
+            if approved_docs is not None:
+                doc_ids = [d.id for d in approved_docs]
+                cache_hit = True
+        if approved_docs is None:
             # Get approved, current documents with sources in one query.
             # KnowledgeDocument has no 'source' relationship (only source_id FK),
             # so we filter source titles directly in SQL via the join.
@@ -207,6 +266,7 @@ class KnowledgeRetriever:
                 .filter(
                     KnowledgeSource.namespace_id.in_(namespace_ids),
                     KnowledgeSource.title.in_(PUBLIC_KB_SOURCE_TITLES),
+                    KnowledgeSource.status == "active",
                     KnowledgeDocument.status == "approved",
                     KnowledgeDocument.freshness_status != FreshnessStatus.EXPIRED,
                 )
@@ -561,12 +621,42 @@ class KnowledgeRetriever:
 
         return run.id
 
+    @staticmethod
+    def _parse_domain_restrictions(raw: Any) -> set[str]:
+        """Normalize an allowed_domains/blocked_domains cell into a set of
+        lowercase domain tokens. Accepts a proper JSON array or a
+        JSON-encoded string (legacy seeds); anything else is ignored."""
+        if raw is None:
+            return set()
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return set()
+            items = parsed if isinstance(parsed, list) else [parsed]
+        elif isinstance(raw, (list, tuple, set)):
+            items = raw
+        else:
+            return set()
+        return {
+            str(item).strip().lower()
+            for item in items
+            if item is not None and str(item).strip()
+        }
+
     def _resolve_namespaces(
         self,
         ctx: AIContext,
         namespace_codes: list[str] | None,
+        domains: list[str] | None = None,
     ) -> list[KnowledgeNamespace]:
-        """Resolve allowed namespaces for the current tenant context."""
+        """Resolve allowed namespaces for the current tenant context.
+
+        Namespaces that declare access restrictions (allowed_domains /
+        blocked_domains) are limited to those app surfaces. Restrictions are
+        only enforced when a current page domain is known: without one, every
+        namespace resolves as before (retrieval was never domain-scoped), so
+        existing installs keep working until a restriction is declared."""
         query = self.db.query(KnowledgeNamespace)
 
         if namespace_codes:
@@ -580,7 +670,26 @@ class KnowledgeRetriever:
                 )
             )
 
-        return query.all()
+        namespaces = query.all()
+
+        current_domains = {
+            d.strip().lower()
+            for d in (domains or [])
+            if d and str(d).strip()
+        }
+        if not current_domains:
+            return namespaces
+
+        def _restricted(ns: KnowledgeNamespace) -> bool:
+            allowed = self._parse_domain_restrictions(ns.allowed_domains)
+            blocked = self._parse_domain_restrictions(ns.blocked_domains)
+            if allowed and not (allowed & current_domains):
+                return True
+            if blocked and (blocked & current_domains):
+                return True
+            return False
+
+        return [ns for ns in namespaces if not _restricted(ns)]
 
     def is_confident(self, results: list[RetrievalResult], threshold: float = 0.5) -> bool:
         """Check if retrieval results are confident enough to answer."""

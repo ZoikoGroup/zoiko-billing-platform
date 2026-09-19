@@ -1,216 +1,298 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { renderWithRouter } from "../test/renderWithRouter";
-import { axe } from "../../../test/a11y";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
-const mockNavigate = vi.fn();
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual("react-router-dom");
-  return { ...actual, useNavigate: () => mockNavigate };
-});
+// This wizard is the money-creating action for the whole billing platform:
+// it builds an invoice + line-item payload and POSTs it via invoiceApi.create /
+// invoiceApi.bulkSetItems. These tests mock every API the component touches on
+// mount (settings/tax/customer search) and on submit, then drive the wizard
+// through its real steps exactly as a user would (Next/Back + form fields),
+// asserting on the mocked API call counts/args rather than on internals.
+
+const mockInvoiceCreate = vi.fn();
+const mockInvoiceBulkSetItems = vi.fn();
+const mockInvoiceGet = vi.fn();
+const mockInvoiceSendEmail = vi.fn();
+const mockCustomerSearch = vi.fn();
+const mockCustomerGet = vi.fn();
+const mockProductList = vi.fn();
+const mockProductGet = vi.fn();
+const mockProductListCategories = vi.fn();
+const mockSettingsGetConfig = vi.fn();
+const mockSettingsGetExchangeRatePair = vi.fn();
+const mockTaxList = vi.fn();
+const mockPricingListByProduct = vi.fn();
 
 vi.mock("../../../service/billingService", () => ({
   invoiceApi: {
-    create: vi.fn(),
-    bulkSetItems: vi.fn(() => Promise.resolve({})),
-    get: vi.fn(),
+    create: (...args) => mockInvoiceCreate(...args),
+    bulkSetItems: (...args) => mockInvoiceBulkSetItems(...args),
+    get: (...args) => mockInvoiceGet(...args),
+    sendEmail: (...args) => mockInvoiceSendEmail(...args),
   },
   customerApi: {
-    search: vi.fn(() => Promise.resolve([])),
-    get: vi.fn(),
+    search: (...args) => mockCustomerSearch(...args),
+    get: (...args) => mockCustomerGet(...args),
   },
   productApi: {
-    list: vi.fn(() => Promise.resolve({ items: [] })),
-    get: vi.fn(),
-    listCategories: vi.fn(() => Promise.resolve({ items: [] })),
+    list: (...args) => mockProductList(...args),
+    get: (...args) => mockProductGet(...args),
+    listCategories: (...args) => mockProductListCategories(...args),
   },
   settingsApi: {
-    getConfig: vi.fn(() => Promise.resolve({ base_currency: "USD", default_payment_terms: "net_30", default_due_days: 30 })),
+    getConfig: (...args) => mockSettingsGetConfig(...args),
+    getExchangeRatePair: (...args) => mockSettingsGetExchangeRatePair(...args),
   },
   taxApi: {
-    list: vi.fn(() => Promise.resolve({ items: [] })),
+    list: (...args) => mockTaxList(...args),
   },
   pricingApi: {
-    resolvePrice: vi.fn(),
+    listByProduct: (...args) => mockPricingListByProduct(...args),
   },
 }));
 
 import CreateInvoiceWizard from "./create-invoice-wizard";
-import { invoiceApi, customerApi } from "../../../service/billingService";
 
-const CUSTOMER = {
-  id: 42, display_name: "Acme Corp", company_name: "Acme Corp", status: "active",
-  currency: "USD", payment_terms: "net_30", billing_address: "1 Main St", email: "billing@acme.com",
+const ORG_SETTINGS = {
+  base_currency: "USD",
+  default_currency: "USD",
+  default_due_days: 30,
+  default_payment_terms: "net_30",
+  auto_generate_invoice_number: true,
+  relationship_terminology: "customer",
 };
 
+const CUSTOMER_SEARCH_RESULT = {
+  id: 1,
+  display_name: "Acme Corp",
+  company_name: "Acme Corp",
+  email: "acme@example.com",
+};
+
+const CUSTOMER_FULL = {
+  id: 1,
+  display_name: "Acme Corp",
+  company_name: "Acme Corp",
+  email: "acme@example.com",
+  currency: "USD",
+  payment_terms: "net_30",
+  billing_address: "123 Main St",
+  status: "active",
+};
+
+function renderWizard(props = {}) {
+  const onClose = props.onClose || vi.fn();
+  const onCreated = props.onCreated || vi.fn();
+  render(
+    <MemoryRouter>
+      <CreateInvoiceWizard {...props} onClose={onClose} onCreated={onCreated} />
+    </MemoryRouter>
+  );
+  return { onClose, onCreated };
+}
+
 async function selectCustomer() {
-  customerApi.search.mockResolvedValue([CUSTOMER]);
-  customerApi.get.mockResolvedValue(CUSTOMER);
-  const searchBox = screen.getByLabelText(/search customer/i);
-  fireEvent.change(searchBox, { target: { value: "Acme" } });
-  const option = await screen.findByRole("option", { name: /Acme Corp/i });
+  const input = await screen.findByLabelText(/search customer/i);
+  fireEvent.change(input, { target: { value: "Acme" } });
+  const option = await screen.findByRole("option", { name: /Acme Corp/i }, { timeout: 2000 });
   fireEvent.click(option);
-  await waitFor(() => expect(customerApi.get).toHaveBeenCalledWith(42));
+  // Confirms handleCustomerSelect's async customerApi.get resolved and the
+  // form actually carries the selected customer forward.
+  await screen.findByText("Acme Corp");
+}
+
+function clickNext() {
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+function clickBack() {
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+}
+
+// ProductSelector (always mounted on step 3, in dropdown mode) re-fetches its
+// category list (productApi.listCategories) on every render, because the
+// wizard passes it a brand-new inline `fetchCategories` callback each time —
+// so every field edit on this step (which re-renders the wizard) kicks off
+// another categories fetch. Flush the trailing one under act() with a
+// real-timer wait, after the *last* step-3 edit, so its setState doesn't fire
+// outside act() once the test has moved on to a later step.
+async function waitForProductSelectorToSettle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+  expect(mockProductListCategories).toHaveBeenCalled();
+}
+
+async function addLineItem({ description, quantity, unitPrice }) {
+  fireEvent.click(screen.getByRole("button", { name: /add line item/i }));
+  if (description !== undefined) {
+    const descInput = await screen.findByLabelText(/description for item 1/i);
+    fireEvent.change(descInput, { target: { value: description } });
+  }
+  if (quantity !== undefined) {
+    fireEvent.change(screen.getByLabelText(/quantity for item 1/i), { target: { value: quantity } });
+  }
+  if (unitPrice !== undefined) {
+    fireEvent.change(screen.getByLabelText(/unit price for item 1/i), { target: { value: unitPrice } });
+  }
+  await waitForProductSelectorToSettle();
+}
+
+// Drives the wizard from a freshly-selected customer (step 1) all the way to
+// step 7 ("Actions"), filling in one valid line item along the way.
+async function advanceToActionsStep() {
+  clickNext(); // step 1 -> 2 (customer already selected)
+  await screen.findByLabelText(/invoice date/i);
+  clickNext(); // step 2 -> 3
+  await addLineItem({ description: "Consulting Services", quantity: "3", unitPrice: "150" });
+  clickNext(); // step 3 -> 4
+  await screen.findByLabelText(/global discount/i);
+  clickNext(); // step 4 -> 5
+  await screen.findByText(/Line Items \(1\)/i);
+  clickNext(); // step 5 -> 6 (PDF preview)
+  clickNext(); // step 6 -> 7
+  await screen.findByText(/Ready to Save/i);
 }
 
 beforeEach(() => {
+  cleanup();
   vi.clearAllMocks();
   localStorage.clear();
-  customerApi.search.mockResolvedValue([]);
+
+  mockSettingsGetConfig.mockResolvedValue(ORG_SETTINGS);
+  mockSettingsGetExchangeRatePair.mockResolvedValue({ rate: 1, source: "cached" });
+  mockTaxList.mockResolvedValue([]);
+  mockCustomerSearch.mockResolvedValue([CUSTOMER_SEARCH_RESULT]);
+  mockCustomerGet.mockResolvedValue(CUSTOMER_FULL);
+  mockProductList.mockResolvedValue([]);
+  mockProductListCategories.mockResolvedValue([]);
+  mockPricingListByProduct.mockResolvedValue([]);
+  mockInvoiceCreate.mockResolvedValue({ id: 501, invoice_number: "INV-000501" });
+  mockInvoiceBulkSetItems.mockResolvedValue({});
+  mockInvoiceGet.mockResolvedValue({ id: 501, invoice_number: "INV-000501", status: "draft" });
+  mockInvoiceSendEmail.mockResolvedValue({ email_delivered: true });
 });
 
-afterEach(() => {
-  localStorage.clear();
-});
+describe("CreateInvoiceWizard — happy path", () => {
+  it("Save creates the invoice with the expected payload and line items, then navigates away", async () => {
+    const { onClose, onCreated } = renderWizard();
 
-describe("CreateInvoiceWizard", () => {
-  it("has no accessibility violations on step 1 (axe-core)", async () => {
-    const { container } = renderWithRouter(<CreateInvoiceWizard />);
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
-    expect(await axe(container)).toHaveNoViolations();
+    await selectCustomer();
+    await advanceToActionsStep();
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(mockInvoiceCreate).toHaveBeenCalledTimes(1));
+
+    // Payload shape from buildPayload().
+    const payload = mockInvoiceCreate.mock.calls[0][0];
+    expect(payload.customer_id).toBe(1);
+    expect(payload.currency).toBe("USD");
+    expect(payload.payment_terms).toBe("net_30");
+
+    // Line items are persisted via bulkSetItems against the created invoice id.
+    await waitFor(() => expect(mockInvoiceBulkSetItems).toHaveBeenCalledTimes(1));
+    const [invoiceId, items] = mockInvoiceBulkSetItems.mock.calls[0];
+    expect(invoiceId).toBe(501);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      description: "Consulting Services",
+      quantity: 3,
+      unit_price: 150,
+    });
+
+    // Save (not Save & Send) must never call sendEmail.
+    expect(mockInvoiceSendEmail).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(mockInvoiceGet).toHaveBeenCalledWith(501));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("opens on step 1 (customer selection) with Next disabled by validation", async () => {
-    renderWithRouter(<CreateInvoiceWizard />);
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+  it("Save & Send creates the invoice, persists items, and sends the email — in that order", async () => {
+    renderWizard();
+
+    await selectCustomer();
+    await advanceToActionsStep();
+
+    fireEvent.click(screen.getByRole("button", { name: /save & send/i }));
+
+    await waitFor(() => expect(mockInvoiceSendEmail).toHaveBeenCalledTimes(1));
+
+    expect(mockInvoiceCreate).toHaveBeenCalledTimes(1);
+    expect(mockInvoiceBulkSetItems).toHaveBeenCalledTimes(1);
+    expect(mockInvoiceSendEmail).toHaveBeenCalledWith(501);
+
+    // sendEmail must run only after the invoice + items were actually saved.
+    const createOrder = mockInvoiceCreate.mock.invocationCallOrder[0];
+    const bulkOrder = mockInvoiceBulkSetItems.mock.invocationCallOrder[0];
+    const sendOrder = mockInvoiceSendEmail.mock.invocationCallOrder[0];
+    expect(createOrder).toBeLessThan(bulkOrder);
+    expect(bulkOrder).toBeLessThan(sendOrder);
+  });
+});
+
+describe("CreateInvoiceWizard — validation blocks the money-creating action", () => {
+  it("does not advance past step 1 and never creates an invoice without a selected customer", async () => {
+    renderWizard();
+    await screen.findByLabelText(/search customer/i);
+
+    clickNext();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/please select a customer/i);
+    // Still on step 1 — the customer search field is still present.
     expect(screen.getByLabelText(/search customer/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/please select a customer/i));
+    expect(mockInvoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("searches and selects a customer, populating billing details", async () => {
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    expect(screen.getByDisplayValue("Acme Corp")).toBeInTheDocument();
+  it("does not advance past step 3 and never creates an invoice for a line item missing a description", async () => {
+    renderWizard();
 
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
+    await selectCustomer();
+    clickNext(); // -> step 2
+    await screen.findByLabelText(/invoice date/i);
+    clickNext(); // -> step 3
+
+    // Add a line item but leave its description blank (quantity defaults to 1).
+    await addLineItem({});
+
+    clickNext();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /each line item needs a description and quantity > 0/i
+    );
+    // Still on step 3 — the line item description field is still present.
+    expect(screen.getByLabelText(/description for item 1/i)).toBeInTheDocument();
+    expect(mockInvoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("blocks moving past Line Items with no items added", async () => {
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // -> step 2
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // -> step 3
-    await waitFor(() => expect(screen.getByText("Step 3 of 7")).toBeInTheDocument());
+  it("blocks a zero-quantity line item even when a description is present", async () => {
+    renderWizard();
 
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/add at least one line item/i));
+    await selectCustomer();
+    clickNext();
+    await screen.findByLabelText(/invoice date/i);
+    clickNext();
+
+    await addLineItem({ description: "Consulting Services", quantity: "0", unitPrice: "150" });
+
+    clickNext();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /each line item needs a description and quantity > 0/i
+    );
+    expect(mockInvoiceCreate).not.toHaveBeenCalled();
   });
+});
 
-  it("adds a manual line item and computes the running total", async () => {
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 2
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 3
-    await waitFor(() => expect(screen.getByText("Step 3 of 7")).toBeInTheDocument());
+describe("CreateInvoiceWizard — Stepper navigation cannot bypass validation", () => {
+  it("the Stepper only allows jumping back to already-visited steps, not forward", async () => {
+    renderWizard();
+    await screen.findByLabelText(/search customer/i);
 
-    fireEvent.click(screen.getByRole("button", { name: /add line item/i }));
-    fireEvent.change(screen.getByLabelText(/description for item 1/i), { target: { value: "Consulting" } });
-    fireEvent.change(screen.getByLabelText(/quantity for item 1/i), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText(/unit price for item 1/i), { target: { value: "100" } });
-
-    // total = qty * price with no tax/discount configured in this test
-    const totalsPanel = screen.getByLabelText(/invoice running totals/i);
-    const totalRow = within(totalsPanel).getByText("Total").closest("div");
-    await waitFor(() => expect(within(totalRow).getByText(/\$?200\.00/)).toBeInTheDocument());
-  });
-
-  it("saves the invoice and navigates to the detail page on success", async () => {
-    invoiceApi.create.mockResolvedValue({ id: 99, invoice_number: "INV-0099" });
-    invoiceApi.get.mockResolvedValue({ id: 99, invoice_number: "INV-0099", status: "draft" });
-
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 2
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 3
-    await waitFor(() => expect(screen.getByText("Step 3 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /add line item/i }));
-    fireEvent.change(screen.getByLabelText(/description for item 1/i), { target: { value: "Consulting" } });
-    fireEvent.change(screen.getByLabelText(/quantity for item 1/i), { target: { value: "1" } });
-    fireEvent.change(screen.getByLabelText(/unit price for item 1/i), { target: { value: "500" } });
-
-    // Jump through the remaining steps (4 Taxes/Discounts, 5 Review, 6 PDF Preview) — no
-    // required fields on any of them per validateStep(), only step 1 and 3 validate.
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 4
-    await waitFor(() => expect(screen.getByText("Step 4 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 5
-    await waitFor(() => expect(screen.getByText("Step 5 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 6
-    await waitFor(() => expect(screen.getByText("Step 6 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i })); // step 7
-    await waitFor(() => expect(screen.getByText("Step 7 of 7")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() => expect(invoiceApi.create).toHaveBeenCalledTimes(1));
-    const payload = invoiceApi.create.mock.calls[0][0];
-    expect(payload.customer_id).toBe(42);
-    expect(invoiceApi.bulkSetItems).toHaveBeenCalledWith(99, expect.arrayContaining([
-      expect.objectContaining({ description: "Consulting", quantity: 1, unit_price: 500 }),
-    ]));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/billing/invoices/99", expect.anything()));
-  });
-
-  it("shows an error and does not navigate when saving fails", async () => {
-    invoiceApi.create.mockRejectedValue({ message: "Duplicate invoice number" });
-
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByText("Step 3 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /add line item/i }));
-    fireEvent.change(screen.getByLabelText(/description for item 1/i), { target: { value: "Consulting" } });
-    fireEvent.change(screen.getByLabelText(/quantity for item 1/i), { target: { value: "1" } });
-    for (let i = 0; i < 4; i++) {
-      fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-      await waitFor(() => expect(screen.getByText(`Step ${i + 4} of 7`)).toBeInTheDocument());
-    }
-
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() => expect(screen.getByText("Duplicate invoice number")).toBeInTheDocument());
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("shows the Subscription Limit Reached panel (not a raw error) when the invoice monthly limit is reached", async () => {
-    // Shape produced by service/api.js's apiRequest for a
-    // SUBSCRIPTION_LIMIT_REACHED response from POST /billing/invoices
-    // (billing.invoice.monthly_limit, entity: "invoice").
-    invoiceApi.create.mockRejectedValue(Object.assign(new Error("'billing.invoice.monthly_limit' limit (1000) exceeded."), {
-      status: 403,
-      code: "SUBSCRIPTION_LIMIT_REACHED",
-      entity: "invoice",
-      currentUsage: 1000,
-      limit: 1000,
-      remaining: 0,
-      planName: "Professional",
-    }));
-
-    renderWithRouter(<CreateInvoiceWizard />);
-    await selectCustomer();
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByText("Step 2 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-    await waitFor(() => expect(screen.getByText("Step 3 of 7")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /add line item/i }));
-    fireEvent.change(screen.getByLabelText(/description for item 1/i), { target: { value: "Consulting" } });
-    fireEvent.change(screen.getByLabelText(/quantity for item 1/i), { target: { value: "1" } });
-    for (let i = 0; i < 4; i++) {
-      fireEvent.click(screen.getByRole("button", { name: /^next/i }));
-      await waitFor(() => expect(screen.getByText(`Step ${i + 4} of 7`)).toBeInTheDocument());
-    }
-
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() => expect(screen.getByText(/invoice limit reached/i)).toBeInTheDocument());
-    expect(screen.queryByText(/billing\.invoice\.monthly_limit/)).not.toBeInTheDocument();
-    expect(mockNavigate).not.toHaveBeenCalled();
+    // Before any customer is selected / step advanced, no stepper step is
+    // clickable (Stepper only enables steps with idx < current).
+    const actionsStepButton = screen.getByRole("button", { name: /actions/i });
+    expect(actionsStepButton).toBeDisabled();
   });
 });

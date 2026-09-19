@@ -130,6 +130,12 @@ FIELD_ALIASES: Dict[str, str] = {
 # maliciously crafted file (e.g. an XLSX whose small compressed size expands to
 # an enormous number of rows) can never force the whole file to be read into
 # memory or processed row-by-row unbounded.
+#
+# This is the real untrusted-spreadsheet defense in this codebase: the
+# frontend's `xlsx` (SheetJS) package only ever writes internally-generated
+# report data (frontend/src/utils/export-helpers.js) and never parses a
+# user-uploaded file — openpyxl, pinned in requirements.txt, is what parses
+# attacker-controlled bytes, via this module and customer_import_service.py.
 MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_IMPORT_ROWS = 20_000
 

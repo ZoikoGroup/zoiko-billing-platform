@@ -82,16 +82,26 @@ class PaymentRepository(BaseRepository[Payment]):
     @staticmethod
     def _rate_case(column, currency_rates):
         """Build a CASE expression to convert amounts by currency rate.
-        
+
         currency_rates: {currency_code: multiplier_to_base, ...}
         Returns an expression that can be multiplied with an amount column.
+
+        Uses Decimal for the coefficients so that Numeric(amount) * rate stays
+        in Decimal arithmetic — matching dashboard_service. Mixing a raw float
+        rate into a Numeric*float product lets binary-float rounding drift by a
+        fraction of a paisa across many summed rows, which surfaces as a
+        ₹0.01 difference between "Paid Amount" and "Collections".
         """
         if not currency_rates:
-            return 1
-        clauses = [(column == curr, rate) for curr, rate in currency_rates.items() if rate != 1.0]
+            return Decimal("1.0")
+        clauses = [
+            (column == curr, Decimal(str(rate)))
+            for curr, rate in currency_rates.items()
+            if rate != 1.0
+        ]
         if not clauses:
-            return 1
-        return case(*clauses, else_=1.0)
+            return Decimal("1.0")
+        return case(*clauses, else_=Decimal("1.0"))
 
     def get_by_number(self, organization_id: int, number: str) -> Optional[Payment]:
         return self.get_first(organization_id, payment_number=number)
