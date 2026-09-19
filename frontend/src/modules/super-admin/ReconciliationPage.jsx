@@ -438,6 +438,7 @@ export default function ReconciliationPage() {
               options={orgOptions}
               placeholder="All organizations"
               className="max-w-xs"
+              aria-label="Organization"
             />
           </div>
         </Field>
