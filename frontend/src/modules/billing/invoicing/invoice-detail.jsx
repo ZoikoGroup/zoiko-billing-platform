@@ -3,6 +3,8 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, Loader2, Send, CheckCircle, Ban, Repeat, Printer, Copy, CreditCard, Undo2, Mail, X, Receipt, Trash2, RotateCcw, Bell, ShieldAlert, Edit3 } from "lucide-react";
 import { PageHeader, Button, Modal, StickyFooter, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
 import { invoiceApi, auditApi, paymentApi } from "../../../service/billingService";
+import { isEntitlementLimitError } from "../../../service/api";
+import { SubscriptionLimitReached } from "../../../components/billing-shared";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
 
@@ -56,6 +58,8 @@ export default function InvoiceDetailPage() {
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateError, setDuplicateError] = useState(null);
+  const [duplicateLimitError, setDuplicateLimitError] = useState(null);
 
   const fetchInvoice = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -135,6 +139,8 @@ export default function InvoiceDetailPage() {
   const handleDuplicate = async () => {
     if (!invoice?.customer_id) return;
     setActionLoading("duplicate");
+    setDuplicateError(null);
+    setDuplicateLimitError(null);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const dueDate = invoice.due_date && invoice.issue_date
@@ -169,9 +175,17 @@ export default function InvoiceDetailPage() {
           resolved_price_type: item.resolved_price_type || undefined,
         })));
       }
+      setShowDuplicateModal(false);
       navigate(`/billing/invoices/${newId}`);
     } catch (err) {
-      setError(err?.detail || err?.message || "Failed to duplicate invoice");
+      // Modal stays open on failure (see the button below — it no longer
+      // closes the modal before this resolves) so an entitlement-limit or
+      // other failure is never silently swallowed.
+      if (isEntitlementLimitError(err)) {
+        setDuplicateLimitError(err);
+      } else {
+        setDuplicateError(err?.detail || err?.message || "Failed to duplicate invoice");
+      }
     } finally {
       setActionLoading(null);
     }
@@ -936,20 +950,27 @@ export default function InvoiceDetailPage() {
 
       <Modal
         open={showDuplicateModal}
-        onClose={() => setShowDuplicateModal(false)}
+        onClose={() => { setShowDuplicateModal(false); setDuplicateError(null); setDuplicateLimitError(null); }}
         title="Duplicate Invoice"
         icon={Copy}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setShowDuplicateModal(false)}>
+            <Button variant="ghost" onClick={() => { setShowDuplicateModal(false); setDuplicateError(null); setDuplicateLimitError(null); }}>
               Cancel
             </Button>
-            <Button variant="primary" icon={Copy} loading={actionLoading === "duplicate"} onClick={async () => { setShowDuplicateModal(false); await handleDuplicate(); }}>
+            <Button variant="primary" icon={Copy} loading={actionLoading === "duplicate"} onClick={handleDuplicate}>
               Duplicate Invoice
             </Button>
           </>
         }
       >
+        {duplicateLimitError ? (
+          <div className="mb-4"><SubscriptionLimitReached error={duplicateLimitError} onClose={() => setDuplicateLimitError(null)} /></div>
+        ) : duplicateError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <AlertCircle size={16} className="shrink-0" />{duplicateError}
+          </div>
+        )}
         <p className="text-sm text-slate-600 mb-4">
           This will create a new draft invoice for the same {getLabel("singularLower")} with the same line items, dated today. Invoice <strong>{invoice.invoice_number || `#${id}`}</strong> itself is not affected.
         </p>

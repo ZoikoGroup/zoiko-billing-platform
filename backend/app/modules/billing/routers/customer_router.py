@@ -77,6 +77,7 @@ def create_customer(
         key="org.entity.max",
         current_count=existing_customers,
         actor_id=current_user.id,
+        entity="customer",
     )
 
     svc = CustomerService(db)

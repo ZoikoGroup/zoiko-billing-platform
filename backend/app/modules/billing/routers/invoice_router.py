@@ -82,6 +82,7 @@ def create_invoice(
         key="billing.invoice.monthly_limit",
         current_count=invoices_this_period,
         actor_id=current_user.id,
+        entity="invoice",
     )
 
     return svc.create_invoice(

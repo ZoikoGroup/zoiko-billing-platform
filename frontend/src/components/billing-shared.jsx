@@ -1,6 +1,6 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles, Lock } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { formatCompactMoney, formatCompactNumber } from "../utils/billing-helpers";
 // ZB-SA-CMD-003 §17 — Domain B containment: shared export entry points are
@@ -1559,6 +1559,123 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- *
+ * Entitlement / subscription limit UX — shared across every create flow
+ * gated by a numeric entitlement (see service/api.js's
+ * isEntitlementLimitError and backend/app/modules/commercial/
+ * entitlement_enforcement.py's EntitlementLimitExceededException).
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Business-facing labels for an entitlement error's `entity` slug. Only
+ * "customer" and "invoice" are wired to a real route-enforced limit today
+ * (POST /billing/customers -> org.entity.max, POST /billing/invoices ->
+ * billing.invoice.monthly_limit) — the rest are included so a future
+ * limit-gated create flow needs no new frontend mapping, just a backend
+ * call site that passes `entity=` to assert_within_limit.
+ */
+const ENTITLEMENT_ENTITY_LABELS = {
+  customer: { singular: "Customer", plural: "Customers" },
+  invoice: { singular: "Invoice", plural: "Invoices" },
+  product: { singular: "Product", plural: "Products" },
+  quotation: { singular: "Quotation", plural: "Quotations" },
+  contract: { singular: "Contract", plural: "Contracts" },
+  subscription: { singular: "Subscription", plural: "Subscriptions" },
+  payment: { singular: "Payment", plural: "Payments" },
+  payment_provider: { singular: "Payment Provider", plural: "Payment Providers" },
+  currency: { singular: "Currency", plural: "Currencies" },
+  webhook: { singular: "Webhook", plural: "Webhooks" },
+  sandbox: { singular: "Sandbox", plural: "Sandboxes" },
+};
+
+/**
+ * Resolves a display label for an entitlement error's `entity` slug.
+ * `terminology` is the optional `{ singular, plural }` pair from
+ * useTerminology() (utils/TerminologyContext) — the "customer" entity
+ * specifically respects the org's configured synonym (Client/Patient/
+ * Member/...) instead of always saying "Customer", matching how the rest
+ * of the app already refers to it.
+ */
+export function getEntitlementEntityLabel(entity, { plural = false, terminology } = {}) {
+  if (entity === "customer" && terminology?.singular) {
+    return plural ? terminology.plural : terminology.singular;
+  }
+  const entry = ENTITLEMENT_ENTITY_LABELS[entity];
+  if (!entry) return plural ? "Items" : "Item";
+  return plural ? entry.plural : entry.singular;
+}
+
+/**
+ * SubscriptionLimitReached — the reusable "your plan's limit is reached"
+ * panel for a SUBSCRIPTION_LIMIT_REACHED entitlement error. Renders in
+ * place of a raw 403/technical message wherever a limit-gated create flow
+ * hits its plan cap; never displays the internal entitlement key
+ * (e.g. "org.entity.max") — only the resolved entity label, counts, and
+ * plan name. Wording stays accurate even when existing usage is already
+ * above the limit (pre-existing data from before a plan downgrade, a demo
+ * org, etc.) — it never claims a remaining count in that case.
+ *
+ * `error` is the normalized error thrown by service/api.js's apiRequest:
+ * `{ entity, currentUsage, limit, remaining, planName, message }` (see
+ * isEntitlementLimitError). `onPrimaryAction`/`primaryActionLabel` are
+ * opt-in — omit them when no real subscription-management route exists for
+ * the current viewer rather than pointing at one that doesn't.
+ */
+export function SubscriptionLimitReached({ error, terminology, onClose, onPrimaryAction, primaryActionLabel }) {
+  if (!error) return null;
+  const entityPlural = getEntitlementEntityLabel(error.entity, { plural: true, terminology }).toLowerCase();
+  const entitySingular = getEntitlementEntityLabel(error.entity, { plural: false, terminology });
+  const hasCounts = typeof error.currentUsage === "number" && typeof error.limit === "number";
+  const overLimit = hasCounts && error.currentUsage > error.limit;
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5" role="alert">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+          <Lock size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-slate-800">{entitySingular} Limit Reached</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            {error.planName ? `Your ${error.planName} subscription` : "Your current subscription"}
+            {hasCounts
+              ? ` allows a maximum of ${error.limit} ${error.limit === 1 ? entitySingular.toLowerCase() : entityPlural}.`
+              : ` has reached its ${entitySingular.toLowerCase()} limit.`}
+          </p>
+          {hasCounts && (
+            <p className="mt-2 text-sm text-slate-600">
+              {overLimit ? (
+                <>
+                  Current usage: <span className="font-semibold text-slate-800">{error.currentUsage}</span>.
+                  {" "}Your organization is already above the current plan limit, so additional {entityPlural} cannot be created.
+                </>
+              ) : (
+                <>Current usage: <span className="font-semibold text-slate-800">{error.currentUsage} / {error.limit}</span></>
+              )}
+            </p>
+          )}
+          <p className="mt-2 text-sm text-slate-600">
+            To add more {entityPlural}, upgrade your subscription or contact your administrator.
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            {onPrimaryAction && (
+              <button type="button" onClick={onPrimaryAction}
+                className="px-4 py-2 text-sm font-medium bg-white border border-amber-300 text-amber-800 rounded-xl hover:bg-amber-100">
+                {primaryActionLabel || "View Subscription"}
+              </button>
+            )}
+            {onClose && (
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-white/70 rounded-xl">
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
