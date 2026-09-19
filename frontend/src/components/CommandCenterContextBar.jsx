@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Calendar, ChevronDown, RefreshCw } from "lucide-react";
 import { useCommandCenter } from "../context/CommandCenterContext";
 
@@ -11,8 +12,35 @@ const DOMAIN_LENS_MAP = {
   "Domain C (Telemetry)": "reliability",
 };
 
+// Bug fix: `setActiveLens` alone updates dead context state — nothing in the
+// app ever reads `activeLens` back out, so picking "Domain A (Commercial)"
+// or "Domain C (Telemetry)" from this dropdown silently did nothing: no
+// navigation, no change to what's on screen. The dropdown's own comment
+// ("the only cross-domain navigation primitive the platform actually has")
+// makes the intent clear — it must actually route to the matching lens.
+const DOMAIN_ROUTE_MAP = {
+  "Global Operations": "/super-admin/triage",
+  "Domain A (Commercial)": "/super-admin/commercial/accounts",
+  "Domain C (Telemetry)": "/super-admin/reliability",
+};
+
 export default function CommandCenterContextBar() {
   const { contextScope, updateContextScope, setActiveLens, lastRefreshedAt, requestRefresh, environmentVerified } = useCommandCenter();
+  const navigate = useNavigate();
+
+  // requestRefresh() genuinely re-fetches (confirmed: it calls refresh() and
+  // bumps refreshTick, which every mounted lens watches) but previously gave
+  // NO visual confirmation the click registered -- the page-level loading
+  // spinners are deliberately mount-only (loadedOnceRef guards) so a repeat
+  // poll/refresh doesn't flash a disruptive full-page skeleton. This local
+  // spin is just an honest "your click was received" signal, independent of
+  // that page-level loading state.
+  const [justRefreshed, setJustRefreshed] = useState(false);
+  const handleRefreshClick = () => {
+    requestRefresh();
+    setJustRefreshed(true);
+    setTimeout(() => setJustRefreshed(false), 700);
+  };
 
   const formattedTime = lastRefreshedAt
     ? new Date(lastRefreshedAt).toUTCString().replace("GMT", "UTC").slice(5, 22)
@@ -22,6 +50,8 @@ export default function CommandCenterContextBar() {
     updateContextScope("domain", value);
     const lens = DOMAIN_LENS_MAP[value];
     if (lens) setActiveLens(lens);
+    const route = DOMAIN_ROUTE_MAP[value];
+    if (route) navigate(route);
   }
 
   // §21 — environment identity comes from the backend configuration
@@ -94,13 +124,14 @@ export default function CommandCenterContextBar() {
         <span className="text-[10px] text-slate-400">Data as of {formattedTime}</span>
         <button
           type="button"
-          onClick={requestRefresh}
+          onClick={handleRefreshClick}
+          disabled={justRefreshed}
           title="Refresh Command Center"
           aria-label="Refresh Command Center"
-          className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+          className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 disabled:opacity-70"
         >
-          <RefreshCw className="w-3 h-3" />
-          <span>Refresh</span>
+          <RefreshCw className={`w-3 h-3 ${justRefreshed ? "animate-spin" : ""}`} />
+          <span>{justRefreshed ? "Refreshing…" : "Refresh"}</span>
         </button>
       </div>
     </div>

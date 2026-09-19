@@ -167,7 +167,7 @@ export default function CustomerListPage() {
   const fetchCustomers = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
 
       const params = {
         page: safePage,

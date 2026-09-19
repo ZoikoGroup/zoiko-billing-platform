@@ -57,7 +57,11 @@ export async function closeSession(conversationUid) {
 
 export async function sendMessage(conversationUid, message, page) {
   const url = `${API_BASE}/sessions/${conversationUid}/messages`;
-  console.log("[CHATBOT-DIAG] sendMessage() → POST", url, "body:", { message, page });
+  // Dev-only, and never logs the message body itself -- it can contain
+  // arbitrary user-entered content (PII, account details, anything typed
+  // into the assistant) that must not reach the browser console/any log
+  // aggregator in production.
+  if (import.meta.env.DEV) console.log("[CHATBOT-DIAG] sendMessage() → POST", url, "message length:", message?.length ?? 0);
   let res;
   try {
     res = await fetch(url, {
@@ -71,7 +75,7 @@ export async function sendMessage(conversationUid, message, page) {
     err.status = 0;
     throw err;
   }
-  console.log("[CHATBOT-DIAG] sendMessage() ← status:", res.status);
+  if (import.meta.env.DEV) console.log("[CHATBOT-DIAG] sendMessage() ← status:", res.status);
   if (!res.ok) {
     const err = new Error(`Send message failed: ${res.status}`);
     err.status = res.status;
@@ -142,7 +146,7 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
     });
 
   const attempt = () => {
-    console.log(`[CHATBOT-DIAG] sendMessageStreamed() → POST ${url} (attempt ${attempts + 1}/${MAX_ATTEMPTS})`);
+    if (import.meta.env.DEV) console.log(`[CHATBOT-DIAG] sendMessageStreamed() → POST ${url} (attempt ${attempts + 1}/${MAX_ATTEMPTS})`);
     fetch(url, {
       method: "POST",
       headers: { ...authHeaders(), Accept: "text/event-stream" },
@@ -197,7 +201,7 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
         const transient = status == null || status === 0 || status === 429 || status >= 500;
         if (transient && !sawFrame && attempts < MAX_ATTEMPTS - 1) {
           attempts += 1;
-          console.warn(`[CHATBOT-DIAG] stream attempt ${attempts + 1} of ${MAX_ATTEMPTS}: retrying after ${status ?? "network"} error`, err?.message);
+          if (import.meta.env.DEV) console.warn(`[CHATBOT-DIAG] stream attempt ${attempts + 1} of ${MAX_ATTEMPTS}: retrying after ${status ?? "network"} error`, err?.message);
           attempt();
           return;
         }

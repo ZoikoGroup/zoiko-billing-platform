@@ -123,7 +123,7 @@ export default function TaxRatesPage() {
   const fetchTaxRates = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const params = {
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,
@@ -258,10 +258,10 @@ export default function TaxRatesPage() {
         />
         <DashboardStatCard
           title="Sales Tax"
-          value={filteredTaxRates.filter((r) => r.tax_type === "sales").length}
+          value={filteredTaxRates.filter((r) => r.tax_type === "sales_tax").length}
           icon={DollarSign}
           color="from-blue-500 to-blue-600"
-          onClick={() => { setTypeFilter("sales"); setCurrentPage(1); }}
+          onClick={() => { setTypeFilter("sales_tax"); setCurrentPage(1); }}
         />
         <DashboardStatCard
           title="VAT / GST"

@@ -52,6 +52,23 @@ _OPEN_ATTENTION_STATUSES = {
 _TENANT_ADMIN_ROLES = {UserRole.ORG_ADMIN}
 
 
+def _as_naive_utc(value: datetime) -> datetime:
+    """Strip tzinfo so mixed-column max()/comparisons never raise.
+
+    PlatformAuditLog.created_at is DateTime(timezone=True) while
+    Organization.updated_at / AttentionItem.last_seen_at are naive DateTime
+    columns populated via datetime.utcnow(). On Postgres, SQLAlchemy hands
+    back a tz-aware datetime for the former, so comparing/max()-ing it
+    against the naive ones raises "can't compare offset-naive and
+    offset-aware datetimes" the moment an org has at least one audit log row
+    (e.g. right after inviting an org admin — see
+    tests/test_phase3_organizations.py::test_last_activity_map_handles_tz_aware_audit_timestamps).
+    All values here already represent UTC wall-clock time, so dropping
+    tzinfo is a safe normalization, not a timezone conversion.
+    """
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
 class OrganizationDirectoryService:
     def __init__(self, db: Session):
         self.db = db
@@ -394,7 +411,7 @@ class OrganizationDirectoryService:
         result: dict[int, Optional[datetime]] = {}
         for org in self.db.query(Organization).filter(Organization.id.in_(org_ids)).all():
             candidates = [
-                c
+                _as_naive_utc(c)
                 for c in (org.updated_at, audit_max.get(org.id), attention_max.get(org.id))
                 if isinstance(c, datetime)
             ]

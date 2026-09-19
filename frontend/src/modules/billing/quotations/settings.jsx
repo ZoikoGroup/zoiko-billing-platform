@@ -52,9 +52,13 @@ export default function QuotationSettingsPage() {
       const settings = settingsRes || {};
 
       const values = {
-        quote_prefix: settings.default_quote_prefix || "QOT-",
+        // BillingConfiguration's real fields are `quote_prefix` and
+        // `quote_terms_and_conditions` -- this page previously read/wrote
+        // `default_quote_prefix`/`terms_and_conditions`, neither of which
+        // exists on the schema, so both silently never persisted.
+        quote_prefix: settings.quote_prefix || "QOT-",
         default_currency: settings.default_currency,
-        default_terms_and_conditions: settings.terms_and_conditions || "",
+        default_terms_and_conditions: settings.quote_terms_and_conditions || "",
         quote_logo_url: settings.logo_url || "",
       };
       setForm(values);
@@ -70,9 +74,9 @@ export default function QuotationSettingsPage() {
       setSaving(true);
       setError(null);
       const payload = {
-        default_quote_prefix: form.quote_prefix,
+        quote_prefix: form.quote_prefix,
         default_currency: form.default_currency,
-        terms_and_conditions: form.default_terms_and_conditions || undefined,
+        quote_terms_and_conditions: form.default_terms_and_conditions || undefined,
         logo_url: form.quote_logo_url || undefined,
       };
       await settingsApi.update(payload);

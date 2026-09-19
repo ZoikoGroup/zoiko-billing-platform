@@ -488,6 +488,22 @@ class BillingConfigurationService:
             data["tax_profiles"] = preserved + incoming_profiles
             logger.info("Merged incoming tax_profiles entries by type for organization_id=%s", organization_id)
 
+        # ── Shallow-merge the subscription/payment settings-page fields ────
+        # that have no dedicated column (Subscription Settings and Payment
+        # Settings are almost entirely composed of these). Merging instead
+        # of a full-replace protects against wiping previously-saved keys
+        # if a caller ever sends a partial update.
+        for blob_field in ("subscription_extra_settings", "payment_extra_settings", "pricing_extra_settings"):
+            incoming_blob = data.get(blob_field)
+            if isinstance(incoming_blob, dict):
+                try:
+                    existing_config = self.repo.get_by_organization(organization_id)
+                    current_blob = dict(getattr(existing_config, blob_field, None) or {}) if existing_config else {}
+                except Exception:
+                    current_blob = {}
+                current_blob.update(incoming_blob)
+                data[blob_field] = current_blob
+
         try:
             config = self.repo.upsert(organization_id, updated_by=updated_by, **data)
             self.audit.log(

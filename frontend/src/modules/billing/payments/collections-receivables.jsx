@@ -28,7 +28,13 @@ export default function CollectionsReceivablesPage() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      // Was `if (!loading) setRefreshing(true)`, but fetchData is a stable
+      // useCallback with an empty dependency array, so it permanently
+      // captured loading's initial value (true) -- !loading was always
+      // false, so setRefreshing(true) never actually ran on a manual
+      // refresh and neither Refresh button ever showed its spinner, even
+      // though the underlying re-fetch itself worked correctly.
+      setRefreshing(true);
       const [caseData, aging, queue] = await Promise.all([
         collectionApi.listCases({ per_page: 50 }),
         collectionApi.getAgingBuckets().catch(() => null),

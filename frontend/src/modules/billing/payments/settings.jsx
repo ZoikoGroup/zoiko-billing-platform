@@ -70,17 +70,25 @@ export default function PaymentSettingsPage() {
       setError(null);
       setSaved(false);
       const settingsRes = await settingsApi.get();
-      const settings = settingsRes || {};
+      // Only `enable_partial_payments` has its own column on
+      // BillingConfiguration; every other field here was previously
+      // read/written at the top level, which Pydantic silently dropped
+      // from every save (no matching schema field) -- persisted instead
+      // under payment_extra_settings (see backend migration
+      // e5a1c3f7b9d2), deliberately independent from this page's
+      // similarly-named counterparts on Subscription Settings.
+      const settings = settingsRes?.payment_extra_settings || {};
+      const enablePartialPayments = settingsRes?.enable_partial_payments;
 
       const values = {
         default_payment_prefix: settings.default_payment_prefix || "PAY-",
         payment_number_format: settings.payment_number_format || "{PREFIX}{NUMBER}",
         auto_generate_payment_number: settings.auto_generate_payment_number ?? true,
         default_payment_gateway: settings.default_payment_gateway || "stripe",
-        payment_currency: settings.payment_currency || settings.default_currency,
+        payment_currency: settings.payment_currency || settingsRes?.default_currency,
         auto_reconcile: settings.auto_reconcile ?? true,
         reconciliation_threshold: settings.reconciliation_threshold || "0.50",
-        enable_partial_payments: settings.enable_partial_payments ?? true,
+        enable_partial_payments: enablePartialPayments ?? true,
         partial_payment_min_percent: settings.partial_payment_min_percent || "10",
         payment_terms_days: settings.payment_terms_days || "0",
         enable_dunning: settings.enable_dunning ?? true,
@@ -113,7 +121,8 @@ export default function PaymentSettingsPage() {
       setSaving(true);
       setError(null);
       setSaved(false);
-      await settingsApi.update(form);
+      const { enable_partial_payments, ...extra } = form;
+      await settingsApi.update({ enable_partial_payments, payment_extra_settings: extra });
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

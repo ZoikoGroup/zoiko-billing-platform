@@ -1012,6 +1012,18 @@ class InvoiceService:
             raise NotFoundException("Invoice", invoice_id)
         return inv
 
+    def get_public_invoice_link(self, invoice_id: int, organization_id: int) -> Dict[str, str]:
+        """Authenticated lookup of the same signed link that gets emailed to
+        the customer, so the internal invoice-detail UI's "preview" button can
+        open a link that actually resolves (a raw invoice id fails the
+        signature check in `_resolve_public_invoice`)."""
+        self.repo.get_by_id(invoice_id, organization_id)  # tenant-isolation check; raises NotFoundException
+        token = self._public_invoice_token(invoice_id)
+        return {
+            "token": token,
+            "url": f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{token}",
+        }
+
     def get_public_invoice(self, token: str) -> Dict[str, Any]:
         """Public-safe snapshot of an invoice for the customer-facing view &
         payment page. Only fields the recipient should see are exposed — no

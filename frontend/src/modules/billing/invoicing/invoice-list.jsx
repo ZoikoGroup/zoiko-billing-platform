@@ -81,7 +81,7 @@ export default function InvoicingPage() {
   const fetchInvoices = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await invoiceApi.list({
         page: safePage,
         per_page: ITEMS_PER_PAGE,
@@ -175,7 +175,12 @@ export default function InvoicingPage() {
       
       const calls = selectedInvoices.map((id) => {
         if (action === "finalize") return invoiceApi.finalize(id);
-        if (action === "send") return invoiceApi.markSent(id);
+        // "Send" must actually email the customer -- invoiceApi.markSent() only
+        // flips the status flag with no delivery, which is what the single-invoice
+        // detail page correctly avoids by calling sendEmail() instead. Bulk "Send"
+        // used to silently do the status-only version, so customers picked for a
+        // bulk send never received anything despite the invoice showing as "Sent".
+        if (action === "send") return invoiceApi.sendEmail(id);
         if (action === "cancel") return invoiceApi.cancel(id, "Cancelled from invoice list");
         return Promise.resolve();
       });

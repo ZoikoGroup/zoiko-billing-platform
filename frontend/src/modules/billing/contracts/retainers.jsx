@@ -64,7 +64,7 @@ export default function RetainersPage() {
   const fetchRetainers = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await productApi.list({
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,

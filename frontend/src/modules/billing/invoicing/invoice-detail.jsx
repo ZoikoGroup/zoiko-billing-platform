@@ -60,6 +60,7 @@ export default function InvoiceDetailPage() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null);
   const [duplicateLimitError, setDuplicateLimitError] = useState(null);
+  const [publicLink, setPublicLink] = useState(null);
 
   const fetchInvoice = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -89,6 +90,12 @@ export default function InvoiceDetailPage() {
       invoiceApi.listCommunications(Number(id))
         .then((d) => setCommunications(Array.isArray(d) ? d : []))
         .catch((err) => console.error("[InvoiceDetail] Failed to load communications:", err));
+      // The customer-facing link requires a signed token, not the raw
+      // invoice id -- fetched separately so a failure here never blocks
+      // the rest of the invoice detail page from rendering.
+      invoiceApi.getPublicLink(Number(id))
+        .then((d) => setPublicLink(d?.url || null))
+        .catch((err) => console.error("[InvoiceDetail] Failed to load public invoice link:", err));
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load invoice");
     } finally {
@@ -529,9 +536,9 @@ export default function InvoiceDetailPage() {
                   {actionLoading === "mark-paid" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Mark as Paid
                 </button>
               )}
-              {!isDraft && (
+              {!isDraft && publicLink && (
                 <a
-                  href={`/invoice/${id}`}
+                  href={publicLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors"
@@ -880,13 +887,15 @@ export default function InvoiceDetailPage() {
             The email will include a <strong>"View Invoice &amp; Payment Options"</strong> button. Preview what the customer will see:
           </p>
           <a
-            href={`/invoice/${id}`}
+            href={publicLink || "#"}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 w-full rounded-lg bg-brand px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-hover transition-colors shadow-sm"
+            onClick={(e) => { if (!publicLink) e.preventDefault(); }}
+            aria-disabled={!publicLink}
+            className={`inline-flex items-center justify-center gap-1.5 w-full rounded-lg px-3 py-2.5 text-sm font-semibold shadow-sm transition-colors ${publicLink ? "bg-brand text-white hover:bg-brand-hover" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}
           >
             <CreditCard className="h-4 w-4" />
-            View Invoice &amp; Payment Options
+            {publicLink ? "View Invoice & Payment Options" : "Loading link…"}
           </a>
           <p className="text-xs text-blue-400 mt-2 text-center">↑ Opens in a new tab · Share this link directly if needed</p>
         </div>

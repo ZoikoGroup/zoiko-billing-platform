@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -475,6 +475,23 @@ class CustomerService:
         date_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         from app.modules.billing.models import Invoice, Payment, Quotation, Subscription, Contract, CreditNote, Refund
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+
+        # This platform supports per-customer/per-invoice currency overrides
+        # (see quote_service.py/invoice_service.py's currency precedence), so
+        # an org can legitimately have Payments/Invoices/CreditNotes/Refunds
+        # in more than one currency. A raw SUM() across all of them would
+        # silently blend currencies into one meaningless number (e.g. add INR
+        # and USD amounts together) -- convert every row to the org's base
+        # currency first, the same real-exchange-rate approach already used
+        # by get_outstanding_by_customer below and by invoice/payment repos'
+        # dashboard aggregates.
+        currency_rates = BillingDashboardService(self.db)._build_currency_rates(organization_id)
+
+        def _rate_case(column):
+            clauses = [(column == curr, rate) for curr, rate in currency_rates.items() if rate != 1.0]
+            return case(*clauses, else_=1.0) if clauses else 1
+
         # created_at/updated_at are stored timezone-aware; keep `now` and the
         # parsed period bounds timezone-aware too so comparisons/filters against
         # those columns stay consistent instead of mixing naive and aware values.
@@ -533,7 +550,8 @@ class CustomerService:
             self.repo.model.outstanding_balance > self.repo.model.credit_limit,
         ).scalar() or 0
         
-        total_revenue = float(self.db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        payment_rate = _rate_case(Payment.currency)
+        total_revenue = float(self.db.query(func.coalesce(func.sum(Payment.amount * payment_rate), 0)).filter(
             Payment.organization_id == organization_id,
             Payment.status == "cleared",
         ).scalar() or 0)
@@ -544,14 +562,15 @@ class CustomerService:
             revenue_period_filter.append(Payment.payment_date >= period_start)
         if period_end:
             revenue_period_filter.append(Payment.payment_date <= period_end)
-        period_revenue = float(self.db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        period_revenue = float(self.db.query(func.coalesce(func.sum(Payment.amount * payment_rate), 0)).filter(
             *revenue_period_filter
         ).scalar() or 0)
         
         total_customers_count = max(total, 1)
         avg_revenue_per_customer = round(total_revenue / total_customers_count, 2)
         
-        outstanding = float(self.db.query(func.coalesce(func.sum(Invoice.total_amount - Invoice.paid_amount), 0)).filter(
+        invoice_rate = _rate_case(Invoice.currency)
+        outstanding = float(self.db.query(func.coalesce(func.sum((Invoice.total_amount - Invoice.paid_amount) * invoice_rate), 0)).filter(
             Invoice.organization_id == organization_id,
             Invoice.status.in_(["sent", "overdue", "partially_paid"]),
         ).scalar() or 0)
@@ -607,12 +626,12 @@ class CustomerService:
             Subscription.status == "active",
         ).scalar() or 0
         
-        credit_notes_total = float(self.db.query(func.coalesce(func.sum(CreditNote.total_amount), 0)).filter(
+        credit_notes_total = float(self.db.query(func.coalesce(func.sum(CreditNote.total_amount * _rate_case(CreditNote.currency)), 0)).filter(
             CreditNote.organization_id == organization_id,
             CreditNote.status == "issued",
         ).scalar() or 0)
-        
-        refunds_total = float(self.db.query(func.coalesce(func.sum(Refund.amount), 0)).filter(
+
+        refunds_total = float(self.db.query(func.coalesce(func.sum(Refund.amount * _rate_case(Refund.currency)), 0)).filter(
             Refund.organization_id == organization_id,
             Refund.status == "completed",
         ).scalar() or 0)

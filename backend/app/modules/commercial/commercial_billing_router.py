@@ -203,6 +203,15 @@ def create_quote(
         subscription_id=data.subscription_id,
     )
     db.commit()
+    # db.commit() expires every attribute on `quote` (Session default
+    # expire_on_commit=True). Returning it unrefreshed serializes to `{}` —
+    # FastAPI's fallback encoder for a non-Pydantic object reads
+    # vars(obj)/__dict__ directly rather than going through the instrumented
+    # attribute descriptors that would trigger SQLAlchemy's lazy reload, so
+    # an expired object dumps empty even though every field is safely
+    # persisted (compare `_serialize_public_quote`, which uses `.attr`
+    # access and is unaffected). db.refresh() repopulates it synchronously.
+    db.refresh(quote)
     return quote
 
 
@@ -259,6 +268,7 @@ def add_quote_item(
         tax_amount=data.tax_amount,
     )
     db.commit()
+    db.refresh(item)  # see create_quote's comment on why this is required
     return item
 
 
@@ -282,6 +292,7 @@ def set_quote_discount(
         approver_id=data.approver_id,
     )
     db.commit()
+    db.refresh(quote)  # see create_quote's comment on why this is required
     return quote
 
 
@@ -298,6 +309,7 @@ def send_quote(
     svc = CommercialQuoteService(db)
     quote = svc.send_quote(quote_id=quote_id, actor_id=current_user.id)
     db.commit()
+    db.refresh(quote)  # see create_quote's comment on why this is required
     return quote
 
 
@@ -346,6 +358,11 @@ def approve_quote(
     quote = svc.approve_quote(quote_id=quote_id, actor_id=current_user.id)
     db.commit()
     _convert_and_invoice_accepted_quote(db, quote, current_user.id)
+    # _convert_and_invoice_accepted_quote() commits multiple times (its own
+    # invoice creation/finalize/send steps), each of which re-expires every
+    # object in the session, including `quote` — refresh right before
+    # returning it (see create_quote's comment for the full explanation).
+    db.refresh(quote)
     return quote
 
 
@@ -365,6 +382,7 @@ def reject_quote(
         quote_id=quote_id, actor_id=current_user.id, reason=data.reason
     )
     db.commit()
+    db.refresh(quote)  # see create_quote's comment on why this is required
     return quote
 
 
@@ -384,6 +402,7 @@ def convert_quote(
         quote_id=quote_id, actor_id=current_user.id, due_date=due_date
     )
     db.commit()
+    db.refresh(invoice)  # see create_quote's comment on why this is required
     return invoice
 
 
@@ -411,6 +430,7 @@ def create_invoice(
         currency=data.currency,
     )
     db.commit()
+    db.refresh(invoice)  # see create_quote's comment on why this is required
     return invoice
 
 
@@ -461,6 +481,7 @@ def finalize_invoice(
     svc = PlatformInvoiceService(db)
     invoice = svc.finalize(invoice_id=invoice_id, actor_id=current_user.id)
     db.commit()
+    db.refresh(invoice)  # see create_quote's comment on why this is required
     return invoice
 
 
@@ -477,6 +498,7 @@ def send_invoice(
     svc = PlatformInvoiceService(db)
     invoice = svc.send(invoice_id=invoice_id, actor_id=current_user.id)
     db.commit()
+    db.refresh(invoice)  # see create_quote's comment on why this is required
     return invoice
 
 
@@ -496,6 +518,7 @@ def void_invoice(
         invoice_id=invoice_id, actor_id=current_user.id, reason=data.reason
     )
     db.commit()
+    db.refresh(invoice)  # see create_quote's comment on why this is required
     return invoice
 
 
@@ -523,6 +546,7 @@ def add_invoice_item(
         tax_amount=data.tax_amount,
     )
     db.commit()
+    db.refresh(item)  # see create_quote's comment on why this is required
     return item
 
 
@@ -550,6 +574,7 @@ def record_payment(
         notes=data.notes,
     )
     db.commit()
+    db.refresh(payment)  # see create_quote's comment on why this is required
     return payment
 
 
@@ -591,6 +616,7 @@ def allocate_payment(
         actor_id=current_user.id,
     )
     db.commit()
+    db.refresh(allocation)  # see create_quote's comment on why this is required
     return allocation
 
 
@@ -628,6 +654,7 @@ def run_reconciliation(
     svc = PlatformReconciliationService(db)
     run = svc.run_reconciliation(trigger="manual")
     db.commit()
+    db.refresh(run)  # see create_quote's comment on why this is required
     return run
 
 

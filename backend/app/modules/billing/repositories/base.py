@@ -8,7 +8,8 @@ All billing repositories inherit from this class.
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Generic, List, Optional, Sequence, Tuple, Type, TypeVar
 
-from sqlalchemy import asc, desc, func, or_
+from sqlalchemy import asc, desc, func, or_, cast
+from sqlalchemy.types import String as SAString
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -246,9 +247,16 @@ class BaseRepository(Generic[ModelType]):
         if search_term and search_fields:
             conditions = []
             for field in search_fields:
-                conditions.append(
-                    getattr(self.model, field).ilike(f"%{search_term}%")
-                )
+                column = getattr(self.model, field)
+                # Cast defensively: several repositories list non-string
+                # columns (integer FKs, enums) in search_fields, and
+                # Postgres has no ILIKE operator for those types -- that
+                # previously 500'd on every search request instead of
+                # simply not matching. CAST(... AS VARCHAR) makes any
+                # column type safely searchable as text.
+                if not isinstance(column.type, SAString):
+                    column = cast(column, SAString)
+                conditions.append(column.ilike(f"%{search_term}%"))
             base_query = base_query.filter(or_(*conditions))
 
         if sort_by and hasattr(self.model, sort_by):
