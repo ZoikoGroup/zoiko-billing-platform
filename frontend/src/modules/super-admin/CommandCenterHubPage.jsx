@@ -84,6 +84,15 @@ export default function CommandCenterHubPage() {
   const [sourceErrors, setSourceErrors] = useState({});
   const loadedOnceRef = useRef(false);
   const firstTickRef = useRef(true);
+  // requestRefresh() genuinely re-fetches (via refreshTick, watched below),
+  // but gave no visual confirmation of the click -- see the matching fix in
+  // CommandCenterContextBar.jsx for the full rationale.
+  const [justRefreshed, setJustRefreshed] = useState(false);
+  const handleRefreshClick = () => {
+    requestRefresh();
+    setJustRefreshed(true);
+    setTimeout(() => setJustRefreshed(false), 700);
+  };
 
   const load = useRef(() => {}).current;
   load.current = () => {
@@ -126,10 +135,11 @@ export default function CommandCenterHubPage() {
         actions={
           <button
             type="button"
-            onClick={() => requestRefresh()}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500"
+            onClick={handleRefreshClick}
+            disabled={justRefreshed}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-70"
           >
-            Refresh
+            {justRefreshed ? "Refreshing…" : "Refresh"}
           </button>
         }
       />

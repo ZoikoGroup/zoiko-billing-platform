@@ -1546,10 +1546,24 @@ def list_commercial_overrides(
     if organization_id is not None:
         query = query.filter(CommercialOverride.organization_id == organization_id)
     if status:
-        try:
-            query = query.filter(CommercialOverride.status == CommercialOverrideStatus(status))
-        except ValueError:
-            raise BadRequestException(f"Invalid status '{status}'.")
+        # "expired" is never a *stored* status (see CommercialOverrideStatus.EXPIRED
+        # docstring, AC-10): expiry is judged dynamically off expires_at, and no
+        # code path ever writes that enum value to a row. Filtering with a naive
+        # `status == CommercialOverrideStatus.EXPIRED` equality is therefore a dead
+        # filter that always returns zero rows, even when APPROVED overrides have
+        # actually lapsed. Interpret "expired" as its real-world meaning instead:
+        # APPROVED overrides whose expires_at has passed.
+        if status == CommercialOverrideStatus.EXPIRED.value:
+            query = query.filter(
+                CommercialOverride.status == CommercialOverrideStatus.APPROVED,
+                CommercialOverride.expires_at.isnot(None),
+                CommercialOverride.expires_at <= datetime.utcnow(),
+            )
+        else:
+            try:
+                query = query.filter(CommercialOverride.status == CommercialOverrideStatus(status))
+            except ValueError:
+                raise BadRequestException(f"Invalid status '{status}'.")
     rows = query.order_by(CommercialOverride.id.desc()).all()
     return CommercialOverrideListResponse(overrides=[_override_payload(o) for o in rows], total=len(rows))
 
@@ -3872,7 +3886,7 @@ def list_billing_command_recent_activity(
 def trigger_reconciliation_run(
     body: TriggerReconciliationRunRequest = Body(default_factory=TriggerReconciliationRunRequest),
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
     """Manually trigger a reconciliation run. `compare_processor=true`
@@ -3968,7 +3982,7 @@ def acknowledge_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest = Body(default=None),
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
     from app.modules.super_admin.reconciliation_service import ReconciliationService
@@ -3991,7 +4005,7 @@ def resolve_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest,
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
     from app.core.exceptions import BadRequestException

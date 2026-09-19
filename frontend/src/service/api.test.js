@@ -6,6 +6,7 @@ import {
   getAccessToken,
   AUTH_INVALID_EVENT,
   getTokenExpiryMs,
+  isEntitlementLimitError,
 } from "./api";
 
 // Regression coverage for Mandatory Fix 5 (Phase 3 architecture remediation):
@@ -126,6 +127,48 @@ describe("service/api.js — authenticated requests", () => {
 
     await expect(api.get("/api/super-admin/settings")).rejects.toMatchObject({ status: 403 });
     expect(fetchMock).toHaveBeenCalledTimes(1); // no refresh attempt, no retry
+  });
+
+  it("preserves the structured SUBSCRIPTION_LIMIT_REACHED payload on a 403, camelCased, alongside the plain message", async () => {
+    setSession({ accessToken: "tok-1", refreshToken: "ref-1", user: { id: 1 } });
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(403, {
+      success: false,
+      error: "SUBSCRIPTION_LIMIT_REACHED",
+      message: "'org.entity.max' limit (2) exceeded.",
+      detail: "'org.entity.max' limit (2) exceeded.",
+      error_type: "ENTITLEMENT_LIMIT",
+      entity: "customer",
+      current_usage: 5,
+      limit: 2,
+      remaining: 0,
+      plan_name: "Professional",
+      entitlement_key: "org.entity.max",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await api.post("/billing/customers", { company_name: "Acme" }).catch((e) => e);
+    expect(error.status).toBe(403);
+    expect(error.message).toBe("'org.entity.max' limit (2) exceeded.");
+    expect(error.code).toBe("SUBSCRIPTION_LIMIT_REACHED");
+    expect(error.entity).toBe("customer");
+    expect(error.currentUsage).toBe(5);
+    expect(error.limit).toBe(2);
+    expect(error.remaining).toBe(0);
+    expect(error.planName).toBe("Professional");
+    expect(isEntitlementLimitError(error)).toBe(true);
+  });
+
+  it("a plain (non-entitlement) 403 does not report as an entitlement-limit error", async () => {
+    setSession({ accessToken: "tok-1", refreshToken: "ref-1", user: { id: 1 } });
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(403, {
+      success: false, error: "FORBIDDEN", message: "You do not have permission to perform this action.",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await api.post("/billing/customers", {}).catch((e) => e);
+    expect(error.status).toBe(403);
+    expect(isEntitlementLimitError(error)).toBe(false);
+    expect(error.entity).toBeUndefined();
   });
 
   it("logout clears the full session", () => {

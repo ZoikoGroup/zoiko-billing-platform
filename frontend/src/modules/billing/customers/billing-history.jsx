@@ -121,7 +121,7 @@ export default function BillingHistoryPage() {
     const api = activeTab === "invoices" ? invoiceApi : paymentApi;
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
 
       const params = {
         page: safePage,

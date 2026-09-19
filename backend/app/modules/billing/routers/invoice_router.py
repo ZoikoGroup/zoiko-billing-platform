@@ -87,6 +87,7 @@ def create_invoice(
         key="billing.invoice.monthly_limit",
         current_count=invoices_this_period,
         actor_id=current_user.id,
+        entity="invoice",
     )
 
     return svc.create_invoice(
@@ -306,6 +307,16 @@ def get_invoice(
 ):
     svc = InvoiceService(db)
     return svc.get_invoice(invoice_id=invoice_id, organization_id=current_user.organization_id)
+
+
+@router.get("/{invoice_id}/public-link", response_model=dict)
+def get_invoice_public_link(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = InvoiceService(db)
+    return svc.get_public_invoice_link(invoice_id=invoice_id, organization_id=current_user.organization_id)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceResponse)

@@ -2935,6 +2935,7 @@ class BillingConfiguration(Base):
     quote_prefix                    = Column(String(10), default="QTE-")
     quote_number_format             = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     quote_sequence_reset            = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
+    quote_terms_and_conditions      = Column(Text, nullable=True)
     credit_note_prefix              = Column(String(10), default="CN-")
     credit_note_number_format       = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     credit_note_sequence_reset      = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
@@ -2987,6 +2988,9 @@ class BillingConfiguration(Base):
     exchange_rate_updated_by        = Column(Integer, nullable=True)
     rounding_method                 = Column(CaseInsensitiveEnum(RoundingMethod), default=RoundingMethod.HALF_UP, nullable=False)
     rounding_precision              = Column(Integer, default=2)
+    default_trial_days              = Column(Integer, default=0)
+    default_pricing_strategy        = Column(String(20), default="flat")
+    default_billing_frequency       = Column(CaseInsensitiveEnum(BillingPeriod), default=BillingPeriod.MONTHLY, nullable=False)
 
     # ── Payment Gateways ──
     gateway_stripe_enabled          = Column(Boolean, default=False)
@@ -3099,6 +3103,22 @@ class BillingConfiguration(Base):
     enable_auto_taxes               = Column(Boolean, default=False)
     enable_audit_logs               = Column(Boolean, default=True)
     security_settings               = Column(JSON, default=lambda: {})
+
+    # ── Subscription / Payment module settings (frontend-only fields with
+    # no dedicated column -- same "typed JSON blob, shallow-merged on
+    # update" idiom already used above for tax_preferences/tax_profiles,
+    # rather than one migration per field for two settings pages that are
+    # almost entirely composed of these) ──
+    subscription_extra_settings     = Column(JSON, default=lambda: {})
+    payment_extra_settings          = Column(JSON, default=lambda: {})
+    # Pricing Settings' "Rounding Rule" is a nearest-increment concept
+    # (nearest $0.01/$0.10/$1.00) distinct from -- and not a valid member
+    # of -- the strict `rounding_method` enum above (none/up/down/half_up/
+    # half_down/half_even, consumed nowhere in the calculation pipeline
+    # today; round_money() always uses ROUND_HALF_UP regardless of that
+    # setting). Storing it here rather than forcing it into that column
+    # avoids either an invalid-enum error or a user-facing copy change.
+    pricing_extra_settings          = Column(JSON, default=lambda: {})
 
     # ── Relationship Terminology ──
     relationship_terminology        = Column(String(20), default="customer")

@@ -149,7 +149,7 @@ export default function PricingPlansPage() {
   const fetchPlans = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const params = {
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,

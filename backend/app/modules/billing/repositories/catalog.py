@@ -560,7 +560,10 @@ class PriceListItemRepository(BaseRepository[PriceListItem]):
             sort_order=sort_order,
             active_only=active_only,
             search_term=search_term,
-            search_fields=search_fields or ["product_id"],
+            # Same class of bug as CurrencyPricingRepository above:
+            # "product_id" is an integer FK column, and the generic search
+            # builder's unconditional .ilike() would 500 on any search term.
+            search_fields=search_fields or ["currency"],
             **filters,
         )
 
@@ -961,7 +964,12 @@ class CurrencyPricingRepository(BaseRepository[CurrencyPricing]):
             sort_order=sort_order,
             active_only=active_only,
             search_term=search_term,
-            search_fields=search_fields or ["product_id", "currency"],
+            # "product_id" was previously included here, but it's an integer
+            # FK column -- the generic search builder applies .ilike() to
+            # every listed field unconditionally, and Postgres has no
+            # integer ~~* text operator, so any search term crashed this
+            # endpoint with a 500 on every call. Search by currency code only.
+            search_fields=search_fields or ["currency"],
             **filters,
         )
 

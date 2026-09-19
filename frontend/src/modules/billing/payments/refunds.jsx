@@ -104,7 +104,7 @@ export default function RefundsPage() {
   const fetchRefunds = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await refundApi.list({
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,
@@ -384,6 +384,10 @@ export default function RefundsPage() {
               <option value="">All Types</option>
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+            {hasActiveFilters && (
+              <button onClick={() => { setSearch(""); setStatusFilter(""); setTypeFilter(""); setCurrentPage(1); }}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
+            )}
           </div>
         )}
 

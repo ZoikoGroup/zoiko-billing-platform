@@ -57,7 +57,7 @@ export default function PricingReportsPage() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const [planRes, prodRes] = await Promise.allSettled([
         pricingApi.list({ per_page: 100 }),
         productApi.list({ per_page: 100 }),

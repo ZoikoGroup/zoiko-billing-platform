@@ -547,18 +547,20 @@ class InvoiceRepository(BaseRepository[Invoice]):
         this_month_revenue = float(this_month_revenue)
         total_tax = float(total_tax)
 
-        status_query = self.db.query(
+        # Deliberately NOT filtered by date_from/date_to: this is a snapshot
+        # of how many invoices are CURRENTLY in each status (an inventory
+        # count), not a "created within this period" metric. Terminal
+        # statuses (cancelled/refunded/written_off/partially_paid) are
+        # reached long after issue_date, so windowing this by issue_date
+        # silently zeroed them out under the default 30-day dashboard
+        # range even when real matching invoices existed.
+        status_rows = self.db.query(
             Invoice.status,
             func.count(Invoice.id),
         ).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
-        )
-        if date_from:
-            status_query = status_query.filter(Invoice.issue_date >= date_from)
-        if date_to:
-            status_query = status_query.filter(Invoice.issue_date <= date_to)
-        status_rows = status_query.group_by(Invoice.status).all()
+        ).group_by(Invoice.status).all()
         status_counts = {row[0].value if hasattr(row[0], "value") else str(row[0]): row[1] for row in status_rows}
 
         avg_days_query = self.db.query(

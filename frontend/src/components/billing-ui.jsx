@@ -466,6 +466,15 @@ export function Modal({
 }) {
   const panelRef = useRef(null);
   const triggerRef = useRef(null);
+  // onClose is normally a fresh inline arrow function on every render of the
+  // caller. Reading it through a ref (instead of putting it in the effect's
+  // dependency array) keeps the effect below from tearing down and
+  // re-running on every keystroke typed into the modal -- its cleanup
+  // refocuses the original trigger element, which was previously stealing
+  // focus away from whatever field the user was typing into after the very
+  // first character (SUB-02: "Create Plan form loses input after typing").
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -475,7 +484,7 @@ export function Modal({
 
     const onKey = (e) => {
       if (e.key === "Escape") {
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (e.key !== "Tab") return;
@@ -501,7 +510,9 @@ export function Modal({
         triggerRef.current.focus();
       }
     };
-  }, [open, onClose]);
+    // Deliberately NOT depending on onClose -- see onCloseRef above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (open) panelRef.current?.focus();

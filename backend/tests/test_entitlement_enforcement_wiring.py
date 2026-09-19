@@ -32,12 +32,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.modules.billing.models import Product, ProductType
+from app.modules.billing.models import BillingCustomer, Product, ProductType
 from app.modules.billing.routers.contract_router import set_contract_items
+from app.modules.billing.routers.customer_router import create_customer
 from app.modules.billing.routers.dunning_router import create_level
 from app.modules.billing.schemas import (
     ContractItemBulkCreate,
     ContractItemCreate,
+    CustomerCreate,
     DunningLevelCreate,
 )
 from app.modules.billing.services import ContractService
@@ -45,6 +47,8 @@ from app.modules.commercial.entitlement_enforcement import (
     EntitlementBlockedException,
     require_entitlement,
 )
+from app.modules.commercial.entitlement_resolver import EntitlementKeyNotFoundError
+from app.modules.commercial.enums import EntitlementValueType
 from tests.conftest import make_customer, make_organization
 from tests.test_commercial_entitlements import _plan_with_entitlement, _org_with_active_subscription
 
@@ -183,3 +187,77 @@ def test_require_entitlement_rejects_unknown_key_at_definition_time():
     request time — mirrors require_capability()'s exact behavior."""
     with pytest.raises(ValueError):
         require_entitlement("not.a.real.catalog.key")
+
+
+# ── Route: org.entity.max on POST /billing/customers ────────────────────────
+# Phase 5 (Billing E2E reliability remediation) — this router body's
+# EntitlementEnforcementService.assert_within_limit(key="org.entity.max")
+# call is exactly what a real environment missing the seeded entitlement
+# catalog (scripts/seed_entitlement_definitions.py never run) surfaces as an
+# unhandled EntitlementKeyNotFoundError -> 500 on customer creation. Fixed by
+# ensuring that seed script (and scripts/seed_commercial_plans.py, its own
+# prerequisite) runs as part of environment/test setup — not by touching this
+# router or the entitlement resolver, both of which are working exactly as
+# designed (see entitlement_enforcement.py's own "fail-open vs fail-closed"
+# docstring: a write whose entitlement can't be resolved must never silently
+# succeed). These tests lock in that the *router* wiring is correct and
+# document the real, deliberate business rule (a plan's org.entity.max caps
+# how many BillingCustomer rows an org may have) that the E2E lifecycle test
+# had to become tenant-per-run to respect, rather than fight.
+
+
+def _customer_payload(code):
+    return CustomerCreate(
+        customer_code=code, company_name=f"Customer {code}", display_name=f"Customer {code}",
+    )
+
+
+def test_customer_creation_blocked_when_entity_limit_reached(db_session):
+    plan, definition = _plan_with_entitlement(
+        db_session, "ENT1PKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+    )
+    org, account, sub = _org_with_active_subscription(db_session, "ENT1ORG", plan)
+    make_customer(db_session, org.id, code="ENT1CUST1")  # already at the limit of 1
+    db_session.commit()
+
+    with pytest.raises(EntitlementBlockedException):
+        create_customer(
+            data=_customer_payload("ENT1CUST2"), db=db_session, current_user=_fake_user(org.id),
+        )
+    # Blocked write must not leave a partial second customer behind.
+    assert db_session.query(BillingCustomer).filter_by(organization_id=org.id).count() == 1
+
+
+def test_customer_creation_allowed_within_entity_limit(db_session):
+    plan, definition = _plan_with_entitlement(
+        db_session, "ENT2PKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+    )
+    org, account, sub = _org_with_active_subscription(db_session, "ENT2ORG", plan)
+    db_session.commit()
+
+    created = create_customer(
+        data=_customer_payload("ENT2CUST1"), db=db_session, current_user=_fake_user(org.id),
+    )
+    assert created.customer_code == "ENT2CUST1"
+    assert created.organization_id == org.id
+
+
+def test_customer_creation_fails_closed_without_seeded_entitlement_catalog(db_session):
+    """Reproduces the exact Phase 5 defect: no EntitlementDefinition row for
+    'org.entity.max' at all (the seed script was never run) makes customer
+    creation raise, by design (see entitlement_resolver.py's own docstring:
+    this is treated as a coding bug / missing setup, not a tenant condition,
+    and never silently resolves). This is the failure the real fix
+    (seeding the catalog before the app/tests run) prevents — proving this
+    stays a hard failure here documents why the fix belongs in environment
+    setup, not in a try/except around this call."""
+    org = make_organization(db_session, code="ENT3ORG", name="Ent3 Org")
+    db_session.commit()
+    # Deliberately no EntitlementDefinition, no CommercialAccount/Subscription
+    # at all for this org -- the exact state of a freshly created org before
+    # scripts/seed_entitlement_definitions.py has ever been run.
+
+    with pytest.raises(EntitlementKeyNotFoundError):
+        create_customer(
+            data=_customer_payload("ENT3CUST1"), db=db_session, current_user=_fake_user(org.id),
+        )

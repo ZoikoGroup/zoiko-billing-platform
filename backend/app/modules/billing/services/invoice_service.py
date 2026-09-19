@@ -638,7 +638,9 @@ class InvoiceService:
         # are 100% consistent with the price resolution semantics (unit vs
         # graduated/lump-sum), exactly like bulk_set_items does.
         data = self._calculate_populate_item_financials_or_use(data)
-        return self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        item = self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        self.recalculate_invoice(invoice_id, organization_id)
+        return item
 
     def _calculate_line_total(self, item_data: Dict[str, Any]) -> Decimal:
         """Calculate line item total: (qty * unit_price) - discount + tax"""
@@ -1009,6 +1011,18 @@ class InvoiceService:
         if inv is None or inv.deleted_at is not None:
             raise NotFoundException("Invoice", invoice_id)
         return inv
+
+    def get_public_invoice_link(self, invoice_id: int, organization_id: int) -> Dict[str, str]:
+        """Authenticated lookup of the same signed link that gets emailed to
+        the customer, so the internal invoice-detail UI's "preview" button can
+        open a link that actually resolves (a raw invoice id fails the
+        signature check in `_resolve_public_invoice`)."""
+        self.repo.get_by_id(invoice_id, organization_id)  # tenant-isolation check; raises NotFoundException
+        token = self._public_invoice_token(invoice_id)
+        return {
+            "token": token,
+            "url": f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{token}",
+        }
 
     def get_public_invoice(self, token: str) -> Dict[str, Any]:
         """Public-safe snapshot of an invoice for the customer-facing view &

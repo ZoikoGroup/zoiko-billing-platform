@@ -6,13 +6,14 @@ import { Users, Search, Filter, X, RefreshCw, Download,
   Columns, Upload, Trash2 } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { customerApi, settingsApi } from "../../../service/billingService";
+import { isEntitlementLimitError } from "../../../service/api";
 import CustomerImportWizard from "./customer-import-wizard";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions, getCountrySelectOptions, getCurrencyForCountry } from "../../../utils/currency";
 import { getCustomerTaxFields } from "../utils/countryIntelligence";
 import { useCurrency, getOrgBaseCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
-import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
+import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 15;
 
@@ -103,6 +104,7 @@ export default function CustomerListPage() {
   const [editCustomer, setEditCustomer] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [limitError, setLimitError] = useState(null);
 
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
@@ -165,7 +167,7 @@ export default function CustomerListPage() {
   const fetchCustomers = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
 
       const params = {
         page: safePage,
@@ -311,6 +313,7 @@ export default function CustomerListPage() {
   const handleCreate = async () => {
     setFormLoading(true);
     setFormError(null);
+    setLimitError(null);
     if (!newCustomer.company_name?.trim()) { setFormError("Company name is required"); setFormLoading(false); return; }
     if (!newCustomer.email?.trim()) { setFormError("Email is required"); setFormLoading(false); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -340,7 +343,13 @@ export default function CustomerListPage() {
       fetchCustomers();
       fetchKPI();
     } catch (err) {
-      setFormError(err.message || "Failed to create customer");
+      // Form data is deliberately left in place (no clearForm()/setShowCreateModal(false)
+      // here) so the user doesn't lose what they typed while resolving the limit.
+      if (isEntitlementLimitError(err)) {
+        setLimitError(err);
+      } else {
+        setFormError(err.message || "Failed to create customer");
+      }
     } finally {
       setFormLoading(false);
     }
@@ -399,7 +408,11 @@ export default function CustomerListPage() {
           <h2 className="text-xl font-bold text-slate-800">New {singular}</h2>
           <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button>
         </div>
-        {formError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>}
+        {limitError ? (
+          <div className="mb-4"><SubscriptionLimitReached error={limitError} terminology={{ singular, plural }} onClose={() => setLimitError(null)} /></div>
+        ) : formError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Company Name <span className="text-red-500">*</span></label><input value={newCustomer.company_name} onChange={(e) => setNewCustomer((p) => ({ ...p, company_name: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Display Name</label><input value={newCustomer.display_name} onChange={(e) => setNewCustomer((p) => ({ ...p, display_name: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>

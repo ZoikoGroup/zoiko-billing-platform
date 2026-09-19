@@ -171,6 +171,7 @@ export const ENDPOINTS = {
   INVOICE_STATUS_HISTORY: (id) => `${BILLING}/invoices/${id}/status-history`,
   INVOICE_COMMUNICATIONS: (id) => `${BILLING}/invoices/${id}/communications`,
   INVOICE_TIMELINE: (id) => `${BILLING}/invoices/${id}/timeline`,
+  INVOICE_PUBLIC_LINK: (id) => `${BILLING}/invoices/${id}/public-link`,
 
   PAYMENT_METHODS: `${BILLING}/payments/methods`,
   PAYMENT_METHODS_BY_CUSTOMER: (id) => `${BILLING}/payments/methods/customer/${id}`,

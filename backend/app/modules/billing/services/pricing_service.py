@@ -721,6 +721,18 @@ class TaxPricingService:
         tax_pricing_id = data.get("tax_pricing_id")
         if tax_pricing_id is not None:
             self.repo.get_by_id(tax_pricing_id, organization_id)
+            # Idempotent: (tax_group_id, tax_pricing_id) is unique
+            # (uq_tax_group_members_group_tax). Re-adding the same tax to
+            # the same group is a no-op that returns the existing
+            # membership, rather than a 409/500 the caller has to work
+            # around -- the frontend has no reliable way to know a
+            # membership already exists before submitting (see the
+            # matching frontend fix for the members-list response shape).
+            existing = self.member_repo.get_first(
+                organization_id, tax_group_id=tax_group_id, tax_pricing_id=tax_pricing_id,
+            )
+            if existing is not None:
+                return existing
         member = self.member_repo.create(organization_id, tax_group_id=tax_group_id, **data)
         return member
 

@@ -6,6 +6,15 @@ import HRPage from "../../../components/HRPage";
 import { writeOffApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
+import { useAuth } from "../../../context/AuthContext";
+
+// Approval is restricted to Finance Approver (or Super Admin) by design --
+// maker-checker separation of duties, enforced authoritatively by the
+// backend's get_current_finance_approver dependency. This must match that
+// dependency's allowed roles exactly; it only controls whether the UI shows
+// an actionable button vs. an honest explanation, never the actual
+// authorization decision.
+const CAN_APPROVE_WRITE_OFF_ROLES = ["finance_approver", "super_admin"];
 
 // pdfmake + vfs_fonts are lazy-loaded inside buildWriteOffPdf() so the
 // ~1.74 MB font bundle is only fetched when the user clicks "Download".
@@ -93,6 +102,8 @@ export default function WriteOffDetailPage() {
   const { singular } = useTerminology();
   const { id } = useParams();
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const canApprove = CAN_APPROVE_WRITE_OFF_ROLES.includes(role);
 
   const [writeOff, setWriteOff] = useState(null);
   const [timeline, setTimeline] = useState([]);
@@ -296,10 +307,16 @@ export default function WriteOffDetailPage() {
                 </button>
               )}
               {isPendingApproval && (
-                <button onClick={() => handleAction("approve", () => writeOffApi.approve(writeOff.id))} disabled={actionLoading === "approve"}
-                  className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-                  {actionLoading === "approve" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Approve
-                </button>
+                canApprove ? (
+                  <button onClick={() => handleAction("approve", () => writeOffApi.approve(writeOff.id))} disabled={actionLoading === "approve"}
+                    className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+                    {actionLoading === "approve" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Approve
+                  </button>
+                ) : (
+                  <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" title="Only a Finance Approver can approve this write-off. This separation of duties cannot be bypassed from your role.">
+                    <span className="font-medium">Approval requires a Finance Approver.</span> Ask your Finance Approver to review this write-off — your role ({role || "unknown"}) cannot approve it.
+                  </div>
+                )
               )}
               {isApproved && (
                 <button onClick={() => handleAction("execute", () => writeOffApi.execute(writeOff.id))} disabled={actionLoading === "execute"}

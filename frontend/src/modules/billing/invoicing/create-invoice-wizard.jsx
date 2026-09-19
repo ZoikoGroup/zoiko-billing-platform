@@ -5,12 +5,13 @@ import { User, Package, FileText, Calculator, Eye, Download, Send,
   CheckCircle, MapPin, Calendar, Loader2, X,
   Receipt, Globe, Hash, Search, Clock, History } from "lucide-react"
 import { invoiceApi, customerApi, productApi, settingsApi, taxApi, pricingApi } from "../../../service/billingService";
+import { isEntitlementLimitError } from "../../../service/api";
 import { formatDisplayCurrency as fmtCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions, normalizeCountryCode } from "../../../utils/currency";
 import { CalculationEngine, calcItemNet, calcItemTotal, calcItemDiscount } from "../utils/calculation-engine";
 import InvoicePDFPreview from "./invoice-pdf-preview";
 import { useTerminology } from "../utils/TerminologyContext";
-import { ProductSelector, BulkProductPickerModal } from "../../../components/billing-shared";
+import { ProductSelector, BulkProductPickerModal, SubscriptionLimitReached } from "../../../components/billing-shared";
 import { PageHeader, Button, Stepper } from "../../../components/billing-ui";
 
 const PAYMENT_TERMS = [
@@ -144,6 +145,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   const [saveProgress, setSaveProgress] = useState(null);
   const saveLockRef = useRef(false);
   const [error, setError] = useState(null);
+  const [limitError, setLimitError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [orgSettings, setOrgSettings] = useState(null);
   const [taxRates, setTaxRates] = useState([]);
@@ -743,14 +745,21 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
     if (navigating || saving || saveLockRef.current) return;
     saveLockRef.current = true;
     try {
-      setSaving(true); setSavingAction("save"); setSaveProgress(null); setError(null);
+      setSaving(true); setSavingAction("save"); setSaveProgress(null); setError(null); setLimitError(null);
       const created = await saveInvoice((label, detail) => setSaveProgress({ label, detail }));
       const invoiceId = created.id || created.invoice_id;
       setSaveProgress({ label: "Refreshing invoice state", detail: "Confirming status, balance, timeline, and actions." });
       const refreshed = await invoiceApi.get(invoiceId).catch(() => created);
       goToSavedInvoice(invoiceId, refreshed, { type: "success", text: "Invoice saved successfully." });
     } catch (err) {
-      setError(err?.detail || err?.message || "Failed to save invoice");
+      // Invoice form state is deliberately left in place here (no onClose()/
+      // draft reset) so the user doesn't lose the invoice they built while
+      // resolving the limit.
+      if (isEntitlementLimitError(err)) {
+        setLimitError(err);
+      } else {
+        setError(err?.detail || err?.message || "Failed to save invoice");
+      }
     } finally {
       saveLockRef.current = false;
       setSaving(false); setSavingAction(null);
@@ -760,14 +769,18 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   const handleSaveAndSend = async () => {
     if (navigating || saving || saveLockRef.current) return;
     saveLockRef.current = true;
-    setSaving(true); setSavingAction("send"); setSaveProgress(null); setError(null);
+    setSaving(true); setSavingAction("send"); setSaveProgress(null); setError(null); setLimitError(null);
     let created;
     try {
       created = await saveInvoice((label, detail) => setSaveProgress({ label, detail }));
     } catch (err) {
       saveLockRef.current = false;
       setSaving(false); setSavingAction(null);
-      setError(err?.detail || err?.message || "Failed to save invoice");
+      if (isEntitlementLimitError(err)) {
+        setLimitError(err);
+      } else {
+        setError(err?.detail || err?.message || "Failed to save invoice");
+      }
       return; // Save failed — never attempt to send an email for an unsaved invoice.
     }
     const invoiceId = created.id || created.invoice_id;
@@ -1464,7 +1477,9 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
           <AlertCircle className="h-4 w-4 shrink-0" /> {formError}
         </div>
       )}
-      {error && (
+      {limitError ? (
+        <SubscriptionLimitReached error={limitError} terminology={{ singular, plural }} onClose={() => setLimitError(null)} />
+      ) : error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2" role="alert">
           <AlertCircle className="h-4 w-4 shrink-0" /> {error}
         </div>

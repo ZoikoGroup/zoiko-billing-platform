@@ -3680,6 +3680,7 @@ class BillingConfigurationUpdate(BaseModel):
     quote_prefix: Optional[str] = None
     quote_number_format: Optional[NumberFormat] = None
     quote_sequence_reset: Optional[SequenceReset] = None
+    quote_terms_and_conditions: Optional[str] = None
     credit_note_prefix: Optional[str] = None
     credit_note_number_format: Optional[NumberFormat] = None
     credit_note_sequence_reset: Optional[SequenceReset] = None
@@ -3719,6 +3720,9 @@ class BillingConfigurationUpdate(BaseModel):
     exchange_rate_auto_update: Optional[bool] = None
     rounding_method: Optional[RoundingMethod] = None
     rounding_precision: Optional[int] = None
+    default_trial_days: Optional[int] = None
+    default_pricing_strategy: Optional[str] = None
+    default_billing_frequency: Optional[BillingPeriod] = None
 
     gateway_stripe_enabled: Optional[bool] = None
     gateway_razorpay_enabled: Optional[bool] = None
@@ -3832,6 +3836,9 @@ class BillingConfigurationUpdate(BaseModel):
     enable_auto_taxes: Optional[bool] = None
     enable_audit_logs: Optional[bool] = None
     security_settings: Optional[Dict[str, Any]] = None
+    subscription_extra_settings: Optional[Dict[str, Any]] = None
+    payment_extra_settings: Optional[Dict[str, Any]] = None
+    pricing_extra_settings: Optional[Dict[str, Any]] = None
 
     product_numbering_prefix: Optional[str] = None
     product_numbering_format: Optional[str] = None
@@ -3896,6 +3903,7 @@ class BillingConfigurationResponse(BaseModel):
     quote_prefix: str
     quote_number_format: NumberFormat
     quote_sequence_reset: SequenceReset
+    quote_terms_and_conditions: Optional[str] = None
     credit_note_prefix: str
     credit_note_number_format: NumberFormat
     credit_note_sequence_reset: SequenceReset
@@ -3935,6 +3943,9 @@ class BillingConfigurationResponse(BaseModel):
     exchange_rate_auto_update: bool
     rounding_method: RoundingMethod
     rounding_precision: int
+    default_trial_days: int = 0
+    default_pricing_strategy: str = "flat"
+    default_billing_frequency: BillingPeriod = BillingPeriod.MONTHLY
 
     gateway_stripe_enabled: bool
     gateway_razorpay_enabled: bool
@@ -4046,6 +4057,9 @@ class BillingConfigurationResponse(BaseModel):
     enable_auto_taxes: bool
     enable_audit_logs: bool
     security_settings: Dict[str, Any]
+    subscription_extra_settings: Dict[str, Any] = {}
+    payment_extra_settings: Dict[str, Any] = {}
+    pricing_extra_settings: Dict[str, Any] = {}
 
     product_numbering_prefix: Optional[str]
     product_numbering_format: Optional[str]

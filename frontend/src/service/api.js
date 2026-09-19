@@ -151,6 +151,7 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
 
   if (!res.ok) {
     let detail;
+    const extra = {};
     try {
       const data = await res.json();
       detail = data?.detail || data?.message;
@@ -163,10 +164,23 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
       } else if (typeof detail === "object" && detail !== null) {
         detail = JSON.stringify(detail);
       }
+      // Structured business-level error payload (e.g. a SUBSCRIPTION_LIMIT_REACHED
+      // entitlement error — see backend/app/core/exceptions.py's ZoikoException.extra)
+      // carried alongside the standard success/error/message/detail shape. Preserved
+      // on the thrown error, camelCased, so callers can branch on it directly instead
+      // of pattern-matching the free-text message. Every field is optional — a plain
+      // 403/404/422 simply won't have them, and `code` alone (via isEntitlementLimitError)
+      // is enough to detect the entitlement-limit case.
+      if (data && typeof data.error === "string") extra.code = data.error;
+      if (data && typeof data.entity === "string") extra.entity = data.entity;
+      if (data && typeof data.current_usage === "number") extra.currentUsage = data.current_usage;
+      if (data && typeof data.limit === "number") extra.limit = data.limit;
+      if (data && typeof data.remaining === "number") extra.remaining = data.remaining;
+      if (data && typeof data.plan_name === "string") extra.planName = data.plan_name;
     } catch {
       detail = res.statusText;
     }
-    throw createApiError(detail, res.status);
+    throw createApiError(detail, res.status, extra);
   }
 
   if (res.status === 204) return null;
@@ -237,5 +251,13 @@ export const api = {
   patch: (path, body, opts) => apiRequest(path, { ...opts, method: "PATCH", body }),
   delete: (path, opts) => apiRequest(path, { ...opts, method: "DELETE" }),
 };
+
+// A subscription/entitlement limit (e.g. "you've reached your plan's
+// customer limit") is still a 403, but a distinct, actionable case from an
+// RBAC-denied 403 — this is the single place that tells them apart, so
+// every call site checks the same thing instead of re-parsing messages.
+export function isEntitlementLimitError(error) {
+  return Boolean(error) && error.code === "SUBSCRIPTION_LIMIT_REACHED";
+}
 
 export { API_BASE_URL, AUTH_INVALID_EVENT };

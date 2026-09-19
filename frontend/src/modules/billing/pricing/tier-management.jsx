@@ -52,7 +52,13 @@ export default function TierManagementPage() {
 
   useEffect(() => {
     if (selectedPlanId) {
-      const found = plans.find((p) => p.id === selectedPlanId);
+      // selectedPlanId originates from a URL query param (?plan_id=4), so
+      // it's always a string, while plan.id from the API is a number --
+      // the strict === here never matched, so arriving via a direct/shared
+      // link silently never resolved a plan name even though fetchTiers
+      // (which passes selectedPlanId straight to the API, no comparison)
+      // worked fine.
+      const found = plans.find((p) => String(p.id) === String(selectedPlanId));
       setSelectedPlanName(found ? found.name : "");
     } else {
       setSelectedPlanName("");
@@ -67,7 +73,7 @@ export default function TierManagementPage() {
     }
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await pricingApi.listTiers(selectedPlanId);
       const items = data.items || data.data || data || [];
       setTiers(Array.isArray(items) ? items : []);

@@ -154,8 +154,8 @@ class RevenueRecognitionService:
     def list_pending_schedules(self, organization_id: int) -> List[RevenueRecognitionSchedule]:
         return self.sched_repo.list_pending(organization_id)
 
-    def get_total_deferred(self, organization_id: int) -> float:
-        return self.sched_repo.get_total_deferred(organization_id)
+    def get_total_deferred_by_currency(self, organization_id: int) -> List[Dict[str, Any]]:
+        return self.sched_repo.get_total_deferred_by_currency(organization_id)
 
     # ── Revenue Recognition ───────────────────────────────────────────────
 

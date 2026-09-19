@@ -61,7 +61,17 @@ export default function SubscriptionSettingsPage() {
       setError(null);
       setSaved(false);
       const settingsRes = await settingsApi.get();
-      const settings = settingsRes || {};
+      // None of these 15 fields have their own column on
+      // BillingConfiguration -- they were previously read/written at the
+      // top level, which Pydantic silently dropped from every save (no
+      // matching schema field), so this page always reverted to these
+      // defaults on reload. Persisted instead under
+      // subscription_extra_settings (a JSON blob dedicated to this page --
+      // see backend migration e5a1c3f7b9d2), deliberately NOT reusing the
+      // similarly-named grace_period_days/default_terms_and_conditions
+      // columns that already exist for the Payments/Contracts domains,
+      // since this page's values are conceptually independent from theirs.
+      const settings = settingsRes?.subscription_extra_settings || {};
 
       const values = {
         default_subscription_prefix: settings.default_subscription_prefix || "SUB-",
@@ -95,7 +105,7 @@ export default function SubscriptionSettingsPage() {
       setSaving(true);
       setError(null);
       setSaved(false);
-      await settingsApi.update(form);
+      await settingsApi.update({ subscription_extra_settings: form });
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

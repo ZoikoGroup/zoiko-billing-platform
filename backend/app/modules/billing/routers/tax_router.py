@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
+from app.core.exceptions import BadRequestException
+from app.modules.billing.models import TaxType
 from app.modules.billing.services import TaxService
 from app.modules.billing.schemas import (
     TaxRateCreate,
@@ -57,6 +59,12 @@ def list_tax_rates(
     svc = TaxService(db)
     if tax_type and tax_type.lower() in ("both", "all"):
         tax_type = None
+    if tax_type is not None:
+        try:
+            TaxType(tax_type)
+        except ValueError:
+            valid = ", ".join(t.value for t in TaxType)
+            raise BadRequestException(f"Invalid tax_type '{tax_type}'. Valid values: {valid}.")
     return svc.list_tax_rates(
         organization_id=current_user.organization_id,
         page=page,
