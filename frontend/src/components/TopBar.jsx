@@ -138,15 +138,30 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
           </Link>
         )}
 
-        {/* Notification Icon */}
-        <button
-          type="button"
-          className="relative p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-          aria-label="Notifications"
-        >
-          <Bell size={20} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ff6b00] rounded-full border-2 border-white" />
-        </button>
+        {/* Notification Icon — links to the real (non-fabricated) billing
+            workspace notifications feed for billing_admin, the only role
+            with one today. For other roles this is an inert placeholder:
+            it must never show a fake "unread" dot when nothing was ever
+            fetched (ORG-01). */}
+        {role === "billing_admin" ? (
+          <Link
+            to="/billing/workspace/notifications"
+            className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            aria-label="Notifications"
+          >
+            <Bell size={20} />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="Notifications are not yet available for this workspace"
+            aria-label="Notifications (not yet available)"
+            className="p-2 rounded-full text-gray-300 cursor-not-allowed"
+          >
+            <Bell size={20} />
+          </button>
+        )}
 
         {/* Divider */}
         <div className="hidden sm:block w-px h-7 bg-gray-200" />
