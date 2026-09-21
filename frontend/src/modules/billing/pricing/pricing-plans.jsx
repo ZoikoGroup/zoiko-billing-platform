@@ -938,6 +938,7 @@ export default function PricingPlansPage() {
               <tr className="bg-slate-50 border-b border-slate-100">
                 <th className="px-4 py-3 w-10">
                   <input type="checkbox" checked={selectAll} onChange={(e) => handleSelectAll(e.target.checked)}
+                    aria-label="Select all pricing plans"
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
                 </th>
                 <SortHeader field="name" label="Plan" />
@@ -967,6 +968,7 @@ export default function PricingPlansPage() {
                   <tr key={plan.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.has(plan.id) ? "bg-brand-50/50" : ""}`}>
                     <td className="px-4 py-4">
                       <input type="checkbox" checked={selectedIds.has(plan.id)} onChange={() => handleSelectOne(plan.id)}
+                        aria-label={`Select ${plan.name || "pricing plan"}`}
                         className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
                     </td>
                     <td className="px-4 py-4">

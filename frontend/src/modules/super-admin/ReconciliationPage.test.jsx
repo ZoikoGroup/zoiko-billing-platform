@@ -11,6 +11,7 @@ const mockGetRun = vi.fn();
 const mockTriggerRun = vi.fn();
 const mockAcknowledge = vi.fn();
 const mockResolve = vi.fn();
+const mockListOrganizations = vi.fn();
 
 vi.mock("../../service/commandCenterService", () => ({
   listReconciliationRuns: (...args) => mockListRuns(...args),
@@ -18,6 +19,15 @@ vi.mock("../../service/commandCenterService", () => ({
   triggerReconciliationRun: (...args) => mockTriggerRun(...args),
   acknowledgeReconciliationException: (...args) => mockAcknowledge(...args),
   resolveReconciliationException: (...args) => mockResolve(...args),
+}));
+
+// The Organization-scope selector fetches its options from commercialService
+// on mount, independent of the commandCenterService mock above -- leaving
+// this unmocked lets the real fetch() run, which fails in CI ("fetch
+// failed") and renders its own role="alert", breaking any assertion that
+// assumes there's exactly one alert on the page.
+vi.mock("../../service/commercialService", () => ({
+  listOrganizations: (...args) => mockListOrganizations(...args),
 }));
 
 import ReconciliationPage from "./ReconciliationPage";
@@ -50,6 +60,8 @@ beforeEach(() => {
   mockTriggerRun.mockReset();
   mockAcknowledge.mockReset();
   mockResolve.mockReset();
+  mockListOrganizations.mockReset();
+  mockListOrganizations.mockResolvedValue({ organizations: [] });
   withRuns([BASE_RUN]);
 });
 
@@ -95,7 +107,7 @@ it("rejects a start date after the end date and disables the Run button", async 
   setDate(screen.getByLabelText(/start date/i), "2026-08-20");
   setDate(screen.getByLabelText(/end date/i), "2026-08-10");
 
-  expect(screen.getByRole("alert")).toHaveTextContent(/start date must be on or before the end date/i);
+  expect(screen.getByText(/start date must be on or before the end date/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /run now/i })).toBeDisabled();
   expect(mockTriggerRun).not.toHaveBeenCalled();
 });

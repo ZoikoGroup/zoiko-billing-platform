@@ -149,7 +149,8 @@ export default function RefundDetailPage() {
 
   useEffect(() => { fetchRefund(); }, [fetchRefund]);
 
-  const handleAction = async (action, actionFn) => {
+  const handleAction = async (action, actionFn, confirmMessage) => {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
     setActionLoading(action);
     setError(null);
     try {
@@ -333,7 +334,7 @@ export default function RefundDetailPage() {
               {isPendingApproval && (
                 <>
                   {canApprove ? (
-                    <button onClick={() => handleAction("approve", () => refundApi.approve(refund.id))} disabled={actionLoading === "approve"}
+                    <button onClick={() => handleAction("approve", () => refundApi.approve(refund.id), `Approve this refund of ${formatDisplayCurrency(refund.amount, "—", currency)}? This authorizes the money movement and cannot be undone from here.`)} disabled={actionLoading === "approve"}
                       className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
                       {actionLoading === "approve" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Approve
                     </button>
@@ -356,7 +357,7 @@ export default function RefundDetailPage() {
               )}
               {isProcessing && (
                 <>
-                  <button onClick={() => handleAction("complete", () => refundApi.complete(refund.id))} disabled={actionLoading === "complete"}
+                  <button onClick={() => handleAction("complete", () => refundApi.complete(refund.id), `Mark this refund of ${formatDisplayCurrency(refund.amount, "—", currency)} as completed? Confirm the money has actually been returned to the customer.`)} disabled={actionLoading === "complete"}
                     className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                     {actionLoading === "complete" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />} Mark Completed
                   </button>

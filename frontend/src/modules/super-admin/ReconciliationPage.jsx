@@ -391,7 +391,11 @@ export default function ReconciliationPage() {
     setRunning(true);
     setActionError(null);
     try {
-      const run = await triggerReconciliationRun({ compareProcessor, rangeStart, rangeEnd, organizationId });
+      const payload = { compareProcessor, rangeStart, rangeEnd };
+      if (organizationId) {
+        payload.organizationId = organizationId;
+      }
+      const run = await triggerReconciliationRun(payload);
       setSuccess(summarizeRunResult(run));
       load();
     } catch (err) {
