@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
@@ -36,6 +36,7 @@ from app.modules.commercial.enums import (
 from app.modules.commercial.models import (
     CommercialEvaluationProgram,
     CommercialEvaluationProgramCap,
+    CommercialAccount,
     CommercialPlan,
     CommercialQuote,
     CommercialQuoteItem,
@@ -277,12 +278,15 @@ def list_quotes(
     status_filter: Optional[str] = Query(None, alias="status"),
     limit: int = Query(50, ge=1, le=200),
 ):
-    query = db.query(CommercialQuote)
+    query = db.query(CommercialQuote).options(
+        joinedload(CommercialQuote.account).joinedload(CommercialAccount.organization)
+    )
     if account_id:
         query = query.filter(CommercialQuote.commercial_account_id == account_id)
     if status_filter:
         query = query.filter(CommercialQuote.status == status_filter)
-    return query.order_by(CommercialQuote.created_at.desc()).limit(limit).all()
+    quotes = query.order_by(CommercialQuote.created_at.desc()).limit(limit).all()
+    return [_serialize_quote_summary(quote) for quote in quotes]
 
 
 @router.get(
@@ -496,12 +500,15 @@ def list_invoices(
     status_filter: Optional[str] = Query(None, alias="status"),
     limit: int = Query(50, ge=1, le=200),
 ):
-    query = db.query(PlatformInvoice)
+    query = db.query(PlatformInvoice).options(
+        joinedload(PlatformInvoice.account).joinedload(CommercialAccount.organization)
+    )
     if account_id:
         query = query.filter(PlatformInvoice.commercial_account_id == account_id)
     if status_filter:
         query = query.filter(PlatformInvoice.status == status_filter)
-    return query.order_by(PlatformInvoice.created_at.desc()).limit(limit).all()
+    invoices = query.order_by(PlatformInvoice.created_at.desc()).limit(limit).all()
+    return [_serialize_invoice_summary(invoice) for invoice in invoices]
 
 
 @router.get(
@@ -940,6 +947,76 @@ def _serialize_public_invoice(invoice: PlatformInvoice) -> dict:
     }
 
 
+def _serialize_organization_summary(invoice: PlatformInvoice) -> dict:
+    organization = invoice.account.organization if invoice.account else None
+    if not organization:
+        return {}
+    return {
+        "id": organization.id,
+        "name": organization.organization_name,
+        "display_name": organization.display_name,
+        "code": organization.organization_code,
+        "legal_name": organization.legal_name,
+        "email": organization.email,
+        "phone": organization.phone,
+        "address": organization.address,
+        "city": organization.city,
+        "state": organization.state,
+        "country": organization.country,
+        "postal_code": organization.postal_code,
+        "tax_no": organization.tax_no,
+        "registration_number": organization.registration_number,
+    }
+
+
+def _serialize_quote_summary(quote: CommercialQuote) -> dict:
+    organization = _serialize_organization_summary(quote)
+    return {
+        "id": quote.id,
+        "commercial_account_id": quote.commercial_account_id,
+        "quote_number": quote.quote_number,
+        "status": quote.status.value,
+        "subject": quote.subject,
+        "currency": quote.currency,
+        "subtotal": str(quote.subtotal),
+        "discount_amount": str(quote.discount_amount),
+        "tax_amount": str(quote.tax_amount),
+        "total_amount": str(quote.total_amount),
+        "valid_until": quote.valid_until.isoformat() if quote.valid_until else None,
+        "organization": organization,
+        "organization_name": organization.get("name"),
+        "created_at": quote.created_at.isoformat() if quote.created_at else None,
+    }
+
+
+def _serialize_invoice_summary(invoice: PlatformInvoice) -> dict:
+    payment_status = invoice.payment_status.value
+    return {
+        "id": invoice.id,
+        "commercial_account_id": invoice.commercial_account_id,
+        "invoice_number": invoice.invoice_number,
+        "status": invoice.status.value,
+        "invoice_type": invoice.invoice_type.value,
+        "currency": invoice.currency,
+        "issue_date": invoice.issue_date.isoformat() if invoice.issue_date else None,
+        "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
+        "total_amount": str(invoice.total_amount),
+        "paid_amount": str(invoice.paid_amount),
+        "balance_due": str(invoice.balance_due),
+        "delivery_status": invoice.delivery_status.value,
+        "payment_status": payment_status,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+        "is_paid": payment_status == "full" or invoice.balance_due == 0,
+        "organization": _serialize_organization_summary(invoice),
+        "organization_name": (
+            invoice.account.organization.organization_name
+            if invoice.account and invoice.account.organization
+            else None
+        ),
+        "created_at": invoice.created_at.isoformat() if invoice.created_at else None,
+    }
+
+
 def _serialize_quote_detail(quote: CommercialQuote) -> dict:
     """Authenticated (Super Admin) quote detail — same item/money shape as
     the public serializer, plus internal fields safe only for staff eyes."""
@@ -948,6 +1025,7 @@ def _serialize_quote_detail(quote: CommercialQuote) -> dict:
         {
             "id": quote.id,
             "commercial_account_id": quote.commercial_account_id,
+            "organization": _serialize_organization_summary(quote),
             "created_by": quote.created_by,
             "public_token": quote.public_token,
             "discount_reason": quote.discount_reason,
@@ -969,6 +1047,9 @@ def _serialize_invoice_detail(invoice: PlatformInvoice) -> dict:
             "public_token": invoice.public_token,
             "delivery_status": invoice.delivery_status.value,
             "payment_status": invoice.payment_status.value,
+            "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+            "is_paid": invoice.payment_status.value == "full" or invoice.balance_due == 0,
+            "organization": _serialize_organization_summary(invoice),
             "delivery_attempts": [
                 {
                     "channel": a.channel,

@@ -185,7 +185,7 @@ export default function PlanChangesPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Plan-Change Queue"
+        title="Plan Change History"
         description="ZB-COM-ENT-001 · Part 3 §7-§8, §16 · every upgrade/downgrade attempt, including BLOCKED ones — for investigating failed or inconsistent transitions."
         icon={GitPullRequestArrow}
         meta={`${displayValue(changes.length)} change(s)`}

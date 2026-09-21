@@ -14,8 +14,10 @@ import ProtectedRoute from "./ProtectedRoute";
 // surface (/organization-admin/*) assumes exactly one, and its endpoints
 // reject super_admin callers server-side with "Super Admin must use
 // get_super_admin_organization_id() to explicitly select an organization."
-// This guards the fix: super_admin must never be routed onto that surface.
-describe("ProtectedRoute — super_admin cannot reach the Organization Admin surface", () => {
+// /billing/* is org-scoped the same way and crashes with a 404 (see
+// ProtectedRoute.jsx's comment). This guards the fix: super_admin must
+// never be routed onto either surface.
+describe("ProtectedRoute — super_admin cannot reach org-scoped surfaces", () => {
   it("redirects away from /organization-admin/users to the super admin's default page", () => {
     getStoredUser.mockReturnValue({ role: "super_admin", email: "sa@zoiko.com" });
 
@@ -32,6 +34,24 @@ describe("ProtectedRoute — super_admin cannot reach the Organization Admin sur
 
     expect(screen.getByText("SUPER ADMIN DASHBOARD")).toBeInTheDocument();
     expect(screen.queryByText("ORG ADMIN USERS PAGE")).not.toBeInTheDocument();
+  });
+
+  it("redirects away from /billing/* (org-scoped and confirmed to crash for a super_admin token) to the super admin's default page", () => {
+    getStoredUser.mockReturnValue({ role: "super_admin", email: "sa@zoiko.com" });
+
+    render(
+      <MemoryRouter initialEntries={["/billing/customers"]}>
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route path="/billing/customers" element={<div>BILLING CUSTOMERS PAGE</div>} />
+          </Route>
+          <Route path="/dashboard" element={<div>SUPER ADMIN DASHBOARD</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("SUPER ADMIN DASHBOARD")).toBeInTheDocument();
+    expect(screen.queryByText("BILLING CUSTOMERS PAGE")).not.toBeInTheDocument();
   });
 
   it("still allows super_admin into its own Administrators & Users page", () => {

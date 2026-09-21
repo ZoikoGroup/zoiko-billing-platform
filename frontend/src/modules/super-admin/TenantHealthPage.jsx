@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw, HelpCircle } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw, HelpCircle, Briefcase } from "lucide-react";
 import { getTenantHealthOverview, getJobTelemetry } from "../../service/privilegedAccessService";
 import { PageHeader, DataTable } from "../../components/billing-ui";
 import { ErrorState, EmptyState, StatusBadge } from "../../components/billing-shared";
@@ -55,9 +55,20 @@ function KpiCard({ label, value, tone = "text-slate-900" }) {
   );
 }
 
+const VALID_TABS = ["health", "jobs"];
+
 export default function TenantHealthPage() {
-  const location = useLocation();
-  const isJobHealth = location.pathname === "/super-admin/tenant-health/jobs";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "health";
+  const [activeTab, setActiveTabState] = useState(initialTab);
+  const setActiveTab = useCallback(
+    (tab) => {
+      setActiveTabState(tab);
+      setSearchParams({ tab }, { replace: true });
+    },
+    [setSearchParams]
+  );
+  const isJobHealth = activeTab === "jobs";
   const { user } = useAuth();
   const canReadTelemetry = canReadReliabilityTelemetry(user?.platform_role);
   const [overview, setOverview] = useState(null);
@@ -167,11 +178,6 @@ export default function TenantHealthPage() {
 
   const jobHealthSection = overview && (
     <section aria-label="Background job health" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      {isJobHealth && (
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand-600">
-          Showing background job health for the platform
-        </p>
-      )}
       <p className="mb-1 text-sm font-bold text-slate-700">Background Job Health</p>
       {!schedulerEnabled && (
         <p className="mb-3 text-xs text-amber-600">
@@ -206,23 +212,16 @@ export default function TenantHealthPage() {
     </section>
   );
 
+  const TABS = [
+    { key: "health", label: "Tenant Health", icon: Activity },
+    { key: "jobs", label: "Background Jobs", icon: Briefcase },
+  ];
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title={isJobHealth ? "Job Health" : "Tenant Health"}
-        description={
-          isJobHealth ? (
-            <>
-              Background job health for the platform — run status and freshness for every tracked recurring
-              job. Per-tenant operational telemetry is shown below as secondary context.
-            </>
-          ) : (
-            <>
-              Cross-tenant operational telemetry (Domain C) — lifecycle states, user counts, open incidents and job health.
-              Counts and states only: never monetary amounts, never cross-tenant financial totals, never an invented score.
-            </>
-          )
-        }
+        title="Tenant Health"
+        description="Cross-tenant operational telemetry (Domain C) — lifecycle states, user counts, open incidents and job health. Counts and states only: never monetary amounts, never cross-tenant financial totals, never an invented score."
         icon={Activity}
         meta={overview ? `${overview.summary.total_organizations} organization(s) · plane ${overview.plane}` : ""}
         actions={
@@ -237,6 +236,30 @@ export default function TenantHealthPage() {
           </button>
         }
       />
+
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Tenant Health sections">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                active
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       {!canReadTelemetry ? (
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm">
@@ -255,22 +278,11 @@ export default function TenantHealthPage() {
       {overview && !error && (
         <div className="mt-6 space-y-8">
           {isJobHealth ? (
-            <>
-              {/* ── Background job health (primary for this route) ─────── */}
-              {jobHealthSection}
-              {/* ── Fleet summary ────────────────────────────────────────── */}
-              {fleetSummarySection}
-              {/* ── Per-tenant operational rows ──────────────────────────── */}
-              {tenantTableSection}
-            </>
+            jobHealthSection
           ) : (
             <>
-              {/* ── Fleet summary ────────────────────────────────────────── */}
               {fleetSummarySection}
-              {/* ── Per-tenant operational rows ──────────────────────────── */}
               {tenantTableSection}
-              {/* ── Background job health ────────────────────────────────── */}
-              {jobHealthSection}
             </>
           )}
         </div>

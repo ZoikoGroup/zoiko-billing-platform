@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   X,
   ChevronDown,
@@ -32,23 +32,19 @@ import {
   Settings,
   Building2,
   UserCog,
-  ShieldCheck,
-  ShieldAlert,
-  KeyRound,
-  KeySquare,
-  GitPullRequestArrow,
-  Clock,
-  CheckSquare,
   Power,
   Bell,
   Activity,
   HelpCircle,
   Gauge,
-  Crosshair,
-  Rocket,
+  AlertTriangle,
+  ChevronsLeft,
+  ChevronsRight,
+  LogOut,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
+import useCockpitStatus from "../hooks/useCockpitStatus";
 import TopBar from "./TopBar";
 import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
@@ -186,87 +182,40 @@ const NAV_SECTIONS = [
       { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
     ],
   },
+];
+
+// Flat, non-collapsible super_admin sidebar (replaces the accordion
+// treatment above, which org_admin/billing_admin still use unchanged).
+// Consolidated from 34 accordion entries down to 8 direct links per the
+// reviewed Section 0 plan — everything else moved into in-page tabs of
+// the hub page it conceptually belongs to (routes were never deleted from
+// App.jsx, only demoted from a direct sidebar link to a tab).
+const SUPER_ADMIN_NAV_SECTIONS = [
   {
     label: "Command Center",
-    icon: Gauge,
-    superAdminOnly: true,
-    children: [
+    items: [
       { label: "Command Center Hub", href: "/super-admin/command-center", icon: Gauge },
-      { label: "Triage & Attention", href: "/super-admin/triage", icon: Crosshair },
-      { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
-      { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: Rocket },
     ],
   },
   {
     label: "Platform",
-    icon: Building2,
-    superAdminOnly: true,
-    children: [
+    items: [
       { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
-      { label: "Administrators & Users", href: "/super-admin/users", icon: UserCog },
-      { label: "Lifecycle & Onboarding", href: "/super-admin/platform/lifecycle", icon: Layers },
-      { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
-      { label: "Job Health", href: "/super-admin/tenant-health/jobs", icon: History },
-      { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
+      { label: "Users", href: "/super-admin/users", icon: UserCog },
     ],
   },
   {
-    label: "Platform Commercial",
-    icon: Package,
-    superAdminOnly: true,
-    children: [
-      { label: "Commercial Accounts", href: "/super-admin/commercial/accounts", icon: Building2 },
-      { label: "Products & Price Book", href: "/super-admin/commercial/plans", icon: Package },
-      { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
-      { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
-      { label: "Plan Entitlements", href: "/super-admin/commercial/plan-entitlements", icon: KeySquare },
-      { label: "Overrides", href: "/super-admin/commercial/overrides", icon: ShieldAlert },
-      { label: "Usage Diagnostics", href: "/super-admin/commercial/usage-diagnostics", icon: Gauge },
-      { label: "Plan-Change Queue", href: "/super-admin/commercial/plan-changes", icon: GitPullRequestArrow },
-      { label: "Evaluation Programs", href: "/super-admin/commercial/evaluation-programs", icon: Clock },
-      { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
-      { label: "Invoices", href: "/super-admin/commercial/invoices?tab=invoices", icon: Receipt },
-      { label: "Payments", href: "/super-admin/commercial/invoices?tab=payments", icon: CreditCard },
-      { label: "Platform Revenue Reconciliation", href: "/super-admin/commercial/invoices?tab=reconciliation", icon: ClipboardCheck },
+    label: "Finance",
+    items: [
+      { label: "Financial Operations Hub", href: "/super-admin/financial-operations", icon: CircleDollarSign },
+      { label: "Products & Pricing", href: "/super-admin/commercial/plans", icon: Package },
     ],
   },
   {
-    label: "Financial Operations",
-    icon: CircleDollarSign,
-    superAdminOnly: true,
-    children: [
-      { label: "Billing Command Center", href: "/super-admin/billing-command-center", icon: LayoutDashboard },
-      { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: Receipt },
-      { label: "Payments", href: "/super-admin/financial/payments", icon: WalletCards },
-      { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: DollarSign },
-      { label: "Tenant Ledger Reconciliation", href: "/super-admin/financial/reconciliation", icon: ClipboardCheck },
-      { label: "Credits, Adjustments & Refunds", href: "/super-admin/financial/credits", icon: Undo2 },
-      { label: "Tax", href: "/super-admin/financial/tax", icon: Landmark },
-    ],
-  },
-  {
-    label: "Governance & Security",
-    icon: ShieldCheck,
-    superAdminOnly: true,
-    children: [
-      { label: "Approval Center", href: "/super-admin/approval-queue", icon: CheckSquare },
+    label: "Reporting",
+    items: [
       { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
-      { label: "Privileged Sessions", href: "/super-admin/governance/privileged-sessions", icon: ShieldCheck },
-      { label: "Security Events", href: "/super-admin/governance/security-events", icon: Bell },
-      { label: "Data Governance", href: "/super-admin/governance/data", icon: ClipboardList },
-      { label: "Configuration Governance", href: "/super-admin/governance/configuration", icon: Settings },
-    ],
-  },
-  {
-    label: "Reliability & Operations",
-    icon: Activity,
-    superAdminOnly: true,
-    children: [
       { label: "System Health", href: "/super-admin/reliability", icon: Activity },
-      { label: "Incidents", href: "/super-admin/reliability/incidents", icon: ClipboardList },
-      { label: "Processing Failures & Reprocessing", href: "/super-admin/reliability/reprocessing", icon: Power },
-      { label: "Data Quality", href: "/super-admin/reliability/data-quality", icon: CheckSquare },
-      { label: "Release Control", href: "/super-admin/production-readiness", icon: ClipboardCheck },
     ],
   },
 ];
@@ -359,39 +308,139 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
   );
 }
 
+// Quiet active-state treatment for the flat super_admin sidebar — a subtle
+// fill + left accent border, not the bold gradient pill MenuItem uses
+// elsewhere in this file (org_admin/billing_admin keep that treatment
+// unchanged; this redesign is scoped to super_admin only, see Section 3).
+function FlatSectionLabel({ label }) {
+  return (
+    <p className="mb-1.5 mt-4 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#64748B] first:mt-0">
+      {label}
+    </p>
+  );
+}
+
+function FlatNavItem({ href, icon: Icon, label, pathname, search, onNavigate, collapsed }) {
+  const active = isActive(href, pathname, search);
+  return (
+    <NavLink
+      to={href}
+      end
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
+        collapsed ? "justify-center px-2" : "px-3"
+      } ${
+        active
+          ? "border-brand-500 bg-white/10 text-white"
+          : "border-transparent text-[#94A3B8] hover:bg-white/5 hover:text-[#CBD5E1]"
+      }`}
+    >
+      <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-brand-400" : "text-[#94A3B8] group-hover:text-[#CBD5E1]"}`} />
+      {collapsed ? null : (
+        <span className={`truncate ${active ? "font-semibold text-white" : ""}`}>{label}</span>
+      )}
+    </NavLink>
+  );
+}
+
+function CockpitBadge({ variant, value }) {
+  // No value yet (still loading) or nothing to report — an empty cockpit
+  // item is a clean cockpit item, so render nothing rather than a "0".
+  if (value === null || value === undefined) return null;
+  if (variant === "dot") {
+    return (
+      <span
+        className={`h-2 w-2 rounded-full ${value ? "bg-emerald-400" : "bg-red-500"}`}
+        aria-hidden="true"
+      />
+    );
+  }
+  if (!value) return null;
+  return (
+    <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-white/15 px-1.5 py-0.5 text-[11px] font-bold text-white">
+      {value}
+    </span>
+  );
+}
+
+function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, search, onNavigate, collapsed }) {
+  const active = isActive(to, pathname, search);
+  return (
+    <NavLink
+      to={to}
+      end
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
+        collapsed ? "justify-center px-2" : "justify-between px-3"
+      } ${
+        active
+          ? "border-brand-500 bg-white/10 text-white"
+          : "border-transparent text-[#94A3B8] hover:bg-white/5 hover:text-[#CBD5E1]"
+      }`}
+    >
+      <span className={`inline-flex items-center gap-3 ${collapsed ? "" : "min-w-0"}`}>
+        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-brand-400" : "text-[#94A3B8] group-hover:text-[#CBD5E1]"}`} />
+        {collapsed ? null : <span className={`truncate ${active ? "font-semibold text-white" : ""}`}>{label}</span>}
+      </span>
+      {!collapsed && badgeVariant ? <CockpitBadge variant={badgeVariant} value={badge} /> : null}
+    </NavLink>
+  );
+}
+
+// Accordion sidebar for org_admin / billing_admin — unchanged by the
+// super_admin flat-sidebar redesign (see SuperAdminSidebarContent below,
+// which super_admin renders instead of this component entirely).
 function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
-  const visibleSections = NAV_SECTIONS.filter((section) => {
-    if (role === "super_admin") return !!section.superAdminOnly;
-    if (section.superAdminOnly) return false;
-    return true;
-  });
+  // NAV_SECTIONS no longer carries any superAdminOnly entries — those moved
+  // to SUPER_ADMIN_NAV_SECTIONS entirely, so every remaining section here
+  // applies to org_admin/billing_admin.
+  const visibleSections = NAV_SECTIONS;
 
-  const visibleTop =
-    role === "super_admin" ? [] : TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
+  const visibleTop = TOP_NAV_ITEMS.filter((item) => !item.orgAdminOnly || role !== "billing_admin");
 
   const showWorkspace = role === "billing_admin";
   const showOrgNav = role === "org_admin";
 
-  // super_admin has no organization of its own — /organization-admin/users
-  // 403s for that role (see ProtectedRoute's ROLE_PATH_RULES), so it gets its
-  // own equivalent page instead of the org_admin footer link.
-  const visibleFooter =
-    role === "super_admin"
-      ? [{ label: "User Management", href: "/super-admin/users", icon: UserCog }]
-      : role === "org_admin"
-      ? FOOTER_NAV_ITEMS
-      : [];
+  const visibleFooter = role === "org_admin" ? FOOTER_NAV_ITEMS : [];
 
-  const [openSection, setOpenSection] = useState(null);
+  // Each section tracks its own open/closed state independently (a Set of
+  // labels the user has explicitly opened), rather than one shared value —
+  // expanding "Governance & Security" must not silently collapse whatever
+  // else was already open. A section not yet touched by the user still
+  // defaults open if the current route matches one of its children.
+  const [openSections, setOpenSections] = useState(() => new Set());
+
+  function isSectionExpanded(section) {
+    if (openSections.has(section.label)) return true;
+    if (openSections.has(`!${section.label}`)) return false;
+    return section.children?.some((c) => isActive(c.href, pathname, search)) ?? false;
+  }
+
+  function toggleSection(section) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      const currentlyExpanded = isSectionExpanded(section);
+      if (currentlyExpanded) {
+        next.delete(section.label);
+        next.add(`!${section.label}`);
+      } else {
+        next.delete(`!${section.label}`);
+        next.add(section.label);
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-6 flex shrink-0 items-center justify-between gap-3">
         <div className="flex flex-col gap-2">
           <Link
-            to={role === "super_admin" ? "/super-admin/dashboard" : role === "org_admin" ? "/organization-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
+            to={role === "org_admin" ? "/organization-admin/dashboard" : showWorkspace ? "/billing/workspace/dashboard" : "/billing"}
             onClick={onNavigate}
             className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
           >
@@ -447,31 +496,9 @@ function SidebarContent({ onNavigate, role }) {
           </div>
         ) : null}
 
-        {role === "super_admin" && (
-          <div className="mb-3 space-y-1">
-            <NavLink
-              to="/super-admin/dashboard"
-              end
-              onClick={onNavigate}
-              className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm font-semibold transition duration-200 ${
-                isActive("/super-admin/dashboard", pathname, search)
-                  ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
-                  : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
-              }`}
-            >
-              <LayoutDashboard className={`h-4 w-4 shrink-0 transition duration-200 ${isActive("/super-admin/dashboard", pathname, search) ? "text-white" : "text-[#94A3B8]"}`} />
-              <span className="flex-1 truncate">Command Center</span>
-            </NavLink>
-          </div>
-        )}
-
-        {role === "super_admin" && <div className="mt-10 border-t border-white/10 pt-6" />}
-
-        {role === "super_admin" ? null : (
-          <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
-            {showWorkspace ? "Billing" : "Navigation"}
-          </p>
-        )}
+        <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
+          {showWorkspace ? "Billing" : "Navigation"}
+        </p>
 
         {visibleSections.map((section) => (
           <MenuItem
@@ -480,11 +507,8 @@ function SidebarContent({ onNavigate, role }) {
             pathname={pathname}
             search={search}
             onNavigate={onNavigate}
-            expanded={openSection === section.label || (openSection === null && section.children?.some(c => isActive(c.href, pathname, search)))}
-            onToggle={() => {
-              const isCurrentlyOpen = openSection === section.label || (openSection === null && section.children?.some(c => isActive(c.href, pathname, search)));
-              setOpenSection(isCurrentlyOpen ? "NONE" : section.label);
-            }}
+            expanded={isSectionExpanded(section)}
+            onToggle={() => toggleSection(section)}
           />
         ))}
 
@@ -507,12 +531,206 @@ function SidebarContent({ onNavigate, role }) {
   );
 }
 
+function initialsOf(user) {
+  if (!user) return "SA";
+  if (user.name) {
+    const parts = user.name.trim().split(/\s+/);
+    return parts.slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+  }
+  if (user.first_name || user.last_name) {
+    return `${user.first_name?.[0] || ""}${user.last_name?.[0] || ""}`.toUpperCase() || "SA";
+  }
+  if (user.email) return user.email.slice(0, 2).toUpperCase();
+  return "SA";
+}
+
+// Flat, non-collapsible sidebar for super_admin only — no accordions, no
+// bold gradient-pill active state (see FlatNavItem/CockpitLink's quiet
+// treatment), a collapsible rail, and a real profile/sign-out footer.
+// org_admin/billing_admin keep SidebarContent above, completely unchanged.
+function SuperAdminSidebarContent({ onNavigate, cockpit, collapsed, onToggleCollapsed }) {
+  const { pathname, search } = useLocation();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = () => {
+    onNavigate();
+    logout();
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className={`mb-4 flex shrink-0 items-center gap-3 ${collapsed ? "justify-center" : "justify-between"}`}>
+        {collapsed ? null : (
+          <div className="flex flex-col gap-2">
+            <Link
+              to="/super-admin/dashboard"
+              onClick={onNavigate}
+              className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
+            >
+              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
+            </Link>
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#94A3B8]">
+              {ROLE_LABELS.super_admin || "Super Admin"}
+            </p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#94A3B8] transition hover:border-white/20 hover:bg-white/10 hover:text-white lg:inline-flex"
+        >
+          {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          onClick={onNavigate}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white transition hover:border-white/20 hover:bg-white/10 lg:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="sidebar-nav flex-1 min-h-0 space-y-1 overflow-y-auto overscroll-contain pr-1">
+        <div className="cockpit-strip mb-3 space-y-1 border-b border-white/10 pb-4">
+          <CockpitLink
+            to="/super-admin/dashboard"
+            icon={LayoutDashboard}
+            label="Platform Overview"
+            pathname={pathname}
+            search={search}
+            onNavigate={onNavigate}
+            collapsed={collapsed}
+          />
+        </div>
+
+        {SUPER_ADMIN_NAV_SECTIONS.map((section) => (
+          <div key={section.label}>
+            {collapsed ? null : <FlatSectionLabel label={section.label} />}
+            <div className="space-y-1">
+              {section.items.map((item) => (
+                <FlatNavItem
+                  key={item.href}
+                  href={item.href}
+                  icon={item.icon}
+                  label={item.label}
+                  pathname={pathname}
+                  search={search}
+                  onNavigate={onNavigate}
+                  collapsed={collapsed}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div className="mt-4 border-t border-white/10 pt-3">
+          {collapsed ? null : <FlatSectionLabel label="Operations" />}
+          <div className="space-y-1">
+            <CockpitLink
+              to="/super-admin/triage"
+              icon={AlertTriangle}
+              label="Triage & Attention"
+              badge={cockpit.openIncidents}
+              badgeVariant="count"
+              pathname={pathname}
+              search={search}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
+            <CockpitLink
+              to="/super-admin/kill-switch"
+              icon={Power}
+              label="Kill Switch"
+              badge={cockpit.killSwitchEnabled}
+              badgeVariant="dot"
+              pathname={pathname}
+              search={search}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-white/10 pt-4">
+        <div className={`flex items-center gap-3 rounded-xl px-1 py-1.5 ${collapsed ? "justify-center" : ""}`}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-sm font-bold text-brand-300">
+            {initialsOf(user)}
+          </div>
+          {collapsed ? null : (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">
+                {user?.name || user?.email || "Super Admin"}
+              </p>
+              <p className="truncate text-[11px] font-medium text-[#94A3B8]">
+                {ROLE_LABELS.super_admin || "Super Admin"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          title={collapsed ? "Sign out" : undefined}
+          className={`mt-2 flex w-full items-center gap-3 rounded-xl bg-white/5 py-2.5 text-sm text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white ${
+            collapsed ? "justify-center px-2" : "px-3"
+          }`}
+        >
+          <LogOut className="h-[18px] w-[18px] shrink-0" />
+          {collapsed ? null : <span>Sign out</span>}
+        </button>
+
+        {collapsed ? null : (
+          <p className="mt-4 text-center text-[10px] font-medium uppercase tracking-[0.2em] text-[#64748B]">
+            Powered by
+            <br />
+            <span className="text-xs font-bold tracking-normal text-[#94A3B8]">Zoiko Billing</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const AssistantPanel = lazy(() => import("../modules/ai-assistant/AssistantPanel"));
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "superAdminSidebarCollapsed";
+
+function readStoredCollapsed() {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export default function BillingShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const { role } = useAuth();
+  const cockpit = useCockpitStatus(role === "super_admin");
+  const [collapsed, setCollapsed] = useState(readStoredCollapsed);
+
+  const isSuperAdmin = role === "super_admin";
+  const sidebarCollapsed = isSuperAdmin && collapsed;
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // localStorage unavailable (private mode, blocked storage) — the
+        // toggle still works for this session, it just won't persist.
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="h-screen overflow-hidden bg-[#F8F7F4]">
@@ -523,23 +741,32 @@ export default function BillingShell({ children }) {
         onClick={() => setSidebarOpen(false)}
       />
 
-      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen((open) => !open)} />
+      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen((open) => !open)} sidebarCollapsed={sidebarCollapsed} />
 
       {/* Content row: sidebar | main workspace | chatbot panel (when open) */}
       <div className="flex h-screen">
         {/* Sidebar — full height, overlaps TopBar */}
         <aside
-          className={`fixed top-0 bottom-0 left-0 z-40 w-72 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-transform lg:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`fixed top-0 bottom-0 left-0 z-40 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-[width,transform] lg:translate-x-0 ${
+            sidebarCollapsed ? "w-[76px]" : "w-72"
+          } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           <div className="max-lg:pt-[65px] h-full">
-            <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
+            {isSuperAdmin ? (
+              <SuperAdminSidebarContent
+                onNavigate={() => setSidebarOpen(false)}
+                cockpit={cockpit}
+                collapsed={sidebarCollapsed}
+                onToggleCollapsed={toggleCollapsed}
+              />
+            ) : (
+              <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
+            )}
           </div>
         </aside>
 
         {/* Main billing workspace — flex-1, scrolls independently */}
-        <main className="flex-1 min-w-0 lg:pl-72 pt-[65px] overflow-y-auto">
+        <main className={`flex-1 min-w-0 pt-[65px] overflow-y-auto ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-72"}`}>
           {role === "super_admin" && (
             <>
               <PrivilegedSessionBanner />
@@ -550,7 +777,7 @@ export default function BillingShell({ children }) {
           {/* Single source of truth for the sidebar-to-content gutter and page
               margins — every page renders here as {children} with no need to
               (and no longer any reason to) set its own horizontal padding. */}
-          <div className="px-4 py-6 sm:px-6 lg:px-8">
+          <div className="min-w-0 max-w-full overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </div>
         </main>
