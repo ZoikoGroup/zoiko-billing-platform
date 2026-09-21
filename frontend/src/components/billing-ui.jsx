@@ -192,6 +192,7 @@ export function DataTable({
   striped = false,
   dense = false,
   footer,
+  tableClassName = "",
   className = "",
 }) {
   const allSelected = data.length > 0 && data.every((row) => selectedKeys.includes(rowKey(row)));
@@ -244,7 +245,7 @@ export function DataTable({
         aria-label={stickyHeader ? "Data table, scrollable" : undefined}
         tabIndex={stickyHeader ? 0 : undefined}
       >
-        <table className="w-full text-left text-sm" aria-busy={loading}>
+        <table className={`w-full text-left text-sm ${tableClassName}`} aria-busy={loading}>
           <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
             <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wider text-slate-600">
               {onSelectionChange && (
@@ -264,7 +265,7 @@ export function DataTable({
                   key={col.key}
                   scope="col"
                   style={col.width ? { width: col.width } : undefined}
-                  className={`whitespace-nowrap px-4 py-3 font-semibold ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}`}
+                  className={`whitespace-normal px-4 py-3 font-semibold ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}${col.hideBelow ? ` hidden ${col.hideBelow}:table-cell` : ""}`}
                 >
                   {col.sortable ? (
                     <button
@@ -334,7 +335,7 @@ export function DataTable({
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`whitespace-nowrap px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left}`}
+                          className={`whitespace-normal px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left}${col.hideBelow ? ` hidden ${col.hideBelow}:table-cell` : ""}`}
                         >
                           {col.render ? col.render(row, idx) : row[col.key]}
                         </td>

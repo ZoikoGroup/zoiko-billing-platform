@@ -859,6 +859,20 @@ export default function Plane1BillingPage() {
   ];
 
   const quoteColumns = [
+    {
+      key: "organization",
+      label: "Organization",
+      render: (r) => (
+        <div className="min-w-0">
+          <span className="block truncate font-semibold text-slate-800" title={r.organization?.name || r.organization_name || "Unknown organization"}>
+            {r.organization?.name || r.organization_name || "Unknown organization"}
+          </span>
+          <span className="block truncate text-xs text-slate-500" title={r.organization?.code || ""}>
+            {r.organization?.code || "—"}
+          </span>
+        </div>
+      ),
+    },
     { key: "quote_number", label: "Quote #", render: (r) => <span className="font-medium text-slate-700">{r.quote_number}</span> },
     { key: "subject", label: "Subject", render: (r) => r.subject || "—" },
     {
@@ -879,13 +893,27 @@ export default function Plane1BillingPage() {
       align: "right",
       render: (r) => (
         <Button size="sm" variant="secondary" icon={Eye} onClick={() => openQuoteDetail(r)}>
-          Manage
+          View
         </Button>
       ),
     },
   ];
 
   const invoiceColumns = [
+    {
+      key: "organization",
+      label: "Organization",
+      render: (r) => (
+        <div className="min-w-0">
+          <span className="block truncate font-semibold text-slate-800" title={r.organization?.name || r.organization_name || "Unknown organization"}>
+            {r.organization?.name || r.organization_name || "Unknown organization"}
+          </span>
+          <span className="block truncate text-xs text-slate-500" title={r.organization?.code || ""}>
+            {r.organization?.code || "—"}
+          </span>
+        </div>
+      ),
+    },
     { key: "invoice_number", label: "Invoice #", render: (r) => <span className="font-medium text-slate-700">{r.invoice_number || "DRAFT"}</span> },
     {
       key: "status",
@@ -908,6 +936,23 @@ export default function Plane1BillingPage() {
         </span>
       ),
     },
+    {
+      key: "payment_status",
+      label: "Payment",
+      render: (r) => (
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+          r.is_paid || r.payment_status === "full"
+            ? "bg-emerald-100 text-emerald-700"
+            : "bg-amber-100 text-amber-700"
+        }`}>
+          {r.is_paid || r.payment_status === "full"
+            ? "Paid"
+            : r.payment_status === "partial"
+            ? "Partially paid"
+            : "Unpaid"}
+        </span>
+      ),
+    },
     { key: "due_date", label: "Due Date", render: (r) => r.due_date || "—" },
     {
       key: "actions",
@@ -915,7 +960,7 @@ export default function Plane1BillingPage() {
       align: "right",
       render: (r) => (
         <Button size="sm" variant="secondary" icon={Eye} onClick={() => openInvoiceDetail(r)}>
-          Manage
+          View
         </Button>
       ),
     },
@@ -1015,6 +1060,9 @@ export default function Plane1BillingPage() {
     return amount.toLocaleString("en-US", { style: "currency", currency: mrr.currencies[0]?.currency || "USD" });
   }
 
+  const accountStatusCount = Object.keys(report?.accounts?.by_status || {}).length;
+  const pricedPlanCount = mrr?.coverage?.plans_with_published_price ?? 0;
+
   const tabs = [
     { key: "quotes", label: "Quotes", icon: Send },
     { key: "invoices", label: "Invoices", icon: Receipt },
@@ -1053,7 +1101,7 @@ export default function Plane1BillingPage() {
                 <DashboardStatCard
                   title="Commercial Accounts"
                   value={report.accounts.total}
-                  subtitle="All-time rows by account status"
+                  subtitle={`${accountStatusCount} status ${accountStatusCount === 1 ? "category" : "categories"} tracked`}
                   icon={Building2}
                   color="from-brand to-brand-hover"
                 />
@@ -1064,75 +1112,30 @@ export default function Plane1BillingPage() {
                   icon={UserCheck}
                   color="from-emerald-500 to-emerald-600"
                 />
-                <DashboardStatCard
-                  title="MRR"
-                  value={mrrValue()}
-                  subtitle={
-                    mrr?.state === "computed"
-                      ? `Priced published versions only · ${mrr.coverage.open_subscriptions_priced}/${mrr.coverage.open_subscriptions_total} open priced`
-                      : mrr?.state === "multi_currency"
-                        ? "Per-currency totals below — no cross-currency total is fabricated"
-                        : "UNKNOWN — no priced published catalog version backs any open subscription"
-                  }
-                  icon={TrendingUp}
-                  color="from-blue-500 to-blue-600"
-                />
+                {mrr?.state !== "unknown" && (
+                  <DashboardStatCard
+                    title="MRR"
+                    value={mrrValue()}
+                    subtitle={
+                      mrr?.state === "computed"
+                        ? `Priced published versions only · ${mrr.coverage.open_subscriptions_priced}/${mrr.coverage.open_subscriptions_total} open priced`
+                        : mrr?.state === "multi_currency"
+                          ? "Per-currency totals below — no cross-currency total is fabricated"
+                          : undefined
+                    }
+                    icon={TrendingUp}
+                    color="from-blue-500 to-blue-600"
+                  />
+                )}
                 <DashboardStatCard
                   title="Plans With Published Price"
-                  value={mrr?.coverage.plans_with_published_price ?? 0}
-                  subtitle="Price book coverage for MRR computation"
+                  value={pricedPlanCount}
+                  subtitle={`${pricedPlanCount} published priced ${pricedPlanCount === 1 ? "plan" : "plans"} available`}
                   icon={Receipt}
                   color="from-slate-500 to-slate-600"
                 />
               </div>
 
-              {mrr?.basis && (
-                <p className="mt-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-xs leading-relaxed text-slate-600">
-                  <span className="font-semibold text-slate-800">MRR basis: </span>{mrr.basis}
-                  {mrr.currencies.length > 0 && (
-                    <span className="ml-2 inline-flex flex-wrap gap-x-4">
-                      {mrr.currencies.map((c) => (
-                        <span key={c.currency} className="tabular-nums">
-                          {c.currency}:{" "}
-                          {Number(c.monthly_amount).toLocaleString("en-US", { style: "currency", currency: c.currency })}
-                          {" "}
-                          ({c.subscriptions} sub{c.subscriptions === 1 ? "" : "s"})
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </p>
-              )}
-
-              <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-                <StatusCountTable
-                  title="Subscriptions by status"
-                  counts={report.subscriptions.by_status}
-                  options={SUBSCRIPTION_STATUS_OPTIONS}
-                />
-                <StatusCountTable
-                  title="Accounts by status"
-                  counts={report.accounts.by_status}
-                  options={ACCOUNT_STATUS_OPTIONS}
-                />
-              </div>
-
-              <div className="mt-5">
-                <DataTable
-                  columns={planColumns}
-                  data={report.subscriptions.open_by_plan}
-                  loading={false}
-                  emptyTitle="No open subscriptions on any plan"
-                  emptyMessage="Open subscriptions appear here grouped by plan with real counts."
-                  minWidth={480}
-                />
-              </div>
-
-              <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-600">
-                {report.honesty_notes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
             </section>
 
             {/* ── Plane 1 Transactional Billing ─────────────────────────── */}

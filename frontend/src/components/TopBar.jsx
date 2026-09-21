@@ -73,7 +73,7 @@ function OrgContext({ role }) {
   );
 }
 
-export default function TopBar({ menuOpen = false, onMenuClick }) {
+export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed = false }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
@@ -108,7 +108,7 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 lg:left-72 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm">
+    <header className={`fixed top-0 left-0 right-0 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm transition-[left] ${sidebarCollapsed ? "lg:left-[76px]" : "lg:left-72"}`}>
       {/* Left: Brand + Organization/Workspace Context */}
       <div className="flex min-w-0 items-center gap-2">
         {onMenuClick && (

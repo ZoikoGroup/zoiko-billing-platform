@@ -1,6 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Package, Plus, Pencil, Star, StarOff, Power, Archive, Crown, GitBranch, Tags } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Package,
+  Plus,
+  Pencil,
+  Star,
+  StarOff,
+  Power,
+  Archive,
+  Crown,
+  GitBranch,
+  Tags,
+  KeyRound,
+  KeySquare,
+  Clock,
+  UserCheck,
+  ShieldAlert,
+  Gauge,
+  GitPullRequestArrow,
+} from "lucide-react";
 import {
   listCommercialPlans,
   createCommercialPlan,
@@ -17,6 +35,26 @@ import {
   formatDateOnly,
   displayValue,
 } from "./constants";
+import EntitlementsPage from "./EntitlementsPage";
+import PlanEntitlementsPage from "./PlanEntitlementsPage";
+import EvaluationProgramsPage from "./EvaluationProgramsPage";
+import SubscriptionsPage from "./SubscriptionsPage";
+import OverridesPage from "./OverridesPage";
+import UsageDiagnosticsPage from "./UsageDiagnosticsPage";
+import PlanChangesPage from "./PlanChangesPage";
+
+const TABS = [
+  { key: "plans", label: "Plans", icon: Package },
+  { key: "entitlements", label: "Entitlement Catalog", icon: KeyRound },
+  { key: "plan-entitlements", label: "Plan Entitlements", icon: KeySquare },
+  { key: "evaluation-programs", label: "Evaluation Programs", icon: Clock },
+  { key: "subscriptions", label: "Platform Subscriptions", icon: UserCheck },
+  { key: "overrides", label: "Entitlement Overrides", icon: ShieldAlert },
+  { key: "usage-diagnostics", label: "Usage Diagnostics", icon: Gauge },
+  { key: "plan-changes", label: "Plan Change History", icon: GitPullRequestArrow },
+];
+
+const VALID_TABS = TABS.map((tab) => tab.key);
 
 const EMPTY_FORM = {
   plan_code: "",
@@ -212,6 +250,16 @@ function PlanForm({ form, setForm, submitting, error, onCancel, onSubmit, editin
 
 export default function PlansPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "plans";
+  const [activeTab, setActiveTabState] = useState(initialTab);
+  const setActiveTab = useCallback(
+    (tab) => {
+      setActiveTabState(tab);
+      setSearchParams({ tab }, { replace: true });
+    },
+    [setSearchParams]
+  );
   const [plans, setPlans] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -464,56 +512,96 @@ export default function PlansPage() {
         description="PLANE 1 · Reusable plan templates shared across organizations. The catalogue intentionally stays empty — pricing is never invented."
         icon={Package}
         actions={
-          <Button variant="primary" icon={Plus} onClick={openCreate}>
-            Create plan
-          </Button>
+          activeTab === "plans" ? (
+            <Button variant="primary" icon={Plus} onClick={openCreate}>
+              Create plan
+            </Button>
+          ) : undefined
         }
-        meta={`${displayValue(total)} plan(s)`}
+        meta={activeTab === "plans" ? `${displayValue(total)} plan(s)` : undefined}
       />
 
-      {/* Phase 3F F4 — honest declaration. No trial/offer model exists in
-          the schema (COM-02), so this surface must never render trial data.
-          The nav item "Plans, Offers & Trials" lands here until offers exist. */}
-      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-4">
-        <Tags size={18} className="mt-0.5 shrink-0 text-slate-400" />
-        <div>
-          <p className="text-sm font-bold text-slate-700">Offers &amp; trials — not configured</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            No evaluation, trial or promotional-offer program exists anywhere in the platform schema
-            (audit finding COM-02). Until a trials model is built and approved, this section will
-            honestly report NOT CONFIGURED rather than render placeholder programs.
-          </p>
-        </div>
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Products & Pricing sections">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                active
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="mt-6 space-y-4">
-        {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
-        {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
-            {error}
-            <button type="button" onClick={() => load(page)} className="ml-3 font-semibold underline">Retry</button>
-            <button type="button" onClick={() => setError(null)} className="ml-3 font-semibold underline">Dismiss</button>
+      {activeTab === "plans" ? (
+        <>
+          {/* Phase 3F F4 — honest declaration. No trial/offer model exists in
+              the schema (COM-02), so this surface must never render trial data.
+              The nav item "Plans, Offers & Trials" lands here until offers exist. */}
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-4">
+            <Tags size={18} className="mt-0.5 shrink-0 text-slate-400" />
+            <div>
+              <p className="text-sm font-bold text-slate-700">Offers &amp; trials — not configured</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                No evaluation, trial or promotional-offer program exists anywhere in the platform schema
+                (audit finding COM-02). Until a trials model is built and approved, this section will
+                honestly report NOT CONFIGURED rather than render placeholder programs.
+              </p>
+            </div>
           </div>
-        )}
 
-        {loading && plans.length === 0 ? (
-          <Spinner />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={plans}
-            loading={loading}
-            emptyTitle="No commercial plans yet"
-            emptyMessage="Create the first plan template to start building the catalogue."
-            emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create plan</Button>}
-            minWidth={960}
-          />
-        )}
+          <div className="mt-6 space-y-4">
+            {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
+            {error && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+                {error}
+                <button type="button" onClick={() => load(page)} className="ml-3 font-semibold underline">Retry</button>
+                <button type="button" onClick={() => setError(null)} className="ml-3 font-semibold underline">Dismiss</button>
+              </div>
+            )}
 
-        <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
-          {displayValue(total)} plan(s)
-        </Pagination>
-      </div>
+            {loading && plans.length === 0 ? (
+              <Spinner />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={plans}
+                loading={loading}
+                emptyTitle="No commercial plans yet"
+                emptyMessage="Create the first plan template to start building the catalogue."
+                emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create plan</Button>}
+                minWidth={960}
+              />
+            )}
+
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
+              {displayValue(total)} plan(s)
+            </Pagination>
+          </div>
+        </>
+      ) : (
+        <div className="mt-6 -mx-4 sm:-mx-6 lg:-mx-8">
+          {activeTab === "entitlements" && <EntitlementsPage />}
+          {activeTab === "plan-entitlements" && <PlanEntitlementsPage />}
+          {activeTab === "evaluation-programs" && <EvaluationProgramsPage />}
+          {activeTab === "subscriptions" && <SubscriptionsPage />}
+          {activeTab === "overrides" && <OverridesPage />}
+          {activeTab === "usage-diagnostics" && <UsageDiagnosticsPage />}
+          {activeTab === "plan-changes" && <PlanChangesPage />}
+        </div>
+      )}
 
       <Modal
         open={createOpen}

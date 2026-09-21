@@ -176,8 +176,8 @@ export function CommandCenterProvider({ children }) {
   return <CommandCenterContext.Provider value={value}>{children}</CommandCenterContext.Provider>;
 }
 
-export function useCommandCenter() {
+export function useCommandCenter({ required = true } = {}) {
   const ctx = useContext(CommandCenterContext);
-  if (!ctx) throw new Error("useCommandCenter must be used within a CommandCenterProvider");
+  if (!ctx && required) throw new Error("useCommandCenter must be used within a CommandCenterProvider");
   return ctx;
 }
