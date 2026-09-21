@@ -20,7 +20,7 @@ const DOMAIN_LENS_MAP = {
 // makes the intent clear — it must actually route to the matching lens.
 const DOMAIN_ROUTE_MAP = {
   "Global Operations": "/super-admin/triage",
-  "Domain A (Commercial)": "/super-admin/commercial/accounts",
+  "Domain A (Commercial)": "/super-admin/organizations",
   "Domain C (Telemetry)": "/super-admin/reliability",
 };
 

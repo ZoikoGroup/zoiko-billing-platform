@@ -7,7 +7,6 @@ import {
   ArrowRightCircle,
   BellOff,
   ScrollText,
-  CheckSquare,
   KeyRound,
   Power,
   ShieldAlert,
@@ -29,11 +28,10 @@ import { useCommandCenter } from "../../context/CommandCenterContext";
 
 /**
  * ZB-SA-CMD-003 §12 Lens 5 — Governance: Attention/incident lifecycle
- * (Approval Center, Audit & Evidence, and Privileged Sessions already have
- * their own dedicated pages — ApprovalQueuePage, AuditLogsPage,
- * SupportAccessPage — this page links to them rather than re-implementing
- * their logic, plus owns the Attention queue UI, which had no frontend at
- * all before this pass).
+ * (Audit & Evidence and Privileged Sessions already have their own
+ * dedicated pages — AuditLogsPage, SupportAccessPage — this page links to
+ * them rather than re-implementing their logic, plus owns the Attention
+ * queue UI, which had no frontend at all before this pass).
  */
 
 const SEVERITY_OPTIONS = [
@@ -316,11 +314,7 @@ export default function GovernancePage() {
         icon={ShieldCheck}
       />
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Link to="/super-admin/approval-queue" className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-brand-300 hover:shadow-sm">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600"><CheckSquare size={14} /> Approval Center</p>
-          <p className="mt-1 text-sm font-semibold text-slate-800">Maker-checker queue →</p>
-        </Link>
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link to="/super-admin/audit-logs" className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-brand-300 hover:shadow-sm">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600"><ScrollText size={14} /> Audit & Evidence</p>
           <p className="mt-1 text-sm font-semibold text-slate-800">Platform audit trail →</p>

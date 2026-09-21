@@ -146,14 +146,6 @@ export const SUBSCRIPTION_CHANGE_STATUS_OPTIONS = [
 ];
 
 // ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
-export const APPROVAL_STATUS_OPTIONS = [
-  { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-700" },
-  { value: "approved", label: "Approved", color: "bg-emerald-100 text-emerald-700" },
-  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
-  { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
-  { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
-];
-
 // ── Production Acceptance Center (ZB-COM-BILL-001 §26) ──────────────────
 export const ACCEPTANCE_STATUS_OPTIONS = [
   { value: "PASS", label: "Pass", color: "bg-emerald-100 text-emerald-700" },

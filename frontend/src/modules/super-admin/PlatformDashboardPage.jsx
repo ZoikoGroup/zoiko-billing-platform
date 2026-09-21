@@ -17,7 +17,6 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCo
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import {
   listPlatformAuditLogs,
-  listApprovalRequests,
   getProductionAcceptanceReport,
   getSaasCommercialReporting,
   listOrganizations,
@@ -41,7 +40,6 @@ export default function PlatformDashboardPage() {
   const [triageData, setTriageData] = useState(null);
   const [finops, setFinops] = useState(null);
   const [mrr, setMrr] = useState(null);
-  const [approvals, setApprovals] = useState(null);
   const [readiness, setReadiness] = useState(null);
   const [activity, setActivity] = useState(null);
   const [trialOrgs, setTrialOrgs] = useState([]);
@@ -72,11 +70,6 @@ export default function PlatformDashboardPage() {
       return null;
     });
 
-    const approvalsPromise = listApprovalRequests({ status: "pending", limit: 200 }).catch((e) => {
-      nextErrors.approvals = e?.message || "Approvals unavailable";
-      return null;
-    });
-
     const readinessPromise = getProductionAcceptanceReport().catch((e) => {
       nextErrors.readiness = e?.message || "Readiness unavailable";
       return null;
@@ -92,12 +85,11 @@ export default function PlatformDashboardPage() {
       return null;
     });
 
-    Promise.all([triagePromise, finopsPromise, mrrPromise, approvalsPromise, readinessPromise, activityPromise, orgsPromise]).then(
-      ([triage, finopsReport, mrrReport, pendingApprovals, readinessReport, logs, orgsReport]) => {
+    Promise.all([triagePromise, finopsPromise, mrrPromise, readinessPromise, activityPromise, orgsPromise]).then(
+      ([triage, finopsReport, mrrReport, readinessReport, logs, orgsReport]) => {
         setTriageData(triage);
         setFinops(finopsReport);
         setMrr(mrrReport?.mrr ?? null);
-        setApprovals(pendingApprovals ? pendingApprovals.requests || [] : null);
         setReadiness(readinessReport);
         setActivity(logs ? logs.logs || [] : null);
         setTrialOrgs(orgsReport ? orgsReport.organizations || [] : []);
@@ -153,12 +145,6 @@ export default function PlatformDashboardPage() {
       : consistency?.state === "FAILED"
       ? "FAILED"
       : "UNKNOWN";
-
-  const pendingCount = approvals ? approvals.length : null;
-  const approvalTypes = {};
-  if (approvals) {
-    for (const r of approvals) approvalTypes[r.request_type] = (approvalTypes[r.request_type] || 0) + 1;
-  }
 
   const readinessItems = readiness?.items || [];
   const failingCriteria = readinessItems.filter((i) => i.status === "FAIL").length;
@@ -227,7 +213,7 @@ export default function PlatformDashboardPage() {
           <span className="text-[10px] text-slate-400">Live · auto-refreshes every minute</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           <ActionCard
             severity={criticalCount > 0 ? "HIGH" : "CLEAR"}
             severityClass={
@@ -275,22 +261,6 @@ export default function PlatformDashboardPage() {
             subtitle={`Dunning: ${finops?.recovery?.dunning_cycle_status || "NOT CONFIGURED"}`}
             actionText="Resolve"
             onAction={() => navigate("/super-admin/financial-operations")}
-          />
-          <ActionCard
-            severity={(pendingCount ?? 0) > 0 ? "MED" : "CLEAR"}
-            severityClass={
-              (pendingCount ?? 0) > 0
-                ? "bg-amber-50 text-amber-600 border-amber-200"
-                : "bg-emerald-50 text-emerald-600 border-emerald-200"
-            }
-            title={
-              (pendingCount ?? 0) > 0
-                ? `${pendingCount} maker-checker request${pendingCount > 1 ? "s" : ""} pending`
-                : "Approval queue is clear"
-            }
-            subtitle={pendingCount > 0 ? "A second Super Admin must decide each request" : undefined}
-            actionText="Review"
-            onAction={() => navigate("/super-admin/approval-queue")}
           />
         </div>
         {sourceErrorCount > 0 && (
@@ -465,9 +435,9 @@ export default function PlatformDashboardPage() {
         </div>
       </div>
 
-      {/* Attention queue & Approval queue */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4">
+      {/* Attention queue */}
+      <div className="grid grid-cols-1 gap-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
           <div className="font-semibold text-slate-800 text-xs mb-3">Attention Queue</div>
           <table className="w-full text-left border-collapse">
             <thead>
@@ -527,43 +497,6 @@ export default function PlatformDashboardPage() {
               View full triage board <ArrowRight size={12} />
             </button>
           </div>
-        </div>
-
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="font-semibold text-slate-800 text-xs">Approval Queue</div>
-            <button
-              type="button"
-              onClick={() => navigate("/super-admin/approval-queue")}
-              className="text-[11px] font-medium text-brand-600 hover:underline inline-flex items-center gap-0.5"
-            >
-              Open <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 mb-3">
-            <span className="text-xs text-slate-600">Pending requests</span>
-            <span className={`text-sm font-bold ${(pendingCount ?? 0) > 0 ? "text-amber-700" : "text-emerald-600"}`}>
-              {pendingCount ?? "—"}
-            </span>
-          </div>
-          <div className="space-y-2 flex-1">
-            {Object.keys(approvalTypes).length === 0 ? (
-              <p className="py-4 text-center text-xs text-slate-500">No request types waiting on a checker decision.</p>
-            ) : (
-              Object.entries(approvalTypes).map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between text-xs border-b border-slate-50 pb-1.5">
-                  <span className="text-slate-600 capitalize">{type.replace(/_/g, " ")}</span>
-                  <span className="font-semibold text-slate-800">{count}</span>
-                </div>
-              ))
-            )}
-          </div>
-          {(pendingCount ?? 0) > 0 && (
-            <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-2 text-[10px] text-amber-700">
-              <ShieldAlert size={12} className="mt-0.5 shrink-0" />
-              Self-approval is blocked server-side. A second Super Admin must decide.
-            </p>
-          )}
         </div>
       </div>
 

@@ -42,7 +42,7 @@ const LENSES = [
   {
     name: "Commercial",
     lensKey: "commercial",
-    href: "/super-admin/commercial/accounts",
+    href: "/super-admin/organizations",
     icon: TrendingUp,
     description:
       "Domain A — accounts, plans, platform subscriptions, entitlements. Per-currency MRR, never FX-summed.",

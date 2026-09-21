@@ -33,10 +33,8 @@ import {
   Building2,
   UserCog,
   ShieldCheck,
-  ShieldAlert,
   KeyRound,
   KeySquare,
-  GitPullRequestArrow,
   Clock,
   CheckSquare,
   Power,
@@ -44,11 +42,15 @@ import {
   Activity,
   HelpCircle,
   Gauge,
-  Crosshair,
   Rocket,
+  RefreshCw,
+  Scale,
+  GitCompare,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
+import useCockpitStatus from "../hooks/useCockpitStatus";
 import TopBar from "./TopBar";
 import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
@@ -192,13 +194,11 @@ const NAV_SECTIONS = [
     superAdminOnly: true,
     children: [
       { label: "Command Center Hub", href: "/super-admin/command-center", icon: Gauge },
-      { label: "Triage & Attention", href: "/super-admin/triage", icon: Crosshair },
-      { label: "Kill Switch", href: "/super-admin/kill-switch", icon: Power },
       { label: "Launch Readiness", href: "/super-admin/launch-readiness", icon: Rocket },
     ],
   },
   {
-    label: "Platform",
+    label: "Tenants",
     icon: Building2,
     superAdminOnly: true,
     children: [
@@ -206,28 +206,29 @@ const NAV_SECTIONS = [
       { label: "Administrators & Users", href: "/super-admin/users", icon: UserCog },
       { label: "Lifecycle & Onboarding", href: "/super-admin/platform/lifecycle", icon: Layers },
       { label: "Tenant Health", href: "/super-admin/tenant-health", icon: Activity },
-      { label: "Job Health", href: "/super-admin/tenant-health/jobs", icon: History },
       { label: "Support Access", href: "/super-admin/support-access", icon: ShieldCheck },
     ],
   },
   {
-    label: "Platform Commercial",
+    label: "Commercial Catalog",
     icon: Package,
     superAdminOnly: true,
     children: [
-      { label: "Commercial Accounts", href: "/super-admin/commercial/accounts", icon: Building2 },
       { label: "Products & Price Book", href: "/super-admin/commercial/plans", icon: Package },
-      { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: UserCheck },
-      { label: "Entitlements", href: "/super-admin/commercial/entitlements", icon: KeyRound },
+      { label: "Entitlement Catalog", href: "/super-admin/commercial/entitlements", icon: KeyRound },
       { label: "Plan Entitlements", href: "/super-admin/commercial/plan-entitlements", icon: KeySquare },
-      { label: "Overrides", href: "/super-admin/commercial/overrides", icon: ShieldAlert },
-      { label: "Usage Diagnostics", href: "/super-admin/commercial/usage-diagnostics", icon: Gauge },
-      { label: "Plan-Change Queue", href: "/super-admin/commercial/plan-changes", icon: GitPullRequestArrow },
       { label: "Evaluation Programs", href: "/super-admin/commercial/evaluation-programs", icon: Clock },
-      { label: "Quotes", href: "/super-admin/commercial/invoices?tab=quotes", icon: FileSignature },
-      { label: "Invoices", href: "/super-admin/commercial/invoices?tab=invoices", icon: Receipt },
-      { label: "Payments", href: "/super-admin/commercial/invoices?tab=payments", icon: CreditCard },
-      { label: "Platform Revenue Reconciliation", href: "/super-admin/commercial/invoices?tab=reconciliation", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Subscriptions & Usage",
+    icon: RefreshCw,
+    superAdminOnly: true,
+    children: [
+      { label: "Platform Subscriptions", href: "/super-admin/commercial/subscriptions", icon: RefreshCw },
+      { label: "Entitlement Overrides", href: "/super-admin/commercial/overrides", icon: KeySquare },
+      { label: "Usage Diagnostics", href: "/super-admin/commercial/usage-diagnostics", icon: Gauge },
+      { label: "Plan Change History", href: "/super-admin/commercial/plan-changes", icon: History },
     ],
   },
   {
@@ -235,13 +236,14 @@ const NAV_SECTIONS = [
     icon: CircleDollarSign,
     superAdminOnly: true,
     children: [
-      { label: "Billing Command Center", href: "/super-admin/billing-command-center", icon: LayoutDashboard },
-      { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: Receipt },
-      { label: "Payments", href: "/super-admin/financial/payments", icon: WalletCards },
-      { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: DollarSign },
-      { label: "Tenant Ledger Reconciliation", href: "/super-admin/financial/reconciliation", icon: ClipboardCheck },
-      { label: "Credits, Adjustments & Refunds", href: "/super-admin/financial/credits", icon: Undo2 },
-      { label: "Tax", href: "/super-admin/financial/tax", icon: Landmark },
+      { label: "Billing Command Center", href: "/super-admin/billing-command-center", icon: Landmark },
+      { label: "Invoice Engine", href: "/super-admin/financial/invoice-engine", icon: FileText },
+      { label: "Quotes & Invoices", href: "/super-admin/commercial/invoices", icon: Receipt },
+      { label: "Payments & Disputes", href: "/super-admin/financial/payments", icon: CreditCard },
+      { label: "Balances & Allocations", href: "/super-admin/financial/balances", icon: Scale },
+      { label: "Credits, Refunds & Write-offs", href: "/super-admin/financial/credits", icon: Undo2 },
+      { label: "Tax", href: "/super-admin/financial/tax", icon: Percent },
+      { label: "Reconciliation", href: "/super-admin/financial/reconciliation", icon: GitCompare },
     ],
   },
   {
@@ -249,7 +251,6 @@ const NAV_SECTIONS = [
     icon: ShieldCheck,
     superAdminOnly: true,
     children: [
-      { label: "Approval Center", href: "/super-admin/approval-queue", icon: CheckSquare },
       { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
       { label: "Privileged Sessions", href: "/super-admin/governance/privileged-sessions", icon: ShieldCheck },
       { label: "Security Events", href: "/super-admin/governance/security-events", icon: Bell },
@@ -359,7 +360,49 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
   );
 }
 
-function SidebarContent({ onNavigate, role }) {
+function CockpitBadge({ variant, value }) {
+  // No value yet (still loading) or nothing to report — an empty cockpit
+  // item is a clean cockpit item, so render nothing rather than a "0".
+  if (value === null || value === undefined) return null;
+  if (variant === "dot") {
+    return (
+      <span
+        className={`h-2 w-2 rounded-full ${value ? "bg-emerald-400" : "bg-red-500"}`}
+        aria-hidden="true"
+      />
+    );
+  }
+  if (!value) return null;
+  return (
+    <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-white/15 px-1.5 py-0.5 text-[11px] font-bold text-white">
+      {value}
+    </span>
+  );
+}
+
+function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, search, onNavigate }) {
+  const active = isActive(to, pathname, search);
+  return (
+    <NavLink
+      to={to}
+      end
+      onClick={onNavigate}
+      className={`group flex items-center justify-between gap-2 rounded-[12px] border px-3.5 py-2.5 text-sm transition duration-200 ${
+        active
+          ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
+          : "border-transparent text-[#CBD5E1] hover:border-white/10 hover:bg-white/5 hover:text-white"
+      }`}
+    >
+      <span className="inline-flex items-center gap-2.5">
+        <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#94A3B8]"}`} />
+        <span className="truncate">{label}</span>
+      </span>
+      {badgeVariant ? <CockpitBadge variant={badgeVariant} value={badge} /> : null}
+    </NavLink>
+  );
+}
+
+function SidebarContent({ onNavigate, role, cockpit }) {
   const { pathname, search } = useLocation();
 
   const visibleSections = NAV_SECTIONS.filter((section) => {
@@ -412,6 +455,39 @@ function SidebarContent({ onNavigate, role }) {
         </button>
       </div>
 
+      {role === "super_admin" ? (
+        <div className="cockpit-strip mb-3 flex-shrink-0 space-y-1 border-b border-white/10 pb-4">
+          <CockpitLink
+            to="/super-admin/dashboard"
+            icon={LayoutDashboard}
+            label="Dashboard"
+            pathname={pathname}
+            search={search}
+            onNavigate={onNavigate}
+          />
+          <CockpitLink
+            to="/super-admin/triage"
+            icon={AlertTriangle}
+            label="Triage & Attention"
+            badge={cockpit.openIncidents}
+            badgeVariant="count"
+            pathname={pathname}
+            search={search}
+            onNavigate={onNavigate}
+          />
+          <CockpitLink
+            to="/super-admin/kill-switch"
+            icon={Power}
+            label="Kill Switch"
+            badge={cockpit.killSwitchEnabled}
+            badgeVariant="dot"
+            pathname={pathname}
+            search={search}
+            onNavigate={onNavigate}
+          />
+        </div>
+      ) : null}
+
       <div className="sidebar-nav flex-1 min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-6 pr-1">
         {showOrgNav && visibleTop.length > 0 ? (
           <div className="mb-6 space-y-3 border-b border-white/10 pb-6">
@@ -446,26 +522,6 @@ function SidebarContent({ onNavigate, role }) {
             </div>
           </div>
         ) : null}
-
-        {role === "super_admin" && (
-          <div className="mb-3 space-y-1">
-            <NavLink
-              to="/super-admin/dashboard"
-              end
-              onClick={onNavigate}
-              className={`group flex items-center gap-3 rounded-[14px] border px-4 py-3 text-sm font-semibold transition duration-200 ${
-                isActive("/super-admin/dashboard", pathname, search)
-                  ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
-                  : "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
-              }`}
-            >
-              <LayoutDashboard className={`h-4 w-4 shrink-0 transition duration-200 ${isActive("/super-admin/dashboard", pathname, search) ? "text-white" : "text-[#94A3B8]"}`} />
-              <span className="flex-1 truncate">Command Center</span>
-            </NavLink>
-          </div>
-        )}
-
-        {role === "super_admin" && <div className="mt-10 border-t border-white/10 pt-6" />}
 
         {role === "super_admin" ? null : (
           <p className="mb-1 px-4 pt-2 text-[10px] font-bold uppercase tracking-[0.32em] text-[#64748B]">
@@ -513,6 +569,7 @@ export default function BillingShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const { role } = useAuth();
+  const cockpit = useCockpitStatus(role === "super_admin");
 
   return (
     <div className="h-screen overflow-hidden bg-[#F8F7F4]">
@@ -534,7 +591,7 @@ export default function BillingShell({ children }) {
           }`}
         >
           <div className="max-lg:pt-[65px] h-full">
-            <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} />
+            <SidebarContent onNavigate={() => setSidebarOpen(false)} role={role} cockpit={cockpit} />
           </div>
         </aside>
 

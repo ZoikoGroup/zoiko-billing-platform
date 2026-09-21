@@ -79,16 +79,6 @@ export const proposeCircuitBreakerChange = (scope, { enabled, reason, incidentRe
     auto_expire_minutes: autoExpireMinutes ?? undefined,
   });
 
-// Generic checker decision endpoint (request_type="circuit_breaker_change").
-// The checker must also present fresh MFA step-up.
-export const decideApprovalRequest = (requestId, { decision, reason, code, recoveryCode }) =>
-  api.post(`/api/super-admin/approval-requests/${requestId}/decision`, {
-    decision,
-    reason,
-    code: code || undefined,
-    recovery_code: recoveryCode || undefined,
-  });
-
 // §11 — Triage lens: one pane composing incidents, pipeline stages, safety
 // controls and critical events from their real upstream sources.
 export const getTriageSummary = () =>
