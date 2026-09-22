@@ -9,7 +9,11 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { platformSelfServiceApi } from "../service/platformSelfServiceApi";
+import {
+  platformSelfServiceApi,
+  getZoikoSubscriptionCached,
+  invalidateZoikoSubscriptionCache,
+} from "../service/platformSelfServiceApi";
 
 /**
  * Persistent trial banner — mounted once in BillingShell so it is app-wide
@@ -88,8 +92,7 @@ export default function TrialBanner() {
       return;
     }
     let alive = true;
-    platformSelfServiceApi
-      .getZoikoSubscription()
+    getZoikoSubscriptionCached()
       .then((res) => {
         if (alive) setSubscription(res?.subscription || null);
       })
@@ -122,6 +125,7 @@ export default function TrialBanner() {
     setActionMsg(null);
     try {
       const route = await platformSelfServiceApi.convertTrialToPaid({ payment_method: "card" });
+      invalidateZoikoSubscriptionCache();
       if (route?.mode === "checkout" && route.checkout_url) {
         window.location.href = route.checkout_url;
         return;

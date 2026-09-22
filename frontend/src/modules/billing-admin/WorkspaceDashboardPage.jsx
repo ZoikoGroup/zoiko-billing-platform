@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import {
-  dashboardApi, settingsApi, subscriptionApi, productApi, invoiceApi,
+  dashboardApi, subscriptionApi, productApi, invoiceApi,
 } from "../../service/billingService";
+import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import { getOrganizationDetails } from "../../service/orgAdminService";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney, normalizeOrgName, formatCurrencyChip, formatFiscalYearLabel } from "./workspace-format";
@@ -106,7 +107,7 @@ export default function WorkspaceDashboardPage() {
       try {
         const [k, c, o, subs, pl, prod, inv, act] = await Promise.allSettled([
           dashboardApi.getKPIs(),
-          settingsApi.getConfig(),
+          loadGlobalBillingConfig(),
           getOrganizationDetails(),
           subscriptionApi.listActive(),
           subscriptionApi.listPlans({ per_page: 200 }),

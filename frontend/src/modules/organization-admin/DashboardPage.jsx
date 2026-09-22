@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getOrganizationDashboardStats, getOrganizationDetails } from "../../service/orgAdminService";
 import { getCurrencySymbol, getCurrencyInfo } from "../../utils/currency";
 import { loadGlobalCurrency, getOrgBaseCurrency, isOrgCurrencyUnavailable } from "../billing/utils/CurrencyContext";
-import { platformSelfServiceApi } from "../../service/platformSelfServiceApi";
+import { getZoikoSubscriptionCached } from "../../service/platformSelfServiceApi";
 import {
   Users,
   FileText,
@@ -152,7 +152,7 @@ export default function OrgAdminDashboardPage() {
       getOrganizationDashboardStats().catch(() => null),
       getOrganizationDetails().catch(() => null),
       loadGlobalCurrency().catch(() => null),
-      platformSelfServiceApi.getZoikoSubscription().catch(() => null),
+      getZoikoSubscriptionCached().catch(() => null),
     ])
       .then(([s, o, _cur, z]) => {
         if (s) setStats(s);

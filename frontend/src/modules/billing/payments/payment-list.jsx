@@ -80,6 +80,11 @@ export default function PaymentListPage() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  // KPI tiles ("Refunded", "Outstanding", "Revenue", "Avg/Day") are backed by
+  // GET /billing/payments/dashboard-stats -- a single aggregate over the
+  // FULL org dataset -- not by the current (paginated, date-filtered) table
+  // page in `payments` above, which is only ever up to ITEMS_PER_PAGE rows.
+  const [stats, setStats] = useState(null);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -159,7 +164,19 @@ export default function PaymentListPage() {
     }
   }, [safePage, debouncedSearch, statusFilter, typeFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const data = await paymentApi.getDashboardStats();
+      setStats(data);
+    } catch {
+      // KPI tiles fall back to the current page's numbers (see below) if the
+      // aggregate endpoint is unavailable -- the table itself still works.
+      setStats(null);
+    }
+  }, []);
+
   useEffect(() => { fetchPayments(true); }, [fetchPayments]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
   const handleSort = (field) => {
@@ -195,6 +212,7 @@ export default function PaymentListPage() {
       for (const id of selectedIds) await paymentApi.updateStatus(id, status);
       setSelectedIds(new Set()); setSelectAll(false);
       fetchPayments();
+      fetchStats();
     } catch (err) {
       setError(err.message || "Bulk action failed");
     } finally { setBulkLoading(false); }
@@ -432,6 +450,7 @@ export default function PaymentListPage() {
       }
       setCurrentPage(1);
       fetchPayments();
+      fetchStats();
       setWizardSuccess(
         cappedCount > 0
           ? "Payment recorded. The allocated amount was reduced to the invoice's remaining balance — the excess was not applied."
@@ -447,8 +466,22 @@ export default function PaymentListPage() {
   };
 
   const filteredByStatus = (status) => payments.filter((p) => p.status === status);
-  const completedAmt = sumInBaseCurrency(filteredByStatus("cleared"), baseCurrency).total;
-  const pendingAmt = sumInBaseCurrency(filteredByStatus("pending"), baseCurrency).total;
+  // "Revenue"/"Outstanding" (and the "Cleared" tile's subtitle below) are
+  // sourced from the org-wide dashboard-stats aggregate, not from this page's
+  // (up to ITEMS_PER_PAGE) rows -- falling back to a page-scoped sum only
+  // while the stats call hasn't resolved yet or failed.
+  const pageCompletedAmt = sumInBaseCurrency(filteredByStatus("cleared"), baseCurrency).total;
+  const pagePendingAmt = sumInBaseCurrency(filteredByStatus("pending"), baseCurrency).total;
+  const completedAmt = stats ? Number(stats.cleared_amount) : pageCompletedAmt;
+  const pendingAmt = stats ? Number(stats.outstanding_amount) : pagePendingAmt;
+  const refundedCount = stats ? stats.refunded_count : filteredByStatus("refunded").length;
+  // Avg/Day = cleared amount collected in the trailing 30 calendar days,
+  // divided by 30 (server-computed in PaymentRepository.get_dashboard_stats).
+  // This replaces the old `completedAmt / payments.length` formula, which
+  // divided the page's cleared amount by the page's ROW COUNT -- not a
+  // per-day average at all, and it changed every time the page size or
+  // filters changed the row count.
+  const avgPerDay = stats ? Number(stats.avg_per_day) : 0;
 
   const headerProps = {
     title: "Payments",
@@ -457,7 +490,7 @@ export default function PaymentListPage() {
     iconGradient: "from-brand to-brand-hover",
     lastUpdated,
     refreshing,
-    onRefresh: () => { setRefreshing(true); fetchPayments(); },
+    onRefresh: () => { setRefreshing(true); fetchPayments(); fetchStats(); },
     onExportCSV: handleExportCSV,
     onExportJSON: handleExportJSON,
     dateRange: dateRangeValue,
@@ -482,10 +515,10 @@ export default function PaymentListPage() {
           <DashboardStatCard title="Failed" value={filteredByStatus("failed").length} icon={XCircle} color="from-red-500 to-rose-500" onClick={() => { setStatusFilter("failed"); setCurrentPage(1); }} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Refunded" value={filteredByStatus("refunded").length} icon={RefreshCw} color="from-blue-500 to-blue-600" />
+          <DashboardStatCard title="Refunded" value={refundedCount} icon={RefreshCw} color="from-blue-500 to-blue-600" />
           <DashboardStatCard title="Outstanding" value={Number(pendingAmt)} currency={baseCurrency} icon={Wallet} color="from-amber-500 to-orange-500" />
           <DashboardStatCard title="Revenue" value={Number(completedAmt)} currency={baseCurrency} icon={DollarSign} color="from-brand to-brand-hover" href="/billing/collections-receivables" />
-          <DashboardStatCard title="Avg/Day" value={Number(payments.length > 0 ? completedAmt / Math.max(payments.length, 1) : 0)} currency={baseCurrency} icon={TrendingUp} color="from-slate-500 to-slate-600" />
+          <DashboardStatCard title="Avg/Day" value={avgPerDay} currency={baseCurrency} icon={TrendingUp} color="from-slate-500 to-slate-600" subtitle="Last 30 days" />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">

@@ -23,9 +23,13 @@ import {
 import { Button, DataTable, StatGroup } from "../../../components/billing-ui";
 
 // A single, wide fetch of recent payments doubles as the source for the
-// status/method/monthly aggregates below — there is no dedicated payments
-// stats endpoint (unlike refunds/write-offs/dunning/collections), so this
-// dashboard aggregates client-side over the most recent window instead.
+// status/method/monthly charts below (pie/bar/trend visuals are inherently
+// windowed — there is no "all-time" pie chart). The KPI tiles ("Cleared
+// Amount", "Avg Payment Value") no longer come from this window: they're
+// fetched from GET /billing/payments/dashboard-stats, a single grouped
+// aggregate query over the full org dataset (see PaymentRepository.
+// get_dashboard_stats), matching the pattern already used by refunds/
+// write-offs/dunning/collections.
 const AGGREGATION_WINDOW = 300;
 
 const CARD_GRADIENTS = [
@@ -73,6 +77,7 @@ export default function PaymentDashboardPage() {
     paymentsTotal: 0,
     unallocated: [],
     unallocatedTotal: 0,
+    stats: null,
   });
 
   const fetchData = useCallback(async () => {
@@ -84,8 +89,9 @@ export default function PaymentDashboardPage() {
         paymentApi.getTotalCollected(),
         paymentApi.list({ per_page: AGGREGATION_WINDOW, sort_by: "payment_date", sort_order: "desc" }),
         paymentApi.listUnallocated({ per_page: 50 }),
+        paymentApi.getDashboardStats(),
       ]);
-      const [totalCollectedRes, listRes, unallocatedRes] = results;
+      const [totalCollectedRes, listRes, unallocatedRes, statsRes] = results;
       const safeVal = (r, transform) => (r.status === "fulfilled" ? (transform ? transform(r.value) : r.value) : null);
 
       const listData = safeVal(listRes);
@@ -98,6 +104,7 @@ export default function PaymentDashboardPage() {
           paymentsTotal: listData?.total ?? extractArray(listData).length,
           unallocated: extractArray(unallocatedData) || [],
           unallocatedTotal: unallocatedData?.total ?? extractArray(unallocatedData).length,
+          stats: safeVal(statsRes),
         });
         setLastUpdated(new Date());
       }
@@ -145,9 +152,18 @@ export default function PaymentDashboardPage() {
     const cleared = byStatus("cleared");
     const pending = byStatus("pending");
     const failed = byStatus("failed");
-    const clearedAmount = sumInBaseCurrency(cleared, baseCurrency).total;
+    // "Cleared Amount" and "Avg Payment Value" come from the org-wide
+    // dashboard-stats aggregate (full dataset), not from the windowed
+    // `payments` fetch above — falling back to the windowed computation only
+    // while the stats call is in flight or if it fails.
+    const windowedClearedAmount = sumInBaseCurrency(cleared, baseCurrency).total;
     const pendingAmount = sumInBaseCurrency(pending, baseCurrency).total;
     const unallocatedAmount = sumInBaseCurrency(dashboard.unallocated, baseCurrency).total;
+    const stats = dashboard.stats;
+    const clearedAmount = stats ? Number(stats.cleared_amount) : windowedClearedAmount;
+    const avgPaymentValue = stats
+      ? Number(stats.avg_payment_value)
+      : (payments.length > 0 ? windowedClearedAmount / Math.max(cleared.length, 1) : 0);
     return {
       totalCollected: dashboard.totalCollected?.total_collected ?? clearedAmount,
       totalCount: dashboard.paymentsTotal,
@@ -158,9 +174,9 @@ export default function PaymentDashboardPage() {
       pendingAmount,
       unallocatedAmount,
       unallocatedCount: dashboard.unallocatedTotal,
-      avgPaymentValue: payments.length > 0 ? clearedAmount / Math.max(cleared.length, 1) : 0,
+      avgPaymentValue,
     };
-  }, [payments, dashboard.totalCollected, dashboard.paymentsTotal, dashboard.unallocated, dashboard.unallocatedTotal, baseCurrency]);
+  }, [payments, dashboard.totalCollected, dashboard.paymentsTotal, dashboard.unallocated, dashboard.unallocatedTotal, dashboard.stats, baseCurrency]);
 
   const statusData = useMemo(() => {
     const counts = {};
@@ -341,7 +357,7 @@ export default function PaymentDashboardPage() {
         <StatCard title="Failed" value={kpis.failedCount.toLocaleString()} icon={XCircle} color={CARD_GRADIENTS[3]} href="/billing/payments?status=failed" />
       </div>
       <p className="-mt-4 text-xs text-slate-400">
-        Aggregated from the {AGGREGATION_WINDOW} most recent payments.
+        Pending/Failed counts and charts below are drawn from the {AGGREGATION_WINDOW} most recent payments; Cleared Amount and Avg Payment Value use the full org total.
       </p>
 
       <StatGroup title="More Metrics">

@@ -14,3 +14,38 @@ export const platformSelfServiceApi = {
   getWorkspaceUsage: () => api.get("/billing/workspace/usage"),
   convertTrialToPaid: (payload = {}) => api.post("/billing/workspace/trial/convert", payload),
 };
+
+// Perf (QA bug #42): TrialBanner is a single component mounted once inside
+// BillingShell "so it is app-wide" (its own header comment), but every route
+// in App.jsx wraps its page element as `<BillingShell>{element}</BillingShell>`
+// -- a fresh element on every navigation, not a persistent parent/Outlet
+// layout -- so React actually unmounts and remounts the whole shell (and
+// therefore TrialBanner) on every single page navigation. Without a cache,
+// that means GET /billing/workspace/zoiko-subscription fired on literally
+// every page load app-wide (measured 1-3s each in this environment), even
+// though trial/subscription status changes at most a few times per session.
+// Same in-flight-promise-dedup + cache-until-invalidated shape already used
+// by orgAdminService.js (organization details) and CurrencyContext.jsx
+// (billing config) -- not a new pattern.
+let cachedSubscription = null;
+let inflightSubscription = null;
+
+export function getZoikoSubscriptionCached() {
+  if (cachedSubscription) return Promise.resolve(cachedSubscription);
+  if (inflightSubscription) return inflightSubscription;
+  inflightSubscription = platformSelfServiceApi
+    .getZoikoSubscription()
+    .then((data) => {
+      cachedSubscription = data;
+      return data;
+    })
+    .finally(() => {
+      inflightSubscription = null;
+    });
+  return inflightSubscription;
+}
+
+export function invalidateZoikoSubscriptionCache() {
+  cachedSubscription = null;
+  inflightSubscription = null;
+}

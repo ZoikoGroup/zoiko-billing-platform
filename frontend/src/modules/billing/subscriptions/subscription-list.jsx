@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Repeat, Search, Filter, X, ChevronDown, Plus, AlertCircle, CheckCircle, Clock, PauseCircle, XCircle, ArrowUpDown, DollarSign, TrendingUp, Percent, Loader2, Eye, Receipt, Play, UserCheck } from "lucide-react";
-import { subscriptionApi, settingsApi } from "../../../service/billingService";
+import { subscriptionApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -84,7 +85,7 @@ export default function SubscriptionListPage() {
   }, []);
 
   useEffect(() => {
-    settingsApi.getConfig().then((cfg) => {
+    loadGlobalBillingConfig().then((cfg) => {
       if (cfg?.default_currency) setOrgCurrency(cfg.default_currency);
       else if (cfg?.currency) setOrgCurrency(cfg.currency);
     }).catch((err) => console.error("[SubList] Failed to load settings config:", err));
@@ -216,10 +217,12 @@ export default function SubscriptionListPage() {
   const kpiArr        = summary?.arr   != null ? parseFloat(summary.arr)  : 0;
   const reportingCurrency = summary?.reporting_currency || orgCurrency;
 
-  // Next billing estimate: page-derived only (not in summary)
-  const nextBillingAmount = subscriptions
-    .filter((s) => s.next_billing_at)
-    .reduce((sum, s) => sum + parseFloat(s.unit_price || s.amount || 0) * parseInt(s.quantity || 1), 0);
+  // Next billing amount: prefer summary (all-pages aggregate), fall back to page-derived
+  const nextBillingAmount = summary?.next_billing_amount != null
+    ? parseFloat(summary.next_billing_amount)
+    : subscriptions
+        .filter((s) => s.next_billing_at)
+        .reduce((sum, s) => sum + parseFloat(s.unit_price || s.amount || 0) * parseInt(s.quantity || 1), 0);
 
   const headerProps = {
     title: "Subscriptions",
@@ -255,7 +258,7 @@ export default function SubscriptionListPage() {
           <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={AlertCircle} color="from-red-500 to-rose-500" loading={summaryLoading} />
           <DashboardStatCard title="MRR" value={Number(kpiMrr)} currency={reportingCurrency} icon={TrendingUp} color="from-blue-500 to-blue-600" loading={summaryLoading} />
           <DashboardStatCard title="ARR" value={Number(kpiArr)} currency={reportingCurrency} icon={Percent} color="from-brand to-brand-hover" loading={summaryLoading} />
-          <DashboardStatCard title="Next Billing Amt" value={Number(nextBillingAmount)} currency={reportingCurrency} icon={DollarSign} color="from-brand to-brand-hover" />
+          <DashboardStatCard title="Next Billing Amt" value={Number(nextBillingAmount)} currency={reportingCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">

@@ -247,17 +247,38 @@ class BillingDashboardService:
         active_customers = self.customer_repo.count(organization_id, active_only=True)
         active_subs = self.sub_repo.count(organization_id, active_only=True, status="active")
 
-        collections = self.payment_repo.get_total_collected(
-            organization_id,
-            date_from=str(period_start),
-            date_to=str(period_end),
-            currency_rates=currency_rates,
-        )
+        # collections and pending_payments were 2 separate round trips against
+        # the SAME table (Payment) -- combined into 1 conditional-aggregation
+        # query (same pattern as organizations/router.py's batched counts).
+        # Each column's CASE keeps its own, independent filter exactly as the
+        # two original queries had them (collections: status='cleared' AND
+        # payment_date BETWEEN period_start/period_end, converted to base
+        # currency via the same _rate_case Payment queries always use;
+        # pending_payments: status='pending', no date bound, unconverted count)
+        # so this is byte-for-byte the same two numbers, just 1 query instead
+        # of 2. Equivalent to the old get_total_collected(date_from=str(
+        # period_start), date_to=str(period_end)) call: str(date) ->
+        # fromisoformat(str(date)) round-trips to the identical date, so
+        # comparing directly against the date objects here changes nothing.
+        pmt_rate = self.payment_repo._rate_case(Payment.currency, currency_rates)
+        pmt_row = self.payment_repo.db.query(
+            func.coalesce(func.sum(
+                case((
+                    and_(
+                        Payment.status == "cleared",
+                        Payment.payment_date >= period_start,
+                        Payment.payment_date <= period_end,
+                    ),
+                    Payment.amount * pmt_rate
+                ), else_=0)
+            ), 0).label("collections"),
+            func.coalesce(func.sum(
+                case((Payment.status == "pending", 1), else_=0)
+            ), 0).label("pending_payments"),
+        ).filter(Payment.organization_id == organization_id).first()
 
-        pending_payments = self.payment_repo.db.query(func.count(Payment.id)).filter(
-            Payment.organization_id == organization_id,
-            Payment.status == "pending",
-        ).scalar() or 0
+        collections = float(pmt_row.collections)
+        pending_payments = int(pmt_row.pending_payments)
 
         period_total_revenue = period_summary["total_revenue"]
         period_paid_revenue = period_summary["paid_revenue"]

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   FileSignature, CheckCircle, XCircle, RotateCcw, Clock, DollarSign,
   TrendingUp, Percent, ChevronRight, PieChart as PieChartIcon,
-  PlusCircle, List, Landmark, BarChart3, AlertCircle, RefreshCw,
+  PlusCircle, List, Landmark, BarChart3, AlertCircle, RefreshCw, Wallet,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area, Line, XAxis, YAxis,
@@ -64,13 +64,17 @@ export default function ContractDashboardPage() {
   const mountedRef = useRef(true);
   const loadingRef = useRef(true);
 
-  // There is no dedicated /contracts/dashboard-stats endpoint yet, so this page
-  // fetches a broad recent sample plus the two ready-made lifecycle endpoints
-  // (active / expiring-soon) and derives everything else client-side.
+  // KPI value tiles (Total Contract Value, Active Value, Monthly Recurring,
+  // Annual Recurring) are sourced from GET /contracts/summary, which
+  // aggregates over the FULL organization dataset. It must never be derived
+  // from `contracts` below, which is a recent, date-filtered sample capped
+  // at 100 rows and only exists to feed the charts (trend/status/value-by-
+  // status breakdowns) and the "recent contracts" style widgets on this page.
   const [contracts, setContracts] = useState([]);
   const [contractsTotal, setContractsTotal] = useState(0);
   const [activeContracts, setActiveContracts] = useState([]);
   const [expiringContracts, setExpiringContracts] = useState([]);
+  const [summary, setSummary] = useState(null);
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -84,8 +88,9 @@ export default function ContractDashboardPage() {
         }),
         contractApi.listActive(),
         contractApi.listExpiring(30),
+        contractApi.summary(),
       ]);
-      const [listResult, activeResult, expiringResult] = results;
+      const [listResult, activeResult, expiringResult, summaryResult] = results;
 
       if (!mountedRef.current) return;
 
@@ -98,6 +103,7 @@ export default function ContractDashboardPage() {
       }
       setActiveContracts(activeResult.status === "fulfilled" ? extractArray(activeResult.value) : []);
       setExpiringContracts(expiringResult.status === "fulfilled" ? extractArray(expiringResult.value) : []);
+      setSummary(summaryResult.status === "fulfilled" ? summaryResult.value : null);
 
       if (listResult.status === "rejected" && activeResult.status === "rejected" && expiringResult.status === "rejected") {
         setError("Failed to load contract dashboard data. Please try again.");
@@ -132,17 +138,25 @@ export default function ContractDashboardPage() {
     const expiredCount = contracts.filter((c) => c.status === "expired").length;
     const activeCount = activeContracts.length;
     const renewals = activeContracts.filter((c) => c.auto_renew).length;
-    const totalValue = contracts.reduce((s, c) => s + contractValue(c), 0);
-    const mrr = activeContracts.reduce((s, c) => s + monthlyEquivalent(contractValue(c), c.billing_period), 0);
-    const arr = mrr * 12;
+    // Total/Active Value, MRR and ARR come from the full-dataset /contracts/summary
+    // aggregate. Fall back to a client-side estimate from the fetched samples only
+    // if that endpoint failed to load, so the tiles degrade gracefully instead of
+    // going blank.
+    const fallbackTotalValue = contracts.reduce((s, c) => s + contractValue(c), 0);
+    const fallbackActiveValue = activeContracts.reduce((s, c) => s + contractValue(c), 0);
+    const fallbackMrr = activeContracts.reduce((s, c) => s + monthlyEquivalent(contractValue(c), c.billing_period), 0);
+    const totalValue = summary ? Number(summary.total_value ?? 0) : fallbackTotalValue;
+    const activeValue = summary ? Number(summary.active_value ?? 0) : fallbackActiveValue;
+    const mrr = summary ? Number(summary.mrr ?? 0) : fallbackMrr;
+    const arr = summary ? Number(summary.arr ?? mrr * 12) : mrr * 12;
     // Retention reads as: of the contracts that have actually reached a
     // resolution (stayed active vs. lapsed to expired), what share retained —
     // drafts/pending/terminated/cancelled are excluded because they haven't
     // reached (or didn't reach) natural term-end, so they'd distort the rate.
     const retentionDenominator = activeCount + expiredCount;
     const retentionRate = retentionDenominator > 0 ? (activeCount / retentionDenominator) * 100 : null;
-    return { expiredCount, activeCount, renewals, totalValue, mrr, arr, retentionRate };
-  }, [contracts, activeContracts]);
+    return { expiredCount, activeCount, renewals, totalValue, activeValue, mrr, arr, retentionRate };
+  }, [contracts, activeContracts, summary]);
 
   const sampleCurrency = contracts.find((c) => c.currency)?.currency
     || activeContracts.find((c) => c.currency)?.currency
@@ -370,9 +384,14 @@ export default function ContractDashboardPage() {
 
           <StatGroup title="More Metrics">
             <DashboardStatCard title="Renewals" value={kpis.renewals.toLocaleString()} subtitle="Active with auto-renew enabled" icon={RotateCcw} color="from-blue-500 to-cyan-500" />
-            <DashboardStatCard title="Contract Value" value={Number(kpis.totalValue)} currency={sampleCurrency} subtitle={isSampled ? `Sum of ${contracts.length.toLocaleString()} most recent` : "Sum of all contracts"} icon={DollarSign} color="from-brand to-brand-hover" sparkline={monthlyTrend.map((m) => m.value)} />
-            <DashboardStatCard title="Revenue (ARR)" value={Number(kpis.arr)} currency={sampleCurrency} subtitle="Annualized, from active contracts" icon={TrendingUp} color="from-indigo-500 to-blue-500" href="/billing/contracts/reports" />
+            <DashboardStatCard title="Total Contract Value" value={Number(kpis.totalValue)} currency={sampleCurrency} subtitle="Sum of all contracts" icon={DollarSign} color="from-brand to-brand-hover" sparkline={monthlyTrend.map((m) => m.value)} />
+            <DashboardStatCard title="Active Value" value={Number(kpis.activeValue)} currency={sampleCurrency} subtitle="Sum of active contracts" icon={Wallet} color="from-emerald-500 to-emerald-600" />
             <DashboardStatCard title="Retention Rate" value={kpis.retentionRate == null ? "—" : `${kpis.retentionRate.toFixed(1)}%`} subtitle="Active vs. Active + Expired" icon={Percent} color="from-teal-500 to-green-500" />
+          </StatGroup>
+
+          <StatGroup title="Recurring Revenue">
+            <DashboardStatCard title="Monthly Recurring" value={Number(kpis.mrr)} currency={sampleCurrency} subtitle="Normalized to a monthly cadence" icon={TrendingUp} color="from-blue-500 to-blue-600" />
+            <DashboardStatCard title="Annual Recurring" value={Number(kpis.arr)} currency={sampleCurrency} subtitle="Annualized, from active contracts" icon={TrendingUp} color="from-indigo-500 to-blue-500" href="/billing/contracts/reports" />
           </StatGroup>
 
           <QuickActions actions={contractQuickActions} />

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from threading import RLock
@@ -33,7 +34,21 @@ logger = logging.getLogger("zoiko_billing")
 # ── In-process fallback (used when Redis is unavailable) ──────────────────────
 
 _LOCK = RLock()
-_fallback: TTLCache[str, Any] = TTLCache(maxsize=4096, ttl=300)
+# cachetools.TTLCache only supports a single, fixed ttl set here at
+# construction time -- it has no notion of a per-item ttl. Every caller of
+# cache_set() below can pass its own `ttl` (e.g. dashboard KPIs use
+# DASHBOARD_KPI_CACHE_TTL_SECONDS=30, others use REDIS_DEFAULT_TTL=60), but
+# when Redis isn't configured (the common case in dev / any Redis-less
+# deployment) that per-call ttl was previously silently ignored: every
+# fallback entry actually lived for this container's fixed ttl below
+# (300s) regardless of what the caller asked for -- e.g. a 30s dashboard
+# cache entry stayed stale for up to 5 minutes instead of 30 seconds.
+# Fixed by storing (value, expires_at) and enforcing the caller's own ttl
+# in cache_get(); this container's ttl=300 remains only as an outer
+# safety-net upper bound so an entry can never live forever even if it's
+# never read again (and thus never has its own expiry checked).
+_FALLBACK_MAX_TTL_SECONDS = 300
+_fallback: TTLCache[str, Any] = TTLCache(maxsize=4096, ttl=_FALLBACK_MAX_TTL_SECONDS)
 _redis = None
 _redis_ok: bool | None = None  # None = not yet probed
 
@@ -98,7 +113,17 @@ def cache_get(name: str) -> Optional[Any]:
             logger.debug("Redis GET failed for %s", name, exc_info=True)
             return None
     with _LOCK:
-        return _fallback.get(name)
+        entry = _fallback.get(name)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        if time.monotonic() >= expires_at:
+            # Past the CALLER's own ttl even though the TTLCache container
+            # (fixed 300s ttl) may not have evicted it yet -- treat as a
+            # miss and drop it now rather than waiting for that outer bound.
+            _fallback.pop(name, None)
+            return None
+        return value
 
 
 def cache_set(name: str, value: Any, ttl: int | None = None) -> None:
@@ -114,7 +139,11 @@ def cache_set(name: str, value: Any, ttl: int | None = None) -> None:
         except Exception:
             logger.debug("Redis SET failed for %s", name, exc_info=True)
     with _LOCK:
-        _fallback[name] = value
+        # Clamp to the container's own outer bound so a caller can never
+        # request a longer effective lifetime than the fallback cache's
+        # housekeeping ttl actually holds entries for.
+        effective_ttl = min(ttl, _FALLBACK_MAX_TTL_SECONDS)
+        _fallback[name] = (value, time.monotonic() + effective_ttl)
 
 
 def cache_delete(*names: str) -> None:

@@ -180,6 +180,15 @@ def get_total_collected(
     return {"total_collected": total}
 
 
+@router.get("/dashboard-stats", response_model=dict)
+def get_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = PaymentService(db)
+    return svc.get_dashboard_stats(current_user.organization_id)
+
+
 @router.get("/unallocated", response_model=UnallocatedPaymentListResponse)
 def list_unallocated_payments(
     page: int = Query(1, ge=1),

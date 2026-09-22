@@ -112,6 +112,7 @@ export const ENDPOINTS = {
   CONTRACT_AMENDMENTS: (id) => `${BILLING}/contracts/${id}/amendments`,
 
   QUOTATIONS: `${BILLING}/quotations`,
+  QUOTATIONS_SUMMARY: `${BILLING}/quotations/summary`,
   QUOTATION: (id) => `${BILLING}/quotations/${id}`,
   QUOTATION_ITEMS: (id) => `${BILLING}/quotations/${id}/items`,
   QUOTATION_ITEMS_BULK: (id) => `${BILLING}/quotations/${id}/items/bulk`,
@@ -179,6 +180,7 @@ export const ENDPOINTS = {
   PAYMENT_METHOD_DEFAULT: (id) => `${BILLING}/payments/methods/${id}/default`,
   PAYMENTS: `${BILLING}/payments`,
   PAYMENTS_TOTAL_COLLECTED: `${BILLING}/payments/total-collected`,
+  PAYMENTS_DASHBOARD_STATS: `${BILLING}/payments/dashboard-stats`,
   PAYMENT: (id) => `${BILLING}/payments/${id}`,
   PAYMENT_STATUS: (id) => `${BILLING}/payments/${id}/status`,
   PAYMENT_ALLOCATE: (id) => `${BILLING}/payments/${id}/allocate`,

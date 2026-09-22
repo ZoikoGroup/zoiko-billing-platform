@@ -4,7 +4,8 @@ import { ArrowLeft, FileSignature, RefreshCw, AlertCircle, Loader2, Send,
   CheckCircle, XCircle, Ban, RotateCcw, FileText, DollarSign, User,
   Package, CreditCard, Clock, Activity, FileEdit, Hash, Copy } from "lucide-react"
 import HRPage from "../../../components/HRPage";
-import { quoteApi, customerApi, contractApi, settingsApi } from "../../../service/billingService";
+import { quoteApi, customerApi, contractApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -93,7 +94,7 @@ export default function QuotationDetailPage() {
       const [qData, itemsData, settingsData] = await Promise.all([
         quoteApi.get(id),
         quoteApi.listItems(id).catch(() => []),
-        settingsApi.getConfig().catch(() => null),
+        loadGlobalBillingConfig().catch(() => null),
       ]);
       if (settingsData) setOrgSettings(settingsData);
       setQuote(qData);

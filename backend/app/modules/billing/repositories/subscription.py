@@ -60,6 +60,16 @@ class SubscriptionRepository(BaseRepository[Subscription]):
     def __init__(self, db):
         super().__init__(db, Subscription)
 
+    def _apply_eager_loads(self, query):
+        # /subscriptions serializes plan/customer display names on every row;
+        # without eager loading those relationships a page of subscriptions
+        # triggers a lazy load per row (N+1). Same pattern as the WriteOff /
+        # CreditNote / Refund repositories.
+        return query.options(
+            joinedload(Subscription.plan),
+            joinedload(Subscription.customer),
+        )
+
     def get_by_number(self, organization_id: int, number: str) -> Optional[Subscription]:
         return self.get_first(organization_id, subscription_number=number)
 

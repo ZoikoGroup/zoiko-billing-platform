@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Tag, Search, Plus, RefreshCw, CheckCircle, Clock } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { priceListApi, settingsApi } from "../../../service/billingService";
+import { priceListApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -33,7 +34,7 @@ export default function PriceListsPage() {
   const [orgCurrency, setOrgCurrency] = useState("");
 
   useEffect(() => {
-    settingsApi.getConfig().then((res) => {
+    loadGlobalBillingConfig().then((res) => {
       const cfg = res?.data || res;
       if (cfg?.default_currency) setOrgCurrency(cfg.default_currency);
     }).catch((err) => console.error("[PriceLists] Failed to load config:", err));

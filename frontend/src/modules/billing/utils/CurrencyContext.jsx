@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { settingsApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig, subscribeBillingConfigInvalidation } from "../../../service/billingConfigCache";
+import { getAccessToken } from "../../../service/sessionStorage";
 import { getCurrencyInfo } from "../../../utils/currency";
 
 const DEFAULT_CURRENCY = "";
@@ -20,7 +21,7 @@ export function loadGlobalCurrency() {
   if (globalPromise) return globalPromise;
   globalPromise = (async () => {
     try {
-      const data = await settingsApi.getConfig();
+      const data = await loadGlobalBillingConfig();
       const resolved = data?.base_currency || data?.default_currency || data?.home_currency || null;
       if (resolved) {
         globalCurrency = resolved;
@@ -48,6 +49,19 @@ export function loadGlobalCurrency() {
   })();
   return globalPromise;
 }
+
+// React to a settings save (or logout) invalidating the shared config cache:
+// clear our own derived value and re-resolve so already-mounted consumers
+// (not just the next page's fresh mount) pick up the new currency instead of
+// serving a stale one until a hard reload. Only re-resolve while still
+// authenticated: on logout the shared cache is invalidated AFTER the session
+// is cleared, so re-fetching then only issues an unauthenticated 401.
+subscribeBillingConfigInvalidation(() => {
+  globalCurrency = null;
+  globalCurrencyUnavailable = false;
+  globalPromise = null;
+  if (getAccessToken()) loadGlobalCurrency();
+});
 
 export function getOrgBaseCurrency() {
   return globalCurrency || DEFAULT_CURRENCY;

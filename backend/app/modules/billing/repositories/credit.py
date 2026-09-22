@@ -270,6 +270,13 @@ class RefundRepository(BaseRepository[Refund]):
     def __init__(self, db):
         super().__init__(db, Refund)
 
+    def _apply_eager_loads(self, query):
+        # /refunds serializes RefundResponse, whose customer_name/customer_email
+        # are hybrid properties that lazy-load Refund.customer per row.
+        # Eager-load so a page of refunds doesn't trigger N+1 queries.
+        from sqlalchemy.orm import joinedload
+        return query.options(joinedload(Refund.customer))
+
     def get_by_number(self, organization_id: int, number: str) -> Optional[Refund]:
         return self.get_first(organization_id, refund_number=number)
 

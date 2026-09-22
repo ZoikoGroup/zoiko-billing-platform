@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import {
-  settingsApi, subscriptionApi, dashboardApi, productApi, invoiceApi, paymentApi,
+  subscriptionApi, dashboardApi, productApi, invoiceApi, paymentApi,
 } from "../../service/billingService";
+import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney, resolveOrgCurrency, formatCurrencyChip } from "./workspace-format";
 import { Repeat, Loader2, ArrowRight, Coins, Layers } from "lucide-react";
@@ -62,7 +63,7 @@ export default function WorkspaceSubscriptionPage() {
     async function load() {
       try {
         const [c, s, r, pl, inv, pay, k, prod] = await Promise.allSettled([
-          settingsApi.getConfig(),
+          loadGlobalBillingConfig(),
           subscriptionApi.listActive(),
           subscriptionApi.getReporting(),
           subscriptionApi.listPlans({ per_page: 200 }),
