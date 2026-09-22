@@ -102,6 +102,39 @@ def test_only_platform_administrator_can_manage_platform_roles():
         assert not has_capability(non_admin, "platform_role.manage")
 
 
+def test_financial_consistency_write_capability_boundary():
+    """Regression: the reconciliation-mutating endpoints (POST trigger a run
+    — including the Stripe-comparison leg — and acknowledge/resolve an
+    exception) used to be gated by the SAME `financial_consistency.read`
+    capability as the read-only report endpoints. That let a FINANCE_READONLY
+    account — a platform role whose own name promises read-only access — (and
+    an AUDITOR) actually mutate reconciliation state, unlike every other
+    domain in this file which splits read from write/manage
+    (circuit_breaker.read/.manage, platform_config.read/.manage,
+    commercial_financial.read/.write). `financial_consistency.write` is a
+    distinct capability held only by SECURITY_OPERATOR, this codebase's
+    established operational-write role, matching that precedent."""
+    finance_readonly = _super_admin("finance-write-boundary@cap.example", platform_role=PlatformRole.FINANCE_READONLY)
+    auditor = _super_admin("auditor-write-boundary@cap.example", platform_role=PlatformRole.AUDITOR)
+    security = _super_admin("security-write-boundary@cap.example", platform_role=PlatformRole.SECURITY_OPERATOR)
+
+    # Read-only roles keep read access to reconciliation reports...
+    assert has_capability(finance_readonly, "financial_consistency.read")
+    assert has_capability(auditor, "financial_consistency.read")
+    # ...but must NOT be able to trigger a run or mutate an exception.
+    assert not has_capability(finance_readonly, "financial_consistency.write")
+    assert not has_capability(auditor, "financial_consistency.write")
+
+    assert has_capability(security, "financial_consistency.write")
+
+    dependency = require_capability("financial_consistency.write")
+    with pytest.raises(ForbiddenException):
+        dependency(current_user=finance_readonly)
+    with pytest.raises(ForbiddenException):
+        dependency(current_user=auditor)
+    assert dependency(current_user=security) is security
+
+
 def test_dependency_raises_forbidden_for_missing_capability():
     dependency = require_capability("tenant_support.request")
     auditor = _super_admin("auditor3@cap.example", platform_role=PlatformRole.AUDITOR)

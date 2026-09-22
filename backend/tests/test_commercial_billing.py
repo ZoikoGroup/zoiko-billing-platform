@@ -50,6 +50,32 @@ from app.modules.commercial.platform_reconciliation_service import PlatformRecon
 from app.modules.commercial.enums import PlatformInvoiceDeliveryStatus
 from app.modules.organizations.models import Organization
 from app.modules.auth.models import User, UserRole
+from app.modules.commercial.commercial_billing_router import (
+    InvoiceCreateRequest,
+    InvoiceItemRequest,
+    InvoiceVoidRequest,
+    PaymentAllocateRequest,
+    PaymentRecordRequest,
+    QuoteCreateRequest,
+    QuoteDiscountRequest,
+    QuoteItemRequest,
+    QuoteRejectRequest,
+    add_invoice_item,
+    add_quote_item,
+    allocate_payment,
+    approve_quote,
+    convert_quote,
+    create_invoice,
+    create_quote,
+    finalize_invoice,
+    record_payment,
+    reject_quote,
+    run_reconciliation,
+    send_invoice,
+    send_quote,
+    set_quote_discount,
+    void_invoice,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -705,3 +731,319 @@ class TestCommercialBillingModels:
         existing = inspector.get_table_names()
         for table in expected:
             assert table in existing, f"Missing table: {table}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Router-level regression: commit() must not return an expired ORM object
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# None of the endpoints in commercial_billing_router.py declare a
+# `response_model`, so FastAPI's jsonable_encoder falls back to reading
+# vars(obj)/__dict__ directly for the SQLAlchemy objects these endpoints
+# return. Session's default expire_on_commit=True clears every attribute
+# out of an object's __dict__ right after db.commit() — normal attribute
+# access (`obj.field`) transparently triggers SQLAlchemy's lazy reload and
+# looks fine in a debugger or a service-layer test, but vars(obj)/__dict__
+# bypasses that instrumented descriptor entirely, so a commit()-then-return
+# with no explicit db.refresh() serializes to `{}` over the wire even though
+# the write reached the database safely.
+#
+# create_quote/add_quote_item/set_quote_discount/send_quote/approve_quote
+# were already fixed with a db.refresh() before return. While adding this
+# regression suite the same commit()-then-return-unrefreshed pattern (with
+# no response_model and no explicit dict serialization) was found still
+# live in ten sibling endpoints in the same file: reject_quote,
+# convert_quote, create_invoice, finalize_invoice, send_invoice,
+# void_invoice, add_invoice_item, record_payment, allocate_payment, and
+# run_reconciliation — each fixed alongside this test (a db.refresh() added
+# right before its return, identical to the existing fix).
+#
+# Reproduction method: call the real router function directly (bypassing
+# only FastAPI's dependency-injection wiring — the same convention used in
+# tests/test_phase3_organizations.py and tests/test_capabilities.py) and
+# assert `vars(result)`, exactly what jsonable_encoder's fallback path
+# reads, is non-empty and holds the real values. Reverting any one
+# db.refresh() call added by this fix makes the matching test below fail
+# with an empty-vars() assertion, not a crash — it is a silent data-loss
+# bug, not an exception.
+
+def _router_super_admin(db, email):
+    user = User(
+        email=email, hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A",
+        is_active=True, is_verified=True,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+class TestRouterEndpointsReturnRefreshedObjects:
+    @staticmethod
+    def _assert_populated(obj, **expected):
+        data = vars(obj)
+        assert data, (
+            f"{type(obj).__name__} serialized to an empty {{}} — db.commit() expired "
+            "its attributes and it was returned without db.refresh()"
+        )
+        for key, value in expected.items():
+            assert data.get(key) == value, f"{key}: expected {value!r}, got {data.get(key)!r}"
+
+    def test_create_quote_endpoint_returns_populated_object(self, db_session):
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-create-quote@router.test")
+        db.commit()
+
+        result = create_quote(
+            data=QuoteCreateRequest(account_id=account.id, subject="Router Quote"),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, subject="Router Quote", status=CommercialQuoteStatus.DRAFT)
+
+    def test_add_quote_item_endpoint_returns_populated_object(self, db_session):
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-add-item@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=sa)
+
+        result = add_quote_item(
+            quote_id=quote.id,
+            data=QuoteItemRequest(line_number=1, description="Consulting", unit_price=Decimal("100.00")),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, description="Consulting", unit_price=Decimal("100.00"))
+
+    def test_set_quote_discount_endpoint_returns_populated_object(self, db_session):
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-discount@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=sa)
+        add_quote_item(
+            quote_id=quote.id,
+            data=QuoteItemRequest(line_number=1, description="Item", unit_price=Decimal("100.00")),
+            db=db, current_user=sa,
+        )
+
+        result = set_quote_discount(
+            quote_id=quote.id,
+            data=QuoteDiscountRequest(discount_amount=Decimal("10.00"), reason="loyalty"),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, discount_amount=Decimal("10.00"), discount_reason="loyalty")
+
+    def test_send_quote_endpoint_returns_populated_object(self, db_session):
+        db = db_session
+        org, _admin = _make_org_with_admin(db, org_name="Router Sendco", org_code="RTRSND")
+        account = _make_account(db, org_id=org.id)
+        sa = _router_super_admin(db, "sa-send-quote@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=sa)
+
+        result = send_quote(quote_id=quote.id, db=db, current_user=sa)
+        self._assert_populated(result, status=CommercialQuoteStatus.SENT)
+        assert result.public_token is not None
+
+    def test_reject_quote_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: reject_quote had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        org, _admin = _make_org_with_admin(db, org_name="Router Rejectco", org_code="RTRRJ")
+        account = _make_account(db, org_id=org.id)
+        creator = _router_super_admin(db, "sa-reject-creator@router.test")
+        approver = _router_super_admin(db, "sa-reject-approver@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=creator)
+        send_quote(quote_id=quote.id, db=db, current_user=creator)
+
+        result = reject_quote(
+            quote_id=quote.id, data=QuoteRejectRequest(reason="Too expensive"),
+            db=db, current_user=approver,
+        )
+        self._assert_populated(result, status=CommercialQuoteStatus.REJECTED)
+
+    def test_approve_quote_endpoint_returns_populated_object(self, db_session):
+        db = db_session
+        org, _admin = _make_org_with_admin(db, org_name="Router Approveco", org_code="RTRAPR")
+        account = _make_account(db, org_id=org.id)
+        creator = _router_super_admin(db, "sa-approve-creator@router.test")
+        approver = _router_super_admin(db, "sa-approve-approver@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=creator)
+        add_quote_item(
+            quote_id=quote.id,
+            data=QuoteItemRequest(line_number=1, description="Item", unit_price=Decimal("500.00")),
+            db=db, current_user=creator,
+        )
+        send_quote(quote_id=quote.id, db=db, current_user=creator)
+
+        result = approve_quote(quote_id=quote.id, db=db, current_user=approver)
+        self._assert_populated(result, status=CommercialQuoteStatus.CONVERTED)
+        # approve_quote's own conversion side effect: an invoice now exists.
+        assert result.converted_platform_invoice_id is not None
+
+    def test_convert_quote_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: convert_quote had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        org, _admin = _make_org_with_admin(db, org_name="Router Convertco", org_code="RTRCNV")
+        account = _make_account(db, org_id=org.id)
+        creator = _router_super_admin(db, "sa-convert-creator@router.test")
+        approver = _router_super_admin(db, "sa-convert-approver@router.test")
+        db.commit()
+        quote = create_quote(data=QuoteCreateRequest(account_id=account.id), db=db, current_user=creator)
+        add_quote_item(
+            quote_id=quote.id,
+            data=QuoteItemRequest(line_number=1, description="Item", unit_price=Decimal("250.00")),
+            db=db, current_user=creator,
+        )
+        send_quote(quote_id=quote.id, db=db, current_user=creator)
+        svc = CommercialQuoteService(db)
+        svc.approve_quote(quote_id=quote.id, actor_id=approver.id)  # service-level: avoid auto-convert
+        db.commit()
+
+        # due_date's router-level default is a FastAPI `Query(None)` sentinel,
+        # only resolved to a real value by FastAPI's request handling — a
+        # direct call must supply an explicit value.
+        result = convert_quote(quote_id=quote.id, due_date=None, db=db, current_user=approver)
+        self._assert_populated(result, total_amount=Decimal("250.00"), status=PlatformInvoiceStatus.DRAFT)
+
+    def test_create_invoice_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: create_invoice had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-create-invoice@router.test")
+        db.commit()
+
+        result = create_invoice(
+            data=InvoiceCreateRequest(account_id=account.id, notes="Router invoice"),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, notes="Router invoice", status=PlatformInvoiceStatus.DRAFT)
+
+    def test_add_invoice_item_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: add_invoice_item had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-add-invoice-item@router.test")
+        db.commit()
+        invoice = create_invoice(data=InvoiceCreateRequest(account_id=account.id), db=db, current_user=sa)
+
+        result = add_invoice_item(
+            invoice_id=invoice.id,
+            data=InvoiceItemRequest(line_number=1, description="Consulting", unit_price=Decimal("150.00")),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, description="Consulting", unit_price=Decimal("150.00"))
+
+    def test_finalize_invoice_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: finalize_invoice had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-finalize-invoice@router.test")
+        db.commit()
+        invoice = create_invoice(data=InvoiceCreateRequest(account_id=account.id), db=db, current_user=sa)
+        add_invoice_item(
+            invoice_id=invoice.id,
+            data=InvoiceItemRequest(line_number=1, description="Item", unit_price=Decimal("100.00")),
+            db=db, current_user=sa,
+        )
+
+        result = finalize_invoice(invoice_id=invoice.id, db=db, current_user=sa)
+        self._assert_populated(result, status=PlatformInvoiceStatus.ISSUED)
+        assert result.invoice_number is not None
+
+    def test_send_invoice_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: send_invoice had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        org, admin = _make_org_with_admin(db, org_name="Router Sendinv", org_code="RTRSIV")
+        account = _make_account(db, org_id=org.id)
+        sa = _router_super_admin(db, "sa-send-invoice@router.test")
+        db.commit()
+        invoice = create_invoice(data=InvoiceCreateRequest(account_id=account.id), db=db, current_user=sa)
+        add_invoice_item(
+            invoice_id=invoice.id,
+            data=InvoiceItemRequest(line_number=1, description="Item", unit_price=Decimal("100.00")),
+            db=db, current_user=sa,
+        )
+        finalize_invoice(invoice_id=invoice.id, db=db, current_user=sa)
+
+        result = send_invoice(invoice_id=invoice.id, db=db, current_user=sa)
+        self._assert_populated(result, delivery_status=PlatformInvoiceDeliveryStatus.SENT)
+        assert result.public_token is not None
+
+    def test_void_invoice_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: void_invoice had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-void-invoice@router.test")
+        db.commit()
+        invoice = create_invoice(data=InvoiceCreateRequest(account_id=account.id), db=db, current_user=sa)
+        add_invoice_item(
+            invoice_id=invoice.id,
+            data=InvoiceItemRequest(line_number=1, description="Item", unit_price=Decimal("100.00")),
+            db=db, current_user=sa,
+        )
+        finalize_invoice(invoice_id=invoice.id, db=db, current_user=sa)
+
+        result = void_invoice(
+            invoice_id=invoice.id, data=InvoiceVoidRequest(reason="Customer cancelled"),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, status=PlatformInvoiceStatus.VOIDED, voided_reason="Customer cancelled")
+
+    def test_record_payment_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: record_payment had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-record-payment@router.test")
+        db.commit()
+
+        result = record_payment(
+            data=PaymentRecordRequest(account_id=account.id, amount=Decimal("1000.00"), payment_method="manual"),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, amount=Decimal("1000.00"), status=PlatformPaymentStatus.CLEARED)
+
+    def test_allocate_payment_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: allocate_payment had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+        account = _make_account(db)
+        sa = _router_super_admin(db, "sa-allocate-payment@router.test")
+        db.commit()
+        invoice = create_invoice(data=InvoiceCreateRequest(account_id=account.id), db=db, current_user=sa)
+        add_invoice_item(
+            invoice_id=invoice.id,
+            data=InvoiceItemRequest(line_number=1, description="Item", unit_price=Decimal("500.00")),
+            db=db, current_user=sa,
+        )
+        finalize_invoice(invoice_id=invoice.id, db=db, current_user=sa)
+        payment = record_payment(
+            data=PaymentRecordRequest(account_id=account.id, amount=Decimal("500.00"), payment_method="manual"),
+            db=db, current_user=sa,
+        )
+
+        result = allocate_payment(
+            payment_id=payment.id,
+            data=PaymentAllocateRequest(invoice_id=invoice.id, amount=Decimal("300.00")),
+            db=db, current_user=sa,
+        )
+        self._assert_populated(result, amount=Decimal("300.00"), platform_invoice_id=invoice.id)
+
+    def test_run_reconciliation_endpoint_returns_populated_object(self, db_session):
+        """NEW fix: run_reconciliation had the same bug and was not in the
+        originally-reported list."""
+        db = db_session
+
+        result = run_reconciliation(db=db)
+        self._assert_populated(result, trigger="manual", plane="plane1")
+        assert result.id is not None

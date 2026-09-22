@@ -104,6 +104,71 @@ def test_welcome_widget_matches_billing_dashboard(db_session):
     assert stats.revenue_this_month == pytest.approx(float(kpis["total_revenue"]))
 
 
+def test_dashboard_stats_counts_correct_after_query_batching(db_session):
+    """QA bug #42 (performance): get_my_organization_dashboard_stats used to
+    issue 6 separate COUNT round trips (total/active customers, open/overdue
+    invoices as two more separate queries, active subscriptions, billing
+    admins) against a remote database, each paying full network latency.
+    Customer and invoice counts were each collapsed into a single
+    conditional-aggregation query (one round trip covering both counts on
+    that table). This locks in that the collapsed queries still return
+    exactly the same values as before, against deterministic fixtures with a
+    mix of statuses on both tables -- not just an all-active/all-sent
+    happy path that could hide an off-by-one in the CASE conditions."""
+    from app.modules.billing.models import CustomerStatus
+
+    org = make_organization(db_session, code="PERF1", name="Perf Org")
+
+    active_customer = make_customer(db_session, org.id, code="PC-ACTIVE", email="a@example.com")
+    suspended_customer = make_customer(db_session, org.id, code="PC-SUSPENDED", email="b@example.com")
+    suspended_customer.status = CustomerStatus.SUSPENDED
+    db_session.flush()
+
+    # 2 open (sent + partially_paid), 1 overdue, 1 draft (neither open nor
+    # overdue -- must not be double-counted into either bucket), 1 paid.
+    make_invoice(db_session, org.id, active_customer.id, status=InvoiceStatus.SENT, invoice_number="PI-1")
+    make_invoice(db_session, org.id, active_customer.id, status=InvoiceStatus.PARTIALLY_PAID, invoice_number="PI-2")
+    make_invoice(db_session, org.id, active_customer.id, status=InvoiceStatus.OVERDUE, invoice_number="PI-3")
+    make_invoice(db_session, org.id, active_customer.id, status=InvoiceStatus.DRAFT, invoice_number="PI-4")
+    make_invoice(db_session, org.id, active_customer.id, status=InvoiceStatus.PAID, invoice_number="PI-5")
+    db_session.commit()
+
+    stats = get_my_organization_dashboard_stats(
+        current_user=_StubUser(org.id), db=db_session,
+    )
+
+    assert stats.total_customers == 2
+    assert stats.active_customers == 1
+    assert stats.open_invoices == 2
+    assert stats.overdue_invoices == 1
+
+
+def test_dashboard_stats_tenant_isolation_and_empty_org(db_session):
+    """The batched count queries must stay scoped to the requesting org, and
+    an org with no customers/invoices at all must return zeros, not an
+    error (e.g. from a query.one() on an aggregate over zero rows)."""
+    org_a = make_organization(db_session, code="PERF-A", name="Org A")
+    org_b = make_organization(db_session, code="PERF-B", name="Org B")
+
+    customer_a = make_customer(db_session, org_a.id, code="PA-CUST", email="pa@example.com")
+    make_invoice(db_session, org_a.id, customer_a.id, status=InvoiceStatus.SENT, invoice_number="PA-INV1")
+    db_session.commit()
+
+    stats_b = get_my_organization_dashboard_stats(
+        current_user=_StubUser(org_b.id), db=db_session,
+    )
+    assert stats_b.total_customers == 0
+    assert stats_b.active_customers == 0
+    assert stats_b.open_invoices == 0
+    assert stats_b.overdue_invoices == 0
+
+    stats_a = get_my_organization_dashboard_stats(
+        current_user=_StubUser(org_a.id), db=db_session,
+    )
+    assert stats_a.total_customers == 1
+    assert stats_a.open_invoices == 1
+
+
 # ── HARD how-to gate (NEW ISSUE fix) ───────────────────────────────────────
 # A leading "how to" / "how do I" / "steps to" / "guide to" pattern must route
 # to EXPLAIN (help_general) BEFORE PREPARE, INSPECT, or any customer-name
