@@ -18,6 +18,7 @@ import os
 import re
 import smtplib
 import ssl
+import uuid
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -445,7 +446,15 @@ def send_user_invite_email(
         "invite_link": invite_link,
         "action_url": invite_link,
         "support_email": "",
-    }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER)
+    }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER,
+      # Every invitation send (first invite AND each resend) is a distinct
+      # occurrence: without an event_id the dedupe key collapses to
+      # sha256(template_id:email), so the resend of an invitation whose
+      # previous email was successfully sent is misclassified as a DUPLICATE
+      # and never goes out. A fresh per-attempt id lets the same recipient be
+      # re-invited (the resend router supersedes the old link/token first),
+      # while callers that supply their own event_id keep full idempotency.
+      event_id=f"org_admin_invite:{organization_id or 'platform'}:{uuid.uuid4().hex}")
 
 
 def send_org_admin_password_reset_email(
