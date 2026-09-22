@@ -35,6 +35,14 @@ class WriteOffRepository(BaseRepository[WriteOff]):
     def __init__(self, db):
         super().__init__(db, WriteOff)
 
+    def _apply_eager_loads(self, query):
+        # /write-offs serializes WriteOffResponse, whose customer_name/
+        # customer_email are hybrid properties that lazy-load WriteOff.customer
+        # per row. Eager-load so a page of write-offs doesn't trigger N+1
+        # queries (same pattern as CreditNote/Refund repositories).
+        from sqlalchemy.orm import joinedload
+        return query.options(joinedload(WriteOff.customer))
+
     def _sum_amount_where(self, organization_id: int, statuses, *extra_filters: Any) -> Decimal:
         """Shared guard-total primitive: sum WriteOff.amount for active rows
         in this org matching the given status set and any extra filters.

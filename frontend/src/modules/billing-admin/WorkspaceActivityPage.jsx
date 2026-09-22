@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { auditApi, invoiceApi, settingsApi } from "../../service/billingService";
+import { auditApi, invoiceApi } from "../../service/billingService";
+import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney } from "./workspace-format";
 import {
@@ -75,7 +76,7 @@ export default function WorkspaceActivityPage() {
       const [a, ia, c] = await Promise.allSettled([
         auditApi.list({ page: 1, per_page: 60 }),
         invoiceApi.getRecentActivity(20),
-        settingsApi.getConfig(),
+        loadGlobalBillingConfig(),
       ]);
       if (a.status === "fulfilled") setAuditLogs(a.value?.items || []);
       if (ia.status === "fulfilled") setInvoiceActivity(Array.isArray(ia.value) ? ia.value : []);

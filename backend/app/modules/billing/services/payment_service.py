@@ -372,6 +372,9 @@ class PaymentService:
     ) -> float:
         return self.repo.get_total_collected(organization_id, date_from, date_to, currency_rates=currency_rates)
 
+    def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
+        return self.repo.get_dashboard_stats(organization_id)
+
     # ── Payment Allocation ─────────────────────────────────────────────────
 
     def allocate_payment(

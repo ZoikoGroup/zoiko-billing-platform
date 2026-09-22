@@ -2178,6 +2178,10 @@ class SubscriptionResponse(BaseModel):
     updated_by: Optional[int]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    # Display names (hybrid properties on the Subscription model) so list and
+    # detail views can render the plan and customer without a per-row lookup.
+    plan_name: Optional[str] = None
+    customer_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2339,8 +2343,66 @@ class InvoiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvoiceListItemResponse(BaseModel):
+    """Slimmer per-row shape for GET /invoices (the paginated list endpoint)
+    only -- GET /invoices/{id} keeps the full InvoiceResponse above.
+
+    invoice-list.jsx (the only frontend list view backed by this endpoint)
+    renders a single `customer_name` string per row and never touches the
+    other ~20 customer_* fields (email, phone, billing/shipping address,
+    gst/vat/pan/tax id, credit terms, ...) that InvoiceResponse carries for
+    the invoice *detail* page. Those fields mirror the customer's own
+    record for every invoice row and meaningfully bloat a 20-row page's JSON
+    payload for data the list view discards. Trimmed here; left untouched on
+    InvoiceResponse since /invoices/{id}, /invoices/overdue and
+    /invoices/due-between still need the full customer detail set.
+    """
+    id: int
+    organization_id: int
+    customer_id: int
+    subscription_id: Optional[int]
+    quotation_id: Optional[int]
+    contract_id: Optional[int]
+    invoice_number: str
+    invoice_type: InvoiceType
+    status: InvoiceStatus
+    issue_date: date
+    due_date: date
+    subtotal: Decimal
+    discount_percentage: Decimal
+    discount_amount: Decimal
+    tax_amount: Decimal
+    shipping_amount: Optional[Decimal] = Decimal("0")
+    round_off: Optional[Decimal] = Decimal("0")
+    total_amount: Decimal
+    paid_amount: Decimal
+    balance_due: Decimal
+    currency: str
+    exchange_rate: Decimal
+    notes: Optional[str]
+    sent_at: Optional[datetime]
+    reminded_at: Optional[datetime]
+    paid_at: Optional[datetime]
+    cancelled_at: Optional[datetime]
+    cancellation_reason: Optional[str]
+    payment_terms: Optional[str]
+    po_number: Optional[str]
+    is_recurring: bool
+    is_active: bool
+    created_by: Optional[int]
+    updated_by: Optional[int]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    # Customer details actually rendered by the list view (populated from
+    # the relationship, same as InvoiceResponse.customer_name).
+    customer_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InvoiceListResponse(PaginatedResponse):
-    items: List[InvoiceResponse]
+    items: List[InvoiceListItemResponse]
 
 
 class InvoiceBulkDeleteRequest(BaseModel):

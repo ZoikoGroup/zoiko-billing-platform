@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { getAccessToken, getStoredUser, setStoredUser, clearSession } from "../api/client";
 import { ROLES, VALID_ROLES } from "../config/roles";
 import { invalidateOrganizationDetailsCache } from "../service/orgAdminService";
+import { invalidateZoikoSubscriptionCache } from "../service/platformSelfServiceApi";
+import { invalidateConfigCache } from "../service/billingService";
+import { invalidateGlobalBillingConfig } from "../service/billingConfigCache";
 
 export const AuthContext = createContext(null);
 
@@ -25,6 +28,13 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     clearSession();
     invalidateOrganizationDetailsCache();
+    invalidateZoikoSubscriptionCache();
+    // Tenant isolation: the billing config (currency, terminology, and every
+    // other cached settingsApi.getConfig() consumer) must never survive a
+    // same-tab account switch — see billingConfigCache.js and
+    // billingService.js's own getConfig cache.
+    invalidateConfigCache();
+    invalidateGlobalBillingConfig();
     setUser(null);
   }, []);
 

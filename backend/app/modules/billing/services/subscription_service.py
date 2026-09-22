@@ -369,6 +369,7 @@ class SubscriptionService:
         past_due_count = 0
         expiring_count = 0
         mrr = Decimal("0")
+        next_billing_amount = Decimal("0")
 
         for s in subs:
             st = (s.status.value if hasattr(s.status, "value") else str(s.status or "")).lower()
@@ -380,6 +381,8 @@ class SubscriptionService:
                 active_count += 1
                 if s.current_term_end and today <= s.current_term_end <= cutoff_30d:
                     expiring_count += 1
+                if s.next_billing_at:
+                    next_billing_amount += sub_total
                 plan = s.plan
                 period = (plan.billing_period.value if plan and hasattr(plan.billing_period, "value") else str(getattr(plan, "billing_period", ""))).lower() if plan else "monthly"
                 if period == "monthly":
@@ -412,6 +415,7 @@ class SubscriptionService:
             "expiring_count": expiring_count,
             "mrr": float(round_money(mrr)),
             "arr": float(round_money(arr)),
+            "next_billing_amount": float(round_money(next_billing_amount)),
         }
 
     def get_invoice_schedule_summary(self, organization_id: int) -> Dict[str, Any]:

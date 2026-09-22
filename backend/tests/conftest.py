@@ -206,13 +206,20 @@ def make_subscription_plan(db, organization_id, code=None):
     return plan
 
 
+# Sentinel so callers can distinguish "omit next_billing_at" (defaults to
+# today, the historical behavior) from "explicitly pass next_billing_at=None"
+# (a subscription with no scheduled next billing date at all).
+_NEXT_BILLING_AT_DEFAULT = object()
+
+
 def make_subscription(
     db, organization_id, customer_id, plan_id,
     contract_id=None, status=BillingSubscriptionStatus.ACTIVE,
-    next_billing_at=None, subscription_number=None, unit_price="10.00",
-    currency="USD", is_active=True,
+    next_billing_at=_NEXT_BILLING_AT_DEFAULT, subscription_number=None, unit_price="10.00",
+    currency="USD", is_active=True, quantity=1, current_term_end=None,
 ):
     today = date.today()
+    resolved_next_billing_at = today if next_billing_at is _NEXT_BILLING_AT_DEFAULT else next_billing_at
     sub = Subscription(
         organization_id=organization_id,
         customer_id=customer_id,
@@ -221,10 +228,11 @@ def make_subscription(
         subscription_number=subscription_number or f"SUB-{organization_id}-{customer_id}-{plan_id}",
         status=status,
         unit_price=unit_price,
+        quantity=quantity,
         start_date=today,
         current_term_start=today,
-        current_term_end=today + timedelta(days=30),
-        next_billing_at=next_billing_at if next_billing_at is not None else today,
+        current_term_end=current_term_end if current_term_end is not None else today + timedelta(days=30),
+        next_billing_at=resolved_next_billing_at,
         currency=currency,
         is_active=is_active,
     )

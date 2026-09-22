@@ -1,4 +1,4 @@
-from datetime import date as date_cls
+from datetime import date as date_cls, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -201,6 +201,45 @@ class PaymentRepository(BaseRepository[Payment]):
             query = query.filter(Payment.payment_date <= date_to)
         return float(query.scalar())
 
+    def get_collected_against_overdue_invoices(
+        self,
+        organization_id: int,
+        currency_rates: Optional[Dict[str, float]] = None,
+    ) -> float:
+        """Real money collected against invoices that had already gone past
+        their due date by the time the payment came in -- independent of
+        whether a CollectionsCase/DunningCase was ever opened for that
+        invoice (QA-36: those cases are opened by a scheduled job or a
+        manual escalation, NOT automatically for every overdue invoice, so
+        CollectionsCase.amount_collected alone silently reads $0 on any org
+        where no case exists yet even though real recovered money exists).
+
+        A cleared payment's PaymentAllocation "counts" here when the
+        invoice it was applied to had a due_date on/before the payment
+        date -- i.e. the invoice was overdue (fully or partially) at the
+        moment that money was collected, regardless of the invoice's
+        current status (it may since have become fully PAID) or whether
+        any collections workflow ever touched it.
+        """
+        from app.modules.billing.models import Invoice
+
+        rate = self._rate_case(Payment.currency, currency_rates)
+        result = (
+            self.db.query(func.coalesce(func.sum(PaymentAllocation.amount * rate), 0))
+            .join(Payment, PaymentAllocation.payment_id == Payment.id)
+            .join(Invoice, PaymentAllocation.invoice_id == Invoice.id)
+            .filter(
+                PaymentAllocation.organization_id == organization_id,
+                Payment.organization_id == organization_id,
+                Invoice.organization_id == organization_id,
+                Payment.status == "cleared",
+                Invoice.due_date.isnot(None),
+                Payment.payment_date >= Invoice.due_date,
+            )
+            .scalar()
+        )
+        return float(result)
+
     def get_daily_payment_trend(
         self,
         organization_id: int,
@@ -287,6 +326,88 @@ class PaymentRepository(BaseRepository[Payment]):
             else:
                 current = current.replace(month=current.month + 1)
         return result
+
+    def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
+        """Single grouped-aggregate query over the FULL org dataset, mirroring
+        RefundRepository.get_dashboard_stats (repositories/credit.py). Backs
+        the KPI tiles on both payment-dashboard.jsx ("Cleared Amount" /
+        "Average Payment Value") and payment-list.jsx ("Refunded" /
+        "Outstanding" / "Avg/Day") — those pages previously derived these
+        numbers client-side from only their most-recently fetched page/window
+        of payments, so totals silently excluded every older row.
+
+        "Outstanding" here means the sum of PENDING-status payments (payments
+        collected but not yet cleared) — a different concept from the main
+        billing dashboard's "outstanding_amount" (BillingDashboardRepository /
+        dashboard_service.py), which is SUM(Invoice.balance_due): unpaid
+        invoice balance. Both are legitimate, differently-scoped metrics; this
+        one is intentionally about payment-record status, not invoice status.
+
+        avg_per_day is computed from a second, narrow query scoped to the
+        trailing 30 calendar days (today inclusive) of CLEARED payments,
+        divided by the fixed 30-day window length -- not by however many of
+        those days actually had a payment -- so a quiet day pulls the average
+        down instead of being invisible.
+        """
+        def _sum_if(condition):
+            return func.coalesce(func.sum(case((condition, Payment.amount), else_=0)), 0)
+
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        row = self.db.query(
+            func.count(Payment.id),
+            _sum_if(Payment.status == "cleared"),
+            _count_if(Payment.status == "cleared"),
+            _sum_if(Payment.status == "refunded"),
+            _count_if(Payment.status == "refunded"),
+            _sum_if(Payment.status == "pending"),
+            _count_if(Payment.status == "pending"),
+            _count_if(Payment.status == "failed"),
+            _count_if(Payment.status == "processing"),
+            _count_if(Payment.status == "cancelled"),
+        ).filter(
+            Payment.organization_id == organization_id,
+            Payment.is_active == True,
+        ).one()
+
+        (
+            total_count, cleared_amount, cleared_count, refunded_amount, refunded_count,
+            outstanding_amount, pending_count, failed_count, processing_count, cancelled_count,
+        ) = row
+
+        cleared_amount = float(cleared_amount)
+        cleared_count = int(cleared_count)
+        avg_payment_value = (cleared_amount / cleared_count) if cleared_count else 0.0
+
+        window_days = 30
+        window_start = date_cls.today() - timedelta(days=window_days - 1)
+        cleared_amount_last_30_days = float(
+            self.db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+                Payment.organization_id == organization_id,
+                Payment.is_active == True,
+                Payment.status == "cleared",
+                Payment.payment_date >= window_start,
+            ).scalar()
+        )
+        avg_per_day = cleared_amount_last_30_days / window_days
+
+        return {
+            "total_count": int(total_count),
+            "cleared_amount": cleared_amount,
+            "cleared_count": cleared_count,
+            "avg_payment_value": avg_payment_value,
+            "refunded_amount": float(refunded_amount),
+            "refunded_count": int(refunded_count),
+            "outstanding_amount": float(outstanding_amount),
+            "pending_count": int(pending_count),
+            "failed_count": int(failed_count),
+            "processing_count": int(processing_count),
+            "cancelled_count": int(cancelled_count),
+            "avg_per_day": avg_per_day,
+            "avg_per_day_window_days": window_days,
+            "cleared_amount_last_30_days": cleared_amount_last_30_days,
+        }
 
     def list_unallocated(
         self, organization_id: int, page: int = 1, per_page: int = 20,

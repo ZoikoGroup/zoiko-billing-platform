@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, Folder, DollarSign, BarChart3, Eye, Tag, Percent, Globe, SlidersHorizontal, Archive, ScrollText, Store, X } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { settingsApi, productApi } from "../../../service/billingService";
+import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions, getCurrencySymbol } from "../../../utils/currency";
 import { useCurrency } from "../utils/CurrencyContext";
 
@@ -101,6 +102,12 @@ export default function ProductSettingsPage() {
       setLoading(true);
       setError(null);
       setSaved(false);
+      // Deliberately NOT routed through loadGlobalBillingConfig(): this is
+      // the product config EDITOR populating an editable form / dirty-diff
+      // baseline (`original`) below, so it needs the true current server
+      // state, not a shared cache snapshot. handleSave() below calls
+      // invalidateGlobalBillingConfig() after a successful save so every
+      // other (read-only) consumer picks up the change on its next read.
       const [settingsRes, catRes, usageRes] = await Promise.allSettled([
         settingsApi.getConfig(),
         productApi.listCategories({ per_page: 100 }),
@@ -157,6 +164,10 @@ export default function ProductSettingsPage() {
         if (payload[key] === "" || payload[key] == null) payload[key] = null;
       }
       await settingsApi.updateConfig(payload);
+      // Every other cached consumer of this same config (CurrencyContext,
+      // TerminologyContext, loadGlobalBillingConfig() read-only callers)
+      // must see this save on its next read instead of a stale snapshot.
+      invalidateGlobalBillingConfig();
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { settingsApi } from "../../service/billingService";
+import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import { getOrganizationDetails } from "../../service/orgAdminService";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { normalizeOrgName, formatFiscalYearRange } from "./workspace-format";
@@ -63,7 +63,7 @@ export default function WorkspaceOrganizationPage() {
     async function load() {
       try {
         const [c, o] = await Promise.allSettled([
-          settingsApi.getConfig(),
+          loadGlobalBillingConfig(),
           getOrganizationDetails(),
         ]);
         if (cancelled) return;

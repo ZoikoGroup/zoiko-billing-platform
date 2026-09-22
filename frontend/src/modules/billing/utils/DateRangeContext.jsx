@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 
 const STORAGE_KEY = "zoiko_billing_date_range";
-const DEFAULT_RANGE = "last_30_days";
+// Exported so pages can tell "still on the page's default range" apart from
+// "user deliberately picked a range" -- e.g. tax/dashboard.jsx uses this to
+// decide whether a lifetime-total KPI should forward concrete dates to the
+// backend at all (see the comment above its summaryDateFrom/summaryDateTo).
+export const DEFAULT_RANGE = "last_30_days";
 
 export const DASHBOARD_DATE_RANGE_OPTIONS = [
   { value: "today", label: "Today" },

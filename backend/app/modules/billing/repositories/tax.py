@@ -182,7 +182,23 @@ class TaxRepository(BaseRepository[Tax]):
         """Aggregated total + per-type breakdown in 2 grouped SQL queries,
         filtered server-side by date range — replaces the previous pattern
         of loading every active Tax row for the org into Python and summing
-        there (a full-table load repeated on every call)."""
+        there (a full-table load repeated on every call).
+
+        date_from/date_to are both OPTIONAL and, when omitted, this returns
+        the org's lifetime tax-collected total, not "zero". "Tax Collected /
+        GST Collected / VAT Collected" answer "how much tax have we
+        collected, ever" -- the same kind of inventory question the
+        deliberately-not-date-filtered status_rows query in
+        InvoiceRepository.get_summary answers for invoice status counts (see
+        the comment there). The tax dashboard's default UI range is a
+        rolling 30-day window, but that default must never reach this method
+        as concrete dates -- the frontend (dashboard.jsx) only forwards
+        date_from/date_to once the user has deliberately picked a range
+        other than the page's default, which is what actually narrows this
+        total. Passing no dates here is what keeps the KPI tiles non-zero
+        for any org whose invoices (and their Tax rows) were created outside
+        that rolling window, which is the common case long after onboarding.
+        """
         base_filters = [Tax.organization_id == organization_id, Tax.is_active == True]
         if date_from:
             base_filters.append(func.date(Tax.created_at) >= func.date(date_from))

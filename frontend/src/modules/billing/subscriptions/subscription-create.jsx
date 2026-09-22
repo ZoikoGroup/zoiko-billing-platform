@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, CheckCircle, AlertCircle, FileText, User, Package, Eye,
   Calendar, Loader2, PackageOpen } from "lucide-react"
-import { subscriptionApi, contractApi, customerApi, settingsApi } from "../../../service/billingService";
+import { subscriptionApi, contractApi, customerApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -53,7 +54,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
   const [planError, setPlanError] = useState(null);
 
   useEffect(() => {
-    settingsApi.getConfig().then((config) => {
+    loadGlobalBillingConfig().then((config) => {
       setOrgConfig(config);
       const prefix = "SUB-";
       const ts = Date.now().toString(36).toUpperCase();

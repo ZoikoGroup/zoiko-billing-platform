@@ -343,10 +343,16 @@ export default function RefundDetailPage() {
                       <span className="font-medium">Approval requires a Finance Approver.</span> Ask your Finance Approver to review this refund — your role ({role || "unknown"}) cannot approve it.
                     </div>
                   )}
-                  <button onClick={() => { setRejectReason(""); setShowRejectModal(true); }} disabled={actionLoading === "reject"}
-                    className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
-                    <XCircle className="h-3.5 w-3.5" /> Reject
-                  </button>
+                  {canApprove ? (
+                    <button onClick={() => { setRejectReason(""); setShowRejectModal(true); }} disabled={actionLoading === "reject"}
+                      className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
+                      <XCircle className="h-3.5 w-3.5" /> Reject
+                    </button>
+                  ) : (
+                    <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" title="Only a Finance Approver can reject this refund. This separation of duties cannot be bypassed from your role.">
+                      <span className="font-medium">Rejection requires a Finance Approver.</span> Ask your Finance Approver to review this refund — your role ({role || "unknown"}) cannot reject it.
+                    </div>
+                  )}
                 </>
               )}
               {isApproved && (
