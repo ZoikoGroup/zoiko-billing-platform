@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Activity, Database, HelpCircle, CheckCircle2, XCircle } from "lucide-react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Activity, Database, HelpCircle, CheckCircle2, XCircle, ClipboardList, ClipboardCheck } from "lucide-react";
 import { api } from "../../service/api";
 import { getJobTelemetry } from "../../service/privilegedAccessService";
 import { PageHeader } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
+import TriagePage from "./TriagePage";
+import ProductionAcceptancePage from "./ProductionAcceptancePage";
 
 /**
  * ZB-SA-CMD-003 §12 Lens 4 — Reliability.
@@ -24,9 +26,34 @@ const FRESHNESS_STYLES = {
   unknown: { className: "text-slate-500", icon: HelpCircle, label: "Unknown" },
 };
 
+// This hub ("System Health" in the flat Reporting sidebar section) also
+// absorbs two standalone lenses as in-page tabs, deep-linkable via ?tab=.
+// Their own standalone routes (/super-admin/reliability/incidents,
+// /super-admin/reliability/reprocessing, /super-admin/production-readiness)
+// keep working unchanged — this hub just offers a second path to the same
+// components.
+const HUB_TABS = [
+  { key: "health", label: "System Health", icon: Activity },
+  { key: "incidents", label: "Incidents & Processing Failures", icon: ClipboardList },
+  { key: "release-control", label: "Release Control", icon: ClipboardCheck },
+];
+const VALID_HUB_TABS = HUB_TABS.map((t) => t.key);
+
 export default function ReliabilityPage() {
   const location = useLocation();
   const isDataQuality = location.pathname === "/super-admin/reliability/data-quality";
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialHubTab = VALID_HUB_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "health";
+  const [activeHubTab, setActiveHubTabState] = useState(initialHubTab);
+  const setActiveHubTab = useCallback(
+    (key) => {
+      setActiveHubTabState(key);
+      setSearchParams({ tab: key }, { replace: true });
+    },
+    [setSearchParams]
+  );
+
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState(null);
   const [jobs, setJobs] = useState(null);
@@ -58,7 +85,39 @@ export default function ReliabilityPage() {
         icon={Activity}
       />
 
-      {isDataQuality ? (
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="System Health sections">
+        {HUB_TABS.map((hubTab) => {
+          const Icon = hubTab.icon;
+          const active = activeHubTab === hubTab.key;
+          return (
+            <button
+              key={hubTab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveHubTab(hubTab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                active
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {hubTab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeHubTab === "incidents" ? (
+        <div className="mt-6">
+          <TriagePage showReprocessing />
+        </div>
+      ) : activeHubTab === "release-control" ? (
+        <div className="mt-6">
+          <ProductionAcceptancePage />
+        </div>
+      ) : isDataQuality ? (
         <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8">
           <div className="flex flex-col items-center text-center">
             <HelpCircle className="mb-3 h-10 w-10 text-slate-300" />

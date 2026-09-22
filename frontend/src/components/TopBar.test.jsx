@@ -6,9 +6,9 @@ import { MemoryRouter } from "react-router-dom";
 // "unread" dot regardless of whether any notification had ever been
 // fetched (in fact nothing was ever fetched -- no onClick, no API call).
 // That's a fabricated indicator, not a real one. This locks in the fix:
-// no fake unread state, and the bell only becomes a real link for the one
-// role (billing_admin) that has an actual (non-fabricated) notifications
-// feed behind it.
+// no fake unread state, and the bell only becomes a real link for a role
+// that has an actual (non-fabricated) notifications feed behind it —
+// billing_admin, org_admin and super_admin each have one now.
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: vi.fn(),
@@ -42,8 +42,22 @@ describe("TopBar notification icon", () => {
     expect(link).toHaveAttribute("href", "/billing/workspace/notifications");
   });
 
-  it("is an honestly disabled placeholder for roles with no notifications feed", () => {
+  it("is a real link to the notifications feed for org_admin", () => {
     useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "org_admin", logout: vi.fn() });
+    renderTopBar();
+    const link = screen.getByRole("link", { name: /notifications/i });
+    expect(link).toHaveAttribute("href", "/organization-admin/notifications");
+  });
+
+  it("is a real link to the notifications feed for super_admin", () => {
+    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "super_admin", logout: vi.fn() });
+    renderTopBar();
+    const link = screen.getByRole("link", { name: /notifications/i });
+    expect(link).toHaveAttribute("href", "/super-admin/notifications");
+  });
+
+  it("is an honestly disabled placeholder for a role with no notifications feed", () => {
+    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "some_other_role", logout: vi.fn() });
     renderTopBar();
     const button = screen.getByRole("button", { name: /notifications/i });
     expect(button).toBeDisabled();

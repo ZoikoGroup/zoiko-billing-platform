@@ -67,10 +67,15 @@ const PIPELINE_STAGE_MAPPINGS = [
 const ROUTE_INCIDENTS = "/super-admin/reliability/incidents";
 const ROUTE_REPROCESSING = "/super-admin/reliability/reprocessing";
 
-export default function TriagePage() {
+export default function TriagePage({ showReprocessing } = {}) {
   const location = useLocation();
   const isIncidentsRoute = location.pathname === ROUTE_INCIDENTS;
-  const isReprocessingRoute = location.pathname === ROUTE_REPROCESSING;
+  // showReprocessing lets an embedding hub (e.g. the Reliability hub's
+  // merged "Incidents & Processing Failures" tab, mounted at a pathname
+  // that matches neither dedicated route below) opt into the reprocessing
+  // panel explicitly. Standalone routing is untouched — pathname still
+  // decides it there.
+  const isReprocessingRoute = showReprocessing || location.pathname === ROUTE_REPROCESSING;
   const pageTitle = isReprocessingRoute
     ? "Processing Failures & Reprocessing"
     : isIncidentsRoute

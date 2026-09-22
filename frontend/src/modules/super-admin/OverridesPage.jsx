@@ -387,7 +387,7 @@ export default function OverridesPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Commercial Overrides"
+        title="Entitlement Overrides"
         description="ZB-COM-ENT-001 · Part 2 §16.1 · per-org entitlement overrides with maker-checker approval. An override beats the org's plan entitlement (resolver precedence L3) until it expires or is revoked."
         icon={ShieldAlert}
         meta={`${displayValue(overrides.length)} override(s)`}

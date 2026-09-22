@@ -5,6 +5,12 @@ import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import { getOrganizationDetails } from "../service/orgAdminService";
 
+const NOTIFICATIONS_ROUTE_BY_ROLE = {
+  billing_admin: "/billing/workspace/notifications",
+  org_admin: "/organization-admin/notifications",
+  super_admin: "/super-admin/notifications",
+};
+
 function initialsOf(user) {
   if (!user) return "JD";
   if (user.name) {
@@ -67,7 +73,7 @@ function OrgContext({ role }) {
   );
 }
 
-export default function TopBar({ menuOpen = false, onMenuClick }) {
+export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed = false }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
@@ -102,7 +108,7 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 lg:left-72 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm">
+    <header className={`fixed top-0 left-0 right-0 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm transition-[left] ${sidebarCollapsed ? "lg:left-[76px]" : "lg:left-72"}`}>
       {/* Left: Brand + Organization/Workspace Context */}
       <div className="flex min-w-0 items-center gap-2">
         {onMenuClick && (
@@ -149,7 +155,7 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
             a fake "unread" dot when nothing was ever fetched (ORG-01). */}
         {ORG_CONTEXT_ROLES.includes(role) ? (
           <Link
-            to="/billing/workspace/notifications"
+            to={NOTIFICATIONS_ROUTE_BY_ROLE[role]}
             className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
             aria-label="Notifications"
           >

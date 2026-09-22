@@ -176,6 +176,7 @@ def _get_org_branding(organization_id=None, db=None) -> dict:
 
 TEMPLATE_NAME_TO_ID = {
     "invoice_sent.html": "ZB-INV-006",
+    "platform_invoice_sent.html": "ZB-INV-006",
     "past_due_notice.html": "ZB-INV-013",
     "credit_note_issued.html": "ZB-INV-018",
     "quote_sent.html": "ZB-CHG-006",
@@ -823,6 +824,8 @@ def send_platform_invoice_email(
     tax_amount: str = "",
     amount_paid: str = "",
     review_url: str = "",
+    event_id: str = "",
+    target_record_id: str = "",
 ) -> bool:
     """Plane 1 (Zoiko-billing-the-org) invoice email — always sent from the
     fixed "Zoiko Billing Accounts" identity, never the recipient org's own
@@ -835,6 +838,7 @@ def send_platform_invoice_email(
     from_email_override = _get_platform_commercial_from_email(db=db)
     return send_approval_email(email, "platform_invoice_sent.html", {
         "subject": f"Invoice {invoice_number} from Zoiko Billing — {currency} {balance_due} due {due_date}",
+        "company_name": "Zoiko Billing Accounts",
         "recipient_org_name": recipient_org_name,
         "recipient_first_name": recipient_first_name or recipient_org_name,
         "invoice_number": invoice_number,
@@ -850,7 +854,8 @@ def send_platform_invoice_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_invoice_totals_html(subtotal, tax_amount, amount_paid, balance_due, currency),
-    }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override)
+     }, db=db, organization_id=None, from_display_name_override="Zoiko Billing Accounts", from_email_override=from_email_override,
+         event_name="invoice.sent", event_id=event_id or None, target_record_id=target_record_id or None)
 
 
 def send_platform_quote_email(

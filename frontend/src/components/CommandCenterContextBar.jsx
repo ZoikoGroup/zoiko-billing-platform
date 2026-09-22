@@ -20,11 +20,11 @@ const DOMAIN_LENS_MAP = {
 // makes the intent clear — it must actually route to the matching lens.
 const DOMAIN_ROUTE_MAP = {
   "Global Operations": "/super-admin/triage",
-  "Domain A (Commercial)": "/super-admin/commercial/accounts",
+  "Domain A (Commercial)": "/super-admin/organizations",
   "Domain C (Telemetry)": "/super-admin/reliability",
 };
 
-export default function CommandCenterContextBar() {
+export default function CommandCenterContextBar({ compact = false, navigateOnDomainChange = true, allowEnvironmentSelection = false }) {
   const { contextScope, updateContextScope, setActiveLens, lastRefreshedAt, requestRefresh, environmentVerified } = useCommandCenter();
   const navigate = useNavigate();
 
@@ -51,7 +51,7 @@ export default function CommandCenterContextBar() {
     const lens = DOMAIN_LENS_MAP[value];
     if (lens) setActiveLens(lens);
     const route = DOMAIN_ROUTE_MAP[value];
-    if (route) navigate(route);
+    if (navigateOnDomainChange && route) navigate(route);
   }
 
   // §21 — environment identity comes from the backend configuration
@@ -66,22 +66,32 @@ export default function CommandCenterContextBar() {
       : "bg-amber-500";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className={`flex items-center justify-between gap-2 ${compact ? "min-w-0 flex-nowrap" : "flex-wrap"}`}>
       <div className="flex flex-wrap items-center gap-2">
         {/* Environment — single-environment platform today. A locked badge rather
             than a selector implying a SANDBOX that does not exist (audit finding
             D-10: decorative controls must not imply capabilities the product
             disclaims). */}
         <div
-          className="bg-white border border-slate-200 rounded px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1 shadow-sm"
+          className="flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 shadow-sm"
           title={
             environmentVerified
               ? `Deployment environment reported by the platform configuration inventory: ${contextScope.environment}`
               : "Environment could not be verified from the configuration inventory"
           }
         >
-          <span className={`w-2 h-2 rounded-full mr-1 ${envDotClass}`} />
-          <span>{envLabel}</span>
+          <span className={`mr-1 h-2 w-2 rounded-full ${envDotClass}`} />
+          {allowEnvironmentSelection ? (
+            <select
+              value={contextScope.environment}
+              onChange={(e) => updateContextScope("environment", e.target.value)}
+              className="cursor-pointer appearance-none bg-transparent pr-1 font-semibold text-slate-700 focus:outline-none"
+              aria-label="Select environment view"
+            >
+              <option value="SANDBOX">SANDBOX</option>
+              <option value="PRODUCTION">PRODUCTION</option>
+            </select>
+          ) : <span>{envLabel}</span>}
         </div>
 
         {/* Domain — switches the active command-center lens */}
@@ -107,7 +117,10 @@ export default function CommandCenterContextBar() {
           <Calendar className="w-3 h-3 mr-0.5 text-slate-500" />
           <select
             value={contextScope.period}
-            onChange={(e) => updateContextScope("period", e.target.value)}
+            onChange={(e) => {
+              updateContextScope("period", e.target.value);
+              requestRefresh();
+            }}
             className="bg-transparent font-medium text-slate-700 focus:outline-none cursor-pointer appearance-none pr-1"
             aria-label="Select reporting period"
           >
@@ -120,8 +133,8 @@ export default function CommandCenterContextBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] text-slate-400">Data as of {formattedTime}</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="hidden text-[10px] text-slate-400 xl:inline">Data as of {formattedTime}</span>
         <button
           type="button"
           onClick={handleRefreshClick}
