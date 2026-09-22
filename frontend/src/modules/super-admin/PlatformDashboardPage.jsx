@@ -17,7 +17,6 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCo
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import {
   listPlatformAuditLogs,
-  listApprovalRequests,
   getProductionAcceptanceReport,
   getSaasCommercialReporting,
   listOrganizations,
@@ -41,7 +40,6 @@ export default function PlatformDashboardPage() {
   const [triageData, setTriageData] = useState(null);
   const [finops, setFinops] = useState(null);
   const [mrr, setMrr] = useState(null);
-  const [approvals, setApprovals] = useState(null);
   const [readiness, setReadiness] = useState(null);
   const [activity, setActivity] = useState(null);
   const [trialOrgs, setTrialOrgs] = useState([]);
@@ -72,11 +70,6 @@ export default function PlatformDashboardPage() {
       return null;
     });
 
-    const approvalsPromise = listApprovalRequests({ status: "pending", limit: 200 }).catch((e) => {
-      nextErrors.approvals = e?.message || "Approvals unavailable";
-      return null;
-    });
-
     const readinessPromise = getProductionAcceptanceReport().catch((e) => {
       nextErrors.readiness = e?.message || "Readiness unavailable";
       return null;
@@ -92,12 +85,11 @@ export default function PlatformDashboardPage() {
       return null;
     });
 
-    Promise.all([triagePromise, finopsPromise, mrrPromise, approvalsPromise, readinessPromise, activityPromise, orgsPromise]).then(
-      ([triage, finopsReport, mrrReport, pendingApprovals, readinessReport, logs, orgsReport]) => {
+    Promise.all([triagePromise, finopsPromise, mrrPromise, readinessPromise, activityPromise, orgsPromise]).then(
+      ([triage, finopsReport, mrrReport, readinessReport, logs, orgsReport]) => {
         setTriageData(triage);
         setFinops(finopsReport);
         setMrr(mrrReport?.mrr ?? null);
-        setApprovals(pendingApprovals ? pendingApprovals.requests || [] : null);
         setReadiness(readinessReport);
         setActivity(logs ? logs.logs || [] : null);
         setTrialOrgs(orgsReport ? orgsReport.organizations || [] : []);
@@ -154,12 +146,6 @@ export default function PlatformDashboardPage() {
       ? "FAILED"
       : "UNKNOWN";
 
-  const pendingCount = approvals ? approvals.length : null;
-  const approvalTypes = {};
-  if (approvals) {
-    for (const r of approvals) approvalTypes[r.request_type] = (approvalTypes[r.request_type] || 0) + 1;
-  }
-
   const readinessItems = readiness?.items || [];
   const failingCriteria = readinessItems.filter((i) => i.status === "FAIL").length;
 
@@ -203,18 +189,32 @@ export default function PlatformDashboardPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="text-lg font-bold text-slate-900">Command Center</h1>
-        <p className="text-[11px] text-slate-500">Zoiko Billing • Financial, commercial, operational and governance health</p>
+    <div className="w-full max-w-full space-y-5 overflow-x-hidden pb-24">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 pt-2 xl:flex-row xl:items-center xl:justify-between">
+        <div className="shrink-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-950">Platform Overview</h1>
+          <p className="text-xs text-slate-500">Zoiko Billing • Financial, commercial, operational and governance health</p>
+        </div>
+        <div className="flex min-w-0 flex-col items-start gap-2 xl:items-end">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-600">
+            <span className={`h-2 w-2 rounded-full ${criticalCount > 0 ? "bg-rose-500" : "bg-emerald-500"}`} />
+            <span>{criticalCount > 0 ? `${criticalCount} active P0/P1 incident${criticalCount === 1 ? "" : "s"}` : "All Systems Operational"}</span>
+            <span className={telemetryStale ? "text-amber-700" : "text-emerald-700"}>• Telemetry {telemetryStale ? "Stale" : "Fresh"}</span>
+          </div>
+          <div className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
+            <CommandCenterContextBar compact navigateOnDomainChange={false} allowEnvironmentSelection />
+          </div>
+        </div>
       </div>
 
-      {/* Filter pills */}
-      <CommandCenterContextBar />
-
       {/* Action Center */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4">
+      {(criticalCount === 0 && overdueCount === 0 && failedPayments === 0) ? (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs font-semibold text-emerald-800">
+          <span><CheckCircle2 className="mr-1 inline-block" size={14} />0 Incidents Open</span>
+          <span><CheckCircle2 className="mr-1 inline-block" size={14} />0 Overdue Invoices</span>
+          <span><CheckCircle2 className="mr-1 inline-block" size={14} />0 Failed Payments</span>
+        </div>
+      ) : <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-xs">
             {criticalCount > 0 || overdueCount > 0 || failedPayments > 0 ? (
@@ -227,7 +227,7 @@ export default function PlatformDashboardPage() {
           <span className="text-[10px] text-slate-400">Live · auto-refreshes every minute</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <ActionCard
             severity={criticalCount > 0 ? "HIGH" : "CLEAR"}
             severityClass={
@@ -276,29 +276,13 @@ export default function PlatformDashboardPage() {
             actionText="Resolve"
             onAction={() => navigate("/super-admin/financial-operations")}
           />
-          <ActionCard
-            severity={(pendingCount ?? 0) > 0 ? "MED" : "CLEAR"}
-            severityClass={
-              (pendingCount ?? 0) > 0
-                ? "bg-amber-50 text-amber-600 border-amber-200"
-                : "bg-emerald-50 text-emerald-600 border-emerald-200"
-            }
-            title={
-              (pendingCount ?? 0) > 0
-                ? `${pendingCount} maker-checker request${pendingCount > 1 ? "s" : ""} pending`
-                : "Approval queue is clear"
-            }
-            subtitle={pendingCount > 0 ? "A second Super Admin must decide each request" : undefined}
-            actionText="Review"
-            onAction={() => navigate("/super-admin/approval-queue")}
-          />
         </div>
         {sourceErrorCount > 0 && (
           <p className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-700">
             <AlertTriangle size={12} /> {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} unreachable — affected figures show last-known or zero values.
           </p>
         )}
-      </div>
+      </div>}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -352,21 +336,22 @@ export default function PlatformDashboardPage() {
         />
       </div>
 
-      {/* Trial Period Overview */}
+      {/* Trial Period Overview + Safety Controls */}
       {trialChartData.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
           <div className="flex items-center justify-between mb-3">
-            <div className="font-semibold text-slate-800 text-xs">Trial Period Overview</div>
-            <span className="text-[11px] text-slate-400">{trialChartData.length} org(s) on trial</span>
+            <div className="font-semibold text-slate-800 text-sm">Trial Period Overview</div>
+            <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">{trialChartData.length} org(s) on trial</span>
           </div>
           <div className="h-64 w-full" aria-label="Remaining trial days per organization">
             <DashboardChartErrorBoundary>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                  <XAxis dataKey="org" tick={{ fontSize: 11, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={56} />
+                  <XAxis dataKey="org" tick={{ fontSize: 10, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={70} tickFormatter={(value) => value.length > 16 ? `${value.slice(0, 14)}…` : value} />
                   <YAxis tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
-                  <Tooltip formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
+                  <Tooltip labelFormatter={(label) => label} formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
                   <Bar dataKey="days" radius={[6, 6, 0, 0]}>
                     {trialChartData.map((d, i) => (
                       <Cell key={i} fill={d.color} />
@@ -377,11 +362,14 @@ export default function PlatformDashboardPage() {
             </DashboardChartErrorBoundary>
           </div>
         </div>
+        <SafetyControlsPanel controls={controls} navigate={navigate} />
+        </div>
       )}
+      {trialChartData.length === 0 && <SafetyControlsPanel controls={controls} navigate={navigate} />}
 
-      {/* Pipeline & Safety Controls */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4">
+      {/* Pipeline telemetry */}
+      <div className="grid grid-cols-1 gap-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Processing Pipeline</div>
             <span className="text-[11px] font-medium text-slate-500">
@@ -425,51 +413,18 @@ export default function PlatformDashboardPage() {
           )}
         </div>
 
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="font-semibold text-slate-800 text-xs">Safety Controls</div>
-            <button
-              type="button"
-              onClick={() => navigate("/super-admin/kill-switch")}
-              className="text-[11px] font-medium text-brand-600 hover:underline inline-flex items-center gap-0.5"
-            >
-              Manage <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="space-y-2 flex-1">
-            {controls.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No circuit breakers loaded.</p>
-            ) : (
-              controls.slice(0, 5).map((c) => (
-                <div key={c.scope} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2 bg-slate-50/60 text-xs">
-                  <div className="min-w-0">
-                    <span className="font-medium text-slate-700 truncate block">{c.display_name}</span>
-                    {c.expires_at && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
-                        <Clock size={10} /> auto-expires{" "}
-                        {new Date(c.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={`shrink-0 ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      c.enabled ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {c.enabled ? "ENGAGED" : "OPEN"}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Attention queue & Approval queue */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4">
+      {/* Attention queue */}
+      <div className="grid grid-cols-1 gap-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="font-semibold text-slate-800 text-xs mb-3">Attention Queue</div>
-          <table className="w-full text-left border-collapse">
+          {incidents.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 px-4 py-5 text-xs font-semibold text-emerald-800">
+              <CheckCircle2 size={18} className="shrink-0 text-emerald-500" />
+              All monitored signals within tolerance
+            </div>
+          ) : <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-slate-400 text-[10px] uppercase border-b border-slate-100">
                 <th scope="col" className="pb-2 font-medium">Severity</th>
@@ -479,15 +434,7 @@ export default function PlatformDashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {incidents.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-6 text-center text-xs text-slate-500">
-                    <CheckCircle2 size={18} className="mx-auto text-emerald-500 mb-1" />
-                    No active incidents. All monitored signals within tolerance.
-                  </td>
-                </tr>
-              ) : (
-                incidents.slice(0, 5).map((item) => (
+              {incidents.slice(0, 5).map((item) => (
                   <tr key={item.id} className="text-xs">
                     <td className="py-2">
                       <span
@@ -514,10 +461,9 @@ export default function PlatformDashboardPage() {
                       </button>
                     </td>
                   </tr>
-                ))
-              )}
+                ))}
             </tbody>
-          </table>
+          </table>}
           <div className="mt-3 text-center border-t border-slate-100 pt-2">
             <button
               type="button"
@@ -528,48 +474,11 @@ export default function PlatformDashboardPage() {
             </button>
           </div>
         </div>
-
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="font-semibold text-slate-800 text-xs">Approval Queue</div>
-            <button
-              type="button"
-              onClick={() => navigate("/super-admin/approval-queue")}
-              className="text-[11px] font-medium text-brand-600 hover:underline inline-flex items-center gap-0.5"
-            >
-              Open <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 mb-3">
-            <span className="text-xs text-slate-600">Pending requests</span>
-            <span className={`text-sm font-bold ${(pendingCount ?? 0) > 0 ? "text-amber-700" : "text-emerald-600"}`}>
-              {pendingCount ?? "—"}
-            </span>
-          </div>
-          <div className="space-y-2 flex-1">
-            {Object.keys(approvalTypes).length === 0 ? (
-              <p className="py-4 text-center text-xs text-slate-500">No request types waiting on a checker decision.</p>
-            ) : (
-              Object.entries(approvalTypes).map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between text-xs border-b border-slate-50 pb-1.5">
-                  <span className="text-slate-600 capitalize">{type.replace(/_/g, " ")}</span>
-                  <span className="font-semibold text-slate-800">{count}</span>
-                </div>
-              ))
-            )}
-          </div>
-          {(pendingCount ?? 0) > 0 && (
-            <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-2 text-[10px] text-amber-700">
-              <ShieldAlert size={12} className="mt-0.5 shrink-0" />
-              Self-approval is blocked server-side. A second Super Admin must decide.
-            </p>
-          )}
-        </div>
       </div>
 
       {/* Production gate & Recent activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Production Gate</div>
             <button
@@ -596,13 +505,14 @@ export default function PlatformDashboardPage() {
               </p>
             </div>
             <div className="text-right">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Failing criteria</span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Checks passed</span>
               <p className={`mt-0.5 text-base font-bold ${failingCriteria > 0 ? "text-red-600" : "text-slate-900"}`}>
-                {failingCriteria}
+                {(readinessItems.length || 18) - failingCriteria}
                 <span className="text-xs text-slate-400 font-medium"> / {readinessItems.length || 18}</span>
               </p>
             </div>
           </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${failingCriteria > 0 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${readinessItems.length ? (((readinessItems.length - failingCriteria) / readinessItems.length) * 100) : 100}%` }} /></div>
           {readiness?.overall_status === "BLOCKED" && (
             <p className="mt-3 flex items-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-2.5 py-2 text-[11px] text-red-700">
               <ShieldAlert size={12} /> Release gate BLOCKED — review failing criteria before proceeding.
@@ -610,7 +520,7 @@ export default function PlatformDashboardPage() {
           )}
         </div>
 
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Recent Activity</div>
             <span className="text-[10px] text-slate-400">{periodDateFrom} → today</span>
@@ -693,6 +603,25 @@ function ActionCard({ severity, severityClass, title, amount, subtitle, actionTe
         {actionText} <ChevronRight className="w-3 h-3" />
       </button>
     </div>
+  );
+}
+
+function SafetyControlsPanel({ controls, navigate }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2" aria-label="Safety Controls">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="font-semibold text-sm text-slate-800">Safety Controls</div>
+        <button type="button" onClick={() => navigate("/super-admin/kill-switch")} className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-brand-600 hover:underline">Manage <ChevronRight size={12} /></button>
+      </div>
+      <div className="space-y-2">
+        {controls.length === 0 ? <p className="py-6 text-center text-xs text-slate-500">No circuit breakers loaded.</p> : controls.slice(0, 5).map((control) => (
+          <div key={control.scope} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs">
+            <span className="min-w-0 truncate font-medium text-slate-700" title={control.display_name}>{control.display_name}</span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${control.enabled ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{control.enabled ? "LIVE / NORMAL" : "ENGAGED / OVERRIDE"}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

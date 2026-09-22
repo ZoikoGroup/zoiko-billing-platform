@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CircleDollarSign,
   AlertTriangle,
@@ -10,10 +11,25 @@ import {
   ShieldCheck,
   Clock,
   BarChart3,
+  LayoutGrid,
+  Receipt,
+  FileText,
+  Wallet,
+  Undo2,
+  Percent,
+  GitMerge,
 } from "lucide-react";
 import { getFinancialOperationsSummary } from "../../service/commandCenterService";
 import { PageHeader, Button } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
+import BillingCommandCenterPage from "./BillingCommandCenterPage";
+import InvoiceEnginePage from "./InvoiceEnginePage";
+import Plane1BillingPage from "./Plane1BillingPage";
+import PaymentsDisputesPage from "./PaymentsDisputesPage";
+import BalancesAllocationsPage from "./BalancesAllocationsPage";
+import CreditsRefundsPage from "./CreditsRefundsPage";
+import TaxEInvoicingPage from "./TaxEInvoicingPage";
+import ReconciliationPage from "./ReconciliationPage";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -529,7 +545,56 @@ export function F4LeakageCard({ leakage }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// Note: the "section" query param (not "tab") is used deliberately — the
+// absorbed Quotes & Invoices tab (Plane1BillingPage) owns its own internal
+// `?tab=` param for its quotes/invoices/payments/reconciliation/evaluation
+// sub-tabs, so this outer hub cannot also key its tab state off `tab`
+// without the two colliding via shared router search params.
+const VALID_TABS = [
+  "overview",
+  "billing-command-center",
+  "invoice-engine",
+  "quotes-invoices",
+  "payments-disputes",
+  "balances-allocations",
+  "credits-refunds",
+  "tax",
+  "reconciliation",
+];
+
+const TABS = [
+  { key: "overview", label: "Overview", icon: BarChart3 },
+  { key: "billing-command-center", label: "Billing Command Center", icon: LayoutGrid },
+  { key: "invoice-engine", label: "Invoice Engine", icon: Receipt },
+  { key: "quotes-invoices", label: "Quotes & Invoices", icon: FileText },
+  { key: "payments-disputes", label: "Payments & Disputes", icon: CreditCard },
+  { key: "balances-allocations", label: "Balances & Allocations", icon: Wallet },
+  { key: "credits-refunds", label: "Credits, Refunds & Write-offs", icon: Undo2 },
+  { key: "tax", label: "Tax", icon: Percent },
+  { key: "reconciliation", label: "Reconciliation", icon: GitMerge },
+];
+
 export default function FinancialOperationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialSection = searchParams.get("section");
+  const initialTab = VALID_TABS.includes(initialSection)
+    ? initialSection
+    : searchParams.get("tab") === "invoices"
+    ? "quotes-invoices"
+    : searchParams.get("tab") === "quotes"
+    ? "quotes-invoices"
+    : ["reconciliation", "evaluation"].includes(searchParams.get("tab"))
+    ? "quotes-invoices"
+    : "overview";
+  const [activeTab, setActiveTabState] = useState(initialTab);
+  const setActiveTab = useCallback(
+    (tab) => {
+      setActiveTabState(tab);
+      setSearchParams({ section: tab }, { replace: true });
+    },
+    [setSearchParams]
+  );
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -551,6 +616,8 @@ export default function FinancialOperationsPage() {
     load();
   }, [load]);
 
+  const isOverview = activeTab === "overview";
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
@@ -558,52 +625,114 @@ export default function FinancialOperationsPage() {
         description="Plane 2 tenant revenue operations — F1 Billings & Collections, F2 Payment Recovery, F3 Reconciliation & Integrity, F4 Revenue Leakage. All values sourced from real billing read models."
         icon={BarChart3}
         meta={
-          refreshedAt
+          isOverview && refreshedAt
             ? `Refreshed ${refreshedAt.toLocaleTimeString()}`
             : null
         }
         actions={
-          <Button
-            variant="secondary"
-            icon={RefreshCw}
-            onClick={load}
-            loading={loading}
-          >
-            Refresh
-          </Button>
+          isOverview ? (
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={load}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          ) : undefined
         }
       />
 
-      {/* Domain isolation notice */}
-      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
-        <ShieldCheck size={15} className="mt-0.5 shrink-0 text-blue-600" />
-        <span>
-          <strong>Domain B — Tenant Revenue Operations.</strong> Access to this view requires
-          platform-level authentication. Monetary amounts are tenant aggregate counts and are NOT exposed
-          to tenant users. Domain A (Platform Commercial / Plane 1) is architecturally isolated.
-        </span>
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Financial Operations sections">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                active
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {loading && !data ? (
-        <div className="mt-8">
-          <Spinner />
-        </div>
-      ) : error ? (
+      {isOverview ? (
+        <>
+          {/* Domain isolation notice */}
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
+            <ShieldCheck size={15} className="mt-0.5 shrink-0 text-blue-600" />
+            <span>
+              <strong>Domain B — Tenant Revenue Operations.</strong> Access to this view requires
+              platform-level authentication. Monetary amounts are tenant aggregate counts and are NOT exposed
+              to tenant users. Domain A (Platform Commercial / Plane 1) is architecturally isolated.
+            </span>
+          </div>
+
+          {loading && !data ? (
+            <div className="mt-8">
+              <Spinner />
+            </div>
+          ) : error ? (
+            <div className="mt-6">
+              <ErrorState
+                message={error}
+                onRetry={load}
+                title="Unable to load financial operations"
+              />
+            </div>
+          ) : (
+            <div className="mt-6 grid grid-cols-1 gap-6">
+              <F1BillingsCard billings={data?.billings} />
+              <F2RecoveryCard recovery={data?.recovery} />
+              <F3IntegrityCard consistency={data?.consistency} />
+              <F4LeakageCard leakage={data?.leakage} />
+            </div>
+          )}
+        </>
+      ) : activeTab === "billing-command-center" ? (
         <div className="mt-6">
-          <ErrorState
-            message={error}
-            onRetry={load}
-            title="Unable to load financial operations"
-          />
+          <BillingCommandCenterPage />
         </div>
-      ) : (
-        <div className="mt-6 grid grid-cols-1 gap-6">
-          <F1BillingsCard billings={data?.billings} />
-          <F2RecoveryCard recovery={data?.recovery} />
-          <F3IntegrityCard consistency={data?.consistency} />
-          <F4LeakageCard leakage={data?.leakage} />
+      ) : activeTab === "invoice-engine" ? (
+        <div className="mt-6">
+          <InvoiceEnginePage />
         </div>
-      )}
+      ) : activeTab === "quotes-invoices" ? (
+        <div className="mt-6">
+          <Plane1BillingPage />
+        </div>
+      ) : activeTab === "payments-disputes" ? (
+        <div className="mt-6">
+          <PaymentsDisputesPage />
+        </div>
+      ) : activeTab === "balances-allocations" ? (
+        <div className="mt-6">
+          <BalancesAllocationsPage />
+        </div>
+      ) : activeTab === "credits-refunds" ? (
+        <div className="mt-6">
+          <CreditsRefundsPage />
+        </div>
+      ) : activeTab === "tax" ? (
+        <div className="mt-6">
+          <TaxEInvoicingPage />
+        </div>
+      ) : activeTab === "reconciliation" ? (
+        <div className="mt-6">
+          <ReconciliationPage />
+        </div>
+      ) : null}
     </div>
   );
 }

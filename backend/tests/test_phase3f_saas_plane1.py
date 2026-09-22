@@ -323,6 +323,23 @@ def test_reporting_mrr_computed_only_from_priced_published_versions(db_session):
     assert coverage["plans_with_published_price"] >= 1
 
 
+def test_reporting_mrr_includes_priced_trialing_subscription(db_session):
+    org, plan, _ = _org_with_plan(db_session, "F10TRIAL", "F10TRIALPLAN")
+    created = _open_sub(db_session, org, plan)
+    row = db_session.query(CommercialSubscription).get(created.id)
+    row.status = CommercialSubscriptionStatus.TRIALING
+    priced = _publish_version(db_session, plan, amount=Decimal("75.00"))
+    row.catalog_version_id = priced.id
+    db_session.flush()
+
+    report = SaasReportingService(db_session).get_reporting()
+
+    assert report["subscriptions"]["total_open"] >= 1
+    assert report["mrr"]["state"] == "computed"
+    assert report["mrr"]["amount"] == Decimal("75.00")
+    assert report["mrr"]["coverage"]["open_subscriptions_priced"] >= 1
+
+
 def test_reporting_mrr_normalizes_annual_prices_monthly(db_session):
     org, plan, _ = _org_with_plan(db_session, "F10C", "F10CPLAN")
     created = _open_sub(db_session, org, plan)

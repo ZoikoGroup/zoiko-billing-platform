@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { ScrollText, Filter, RotateCcw, Repeat } from "lucide-react";
+import { useLocation, useSearchParams } from "react-router-dom";
+import { ScrollText, Filter, RotateCcw, Repeat, ShieldCheck, Settings2 } from "lucide-react";
 import {
   listPlatformAuditLogs,
   listSubscriptionAuditLogs,
@@ -18,6 +18,8 @@ import {
   formatDateTime,
   displayValue,
 } from "./constants";
+import GovernancePage from "./GovernancePage";
+import ConfigurationGovernancePage from "./ConfigurationGovernancePage";
 
 function StateBlock({ title, value }) {
   const empty =
@@ -81,10 +83,34 @@ function TabBar({ tab, onChange }) {
 // here.
 const ROUTE_SECURITY_EVENTS = "/super-admin/governance/security-events";
 
+// This hub ("Audit & Evidence" in the flat Reporting sidebar section) also
+// absorbs the two standalone governance pages that conceptually belong here
+// as in-page tabs, deep-linkable via ?tab=. Their own standalone routes
+// (/super-admin/governance/data, /super-admin/governance/configuration)
+// keep working unchanged — this hub just offers a second path to the same
+// components.
+const HUB_TABS = [
+  { key: "audit", label: "Audit Logs", icon: ScrollText },
+  { key: "data-governance", label: "Data Governance", icon: ShieldCheck },
+  { key: "configuration-governance", label: "Configuration Governance", icon: Settings2 },
+];
+const VALID_HUB_TABS = HUB_TABS.map((t) => t.key);
+
 export default function AuditLogsPage() {
   const location = useLocation();
   const isSecurityEventsRoute = location.pathname === ROUTE_SECURITY_EVENTS;
   const pageTitle = isSecurityEventsRoute ? "Security Events" : "Audit Logs";
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialHubTab = VALID_HUB_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "audit";
+  const [activeHubTab, setActiveHubTabState] = useState(initialHubTab);
+  const setActiveHubTab = useCallback(
+    (key) => {
+      setActiveHubTabState(key);
+      setSearchParams({ tab: key }, { replace: true });
+    },
+    [setSearchParams]
+  );
 
   const [tab, setTab] = useState("platform");
 
@@ -338,9 +364,49 @@ export default function AuditLogsPage() {
         title={pageTitle}
         description="Platform-plane audit trail plus subscription lifecycle activity across all organizations."
         icon={ScrollText}
-        meta={tab === "platform" ? `${displayValue(total)} log(s)` : `${displayValue(subTotal)} event(s)`}
+        meta={
+          activeHubTab === "audit"
+            ? tab === "platform"
+              ? `${displayValue(total)} log(s)`
+              : `${displayValue(subTotal)} event(s)`
+            : null
+        }
       />
 
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Audit & Evidence sections">
+        {HUB_TABS.map((hubTab) => {
+          const Icon = hubTab.icon;
+          const active = activeHubTab === hubTab.key;
+          return (
+            <button
+              key={hubTab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveHubTab(hubTab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                active
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {hubTab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeHubTab === "data-governance" ? (
+        <div className="mt-6">
+          <GovernancePage />
+        </div>
+      ) : activeHubTab === "configuration-governance" ? (
+        <div className="mt-6">
+          <ConfigurationGovernancePage />
+        </div>
+      ) : (
+        <>
       <div className="mt-6">
         <TabBar tab={tab} onChange={setTab} />
       </div>
@@ -541,6 +607,8 @@ export default function AuditLogsPage() {
             {displayValue(subTotal)} event(s)
           </Pagination>
         </div>
+      )}
+        </>
       )}
 
       <Modal

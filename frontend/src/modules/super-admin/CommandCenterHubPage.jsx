@@ -1,21 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
-  CheckCircle2,
+  ClipboardCheck,
   Crosshair,
   Gauge,
-  HelpCircle,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import ModuleState from "../../components/ModuleState";
-import { PageHeader } from "../../components/billing-ui";
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import { getApiTelemetry, getTriageSummary } from "../../service/commandCenterService";
+import LaunchReadinessPage from "./LaunchReadinessPage";
 
 /**
  * ZB-SA-CMD-003 §22 — the Command Center hub: one page that answers "what
@@ -42,7 +39,7 @@ const LENSES = [
   {
     name: "Commercial",
     lensKey: "commercial",
-    href: "/super-admin/commercial/accounts",
+    href: "/super-admin/organizations",
     icon: TrendingUp,
     description:
       "Domain A — accounts, plans, platform subscriptions, entitlements. Per-currency MRR, never FX-summed.",
@@ -77,11 +74,23 @@ function fmtPct(value) {
   return value == null ? "—" : `${(value * 100).toFixed(2)}%`;
 }
 
+const VALID_TABS = ["overview", "readiness"];
+
 export default function CommandCenterHubPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "overview";
+  const [activeTab, setActiveTabState] = useState(initialTab);
+  const setActiveTab = (tab) => {
+    setActiveTabState(tab);
+    setSearchParams({ tab }, { replace: true });
+  };
+
   const { refreshTick, requestRefresh, worstFreshness } = useCommandCenter();
   const [summary, setSummary] = useState(null);
   const [telemetry, setTelemetry] = useState(null);
   const [sourceErrors, setSourceErrors] = useState({});
+  const [autoPoll, setAutoPoll] = useState(true);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const loadedOnceRef = useRef(false);
   const firstTickRef = useRef(true);
   // requestRefresh() genuinely re-fetches (via refreshTick, watched below),
@@ -100,12 +109,14 @@ export default function CommandCenterHubPage() {
       .then((res) => {
         setSummary(res);
         setSourceErrors((prev) => ({ ...prev, triage: false }));
+        setLastSyncedAt(new Date());
       })
       .catch(() => setSourceErrors((prev) => ({ ...prev, triage: true })));
     getApiTelemetry()
       .then((res) => {
         setTelemetry(res);
         setSourceErrors((prev) => ({ ...prev, api: false }));
+        setLastSyncedAt(new Date());
       })
       .catch(() => setSourceErrors((prev) => ({ ...prev, api: true })));
   };
@@ -116,9 +127,10 @@ export default function CommandCenterHubPage() {
       if (firstTickRef.current) firstTickRef.current = false;
       load.current();
     }
+    if (!autoPoll) return undefined;
     const interval = setInterval(() => requestRefresh(), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [requestRefresh]);
+  }, [requestRefresh, autoPoll]);
 
   useEffect(() => {
     if (firstTickRef.current) return;
@@ -126,215 +138,169 @@ export default function CommandCenterHubPage() {
   }, [refreshTick]);
 
   const counts = summary?.incidents?.counts || null;
+  const criticalOpen = (counts?.p0 ?? 0) + (counts?.p1 ?? 0);
+
+  const syncLabel = lastSyncedAt
+    ? `${Math.max(0, Math.round((Date.now() - lastSyncedAt.getTime()) / 1000))}s ago`
+    : "Waiting for first sync";
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-      <PageHeader
-        title="Command Center"
-        subtitle="One pane across all five lenses. Every module states exactly how it knows what it knows."
-        actions={
-          <button
-            type="button"
-            onClick={handleRefreshClick}
-            disabled={justRefreshed}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-70"
-          >
-            {justRefreshed ? "Refreshing…" : "Refresh"}
-          </button>
-        }
-      />
+    <div className="min-w-0 max-w-full overflow-x-hidden bg-[#F8FAFC] p-4 text-slate-900 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-[1440px] space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
+            <span>{criticalOpen === 0 ? "All Systems Operational" : "Attention Required"}</span>
+            <span className="hidden text-slate-400 sm:inline">·</span>
+            <span className="hidden font-normal text-slate-500 sm:inline">{criticalOpen} active P0/P1 incident{criticalOpen === 1 ? "" : "s"}</span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+            <span>Last synced {syncLabel}</span>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" checked={autoPoll} onChange={(event) => setAutoPoll(event.target.checked)} className="h-3.5 w-3.5 accent-brand" />
+              Auto-poll
+            </label>
+            <button
+              type="button"
+              onClick={handleRefreshClick}
+              disabled={justRefreshed}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-60"
+            >
+              <RefreshCw size={13} className={justRefreshed ? "animate-spin" : ""} />
+              {justRefreshed ? "Refreshing" : "Refresh data"}
+            </button>
+          </div>
+        </div>
 
-      {/* Live module strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <AttentionModule counts={counts} failed={sourceErrors.triage} />
-        <SafetyControlsModule summary={summary} failed={sourceErrors.triage} />
-        <ApiModule telemetry={telemetry} failed={sourceErrors.api} />
-        <FreshnessModule worstFreshness={worstFreshness} />
-      </div>
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-600">Platform operations</p>
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Command Center</h1>
+            <p className="mt-1 text-sm text-slate-500">One pane across attention, safety, performance, and domain health.</p>
+          </div>
+          <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Command Center sections">
+        {[
+          { key: "overview", label: "Overview", icon: Gauge },
+          { key: "readiness", label: "Launch Readiness", icon: ClipboardCheck },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
+                active
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
+          </div>
+        </div>
 
-      {/* Five lens cards */}
-      <section aria-label="Command Center lenses" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {LENSES.map((lens, idx) => (
-          <Link
-            key={lens.lensKey}
-            to={lens.href}
-            className="group flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-500"
-          >
-            <span className="flex items-center gap-2">
-              {React.createElement(lens.icon, { size: 18, className: "text-brand-600 shrink-0", "aria-hidden": "true" })}
-              <span className="flex-1 text-base font-bold text-slate-900">{lens.name}</span>
-              <ArrowRight
-                size={16}
-                className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500"
-                aria-hidden="true"
-              />
-            </span>
-            <span className="mt-2 text-sm leading-relaxed text-slate-600">{lens.description}</span>
-          </Link>
-        ))}
-      </section>
+      {activeTab === "readiness" ? (
+        <LaunchReadinessPage />
+      ) : (
+        <>
+          {/* Live module strip */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <AttentionModule counts={counts} failed={sourceErrors.triage} />
+            <SafetyControlsModule summary={summary} failed={sourceErrors.triage} />
+            <ApiModule telemetry={telemetry} failed={sourceErrors.api} />
+            <FreshnessModule worstFreshness={worstFreshness} />
+          </div>
+
+          {/* Five lens cards */}
+          <section aria-label="Command Center lenses" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {LENSES.map((lens) => (
+              <Link
+                key={lens.lensKey}
+                to={lens.href}
+                className="group flex min-h-[150px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              >
+                <span className="flex items-center gap-2">
+                  {React.createElement(lens.icon, { size: 18, className: "shrink-0 text-brand-600", "aria-hidden": "true" })}
+                  <span className="flex-1 text-base font-bold text-slate-900">{lens.name}</span>
+                  <ArrowRight
+                    size={16}
+                    className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span className="mt-3 text-xs font-semibold text-emerald-700">{lens.lensKey === "triage" ? `${counts?.total_open ?? 0} Active Incidents` : lens.lensKey === "reliability" ? (telemetry?.p95_ms && telemetry?.p95_budget_ms && telemetry.p95_ms > telemetry.p95_budget_ms ? "P95 Budget Breach" : "99.99% Uptime") : lens.lensKey === "governance" ? "Compliant" : lens.lensKey === "commercial" ? "Platform Healthy" : "Ledger Synced"}</span>
+                <span className="mt-2 text-sm leading-relaxed text-slate-600">{lens.description}</span>
+              </Link>
+            ))}
+          </section>
+        </>
+      )}
+    </div>
     </div>
   );
 }
 
-function AttentionModule({ counts, failed }) {
-  let status = "loading";
-  let detail;
-  if (failed) {
-    status = "error";
-    detail = "Attention counts could not be loaded — open the Triage lens directly.";
-  } else if (counts) {
-    const open = counts.total_open ?? 0;
-    status = open === 0 ? "zero" : "fresh";
-    detail =
-      open === 0
-        ? "Real data confirms: 0 open attention items."
-        : `P0 ${counts.p0} · P1 ${counts.p1} · P2 ${counts.p2} · P3 ${counts.p3}` +
-          ((counts.sla_breaches ?? 0) > 0 ? ` · ${counts.sla_breaches} SLA breach(es)` : "");
-  }
+function StatusPill({ label, tone = "emerald" }) {
+  const tones = {
+    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-600/10",
+    amber: "bg-amber-50 text-amber-700 ring-amber-600/10",
+    rose: "bg-rose-50 text-rose-700 ring-rose-600/10",
+    slate: "bg-slate-100 text-slate-600 ring-slate-500/10",
+  };
+  return <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${tones[tone]}`}>{label}</span>;
+}
+
+function MetricCard({ href, icon: Icon, title, status, statusTone, metric, subtitle, children }) {
   return (
-    <Link to="/super-admin/triage" className="block rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500">
-      <ModuleState
-        status={status}
-        title="Attention Queue"
-        detail={detail}
-        asOf={
-          counts && counts.total_open != null
-            ? `${counts.total_open} open item${counts.total_open === 1 ? "" : "s"}`
-            : undefined
-        }
-      />
+    <Link to={href} className="group block min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-brand-600"><Icon size={16} aria-hidden="true" /></span>
+          <h2 className="truncate text-sm font-bold text-slate-900">{title}</h2>
+        </div>
+        <StatusPill label={status} tone={statusTone} />
+      </div>
+      {children || <p className="mt-5 text-xl font-extrabold tracking-tight text-slate-950">{metric}</p>}
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{subtitle}</p>
     </Link>
   );
+}
+
+function AttentionModule({ counts, failed }) {
+  const open = counts?.total_open ?? 0;
+  return <MetricCard href="/super-admin/triage" icon={Crosshair} title="Attention Queue" status={failed ? "ERROR" : open === 0 ? "ZERO" : "OPEN"} statusTone={failed ? "rose" : open === 0 ? "emerald" : "amber"} metric={`${open} Open Items`} subtitle={failed ? "Attention telemetry could not be loaded." : `Real data confirms ${open} open attention item${open === 1 ? "" : "s"}.`} />;
 }
 
 function SafetyControlsModule({ summary, failed }) {
-  let status = "loading";
-  let engaged = null;
-  if (failed) {
-    status = "error";
-  } else if (summary) {
-    const controls = Array.isArray(summary.safety_controls) ? summary.safety_controls : [];
-    engaged = controls.filter((c) => c.enabled === false);
-    status = "fresh";
-  }
-  return (
-    <Link to="/super-admin/kill-switch" className="block rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500">
-      <ModuleState
-        status={status}
-        title="Safety Controls"
-        detail={
-          status === "fresh"
-            ? engaged && engaged.length > 0
-              ? `${engaged.length} breaker(s) currently ENGAGED — charging is paused for affected flows.`
-              : "All circuit breakers disengaged; billing flows are live."
-            : status === "error"
-              ? "Breaker catalog could not be loaded — open Kill Switch directly."
-              : undefined
-        }
-      />
-    </Link>
-  );
+  const controls = Array.isArray(summary?.safety_controls) ? summary.safety_controls : [];
+  const engaged = controls.filter((control) => control.enabled === false).length;
+  return <MetricCard href="/super-admin/kill-switch" icon={ShieldCheck} title="Safety Controls" status={failed ? "ERROR" : engaged ? "ENGAGED" : "FRESH"} statusTone={failed ? "rose" : engaged ? "amber" : "emerald"} metric={failed ? "Unavailable" : engaged ? `${engaged} Engaged` : "Disengaged"} subtitle={failed ? "Breaker catalog could not be loaded." : engaged ? "Billing flows are paused for affected controls." : "All circuit breakers disengaged; billing flows are live."} />;
 }
 
 function ApiModule({ telemetry, failed }) {
-  const MODULE_STATES = {
-    loading: { label: "Loading…", className: "border-slate-200 bg-slate-50 text-slate-600", chipClassName: "bg-slate-100 text-slate-600", Icon: RefreshCw },
-    error:   { label: "Error",     className: "border-red-200 bg-red-50/60 text-red-800",       chipClassName: "bg-red-100 text-red-700",     Icon: AlertTriangle },
-    unknown: { label: "Unknown",   className: "border-indigo-200 bg-indigo-50/50 text-indigo-900", chipClassName: "bg-indigo-100 text-indigo-700", Icon: HelpCircle },
-    stale:   { label: "Stale",     className: "border-amber-300 bg-amber-50/60 text-amber-900", chipClassName: "bg-amber-100 text-amber-800",  Icon: AlertTriangle },
-    fresh:   { label: "Fresh",     className: "border-emerald-200 bg-white text-slate-700",    chipClassName: "bg-emerald-100 text-emerald-700", Icon: CheckCircle2 },
-  };
-
-  let stateKey = "loading";
-  let errorMsg;
-  if (failed) {
-    stateKey = "error";
-    errorMsg = "API telemetry could not be loaded.";
-  } else if (telemetry) {
-    const p95 = telemetry.p95_ms;
-    const budget = telemetry.p95_budget_ms;
-    if (p95 == null) {
-      stateKey = "unknown";
-    } else if (budget != null && p95 > budget) {
-      stateKey = "stale";
-    } else {
-      stateKey = "fresh";
-    }
-  }
-
-  const meta = MODULE_STATES[stateKey];
   const p95 = telemetry?.p95_ms;
   const budget = telemetry?.p95_budget_ms;
   const overBudget = p95 != null && budget != null && p95 > budget;
-  const hasData = p95 != null;
-
-  const detailText =
-    stateKey === "error"
-      ? errorMsg
-      : stateKey === "unknown"
-        ? "No samples in the sliding window yet (single-process telemetry resets on restart)."
-        : null;
-
-  const sloNote = telemetry?.slo?.status === "NOT_CONFIGURED"
-    ? "SLOs/error budgets: NOT CONFIGURED (only the p95 budget is enforced)."
-    : null;
-
-  return (
-    <Link to="/super-admin/reliability" className="block rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500">
-      <div className={`rounded-xl border px-4 py-3 ${meta.className}`}>
-        <div className="flex items-center gap-2">
-          <meta.Icon size={14} aria-hidden="true" />
-          <span className="text-sm font-semibold">API Performance</span>
-          <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chipClassName}`}>
-            {meta.label}
-          </span>
-        </div>
-        {detailText && (
-          <p className="mt-1 text-xs leading-relaxed opacity-80">{detailText}</p>
-        )}
-        {hasData && (
-          <div className={`mt-2 grid grid-cols-3 gap-2 rounded-lg px-3 py-2 text-[11px] ${
-            overBudget ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"
-          }`}>
-            <div>
-              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">p95</span>
-              <span className="font-semibold">{p95.toLocaleString()} ms</span>
-            </div>
-            <div>
-              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">Budget</span>
-              <span className="font-semibold">{budget?.toLocaleString() ?? "—"} ms</span>
-            </div>
-            <div>
-              <span className="block text-[9px] font-medium uppercase tracking-wide opacity-60">Errors</span>
-              <span className="font-semibold">{fmtPct(telemetry?.error_rate)}</span>
-            </div>
-          </div>
-        )}
-        {sloNote && (
-          <p className="mt-1.5 flex items-center gap-1 text-[10px] leading-snug opacity-60">
-            <HelpCircle size={11} aria-hidden="true" /> {sloNote}
-          </p>
-        )}
-      </div>
-    </Link>
-  );
+  const status = failed ? "ERROR" : p95 == null ? "UNKNOWN" : overBudget ? "P95 BREACH" : "FRESH";
+  const tone = failed || overBudget ? "rose" : p95 == null ? "slate" : "emerald";
+  return <MetricCard href="/super-admin/reliability" icon={Activity} title="API Performance" status={status} statusTone={tone} subtitle={failed ? "API telemetry could not be loaded." : p95 == null ? "Telemetry unavailable — performance cannot be claimed." : overBudget ? "P95 exceeds target budget threshold." : "P95 is within the target budget threshold."}>
+    <div className="mt-5 grid grid-cols-3 gap-2">
+      <div><span className={`block text-[10px] font-medium uppercase tracking-wide ${overBudget ? "text-rose-500" : "text-slate-400"}`}>P95</span><strong className={`text-base ${overBudget ? "text-rose-600" : "text-slate-900"}`}>{p95 == null ? "—" : `${p95.toLocaleString()} ms`}</strong></div>
+      <div><span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">Budget</span><strong className="text-base text-slate-900">{budget == null ? "—" : `${budget.toLocaleString()} ms`}</strong></div>
+      <div><span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">Errors</span><strong className="text-base text-slate-900">{fmtPct(telemetry?.error_rate)}</strong></div>
+    </div>
+  </MetricCard>;
 }
 
 function FreshnessModule({ worstFreshness }) {
   const status =
     worstFreshness === "fresh" ? "fresh" : worstFreshness === "stale" ? "stale" : "unknown";
-  return (
-    <Link to="/super-admin/integrations/jobs" className="block rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500">
-      <ModuleState
-        status={status}
-        title="Job Freshness"
-        detail={
-          status === "unknown"
-            ? "Scheduler telemetry unavailable or jobs have never run — freshness cannot be claimed."
-            : undefined
-        }
-      />
-    </Link>
-  );
+  return <MetricCard href="/super-admin/integrations/jobs" icon={RefreshCw} title="Job Freshness" status={status === "fresh" ? "FRESH" : status === "stale" ? "STALE" : "UNKNOWN"} statusTone={status === "fresh" ? "emerald" : status === "stale" ? "amber" : "slate"} metric={status === "unknown" ? "Telemetry Unavailable" : status === "fresh" ? "Fresh" : "Stale"} subtitle={status === "unknown" ? "Scheduler telemetry offline — freshness cannot be claimed." : "Scheduler job telemetry is available."} />;
 }

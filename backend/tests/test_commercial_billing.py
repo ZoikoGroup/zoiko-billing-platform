@@ -506,6 +506,7 @@ class TestPlatformInvoiceService:
         def fake_send_email(email, org_name, invoice_number, *args, **kwargs):
             captured["email"] = email
             captured["org_name"] = org_name
+            captured.update(kwargs)
             return True
 
         monkeypatch.setattr(
@@ -518,6 +519,8 @@ class TestPlatformInvoiceService:
         assert sent.delivery_status == PlatformInvoiceDeliveryStatus.SENT
         assert captured["email"] == admin.email
         assert captured["org_name"] == "Acme Co"
+        assert captured["event_id"] == f"platform_invoice:{invoice.id}:sent"
+        assert captured["target_record_id"] == str(invoice.id)
         db.commit()
 
     def test_send_without_org_admin_raises(self, db_session):

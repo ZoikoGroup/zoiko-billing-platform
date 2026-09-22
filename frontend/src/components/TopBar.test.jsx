@@ -11,7 +11,10 @@ import { MemoryRouter } from "react-router-dom";
 // notifications feed (WorkspaceNotificationsPage) actually relies on. A
 // billing_admin-only gate previously left org_admin -- the default landing
 // role for /organization-admin/dashboard -- with a permanently disabled
-// bell on their own home page (QA bug #41).
+// bell on their own home page (QA bug #41). super_admin has its own route
+// entry in NOTIFICATIONS_ROUTE_BY_ROLE but is intentionally not in
+// ORG_CONTEXT_ROLES (this feed is org-scoped, not platform-scoped), so it
+// still gets the disabled placeholder here.
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: vi.fn(),
@@ -38,15 +41,26 @@ describe("TopBar notification icon", () => {
     expect(container.querySelector(".bg-\\[\\#ff6b00\\]")).not.toBeInTheDocument();
   });
 
-  it.each(["billing_admin", "org_admin"])("is a real link to the notifications feed for %s", (role) => {
+  it.each([
+    ["billing_admin", "/billing/workspace/notifications"],
+    ["org_admin", "/organization-admin/notifications"],
+  ])("is a real link to the notifications feed for %s", (role, expectedHref) => {
     useAuth.mockReturnValue({ user: { email: "a@b.com" }, role, logout: vi.fn() });
     renderTopBar();
     const link = screen.getByRole("link", { name: /notifications/i });
-    expect(link).toHaveAttribute("href", "/billing/workspace/notifications");
+    expect(link).toHaveAttribute("href", expectedHref);
   });
 
-  it("is an honestly disabled placeholder for roles with no notifications feed", () => {
-    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "finance_approver", logout: vi.fn() });
+  it("is an honestly disabled placeholder for super_admin (org-scoped feed, not platform-scoped)", () => {
+    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "super_admin", logout: vi.fn() });
+    renderTopBar();
+    const button = screen.getByRole("button", { name: /notifications/i });
+    expect(button).toBeDisabled();
+    expect(screen.queryByRole("link", { name: /notifications/i })).not.toBeInTheDocument();
+  });
+
+  it("is an honestly disabled placeholder for a role with no notifications feed", () => {
+    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "some_other_role", logout: vi.fn() });
     renderTopBar();
     const button = screen.getByRole("button", { name: /notifications/i });
     expect(button).toBeDisabled();

@@ -134,12 +134,12 @@ const CommercialEvaluationProgramsPage = lazy(() => import("./modules/super-admi
 const Plane1BillingPage = lazy(() => import("./modules/super-admin/Plane1BillingPage"));
 const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
 const CommercialPlanVersionsPage = lazy(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
-const ApprovalQueuePage = lazy(() => import("./modules/super-admin/ApprovalQueuePage"));
 const KillSwitchPage = lazy(() => import("./modules/super-admin/KillSwitchPage"));
 const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/ProductionAcceptancePage"));
 const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
 const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccessPage"));
 const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
+const SuperAdminNotificationsPage = lazy(() => import("./modules/super-admin/NotificationsPage"));
 const LifecycleOnboardingPage = lazy(() => import("./modules/super-admin/LifecycleOnboardingPage"));
 const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
 const ConfigurationGovernancePage = lazy(() => import("./modules/super-admin/ConfigurationGovernancePage"));
@@ -156,6 +156,7 @@ const ReconciliationPage = lazy(() => import("./modules/super-admin/Reconciliati
 const CreditsRefundsPage = lazy(() => import("./modules/super-admin/CreditsRefundsPage"));
 const TaxEInvoicingPage = lazy(() => import("./modules/super-admin/TaxEInvoicingPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
+const OrgAdminNotificationsPage = lazy(() => import("./modules/organization-admin/NotificationsPage"));
 
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
@@ -258,7 +259,8 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/platform/lifecycle", element: <LifecycleOnboardingPage /> },
   { path: "/super-admin/support-access", element: <SupportAccessPage /> },
   { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
-  { path: "/super-admin/tenant-health/jobs", element: <TenantHealthPage /> },
+  { path: "/super-admin/notifications", element: <SuperAdminNotificationsPage /> },
+  { path: "/super-admin/tenant-health/jobs", element: <Navigate to="/super-admin/tenant-health?tab=jobs" replace /> },
   { path: "/super-admin/commercial/accounts", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
   { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
@@ -278,7 +280,6 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/financial/tax", element: <TaxEInvoicingPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
   { path: "/super-admin/billing-command-center", element: <BillingCommandCenterPage /> },
-  { path: "/super-admin/approval-queue", element: <ApprovalQueuePage /> },
   { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance", element: <GovernancePage /> },
   { path: "/super-admin/governance/privileged-sessions", element: <SupportAccessPage /> },
@@ -308,11 +309,10 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/commercial/organizations", to: "/super-admin/organizations" },
   { from: "/super-admin/commercial/organizations/:organizationId", to: "/super-admin/organizations/:organizationId" },
   { from: "/super-admin/commercial/audit-logs", to: "/super-admin/audit-logs" },
-  { from: "/super-admin/commercial/approvals", to: "/super-admin/approval-queue" },
   { from: "/super-admin/commercial/kill-switch", to: "/super-admin/kill-switch" },
   { from: "/super-admin/commercial/production-acceptance", to: "/super-admin/production-readiness" },
   { from: "/super-admin/command-center/triage", to: "/super-admin/triage" },
-  { from: "/super-admin/command-center/commercial", to: "/super-admin/commercial/accounts" },
+  { from: "/super-admin/command-center/commercial", to: "/super-admin/organizations" },
   { from: "/super-admin/command-center/financial", to: "/super-admin/financial-operations" },
   { from: "/super-admin/command-center/reliability", to: "/super-admin/reliability" },
   { from: "/super-admin/command-center/governance", to: "/super-admin/governance" },
@@ -327,7 +327,7 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/integrations/connectors", to: "/super-admin/reliability" },
   { from: "/super-admin/integrations/webhooks", to: "/super-admin/reliability" },
   { from: "/super-admin/integrations/imports-exports", to: "/super-admin/reliability" },
-  { from: "/super-admin/integrations/jobs", to: "/super-admin/tenant-health/jobs" },
+  { from: "/super-admin/integrations/jobs", to: "/super-admin/tenant-health?tab=jobs" },
   { from: "/super-admin/governance/roles", to: "/super-admin/users" },
 ];
 
@@ -440,6 +440,14 @@ export default function App() {
             element={
               <BillingShell>
                 <OrgAdminPrivilegedAccessLogPage />
+              </BillingShell>
+            }
+          />
+          <Route
+            path="/organization-admin/notifications"
+            element={
+              <BillingShell>
+                <OrgAdminNotificationsPage />
               </BillingShell>
             }
           />

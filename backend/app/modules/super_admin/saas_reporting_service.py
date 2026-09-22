@@ -56,6 +56,7 @@ _TWO_PLACES = Decimal("0.01")
 _OPEN_SUB_STATUSES = {
     CommercialSubscriptionStatus.PENDING,
     CommercialSubscriptionStatus.ACTIVE,
+    CommercialSubscriptionStatus.TRIALING,
     CommercialSubscriptionStatus.PAST_DUE,
     CommercialSubscriptionStatus.RESTRICTED,
     CommercialSubscriptionStatus.SUSPENDED,
