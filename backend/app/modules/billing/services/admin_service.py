@@ -683,6 +683,23 @@ class BillingAdminService:
     # ── STEP 8: Billing Health Check (enhanced) ───────────────────────────────
 
     def run_billing_health_check(self, organization_id: int) -> BillingHealthCheckResponse:
+        """Cached wrapper: the underlying check includes a live SMTP connectivity
+        probe that can take multiple seconds even when fixed to use the right
+        protocol (see the SMTP_SSL branch below) -- callers polling this
+        endpoint repeatedly (e.g. the main Billing Dashboard) should not repeat
+        that live network round trip on every call within a short window.
+        """
+        from app.core.cache_service import cache_get_or_set
+
+        def _factory():
+            return self._run_billing_health_check_uncached(organization_id).model_dump(mode="json")
+
+        cached = cache_get_or_set(
+            f"billing_health_check:{organization_id}", _factory, ttl=30,
+        )
+        return BillingHealthCheckResponse(**cached)
+
+    def _run_billing_health_check_uncached(self, organization_id: int) -> BillingHealthCheckResponse:
         components = []
         config = self.repo.get_by_organization(organization_id)
         checks_at = datetime.utcnow().isoformat() + "Z"
@@ -750,7 +767,20 @@ class BillingAdminService:
 
         if smtp_configured:
             try:
-                s = smtplib.SMTP(smtp_cfg["host"], int(smtp_cfg["port"]), timeout=5)
+                # Port 465 is implicit-TLS (SMTPS): a plain smtplib.SMTP()
+                # handshake against it doesn't get a clean protocol error, it
+                # just stalls until the OS-level socket timeout well past the
+                # 5s `timeout` kwarg (observed: ~10.5s per call in
+                # production) -- this single probe was the dominant cost of
+                # /billing/settings/health, which the main Billing Dashboard
+                # calls on every load. Branch exactly like the real send path
+                # (email_service.py) does.
+                smtp_port = int(smtp_cfg["port"])
+                if smtp_port == 465:
+                    s = smtplib.SMTP_SSL(smtp_cfg["host"], smtp_port, timeout=5,
+                                          context=ssl.create_default_context())
+                else:
+                    s = smtplib.SMTP(smtp_cfg["host"], smtp_port, timeout=5)
                 smtp_connectable = True
                 smtp_response_time_ms = (time.time() - start) * 1000
                 s.quit()

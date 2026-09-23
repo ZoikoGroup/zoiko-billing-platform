@@ -154,7 +154,27 @@ const [original, setOriginal] = useState({});
       setSaving(true);
       setError(null);
       setSaved(false);
-      await settingsApi.update(form);
+      // These fields are Optional[int]/Optional[Decimal] on the backend
+      // (BillingConfigurationUpdate) but default to "" in this form's local
+      // state whenever unset -- Pydantic rejects an empty string for a
+      // numeric field with a 422 ("unable to parse string as an integer"),
+      // so every save failed whenever any of these was blank. Same
+      // empty-string-to-null coercion already used by tax/settings.jsx's
+      // handleSave for this exact default_tax_rate_id field.
+      const payload = {
+        ...form,
+        default_tax_rate_id: form.default_tax_rate_id ? Number(form.default_tax_rate_id) : null,
+        dunning_level_count: form.dunning_level_count !== "" ? Number(form.dunning_level_count) : null,
+        payment_reminder_days_before: form.payment_reminder_days_before !== "" ? Number(form.payment_reminder_days_before) : null,
+        late_payment_fee_percentage: form.late_payment_fee_percentage !== "" ? form.late_payment_fee_percentage : null,
+        late_payment_fee_flat: form.late_payment_fee_flat !== "" ? form.late_payment_fee_flat : null,
+        exchange_rate_usd: form.exchange_rate_usd !== "" ? form.exchange_rate_usd : null,
+        exchange_rate_inr: form.exchange_rate_inr !== "" ? form.exchange_rate_inr : null,
+        exchange_rate_gbp: form.exchange_rate_gbp !== "" ? form.exchange_rate_gbp : null,
+        exchange_rate_eur: form.exchange_rate_eur !== "" ? form.exchange_rate_eur : null,
+        exchange_rate_aed: form.exchange_rate_aed !== "" ? form.exchange_rate_aed : null,
+      };
+      await settingsApi.update(payload);
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
