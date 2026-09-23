@@ -24,6 +24,30 @@ class CreditNoteRepository(BaseRepository[CreditNote]):
     def __init__(self, db):
         super().__init__(db, CreditNote)
 
+    @staticmethod
+    def _rate_case(column, currency_rates):
+        """Build a CASE expression to convert amounts by currency rate.
+
+        currency_rates: {currency_code: multiplier_to_base, ...}
+        Returns an expression that can be multiplied with an amount column.
+
+        Uses Decimal for the coefficients so that Numeric(amount) * rate stays
+        in Decimal arithmetic, matching the same convention already used by
+        InvoiceRepository/PaymentRepository's dashboard aggregates -- a raw
+        float rate mixed into a Numeric*float product lets binary-float
+        rounding drift by a fraction of a cent across many summed rows.
+        """
+        if not currency_rates:
+            return Decimal("1.0")
+        clauses = [
+            (column == curr, Decimal(str(rate)))
+            for curr, rate in currency_rates.items()
+            if rate != 1.0
+        ]
+        if not clauses:
+            return Decimal("1.0")
+        return case(*clauses, else_=Decimal("1.0"))
+
     def _apply_eager_loads(self, query):
         # /credit-notes serializes CreditNoteResponse, whose customer_* fields
         # are hybrid properties that lazy-load CreditNote.customer per row.
@@ -177,22 +201,32 @@ class CreditNoteRepository(BaseRepository[CreditNote]):
             for t, count, total in rows
         ]
 
-    def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
+    def get_dashboard_stats(self, organization_id: int, currency_rates: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """Single grouped-aggregate query instead of 6 separate round trips
         (1 count + 1 sum + 1 outstanding-sum + 4 status-filtered counts) —
         each round trip costs real, measurable network latency in this
         environment. get_outstanding_total() itself is left unchanged
         (still callable standalone — credit_note_service.py uses it
-        independently), just no longer called from inside this method."""
+        independently), just no longer called from inside this method.
+
+        `currency_rates` converts every row to the org's base currency before
+        summing (same convention as InvoiceRepository/PaymentRepository's
+        dashboard aggregates) -- this platform allows CreditNote.currency to
+        differ per credit note (it follows the customer/invoice currency), so
+        a raw SUM() without conversion silently blends currencies into one
+        meaningless "Total Value" / "Outstanding Credits" figure whenever an
+        org has credit notes in more than one currency.
+        """
         def _count_if(condition):
             return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
 
+        rate = self._rate_case(CreditNote.currency, currency_rates)
         outstanding_condition = CreditNote.status.in_(["issued", "partially_applied"])
 
         row = self.db.query(
             func.count(CreditNote.id),
-            func.coalesce(func.sum(CreditNote.total_amount), 0),
-            func.coalesce(func.sum(case((outstanding_condition, CreditNote.remaining_amount), else_=0)), 0),
+            func.coalesce(func.sum(CreditNote.total_amount * rate), 0),
+            func.coalesce(func.sum(case((outstanding_condition, CreditNote.remaining_amount * rate), else_=0)), 0),
             _count_if(CreditNote.status == "draft"),
             _count_if(outstanding_condition),
             _count_if(CreditNote.status == "fully_applied"),

@@ -3753,6 +3753,7 @@ class BillingConfigurationUpdate(BaseModel):
     write_off_number_format: Optional[NumberFormat] = None
     write_off_sequence_reset: Optional[SequenceReset] = None
     auto_generate_invoice_number: Optional[bool] = None
+    auto_send_invoices: Optional[bool] = None
     invoice_footer: Optional[str] = None
     invoice_terms: Optional[str] = None
     invoice_notes: Optional[str] = None
@@ -3976,6 +3977,7 @@ class BillingConfigurationResponse(BaseModel):
     write_off_number_format: NumberFormat
     write_off_sequence_reset: SequenceReset
     auto_generate_invoice_number: bool
+    auto_send_invoices: bool
     invoice_footer: Optional[str]
     invoice_terms: Optional[str]
     invoice_notes: Optional[str]

@@ -57,9 +57,9 @@ export default function InvoiceSettingsPage() {
     invoice_prefix: "INV-",
     quote_prefix: "QTE-",
     auto_generate_invoice_number: true,
-    invoice_number_format: "{PREFIX}{NUMBER}",
+    invoice_number_format: "PREFIX-{YYYY}-{SEQ}",
     default_tax_rate_id: "",
-    auto_apply_credits: true,
+    enable_auto_apply_credits: true,
     auto_send_invoices: false,
     auto_send_receipts: false,
     auto_dunning: false,
@@ -71,7 +71,7 @@ export default function InvoiceSettingsPage() {
     enable_multi_currency: false,
     billing_email: "",
     billing_phone: "",
-    terms_and_conditions: "",
+    invoice_terms_and_conditions: "",
     logo_url: "",
     // Exchange Rates (Phase 1)
     exchange_rate_usd: "",
@@ -85,9 +85,9 @@ const [original, setOriginal] = useState({});
   
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
   
-  const validationError = form.invoice_number_format.includes("{NUMBER}")
+  const validationError = form.invoice_number_format.includes("{SEQ}")
     ? ""
-    : "Invoice number format must include {NUMBER}.";
+    : "Invoice number format must include {SEQ}.";
   
   useEffect(() => { 
     fetchSettings(); 
@@ -117,9 +117,9 @@ const [original, setOriginal] = useState({});
         invoice_prefix: settings.invoice_prefix || "INV-",
         quote_prefix: settings.quote_prefix || "QTE-",
         auto_generate_invoice_number: settings.auto_generate_invoice_number ?? true,
-        invoice_number_format: settings.invoice_number_format || "{PREFIX}{NUMBER}",
+        invoice_number_format: settings.invoice_number_format || "PREFIX-{YYYY}-{SEQ}",
         default_tax_rate_id: settings.default_tax_rate_id || "",
-        auto_apply_credits: settings.auto_apply_credits ?? true,
+        enable_auto_apply_credits: settings.enable_auto_apply_credits ?? true,
         auto_send_invoices: settings.auto_send_invoices ?? false,
         auto_send_receipts: settings.auto_send_receipts ?? false,
         auto_dunning: settings.auto_dunning ?? false,
@@ -131,7 +131,7 @@ const [original, setOriginal] = useState({});
         enable_multi_currency: settings.enable_multi_currency ?? false,
         billing_email: settings.billing_email || "",
         billing_phone: settings.billing_phone || "",
-        terms_and_conditions: settings.terms_and_conditions || "",
+        invoice_terms_and_conditions: settings.invoice_terms_and_conditions || "",
         logo_url: settings.logo_url || "",
         // Exchange Rates (Phase 1)
         exchange_rate_usd: settings.exchange_rate_usd || "",
@@ -189,9 +189,17 @@ const [original, setOriginal] = useState({});
     );
   }
 
-  const numberingPreview = form.invoice_number_format
-    .replace("{PREFIX}", form.invoice_prefix)
-    .replace("{NUMBER}", "0001");
+  const numberingPreview = (() => {
+    const now = new Date();
+    const yyyy = String(now.getFullYear());
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    return (form.invoice_number_format || "PREFIX-{SEQ}")
+      .replace("PREFIX", form.invoice_prefix || "INV-")
+      .replace("{YYYYMM}", `${yyyy}${mm}`)
+      .replace("{YYYY}", yyyy)
+      .replace("{MM}", mm)
+      .replace("{SEQ}", "000001");
+  })();
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -265,9 +273,15 @@ const [original, setOriginal] = useState({});
             className={`${inputClass} max-w-xs`} />
         </SettingsField>
 
-        <SettingsField label="Invoice Numbering Format" icon={Hash} description="Invoice number format. Use {PREFIX} and {NUMBER} as placeholders">
-          <input type="text" value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
-            className={`${inputClass} max-w-xs`} />
+        <SettingsField label="Invoice Numbering Format" icon={Hash} description="Pattern for generating invoice numbers">
+          <select value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
+            className={`${inputClass} max-w-xs`}>
+            <option value="PREFIX-{SEQ}">Simple Sequential (INV-000001)</option>
+            <option value="PREFIX-{YYYY}-{SEQ}">Annual Sequential (INV-2026-000001)</option>
+            <option value="PREFIX-{YYYYMM}-{SEQ}">Monthly Sequential (INV-202601-000001)</option>
+            <option value="PREFIX-{YYYY}-{MM}-{SEQ}">Year-Month-Seq (INV-2026-01-000001)</option>
+            <option value="PREFIX-{MM}-{YYYY}-{SEQ}">Month-Year-Seq (INV-01-2026-000001)</option>
+          </select>
           <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
         </SettingsField>
 
@@ -303,7 +317,7 @@ const [original, setOriginal] = useState({});
         </SettingsField>
 
         <SettingsField label="Auto-Apply Credits" icon={ToggleLeft} description="Automatically apply available credit notes to new invoices">
-          <select value={String(form.auto_apply_credits)} onChange={(e) => updateField("auto_apply_credits", e.target.value === "true")}
+          <select value={String(form.enable_auto_apply_credits)} onChange={(e) => updateField("enable_auto_apply_credits", e.target.value === "true")}
             className={`${inputClass} max-w-xs`}>
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
@@ -428,7 +442,7 @@ const [original, setOriginal] = useState({});
         </SettingsField>
 
         <SettingsField label="Terms & Conditions" icon={FileText} description="Default terms and conditions printed on invoices">
-          <textarea value={form.terms_and_conditions} onChange={(e) => updateField("terms_and_conditions", e.target.value)}
+          <textarea value={form.invoice_terms_and_conditions} onChange={(e) => updateField("invoice_terms_and_conditions", e.target.value)}
             rows={3} placeholder="Payment is due within 30 days..."
             className={inputClass} />
         </SettingsField>
