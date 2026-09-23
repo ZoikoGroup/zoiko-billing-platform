@@ -160,6 +160,7 @@ export const ENDPOINTS = {
   INVOICES_STATUS_DISTRIBUTION: `${BILLING}/invoices/status-distribution`,
   INVOICES_MONTHLY_REVENUE: `${BILLING}/invoices/monthly-revenue`,
   INVOICES_RECENT_ACTIVITY: `${BILLING}/invoices/recent-activity`,
+  INVOICES_TOP_CUSTOMERS: `${BILLING}/invoices/top-customers`,
   INVOICES_BULK_DELETE: `${BILLING}/invoices/bulk-delete`,
   INVOICE: (id) => `${BILLING}/invoices/${id}`,
   INVOICE_FINALIZE: (id) => `${BILLING}/invoices/${id}/finalize`,

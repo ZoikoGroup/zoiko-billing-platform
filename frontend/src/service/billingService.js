@@ -468,6 +468,7 @@ export const invoiceApi = {
   getStatusDistribution: () => api.get(ENDPOINTS.INVOICES_STATUS_DISTRIBUTION),
   getMonthlyRevenue: (months = 12) => api.get(buildUrl(ENDPOINTS.INVOICES_MONTHLY_REVENUE, { months })),
   getRecentActivity: (limit = 10) => api.get(buildUrl(ENDPOINTS.INVOICES_RECENT_ACTIVITY, { limit })),
+  getTopCustomers: (range, limit = 5) => api.get(buildUrl(ENDPOINTS.INVOICES_TOP_CUSTOMERS, { ...(range || {}), limit })),
   bulkDelete: (ids) => api.post(ENDPOINTS.INVOICES_BULK_DELETE, { ids }),
   listDueBetween: (startDate, endDate) =>
     api.get(

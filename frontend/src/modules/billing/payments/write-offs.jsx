@@ -167,7 +167,17 @@ export default function WriteOffsPage() {
     (createForm.write_off_source !== "invoice" || createForm.invoice_id);
 
   const handleCreate = async () => {
-    if (!canSubmitAmount) return;
+    // Silently no-oping here (as this used to) is indistinguishable from a
+    // broken button: write_off_source defaults to "invoice", so until an
+    // invoice is picked, clicking Create did nothing and gave no clue why
+    // (QA defect #33: "Create button is not working"). Tell the user
+    // exactly which required field is missing instead.
+    if (!canSubmitAmount) {
+      if (!createForm.customer_id) setFormError("Select a customer to continue.");
+      else if (createForm.write_off_source === "invoice" && !createForm.invoice_id) setFormError("Select an invoice to write off, or change the source.");
+      else if (!createForm.amount) setFormError("Enter an amount.");
+      return;
+    }
     try {
       setSaving(true); setFormError(null);
       const body = {
@@ -328,6 +338,15 @@ export default function WriteOffsPage() {
               <option value="">All Types</option>
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+            {hasActiveFilters && (
+              // Once a filter is applied there was previously no way to reset it
+              // short of manually reverting each dropdown to its default option
+              // one at a time -- the most concrete, reproducible reading of QA
+              // defect #33's "the Filters button is not working". Matches the
+              // Clear filters pattern already established on refunds.jsx.
+              <button onClick={() => { setSearch(""); setStatusFilter(""); setTypeFilter(""); setCurrentPage(1); }}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
+            )}
           </div>
         )}
 

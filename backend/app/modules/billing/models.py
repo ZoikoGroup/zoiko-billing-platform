@@ -2991,6 +2991,7 @@ class BillingConfiguration(Base):
     write_off_number_format         = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     write_off_sequence_reset        = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
     auto_generate_invoice_number    = Column(Boolean, default=True)
+    auto_send_invoices              = Column(Boolean, default=False)
     invoice_footer                  = Column(Text, nullable=True)
     invoice_terms                   = Column(Text, nullable=True)
     invoice_notes                   = Column(Text, nullable=True)

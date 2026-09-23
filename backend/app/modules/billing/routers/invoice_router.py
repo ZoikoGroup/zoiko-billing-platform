@@ -265,6 +265,20 @@ def get_recent_activity(
     return svc.get_recent_activity(organization_id=current_user.organization_id, limit=limit)
 
 
+@router.get("/top-customers", response_model=list)
+def get_top_customers(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    limit: int = Query(5, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = InvoiceService(db)
+    return svc.get_top_customers(
+        organization_id=current_user.organization_id, date_from=date_from, date_to=date_to, limit=limit,
+    )
+
+
 @router.post("/bulk-delete", response_model=SuccessResponse)
 def bulk_delete_invoices(
     body: InvoiceBulkDeleteRequest,
