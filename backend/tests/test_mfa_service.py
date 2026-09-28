@@ -84,6 +84,144 @@ def test_verify_enrollment_rejects_wrong_code_and_stays_disabled(db_session):
     assert mfa_service.is_mfa_enabled(db_session, user.id) is False
 
 
+def test_enrollment_accepts_a_separated_or_padded_code(db_session):
+    """pyotp does a strict string compare, so a code pasted as "123 456" used
+    to be rejected as if the operator had typed the wrong one."""
+    user = User(
+        email="enroll-spaced@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    start = mfa_service.start_enrollment(db_session, user)
+    code = pyotp.TOTP(start["secret"]).now()
+    spaced = f" {code[:3]} {code[3:]} "
+
+    result = mfa_service.verify_enrollment(db_session, user, spaced)
+    assert len(result["recovery_codes"]) == mfa_service.RECOVERY_CODE_COUNT
+    assert mfa_service.is_mfa_enabled(db_session, user.id) is True
+
+
+def test_step_up_bypass_lets_an_unenrolled_account_through(monkeypatch, db_session):
+    """Dev convenience: no authenticator required while the flag is on."""
+    user = User(
+        email="bypass@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(mfa_service.settings, "MFA_STEP_UP_BYPASS", True)
+    monkeypatch.setattr(mfa_service.settings, "DEBUG", True)
+
+    assert mfa_service.is_mfa_enabled(db_session, user.id) is False
+    assert mfa_service.step_up_is_bypassed() is True
+    # Without the flag this exact call refuses outright.
+    mfa_service.verify_step_up(db_session, user, code=None, recovery_code=None)
+
+
+def test_step_up_bypass_is_inert_when_disabled(monkeypatch, db_session):
+    """The default must be the secure behaviour, not the convenient one."""
+    user = User(
+        email="nobypass@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(mfa_service.settings, "MFA_STEP_UP_BYPASS", False)
+    assert mfa_service.step_up_is_bypassed() is False
+    with pytest.raises(BadRequestException):
+        mfa_service.verify_step_up(db_session, user, code=None, recovery_code=None)
+
+
+def test_bypass_cannot_be_enabled_without_debug(monkeypatch):
+    """Config must refuse to load with the control off in a real deployment."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.setenv("MFA_STEP_UP_BYPASS", "true")
+    monkeypatch.setenv("DEBUG", "false")
+
+    with pytest.raises(ValidationError) as exc:
+        Settings(
+            _env_file=None,
+            BILLING_DATABASE_URL="postgresql://x/y",
+            BILLING_SECRET_KEY="k",
+            MFA_ENCRYPTION_KEY="k",
+        )
+    assert "MFA_STEP_UP_BYPASS" in str(exc.value)
+
+
+def test_start_enrollment_replaces_a_pending_secret(db_session):
+    """regenerate=True is the only path that discards a pending key."""
+    user = User(
+        email="enroll-restart@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    first = mfa_service.start_enrollment(db_session, user)
+    second = mfa_service.start_enrollment(db_session, user, regenerate=True)
+    assert first["secret"] != second["secret"]
+    assert first["reused_pending"] is False
+    assert second["reused_pending"] is False
+
+    # The discarded key is dead — confirming it is impossible, not unlucky.
+    with pytest.raises(BadRequestException):
+        mfa_service.verify_enrollment(db_session, user, pyotp.TOTP(first["secret"]).now())
+
+    # The freshly issued one works.
+    mfa_service.verify_enrollment(db_session, user, pyotp.TOTP(second["secret"]).now())
+    assert mfa_service.is_mfa_enabled(db_session, user.id) is True
+
+
+def test_start_enrollment_replays_a_pending_secret_instead_of_replacing_it(db_session):
+    """Re-opening the setup screen must not invalidate a key the operator has
+    already entered in their authenticator. That produced codes which could
+    never verify, with no signal that the key had been swapped underneath."""
+    user = User(
+        email="enroll-replay@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    first = mfa_service.start_enrollment(db_session, user)
+    assert first["reused_pending"] is False
+
+    for _ in range(3):
+        again = mfa_service.start_enrollment(db_session, user)
+        assert again["secret"] == first["secret"]
+        assert again["otpauth_url"] == first["otpauth_url"]
+        assert again["reused_pending"] is True
+
+    # The key from the FIRST call still verifies after all those re-opens.
+    result = mfa_service.verify_enrollment(db_session, user, pyotp.TOTP(first["secret"]).now())
+    assert len(result["recovery_codes"]) == mfa_service.RECOVERY_CODE_COUNT
+    assert mfa_service.is_mfa_enabled(db_session, user.id) is True
+
+
+def test_start_enrollment_still_refuses_once_mfa_is_enabled(db_session):
+    user = User(
+        email="enroll-guard@test.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", is_active=True, is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    start = mfa_service.start_enrollment(db_session, user)
+    mfa_service.verify_enrollment(db_session, user, pyotp.TOTP(start["secret"]).now())
+
+    # Replay must not become a way to re-issue a secret over an enabled account.
+    with pytest.raises(BadRequestException):
+        mfa_service.start_enrollment(db_session, user)
+    with pytest.raises(BadRequestException):
+        mfa_service.start_enrollment(db_session, user, regenerate=True)
+
+
 def test_wrong_code_rejected_and_counted(db_session):
     user, _secret = _mfa_super_admin(db_session)
     with pytest.raises(UnauthorizedException):

@@ -19,8 +19,9 @@ import {
   suppressAttentionItem,
   getInvoiceFinalizationBreaker,
   setInvoiceFinalizationBreaker,
+  getMfaStepUpStatus,
 } from "../../service/commandCenterService";
-import { PageHeader, Modal, Field, Button } from "../../components/billing-ui";
+import { PageHeader, Modal, Field, Button, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, EmptyState } from "../../components/billing-shared";
 import { formatDateTime } from "./constants";
 import { useAuth } from "../../context/AuthContext";
@@ -32,6 +33,13 @@ import { useCommandCenter } from "../../context/CommandCenterContext";
  * dedicated pages — AuditLogsPage, SupportAccessPage — this page links to
  * them rather than re-implementing their logic, plus owns the Attention
  * queue UI, which had no frontend at all before this pass).
+ *
+ * `embedded` drops this page's own PageHeader (and its page padding) when it
+ * is mounted as a tab inside the Audit & Evidence hub, which renders the
+ * tab-aware header itself — otherwise the operator sees two stacked headers,
+ * the outer one titled for a different tab. Standalone routes
+ * (/super-admin/governance, /super-admin/governance/data) leave it false and
+ * keep a normal single header.
  */
 
 const SEVERITY_OPTIONS = [
@@ -183,20 +191,30 @@ function AttentionRow({ item, currentUserId, onAction }) {
 // ZB-SA-CMD-003 §18 — the one real Domain B circuit breaker implemented so
 // far. Toggling requires a reason AND a fresh MFA step-up code every time
 // (both pause and resume) — enforced server-side, not just hidden here.
-function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
+// Engaging (pausing) additionally requires an incident reference: the server
+// rejects an engage without one, because a platform-wide invoice stop is only
+// defensible when it is tied to a tracked incident.
+function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit, mfaBypassed = false }) {
   const [reason, setReason] = useState("");
+  const [incidentReference, setIncidentReference] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const engaging = targetEnabled === false;
+  const needsReference = engaging;
 
-  useEffect(() => { if (open) { setReason(""); setCode(""); setError(null); } }, [open]);
+  useEffect(() => {
+    if (open) { setReason(""); setIncidentReference(""); setCode(""); setError(null); }
+  }, [open]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(reason, code);
+      // Under the dev bypass the server ignores the factor entirely, so do not
+      // make the operator invent one.
+      await onSubmit(reason, mfaBypassed ? "" : code, incidentReference.trim());
       onClose();
     } catch (err) {
       setError(err?.message || "Failed to update the circuit breaker.");
@@ -204,6 +222,17 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
       setBusy(false);
     }
   }
+
+  const canSubmit =
+    Boolean(reason.trim()) &&
+    (mfaBypassed || code.length >= 6) &&
+    (!needsReference || incidentReference.trim().length > 0);
+
+  // Safety net for the case the up-front card check cannot cover: MFA was
+  // turned off (or enrolment was abandoned) after the card fetched its status,
+  // so the only signal is the server's own rejection. Recognising the exact
+  // refusal is what turns a dead end into a route to enrollment.
+  const mfaNotEnrolledError = /MFA is not enabled/i.test(error || "");
 
   return (
     <Modal open={open} onClose={onClose} title={targetEnabled ? "Resume invoice finalization?" : "Pause invoice finalization?"} icon={targetEnabled ? Power : ShieldAlert} size="sm">
@@ -217,15 +246,55 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
           <textarea id="breaker-reason" required rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
         </Field>
-        <Field label="MFA code" htmlFor="breaker-mfa" required hint="A fresh authenticator code — required every time this breaker changes.">
-          <input id="breaker-mfa" required inputMode="numeric" maxLength={8} value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\s/g, ""))} placeholder="123456"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-lg tracking-widest focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
-        </Field>
-        {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+        {needsReference && (
+          <Field
+            label="Incident reference"
+            htmlFor="breaker-incident"
+            required
+            hint="Required to engage a platform-wide breaker. Links this stop to a tracked incident."
+          >
+            <input
+              id="breaker-incident"
+              required
+              maxLength={100}
+              value={incidentReference}
+              onChange={(e) => setIncidentReference(e.target.value)}
+              placeholder="INC-2026-014"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            />
+          </Field>
+        )}
+        {mfaBypassed ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            MFA step-up is <strong>bypassed</strong> on this deployment, so no code is required. This is a
+            development-only setting and must be off in production.
+          </p>
+        ) : (
+          <Field label="MFA code" htmlFor="breaker-mfa" required hint="A fresh authenticator code — required every time this breaker changes.">
+            <input id="breaker-mfa" required inputMode="numeric" maxLength={8} value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\s/g, ""))} placeholder="123456"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-lg tracking-widest focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
+          </Field>
+        )}
+        {error && (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <p>{error}</p>
+            {mfaNotEnrolledError && (
+              <p className="mt-1.5">
+                Your account has no MFA factor, so the server will reject this change regardless of the code entered.
+                <Link
+                  to="/super-admin/settings"
+                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-2.5 py-1 font-semibold text-red-700 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+                >
+                  Enable MFA in Platform Settings <ArrowRightCircle size={12} />
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant={targetEnabled ? "primary" : "danger"} loading={busy} disabled={!reason || code.length < 6}>
+          <Button type="submit" variant={targetEnabled ? "primary" : "danger"} loading={busy} disabled={!canSubmit}>
             {targetEnabled ? "Resume" : "Pause"}
           </Button>
         </div>
@@ -238,45 +307,113 @@ function CircuitBreakerCard() {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [modalTarget, setModalTarget] = useState(null);
+  // Tri-state: null = still checking. A breaker change runs verify_step_up(),
+  // which hard-fails with "MFA is not enabled on this account" when this is
+  // false, so the card checks up front instead of letting the operator fill in
+  // a form that can only ever 400.
+  const [mfaEnabled, setMfaEnabled] = useState(null);
+  const [mfaBypassed, setMfaBypassed] = useState(false);
 
   const load = useCallback(() => {
+    setError(null);
     getInvoiceFinalizationBreaker().then(setState).catch((e) => setError(e?.message || "Failed to load."));
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function handleSubmit(reason, code) {
-    const updated = await setInvoiceFinalizationBreaker(modalTarget, reason, code);
+  useEffect(() => {
+    let cancelled = false;
+    getMfaStepUpStatus()
+      .then((data) => {
+        if (cancelled) return;
+        setMfaBypassed(Boolean(data?.bypassed));
+        setMfaEnabled(Boolean(data?.enabled));
+      })
+      // A status probe that fails is not proof MFA is off, and must not be
+      // reported as such — leave it unknown and let the server have the final
+      // word on an actual attempt.
+      .catch(() => { if (!cancelled) setMfaEnabled(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleSubmit(reason, code, incidentReference) {
+    const updated = await setInvoiceFinalizationBreaker(modalTarget, reason, code, undefined, incidentReference);
     setState(updated);
   }
 
+  const mfaMissing = mfaEnabled === false;
+
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      <p className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-700"><Power size={16} /> Circuit Breakers</p>
-      <p className="mb-4 text-xs text-slate-500">Real, server-enforced platform-wide controls — MFA step-up required on every change.</p>
+    <SectionCard
+      variant="hero"
+      accent="slate"
+      icon={Power}
+      title="Circuit Breakers"
+      description={
+        <>
+          Real, server-enforced platform-wide controls.
+          {mfaBypassed ? (
+            <span className="font-semibold text-amber-700"> MFA step-up is currently bypassed on this deployment.</span>
+          ) : (
+            <> MFA step-up required on every change.</>
+          )}
+        </>
+      }
+    >
       {error ? (
         <ErrorState message={error} onRetry={load} title="Unable to load breaker state" />
       ) : !state ? (
         <Spinner />
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Invoice Finalization</p>
-            <p className={`text-lg font-extrabold ${state.enabled ? "text-emerald-700" : "text-red-600"}`}>
-              {state.enabled ? "Enabled" : "Paused"}
-            </p>
-            {state.reason && <p className="text-xs text-slate-500">Last reason: {state.reason}</p>}
+        <>
+          {mfaMissing && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <ShieldAlert size={15} /> MFA step-up is not enrolled on your account
+              </p>
+              <p className="mt-1 text-xs text-amber-700">
+                The server refuses every breaker change without it, so changing this switch is currently impossible.
+                Enrol once, then return here.
+              </p>
+              <Link
+                to="/super-admin/settings"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+              >
+                Enable MFA in Platform Settings <ArrowRightCircle size={13} />
+              </Link>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Invoice Finalization</p>
+              <p className={`text-lg font-extrabold ${state.enabled ? "text-emerald-700" : "text-red-600"}`}>
+                {state.enabled ? "Enabled" : "Paused"}
+              </p>
+              {state.reason && <p className="text-xs text-slate-500">Last reason: {state.reason}</p>}
+            </div>
+            <Button
+              variant={state.enabled ? "danger" : "primary"}
+              icon={state.enabled ? ShieldAlert : Power}
+              disabled={mfaMissing}
+              title={mfaMissing ? "Enable MFA step-up in Platform Settings before changing this breaker." : undefined}
+              onClick={() => setModalTarget(!state.enabled)}
+            >
+              {state.enabled ? "Pause" : "Resume"}
+            </Button>
           </div>
-          <Button variant={state.enabled ? "danger" : "primary"} icon={state.enabled ? ShieldAlert : Power} onClick={() => setModalTarget(!state.enabled)}>
-            {state.enabled ? "Pause" : "Resume"}
-          </Button>
-        </div>
+        </>
       )}
-      <BreakerToggleModal open={modalTarget !== null} targetEnabled={modalTarget} onClose={() => setModalTarget(null)} onSubmit={handleSubmit} />
-    </div>
+      <BreakerToggleModal
+        open={modalTarget !== null}
+        targetEnabled={modalTarget}
+        onClose={() => setModalTarget(null)}
+        onSubmit={handleSubmit}
+        mfaBypassed={mfaBypassed}
+      />
+    </SectionCard>
   );
 }
 
-export default function GovernancePage() {
+export default function GovernancePage({ embedded = false } = {}) {
   const { user } = useAuth();
   const { activeGrant, attentionCounts, refresh: refreshShell } = useCommandCenter();
   const [items, setItems] = useState([]);
@@ -307,14 +444,17 @@ export default function GovernancePage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Governance"
-        description="Approval, audit and evidence integrity, privileged access, and the Attention/incident queue — cross-cutting oversight, not a financial view."
-        icon={ShieldCheck}
-      />
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
+      {!embedded && (
+        <PageHeader
+          title="Governance"
+          description="Approval, audit and evidence integrity, privileged access, and the Attention/incident queue — cross-cutting oversight, not a financial view."
+          icon={ShieldCheck}
+          accent="slate"
+        />
+      )}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${embedded ? "" : "mt-6"}`}>
         <Link to="/super-admin/audit-logs" className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-brand-300 hover:shadow-sm">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600"><ScrollText size={14} /> Audit & Evidence</p>
           <p className="mt-1 text-sm font-semibold text-slate-800">Platform audit trail →</p>
@@ -333,15 +473,19 @@ export default function GovernancePage() {
         <CircuitBreakerCard />
       </div>
 
-      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm font-bold text-slate-700">Attention Queue</p>
-          {attentionCounts && (
+      <SectionCard
+        variant="standard"
+        accent="slate"
+        title="Attention Queue"
+        actions={
+          attentionCounts && (
             <p className="text-xs text-slate-500">
               {attentionCounts.total_open} open · {attentionCounts.sla_breaches} SLA breach{attentionCounts.sla_breaches === 1 ? "" : "es"}
             </p>
-          )}
-        </div>
+          )
+        }
+        className="mt-6"
+      >
         {loading ? (
           <Spinner />
         ) : error ? (
@@ -355,7 +499,7 @@ export default function GovernancePage() {
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

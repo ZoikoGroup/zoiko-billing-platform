@@ -18,8 +18,7 @@ Every Super Admin frontend route, generated directly from `frontend/src/App.jsx`
 | `/super-admin/tenant-health` | `TenantHealthPage.jsx` | `GET /api/super-admin/telemetry/organizations` | super_admin | 200 | Platform |
 | `/super-admin/tenant-health/jobs` | `TenantHealthPage.jsx` | `GET /api/super-admin/telemetry/jobs` | super_admin | 200 | Platform |
 | `/super-admin/support-access` | `SupportAccessPage.jsx` | `GET /api/organizations/`, `POST/GET .../privileged-access/{request,active,mine}`, `POST .../privileged-access/{id}/{activate,exit}`, `GET .../privileged-access/{id}/tenant-summary` | super_admin | 200 | Platform |
-| `/super-admin/commercial/accounts` | `OrganizationsPage.jsx` | `GET /api/super-admin/commercial-accounts` | super_admin | 200 | Platform Commercial |
-| `/super-admin/commercial/plans` | `PlansPage.jsx` | `GET/POST/PATCH /api/super-admin/commercial-plans` | super_admin | 200 | Platform Commercial |
+| `/super-admin/commercial/plans` | `PlansPage.jsx` | *(8-tab "Products & Pricing" hub: Plans, Entitlement Catalog, Plan Entitlements, Evaluation Programs, Platform Subscriptions, Entitlement Overrides, Usage Diagnostics, Plan Change History)* `GET/POST/PATCH /api/super-admin/commercial-plans` | super_admin | 200 | Platform Commercial |
 | `/super-admin/commercial/plans/:planId/versions` | `CommercialPlanVersionsPage.jsx` | `GET/POST /api/super-admin/commercial-plans/{id}/versions`, `.../commercial-plan-versions/{id}/{submit,approve,reject,archive}` | super_admin | 200 | Platform Commercial |
 | `/super-admin/commercial/subscriptions` | `SubscriptionsPage.jsx` | `GET/POST /api/super-admin/commercial-subscriptions`, `PATCH .../status`, `POST .../change-plan` | super_admin | 200 | Platform Commercial |
 | `/super-admin/commercial/entitlements` | `EntitlementsPage.jsx` | `GET /api/super-admin/commercial-accounts`, `GET /api/super-admin/commercial-subscriptions` | super_admin | 200 | Platform Commercial |
@@ -29,25 +28,16 @@ Every Super Admin frontend route, generated directly from `frontend/src/App.jsx`
 | `/super-admin/commercial/plan-changes` | `PlanChangesPage.jsx` | *(plan change queue management)* | super_admin | 200 | Platform Commercial |
 | `/super-admin/commercial/evaluation-programs` | `EvaluationProgramsPage.jsx` | `POST/PATCH /api/super-admin/commercial-billing/evaluation-programs` | super_admin | 200 | Platform Commercial |
 | `/super-admin/commercial/invoices` | `Plane1BillingPage.jsx` (Plane 1 — quotes, invoices, payments, reconciliation) | `POST/GET /api/super-admin/commercial-billing/quotes`, `POST/GET /api/super-admin/commercial-billing/invoices`, `POST/GET /api/super-admin/commercial-billing/payments`, `POST /api/super-admin/commercial-billing/reconciliation/run` | super_admin (capabilities: `commercial_quote.write`, `commercial_quote.approve`, `commercial_payment.write`, `commercial_financial.read/write`) | 200 | Platform Commercial |
-| `/super-admin/financial/invoice-engine` | `InvoiceEnginePage.jsx` | *(invoice engine configuration & health)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial/payments` | `PaymentsDisputesPage.jsx` | *(payments & disputes management)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial/balances` | `BalancesAllocationsPage.jsx` | *(balances & allocations)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial/reconciliation` | `ReconciliationPage.jsx` | *(tenant ledger reconciliation)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial/credits` | `CreditsRefundsPage.jsx` | *(credits, adjustments & refunds)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial/tax` | `TaxEInvoicingPage.jsx` | *(tax & e-invoicing)* | super_admin | 200 | Financial Operations |
-| `/super-admin/financial-operations` | `FinancialOperationsPage.jsx` | *(consolidated financial operations overview)* | super_admin | 200 | Financial Operations |
-| `/super-admin/billing-command-center` | `BillingCommandCenterPage.jsx` | *(billing command center hub)* | super_admin | 200 | Financial Operations |
+| `/super-admin/financial-operations` | `FinancialOperationsPage.jsx` | *(7-tab hub: Overview, Invoice Engine, Payments & Recovery, Balances & Allocations, Credits/Refunds/Write-offs, Tax, Tenant Ledger Reconciliation; legacy `?tab=quotes/invoices/payments/reconciliation/evaluation` → `/super-admin/commercial/invoices`)* | super_admin | 200 | Financial Operations |
 | `/super-admin/approval-queue` | `ApprovalQueuePage.jsx` | `GET /api/super-admin/approval-requests`, domain-specific approve/reject endpoints | super_admin | 200 | Governance & Security |
 | `/super-admin/audit-logs` | `AuditLogsPage.jsx` | `GET /api/super-admin/audit-logs`, `GET /api/super-admin/subscription-audit-logs` | super_admin | 200 | Governance & Security |
 | `/super-admin/governance` | `GovernancePage.jsx` | `GET .../attention`, `GET .../attention/counts`, `POST .../attention/{id}/{acknowledge,assign,transition,suppress}` | super_admin | 200 | Governance & Security |
 | `/super-admin/governance/privileged-sessions` | `SupportAccessPage.jsx` | `GET /api/organizations/`, `POST/GET .../privileged-access/{request,active,mine}` | super_admin | 200 | Governance & Security |
-| `/super-admin/governance/security-events` | `AuditLogsPage.jsx` | `GET /api/super-admin/audit-logs`, `GET /api/super-admin/subscription-audit-logs` | super_admin | 200 | Governance & Security |
 | `/super-admin/governance/data` | `GovernancePage.jsx` | `GET .../attention`, `GET .../attention/counts` | super_admin | 200 | Governance & Security |
 | `/super-admin/governance/configuration` | `ConfigurationGovernancePage.jsx` | `GET/POST/PUT /api/super-admin/configuration`, `GET/PUT /api/super-admin/settings` | super_admin | 200 | Governance & Security |
 | `/super-admin/reliability` | `ReliabilityPage.jsx` | `GET /health` (unauthenticated liveness), `GET /api/super-admin/telemetry/jobs` | super_admin | 200 | Reliability & Operations |
 | `/super-admin/reliability/incidents` | `TriagePage.jsx` | `GET /api/super-admin/triage/summary` (capability `triage.read`), `POST .../attention/{id}/{acknowledge,assign,transition,suppress}` | super_admin | 200 | Reliability & Operations |
 | `/super-admin/reliability/reprocessing` | `TriagePage.jsx` | `GET /api/super-admin/triage/summary`, `POST .../telemetry/jobs/{name}/retry` | super_admin | 200 | Reliability & Operations |
-| `/super-admin/reliability/data-quality` | `ReliabilityPage.jsx` | `GET /api/super-admin/telemetry/jobs` | super_admin | 200 | Reliability & Operations |
 | `/super-admin/kill-switch` | `KillSwitchPage.jsx` | `GET/PUT /api/super-admin/billing-kill-switch` | super_admin | 200 | Command Center |
 | `/super-admin/production-readiness` | `ProductionAcceptancePage.jsx` | `GET /api/super-admin/production-acceptance` | super_admin | 200 | Reliability & Operations |
 | `/super-admin/triage` | `TriagePage.jsx` | `GET /api/super-admin/triage/summary` (capability `triage.read`) | super_admin | 200 | Command Center |
@@ -76,7 +66,14 @@ Every Super Admin frontend route, generated directly from `frontend/src/App.jsx`
 | `/users` | `/super-admin/users` | |
 | `/settings` | `/super-admin/settings` | Also linked from `TopBar.jsx` |
 | `/organizations` | `/super-admin/organizations` | |
-| `/admin/billing` | `/super-admin/billing-command-center` | Pre-consolidation Billing Command Center path |
+| `/admin/billing` | `/super-admin/financial-operations?section=overview` | Pre-consolidation Billing Command Center path |
+| `/super-admin/billing-command-center` | `/super-admin/financial-operations?section=overview` | Merged into the hub Overview tab |
+| `/super-admin/financial/invoice-engine` | `/super-admin/financial-operations?section=invoice-engine` | Standalone copy of a hub tab |
+| `/super-admin/financial/payments` | `/super-admin/financial-operations?section=payments-recovery` | Standalone copy of a hub tab |
+| `/super-admin/financial/balances` | `/super-admin/financial-operations?section=balances-allocations` | Standalone copy of a hub tab |
+| `/super-admin/financial/reconciliation` | `/super-admin/financial-operations?section=tenant-ledger-reconciliation` | Standalone copy of a hub tab |
+| `/super-admin/financial/credits` | `/super-admin/financial-operations?section=credits-refunds` | Standalone copy of a hub tab |
+| `/super-admin/financial/tax` | `/super-admin/financial-operations?section=tax` | Standalone copy of a hub tab |
 | `/super-admin/commercial/dashboard` | `/super-admin/dashboard` | Pre-consolidation Commercial Control Center path |
 | `/super-admin/commercial/organizations` | `/super-admin/organizations` | |
 | `/super-admin/commercial/organizations/:organizationId` | `/super-admin/organizations/:organizationId` | Param substituted, query string preserved |
@@ -85,7 +82,8 @@ Every Super Admin frontend route, generated directly from `frontend/src/App.jsx`
 | `/super-admin/commercial/kill-switch` | `/super-admin/kill-switch` | |
 | `/super-admin/commercial/production-acceptance` | `/super-admin/production-readiness` | |
 | `/super-admin/command-center/triage` | `/super-admin/triage` | Command Center sub-route redirect |
-| `/super-admin/command-center/commercial` | `/super-admin/commercial/accounts` | Command Center sub-route redirect |
+| `/super-admin/command-center/commercial` | `/super-admin/organizations` | Command Center sub-route redirect (through the accounts→organizations redirect below) |
+| `/super-admin/commercial/accounts` | `/super-admin/organizations` | Rendered the identical OrganizationsPage under a second URL |
 | `/super-admin/command-center/financial` | `/super-admin/financial-operations` | Command Center sub-route redirect |
 | `/super-admin/command-center/reliability` | `/super-admin/reliability` | Command Center sub-route redirect |
 | `/super-admin/command-center/governance` | `/super-admin/governance` | Command Center sub-route redirect |
@@ -97,6 +95,8 @@ Every Super Admin frontend route, generated directly from `frontend/src/App.jsx`
 | `/super-admin/integrations/imports-exports` | `/super-admin/reliability` | Sidebar audit cleanup: label had no backend feature behind it |
 | `/super-admin/integrations/jobs` | `/super-admin/tenant-health/jobs` | Redirected to surviving job-health entry |
 | `/super-admin/governance/roles` | `/super-admin/users` | Sidebar audit cleanup: duplicated Administrators & Users |
+| `/super-admin/governance/security-events` | `/super-admin/audit-logs` | Audit & Evidence hub: the former sub-route rendered the same `AuditLogsPage` under a second URL with no distinct data or actions; it is now a tab of the hub |
+| `/super-admin/reliability/data-quality` | `/super-admin/reliability` | System Health hub: always rendered a permanent "not implemented" placeholder, and no data-quality checks exist in the backend to put behind it |
 
 **Note on `LegacyRedirect` component**: every legacy path's target `:param` segments are substituted with the current route's matched params, and the query string is preserved, so a bookmarked/shared legacy URL (including detail pages) lands on the exact equivalent canonical page rather than a generic top-level route.
 

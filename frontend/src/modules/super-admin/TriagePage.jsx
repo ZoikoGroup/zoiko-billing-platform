@@ -28,7 +28,7 @@ import {
   listAttentionItems,
 } from "../../service/commandCenterService";
 import { getJobTelemetry, retryJob } from "../../service/privilegedAccessService";
-import { PageHeader } from "../../components/billing-ui";
+import { PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 
 const SEVERITY_BADGES = {
@@ -67,14 +67,20 @@ const PIPELINE_STAGE_MAPPINGS = [
 const ROUTE_INCIDENTS = "/super-admin/reliability/incidents";
 const ROUTE_REPROCESSING = "/super-admin/reliability/reprocessing";
 
-export default function TriagePage({ showReprocessing } = {}) {
+/**
+ * `embedded` drops this page's own PageHeader when it is mounted as a tab of
+ * the System Health hub, which renders the tab-aware header itself; leaving it
+ * on stacks two headers. The standalone routes (/super-admin/reliability/
+ * incidents, /super-admin/reliability/reprocessing, /super-admin/triage) keep
+ * the header. `showReprocessing` lets an embedding hub (e.g. the Reliability
+ * hub's merged "Incidents & Processing Failures" tab, mounted at a pathname
+ * that matches neither dedicated route below) opt into the reprocessing panel
+ * explicitly. Standalone routing is untouched — pathname still decides it
+ * there.
+ */
+export default function TriagePage({ showReprocessing, embedded = false } = {}) {
   const location = useLocation();
   const isIncidentsRoute = location.pathname === ROUTE_INCIDENTS;
-  // showReprocessing lets an embedding hub (e.g. the Reliability hub's
-  // merged "Incidents & Processing Failures" tab, mounted at a pathname
-  // that matches neither dedicated route below) opt into the reprocessing
-  // panel explicitly. Standalone routing is untouched — pathname still
-  // decides it there.
   const isReprocessingRoute = showReprocessing || location.pathname === ROUTE_REPROCESSING;
   const pageTitle = isReprocessingRoute
     ? "Processing Failures & Reprocessing"
@@ -209,28 +215,32 @@ export default function TriagePage({ showReprocessing } = {}) {
   const criticalEvents = summary?.critical_events || [];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className={embedded ? "space-y-6" : "p-4 sm:p-6 lg:p-8 space-y-6"}>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <PageHeader
-          title={pageTitle}
-          description="Real-time incident response, 7-stage processing pipeline telemetry, circuit breaker safety controls, and critical audit stream."
-          icon={ClipboardList}
-        />
+        {!embedded && (
+          <PageHeader
+            title={pageTitle}
+            description="Real-time incident response, 7-stage processing pipeline telemetry, circuit breaker safety controls, and critical audit stream."
+            icon={ClipboardList}
+            accent="teal"
+          />
+        )}
         <button
           type="button"
           onClick={load}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          className={`inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-60 ${embedded ? "ml-auto" : ""}`}
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          Refresh Triage
+          {loading ? "Refreshing…" : "Refresh Triage"}
         </button>
       </div>
 
       {isReprocessingRoute && (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Failed Jobs</h3>
+        <SectionCard
+          variant="standard"
+          title="Failed Jobs"
+          actions={
             <button
               type="button"
               onClick={loadFailedJobs}
@@ -240,8 +250,8 @@ export default function TriagePage({ showReprocessing } = {}) {
               <RefreshCw size={12} className={jobsLoading ? "animate-spin" : ""} />
               Refresh
             </button>
-          </div>
-
+          }
+        >
           {jobsLoading ? (
             <div className="py-8 flex justify-center">
               <Spinner />
@@ -298,7 +308,7 @@ export default function TriagePage({ showReprocessing } = {}) {
               ))}
             </div>
           )}
-        </div>
+        </SectionCard>
       )}
 
       {loading ? (
@@ -310,26 +320,30 @@ export default function TriagePage({ showReprocessing } = {}) {
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           {/* T1: Live Incidents */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${incidents?.top_items?.length > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500"}`} />
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">T1 · Live Incidents</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-extrabold text-rose-700">
-                    {incidents?.counts?.p0 || 0} P0 · {incidents?.counts?.p1 || 0} P1
+          <SectionCard
+            variant="hero"
+            accent="teal"
+            title={
+              <span className="inline-flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${incidents?.top_items?.length > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500"}`} />
+                T1 · Live Incidents
+              </span>
+            }
+            actions={
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-extrabold text-rose-700">
+                  {incidents?.counts?.p0 || 0} P0 · {incidents?.counts?.p1 || 0} P1
+                </span>
+                {(incidents?.counts?.sla_breaches ?? 0) > 0 && (
+                  <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-extrabold text-white">
+                    {incidents.counts.sla_breaches} SLA Breaches
                   </span>
-                  {(incidents?.counts?.sla_breaches ?? 0) > 0 && (
-                    <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-extrabold text-white">
-                      {incidents.counts.sla_breaches} SLA Breaches
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
-
-              <div className="mt-4 space-y-3">
+            }
+          >
+            <>
+              <div className="space-y-3">
                 {(!incidents?.top_items?.length) ? (
                   <div className="py-8 text-center">
                     <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
@@ -380,24 +394,25 @@ export default function TriagePage({ showReprocessing } = {}) {
                   })
                 )}
               </div>
-            </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-600 flex justify-between items-center">
-              <span>Attention Engine v3.0 · Server-enforced SLA clocks</span>
-              <span className="font-semibold">{incidents?.counts?.total_open ?? 0} total open</span>
-            </div>
-          </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-600 flex justify-between items-center">
+                <span>Attention Engine v3.0 · Server-enforced SLA clocks</span>
+                <span className="font-semibold">{incidents?.counts?.total_open ?? 0} total open</span>
+              </div>
+            </>
+          </SectionCard>
 
           {/* T2: Processing Pipeline (7 Stages) */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">T2 · Processing Pipeline (7 Stages)</h3>
+          <SectionCard
+            variant="standard"
+            title="T2 · Processing Pipeline (7 Stages)"
+            actions={
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${summary?.scheduler_enabled ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
                 Scheduler {summary?.scheduler_enabled ? "Active" : "Disabled"}
               </span>
-            </div>
-
-            <div className="mt-4 space-y-2.5">
+            }
+          >
+            <div className="space-y-2.5">
               {PIPELINE_STAGE_MAPPINGS.map((mapping, idx) => {
                 const job = pipelineStages.find((j) => j.job_name === mapping.job_name);
                 const isStale = !job || job.freshness === "stale" || job.freshness === "unknown";
@@ -434,21 +449,22 @@ export default function TriagePage({ showReprocessing } = {}) {
                 );
               })}
             </div>
-          </div>
+          </SectionCard>
 
           {/* T3: Safety Controls (Circuit Breakers) */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">T3 · Safety Controls &amp; Circuit Breakers</h3>
+          <SectionCard
+            variant="standard"
+            title="T3 · Safety Controls & Circuit Breakers"
+            actions={
               <Link
                 to="/super-admin/kill-switch"
                 className="text-xs font-bold text-brand-600 hover:text-brand-800"
               >
                 Manage Breakers →
               </Link>
-            </div>
-
-            <div className="mt-4 space-y-3">
+            }
+          >
+            <div className="space-y-3">
               {engagedBreakers.length === 0 ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-xs text-emerald-900">
                   <div className="flex items-center gap-2 font-bold">
@@ -489,21 +505,22 @@ export default function TriagePage({ showReprocessing } = {}) {
                 ))}
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* T4: Critical Event Stream */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">T4 · Critical Event Stream</h3>
+          <SectionCard
+            variant="standard"
+            title="T4 · Critical Event Stream"
+            actions={
               <Link
                 to="/super-admin/audit-logs"
                 className="text-xs font-bold text-brand-600 hover:text-brand-800"
               >
                 Full Audit Trail →
               </Link>
-            </div>
-
-            <div className="mt-4 space-y-2.5">
+            }
+          >
+            <div className="space-y-2.5">
               {criticalEvents.length === 0 ? (
                 <p className="py-6 text-center text-xs text-slate-600">No platform audit entries recorded yet.</p>
               ) : (
@@ -525,7 +542,7 @@ export default function TriagePage({ showReprocessing } = {}) {
                 ))
               )}
             </div>
-          </div>
+          </SectionCard>
         </div>
       )}
 

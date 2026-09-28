@@ -5,7 +5,7 @@ import {
   listCommercialPlanVersions,
   listPlanVersionEntitlements,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Select } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, Select } from "../../components/billing-ui";
 import { StatusBadge, ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
 import {
   CATALOG_VERSION_STATUS_OPTIONS,
@@ -16,7 +16,9 @@ import {
   formatEntitlementValue,
 } from "./constants";
 
-export default function PlanEntitlementsPage() {
+// `embedded` drops this page's own PageHeader when it is mounted as a tab of
+// the Products & Pricing hub.
+export default function PlanEntitlementsPage({ embedded = false } = {}) {
   const [plans, setPlans] = useState([]);
   const [versions, setVersions] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -25,6 +27,15 @@ export default function PlanEntitlementsPage() {
   const [loading, setLoading] = useState(true);
   const [versionLoading, setVersionLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Which of the three cascading fetches (plan list / versions-for-plan /
+  // entitlements-for-version) last failed, so Retry re-runs that one fetch
+  // instead of just clearing the message. Bumping the matching nonce below
+  // re-triggers only that effect without disturbing the operator's selection.
+  const [errorStage, setErrorStage] = useState(null);
+  const [plansRetry, setPlansRetry] = useState(0);
+  const [versionsRetry, setVersionsRetry] = useState(0);
+  const [entitlementsRetry, setEntitlementsRetry] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -37,12 +48,16 @@ export default function PlanEntitlementsPage() {
         setPlans(plans);
         if (plans.length === 1) setSelectedPlanId(String(plans[0].id));
       })
-      .catch((err) => alive && setError(err?.message || "Failed to load plans."))
+      .catch((err) => {
+        if (!alive) return;
+        setError(err?.message || "Failed to load plans.");
+        setErrorStage("plans");
+      })
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [plansRetry]);
 
   // Whenever the plan changes, load its versions and reset the version picker.
   useEffect(() => {
@@ -57,6 +72,7 @@ export default function PlanEntitlementsPage() {
     }
     setVersionLoading(true);
     setEntitlements([]);
+    setError((prev) => (errorStage === "versions" || errorStage === "entitlements" ? null : prev));
     listCommercialPlanVersions(Number(selectedPlanId))
       .then((data) => {
         if (!alive) return;
@@ -65,13 +81,19 @@ export default function PlanEntitlementsPage() {
         const preferred =
           versions.find((v) => v.status === "published") || versions[0];
         setVersionId(preferred ? String(preferred.id) : "");
+        setErrorStage((prev) => (prev === "versions" ? null : prev));
       })
-      .catch((err) => alive && setError(err?.message || "Failed to load versions."))
+      .catch((err) => {
+        if (!alive) return;
+        setError(err?.message || "Failed to load versions.");
+        setErrorStage("versions");
+      })
       .finally(() => alive && setVersionLoading(false));
     return () => {
       alive = false;
     };
-  }, [selectedPlanId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlanId, versionsRetry]);
 
   useEffect(() => {
     let alive = true;
@@ -82,13 +104,30 @@ export default function PlanEntitlementsPage() {
       };
     }
     setEntitlements([]);
+    setError((prev) => (errorStage === "entitlements" ? null : prev));
     listPlanVersionEntitlements(Number(versionId))
-      .then((data) => alive && setEntitlements(data.entitlements || []))
-      .catch((err) => alive && setError(err?.message || "Failed to load entitlements."));
+      .then((data) => {
+        if (!alive) return;
+        setEntitlements(data.entitlements || []);
+        setErrorStage((prev) => (prev === "entitlements" ? null : prev));
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(err?.message || "Failed to load entitlements.");
+        setErrorStage("entitlements");
+      });
     return () => {
       alive = false;
     };
-  }, [versionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [versionId, entitlementsRetry]);
+
+  const retry = useCallback(() => {
+    if (errorStage === "plans") setPlansRetry((n) => n + 1);
+    else if (errorStage === "versions") setVersionsRetry((n) => n + 1);
+    else if (errorStage === "entitlements") setEntitlementsRetry((n) => n + 1);
+    else setError(null);
+  }, [errorStage]);
 
   const selectedVersion = useMemo(
     () => versions.find((v) => String(v.id) === versionId),
@@ -148,15 +187,17 @@ export default function PlanEntitlementsPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
+        embedded={embedded}
+        accent="violet"
         title="Plan Entitlements"
         description="ZB-COM-ENT-001 · Part 1 · read-only per-plan-version entitlement matrix (§13). Pick a plan and version to inspect its typed entitlement snapshot."
         icon={KeySquare}
         meta={selectedVersion ? `v${selectedVersion.version_number} · ${selectedVersion.status}` : null}
       />
 
-      <div className="mt-6 space-y-4">
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
         <div className="flex flex-wrap items-start gap-4">
           <div className="w-full max-w-sm">
             <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="pe-plan">
@@ -201,35 +242,43 @@ export default function PlanEntitlementsPage() {
         )}
 
         {error ? (
-          <div className="rounded-3xl border border-slate-200 bg-white">
-            <ErrorState message={error} onRetry={() => setError(null)} title="Unable to load plan entitlements" />
-          </div>
-        ) : loading ? (
-          <Spinner />
-        ) : !selectedPlanId ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4">
-            <EmptyState
-              icon={KeySquare}
-              title="No plan selected"
-              message="Select a commercial plan to inspect its versioned entitlement bundle."
-            />
-          </div>
+          <ErrorState message={error} onRetry={retry} title="Unable to load plan entitlements" />
         ) : (
-          <DataTable
-            columns={columns}
-            data={entitlements}
-            loading={versionLoading}
-            emptyTitle="No entitlements bound to this version"
-            emptyMessage="This version has no PlanEntitlement rows yet — parts of the bundle may be unseeded for drafts."
-            minWidth={820}
-          />
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={KeySquare}
+            title="Plan Entitlement Matrix"
+            description="Read-only per-plan-version entitlement snapshot — the published version is immutable, so values shown are the approved bundle."
+          >
+            {loading ? (
+              <Spinner />
+            ) : !selectedPlanId ? (
+              <EmptyState
+                icon={KeySquare}
+                title="No plan selected"
+                message="Select a commercial plan to inspect its versioned entitlement bundle."
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={entitlements}
+                loading={versionLoading}
+                emptyTitle="No entitlements bound to this version"
+                emptyMessage="This version has no PlanEntitlement rows yet — parts of the bundle may be unseeded for drafts."
+                minWidth={820}
+              />
+            )}
+          </SectionCard>
         )}
 
         {!error && !loading && entitlements.length > 0 && (
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-            <StatusBadge status={selectedVersion?.status || ""} options={CATALOG_VERSION_STATUS_OPTIONS} />
-            {displayValue(entitlements.length)} entitlement(s) resolved for this version.
-          </div>
+          <SectionCard variant="quiet">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <StatusBadge status={selectedVersion?.status || ""} options={CATALOG_VERSION_STATUS_OPTIONS} />
+              {displayValue(entitlements.length)} entitlement(s) resolved for this version.
+            </div>
+          </SectionCard>
         )}
       </div>
     </div>

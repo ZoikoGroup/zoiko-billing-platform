@@ -9,7 +9,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { getConfigurationInventory } from "../../service/commandCenterService";
-import { PageHeader, Button } from "../../components/billing-ui";
+import { PageHeader, Button, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 
 /**
@@ -60,6 +60,37 @@ function UnknownChip({ title }) {
       <HelpCircle size={11} /> UNKNOWN
     </span>
   );
+}
+
+/**
+ * "Updated by" and "At" only mean something for values that were actually
+ * written somewhere. Code-declared thresholds live in source files and
+ * environment capabilities are read from the process environment — neither was
+ * ever "updated" by an actor, so labelling them UNKNOWN claimed missing
+ * evidence where in fact the field is not applicable. That is the same
+ * dishonesty UNKNOWN exists to prevent, just pointed the other way.
+ */
+const PROVENANCE = {
+  platform_setting: {
+    actor: null, // unknown means unknown
+    at: null,
+  },
+  operational_threshold: {
+    actor: "Code-declared",
+    at: "Declared in source",
+  },
+  environment_capability: {
+    actor: "Environment-derived",
+    at: "Read from environment",
+  },
+};
+
+function ProvenanceCell({ category, field, children, title }) {
+  const label = PROVENANCE[category]?.[field];
+  if (label) {
+    return <span className="text-[10px] font-semibold text-slate-500">{label}</span>;
+  }
+  return children;
 }
 
 function EntryRow({ entry, isFirst }) {
@@ -122,19 +153,23 @@ function EntryRow({ entry, isFirst }) {
         <div className="flex flex-wrap items-center justify-start gap-x-3 gap-y-1 text-[10px] text-slate-500 sm:justify-end">
           <span>
             Updated by:{" "}
-            {entry.updated_by ? (
-              <strong className="text-slate-700">{entry.updated_by}</strong>
-            ) : (
-              <UnknownChip title="No recorded actor exists — not fabricated." />
-            )}
+            <ProvenanceCell category={entry.category} field="actor">
+              {entry.updated_by ? (
+                <strong className="text-slate-700">{entry.updated_by}</strong>
+              ) : (
+                <UnknownChip title="No recorded actor exists — not fabricated." />
+              )}
+            </ProvenanceCell>
           </span>
           <span>
             At:{" "}
-            {entry.last_updated_at ? (
-              new Date(entry.last_updated_at).toLocaleString()
-            ) : (
-              <UnknownChip title="No recorded timestamp exists." />
-            )}
+            <ProvenanceCell category={entry.category} field="at">
+              {entry.last_updated_at ? (
+                new Date(entry.last_updated_at).toLocaleString()
+              ) : (
+                <UnknownChip title="No recorded timestamp exists." />
+              )}
+            </ProvenanceCell>
           </span>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 font-bold text-slate-600">
             {entry.audit_status}
@@ -145,7 +180,7 @@ function EntryRow({ entry, isFirst }) {
   );
 }
 
-export default function ConfigurationGovernancePage() {
+export default function ConfigurationGovernancePage({ embedded = false } = {}) {
   const [inventory, setInventory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -175,22 +210,41 @@ export default function ConfigurationGovernancePage() {
   }, [inventory]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Configuration Governance"
-        description="One authoritative inventory of the configuration that governs this control plane: DB-backed platform settings (audited mutations), code-declared operational thresholds imported live from their enforcing modules, and environment capability status (presence only). UNKNOWN means no recorded evidence exists — never a guess."
-        icon={Settings2}
-        meta={
-          inventory?.generated_at
-            ? `Generated ${new Date(inventory.generated_at).toLocaleString()}`
-            : null
-        }
-        actions={
-          <Button variant="secondary" icon={RefreshCw} onClick={load} loading={loading}>
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
+      {embedded ? (
+        // Embedded as a tab of the Audit & Evidence hub: the hub renders the
+        // tab-aware PageHeader itself, so this page suppresses its own (which
+        // would otherwise stack a second header directly beneath the hub's).
+        // The refresh action and the "generated at" stamp lived in that header,
+        // so they are repeated here rather than dropped.
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">
+            {inventory?.generated_at
+              ? `Generated ${new Date(inventory.generated_at).toLocaleString()}`
+              : "Inventory not generated yet."}
+          </p>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load} loading={loading}>
             Refresh
           </Button>
-        }
-      />
+        </div>
+      ) : (
+        <PageHeader
+          title="Configuration Governance"
+          description="One authoritative inventory of the configuration that governs this control plane: DB-backed platform settings (audited mutations), code-declared operational thresholds imported live from their enforcing modules, and environment capability status (presence only). UNKNOWN means no recorded evidence exists — never a guess."
+          icon={Settings2}
+          accent="slate"
+          meta={
+            inventory?.generated_at
+              ? `Generated ${new Date(inventory.generated_at).toLocaleString()}`
+              : null
+          }
+          actions={
+            <Button variant="secondary" icon={RefreshCw} onClick={load} loading={loading}>
+              Refresh
+            </Button>
+          }
+        />
+      )}
 
       {inventory?.honesty_notes?.length > 0 && (
         <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
@@ -203,7 +257,7 @@ export default function ConfigurationGovernancePage() {
         </div>
       )}
 
-      <div className="mt-6 space-y-6">
+      <div className={embedded ? "space-y-6" : "mt-6 space-y-6"}>
         {loading && !inventory ? (
           <Spinner />
         ) : error ? (
@@ -221,32 +275,27 @@ export default function ConfigurationGovernancePage() {
             const Icon = meta.icon;
             const count = inventory?.summary?.[category] ?? entries.length;
             return (
-              <div
+              <SectionCard
                 key={category}
-                className="rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)]"
+                variant="standard"
+                accent="slate"
+                icon={Icon}
+                title={meta.label}
+                description={meta.blurb}
+                actions={
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+                    {count} entr{count === 1 ? "y" : "ies"}
+                  </span>
+                }
               >
-                <div className="border-b border-slate-100 p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-800">
-                      <span className={`rounded-xl p-1.5 ${meta.badge}`}>
-                        <Icon size={15} />
-                      </span>
-                      {meta.label}
-                    </h3>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
-                      {count} entr{count === 1 ? "y" : "ies"}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-xs text-slate-500">{meta.blurb}</p>
-                </div>
                 {entries.length === 0 ? (
-                  <p className="p-5 text-xs text-slate-500">None present.</p>
+                  <p className="text-xs text-slate-500">None present.</p>
                 ) : (
                   entries.map((entry, idx) => (
                     <EntryRow key={`${category}-${entry.name}`} entry={entry} isFirst={idx === 0} />
                   ))
                 )}
-              </div>
+              </SectionCard>
             );
           })
         )}

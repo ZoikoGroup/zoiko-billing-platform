@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+from app.config import step_up_bypass_active
 from app.modules.auth.models import UserRole
 
 # Platform Settings can legitimately hold operational overrides (e.g. an SMTP
@@ -398,6 +399,8 @@ class CircuitBreakerToggleRequest(BaseModel):
 
     @model_validator(mode="after")
     def _one_factor_required(self):
+        if step_up_bypass_active():
+            return self
         if not self.code and not self.recovery_code:
             raise ValueError("Either a TOTP code or a recovery code is required to change a circuit breaker.")
         return self
@@ -489,6 +492,8 @@ class PrivilegedAccessStepUp(BaseModel):
 
     @model_validator(mode="after")
     def _one_factor_required(self):
+        if step_up_bypass_active():
+            return self
         if not self.code and not self.recovery_code:
             raise ValueError("Either a TOTP code or a recovery code is required.")
         return self

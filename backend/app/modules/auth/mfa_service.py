@@ -96,18 +96,57 @@ def is_mfa_enabled(db: Session, user_id: int) -> bool:
     return bool(row and row.is_enabled)
 
 
+def step_up_is_bypassed() -> bool:
+    """True when the dev-only MFA_STEP_UP_BYPASS flag is on.
+
+    Delegates to config.step_up_bypass_active so the request schemas and this
+    service can never disagree about whether the control is active.
+    """
+    from app.config import step_up_bypass_active
+
+    return step_up_bypass_active()
+
+
 # ── Enrollment (self-service from an authenticated session) ──────────────────
 
-def start_enrollment(db: Session, user: User) -> dict:
-    """(Re)generates a fresh, unconfirmed TOTP secret. Safe to call again
-    before verify_enrollment completes (e.g. the user re-scans a fresh QR) —
-    only verify_enrollment ever flips is_enabled to True."""
+def start_enrollment(db: Session, user: User, regenerate: bool = False) -> dict:
+    """Returns the secret to enroll with, generating one only if needed.
+
+    IDEMPOTENT BY DEFAULT. Regenerating on every call silently invalidated a
+    key the operator had already typed into their authenticator, so the codes
+    that app produced could never verify and the only symptom was an
+    "Incorrect verification code" with no way to tell that the key had been
+    swapped out from under them. An unconfirmed enrollment now survives
+    re-opening the setup screen; a new key is issued only when the caller asks
+    for one explicitly (regenerate=True) or when nothing is pending.
+
+    Only verify_enrollment ever flips is_enabled to True.
+    """
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
     row = get_or_create_mfa_row(db, user)
     if row.is_enabled:
         raise BadRequestException("MFA is already enabled on this account.")
+
+    if not regenerate and row.secret_encrypted:
+        # Replay the pending enrollment rather than replacing it. Decryption
+        # also proves the stored secret is still readable under the current
+        # MFA_ENCRYPTION_KEY; if it is not, fall through and issue a new one.
+        try:
+            raw_secret = decrypt_secret(row.secret_encrypted)
+        except Exception:
+            raw_secret = None
+        if raw_secret:
+            totp = pyotp.TOTP(raw_secret)
+            return {
+                "secret": raw_secret,
+                "otpauth_url": totp.provisioning_uri(
+                    name=user.email, issuer_name=settings.MFA_ISSUER_NAME
+                ),
+                "issuer": settings.MFA_ISSUER_NAME,
+                "reused_pending": True,
+            }
 
     raw_secret = pyotp.random_base32()
     row.secret_encrypted = encrypt_secret(raw_secret)
@@ -127,7 +166,12 @@ def start_enrollment(db: Session, user: User) -> dict:
 
     totp = pyotp.TOTP(raw_secret)
     otpauth_url = totp.provisioning_uri(name=user.email, issuer_name=settings.MFA_ISSUER_NAME)
-    return {"secret": raw_secret, "otpauth_url": otpauth_url, "issuer": settings.MFA_ISSUER_NAME}
+    return {
+        "secret": raw_secret,
+        "otpauth_url": otpauth_url,
+        "issuer": settings.MFA_ISSUER_NAME,
+        "reused_pending": False,
+    }
 
 
 def verify_enrollment(
@@ -145,7 +189,11 @@ def verify_enrollment(
         raise BadRequestException("No pending MFA enrollment found for this account.")
 
     raw_secret = decrypt_secret(row.secret_encrypted)
-    if not pyotp.TOTP(raw_secret).verify(code, valid_window=1):
+    # Authenticator apps and password managers hand back "123 456" about as
+    # often as "123456". Normalise before handing it to pyotp, which does a
+    # strict string compare and would otherwise reject a valid code.
+    candidate = (code or "").strip().replace(" ", "").replace("-", "")
+    if not pyotp.TOTP(raw_secret).verify(candidate, valid_window=1):
         PlatformAuditService(db).log_no_commit(
             actor_id=user.id,
             actor_role="super_admin",
@@ -155,7 +203,7 @@ def verify_enrollment(
             metadata={"stage": "enroll_verify"},
         )
         db.commit()
-        raise BadRequestException("Incorrect verification code. Please try again.")
+        raise BadRequestException("Incorrect verification code.")
 
     row.is_enabled = True
     row.enabled_at = datetime.utcnow()
@@ -199,6 +247,17 @@ def verify_step_up(db: Session, user: User, code: str | None, recovery_code: str
     None (no tokens) on success."""
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
+
+    if step_up_is_bypassed():
+        # Deliberately NOT silent. A bypassed privileged action must be visible
+        # in the logs, because the whole point of the flag is that the operator
+        # knows they are running without the control.
+        logger.warning(
+            "MFA_STEP_UP_BYPASS active: skipping step-up verification for %s (user_id=%s). "
+            "This must never happen outside local development.",
+            getattr(user, "email", "?"), getattr(user, "id", "?"),
+        )
+        return
 
     row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user.id).first()
     if row is None or not row.is_enabled:

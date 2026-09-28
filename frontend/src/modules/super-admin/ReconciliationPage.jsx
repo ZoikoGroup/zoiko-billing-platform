@@ -126,7 +126,7 @@ function ResolveModal({ open, onClose, onSubmit }) {
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!note}>
+          <Button type="submit" variant="primary" loading={busy} disabled={!note.trim()}>
             Resolve
           </Button>
         </div>
@@ -294,11 +294,12 @@ const RUN_COLUMNS = (onOpen) => [
         <span className="text-xs text-slate-400">Ledger only</span>
       ),
   },
-  { key: "checks_total", label: "Checks", align: "center", render: (r) => <span className="text-slate-700">{r.checks_total}</span> },
+  { key: "checks_total", label: "Checks", align: "center", numeric: true, render: (r) => <span className="text-slate-700">{r.checks_total}</span> },
   {
     key: "exceptions_found",
     label: "Exceptions",
     align: "center",
+    numeric: true,
     render: (r) => (
       <span className={r.exceptions_found > 0 ? "font-semibold text-red-600" : "text-slate-700"}>{r.exceptions_found}</span>
     ),
@@ -319,7 +320,9 @@ const RUN_COLUMNS = (onOpen) => [
   },
 ];
 
-export default function ReconciliationPage() {
+// `embedded` drops this page's own PageHeader and padding when it is mounted
+// as a tab of the Financial Operations hub, whose header already titles it.
+export default function ReconciliationPage({ embedded = false } = {}) {
   const [runs, setRuns] = useState(null);
   // `loadError` blocks the run-history table (the list itself failed to
   // load — e.g. unauthorized). `actionError` is a dismissible banner for a
@@ -418,21 +421,24 @@ export default function ReconciliationPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Tenant Ledger Reconciliation"
-        description="Internal tenant ledger reconciliation engine (REC-01) — invoice balance and payment-allocation invariants, checked on a daily schedule or on demand."
-        icon={ShieldCheck}
-      />
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
+      {!embedded && (
+        <PageHeader
+          title="Tenant Ledger Reconciliation"
+          description="Internal tenant ledger reconciliation engine (REC-01) — invoice balance and payment-allocation invariants, checked on a daily schedule or on demand."
+          icon={ShieldCheck}
+          accent="brand"
+        />
+      )}
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className={`rounded-2xl border border-slate-200 bg-white p-4 ${embedded ? "" : "mt-4"}`}>
         <Field label="Organization" hint="Leave as “All organizations” to sweep the whole platform.">
           <div className="flex items-center gap-2">
             <Building2 size={14} className="shrink-0 text-slate-500" aria-hidden="true" />

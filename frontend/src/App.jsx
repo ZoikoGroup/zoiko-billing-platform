@@ -148,13 +148,6 @@ const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadi
 const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
 const CommandCenterHubPage = lazy(() => import("./modules/super-admin/CommandCenterHubPage"));
 const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
-const BillingCommandCenterPage = lazy(() => import("./modules/super-admin/BillingCommandCenterPage"));
-const InvoiceEnginePage = lazy(() => import("./modules/super-admin/InvoiceEnginePage"));
-const PaymentsDisputesPage = lazy(() => import("./modules/super-admin/PaymentsDisputesPage"));
-const BalancesAllocationsPage = lazy(() => import("./modules/super-admin/BalancesAllocationsPage"));
-const ReconciliationPage = lazy(() => import("./modules/super-admin/ReconciliationPage"));
-const CreditsRefundsPage = lazy(() => import("./modules/super-admin/CreditsRefundsPage"));
-const TaxEInvoicingPage = lazy(() => import("./modules/super-admin/TaxEInvoicingPage"));
 const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 const OrgAdminNotificationsPage = lazy(() => import("./modules/organization-admin/NotificationsPage"));
 
@@ -261,7 +254,6 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
   { path: "/super-admin/notifications", element: <SuperAdminNotificationsPage /> },
   { path: "/super-admin/tenant-health/jobs", element: <Navigate to="/super-admin/tenant-health?tab=jobs" replace /> },
-  { path: "/super-admin/commercial/accounts", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/commercial/plans", element: <CommercialPlansPage /> },
   { path: "/super-admin/commercial/plans/:planId/versions", element: <CommercialPlanVersionsPage /> },
   { path: "/super-admin/commercial/subscriptions", element: <CommercialSubscriptionsPage /> },
@@ -272,24 +264,15 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/commercial/plan-changes", element: <CommercialPlanChangesPage /> },
   { path: "/super-admin/commercial/evaluation-programs", element: <CommercialEvaluationProgramsPage /> },
   { path: "/super-admin/commercial/invoices", element: <Plane1BillingPage /> },
-  { path: "/super-admin/financial/invoice-engine", element: <InvoiceEnginePage /> },
-  { path: "/super-admin/financial/payments", element: <PaymentsDisputesPage /> },
-  { path: "/super-admin/financial/balances", element: <BalancesAllocationsPage /> },
-  { path: "/super-admin/financial/reconciliation", element: <ReconciliationPage /> },
-  { path: "/super-admin/financial/credits", element: <CreditsRefundsPage /> },
-  { path: "/super-admin/financial/tax", element: <TaxEInvoicingPage /> },
   { path: "/super-admin/financial-operations", element: <FinancialOperationsPage /> },
-  { path: "/super-admin/billing-command-center", element: <BillingCommandCenterPage /> },
   { path: "/super-admin/audit-logs", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance", element: <GovernancePage /> },
   { path: "/super-admin/governance/privileged-sessions", element: <SupportAccessPage /> },
-  { path: "/super-admin/governance/security-events", element: <CommercialAuditLogsPage /> },
   { path: "/super-admin/governance/data", element: <GovernancePage /> },
-{ path: "/super-admin/governance/configuration", element: <ConfigurationGovernancePage /> },
+  { path: "/super-admin/governance/configuration", element: <ConfigurationGovernancePage /> },
   { path: "/super-admin/reliability", element: <ReliabilityPage /> },
   { path: "/super-admin/reliability/incidents", element: <TriagePage /> },
   { path: "/super-admin/reliability/reprocessing", element: <TriagePage /> },
-  { path: "/super-admin/reliability/data-quality", element: <ReliabilityPage /> },
   { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },
   { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
   { path: "/super-admin/triage", element: <TriagePage /> },
@@ -304,10 +287,15 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/users", to: "/super-admin/users" },
   { from: "/settings", to: "/super-admin/settings" },
   { from: "/organizations", to: "/super-admin/organizations" },
-  { from: "/admin/billing", to: "/super-admin/billing-command-center" },
+  { from: "/admin/billing", to: "/super-admin/financial-operations?section=overview" },
   { from: "/super-admin/commercial/dashboard", to: "/super-admin/dashboard" },
   { from: "/super-admin/commercial/organizations", to: "/super-admin/organizations" },
   { from: "/super-admin/commercial/organizations/:organizationId", to: "/super-admin/organizations/:organizationId" },
+  // Rendered the exact same OrganizationsPage as /super-admin/organizations
+  // under a second URL — the "Commercial" lens link from the Command Center
+  // hub. One canonical route now; this one redirects instead of serving a
+  // second copy.
+  { from: "/super-admin/commercial/accounts", to: "/super-admin/organizations" },
   { from: "/super-admin/commercial/audit-logs", to: "/super-admin/audit-logs" },
   { from: "/super-admin/commercial/kill-switch", to: "/super-admin/kill-switch" },
   { from: "/super-admin/commercial/production-acceptance", to: "/super-admin/production-readiness" },
@@ -329,6 +317,25 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/integrations/imports-exports", to: "/super-admin/reliability" },
   { from: "/super-admin/integrations/jobs", to: "/super-admin/tenant-health?tab=jobs" },
   { from: "/super-admin/governance/roles", to: "/super-admin/users" },
+  // Standalone copies of the Financial Operations hub's tabs. Each rendered
+  // the same component as its hub tab under a second URL with its own header,
+  // so there were two homes for every finance view. They now land on the tab.
+  { from: "/super-admin/billing-command-center", to: "/super-admin/financial-operations?section=overview" },
+  { from: "/super-admin/financial/invoice-engine", to: "/super-admin/financial-operations?section=invoice-engine" },
+  { from: "/super-admin/financial/payments", to: "/super-admin/financial-operations?section=payments-recovery" },
+  { from: "/super-admin/financial/balances", to: "/super-admin/financial-operations?section=balances-allocations" },
+  { from: "/super-admin/financial/reconciliation", to: "/super-admin/financial-operations?section=tenant-ledger-reconciliation" },
+  { from: "/super-admin/financial/credits", to: "/super-admin/financial-operations?section=credits-refunds" },
+  { from: "/super-admin/financial/tax", to: "/super-admin/financial-operations?section=tax" },
+  // Two labels that described pages no distinct page ever backed:
+  // "Security Events" rendered the identical audit feed as "Audit & Evidence"
+  // (no filter in AUDIT_ACTION_OPTIONS / AUDIT_ENTITY_OPTIONS isolates
+  // security-relevant events), and "Data Quality" rendered a permanent
+  // "not implemented" placeholder. The features they promised do not exist
+  // in this codebase, so both redirect to the real page instead of serving a
+  // second, differently-titled copy or a dead end.
+  { from: "/super-admin/governance/security-events", to: "/super-admin/audit-logs" },
+  { from: "/super-admin/reliability/data-quality", to: "/super-admin/reliability" },
 ];
 
 function ModuleSpinner() {
@@ -361,7 +368,10 @@ function LegacyRedirect({ to }) {
   const resolved = to.replace(/:([A-Za-z0-9_]+)/g, (match, name) =>
     params[name] !== undefined ? params[name] : match
   );
-  return <Navigate to={`${resolved}${search}`} replace />;
+  // A target that already carries a query (e.g. ?section=tax) gets the
+  // incoming query appended with "&", not a second "?".
+  const joined = search ? `${resolved}${resolved.includes("?") ? "&" : "?"}${search.slice(1)}` : resolved;
+  return <Navigate to={joined} replace />;
 }
 
 class ErrorBoundary extends React.Component {

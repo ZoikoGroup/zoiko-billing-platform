@@ -11,7 +11,7 @@ old repo's app.config.
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anchored to THIS file's directory (backend/.env), not the process CWD.
@@ -104,6 +104,24 @@ class Settings(BaseSettings):
     MFA_MAX_FAILED_ATTEMPTS: int = 5
     MFA_LOCKOUT_MINUTES: int = 15
     MFA_PENDING_TOKEN_EXPIRE_MINUTES: int = 10
+    # Dev-only escape hatch: skip MFA step-up entirely (login is unaffected
+    # either way). Exists so local development is not blocked on provisioning
+    # an authenticator for every seeded super-admin.
+    #
+    # Hard-refused unless DEBUG is on — see _guard_mfa_bypass. This is a
+    # development convenience, not a way to run production without step-up.
+    MFA_STEP_UP_BYPASS: bool = False
+
+    @model_validator(mode="after")
+    def _guard_mfa_bypass(self):
+        if self.MFA_STEP_UP_BYPASS and not self.DEBUG:
+            raise ValueError(
+                "MFA_STEP_UP_BYPASS cannot be enabled while DEBUG is off. "
+                "Disabling step-up verification on a production deployment would "
+                "leave a single stolen password able to flip platform-wide billing "
+                "controls. Set DEBUG=false and MFA_STEP_UP_BYPASS=false for real deployments."
+            )
+        return self
 
     # ── Stripe (ported from the old platform's billing module) ─────────
     # Blank/inert by default. Fill these in once real Stripe credentials
@@ -244,3 +262,19 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def step_up_bypass_active() -> bool:
+    """Single source of truth for "is MFA step-up being skipped right now?".
+
+    Lives here, not in mfa_service, because the requirement is enforced in
+    THREE separate places: the request schemas (which reject a payload with no
+    factor before a handler ever runs) and mfa_service.verify_step_up. Bypassing
+    only the service left the schema validators still rejecting the request, so
+    the toggle still 422'd. Every enforcement point must consult this one
+    function or they will drift apart again.
+
+    Always False unless DEBUG is also on — Settings refuses to construct
+    otherwise — so it can never be true in a production deployment.
+    """
+    return bool(settings.MFA_STEP_UP_BYPASS and settings.DEBUG)

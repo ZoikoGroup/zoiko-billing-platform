@@ -43,13 +43,26 @@ export const getMetricDictionary = (domain) =>
 export const getInvoiceFinalizationBreaker = () =>
   api.get("/api/super-admin/circuit-breakers/tenant-invoice-finalization");
 
-export const setInvoiceFinalizationBreaker = (enabled, reason, code, recoveryCode) =>
+// `incident_reference` is NOT optional in practice: CircuitBreakerToggleRequest
+// rejects any engage (enabled=false) without it. Sending it only when present
+// keeps resume calls valid while making the engage case send what the server
+// demands, rather than collecting it and dropping it on the floor.
+export const setInvoiceFinalizationBreaker = (enabled, reason, code, recoveryCode, incidentReference) =>
   api.put("/api/super-admin/circuit-breakers/tenant-invoice-finalization", {
     enabled,
     reason,
+    incident_reference: incidentReference || undefined,
     code: code || undefined,
     recovery_code: recoveryCode || undefined,
   });
+
+// Whether the CALLING super_admin has MFA enrolled. Every breaker change runs
+// verify_step_up(), which refuses outright when this is false — so a UI that
+// offers the action without checking leaves the operator at a dead end with a
+// raw "MFA is not enabled on this account" error and no path forward.
+// Enrollment itself lives in SettingsPage's "Security — MFA step-up" card.
+export const getMfaStepUpStatus = () =>
+  api.get("/api/auth/mfa/status");
 
 // ZB-SA-CMD-003 §9 — generalized breaker catalog + break-glass toggle
 // (session 7). Engaging REQUIRES an incident_reference; every engaged pause

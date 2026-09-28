@@ -163,6 +163,9 @@ class MFASetupStartResponse(BaseModel):
     secret: str
     otpauth_url: str
     issuer: str
+    # True when an unconfirmed enrollment was replayed rather than replaced, so
+    # the client can tell the operator their existing key is still good.
+    reused_pending: bool = False
 
 
 class MFASetupVerifyRequest(BaseModel):
@@ -178,6 +181,9 @@ class MFASetupVerifyResponse(BaseModel):
 
 class MFAStatusResponse(BaseModel):
     enabled: bool
+    # True only under the dev-only MFA_STEP_UP_BYPASS flag, so the UI can stop
+    # demanding a code the server is not going to check.
+    bypassed: bool = False
 
 
 class MFADisableRequest(BaseModel):

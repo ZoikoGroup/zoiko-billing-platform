@@ -293,3 +293,61 @@ it("has no accessibility violations with the processor-comparison controls expan
 
   expect(await axe(container)).toHaveNoViolations();
 });
+
+// Resolve is the one write action in the Financial Operations hub: it must hit
+// the real endpoint, reflect the server's new state, and surface a failure
+// inside the modal instead of closing as if it had worked.
+const RUN_WITH_OPEN_EXCEPTION = {
+  ...BASE_RUN,
+  id: 9,
+  exceptions_found: 1,
+  exceptions: [
+    { id: 201, run_id: 9, kind: "invoice_balance_mismatch", organization_id: 1, entity_type: "invoice", entity_id: 77, detail: { expected: "10.00", actual: "12.00" }, status: "OPEN" },
+  ],
+};
+
+async function openResolveModal() {
+  withRuns([{ ...BASE_RUN, id: 9, exceptions_found: 1 }]);
+  render(<ReconciliationPage />);
+  fireEvent.click(await screen.findByRole("button", { name: /view/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /^resolve$/i }));
+  return screen.findByRole("textbox");
+}
+
+it("resolves an exception through the backend and shows the re-fetched RESOLVED state", async () => {
+  mockGetRun
+    .mockResolvedValueOnce(RUN_WITH_OPEN_EXCEPTION)
+    .mockResolvedValueOnce({
+      ...RUN_WITH_OPEN_EXCEPTION,
+      exceptions: [{ ...RUN_WITH_OPEN_EXCEPTION.exceptions[0], status: "RESOLVED", resolution_note: "credit note applied" }],
+    });
+  mockResolve.mockResolvedValue({ id: 201, status: "RESOLVED" });
+
+  const note = await openResolveModal();
+  fireEvent.change(note, { target: { value: "credit note applied" } });
+  fireEvent.click(screen.getAllByRole("button", { name: /^resolve$/i }).at(-1));
+
+  await waitFor(() => expect(mockResolve).toHaveBeenCalledWith(201, "credit note applied"));
+  await waitFor(() => expect(screen.getByText("credit note applied")).toBeInTheDocument());
+  expect(mockGetRun).toHaveBeenLastCalledWith(9);
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+it("keeps the resolve modal open with the server's error when resolving fails", async () => {
+  mockGetRun.mockResolvedValue(RUN_WITH_OPEN_EXCEPTION);
+  mockResolve.mockRejectedValue(new Error("Exception is already resolved"));
+
+  const note = await openResolveModal();
+  fireEvent.change(note, { target: { value: "dup" } });
+  fireEvent.click(screen.getAllByRole("button", { name: /^resolve$/i }).at(-1));
+
+  await waitFor(() => expect(screen.getByText("Exception is already resolved")).toBeInTheDocument());
+  expect(screen.getByRole("textbox")).toBeInTheDocument();
+});
+
+it("does not allow submitting a whitespace-only resolution note", async () => {
+  mockGetRun.mockResolvedValue(RUN_WITH_OPEN_EXCEPTION);
+  const note = await openResolveModal();
+  fireEvent.change(note, { target: { value: "   " } });
+  expect(screen.getAllByRole("button", { name: /^resolve$/i }).at(-1)).toBeDisabled();
+});
