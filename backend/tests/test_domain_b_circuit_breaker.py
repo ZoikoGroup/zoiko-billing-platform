@@ -133,6 +133,7 @@ def test_bypass_makes_schema_and_service_agree(monkeypatch, db_session):
     with pytest.raises(ValidationError):
         CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
 
+    monkeypatch.setattr(settings, "DEBUG", True)  # bypass is refused unless DEBUG is on (config.py _guard_mfa_bypass); CI runs with DEBUG unset
     monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
     assert mfa_service.step_up_is_bypassed() is True
     payload = CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
@@ -148,6 +149,7 @@ def test_bypass_does_not_relax_the_incident_reference_requirement(monkeypatch, d
     breaker must still be tied to a tracked incident."""
     from app.config import settings
 
+    monkeypatch.setattr(settings, "DEBUG", True)  # bypass is refused unless DEBUG is on (config.py _guard_mfa_bypass); CI runs with DEBUG unset
     monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
     with pytest.raises(ValidationError):
         CircuitBreakerToggleRequest(enabled=False, reason="test")
@@ -164,6 +166,7 @@ def test_privileged_access_step_up_schema_honours_the_bypass(monkeypatch):
     with pytest.raises(VE):
         PrivilegedAccessStepUp()
 
+    monkeypatch.setattr(settings, "DEBUG", True)  # bypass is refused unless DEBUG is on (config.py _guard_mfa_bypass); CI runs with DEBUG unset
     monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
     PrivilegedAccessStepUp()
 

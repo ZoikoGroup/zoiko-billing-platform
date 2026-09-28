@@ -21,6 +21,18 @@ breaker state — Unknown circuit breaker scope".
 This test resolves the ASSEMBLED route table, so it covers every router in the
 application, not just the one that was broken. It is cheap and runs on every
 suite invocation.
+
+`_flatten_routes` below, not raw `app.routes` iteration, is what makes that
+possible: FastAPI's `include_router()` stopped eagerly flattening every
+sub-router's routes into `app.routes` at registration time (a lazily-resolved
+private wrapper is stored instead, exposing an `effective_candidates()` method
+rather than `.path`/`.methods`/`.endpoint` directly) — a real break discovered
+when upgrading to the pinned fastapi==0.141.1 (CI/production) exposed a stale
+fastapi==0.111.0 in a local dev venv had been silently masking. Recursing
+through `effective_candidates()` when present, and falling back to reading
+`.path`/`.methods`/`.endpoint` directly otherwise, keeps this working against
+either shape — this file has no way to pin exactly which one a given
+environment's installed FastAPI produces.
 """
 from app.main import app
 
@@ -28,17 +40,28 @@ from app.main import app
 _IGNORED_METHODS = {"HEAD", "OPTIONS"}
 
 
+def _flatten_routes(routes):
+    """Yield (method, path, endpoint) for every leaf route reachable from
+    `routes`, in the same order Starlette will try them."""
+    for route in routes:
+        if hasattr(route, "effective_candidates"):
+            # A lazy include-router wrapper: its own .path/.methods/.endpoint
+            # are meaningless — recurse into what it actually wraps.
+            yield from _flatten_routes(route.effective_candidates())
+            continue
+        path = getattr(route, "path", None)
+        endpoint = getattr(route, "endpoint", None)
+        methods = getattr(route, "methods", None) or []
+        if not path or endpoint is None:
+            continue
+        for method in methods:
+            if method.upper() not in _IGNORED_METHODS:
+                yield (method.upper(), path, endpoint)
+
+
 def _routes_in_order():
     """(method, path) pairs in the exact order Starlette will try them."""
-    out = []
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        if not path:
-            continue
-        for method in getattr(route, "methods", None) or []:
-            if method.upper() not in _IGNORED_METHODS:
-                out.append((method.upper(), path))
-    return out
+    return [(method, path) for method, path, _endpoint in _flatten_routes(app.routes)]
 
 
 def _segments(path):
@@ -84,36 +107,65 @@ def test_no_route_is_shadowed_by_an_earlier_path_parameter_route():
     )
 
 
+async def _resolve(method, path):
+    """Dispatch a real (fake-transport) ASGI call through the whole app and
+    read back Starlette's own `scope["route"]` — the leaf route it actually
+    matched a concrete incoming URL against, set by Starlette's router
+    regardless of what the endpoint itself does afterward (auth/DB errors
+    included). This replicates real request-time path-parameter matching
+    (a literal path and a `{param}` path are different regexes competing for
+    the same concrete URL) — a `(method, path)` dict lookup keyed on the
+    declared path *template* cannot express that competition at all, since
+    the literal and templated paths are different strings and never collide
+    as dict keys. Needs a complete scope (query_string/client/server) or
+    dependency resolution raises before scope["route"] would matter anyway.
+    """
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "root_path": "",
+        "headers": [],
+        "query_string": b"",
+        "client": ("test", 0),
+        "server": ("test", 80),
+    }
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        pass
+
+    try:
+        await app(scope, receive, send)
+    except Exception:
+        # The endpoint itself may fail past routing (missing auth, DB, etc.)
+        # -- irrelevant here; scope["route"] is set before that ever runs.
+        pass
+    return scope.get("route")
+
+
 def test_legacy_breaker_alias_resolves_to_its_dedicated_handler():
     """The specific regression, pinned by handler identity so a future
     reordering (or a rename of either path) fails loudly here."""
     import asyncio
-
-    from starlette.routing import Match
 
     from app.modules.super_admin.router import (
         get_tenant_invoice_finalization_breaker,
         set_tenant_invoice_finalization_breaker,
     )
 
-    async def _first_full_match(method, path):
-        scope = {"type": "http", "method": method, "path": path, "root_path": ""}
-        for route in app.routes:
-            match, _ = route.matches(scope)
-            if match == Match.FULL:
-                return route
-        return None
-
     for method, expected in (
         ("GET", get_tenant_invoice_finalization_breaker),
         ("PUT", set_tenant_invoice_finalization_breaker),
     ):
         path = "/api/super-admin/circuit-breakers/tenant-invoice-finalization"
-        route = asyncio.run(_first_full_match(method, path))
+        route = asyncio.run(_resolve(method, path))
         assert route is not None, f"{method} {path} resolves to no route at all"
         assert route.endpoint is expected, (
-            f"{method} {path} resolves to {route.path} -> "
-            f"{getattr(route.endpoint, '__name__', route.endpoint)}"
+            f"{method} {path} resolves to {getattr(route.endpoint, '__name__', route.endpoint)}, not "
+            f"{getattr(expected, '__name__', expected)}"
         )
 
 
@@ -122,19 +174,8 @@ def test_canonical_underscore_scope_still_resolves_through_generic_route():
     canonical underscore scope, so it must keep hitting the generic handler."""
     import asyncio
 
-    from starlette.routing import Match
-
-    async def _first_full_match(method, path):
-        scope = {"type": "http", "method": method, "path": path, "root_path": ""}
-        for route in app.routes:
-            match, _ = route.matches(scope)
-            if match == Match.FULL:
-                return route
-        return None
-
     route = asyncio.run(
-        _first_full_match("GET", "/api/super-admin/circuit-breakers/tenant_invoice_finalization")
+        _resolve("GET", "/api/super-admin/circuit-breakers/tenant_invoice_finalization")
     )
     assert route is not None
-    assert route.path == "/api/super-admin/circuit-breakers/{scope}"
     assert getattr(route.endpoint, "__name__", "") == "get_circuit_breaker"
