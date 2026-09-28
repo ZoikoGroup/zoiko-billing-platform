@@ -21,15 +21,17 @@ from app.modules.commercial.enums import CommercialSubscriptionStatus
 from app.modules.super_admin.financial_operations_detail_service import (
     FinancialOperationsDetailService,
 )
+from app.modules.super_admin.models import JobRunLog, JobRunStatus
 from app.modules.super_admin.router import (
     list_commercial_subscriptions,
     list_platform_users,
 )
+from app.modules.super_admin.telemetry_service import TelemetryService
 from tests.conftest import count_queries, make_organization
 from tests.test_commercial_subscription_management import _org_with_plan, _sa_user
 from tests.test_credit_note_relations_query_count import _make_customer, _make_org
 from app.modules.billing.models import CreditNote, CreditNoteStatus, CreditNoteType
-from datetime import date
+from datetime import date, datetime, timedelta
 
 
 def _bounded_across_growth(seed_more, call_fn, db_session):
@@ -136,5 +138,37 @@ def test_financial_operations_credit_notes_query_count_is_bounded(db_session):
 
     def _call():
         return svc.list_credit_notes(limit=50)
+
+    _bounded_across_growth(_seed, _call, db_session)
+
+
+def test_job_health_query_count_is_bounded_by_distinct_job_count(db_session):
+    """TelemetryService.get_job_health() used to run 3 queries per distinct
+    job_name in a Python loop (1 + 3N total). The System Health hub's
+    "Queues & Jobs" hero panel calls this on every page load, so every
+    additional scheduled job made every load of that tab slower. Rewritten
+    to batch the "latest run per job" lookup and both 24h counts into one
+    grouped query each — 4 queries total regardless of job count. Each seed
+    call adds a NEW distinct job_name (not more rows of the same job), since
+    job_name count is the axis the original N+1 scaled on."""
+    counter_box = {"n": 0}
+
+    def _seed(count):
+        for _ in range(count):
+            i = counter_box["n"]
+            counter_box["n"] += 1
+            db_session.add(JobRunLog(
+                job_name=f"np1-job-{i}",
+                display_name=f"NP1 Job {i}",
+                status=JobRunStatus.SUCCEEDED,
+                started_at=datetime.utcnow() - timedelta(minutes=1),
+                finished_at=datetime.utcnow(),
+            ))
+        db_session.commit()
+
+    svc = TelemetryService(db_session)
+
+    def _call():
+        return svc.get_job_health()
 
     _bounded_across_growth(_seed, _call, db_session)

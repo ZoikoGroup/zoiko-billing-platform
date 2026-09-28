@@ -4,7 +4,7 @@ import {
   listCommercialSubscriptionChanges,
   reverseCommercialSubscriptionChange,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, useConfirmationDialog } from "../../components/billing-shared";
 import { SUBSCRIPTION_CHANGE_STATUS_OPTIONS, formatDateTime, displayValue } from "./constants";
 
@@ -110,7 +110,9 @@ function ReverseModal({ open, onClose, onSubmit }) {
   );
 }
 
-export default function PlanChangesPage() {
+// `embedded` drops this page's own PageHeader when it is mounted as a tab of
+// the Products & Pricing hub.
+export default function PlanChangesPage({ embedded = false } = {}) {
   const [changes, setChanges] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -155,6 +157,7 @@ export default function PlanChangesPage() {
       {
         key: "blockers",
         label: "Blockers",
+        numeric: true,
         render: (row) => {
           const count = Array.isArray(row.blockers) ? row.blockers.length : 0;
           return count > 0 ? (
@@ -183,39 +186,54 @@ export default function PlanChangesPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
+        embedded={embedded}
+        accent="violet"
         title="Plan Change History"
         description="ZB-COM-ENT-001 · Part 3 §7-§8, §16 · every upgrade/downgrade attempt, including BLOCKED ones — for investigating failed or inconsistent transitions."
         icon={GitPullRequestArrow}
         meta={`${displayValue(changes.length)} change(s)`}
       />
 
-      <div className="mt-6 space-y-4">
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
         <div className="flex items-center justify-between gap-3">
           <Select value={statusFilter} onChange={setStatusFilter} options={SUBSCRIPTION_CHANGE_STATUS_OPTIONS} placeholder="All statuses" className="w-48" />
         </div>
 
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
-        {error && (
+
+        {/* error and the table used to render independently, so a failed
+            fetch (which also clears `changes` to []) showed the error banner
+            stacked above "No plan changes yet" — a failure read as an empty
+            history. */}
+        {error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
             {error}
             <button type="button" onClick={load} className="ml-3 font-semibold underline">Retry</button>
           </div>
-        )}
-
-        {loading && changes.length === 0 ? (
-          <Spinner />
         ) : (
-          <DataTable
-            columns={columns}
-            data={changes}
-            loading={loading}
-            rowKey={(row) => row.id}
-            emptyTitle="No plan changes yet"
-            emptyMessage="Upgrades and downgrades will appear here once a tenant initiates one."
-            minWidth={960}
-          />
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={GitPullRequestArrow}
+            title="Change History Log"
+            description="Every upgrade/downgrade attempt, including BLOCKED ones — for investigating failed or inconsistent transitions."
+          >
+            {loading && changes.length === 0 ? (
+              <Spinner />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={changes}
+                loading={loading}
+                rowKey={(row) => row.id}
+                emptyTitle="No plan changes yet"
+                emptyMessage="Upgrades and downgrades will appear here once a tenant initiates one."
+                minWidth={960}
+              />
+            )}
+          </SectionCard>
         )}
       </div>
 

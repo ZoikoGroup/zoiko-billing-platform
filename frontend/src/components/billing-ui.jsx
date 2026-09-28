@@ -49,6 +49,52 @@ import {
 export { ExecutiveSummary } from "./executive-summary";
 
 /* ------------------------------------------------------------------ *
+ * Hub accents — one literal, Tailwind-scannable class set per hub, so
+ * each hub reads as a distinguishable but harmonious variation of the
+ * same product rather than a same-brand-blue everywhere ("PageHeader"),
+ * or four unrelated skins. Classes are written out in full (never built
+ * from a template string) because Tailwind's build-time scanner only
+ * emits CSS for class names it can see literally in source.
+ *
+ *   brand  — Financial Operations (unchanged existing blue)
+ *   violet — Products & Pricing (adjacent hue, echoes the existing
+ *            billing_admin "tax" domain accent for cross-app cohesion)
+ *   slate  — Audit & Evidence (restrained graphite, fits compliance)
+ *   teal   — System Health (calm monitoring green, echoes the existing
+ *            billing_admin "collections" domain accent)
+ */
+export const HUB_ACCENTS = {
+  brand: {
+    iconChip: "bg-brand-50 text-brand-600",
+    heroBorder: "border-t-4 border-t-brand-500",
+    tabActive: "border-brand-500 bg-brand-50 text-brand-700",
+    ring: "ring-brand-500/30",
+  },
+  violet: {
+    iconChip: "bg-violet-50 text-violet-600",
+    heroBorder: "border-t-4 border-t-violet-500",
+    tabActive: "border-violet-500 bg-violet-50 text-violet-700",
+    ring: "ring-violet-500/30",
+  },
+  slate: {
+    iconChip: "bg-slate-100 text-slate-600",
+    heroBorder: "border-t-4 border-t-slate-400",
+    tabActive: "border-slate-500 bg-slate-100 text-slate-700",
+    ring: "ring-slate-500/30",
+  },
+  teal: {
+    iconChip: "bg-teal-50 text-teal-600",
+    heroBorder: "border-t-4 border-t-teal-500",
+    tabActive: "border-teal-500 bg-teal-50 text-teal-700",
+    ring: "ring-teal-500/30",
+  },
+};
+
+function resolveAccent(accent) {
+  return HUB_ACCENTS[accent] || HUB_ACCENTS.brand;
+}
+
+/* ------------------------------------------------------------------ *
  * Button
  * ------------------------------------------------------------------ */
 
@@ -105,10 +151,25 @@ export function PageHeader({
   icon: Icon,
   actions,
   meta,
+  embedded = false,
+  accent = "brand",
   className = "",
 }) {
+  // A page mounted as a hub tab sits under the hub's own tab-aware header, so
+  // repeating its title/description would stack two headers. Embedded mode
+  // keeps only what the hub header can't carry: the page's count and actions.
+  if (embedded) {
+    if (!meta && !actions) return null;
+    return (
+      <div className={`flex flex-wrap items-center justify-between gap-3 ${className}`}>
+        <div className="text-xs font-medium text-slate-500">{meta}</div>
+        {actions}
+      </div>
+    );
+  }
+  const tone = resolveAccent(accent);
   return (
-    <div className={`rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] md:p-8 ${className}`}>
+    <div className={`rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] md:p-8 ${className}`}>
       {crumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {crumbs.map((crumb, idx) => {
@@ -131,18 +192,161 @@ export function PageHeader({
       <div className="flex flex-col gap-5 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between xl:gap-6">
         <div className="flex min-w-0 items-start gap-4">
           {Icon && (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-linear-to-r from-brand to-brand-hover text-white shadow-sm">
-              <Icon size={22} />
+            // Calmer than the old solid brand-gradient chip — a soft accent
+            // tint that can vary per hub instead of every page in the app
+            // leading with an identical loud blue tile.
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${tone.iconChip}`}>
+              <Icon size={21} />
             </div>
           )}
           <div className="min-w-0">
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">{title}</h1>
-            {description && <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>}
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-[1.75rem]">{title}</h1>
+            {description && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">{description}</p>}
           </div>
         </div>
         {actions}
       </div>
-      {meta && <div className="mt-3 text-xs text-slate-500">{meta}</div>}
+      {/* Secondary to the title by design — smaller, lighter weight, muted
+          color — so a "Refreshed HH:MM:SS" stamp never competes with the
+          page's actual title for attention. */}
+      {meta && <div className="mt-3 text-xs font-medium text-slate-400">{meta}</div>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * HubTabs — the tab row shared by every multi-section hub page
+ * ------------------------------------------------------------------ */
+
+// tabs: [{ key, label, icon }]. Each hub used to hand-roll this markup, and
+// the copies had drifted (pill vs rounded shape, focus ring on some only).
+// `accent` picks the hub's own tone for the active tab (see HUB_ACCENTS) so
+// tabs read clearly as this hub's navigation, not a generic button row.
+// role="tablist"/"tab"/aria-selected and the onClick contract are unchanged
+// from the original hand-rolled markup — only the presentational classes
+// were refined.
+export function HubTabs({ tabs, active, onChange, label, accent = "brand", className = "mt-4" }) {
+  const tone = resolveAccent(accent);
+  return (
+    <div
+      className={`inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50/60 p-1 ${className}`}
+      role="tablist"
+      aria-label={label}
+    >
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        const selected = active === tab.key;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(tab.key)}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${
+              selected
+                ? `${tone.tabActive} shadow-sm`
+                : "border-transparent bg-transparent text-slate-500 hover:bg-white hover:text-slate-700"
+            }`}
+          >
+            {Icon && <Icon size={15} />}
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// The redesign brief's requested name for this same component — same
+// implementation, so existing HubTabs call sites keep working unchanged
+// while new code can reach for the more generic name.
+export const TabBar = HubTabs;
+
+/* ------------------------------------------------------------------ *
+ * SectionCard — the standard section wrapper (title + description +
+ * icon + actions slot + body), in three visual weights so a page can
+ * finally distinguish "the number that matters most here" from "a
+ * routine supporting table" instead of every section using the exact
+ * same rounded-3xl/shadow/p-6 card regardless of importance:
+ *
+ *   hero     — the page's single most important panel: a hairline top
+ *              accent in the hub's own tone, more generous padding, a
+ *              slightly more considered shadow. Use at most once or
+ *              twice per page.
+ *   standard — everyday content: a real table, a form, a normal
+ *              section. This is today's card, kept but tightened.
+ *   quiet    — supporting/secondary material that should recede: a
+ *              disclaimer, a "not integrated" notice, a dashed-border
+ *              aside. No shadow, no solid border.
+ *
+ * Titles are normal-case semibold, not uppercase-tracked-wide — that
+ * treatment is reserved for genuine metadata/labels (StatusBadge,
+ * table headers), not repeated on every single section title in the
+ * product.
+ * ------------------------------------------------------------------ */
+
+const SECTION_CARD_VARIANTS = {
+  hero: "rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-12px_rgba(15,23,42,0.10)] md:p-8",
+  standard: "rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]",
+  quiet: "rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5",
+};
+
+const SECTION_CARD_TITLE_CLASSES = {
+  hero: "text-lg font-bold text-slate-900",
+  standard: "text-sm font-semibold text-slate-800",
+  quiet: "text-sm font-semibold text-slate-600",
+};
+
+const SECTION_CARD_ICON_CLASSES = {
+  // hero's icon chip carries the hub accent (resolved below); standard and
+  // quiet stay neutral so only the hero section pulls the eye toward color.
+  standard: "bg-slate-100 text-slate-500",
+  quiet: "bg-transparent text-slate-400",
+};
+
+export function SectionCard({
+  title,
+  description,
+  icon: Icon,
+  variant = "standard",
+  accent = "brand",
+  actions,
+  meta,
+  children,
+  className = "",
+  bodyClassName = "mt-4",
+}) {
+  const tone = resolveAccent(accent);
+  const wrapperClasses = `${SECTION_CARD_VARIANTS[variant] || SECTION_CARD_VARIANTS.standard} ${
+    variant === "hero" ? tone.heroBorder : ""
+  } ${className}`;
+  const hasHeader = Boolean(title || description || Icon || actions || meta);
+
+  return (
+    <div className={wrapperClasses}>
+      {hasHeader && (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            {Icon && (
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                  variant === "hero" ? tone.iconChip : SECTION_CARD_ICON_CLASSES[variant] || SECTION_CARD_ICON_CLASSES.standard
+                }`}
+              >
+                <Icon size={variant === "hero" ? 19 : 16} />
+              </div>
+            )}
+            <div className="min-w-0">
+              {title && <h3 className={SECTION_CARD_TITLE_CLASSES[variant] || SECTION_CARD_TITLE_CLASSES.standard}>{title}</h3>}
+              {description && <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>}
+              {meta && <p className="mt-1 text-xs font-medium text-slate-400">{meta}</p>}
+            </div>
+          </div>
+          {actions && <div className="shrink-0">{actions}</div>}
+        </div>
+      )}
+      {children != null && <div className={hasHeader ? bodyClassName : ""}>{children}</div>}
     </div>
   );
 }
@@ -169,6 +373,17 @@ export function StatGroup({ title, icon: Icon, children, gridClass = "grid gap-5
  * ------------------------------------------------------------------ */
 
 const ALIGN_CLASSES = { left: "text-left", center: "text-center", right: "text-right" };
+
+// Literal class strings so Tailwind v4's source scanner emits them. Building
+// `${col.hideBelow}:table-cell` at runtime produced a bare `hidden` with no
+// breakpoint override, so every hideBelow column was hidden at every width.
+const HIDE_BELOW_CLASSES = {
+  sm: "hidden sm:table-cell",
+  md: "hidden md:table-cell",
+  lg: "hidden lg:table-cell",
+  xl: "hidden xl:table-cell",
+  "2xl": "hidden 2xl:table-cell",
+};
 
 export function DataTable({
   columns = [],
@@ -247,7 +462,7 @@ export function DataTable({
       >
         <table className={`w-full text-left text-sm ${tableClassName}`} aria-busy={loading}>
           <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
-            <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wider text-slate-600">
+            <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {onSelectionChange && (
                 <th className="w-10 px-4 py-3">
                   <input
@@ -260,12 +475,18 @@ export function DataTable({
                   />
                 </th>
               )}
-              {columns.map((col) => (
+              {columns.map((col) => {
+                // `numeric: true` right-aligns the column (unless the caller
+                // already set an explicit `align`) and puts tabular figures
+                // on its cells so stacked numbers line up on the digit
+                // instead of ragging left like prose.
+                const align = col.align || (col.numeric ? "right" : "left");
+                return (
                 <th
                   key={col.key}
                   scope="col"
                   style={col.width ? { width: col.width } : undefined}
-                  className={`whitespace-normal px-4 py-3 font-semibold ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}${col.hideBelow ? ` hidden ${col.hideBelow}:table-cell` : ""}`}
+                  className={`whitespace-normal px-4 py-3 ${ALIGN_CLASSES[align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
                 >
                   {col.sortable ? (
                     <button
@@ -281,7 +502,8 @@ export function DataTable({
                     col.label
                   )}
                 </th>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -335,7 +557,7 @@ export function DataTable({
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={`whitespace-normal px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align] || ALIGN_CLASSES.left}${col.hideBelow ? ` hidden ${col.hideBelow}:table-cell` : ""}`}
+                          className={`whitespace-normal px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align || (col.numeric ? "right" : "left")] || ALIGN_CLASSES.left}${col.numeric ? " tabular-nums" : ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
                         >
                           {col.render ? col.render(row, idx) : row[col.key]}
                         </td>

@@ -30,6 +30,7 @@ import time
 
 import pyotp
 import pytest
+from pydantic import ValidationError
 
 from app.core.capabilities import require_capability
 from app.core.exceptions import BadRequestException, ForbiddenException, UnauthorizedException
@@ -107,6 +108,66 @@ def test_wrong_mfa_cannot_toggle_breaker(db_session):
         )
 
 
+def test_breaker_payload_without_a_factor_is_rejected_at_the_schema(db_session):
+    """The schema is an enforcement point in its own right — the request is
+    rejected before a handler runs, so a service-level bypass alone is not
+    enough to make the toggle work."""
+    security_op, _secret = _security_operator(db_session)
+    with pytest.raises(ValidationError):
+        CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
+
+
+def test_bypass_makes_schema_and_service_agree(monkeypatch, db_session):
+    """Regression guard for the whole class of bug: the requirement is enforced
+    in BOTH the schema and the service, and when only the service honoured the
+    bypass the toggle still 422'd with "Either a TOTP code or a recovery code
+    is required" while the UI reported MFA as bypassed. Both must flip
+    together, or the UI will send a payload the server refuses."""
+    from app.config import settings
+    from app.modules.auth import mfa_service
+
+    security_op, _secret = _security_operator(db_session)
+
+    # Bypass OFF: schema refuses, and so does the service.
+    assert mfa_service.step_up_is_bypassed() is False
+    with pytest.raises(ValidationError):
+        CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
+
+    monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+    assert mfa_service.step_up_is_bypassed() is True
+    payload = CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
+    assert payload.code is None and payload.recovery_code is None
+    # And the service accepts it, so the request does not die in the handler.
+    set_tenant_invoice_finalization_breaker(
+        data=payload, current_user=security_op, db=db_session,
+    )
+
+
+def test_bypass_does_not_relax_the_incident_reference_requirement(monkeypatch, db_session):
+    """The bypass is about the second factor only. Engaging a platform-wide
+    breaker must still be tied to a tracked incident."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+    with pytest.raises(ValidationError):
+        CircuitBreakerToggleRequest(enabled=False, reason="test")
+    # A resume still needs no incident reference.
+    CircuitBreakerToggleRequest(enabled=True, reason="resume")
+
+
+def test_privileged_access_step_up_schema_honours_the_bypass(monkeypatch):
+    """The other schema-level enforcement point, covered by the same flag."""
+    from pydantic import ValidationError as VE
+    from app.config import settings
+    from app.modules.super_admin.schemas import PrivilegedAccessStepUp
+
+    with pytest.raises(VE):
+        PrivilegedAccessStepUp()
+
+    monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+    PrivilegedAccessStepUp()
+
+
 def test_resume_restores_real_finalization(db_session):
     org = make_organization(db_session)
     cust = make_customer(db_session, org.id)
@@ -177,3 +238,45 @@ def test_get_breaker_status_reflects_real_state(db_session):
     assert after.enabled is False
     assert after.reason == "pause"
     assert after.changed_by_email == security_op.email
+
+
+def test_engaging_without_incident_reference_is_rejected_at_the_schema():
+    """A platform-wide invoice stop must be tied to a tracked incident, so the
+    schema refuses an engage that carries no reference.
+
+    Every other test in this file passed an incident_reference and therefore
+    never exercised this guard; the Data Governance modal shipped without the
+    field and every "Pause" click came back 422 "An incident_reference is
+    required to engage (disable) a circuit breaker." This pins the contract the
+    UI has to satisfy.
+    """
+    from pydantic import ValidationError
+
+    code = pyotp.TOTP(pyotp.random_base32()).now()
+    with pytest.raises(ValidationError, match="incident_reference is required"):
+        CircuitBreakerToggleRequest(enabled=False, reason="duplicate invoices", code=code)
+
+    # A whitespace-only reference is not a reference.
+    with pytest.raises(ValidationError, match="incident_reference is required"):
+        CircuitBreakerToggleRequest(enabled=False, reason="duplicate invoices", incident_reference="   ", code=code)
+
+    # Resuming is a release, not an engage: no incident reference needed.
+    assert CircuitBreakerToggleRequest(enabled=True, reason="resolved", code=code).enabled is True
+
+    # The engage is accepted once a real reference is supplied.
+    ok = CircuitBreakerToggleRequest(
+        enabled=False, reason="duplicate invoices", incident_reference="INC-1234", code=code
+    )
+    assert ok.incident_reference == "INC-1234"
+
+
+def test_breaker_toggle_requires_an_mfa_factor_too():
+    """Belt-and-braces: the one-factor guard is independent of the incident
+    reference, and neither is sufficient on its own."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="TOTP code or a recovery code"):
+        CircuitBreakerToggleRequest(enabled=False, reason="pause", incident_reference="INC-1")
+
+    with pytest.raises(ValidationError, match="TOTP code or a recovery code"):
+        CircuitBreakerToggleRequest(enabled=True, reason="resume")

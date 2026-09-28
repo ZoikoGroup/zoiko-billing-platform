@@ -10,7 +10,6 @@ import {
   Archive,
   Crown,
   GitBranch,
-  Tags,
   KeyRound,
   KeySquare,
   Clock,
@@ -26,8 +25,8 @@ import {
   setCommercialPlanStatus,
   setCommercialPlanDefault,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
-import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
+import { PageHeader, DataTable, Button, Modal, Field, Select, HubTabs } from "../../components/billing-ui";
+import { Pagination, StatusBadge, Spinner, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
   PLAN_STATUS_OPTIONS,
@@ -43,15 +42,74 @@ import OverridesPage from "./OverridesPage";
 import UsageDiagnosticsPage from "./UsageDiagnosticsPage";
 import PlanChangesPage from "./PlanChangesPage";
 
+// The hub's own name, matching its sidebar label (BillingShell.jsx). The old
+// header read "Commercial Plans" unconditionally — wrong for the sidebar
+// entry it sits under, and wrong for 7 of 8 tabs once you clicked away from
+// Plans.
+const HUB_NAME = "Products & Pricing";
+
+// Each tab's own title/description, shown in the hub's header when that tab
+// is active — the same tab-aware-header fix already applied to the Audit &
+// Evidence, System Health and Financial Operations hubs. Descriptions are the
+// same copy each embedded page renders itself when not embedded, so there's
+// one description per tab, not two that can drift apart.
 const TABS = [
-  { key: "plans", label: "Plans", icon: Package },
-  { key: "entitlements", label: "Entitlement Catalog", icon: KeyRound },
-  { key: "plan-entitlements", label: "Plan Entitlements", icon: KeySquare },
-  { key: "evaluation-programs", label: "Evaluation Programs", icon: Clock },
-  { key: "subscriptions", label: "Platform Subscriptions", icon: UserCheck },
-  { key: "overrides", label: "Entitlement Overrides", icon: ShieldAlert },
-  { key: "usage-diagnostics", label: "Usage Diagnostics", icon: Gauge },
-  { key: "plan-changes", label: "Plan Change History", icon: GitPullRequestArrow },
+  {
+    key: "plans",
+    label: "Plans",
+    icon: Package,
+    description:
+      "PLANE 1 · Reusable plan templates shared across organizations. The catalogue intentionally stays empty — pricing is never invented.",
+  },
+  {
+    key: "entitlements",
+    label: "Entitlement Catalog",
+    icon: KeyRound,
+    description:
+      "ZB-COM-ENT-001 · Part 3 · typed entitlement key registry (§12–§13), enforced for 5 of 19 keys (Part 2), with real management surfaces for overrides, draft-version entitlement editing, usage diagnostics, and the plan-change queue (Part 3) — see docs/ENTITLEMENT_ENFORCEMENT_CHECKLIST.md for the full wired/unwired breakdown.",
+  },
+  {
+    key: "plan-entitlements",
+    label: "Plan Entitlements",
+    icon: KeySquare,
+    description:
+      "ZB-COM-ENT-001 · Part 1 · read-only per-plan-version entitlement matrix (§13). Pick a plan and version to inspect its typed entitlement snapshot.",
+  },
+  {
+    key: "evaluation-programs",
+    label: "Evaluation Programs",
+    icon: Clock,
+    description:
+      "ZB-COM-ENT-001 · §B3 · bounded trial configurations. A program exists only when deliberately created, and grants trials only once activated. Per-§5 the trial grants the granted_plan's entitlement bundle.",
+  },
+  {
+    key: "subscriptions",
+    label: "Platform Subscriptions",
+    icon: UserCheck,
+    description:
+      "PLANE 1 · Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only; plan changes supersede the subscription and preserve history.",
+  },
+  {
+    key: "overrides",
+    label: "Entitlement Overrides",
+    icon: ShieldAlert,
+    description:
+      "ZB-COM-ENT-001 · Part 2 §16.1 · per-org entitlement overrides with maker-checker approval. An override beats the org's plan entitlement (resolver precedence L3) until it expires or is revoked.",
+  },
+  {
+    key: "usage-diagnostics",
+    label: "Usage Diagnostics",
+    icon: Gauge,
+    description:
+      "ZB-COM-ENT-001 · Part 3 §16 · UsageCounter values per organization, for keys enforced with a numeric limit. Threshold percentages require the org's resolved limit — click a key below to open it in the Entitlement Catalog.",
+  },
+  {
+    key: "plan-changes",
+    label: "Plan Change History",
+    icon: GitPullRequestArrow,
+    description:
+      "ZB-COM-ENT-001 · Part 3 §7-§8, §16 · every upgrade/downgrade attempt, including BLOCKED ones — for investigating failed or inconsistent transitions.",
+  },
 ];
 
 const VALID_TABS = TABS.map((tab) => tab.key);
@@ -251,13 +309,21 @@ function PlanForm({ form, setForm, submitting, error, onCancel, onSubmit, editin
 export default function PlansPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "plans";
-  const [activeTab, setActiveTabState] = useState(initialTab);
+  // Derived from the URL on every render (not copied into state once), so an
+  // in-hub link — e.g. Usage Diagnostics' "open in Entitlement Catalog"
+  // deep-link — can switch tabs by changing the URL.
+  const activeTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "plans";
+  // Carries the entitlement key the operator jumped in on, so the
+  // Entitlement Catalog tab opens pre-filtered instead of requiring a manual
+  // re-search.
+  const focusKey = searchParams.get("key") || "";
+  const activeMeta = TABS.find((t) => t.key === activeTab) || TABS[0];
   const setActiveTab = useCallback(
-    (tab) => {
-      setActiveTabState(tab);
-      setSearchParams({ tab }, { replace: true });
-    },
+    (tab) => setSearchParams({ tab }, { replace: true }),
+    [setSearchParams]
+  );
+  const openEntitlementKey = useCallback(
+    (key) => setSearchParams({ tab: "entitlements", key }),
     [setSearchParams]
   );
   const [plans, setPlans] = useState([]);
@@ -508,9 +574,11 @@ export default function PlansPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Commercial Plans"
-        description="PLANE 1 · Reusable plan templates shared across organizations. The catalogue intentionally stays empty — pricing is never invented."
-        icon={Package}
+        crumbs={[{ label: HUB_NAME }, { label: activeMeta.label }]}
+        title={activeMeta.label}
+        description={activeMeta.description}
+        icon={activeMeta.icon}
+        accent="violet"
         actions={
           activeTab === "plans" ? (
             <Button variant="primary" icon={Plus} onClick={openCreate}>
@@ -521,46 +589,17 @@ export default function PlansPage() {
         meta={activeTab === "plans" ? `${displayValue(total)} plan(s)` : undefined}
       />
 
-      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Products & Pricing sections">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
-                active
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <HubTabs tabs={TABS} active={activeTab} onChange={setActiveTab} label={`${HUB_NAME} sections`} accent="violet" />
 
       {activeTab === "plans" ? (
         <>
-          {/* Phase 3F F4 — honest declaration. No trial/offer model exists in
-              the schema (COM-02), so this surface must never render trial data.
-              The nav item "Plans, Offers & Trials" lands here until offers exist. */}
-          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-4">
-            <Tags size={18} className="mt-0.5 shrink-0 text-slate-400" />
-            <div>
-              <p className="text-sm font-bold text-slate-700">Offers &amp; trials — not configured</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                No evaluation, trial or promotional-offer program exists anywhere in the platform schema
-                (audit finding COM-02). Until a trials model is built and approved, this section will
-                honestly report NOT CONFIGURED rather than render placeholder programs.
-              </p>
-            </div>
-          </div>
+          {/* This hub also has a real "Evaluation Programs" tab (§B3, bounded
+              trial configurations) — the "no trial/offer model exists" claim
+              this banner used to make was true when it was written (COM-02)
+              but stopped being true once that tab shipped, and it then
+              contradicted its own neighbour. Removed rather than reworded:
+              there's nothing left here that Evaluation Programs doesn't
+              already say more precisely. */}
 
           <div className="mt-6 space-y-4">
             {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
@@ -572,9 +611,13 @@ export default function PlansPage() {
               </div>
             )}
 
+            {/* A failed fetch also clears `plans` to [], so rendering the
+                table unconditionally showed "No commercial plans yet" right
+                under the error banner above — a fetch failure read as an
+                empty catalogue. */}
             {loading && plans.length === 0 ? (
               <Spinner />
-            ) : (
+            ) : !(error && plans.length === 0) && (
               <DataTable
                 columns={columns}
                 data={plans}
@@ -586,20 +629,26 @@ export default function PlansPage() {
               />
             )}
 
-            <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
-              {displayValue(total)} plan(s)
-            </Pagination>
+            {!(error && plans.length === 0) && (
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
+                {displayValue(total)} plan(s)
+              </Pagination>
+            )}
           </div>
         </>
       ) : (
-        <div className="mt-6 -mx-4 sm:-mx-6 lg:-mx-8">
-          {activeTab === "entitlements" && <EntitlementsPage />}
-          {activeTab === "plan-entitlements" && <PlanEntitlementsPage />}
-          {activeTab === "evaluation-programs" && <EvaluationProgramsPage />}
-          {activeTab === "subscriptions" && <SubscriptionsPage />}
-          {activeTab === "overrides" && <OverridesPage />}
-          {activeTab === "usage-diagnostics" && <UsageDiagnosticsPage />}
-          {activeTab === "plan-changes" && <PlanChangesPage />}
+        <div className="mt-6">
+          {activeTab === "entitlements" && (
+            <EntitlementsPage embedded key={focusKey} initialSearch={focusKey} />
+          )}
+          {activeTab === "plan-entitlements" && <PlanEntitlementsPage embedded />}
+          {activeTab === "evaluation-programs" && <EvaluationProgramsPage embedded />}
+          {activeTab === "subscriptions" && <SubscriptionsPage embedded />}
+          {activeTab === "overrides" && <OverridesPage embedded />}
+          {activeTab === "usage-diagnostics" && (
+            <UsageDiagnosticsPage embedded onOpenKey={openEntitlementKey} />
+          )}
+          {activeTab === "plan-changes" && <PlanChangesPage embedded />}
         </div>
       )}
 

@@ -25,18 +25,24 @@ import {
 } from "lucide-react";
 
 import CommandCenterContextBar from "../../components/CommandCenterContextBar";
-import { Button } from "../../components/billing-ui";
+import { Button, PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import {
+  getFinancialOperationsSummary,
   getBillingCommandOverview,
   getBillingCommandTrend,
   listBillingOverdueInvoices,
   listBillingCollectionsRisk,
   listBillingRecentActivity,
 } from "../../service/commandCenterService";
+import { FinancialSummaryStrip } from "./FinancialSummaryCards";
 
 const POLL_INTERVAL_MS = 60000;
+
+// Action links open the matching hub tab rather than the standalone
+// /super-admin/financial/* routes, so the operator stays inside the hub.
+const FINOPS_HUB = "/super-admin/financial-operations";
 
 const CHART_BLUE = "#2563eb";
 const CHART_GREEN = "#10b981";
@@ -77,6 +83,22 @@ function relTime(iso) {
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// A failed panel fetch must read as a failure, never as that panel's "all
+// clear" empty state — a failed overdue fetch used to render "Nothing is
+// overdue" with a green check.
+function PanelError({ message, onRetry }) {
+  return (
+    <div role="alert" className="flex flex-col items-center gap-2 py-6 text-center text-xs text-red-700">
+      <span className="inline-flex items-center gap-1.5">
+        <AlertTriangle size={14} /> {message}
+      </span>
+      <button type="button" onClick={onRetry} className="font-medium text-brand-600 hover:underline">
+        Retry
+      </button>
+    </div>
+  );
 }
 
 function Sparkline({ data, color }) {
@@ -140,11 +162,21 @@ function PanelLink({ to, children }) {
   );
 }
 
-export default function BillingCommandCenterPage() {
+// `embedded` drops this page's own title line when it is the Overview tab of
+// the Financial Operations hub, whose header already titles it; the refresh
+// stamp stays because the hub header doesn't carry it.
+export default function BillingCommandCenterPage({ embedded = false } = {}) {
   const navigate = useNavigate();
   const { requestRefresh, refreshTick } = useCommandCenter();
 
   const [overview, setOverview] = useState(null);
+  // The F1–F4 summary. This is NOT redundant with getBillingCommandOverview():
+  // the command overview's kpis carry display_* single-primary-currency totals
+  // and a currency count, but the F-cards need the per-currency buckets
+  // (F1), the dunning cycle status (F2), the allocation-consistency state (F3)
+  // and the leakage/anomaly counts (F4) — none of which the overview returns.
+  const [summary, setSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState(null);
   const [trend, setTrend] = useState(null);
   const [overdue, setOverdue] = useState(null);
   const [risk, setRisk] = useState(null);
@@ -158,6 +190,13 @@ export default function BillingCommandCenterPage() {
   const loadAllRef = useRef(() => {});
   const firstTickRef = useRef(true);
   const granularityRef = useRef(granularity);
+
+  const loadSummary = useCallback(() => {
+    setSummaryError(null);
+    getFinancialOperationsSummary()
+      .then(setSummary)
+      .catch((e) => setSummaryError(e?.message || "Summary unavailable"));
+  }, []);
 
   const loadAll = useCallback(() => {
     if (!loadedOnceRef.current) setLoading(true);
@@ -188,6 +227,8 @@ export default function BillingCommandCenterPage() {
       return null;
     });
 
+    loadSummary();
+
     Promise.all([overviewPromise, trendPromise, overduePromise, riskPromise, activityPromise]).then(
       ([overviewRes, trendRes, overdueRes, riskRes, activityRes]) => {
         setOverview(overviewRes);
@@ -200,7 +241,7 @@ export default function BillingCommandCenterPage() {
         setLoading(false);
       }
     );
-  }, []);
+  }, [loadSummary]);
 
   useEffect(() => {
     granularityRef.current = granularity;
@@ -232,8 +273,13 @@ export default function BillingCommandCenterPage() {
       setGranularity(g);
       granularityRef.current = g;
       getBillingCommandTrend(g)
-        .then((res) => setTrend(res))
-        .catch(() => {});
+        .then((res) => {
+          setTrend(res);
+          setSourceErrors(({ trend: _cleared, ...rest }) => rest);
+        })
+        .catch((e) =>
+          setSourceErrors((prev) => ({ ...prev, trend: e?.message || "Trend unavailable" }))
+        );
     },
     []
   );
@@ -285,7 +331,7 @@ export default function BillingCommandCenterPage() {
           : "No invoices overdue beyond 30 days",
       amount: action.overdue_30d_count > 0 ? money(action.overdue_30d_amount) : null,
       actionText: "Review",
-      onAction: () => navigate("/super-admin/financial/invoice-engine"),
+      onAction: () => navigate(`${FINOPS_HUB}?section=invoice-engine`),
     },
     {
       severity: action.failed_payments_count > 0 ? "HIGH" : "CLEAR",
@@ -295,7 +341,7 @@ export default function BillingCommandCenterPage() {
           : "No payment failures awaiting recovery",
       amount: action.failed_payments_count > 0 ? money(action.failed_payments_amount) : null,
       actionText: "Resolve",
-      onAction: () => navigate("/super-admin/financial/payments"),
+      onAction: () => navigate(`${FINOPS_HUB}?section=payments-recovery`),
     },
     {
       severity: action.draft_invoices_count > 0 ? "MED" : "CLEAR",
@@ -305,7 +351,7 @@ export default function BillingCommandCenterPage() {
           : "No draft invoices pending issuance",
       amount: action.draft_invoices_count > 0 ? money(action.draft_invoices_amount) : null,
       actionText: "Review",
-      onAction: () => navigate("/super-admin/financial/invoice-engine"),
+      onAction: () => navigate(`${FINOPS_HUB}?section=invoice-engine`),
     },
     {
       severity: action.active_dunning_cases_count > 0 ? "MED" : "CLEAR",
@@ -318,27 +364,38 @@ export default function BillingCommandCenterPage() {
           ? `${action.active_credit_notes_count} credit notes outstanding`
           : null,
       actionText: "Contact",
-      onAction: () => navigate("/super-admin/financial/payments"),
+      onAction: () => navigate(`${FINOPS_HUB}?section=payments-recovery`),
     },
   ];
 
   return (
-    <div className="p-4 space-y-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-base font-bold text-slate-900 sm:text-lg">Billing Command Center</h1>
-          <p className="mt-0.5 text-[11px] text-slate-500">
-            Zoiko Billing · Cross-tenant financial operations and collections
-            {!unknownCurrency && currencyLabel ? ` · figures in ${currencyLabel}` : ""}
-          </p>
-        </div>
-        <div className="text-right text-[11px] text-slate-400">
-          Refreshed{" "}
-          {overview.generated_at ? new Date(overview.generated_at).toLocaleTimeString() : "—"}
-          {" · auto-refreshes every minute"}
-        </div>
-      </div>
+    <div className={embedded ? "space-y-4" : "p-4 space-y-4 sm:p-6"}>
+      {/* This used to be a hand-rolled header div that only hid its own <h1>
+          when embedded — since this page is only ever mounted with
+          embedded=true (as the hub's Overview tab), the subtitle and
+          "Refreshed…" timestamp rendered as an orphaned second header
+          floating below the hub's own PageHeader and tab row on every load,
+          not "at the top" and not aligned with how every other tab in the
+          hub presents this same meta/actions row. Routed through the shared
+          PageHeader now, matching the other six tabs exactly. */}
+      <PageHeader
+        embedded={embedded}
+        title="Financial Operations Overview"
+        description={`Zoiko Billing · Cross-tenant financial operations and collections${
+          !unknownCurrency && currencyLabel ? ` · figures in ${currencyLabel}` : ""
+        }`}
+        icon={BarChart3}
+        meta={`Zoiko Billing · Cross-tenant financial operations and collections${
+          !unknownCurrency && currencyLabel ? ` · figures in ${currencyLabel}` : ""
+        }`}
+        actions={
+          <span className="whitespace-nowrap text-[11px] text-slate-400">
+            Refreshed {overview.generated_at ? new Date(overview.generated_at).toLocaleTimeString() : "—"}
+            {" · auto-refreshes every minute"}
+          </span>
+        }
+        accent="brand"
+      />
 
       {/* Filter pills */}
       <CommandCenterContextBar />
@@ -360,8 +417,18 @@ export default function BillingCommandCenterPage() {
         </p>
       )}
 
+      {/* F1–F4 summary strip. These four cards used to be the entire old
+          "Overview" tab, sitting as a second competing landing dashboard
+          alongside this one. They are now the top strip of the single merged
+          Overview, and appear on no other tab in the hub. */}
+      <FinancialSummaryStrip
+        summary={summary}
+        error={summaryError}
+        onRetry={loadSummary}
+      />
+
       {/* Action Center */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <SectionCard variant="standard" accent="brand">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             {actionCards.some((c) => c.severity !== "CLEAR") ? (
@@ -390,7 +457,7 @@ export default function BillingCommandCenterPage() {
             </div>
           ))}
         </div>
-      </div>
+      </SectionCard>
 
       {/* KPI stat cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -450,7 +517,7 @@ export default function BillingCommandCenterPage() {
 
       {/* Billings & Collections + Collections Health */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <SectionCard variant="hero" accent="brand" className="lg:col-span-2">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-xs font-bold text-slate-800">Billings &amp; Collections</h3>
@@ -478,7 +545,11 @@ export default function BillingCommandCenterPage() {
               ))}
             </div>
           </div>
-          {trendPoints.length === 0 ? (
+          {sourceErrors.trend ? (
+            <div className="flex h-64 items-center justify-center">
+              <PanelError message={sourceErrors.trend} onRetry={() => loadTrend(granularity)} />
+            </div>
+          ) : trendPoints.length === 0 ? (
             <div className="flex h-64 items-center justify-center text-xs text-slate-400">
               No billing trend data{trend?.currency ? ` in ${trend.currency}` : ""} for this window.
             </div>
@@ -525,9 +596,9 @@ export default function BillingCommandCenterPage() {
               )}
             </>
           )}
-        </div>
+        </SectionCard>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Health</h3>
           {aging.length === 0 ? (
             <p className="py-6 text-center text-xs text-slate-400">
@@ -579,14 +650,14 @@ export default function BillingCommandCenterPage() {
             </div>
           </div>
           <div className="mt-3 border-t border-slate-100 pt-2 text-right">
-            <PanelLink to="/super-admin/financial/payments">Recovery &amp; collections</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>Recovery &amp; collections</PanelLink>
           </div>
-        </div>
+        </SectionCard>
       </div>
 
       {/* Overdue Invoices + Next 7 Days */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-800">Overdue Invoices</h3>
             {overdue?.total > 0 && <span className="text-[10px] text-slate-400">{overdue.total} total</span>}
@@ -605,7 +676,13 @@ export default function BillingCommandCenterPage() {
                 </tr>
               </thead>
               <tbody>
-                {(overdue?.invoices || []).length === 0 ? (
+                {sourceErrors.overdue ? (
+                  <tr>
+                    <td colSpan={7}>
+                      <PanelError message={sourceErrors.overdue} onRetry={loadAll} />
+                    </td>
+                  </tr>
+                ) : (overdue?.invoices || []).length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-6 text-center text-xs text-slate-500">
                       <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-500" />
@@ -633,7 +710,7 @@ export default function BillingCommandCenterPage() {
                       <td className="py-2.5">
                         <button
                           type="button"
-                          onClick={() => navigate("/super-admin/financial/invoice-engine")}
+                          onClick={() => navigate(`${FINOPS_HUB}?section=invoice-engine`)}
                           className="text-[11px] font-medium text-brand-600 hover:underline"
                         >
                           Review
@@ -646,11 +723,11 @@ export default function BillingCommandCenterPage() {
             </table>
           </div>
           <div className="mt-3">
-            <PanelLink to="/super-admin/financial/invoice-engine">View all overdue invoices</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>View all overdue invoices</PanelLink>
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Next 7 Days</h3>
           <div className="space-y-3.5">
             <div className="flex items-center justify-between text-xs">
@@ -690,14 +767,14 @@ export default function BillingCommandCenterPage() {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-2 text-right">
-            <PanelLink to="/super-admin/financial/invoice-engine">Open invoice engine</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>Open invoice engine</PanelLink>
           </div>
-        </div>
+        </SectionCard>
       </div>
 
       {/* Collections Risk + Recent Activity */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Risk</h3>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-xs">
@@ -711,7 +788,13 @@ export default function BillingCommandCenterPage() {
                 </tr>
               </thead>
               <tbody>
-                {(risk?.rows || []).length === 0 ? (
+                {sourceErrors.risk ? (
+                  <tr>
+                    <td colSpan={5}>
+                      <PanelError message={sourceErrors.risk} onRetry={loadAll} />
+                    </td>
+                  </tr>
+                ) : (risk?.rows || []).length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-6 text-center text-xs text-slate-500">
                       <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-500" />
@@ -744,14 +827,16 @@ export default function BillingCommandCenterPage() {
             </table>
           </div>
           <div className="mt-3">
-            <PanelLink to="/super-admin/financial/payments">View all customers at risk</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>View all customers at risk</PanelLink>
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Recent Activity</h3>
           <div className="space-y-3.5">
-            {(activity?.items || []).length === 0 ? (
+            {sourceErrors.activity ? (
+              <PanelError message={sourceErrors.activity} onRetry={loadAll} />
+            ) : (activity?.items || []).length === 0 ? (
               <p className="py-4 text-center text-xs text-slate-500">No billing activity recorded yet.</p>
             ) : (
               activity.items.map((item, i) => {
@@ -778,7 +863,7 @@ export default function BillingCommandCenterPage() {
           <div className="mt-4 border-t border-slate-100 pt-2 text-right">
             <PanelLink to="/super-admin/audit-logs">View all activity</PanelLink>
           </div>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

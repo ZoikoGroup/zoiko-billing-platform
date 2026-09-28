@@ -90,6 +90,22 @@ def count_queries(db):
 
 
 @pytest.fixture(autouse=True)
+def _force_step_up_enforced():
+    """MFA_STEP_UP_BYPASS is a developer convenience read from .env, so a
+    developer who turns it on locally would otherwise silently stop running
+    the assertions that prove step-up is enforced — the security tests would
+    pass vacuously on exactly the machine most likely to be misconfigured.
+    Tests therefore always exercise the enforced path; a test that wants the
+    bypass opts in by patching the flag itself."""
+    from app.config import settings
+
+    original = settings.MFA_STEP_UP_BYPASS
+    settings.MFA_STEP_UP_BYPASS = False
+    yield
+    settings.MFA_STEP_UP_BYPASS = original
+
+
+@pytest.fixture(autouse=True)
 def _clear_in_process_caches():
     """Every test gets a fresh in-memory DB (above) with auto-increment ids
     restarting at 1 — so any cache from a previous test would serve stale

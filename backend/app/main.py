@@ -321,10 +321,23 @@ def health_root():
 @app.get("/health", tags=["Health"])
 def health_check():
     """Liveness: is the process up and able to respond at all. Does not
-    imply the database is reachable -- see /ready for that."""
+    imply the database is reachable -- see /ready for that.
+
+    Also reports whether the Redis cache backend is actually connected —
+    without this, the only way to confirm a deployed REDIS_URL is really
+    working was to grep server logs for the one-line startup probe result.
+    A "disconnected" reading here is not fatal (every cache_get_or_set call
+    silently falls back to a process-local cache), but it means dashboard
+    reads are not shared across instances/workers and this deploy is not
+    getting the benefit Redis is there for."""
+    from app.core import cache_service
     from app.database import check_connection
 
-    return {"status": "ok", "database": "connected" if check_connection() else "unavailable"}
+    return {
+        "status": "ok",
+        "database": "connected" if check_connection() else "unavailable",
+        "redis": "connected" if cache_service.cache_ping() else "disconnected (using in-process fallback)",
+    }
 
 
 @app.get("/ready", tags=["Health"])

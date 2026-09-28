@@ -60,15 +60,20 @@ export function SuccessMessage({ message, onDismiss }) {
   );
 }
 
+// Both ErrorState and EmptyState appear often (every failed fetch, every
+// zero-row table) and shouldn't visually shout each time — a calmer
+// treatment consistent with SectionCard's "quiet" tier, in billing-ui.jsx.
+// Neither's structure (message/onRetry/title, or icon/title/message/
+// actionLabel/onAction) changed — only the presentational classes did.
 export function ErrorState({ message, onRetry, title }) {
   const content = (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4"><AlertCircle size={32} /></div>
-      {title && <h3 className="text-xl font-bold text-slate-800 mb-2">{title}</h3>}
-      <p className="text-sm text-slate-600 mb-6 max-w-md">{message}</p>
+      <div className="h-14 w-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-4"><AlertCircle size={28} /></div>
+      {title && <h3 className="text-base font-bold text-slate-800 mb-1.5">{title}</h3>}
+      <p className="text-sm text-slate-500 mb-6 max-w-md">{message}</p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 px-6 py-3 bg-linear-to-r from-brand to-brand-hover text-white rounded-xl font-medium hover:shadow-lg">
-          <RefreshCw size={18} /> Try Again
+        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+          <RefreshCw size={16} /> Try Again
         </button>
       )}
     </div>
@@ -78,9 +83,9 @@ export function ErrorState({ message, onRetry, title }) {
 
 export function EmptyState({ icon: Icon, title, message, actionLabel, onAction }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center">
-      {Icon && <Icon className="mb-3 h-10 w-10 text-slate-300" />}
-      <p className="mb-1 text-sm font-semibold text-slate-700">{title}</p>
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-12 text-center">
+      {Icon && <Icon className="mb-3 h-9 w-9 text-slate-300" />}
+      <p className="mb-1 text-sm font-semibold text-slate-600">{title}</p>
       {message && <p className="max-w-sm text-xs text-slate-500">{message}</p>}
       {actionLabel && onAction && (
         <button type="button" onClick={onAction} className="mt-4 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2">
@@ -173,18 +178,79 @@ export const DOMAIN_ACCENTS = {
   },
 };
 
+// Every `{ value, label, color }` option across the app already encodes its
+// semantic meaning in its Tailwind color family (red/rose = bad, emerald/
+// green = good, amber/orange/yellow = caution, slate/gray/zinc = neutral,
+// everything else = informational) — that's ~150 option definitions across
+// every hub's constants file, none of which needed to change to get a
+// severity-tiered visual weight. StatusBadge derives the tier from the
+// family already present in `color` and renders a refined treatment for it;
+// an unrecognised family falls back to the exact original pill unchanged.
+const FAMILY_TIER = {
+  red: "critical", rose: "critical",
+  emerald: "positive", green: "positive",
+  amber: "caution", orange: "caution", yellow: "caution",
+  slate: "neutral", gray: "neutral", zinc: "neutral",
+};
+
+// One literal, fully-written class string per (tier, family) pair — never
+// built from a template string, so Tailwind's build-time scanner can see and
+// emit every one of them. Reuses the exact "-50 background / -700 text"
+// pairing already trusted elsewhere in this file (ErrorState, SuccessMessage)
+// rather than inventing new, unverified color combinations.
+const TIER_PILL_CLASSES = {
+  critical_red: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/15 font-semibold",
+  critical_rose: "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15 font-semibold",
+  caution_amber: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/10",
+  caution_orange: "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/10",
+  caution_yellow: "bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/10",
+  neutral_slate: "bg-slate-100/70 text-slate-600",
+  neutral_gray: "bg-gray-100/70 text-gray-600",
+  neutral_zinc: "bg-zinc-100/70 text-zinc-600",
+};
+
+// Steady-state positive statuses (Active, Verified, Healthy, Resolved) get
+// the calmest treatment of all — a dot, not a filled pill — so they never
+// compete for attention with an amber or red status sitting next to them.
+const POSITIVE_DOT_CLASSES = {
+  emerald: { text: "text-emerald-700", dot: "bg-emerald-500" },
+  green: { text: "text-green-700", dot: "bg-green-500" },
+};
+
+function extractColorFamily(colorClasses) {
+  const match = /bg-([a-z]+)-\d+/.exec(colorClasses || "");
+  return match ? match[1] : null;
+}
+
 /**
  * Shared status pill — renders a colored badge from a per-page `options`
  * list of `{ value, label, color }`, falling back to the canonical
- * STATUS_META map. `icon` (a component) is optional.
+ * STATUS_META map. `icon` (a component) is optional. The color-to-meaning
+ * mapping every `options` array already defines is unchanged; only the
+ * visual weight per severity tier is refined (see FAMILY_TIER above).
  */
 export function StatusBadge({ status, options, icon: Icon, fallbackColor = "bg-gray-100 text-gray-700" }) {
   const option = options?.find((o) => o.value === status) ||
     (status && !options ? STATUS_META[status] : null);
+  const label = option?.label || humanizeStatus(status);
+  const family = extractColorFamily(option?.color);
+  const tier = family ? FAMILY_TIER[family] : null;
+
+  if (tier === "positive" && POSITIVE_DOT_CLASSES[family] && !Icon) {
+    const dot = POSITIVE_DOT_CLASSES[family];
+    return (
+      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${dot.text}`}>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.dot}`} aria-hidden="true" />
+        {label}
+      </span>
+    );
+  }
+
+  const pillClasses = tier && family ? TIER_PILL_CLASSES[`${tier}_${family}`] : null;
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${option?.color || fallbackColor}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${pillClasses || option?.color || fallbackColor}`}>
       {Icon && <Icon size={12} />}
-      {option?.label || humanizeStatus(status)}
+      {label}
     </span>
   );
 }

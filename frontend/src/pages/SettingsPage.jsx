@@ -91,26 +91,50 @@ function MfaSetupModal({ open, onClose, onEnabled }) {
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [reusedPending, setReusedPending] = useState(false);
 
+  // Opening the setup screen must never invalidate a key the operator has
+  // already entered. /start is idempotent server-side (it replays an
+  // unconfirmed enrollment), so this is safe to run on every open; a new key
+  // is only minted by the explicit "get a new key" action.
   useEffect(() => {
-    if (open) {
-      setStage("start");
-      setSecret("");
-      setOtpauthUrl("");
-      setCode("");
-      setRecoveryCodes([]);
-      setError("");
-      apiFetch("/api/auth/mfa/setup/start", { method: "POST" })
-        .then((data) => {
-          setSecret(data.secret);
-          setOtpauth_url_safe(data.otpauth_url);
-        })
-        .catch((err) => setError(err.message));
-    }
-    function setOtpauth_url_safe(url) {
-      setOtpauthUrl(url);
-    }
+    if (!open) return undefined;
+    let cancelled = false;
+    setStage("start");
+    setCode("");
+    setRecoveryCodes([]);
+    setError("");
+    setLoadError("");
+    setReusedPending(false);
+    apiFetch("/api/auth/mfa/setup/start", { method: "POST" })
+      .then((data) => {
+        if (cancelled) return;
+        setSecret(data.secret || "");
+        setOtpauthUrl(data.otpauth_url || "");
+        setReusedPending(Boolean(data.reused_pending));
+      })
+      .catch((err) => { if (!cancelled) setLoadError(err.message); });
+    return () => { cancelled = true; };
   }, [open]);
+
+  // Explicitly discard a key and issue another, for when the one in the app is
+  // genuinely wrong (mistyped, wrong device, phone reset).
+  async function regenerate() {
+    setBusy(true);
+    setError("");
+    setLoadError("");
+    try {
+      const data = await apiFetch("/api/auth/mfa/setup/start?regenerate=true", { method: "POST" });
+      setSecret(data.secret || "");
+      setOtpauthUrl(data.otpauth_url || "");
+      setReusedPending(false);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleVerify(e) {
     e.preventDefault();
@@ -119,7 +143,7 @@ function MfaSetupModal({ open, onClose, onEnabled }) {
     try {
       const data = await apiFetch("/api/auth/mfa/setup/verify", {
         method: "POST",
-        body: { code },
+        body: { code: code.replace(/\s/g, "") },
       });
       setRecoveryCodes(data.recovery_codes || []);
       setStage("codes");
@@ -137,9 +161,13 @@ function MfaSetupModal({ open, onClose, onEnabled }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Enable MFA step-up" icon={ShieldCheck} size="sm">
-      {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {loadError && (
+        <div className="mb-4">
+          <ErrorState message={loadError} onRetry={regenerate} title="Unable to start MFA enrollment" />
+        </div>
+      )}
 
-      {stage === "start" && (
+      {stage === "start" && !loadError && (
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
             Add the account to your authenticator app using the key below (choose &ldquo;Enter a setup key&rdquo;),
@@ -150,16 +178,21 @@ function MfaSetupModal({ open, onClose, onEnabled }) {
             <p className="break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800">
               {secret || "…"}
             </p>
-          </div>
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-600">otpauth URI</p>
-            <p className="break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800">
-              {otpauthUrl || "…"}
+            <p className="mt-2 text-xs text-slate-500">
+              Transcribe carefully — a single wrong character produces a code the server will never accept.
             </p>
+            {reusedPending && (
+              <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                This is the same key from your last attempt. If you already added it to your authenticator app,
+                it is still valid — just enter a fresh code.
+              </p>
+            )}
           </div>
           <div className="flex items-center justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!secret} onClick={() => setStage("confirm")}>I&apos;ve added it — continue</Button>
+            <Button variant="primary" disabled={!secret} onClick={() => setStage("confirm")}>
+              I&apos;ve added it — continue
+            </Button>
           </div>
         </div>
       )}
@@ -172,14 +205,35 @@ function MfaSetupModal({ open, onClose, onEnabled }) {
               type="text"
               inputMode="numeric"
               autoComplete="one-time-code"
-              minLength={6}
-              maxLength={8}
+              maxLength={6}
               required
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm tracking-widest focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              // A TOTP code is exactly 6 digits. maxLength alone does not clamp
+              // pasted or autofilled values (one-time-code autofill is a real
+              // path here), so bound the state itself.
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center font-mono text-lg tracking-widest focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
             />
           </Field>
+          {error && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p>{error}</p>
+              <p className="mt-1.5">
+                Codes change every 30s, so wait for the next one. If it keeps failing, the key in your app
+                does not match the one above.
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-2"
+                loading={busy}
+                onClick={regenerate}
+              >
+                Get a new key
+              </Button>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setStage("start")}>Back</Button>
             <Button type="submit" variant="primary" loading={busy} disabled={code.length < 6}>Confirm &amp; enable</Button>

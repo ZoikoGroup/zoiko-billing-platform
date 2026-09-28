@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { F1BillingsCard } from "./FinancialOperationsPage";
+import { F1BillingsCard } from "./FinancialSummaryCards";
 
 // Regression coverage for the Phase 3 architecture remediation fix to
 // FinancialOperationsPage.jsx: `isMulti` was referenced but never declared,

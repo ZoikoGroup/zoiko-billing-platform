@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Landmark } from "lucide-react";
 import {
-  getFinancialOperationsSummary,
   listAllocationExceptions,
   listCreditApplications,
 } from "../../service/commandCenterService";
-import { PageHeader, DataTable } from "../../components/billing-ui";
+import { PageHeader, DataTable, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
-import { F4LeakageCard } from "./FinancialOperationsPage";
 
 function money(strAmount) {
   const n = parseFloat(strAmount || "0");
@@ -23,10 +21,11 @@ function formatDateTime(value) {
 const ALLOCATION_EXCEPTION_COLUMNS = [
   { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
   { key: "invoice_number", label: "Invoice", render: (r) => <span className="font-semibold text-brand-600">{r.invoice_number}</span> },
-  { key: "total_amount", label: "Invoice Total", render: (r) => <span className="text-slate-700">{money(r.total_amount)} <span className="text-[10px] text-slate-400">{r.currency}</span></span> },
+  { key: "total_amount", label: "Invoice Total", numeric: true, render: (r) => <span className="text-slate-700">{money(r.total_amount)} <span className="text-[10px] text-slate-400">{r.currency}</span></span> },
   {
     key: "allocated_amount",
     label: "Allocated",
+    numeric: true,
     render: (r) => (
       <span className="font-semibold text-red-700">
         {money(r.allocated_amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span>
@@ -36,6 +35,7 @@ const ALLOCATION_EXCEPTION_COLUMNS = [
   {
     key: "overage",
     label: "Overage",
+    numeric: true,
     render: (r) => (
       <span className="font-semibold text-red-700">
         {money(String(parseFloat(r.allocated_amount) - parseFloat(r.total_amount)))}
@@ -48,28 +48,28 @@ const CREDIT_APPLICATION_COLUMNS = [
   { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
   { key: "credit_note_number", label: "Credit Note", render: (r) => <span className="font-semibold text-brand-600">{r.credit_note_number}</span> },
   { key: "invoice_number", label: "Applied to Invoice", render: (r) => <span className="text-slate-700">{r.invoice_number}</span> },
-  { key: "amount", label: "Amount", render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
+  { key: "amount", label: "Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
   { key: "created_at", label: "Applied At", render: (r) => <span className="text-slate-500">{formatDateTime(r.created_at)}</span> },
 ];
 
-export default function BalancesAllocationsPage() {
-  const [leakage, setLeakage] = useState(null);
+// `embedded` drops this page's own PageHeader and padding when it is mounted
+// as a tab of the Financial Operations hub, whose header already titles it.
+export default function BalancesAllocationsPage({ embedded = false } = {}) {
   const [exceptions, setExceptions] = useState(null);
   const [applications, setApplications] = useState(null);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
 
+  // This page used to open with the F4 Revenue Leakage card — neither a
+  // balance nor an allocation figure, and already on the hub's Overview. It now
+  // opens on its own subject: allocation exceptions.
   const load = useCallback(() => {
     setLoading(true);
     const nextErrors = {};
     Promise.allSettled([
-      getFinancialOperationsSummary(),
       listAllocationExceptions(50),
       listCreditApplications(50),
-    ]).then(([summaryRes, excRes, appRes]) => {
-      if (summaryRes.status === "fulfilled") setLeakage(summaryRes.value.leakage);
-      else nextErrors.leakage = summaryRes.reason?.message || "Failed to load leakage summary.";
-
+    ]).then(([excRes, appRes]) => {
       if (excRes.status === "fulfilled") setExceptions(excRes.value);
       else nextErrors.exceptions = excRes.reason?.message || "Failed to load allocation exceptions.";
 
@@ -87,67 +87,65 @@ export default function BalancesAllocationsPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Balances & Allocations"
-        description="Payment-allocation integrity invariant (PaymentAllocation ≤ Invoice.total_amount) and the credit-note application ledger, across every tenant."
-        icon={Landmark}
-      />
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
+      {!embedded && (
+        <PageHeader
+          title="Balances & Allocations"
+          description="Payment-allocation integrity invariant (PaymentAllocation ≤ Invoice.total_amount) and the credit-note application ledger, across every tenant."
+          icon={Landmark}
+          accent="brand"
+        />
+      )}
 
-      <div className="mt-6 grid grid-cols-1 gap-6">
-        {errors.leakage ? (
-          <ErrorState title="Unable to load leakage summary" message={errors.leakage} onRetry={load} />
-        ) : (
-          <F4LeakageCard leakage={leakage} />
-        )}
+      <div className={`grid grid-cols-1 gap-6 ${embedded ? "" : "mt-6"}`}>
+        <SectionCard
+          variant="hero"
+          accent="brand"
+          icon={Landmark}
+          title="Allocation Exceptions"
+          description="Invoices where PaymentAllocation totals exceed the invoice's own total_amount — a real ledger integrity failure, never a legitimate state."
+        >
+          {errors.exceptions ? (
+            <ErrorState title="Unable to load allocation exceptions" message={errors.exceptions} onRetry={load} />
+          ) : (exceptions?.items || []).length === 0 ? (
+            <EmptyState icon={Landmark} title="No allocation exceptions" message="Every invoice's allocated payments are within its total amount." />
+          ) : (
+            <DataTable
+              columns={ALLOCATION_EXCEPTION_COLUMNS}
+              data={exceptions.items}
+              rowKey={(r) => r.invoice_id}
+              minWidth={840}
+            />
+          )}
+        </SectionCard>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Allocation Exceptions</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            Invoices where PaymentAllocation totals exceed the invoice's own total_amount — a real ledger
-            integrity failure, never a legitimate state.
-          </p>
-          <div className="mt-4">
-            {errors.exceptions ? (
-              <ErrorState title="Unable to load allocation exceptions" message={errors.exceptions} onRetry={load} />
-            ) : (exceptions?.items || []).length === 0 ? (
-              <EmptyState icon={Landmark} title="No allocation exceptions" message="Every invoice's allocated payments are within its total amount." />
-            ) : (
-              <DataTable
-                columns={ALLOCATION_EXCEPTION_COLUMNS}
-                data={exceptions.items}
-                rowKey={(r) => r.invoice_id}
-                minWidth={900}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Credit Note Applications</h3>
-          <p className="mt-1 text-xs text-slate-500">The ledger of which credit note reduced which invoice's balance, and by how much.</p>
-          <div className="mt-4">
-            {errors.applications ? (
-              <ErrorState title="Unable to load credit applications" message={errors.applications} onRetry={load} />
-            ) : (applications?.items || []).length === 0 ? (
-              <EmptyState icon={Landmark} title="No credit note applications yet" message="Credit notes applied against invoices will appear here." />
-            ) : (
-              <DataTable
-                columns={CREDIT_APPLICATION_COLUMNS}
-                data={applications.items}
-                rowKey={(r) => r.application_id}
-                minWidth={900}
-              />
-            )}
-          </div>
-        </div>
+        <SectionCard
+          variant="standard"
+          accent="brand"
+          icon={Landmark}
+          title="Credit Note Applications"
+          description="The ledger of which credit note reduced which invoice's balance, and by how much."
+        >
+          {errors.applications ? (
+            <ErrorState title="Unable to load credit applications" message={errors.applications} onRetry={load} />
+          ) : (applications?.items || []).length === 0 ? (
+            <EmptyState icon={Landmark} title="No credit note applications yet" message="Credit notes applied against invoices will appear here." />
+          ) : (
+            <DataTable
+              columns={CREDIT_APPLICATION_COLUMNS}
+              data={applications.items}
+              rowKey={(r) => r.application_id}
+              minWidth={840}
+            />
+          )}
+        </SectionCard>
       </div>
     </div>
   );
