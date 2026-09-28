@@ -1526,6 +1526,23 @@ class Subscription(Base):
         UniqueConstraint("organization_id", "idempotency_key", name="uq_subscriptions_org_idempotency_key"),
     )
 
+    # -- Plan/Customer display-name hybrid properties (read-only, from
+    # relationship) --
+    # Same established pattern as WriteOff/Refund/CreditNote: the schema
+    # (SubscriptionResponse.plan_name/customer_name) declares these fields
+    # and Pydantic reads them off the ORM object via from_attributes=True.
+    # The paginated list repository eager-loads plan/customer so a page of
+    # subscriptions never lazy-loads per row.
+    @hybrid_property
+    def plan_name(self):
+        return self.plan.plan_name if self.plan else None
+
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
     def __repr__(self):
         return f"<Subscription id={self.id} number={self.subscription_number} status={self.status}>"
 
@@ -2211,6 +2228,20 @@ class Refund(Base):
     def __repr__(self):
         return f"<Refund id={self.id} number={self.refund_number} status={self.status}>"
 
+    # -- Customer detail hybrid properties (read-only, from relationship) --
+    # Same established pattern as Invoice/CreditNote: the schema
+    # (RefundResponse.customer_name/customer_email) declares these fields and
+    # Pydantic reads them off the ORM object via from_attributes=True.
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
+    @hybrid_property
+    def customer_email(self):
+        return self.customer.email if self.customer else None
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TABLE 23b: REFUND STATUS HISTORY
@@ -2318,6 +2349,20 @@ class WriteOff(Base):
 
     def __repr__(self):
         return f"<WriteOff id={self.id} number={self.write_off_number} status={self.status}>"
+
+    # -- Customer detail hybrid properties (read-only, from relationship) --
+    # Same established pattern as Invoice/CreditNote/Refund: the schema
+    # (WriteOffResponse.customer_name/customer_email) declares these fields
+    # and Pydantic reads them off the ORM object via from_attributes=True.
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
+    @hybrid_property
+    def customer_email(self):
+        return self.customer.email if self.customer else None
 
 
 class WriteOffStatusHistory(Base):
@@ -2946,6 +2991,7 @@ class BillingConfiguration(Base):
     write_off_number_format         = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     write_off_sequence_reset        = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
     auto_generate_invoice_number    = Column(Boolean, default=True)
+    auto_send_invoices              = Column(Boolean, default=False)
     invoice_footer                  = Column(Text, nullable=True)
     invoice_terms                   = Column(Text, nullable=True)
     invoice_notes                   = Column(Text, nullable=True)

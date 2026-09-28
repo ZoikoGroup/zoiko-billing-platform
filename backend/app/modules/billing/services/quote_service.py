@@ -120,6 +120,12 @@ class QuoteService:
             date_from=date_from, date_to=date_to,
         )
 
+    def get_quotation_summary(self, organization_id: int) -> Dict[str, Any]:
+        """KPI tiles for the quotations list page, computed over the full
+        org dataset -- not just whatever page of results the list endpoint
+        happens to be returning."""
+        return self.repo.get_summary_stats(organization_id)
+
     # ── Items ─────────────────────────────────────────────────────────────
 
     def _validate_tax_rate_ownership(self, organization_id: int, tax_rate_id: Optional[int]) -> None:

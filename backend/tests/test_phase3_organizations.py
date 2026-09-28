@@ -19,6 +19,8 @@ Coverage:
 Handlers/services are invoked directly (no HTTP layer) on the isolated
 in-memory SQLite fixture — never BILLING_DATABASE_URL. conftest is untouched.
 """
+from datetime import datetime, timezone
+
 import pytest
 
 from app.core.exceptions import BadRequestException, NotFoundException
@@ -289,6 +291,73 @@ def test_last_activity_handles_mixed_aware_and_naive_datetimes():
     assert result2 == datetime(2026, 1, 2, 10, 0, 0)
 
     assert OrganizationDirectoryService._max_activity_datetime((None, None)) is None
+
+
+def test_last_activity_map_normalizes_tz_aware_audit_timestamp(db_session):
+    """Regression for the "Invite Organization Admin" crash: on Postgres,
+    PlatformAuditLog.created_at is DateTime(timezone=True) and comes back
+    tz-aware, while Organization.updated_at / AttentionItem.last_seen_at are
+    naive. Once an org has at least one audit log row (e.g. right after
+    /api/super-admin/users/invite), GET /organizations/{id}/overview called
+    `max()` over a mix of aware and naive datetimes and raised
+    "TypeError: can't compare offset-naive and offset-aware datetimes",
+    turning into a 500 in the Organization Detail page. SQLite (this
+    fixture's engine) silently drops tzinfo on round-trip, so the aggregate
+    queries can't reproduce the mismatch here — this test injects a
+    tz-aware value the way psycopg2 would return it, to exercise the exact
+    line that failed.
+    """
+    org = _org(db_session, "TZMIX")
+    org.updated_at = datetime(2026, 1, 1, 8, 0, 0)  # naive, as SQLite/Postgres both store it
+    db_session.commit()
+
+    service = OrganizationDirectoryService(db_session)
+    real_query = db_session.query
+
+    def patched_query(*entities, **kwargs):
+        q = real_query(*entities, **kwargs)
+        if entities and entities[0] is PlatformAuditLog.organization_id:
+            q.all = lambda: [(org.id, datetime(2026, 1, 2, 9, 0, 0, tzinfo=timezone.utc))]
+        return q
+
+    db_session.query = patched_query
+    try:
+        result = service._last_activity_map([org.id])
+    finally:
+        db_session.query = real_query
+
+    # Must not raise, and must pick the later (tz-aware, now normalized) value.
+    assert result[org.id] == datetime(2026, 1, 2, 9, 0, 0)
+    assert result[org.id].tzinfo is None
+
+
+def test_overview_after_invite_style_audit_row_does_not_crash(db_session):
+    """End-to-end shape of the reported bug: a real PlatformAuditLog row
+    (as written transactionally by UserAdminService.invite_user) must not
+    make GET /organizations/{id}/overview blow up. This runs on SQLite where
+    the timestamp mismatch itself can't be reproduced (see the test above
+    for that), but it pins the overview endpoint's happy path once an org
+    has audit history — the exact trigger condition for the reported crash.
+    """
+    org = _org(db_session, "TZOV")
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    PlatformAuditService(db_session).log_no_commit(
+        actor_id=None,
+        actor_role="super_admin",
+        action=PlatformAuditAction.CREATE,
+        entity_type="User",
+        entity_id=1,
+        organization_id=org.id,
+        reason="invited an org admin",
+    )
+    db_session.commit()
+
+    response = get_super_admin_organization_overview(
+        organization_id=org.id, current_user=_sa_user(), db=db_session
+    )
+    assert response.organization.id == org.id
 
 
 # ── 7 Registration stamps ONBOARDING ────────────────────────────────────────

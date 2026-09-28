@@ -832,6 +832,58 @@ class InvoiceRepository(BaseRepository[Invoice]):
             for h in history
         ]
 
+    def get_top_customers(
+        self,
+        organization_id: int,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        currency_rates: Optional[Dict[str, float]] = None,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Top-N customers by billed amount for the Invoice Dashboard's "Top
+        Customers" panel -- a single grouped aggregate (same idiom as
+        get_overdue_by_customer above) instead of the dashboard pulling up to
+        200 full invoice rows (InvoiceResponse's ~50 fields each, including
+        the entire customer profile) across the wire just to group/sum them
+        in the browser."""
+        from app.modules.billing.models import BillingCustomer
+
+        rate = self._rate_case(Invoice.currency, currency_rates)
+        filters = [
+            Invoice.organization_id == organization_id,
+            Invoice.is_active == True,
+        ]
+        if date_from:
+            filters.append(Invoice.issue_date >= self._parse_date_boundary(date_from, "date_from").date())
+        if date_to:
+            filters.append(Invoice.issue_date <= self._parse_date_boundary(date_to, "date_to").date())
+
+        total_expr = func.coalesce(func.sum(Invoice.total_amount * rate), 0)
+        rows = (
+            self.db.query(
+                Invoice.customer_id,
+                BillingCustomer.company_name,
+                BillingCustomer.display_name,
+                total_expr,
+                func.count(Invoice.id),
+            )
+            .join(BillingCustomer, BillingCustomer.id == Invoice.customer_id)
+            .filter(*filters)
+            .group_by(Invoice.customer_id, BillingCustomer.company_name, BillingCustomer.display_name)
+            .order_by(total_expr.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "customer_id": customer_id,
+                "customer_name": display_name or company_name,
+                "total_amount": float(total),
+                "invoice_count": count,
+            }
+            for customer_id, company_name, display_name, total, count in rows
+        ]
+
     def bulk_delete(self, ids: List[int], organization_id: int) -> int:
         # Resolve the requested ids within this organization first (silently
         # excludes ids that don't exist or belong to another org, same as the

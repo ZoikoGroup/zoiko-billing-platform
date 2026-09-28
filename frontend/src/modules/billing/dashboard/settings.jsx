@@ -7,6 +7,7 @@ import { Save, RefreshCw, AlertCircle, CheckCircle, Check, Settings2,
   ArrowRight, Zap, Mail, Eye, Server, Hash, DollarSign,
   Thermometer, FileJson } from "lucide-react"
 import { settingsApi } from "../../../service/billingService";
+import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import {
   CURRENCY_MASTER, getCurrencySymbol, formatCurrency, getCurrencySelectOptions,
 } from "../../../utils/currency";
@@ -894,6 +895,13 @@ export default function BillingSettingsPage() {
     setLoading(true);
     setError(null);
     try {
+      // Deliberately NOT routed through loadGlobalBillingConfig(): this is
+      // the org config EDITOR populating an editable form (and its dirty-diff
+      // `original` baseline below) — it must always see the true current
+      // server state when the page opens, not a shared cache that might be
+      // serving a snapshot from before another tab's save. The save path
+      // below calls invalidateGlobalBillingConfig() so every other (read-only)
+      // consumer picks up this page's changes on its next read.
       const [configData, ratesData] = await Promise.allSettled([
         settingsApi.getConfig(),
         settingsApi.getExchangeRates(),
@@ -1147,6 +1155,11 @@ export default function BillingSettingsPage() {
         data.default_tax_rate = String(data.default_tax_rate);
       }
       await settingsApi.updateConfig(data);
+      // This page is the org-wide config editor: every other page's cached
+      // config (CurrencyContext, TerminologyContext, and every read-only
+      // consumer of loadGlobalBillingConfig()) must pick up this save on its
+      // very next read instead of showing a stale snapshot until reload.
+      invalidateGlobalBillingConfig();
       setSaved(true);
       setLastSavedTimestamp(new Date());
       setOriginal(JSON.parse(JSON.stringify(form)));

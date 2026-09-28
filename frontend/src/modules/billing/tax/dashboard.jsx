@@ -9,7 +9,7 @@ import {
 import { taxApi } from "../../../service/billingService";
 import { extractArray, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
-import { useBillingDateRange } from "../utils/DateRangeContext";
+import { useBillingDateRange, DEFAULT_RANGE } from "../utils/DateRangeContext";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -56,13 +56,37 @@ export default function TaxDashboardPage() {
 
   const hasLoadedOnce = useRef(false);
 
+  // "Tax Collected" / "GST Collected" / "VAT Collected" answer "how much tax
+  // have we collected, ever" -- a lifetime inventory total, not a "this
+  // period" flow metric (mirrors the deliberately-not-date-filtered
+  // status-count precedent in InvoiceRepository.get_summary; see the
+  // matching comment on TaxRepository.get_summary in repositories/tax.py).
+  // QA reported these tiles showing NO results (not wrong ones): every load
+  // of this page applies DateRangeContext's shared rolling 30-day DEFAULT
+  // range, and most orgs' invoice-tax activity (the Tax ledger rows this
+  // summary aggregates) sits outside that window well before or after
+  // onboarding. The backend already treats omitted date_from/date_to as
+  // "no filter" (lifetime), so the fix is to simply not forward the page's
+  // default range as concrete dates -- while still forwarding them, and
+  // narrowing the total, the moment the user deliberately picks a
+  // non-default range (e.g. "Last 7 Days" or a custom range).
+  const isDefaultDateRange = dateRangeValue === DEFAULT_RANGE;
+  const summaryDateFrom = isDefaultDateRange ? undefined : dateRange.date_from;
+  const summaryDateTo = isDefaultDateRange ? undefined : dateRange.date_to;
+
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
 
       const [summaryRes, ratesRes, monthlyRes] = await Promise.allSettled([
-        taxApi.getSummary(dateRange.date_from, dateRange.date_to),
-        taxApi.list({ per_page: 100 }),
+        taxApi.getSummary(summaryDateFrom, summaryDateTo),
+        // per_page bumped from 100 -> 1000 (clamped server-side to 200 by
+        // BaseRepository.list_paginated) so "Countries Covered" and the
+        // other tiles/charts driven by this fetch reflect the org's whole
+        // tax-rate catalog, not just its first 100 rows -- TaxRate is a
+        // configuration table (see utils/tax_catalogue.py) that a KPI tile
+        // should never silently truncate.
+        taxApi.list({ per_page: 1000 }),
         taxApi.getMonthlyTrend(6),
       ]);
 
@@ -86,12 +110,12 @@ export default function TaxDashboardPage() {
       setRefreshing(false);
       hasLoadedOnce.current = true;
     }
-  }, [dateRange.date_from, dateRange.date_to]);
+  }, [summaryDateFrom, summaryDateTo]);
 
   useEffect(() => {
     fetchDashboardData(hasLoadedOnce.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange.date_from, dateRange.date_to]);
+  }, [summaryDateFrom, summaryDateTo]);
 
   const totalTax = Number(summary?.total_tax || 0);
   const totalRecords = Number(summary?.total_records || 0);
@@ -132,7 +156,8 @@ export default function TaxDashboardPage() {
   const insightItems = useMemo(() => {
     const items = [];
     if (totalTax > 0) {
-      items.push({ tone: "up", icon: TrendingUp, text: `${formatDisplayCurrency(totalTax, baseCurrency)} tax collected this period` });
+      const periodLabel = isDefaultDateRange ? "all-time" : "this period";
+      items.push({ tone: "up", icon: TrendingUp, text: `${formatDisplayCurrency(totalTax, baseCurrency)} tax collected ${periodLabel}` });
     }
     const inactiveCount = taxRates.length - activeRates.length;
     if (inactiveCount > 0) {
@@ -143,10 +168,10 @@ export default function TaxDashboardPage() {
       items.push({ tone: "neutral", icon: Globe, text: `${jurisdictionCount} jurisdiction${jurisdictionCount === 1 ? "" : "s"} covered by configured tax rates` });
     }
     if (!items.length) {
-      items.push({ tone: "neutral", icon: CheckCircle, text: "No tax activity recorded for this period" });
+      items.push({ tone: "neutral", icon: CheckCircle, text: isDefaultDateRange ? "No tax activity recorded yet" : "No tax activity recorded for this period" });
     }
     return items;
-  }, [totalTax, baseCurrency, taxRates.length, activeRates.length, jurisdictionCounts]);
+  }, [totalTax, baseCurrency, taxRates.length, activeRates.length, jurisdictionCounts, isDefaultDateRange]);
 
   const taxQuickActions = useMemo(() => [
     { label: "Tax Rates", hint: "View and manage configured rates", href: "/billing/tax", icon: Receipt },
@@ -272,7 +297,7 @@ export default function TaxDashboardPage() {
         <DashboardStatCard
           title="Tax Collected"
           value={formatDisplayCurrency(totalTax, baseCurrency)}
-          subtitle={`${totalRecords} tax record(s) in range`}
+          subtitle={isDefaultDateRange ? `${totalRecords} tax record(s), all-time` : `${totalRecords} tax record(s) in range`}
           icon={DollarSign}
           color="from-brand to-brand-hover"
           sparkline={monthlyTax.map((m) => m.tax)}
@@ -280,21 +305,21 @@ export default function TaxDashboardPage() {
         <DashboardStatCard
           title="GST Collected"
           value={formatDisplayCurrency(gstAmount, baseCurrency)}
-          subtitle={breakdown.gst != null ? "From GST-type tax records" : "No GST records in range"}
+          subtitle={breakdown.gst != null ? "From GST-type tax records" : (isDefaultDateRange ? "No GST records yet" : "No GST records in range")}
           icon={Landmark}
           color="from-amber-500 to-orange-500"
         />
         <DashboardStatCard
           title="VAT Collected"
           value={formatDisplayCurrency(vatAmount, baseCurrency)}
-          subtitle={breakdown.vat != null ? "From VAT-type tax records" : "No VAT records in range"}
+          subtitle={breakdown.vat != null ? "From VAT-type tax records" : (isDefaultDateRange ? "No VAT records yet" : "No VAT records in range")}
           icon={Landmark}
           color="from-blue-500 to-cyan-500"
         />
         <DashboardStatCard
           title="Tax Records"
           value={totalRecords}
-          subtitle="Applied tax entries in range"
+          subtitle={isDefaultDateRange ? "Applied tax entries, all-time" : "Applied tax entries in range"}
           icon={FileText}
           color="from-emerald-500 to-green-500"
           href="/billing/tax/reports"

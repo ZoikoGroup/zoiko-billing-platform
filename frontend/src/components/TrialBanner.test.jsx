@@ -13,7 +13,16 @@ const { platformSelfServiceApi } = vi.hoisted(() => ({
     convertTrialToPaid: vi.fn(),
   },
 }));
-vi.mock("../service/platformSelfServiceApi", () => ({ platformSelfServiceApi }));
+// Mocked as a passthrough (no real caching here) so each test's per-call
+// mockResolvedValue/toHaveBeenCalledTimes assertions keep working exactly as
+// before -- these tests exercise TrialBanner's contract with the service
+// layer, not platformSelfServiceApi's own cache (an untested implementation
+// detail, same convention as orgAdminService's analogous cache).
+vi.mock("../service/platformSelfServiceApi", () => ({
+  platformSelfServiceApi,
+  getZoikoSubscriptionCached: (...args) => platformSelfServiceApi.getZoikoSubscription(...args),
+  invalidateZoikoSubscriptionCache: vi.fn(),
+}));
 
 import TrialBanner from "./TrialBanner";
 

@@ -105,6 +105,36 @@ def test_credit_note_created_by_is_persisted_and_self_approval_blocked(db_sessio
     assert approved.approved_by == approver.id
 
 
+def test_refund_reject_requires_different_finance_approver_and_blocks_self(db_session):
+    """RBAC matrix audit regression: reject_refund is a CHECKER decision on a
+    submitted approval request (REJECTED is only reachable from
+    PENDING_APPROVAL -- see RefundService._validate_status_transition),
+    symmetric with approve_refund. It must carry the same self-action SoD
+    guard as approve_refund (and as DiscountService.reject_discount, the
+    established pattern for reject actions in this codebase). Router-level
+    role gating (get_current_finance_approver, not get_current_billing_admin)
+    is covered separately in test_billing_router_rbac_wiring.py."""
+    org = make_organization(db_session)
+    customer = make_customer(db_session, org.id)
+    payment = make_payment(db_session, org.id, customer.id, amount="100.00")
+    submitter = _make_user(db_session, org.id, "reject-submitter@example.com")
+    approver = _make_user(db_session, org.id, "reject-approver@example.com", role=UserRole.FINANCE_APPROVER)
+
+    svc = RefundService(db_session)
+    refund = svc.create_refund(
+        organization_id=org.id, created_by=submitter.id,
+        customer_id=customer.id, refund_number="auto",
+        refund_type="full", amount=Decimal("30.00"), payment_id=payment.id,
+    )
+    svc.submit_for_approval(refund.id, org.id, submitter.id)
+
+    with pytest.raises(ForbiddenException):
+        svc.reject_refund(refund.id, org.id, submitter.id, reason="self-reject attempt")
+
+    rejected = svc.reject_refund(refund.id, org.id, approver.id, reason="insufficient documentation")
+    assert rejected.status.value == "rejected"
+
+
 def test_discount_created_by_is_persisted_and_self_approval_blocked(db_session):
     org = make_organization(db_session)
     submitter = _make_user(db_session, org.id, "submitter4@example.com")

@@ -236,7 +236,14 @@ def reject_refund(
     body: RefundRejectRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-    _admin=Depends(get_current_billing_admin),
+    # §25 SoD: reject is a CHECKER decision on a submitted approval request,
+    # symmetric with approve — it must require the same Finance Approver
+    # gate as approve_refund, matching this codebase's own established
+    # pattern in discount_router.reject_discount. (Previously mis-gated to
+    # get_current_billing_admin, which let the MAKER role unilaterally kill
+    # a pending-approval refund while the real Finance Approver was
+    # rejected with 403 trying to use this very endpoint.)
+    _approver=Depends(get_current_finance_approver),
 ):
     svc = RefundService(db)
     return svc.reject_refund(

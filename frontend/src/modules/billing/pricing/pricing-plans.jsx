@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tag, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Layers, Eye, Copy, Calendar } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { pricingApi, productApi, settingsApi } from "../../../service/billingService";
+import { pricingApi, productApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, Pagination, ProductSelector } from "../../../components/billing-shared";
@@ -129,7 +130,7 @@ export default function PricingPlansPage() {
   const [newPlan, setNewPlan] = useState(getDefaultPlan());
 
   useEffect(() => {
-    settingsApi.getConfig().then((res) => {
+    loadGlobalBillingConfig().then((res) => {
       const cfg = res?.data || res;
       if (cfg?.default_currency) setOrgCurrency(cfg.default_currency);
     }).catch((err) => console.error("[PricingPlans] Failed to load config:", err));

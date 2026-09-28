@@ -3,7 +3,8 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, Clock, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { currencyPricingApi, productApi, settingsApi } from "../../../service/billingService";
+import { currencyPricingApi, productApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -21,7 +22,7 @@ function CurrencyFormModal({ show, onClose, onSave, editItem, saving, productMap
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
-    settingsApi.getConfig().then((res) => {
+    loadGlobalBillingConfig().then((res) => {
       const cfg = res?.data || res;
       if (cfg?.default_currency) {
         setForm(f => f.currency ? f : { ...f, currency: cfg.default_currency });

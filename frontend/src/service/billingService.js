@@ -86,7 +86,7 @@ const CONFIG_CACHE_TTL_MS = 60_000;
 let _configCache = null; // { token, data, fetchedAt }
 let _configInFlight = null; // { token, promise }
 
-function invalidateConfigCache() {
+export function invalidateConfigCache() {
   _configCache = null;
   _configInFlight = null;
 }
@@ -390,6 +390,7 @@ export const contractApi = {
 
 export const quoteApi = {
   list: (params) => api.get(buildUrl(ENDPOINTS.QUOTATIONS, params)),
+  summary: () => api.get(ENDPOINTS.QUOTATIONS_SUMMARY),
   get: (id) => api.get(ENDPOINTS.QUOTATION(id)),
   create: (data) => api.post(ENDPOINTS.QUOTATIONS, data),
   update: (id, data) => api.put(ENDPOINTS.QUOTATION(id), data),
@@ -467,6 +468,7 @@ export const invoiceApi = {
   getStatusDistribution: () => api.get(ENDPOINTS.INVOICES_STATUS_DISTRIBUTION),
   getMonthlyRevenue: (months = 12) => api.get(buildUrl(ENDPOINTS.INVOICES_MONTHLY_REVENUE, { months })),
   getRecentActivity: (limit = 10) => api.get(buildUrl(ENDPOINTS.INVOICES_RECENT_ACTIVITY, { limit })),
+  getTopCustomers: (range, limit = 5) => api.get(buildUrl(ENDPOINTS.INVOICES_TOP_CUSTOMERS, { ...(range || {}), limit })),
   bulkDelete: (ids) => api.post(ENDPOINTS.INVOICES_BULK_DELETE, { ids }),
   listDueBetween: (startDate, endDate) =>
     api.get(
@@ -538,6 +540,7 @@ export const paymentApi = {
   listAttempts: (id) => api.get(ENDPOINTS.PAYMENT_ATTEMPTS(id)),
   reconcile: (id) => api.post(ENDPOINTS.PAYMENT_RECONCILE(id)),
   getTotalCollected: () => api.get(ENDPOINTS.PAYMENTS_TOTAL_COLLECTED),
+  getDashboardStats: () => api.get(ENDPOINTS.PAYMENTS_DASHBOARD_STATS),
   listUnallocated: (params) => api.get(buildUrl(ENDPOINTS.PAYMENT_UNALLOCATED, params)),
   getUnallocatedAmount: (id) => api.get(ENDPOINTS.PAYMENT_UNALLOCATED_AMOUNT(id)),
   deleteAllocation: (id) => api.delete(ENDPOINTS.PAYMENT_ALLOCATION_DELETE(id)),

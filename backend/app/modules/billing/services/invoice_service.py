@@ -569,6 +569,11 @@ class InvoiceService:
     def get_recent_activity(self, organization_id: int, limit: int = 10) -> List:
         return self.repo.get_recent_activity(organization_id, limit)
 
+    def get_top_customers(
+        self, organization_id: int, date_from: Optional[str] = None, date_to: Optional[str] = None, limit: int = 5,
+    ) -> List:
+        return self.repo.get_top_customers(organization_id, date_from=date_from, date_to=date_to, limit=limit)
+
     def bulk_delete_invoices(self, organization_id: int, ids: List[int], updated_by: int) -> int:
         count = self.repo.bulk_delete(ids, organization_id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "Invoice", None, new_values={"deleted_ids": ids})

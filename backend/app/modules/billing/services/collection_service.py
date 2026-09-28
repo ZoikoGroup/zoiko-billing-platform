@@ -27,6 +27,7 @@ from app.modules.billing.repositories.collection import (
     DunningCaseRepository,
 )
 from app.modules.billing.repositories.invoice import InvoiceCommunicationRepository, InvoiceRepository
+from app.modules.billing.repositories.payment import PaymentRepository
 from app.modules.billing.repositories.promise_to_pay import PromiseToPayRepository
 from app.modules.billing.repositories.settings import BillingConfigurationRepository
 from app.modules.billing.services.audit_service import BillingAuditService
@@ -54,6 +55,7 @@ class CollectionService:
         self.dunning_case_repo = DunningCaseRepository(db)
         self.promise_repo = PromiseToPayRepository(db)
         self.invoice_repo = InvoiceRepository(db)
+        self.payment_repo = PaymentRepository(db)
         self.comms_repo = InvoiceCommunicationRepository(db)
         self.config_repo = BillingConfigurationRepository(db)
         self.customer_service = CustomerService(db)
@@ -369,7 +371,61 @@ class CollectionService:
     # ── Dashboard ─────────────────────────────────────────────────────────────
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        return self.repo.get_dashboard_stats(organization_id)
+        """Collections dashboard headline numbers.
+
+        QA bug report item #36: "Total Overdue" / "Amount Collected" /
+        "Still Outstanding" used to come ONLY from CollectionsCase /
+        DunningCase rows (self.repo.get_dashboard_stats() below, whose
+        case-scoped total_outstanding/amount_collected fields are still
+        returned as case_total_outstanding/case_amount_collected for
+        whatever "open workflow inventory" value they retain -- e.g. for
+        get_collection_effectiveness()'s recovery-rate-of-cases metric).
+        A CollectionsCase/DunningCase is only ever created by the dunning
+        scheduler escalating an invoice, or by a human opening/escalating
+        one manually -- NOT automatically for every overdue invoice -- so
+        on any org where that job hasn't run yet, or nobody has opened a
+        case, those numbers were a real, silent $0 even though genuinely
+        overdue invoices and/or already-collected payments exist.
+
+        The three headline numbers below are therefore invoice/payment-
+        level ("financial reality"), not case-inventory-level:
+
+        - real_overdue_amount: sum of currently-overdue invoice balances,
+          reusing InvoiceRepository.get_aging_buckets' due-date-based
+          definition (the same one list_effectively_overdue uses) rather
+          than Invoice.status == 'overdue', because that status flag is
+          only ever flipped by a scheduled/manual job and would reintroduce
+          the exact same "no job has run yet -> $0" gap this fix closes.
+        - real_amount_collected: real cleared payments actually collected
+          against invoices that were overdue at the time they were paid
+          (PaymentRepository.get_collected_against_overdue_invoices),
+          regardless of whether any collections case ever existed.
+        - real_total_outstanding: remaining balance across all unpaid
+          invoices org-wide (InvoiceRepository.get_outstanding_total) --
+          does not go to zero just because no CollectionsCase exists.
+
+        None of this duplicates a case's own bookkeeping: a case's
+        total_outstanding/amount_collected are still returned unchanged
+        (as case_total_outstanding/case_amount_collected) for anyone who
+        wants the narrower "via an open collections case" view.
+        """
+        case_stats = self.repo.get_dashboard_stats(organization_id)
+
+        aging = self.invoice_repo.get_aging_buckets(organization_id)
+        real_overdue_amount = sum(
+            aging[bucket]["total"] for bucket in ("0_30", "31_60", "61_90", "91_plus")
+        )
+        real_total_outstanding = self.invoice_repo.get_outstanding_total(organization_id)
+        real_amount_collected = self.payment_repo.get_collected_against_overdue_invoices(organization_id)
+
+        return {
+            **case_stats,
+            "real_overdue_amount": real_overdue_amount,
+            "real_amount_collected": real_amount_collected,
+            "real_total_outstanding": real_total_outstanding,
+            "case_amount_collected": case_stats["amount_collected"],
+            "case_total_outstanding": case_stats["total_outstanding"],
+        }
 
     def get_priority_distribution(self, organization_id: int) -> List[Dict[str, Any]]:
         return self.repo.get_priority_distribution(organization_id)

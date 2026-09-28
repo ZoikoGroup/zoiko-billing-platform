@@ -15,6 +15,7 @@ const mockPaymentCreate = vi.fn();
 const mockPaymentAllocate = vi.fn();
 const mockPaymentListMethods = vi.fn();
 const mockPaymentUpdateStatus = vi.fn();
+const mockPaymentGetDashboardStats = vi.fn();
 const mockInvoiceList = vi.fn();
 const mockInvoiceGet = vi.fn();
 const mockCustomerSearch = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("../../../service/billingService", () => ({
     allocate: (...args) => mockPaymentAllocate(...args),
     listMethods: (...args) => mockPaymentListMethods(...args),
     updateStatus: (...args) => mockPaymentUpdateStatus(...args),
+    getDashboardStats: (...args) => mockPaymentGetDashboardStats(...args),
   },
   invoiceApi: {
     list: (...args) => mockInvoiceList(...args),
@@ -79,6 +81,12 @@ function setDefaultMocks() {
   mockPaymentAllocate.mockResolvedValue({ amount: 0 });
   mockPaymentListMethods.mockResolvedValue([]);
   mockPaymentUpdateStatus.mockResolvedValue({});
+  mockPaymentGetDashboardStats.mockResolvedValue({
+    cleared_amount: 0, cleared_count: 0, avg_payment_value: 0,
+    refunded_amount: 0, refunded_count: 0,
+    outstanding_amount: 0, pending_count: 0,
+    avg_per_day: 0, avg_per_day_window_days: 30, cleared_amount_last_30_days: 0,
+  });
   mockInvoiceList.mockResolvedValue({ items: [] });
   mockInvoiceGet.mockResolvedValue({});
   mockCustomerSearch.mockResolvedValue([CUSTOMER]);
@@ -211,5 +219,96 @@ describe("Record Payment wizard — submission is gated by the 4-step wizard", (
 
     clickFinalSubmit();
     await waitFor(() => expect(mockPaymentCreate).toHaveBeenCalledTimes(1));
+  });
+});
+
+// QA defect #28: "Refunded", "Outstanding", and "Avg/Day" derived their
+// numbers from `payments` -- the current (paginated, date-filtered) table
+// page -- instead of the full org dataset. "Avg/Day" additionally divided
+// the page's cleared amount by the page's ROW COUNT, which isn't a per-day
+// average at all. The fix pulls all four tiles from the new
+// paymentApi.getDashboardStats() aggregate; these tests pin that wiring down
+// with a page whose rows would produce very different (wrong) numbers if
+// the old page-scoped logic were still in effect.
+describe("KPI tiles — Refunded/Outstanding/Revenue/Avg-Day come from the dashboard-stats aggregate", () => {
+  function tileValueTitle(label) {
+    const labelEl = screen.getByText(label);
+    const valueEl = labelEl.parentElement.querySelector("p[title]");
+    return valueEl && valueEl.getAttribute("title");
+  }
+
+  it("renders Refunded/Outstanding/Revenue/Avg-Day from the stats endpoint, not from the current page's rows", async () => {
+    // Only 2 rows on this page, neither refunded -- the pre-fix code would
+    // have shown Refunded = 0 and Avg/Day = completedAmt / 2.
+    mockPaymentList.mockResolvedValue({
+      items: [
+        { id: 1, status: "cleared", amount: 500, currency: "USD", payment_date: "2024-01-01" },
+        { id: 2, status: "pending", amount: 50, currency: "USD", payment_date: "2024-01-02" },
+      ],
+      total: 2,
+    });
+    mockPaymentGetDashboardStats.mockResolvedValue({
+      cleared_amount: 9000, cleared_count: 30, avg_payment_value: 300,
+      refunded_amount: 400, refunded_count: 7,
+      outstanding_amount: 1250, pending_count: 3,
+      avg_per_day: 42.5, avg_per_day_window_days: 30, cleared_amount_last_30_days: 1275,
+    });
+
+    renderPage();
+    await waitFor(() => expect(mockPaymentGetDashboardStats).toHaveBeenCalledTimes(1));
+    await screen.findByRole("heading", { name: "Payments" });
+
+    expect(tileValueTitle("Refunded")).toBe("7");
+    expect(tileValueTitle("Outstanding")).toBe("1,250");
+    expect(tileValueTitle("Revenue")).toBe("9,000");
+    expect(tileValueTitle("Avg/Day")).toBe("42.5");
+  });
+
+  it("Avg/Day stays fixed to the server's 30-day figure regardless of how many rows are on the current page", async () => {
+    mockPaymentGetDashboardStats.mockResolvedValue({
+      cleared_amount: 3000, cleared_count: 10, avg_payment_value: 300,
+      refunded_amount: 0, refunded_count: 0,
+      outstanding_amount: 0, pending_count: 0,
+      avg_per_day: 100, avg_per_day_window_days: 30, cleared_amount_last_30_days: 3000,
+    });
+
+    mockPaymentList.mockResolvedValue({
+      items: [{ id: 1, status: "cleared", amount: 10, currency: "USD", payment_date: "2024-01-01" }],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => expect(mockPaymentGetDashboardStats).toHaveBeenCalledTimes(1));
+    await screen.findByRole("heading", { name: "Payments" });
+    // Old buggy formula: completedAmt / payments.length = 10 / 1 = 10. Must be 100.
+    expect(tileValueTitle("Avg/Day")).toBe("100");
+    cleanup();
+
+    mockPaymentList.mockResolvedValue({
+      items: Array.from({ length: 10 }, (_, i) => (
+        { id: i + 1, status: "cleared", amount: 10, currency: "USD", payment_date: "2024-01-01" }
+      )),
+      total: 10,
+    });
+    renderPage();
+    await waitFor(() => expect(mockPaymentGetDashboardStats).toHaveBeenCalledTimes(2));
+    await screen.findByRole("heading", { name: "Payments" });
+    // Old buggy formula would now give 100 / 10 = 10 instead -- a different
+    // page size alone must never change this tile.
+    expect(tileValueTitle("Avg/Day")).toBe("100");
+  });
+
+  it("falls back to page-scoped numbers (not a crash) when the stats endpoint fails", async () => {
+    mockPaymentGetDashboardStats.mockRejectedValue(new Error("network error"));
+    mockPaymentList.mockResolvedValue({
+      items: [{ id: 1, status: "cleared", amount: 500, currency: "USD", payment_date: "2024-01-01" }],
+      total: 1,
+    });
+
+    renderPage();
+    await waitFor(() => expect(mockPaymentGetDashboardStats).toHaveBeenCalledTimes(1));
+    await screen.findByRole("heading", { name: "Payments" });
+
+    // No crash, and Avg/Day falls back to 0 rather than a stale/undefined value.
+    expect(tileValueTitle("Avg/Day")).toBe("0");
   });
 });

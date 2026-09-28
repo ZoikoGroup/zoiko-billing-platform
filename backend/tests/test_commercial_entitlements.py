@@ -668,6 +668,55 @@ def test_expired_override_has_zero_effect_with_no_cleanup_job(db_session):
     assert resolved.value is False
 
 
+def test_overrides_expired_status_filter_finds_lapsed_approved_overrides(db_session):
+    """Regression: the Super Admin Overrides page (OverridesPage.jsx) offers an
+    "Expired" status filter option (OVERRIDE_STATUS_OPTIONS value="expired").
+    CommercialOverrideStatus.EXPIRED is documented as a status that no code
+    path ever actually writes to a row (AC-10 — expiry is judged dynamically
+    off expires_at, not a stored status), so filtering with a naive
+    `status == CommercialOverrideStatus.EXPIRED` equality was a dead filter:
+    it always returned zero rows, even for an APPROVED override whose
+    expires_at had already passed. GET /commercial-overrides?status=expired
+    must instead surface those lapsed-but-still-APPROVED rows."""
+    from app.modules.auth.models import User, UserRole
+    from app.modules.super_admin.router import list_commercial_overrides
+
+    plan, definition = _plan_with_entitlement(db_session, "EXPFPKG", "p2.expf.key", False)
+    org, account, sub = _org_with_active_subscription(db_session, "EXPFORG", plan)
+    db_session.commit()
+
+    lapsed = CommercialOverride(
+        organization_id=org.id, entitlement_definition_id=definition.id,
+        value=True, reason="lapsed override", status=CommercialOverrideStatus.APPROVED,
+        expires_at=datetime.utcnow() - timedelta(days=1),
+    )
+    live = CommercialOverride(
+        organization_id=org.id, entitlement_definition_id=definition.id,
+        value=True, reason="live override", status=CommercialOverrideStatus.APPROVED,
+        expires_at=datetime.utcnow() + timedelta(days=30),
+    )
+    draft = CommercialOverride(
+        organization_id=org.id, entitlement_definition_id=definition.id,
+        value=True, reason="unrelated draft", status=CommercialOverrideStatus.DRAFT,
+    )
+    db_session.add_all([lapsed, live, draft])
+    db_session.commit()
+
+    sa_user = User(
+        email="sa@overrides.example", hashed_password="x", role=UserRole.SUPER_ADMIN,
+        organization_id=None, first_name="S", last_name="A", phone="",
+        is_active=True, is_verified=True,
+    )
+
+    result = list_commercial_overrides(status="expired", current_user=sa_user, db=db_session)
+
+    returned_ids = {o.id for o in result.overrides}
+    assert lapsed.id in returned_ids, "the lapsed APPROVED override must be found by the 'expired' filter"
+    assert live.id not in returned_ids
+    assert draft.id not in returned_ids
+    assert result.total == len(returned_ids)
+
+
 # ── UsageMeteringService idempotency ────────────────────────────────────────
 
 

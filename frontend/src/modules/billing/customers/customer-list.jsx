@@ -5,7 +5,8 @@ import { Users, Search, Filter, X, RefreshCw, Download,
   FileText, Mail, Phone,
   Columns, Upload, Trash2 } from "lucide-react"
 import HRPage from "../../../components/HRPage";
-import { customerApi, settingsApi } from "../../../service/billingService";
+import { customerApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { isEntitlementLimitError } from "../../../service/api";
 import CustomerImportWizard from "./customer-import-wizard";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -130,7 +131,7 @@ export default function CustomerListPage() {
 
   useEffect(() => {
     fetchKPI();
-    settingsApi.getConfig().then((cfg) => {
+    loadGlobalBillingConfig().then((cfg) => {
       setOrgConfig(cfg);
       const orgCurrency = cfg?.base_currency || cfg?.default_currency || getOrgBaseCurrency();
       setNewCustomer((prev) => ({ ...prev, currency: prev.currency || orgCurrency }));

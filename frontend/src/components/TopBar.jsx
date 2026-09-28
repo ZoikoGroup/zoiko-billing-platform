@@ -144,13 +144,16 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           </Link>
         )}
 
-        {/* Notification Icon — links to a real (non-fabricated) feed per
-            role: billing_admin's workspace notifications (overdue
-            invoices/expiring contracts/aging collections), org_admin's
-            equivalent org-scoped feed, and super_admin's Attention/Audit
-            feed. Never shows a fake "unread" dot when nothing was ever
-            fetched (ORG-01) — any other role gets the inert placeholder. */}
-        {NOTIFICATIONS_ROUTE_BY_ROLE[role] ? (
+        {/* Notification Icon — links to the real (non-fabricated) billing
+            workspace notifications feed. The feed itself (WorkspaceNotificationsPage)
+            only calls org-scoped billing endpoints (overdue invoices, expiring
+            contracts, aging buckets, billing config) that both org_admin and
+            billing_admin are already authorized to call, and org_admin is the
+            default landing role for /organization-admin/dashboard — the exact
+            page this was reported broken on — so it must not be billing_admin-only.
+            For every other role this is an inert placeholder: it must never show
+            a fake "unread" dot when nothing was ever fetched (ORG-01). */}
+        {ORG_CONTEXT_ROLES.includes(role) ? (
           <Link
             to={NOTIFICATIONS_ROUTE_BY_ROLE[role]}
             className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"

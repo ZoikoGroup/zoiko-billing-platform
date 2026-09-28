@@ -91,6 +91,18 @@ export default function TaxRatesPage() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Full, unpaginated org-wide tax-rate catalog, kept separate from the
+  // paginated `taxRates` above. Feeds ONLY the "VAT / GST" and "Countries
+  // Covered" KPI tiles below: TaxRate is a configuration table seeded once
+  // at org onboarding (utils/tax_catalogue.py) and rarely touched again, so
+  // a rate configured months ago is still "covered" today. Those two tiles
+  // previously read from `filteredTaxRates` (the current 10-row page,
+  // additionally narrowed to the dashboard's rolling 30-day created_at
+  // window) -- doubly wrong for a config catalog, and the reason both
+  // tiles went to 0 for any org more than 30 days past onboarding or with
+  // more than 10 tax rates. The paginated table itself is untouched.
+  const [allTaxRates, setAllTaxRates] = useState([]);
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -142,7 +154,24 @@ export default function TaxRatesPage() {
     }
   }, [safePage, debouncedSearch, typeFilter, statusFilter]);
 
+  // Fetches the entire tax-rate catalog once (independent of page/search/
+  // status/type filters and of the dashboard date range) for the "VAT / GST"
+  // and "Countries Covered" KPI tiles only. per_page: 1000 is clamped
+  // server-side to 200 by BaseRepository.list_paginated -- the same large-
+  // per_page-for-a-full-fetch convention already used elsewhere in this app
+  // (see forecast-report.jsx / profitability-report.jsx), and comfortably
+  // above any realistic tax-rate catalog size.
+  const fetchAllTaxRatesForKpis = useCallback(async () => {
+    try {
+      const data = await taxApi.list({ per_page: 1000 });
+      setAllTaxRates(extractArray(data));
+    } catch (err) {
+      setAllTaxRates([]);
+    }
+  }, []);
+
   useEffect(() => { fetchTaxRates(); }, [fetchTaxRates]);
+  useEffect(() => { fetchAllTaxRatesForKpis(); }, [fetchAllTaxRatesForKpis]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
   const handleSort = (field) => {
@@ -164,7 +193,7 @@ export default function TaxRatesPage() {
       else await taxApi.create(payload);
       setShowForm(false); setEditRate(null);
       setFormData({ name: "", code: "", rate: "", tax_type: "sales_tax", jurisdiction: "", is_active: true, is_compound: false, is_recoverable: true, country_code: "", currency_code: "", tax_type_label: "", is_default: false, priority: 0 });
-      setCurrentPage(1); fetchTaxRates();
+      setCurrentPage(1); fetchTaxRates(); fetchAllTaxRatesForKpis();
     } catch (err) {
       setFormError(err.message || "Failed to save tax rate");
     } finally { setFormLoading(false); }
@@ -173,7 +202,7 @@ export default function TaxRatesPage() {
   const handleDeactivate = async (id) => {
     const ok = await confirm({ title: "Deactivate tax rate", message: "Deactivate this tax rate? This action cannot be undone.", confirmLabel: "Deactivate" });
     if (!ok) return;
-    try { await taxApi.update(id, { is_active: false }); fetchTaxRates(); }
+    try { await taxApi.update(id, { is_active: false }); fetchTaxRates(); fetchAllTaxRatesForKpis(); }
     catch (err) { setError(err.message || "Failed to deactivate tax rate"); }
   };
 
@@ -213,7 +242,7 @@ export default function TaxRatesPage() {
     subtitle: "Manage tax rates, jurisdictions, and default rates",
     icon: Receipt,
     iconGradient: "from-amber-500 to-orange-600",
-    onRefresh: () => { setRefreshing(true); fetchTaxRates(); },
+    onRefresh: () => { setRefreshing(true); fetchTaxRates(); fetchAllTaxRatesForKpis(); },
     refreshing,
     onExportCSV: () => handleExport("csv"),
     onExportJSON: () => handleExport("json"),
@@ -265,13 +294,13 @@ export default function TaxRatesPage() {
         />
         <DashboardStatCard
           title="VAT / GST"
-          value={filteredTaxRates.filter((r) => r.tax_type === "vat" || r.tax_type === "gst").length}
+          value={allTaxRates.filter((r) => r.tax_type === "vat" || r.tax_type === "gst").length}
           icon={Landmark}
           color="from-emerald-500 to-emerald-600"
         />
         <DashboardStatCard
           title="Countries Covered"
-          value={new Set(filteredTaxRates.map((r) => r.jurisdiction)).size}
+          value={new Set(allTaxRates.map((r) => r.jurisdiction)).size}
           icon={Globe}
           color="from-amber-500 to-orange-500"
         />
@@ -549,7 +578,7 @@ export default function TaxRatesPage() {
       {showImportWizard && (
         <TaxRateImportWizard
           onClose={() => setShowImportWizard(false)}
-          onImported={() => { setCurrentPage(1); fetchTaxRates(); }}
+          onImported={() => { setCurrentPage(1); fetchTaxRates(); fetchAllTaxRatesForKpis(); }}
         />
       )}
       {ConfirmationDialog}

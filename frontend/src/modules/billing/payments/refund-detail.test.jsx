@@ -147,6 +147,11 @@ describe("RefundDetailPage — happy path", () => {
 
 describe("RefundDetailPage — reject requires a typed reason (business validation)", () => {
   it("disables the Reject Refund confirm button until a reason is typed, and does not call the API without one", async () => {
+    // Reject is gated to finance_approver/super_admin (maker-checker
+    // separation of duties) -- without a stored user in this role, the
+    // component renders an explanatory panel instead of the button.
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
     await loadPage({ status: "pending_approval" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
@@ -159,6 +164,8 @@ describe("RefundDetailPage — reject requires a typed reason (business validati
   });
 
   it("submits the typed reason and calls refundApi.reject exactly once", async () => {
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
     await loadPage({ status: "pending_approval" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
@@ -171,6 +178,19 @@ describe("RefundDetailPage — reject requires a typed reason (business validati
 
     await waitFor(() => expect(mockReject).toHaveBeenCalledTimes(1));
     expect(mockReject).toHaveBeenCalledWith(42, "Duplicate charge dispute");
+  });
+
+  it("hides the Reject button from a non-approver and explains the maker-checker gate", async () => {
+    // maker-checker (RBAC §25): a billing admin who lacks the finance-
+    // approver role must not even see/click Reject — the component renders
+    // an explanatory panel and never shows the button.
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "billing_admin" }));
+    await loadPage({ status: "pending_approval" });
+
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rejection requires a Finance Approver/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockReject).not.toHaveBeenCalled());
   });
 });
 

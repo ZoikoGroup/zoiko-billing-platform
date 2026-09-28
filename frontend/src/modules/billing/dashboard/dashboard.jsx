@@ -227,14 +227,13 @@ export default function ZoikoBillingModule() {
         auditApi.list({ per_page: 10 }),
         productApi.list({ per_page: 1 }),
         subscriptionApi.getReporting(),
-        settingsApi.getHealth(),
       ]);
 
       if (currentRequestId !== requestIdRef.current) return;
 
       const [fullResult, paymentTrendResult, invoicesResult, paymentsResult, customersResult,
         subscriptionsResult, contractsResult,
-        agingResult, expiringResult, auditResult, productResult, reportingResult, healthResult] = results;
+        agingResult, expiringResult, auditResult, productResult, reportingResult] = results;
 
       const safeValue = (result, transform = (v) => v) =>
         result.status === "fulfilled" ? transform(result.value) : null;
@@ -246,7 +245,6 @@ export default function ZoikoBillingModule() {
       }
 
       setSubscriptionReporting(safeValue(reportingResult));
-      setHealthSummary(safeValue(healthResult));
 
       const fullData = safeValue(fullResult);
       const kpisData = fullData?.kpis ?? null;
@@ -290,6 +288,24 @@ export default function ZoikoBillingModule() {
       clearInterval(interval);
     };
   }, [fetchDashboardData]);
+
+  // System Health badge (readiness score / "N of M components healthy") is a
+  // secondary diagnostic widget, not a revenue KPI -- it must never gate the
+  // dashboard's critical rendering path. settingsApi.getHealth() runs a live
+  // SMTP connectivity probe server-side (admin_service.py::run_billing_
+  // health_check) that alone can take 10+ seconds; it used to be inside the
+  // same Promise.allSettled batch that also gates `loading`/`setRefreshing`,
+  // so every dashboard load and every 60s poll waited on it. Fetched here
+  // instead, independently, on mount only (not on every poll) -- a failed or
+  // slow health check silently leaves the badge absent, exactly like the
+  // other `.catch(() => null)` best-effort widgets on this page.
+  useEffect(() => {
+    let cancelled = false;
+    settingsApi.getHealth()
+      .then((data) => { if (!cancelled && mountedRef.current) setHealthSummary(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!loadingRef.current) {

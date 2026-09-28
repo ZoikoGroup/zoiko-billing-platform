@@ -1,6 +1,8 @@
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import case, func
+
 from app.modules.billing.models import (
     Contract,
     Quotation,
@@ -15,6 +17,54 @@ class QuotationRepository(BaseRepository[Quotation]):
 
     def get_by_number(self, organization_id: int, number: str) -> Optional[Quotation]:
         return self.get_first(organization_id, quote_number=number)
+
+    def get_summary_stats(self, organization_id: int) -> Dict[str, Any]:
+        """Full-org-dataset KPI aggregate for the quotations list page tiles.
+
+        Single grouped-aggregate query instead of 9 separate round trips (1
+        count + 1 sum + 7 status-filtered counts) -- each round trip costs
+        real, measurable network latency in this environment (same pattern
+        as CreditNoteRepository/RefundRepository.get_dashboard_stats).
+
+        Deliberately NOT paginated and NOT date-restricted: this is a
+        snapshot of how many quotations are CURRENTLY in each status (an
+        inventory count) and their lifetime total value, not a "created
+        within this period" metric -- same rationale as
+        InvoiceRepository.get_enterprise_dashboard_stats' status_counts
+        query, which is also intentionally left unfiltered by date.
+        """
+        def _count_if(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        row = self.db.query(
+            func.count(Quotation.id),
+            func.coalesce(func.sum(Quotation.total_amount), 0),
+            _count_if(Quotation.status == "draft"),
+            _count_if(Quotation.status == "sent"),
+            _count_if(Quotation.status == "accepted"),
+            _count_if(Quotation.status == "rejected"),
+            _count_if(Quotation.status == "cancelled"),
+            _count_if(Quotation.status == "converted"),
+            _count_if(Quotation.status == "expired"),
+        ).filter(
+            Quotation.organization_id == organization_id,
+            Quotation.is_active == True,
+        ).one()
+
+        (total, total_value, draft_count, sent_count, accepted_count,
+         rejected_count, cancelled_count, converted_count, expired_count) = row
+
+        return {
+            "total": total,
+            "total_value": float(total_value),
+            "draft_count": draft_count,
+            "sent_count": sent_count,
+            "accepted_count": accepted_count,
+            "rejected_count": rejected_count,
+            "cancelled_count": cancelled_count,
+            "converted_count": converted_count,
+            "expired_count": expired_count,
+        }
 
     def list_by_customer(
         self,
