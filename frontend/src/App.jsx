@@ -101,6 +101,8 @@ const PaymentDashboardPage = lazy(() => import("./modules/billing/payments/payme
 const PaymentDetailPage = lazy(() => import("./modules/billing/payments/payment-detail"));
 const PaymentReportsPage = lazy(() => import("./modules/billing/payments/reports"));
 const PaymentSettingsPage = lazy(() => import("./modules/billing/payments/settings"));
+const StripeConnectSettingsPage = lazy(() => import("./modules/billing/payments/stripe-connect"));
+const StripeConnectCallbackPage = lazy(() => import("./modules/billing/payments/stripe-connect-callback"));
 const CollectionsReceivablesPage = lazy(() => import("./modules/billing/payments/collections-receivables"));
 const CollectionsDashboardPage = lazy(() => import("./modules/billing/payments/collections-dashboard"));
 const CollectionsCaseDetailPage = lazy(() => import("./modules/billing/payments/collections-case-detail"));
@@ -145,6 +147,7 @@ const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage")
 const ConfigurationGovernancePage = lazy(() => import("./modules/super-admin/ConfigurationGovernancePage"));
 const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
 const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
+const EmailDeliveryPage = lazy(() => import("./modules/super-admin/EmailDeliveryPage"));
 const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
 const CommandCenterHubPage = lazy(() => import("./modules/super-admin/CommandCenterHubPage"));
 const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
@@ -229,6 +232,8 @@ const BILLING_ROUTES = [
   { path: "/billing/payments/:id", element: <PaymentDetailPage /> },
   { path: "/billing/payments/reports", element: <PaymentReportsPage /> },
   { path: "/billing/payments/settings", element: <PaymentSettingsPage /> },
+  { path: "/billing/payments/stripe-connect", element: <StripeConnectSettingsPage /> },
+  { path: "/billing/payments/stripe-connect/callback", element: <StripeConnectCallbackPage /> },
   { path: "/billing/credits", element: <CreditsPage /> },
   { path: "/billing/refunds", element: <RefundsPage /> },
   { path: "/billing/refunds/dashboard", element: <RefundDashboardPage /> },
@@ -271,6 +276,7 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/governance/data", element: <GovernancePage /> },
   { path: "/super-admin/governance/configuration", element: <ConfigurationGovernancePage /> },
   { path: "/super-admin/reliability", element: <ReliabilityPage /> },
+  { path: "/super-admin/email-delivery", element: <EmailDeliveryPage /> },
   { path: "/super-admin/reliability/incidents", element: <TriagePage /> },
   { path: "/super-admin/reliability/reprocessing", element: <TriagePage /> },
   { path: "/super-admin/kill-switch", element: <KillSwitchPage /> },

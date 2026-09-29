@@ -306,7 +306,52 @@ class ReconciliationService:
             run.state = ReconciliationRunState.PARTIAL
         run.finished_at = datetime.utcnow()
         self.db.flush()
+
+        # ── ZB-PAY-021 / ZB-PAY-022 email notifications ──────────────────────
+        # Notify the first active super-admin about exception findings or a
+        # clean completion. Both sends are non-blocking; failures are logged.
+        try:
+            from app.modules.auth.models import User, UserRole
+            from app.services.email_service import (
+                send_reconciliation_exception_email,
+                send_reconciliation_completed_email,
+            )
+            sa = (
+                self.db.query(User)
+                .filter(User.role == UserRole.SUPER_ADMIN, User.is_active.is_(True))
+                .first()
+            )
+            if sa and sa.email:
+                records_inspected = (
+                    processor_result.get("records_inspected", 0)
+                    if processor_result
+                    else 0
+                )
+                if found:
+                    send_reconciliation_exception_email(
+                        email=sa.email,
+                        recipient_first_name=sa.first_name or "there",
+                        exception_count=len(found),
+                        run_id=run.id,
+                        db=self.db,
+                    )
+                else:
+                    send_reconciliation_completed_email(
+                        email=sa.email,
+                        recipient_first_name=sa.first_name or "there",
+                        run_id=run.id,
+                        records_inspected=records_inspected,
+                        db=self.db,
+                    )
+        except Exception as _recon_email_err:
+            logger.warning(
+                "Reconciliation email notification failed (non-blocking): %s",
+                _recon_email_err,
+            )
+        # ── end ZB-PAY-021 / ZB-PAY-022 ─────────────────────────────────────
+
         return run
+
 
     # ------------------------------------------------------------------
     # Exception ownership workflow

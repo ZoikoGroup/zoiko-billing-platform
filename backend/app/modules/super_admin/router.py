@@ -166,7 +166,13 @@ from app.modules.super_admin.schemas import (
     CollectionsRiskListResponse,
     BillingActivityItem,
     BillingActivityListResponse,
+    EmailFailureListResponse,
+    EmailDeliveryOverviewResponse,
+    EmailResendResponse,
+    EmailTestSendRequest,
+    EmailTestSendResponse,
 )
+from app.modules.super_admin.email_delivery_service import EmailDeliveryService
 
 
 logger = logging.getLogger("zoiko_billing.super_admin")
@@ -3027,6 +3033,54 @@ def update_setting(
     return response
 
 
+# ── B6: synchronous SMTP test send ──────────────────────────────────────────
+# Lives next to the platform settings endpoints above since it always tests
+# the SAME effective SMTP configuration those settings write to (env +
+# PlatformSetting category="email" overrides) — gated the same way a setting
+# mutation is (platform_config.manage), since sending mail with the current
+# credentials is an operational action taken from that same settings page.
+
+@router.post("/settings/email/test", response_model=EmailTestSendResponse)
+def send_smtp_test_email(
+    data: EmailTestSendRequest,
+    current_user=Depends(require_capability("platform_config.manage")),
+    db: Session = Depends(get_db),
+):
+    result = EmailDeliveryService(db).send_test_email(str(data.recipient_email))
+    return EmailTestSendResponse(**result)
+
+
+# ── B3: Email delivery health (read model over CommunicationAuditLog) ──────
+# See email_delivery_service.py's module docstring for scope/limitations.
+
+@router.get("/email-delivery/overview", response_model=EmailDeliveryOverviewResponse)
+def get_email_delivery_overview(
+    current_user=Depends(require_capability("reliability.read")),
+    db: Session = Depends(get_db),
+):
+    return EmailDeliveryService(db).get_overview()
+
+
+@router.get("/email-delivery/failures", response_model=EmailFailureListResponse)
+def list_email_delivery_failures(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability("reliability.read")),
+    db: Session = Depends(get_db),
+):
+    return EmailDeliveryService(db).list_recent_failures(skip=skip, limit=limit)
+
+
+@router.post("/email-delivery/failures/{log_id}/resend", response_model=EmailResendResponse)
+def resend_email_delivery_failure(
+    log_id: int,
+    current_user=Depends(require_capability("email_delivery.resend")),
+    db: Session = Depends(get_db),
+):
+    result = EmailDeliveryService(db).resend(log_id, actor=current_user)
+    return EmailResendResponse(**result)
+
+
 # ── Production Acceptance Center (ZB-COM-BILL-001 §26, Super Admin only) ────
 # The exact acceptance criteria from Table 13 of the Commercial Billing &
 # Subscription Operating Standard (verbatim IDs/criterion text — nothing
@@ -4143,6 +4197,37 @@ def resolve_reconciliation_exception(
         "resolved_at": str(exc.resolved_at) if exc.resolved_at else None,
         "resolution_note": exc.resolution_note,
     }
+
+
+class RecoverMissingPaymentIntentRequest(BaseModel):
+    organization_id: int
+    payment_intent_id: str
+
+
+@router.post("/reconciliation-runs/recover-payment-intent")
+@limit_route("10/minute")
+def recover_missing_stripe_payment_intent(
+    body: RecoverMissingPaymentIntentRequest,
+    request: Request = None,
+    current_user=Depends(require_capability('financial_consistency.write')),
+    db: Session = Depends(get_db),
+):
+    """Explicit, admin-triggered recovery for ONE PaymentIntent a
+    reconciliation run flagged as `stripe_missing_in_ledger` (Stripe has it,
+    our ledger doesn't — a missed webhook). This is a sibling action to the
+    reconciliation-run endpoints above, not part of the passive nightly
+    comparison: it is never invoked automatically, only by a human who has
+    reviewed the reconciliation exception and decided to recover this
+    specific PaymentIntent for this specific organization.
+    """
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.stripe_reconciliation import recover_missing_payment_intent
+
+    try:
+        result = recover_missing_payment_intent(db, body.organization_id, body.payment_intent_id)
+    except RuntimeError as exc:
+        raise BadRequestException(str(exc))
+    return result
 
 
 def _serialize_reconciliation_run(run) -> dict:

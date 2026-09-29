@@ -6,12 +6,13 @@ import {
   ClipboardCheck,
   Crosshair,
   Gauge,
+  Mail,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import { useCommandCenter } from "../../context/CommandCenterContext";
-import { getApiTelemetry, getTriageSummary } from "../../service/commandCenterService";
+import { getApiTelemetry, getEmailDeliveryOverview, getTriageSummary } from "../../service/commandCenterService";
 import LaunchReadinessPage from "./LaunchReadinessPage";
 
 /**
@@ -88,6 +89,7 @@ export default function CommandCenterHubPage() {
   const { refreshTick, requestRefresh, worstFreshness } = useCommandCenter();
   const [summary, setSummary] = useState(null);
   const [telemetry, setTelemetry] = useState(null);
+  const [emailDelivery, setEmailDelivery] = useState(null);
   const [sourceErrors, setSourceErrors] = useState({});
   const [autoPoll, setAutoPoll] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
@@ -119,6 +121,13 @@ export default function CommandCenterHubPage() {
         setLastSyncedAt(new Date());
       })
       .catch(() => setSourceErrors((prev) => ({ ...prev, api: true })));
+    getEmailDeliveryOverview()
+      .then((res) => {
+        setEmailDelivery(res);
+        setSourceErrors((prev) => ({ ...prev, emailDelivery: false }));
+        setLastSyncedAt(new Date());
+      })
+      .catch(() => setSourceErrors((prev) => ({ ...prev, emailDelivery: true })));
   };
 
   useEffect(() => {
@@ -211,10 +220,11 @@ export default function CommandCenterHubPage() {
       ) : (
         <>
           {/* Live module strip */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <AttentionModule counts={counts} failed={sourceErrors.triage} />
             <SafetyControlsModule summary={summary} failed={sourceErrors.triage} />
             <ApiModule telemetry={telemetry} failed={sourceErrors.api} />
+            <EmailDeliveryModule emailDelivery={emailDelivery} failed={sourceErrors.emailDelivery} />
             <FreshnessModule worstFreshness={worstFreshness} />
           </div>
 
@@ -297,6 +307,33 @@ function ApiModule({ telemetry, failed }) {
       <div><span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">Errors</span><strong className="text-base text-slate-900">{fmtPct(telemetry?.error_rate)}</strong></div>
     </div>
   </MetricCard>;
+}
+
+function EmailDeliveryModule({ emailDelivery, failed }) {
+  const health = emailDelivery?.smtp_health;
+  const failureRate = emailDelivery?.last_24h?.failure_rate_pct;
+  const failedCount = emailDelivery?.last_24h?.failed;
+  const status = failed ? "ERROR" : health === "degraded" ? "DEGRADED" : health === "healthy" ? "HEALTHY" : "UNKNOWN";
+  const tone = failed || health === "degraded" ? "rose" : health === "healthy" ? "emerald" : "slate";
+  return (
+    <MetricCard
+      href="/super-admin/email-delivery"
+      icon={Mail}
+      title="Email Delivery"
+      status={status}
+      statusTone={tone}
+      metric={failed ? "Unavailable" : health === "unknown" ? "Not enough signal yet" : `${failedCount ?? 0} failed (24h)`}
+      subtitle={
+        failed
+          ? "Email delivery telemetry could not be loaded."
+          : health === "unknown"
+          ? "Too few recent send attempts to judge SMTP health."
+          : health === "degraded"
+          ? "SMTP failure rate is elevated — also reported to the Attention Queue."
+          : `Failure rate over last 24h: ${failureRate == null ? "—" : `${failureRate}%`}`
+      }
+    />
+  );
 }
 
 function FreshnessModule({ worstFreshness }) {

@@ -52,6 +52,11 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     "incident.transition": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "incident.suppress": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "job.retry": {PlatformRole.RELIABILITY_OPERATOR},
+    # B3 — manual resend of a failed/suppressed email delivery. Same
+    # operational-write precedent as job.retry (RELIABILITY_OPERATOR), plus
+    # SECURITY_OPERATOR since a resend can be the fix for a security-relevant
+    # suppression review.
+    "email_delivery.resend": {PlatformRole.RELIABILITY_OPERATOR, PlatformRole.SECURITY_OPERATOR},
     "audit.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.AUDITOR},
     "launch_readiness.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR},
     "global_search.read": {

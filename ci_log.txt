@@ -1,0 +1,990 @@
+﻿2026-09-28T16:21:15.2824633Z Current runner version: '2.337.0'
+2026-09-28T16:21:15.2851734Z ##[group]Runner Image Provisioner
+2026-09-28T16:21:15.2852555Z Hosted Compute Agent
+2026-09-28T16:21:15.2853060Z Version: 20260828.587
+2026-09-28T16:21:15.2853619Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-28T16:21:15.2854294Z Build Date: 2026-08-28T16:44:25Z
+2026-09-28T16:21:15.2854879Z Worker ID: {dcc9c2fe-1cb9-4197-a957-c51fd65d5f30}
+2026-09-28T16:21:15.2855464Z Azure Region: northcentralus
+2026-09-28T16:21:15.2856051Z ##[endgroup]
+2026-09-28T16:21:15.2857196Z ##[group]Operating System
+2026-09-28T16:21:15.2857802Z Ubuntu
+2026-09-28T16:21:15.2858261Z 24.04.5
+2026-09-28T16:21:15.2858694Z LTS
+2026-09-28T16:21:15.2859529Z ##[endgroup]
+2026-09-28T16:21:15.2860041Z ##[group]Runner Image
+2026-09-28T16:21:15.2860578Z Image: ubuntu-24.04
+2026-09-28T16:21:15.2861063Z Version: 20260920.314.1
+2026-09-28T16:21:15.2862136Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md
+2026-09-28T16:21:15.2863421Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260920.314
+2026-09-28T16:21:15.2864244Z ##[endgroup]
+2026-09-28T16:21:15.2865238Z ##[group]GITHUB_TOKEN Permissions
+2026-09-28T16:21:15.2867088Z Contents: read
+2026-09-28T16:21:15.2867633Z Metadata: read
+2026-09-28T16:21:15.2868097Z Packages: read
+2026-09-28T16:21:15.2868621Z ##[endgroup]
+2026-09-28T16:21:15.2870873Z Secret source: Actions
+2026-09-28T16:21:15.2871790Z Cache mode: write
+2026-09-28T16:21:15.2872613Z Prepare workflow directory
+2026-09-28T16:21:15.3226358Z Prepare all required actions
+2026-09-28T16:21:15.3272649Z Getting action download info
+2026-09-28T16:21:15.6004251Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-09-28T16:21:15.7150016Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-09-28T16:21:15.9072479Z Complete job name: backend-tests
+2026-09-28T16:21:15.9472342Z ##[group]Checking docker version
+2026-09-28T16:21:15.9482768Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-09-28T16:21:16.0223816Z '1.48'
+2026-09-28T16:21:16.0233813Z Docker daemon API version: '1.48'
+2026-09-28T16:21:16.0234517Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-09-28T16:21:16.0366799Z '1.48'
+2026-09-28T16:21:16.0378580Z Docker client API version: '1.48'
+2026-09-28T16:21:16.0382247Z ##[endgroup]
+2026-09-28T16:21:16.0384626Z ##[group]Clean up resources from previous jobs
+2026-09-28T16:21:16.0388427Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=85821e"
+2026-09-28T16:21:16.0509616Z ##[command]/usr/bin/docker network prune --force --filter "label=85821e"
+2026-09-28T16:21:16.0611624Z ##[endgroup]
+2026-09-28T16:21:16.0612036Z ##[group]Create local container network
+2026-09-28T16:21:16.0619869Z ##[command]/usr/bin/docker network create --label 85821e github_network_689dd26003214b7cba41283409170c52
+2026-09-28T16:21:16.1066983Z fe24da642d9f9a6c49a9523f2a08aaab786544bc8a9ca62cd7be6cc574dd2011
+2026-09-28T16:21:16.1083587Z ##[endgroup]
+2026-09-28T16:21:16.1104018Z ##[group]Starting postgres service container
+2026-09-28T16:21:16.1121858Z ##[command]/usr/bin/docker pull postgres:16
+2026-09-28T16:21:16.5137672Z 16: Pulling from library/postgres
+2026-09-28T16:21:16.6485330Z 6b37362b3da7: Pulling fs layer
+2026-09-28T16:21:16.6486003Z b1fdda8975a0: Pulling fs layer
+2026-09-28T16:21:16.6486472Z 106e7e3cf19a: Pulling fs layer
+2026-09-28T16:21:16.6486960Z ba0e979d0818: Pulling fs layer
+2026-09-28T16:21:16.6487416Z ad29720ebbb9: Pulling fs layer
+2026-09-28T16:21:16.6487867Z 3a749597affc: Pulling fs layer
+2026-09-28T16:21:16.6488307Z 483fb6941c15: Pulling fs layer
+2026-09-28T16:21:16.6488795Z 359ae0fc975d: Pulling fs layer
+2026-09-28T16:21:16.6489439Z 56d4d190ef07: Pulling fs layer
+2026-09-28T16:21:16.6489874Z 74156cf9f063: Pulling fs layer
+2026-09-28T16:21:16.6490307Z f7c7d4dd80ba: Pulling fs layer
+2026-09-28T16:21:16.6490831Z 749acf6dc637: Pulling fs layer
+2026-09-28T16:21:16.6491569Z 4d848243a73e: Pulling fs layer
+2026-09-28T16:21:16.6492037Z 6ad4758748c1: Pulling fs layer
+2026-09-28T16:21:16.6492472Z ba0e979d0818: Waiting
+2026-09-28T16:21:16.6492874Z ad29720ebbb9: Waiting
+2026-09-28T16:21:16.6493261Z 3a749597affc: Waiting
+2026-09-28T16:21:16.6493652Z 749acf6dc637: Waiting
+2026-09-28T16:21:16.6494050Z 56d4d190ef07: Waiting
+2026-09-28T16:21:16.6494448Z 4d848243a73e: Waiting
+2026-09-28T16:21:16.6494831Z 74156cf9f063: Waiting
+2026-09-28T16:21:16.6495215Z f7c7d4dd80ba: Waiting
+2026-09-28T16:21:16.6495599Z 6ad4758748c1: Waiting
+2026-09-28T16:21:16.6495976Z 359ae0fc975d: Waiting
+2026-09-28T16:21:16.7349203Z b1fdda8975a0: Verifying Checksum
+2026-09-28T16:21:16.7350774Z b1fdda8975a0: Download complete
+2026-09-28T16:21:16.7542422Z 106e7e3cf19a: Download complete
+2026-09-28T16:21:16.8098144Z 6b37362b3da7: Verifying Checksum
+2026-09-28T16:21:16.8099669Z 6b37362b3da7: Download complete
+2026-09-28T16:21:16.8192110Z ba0e979d0818: Verifying Checksum
+2026-09-28T16:21:16.8192934Z ba0e979d0818: Download complete
+2026-09-28T16:21:16.8554794Z ad29720ebbb9: Verifying Checksum
+2026-09-28T16:21:16.8555857Z ad29720ebbb9: Download complete
+2026-09-28T16:21:16.8985384Z 3a749597affc: Verifying Checksum
+2026-09-28T16:21:16.8986522Z 3a749597affc: Download complete
+2026-09-28T16:21:16.9040054Z 483fb6941c15: Verifying Checksum
+2026-09-28T16:21:16.9041077Z 483fb6941c15: Download complete
+2026-09-28T16:21:16.9256614Z 359ae0fc975d: Verifying Checksum
+2026-09-28T16:21:16.9258094Z 359ae0fc975d: Download complete
+2026-09-28T16:21:16.9740577Z 74156cf9f063: Download complete
+2026-09-28T16:21:16.9971318Z f7c7d4dd80ba: Verifying Checksum
+2026-09-28T16:21:16.9972490Z f7c7d4dd80ba: Download complete
+2026-09-28T16:21:17.0621019Z 749acf6dc637: Verifying Checksum
+2026-09-28T16:21:17.0636357Z 749acf6dc637: Download complete
+2026-09-28T16:21:17.0679427Z 4d848243a73e: Download complete
+2026-09-28T16:21:17.1337541Z 6ad4758748c1: Verifying Checksum
+2026-09-28T16:21:17.1340082Z 6ad4758748c1: Download complete
+2026-09-28T16:21:17.3082734Z 56d4d190ef07: Verifying Checksum
+2026-09-28T16:21:17.6495074Z 56d4d190ef07: Download complete
+2026-09-28T16:21:17.6495585Z 6b37362b3da7: Pull complete
+2026-09-28T16:21:18.9339873Z b1fdda8975a0: Pull complete
+2026-09-28T16:21:19.1567226Z 106e7e3cf19a: Pull complete
+2026-09-28T16:21:19.2096902Z ba0e979d0818: Pull complete
+2026-09-28T16:21:19.6022185Z ad29720ebbb9: Pull complete
+2026-09-28T16:21:19.6802439Z 3a749597affc: Pull complete
+2026-09-28T16:21:19.6868280Z 483fb6941c15: Pull complete
+2026-09-28T16:21:19.6953838Z 359ae0fc975d: Pull complete
+2026-09-28T16:21:23.4511329Z 56d4d190ef07: Pull complete
+2026-09-28T16:21:23.4643834Z 74156cf9f063: Pull complete
+2026-09-28T16:21:23.4704917Z f7c7d4dd80ba: Pull complete
+2026-09-28T16:21:23.4801580Z 749acf6dc637: Pull complete
+2026-09-28T16:21:23.4883393Z 4d848243a73e: Pull complete
+2026-09-28T16:21:23.4942647Z 6ad4758748c1: Pull complete
+2026-09-28T16:21:23.4979651Z Digest: sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+2026-09-28T16:21:23.4990587Z Status: Downloaded newer image for postgres:16
+2026-09-28T16:21:23.4997123Z docker.io/library/postgres:16
+2026-09-28T16:21:23.5043677Z ##[command]/usr/bin/docker create --name c02516955380400caf5e51db77f45e1c_postgres16_54a800 --label 85821e --network github_network_689dd26003214b7cba41283409170c52 --network-alias postgres -p 5432:5432 --health-cmd="pg_isready -U ci" --health-interval=10s --health-timeout=5s --health-retries=5 -e "POSTGRES_USER=ci" -e "POSTGRES_PASSWORD=ci" -e "POSTGRES_DB=ci" -e GITHUB_ACTIONS=true -e CI=true postgres:16
+2026-09-28T16:21:23.5250337Z 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:23.5266917Z ##[command]/usr/bin/docker start 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:23.6849871Z 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:23.6859309Z ##[command]/usr/bin/docker ps --all --filter id=1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-09-28T16:21:23.6964111Z 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6 Up Less than a second (health: starting)
+2026-09-28T16:21:23.6980837Z ##[command]/usr/bin/docker port 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:23.7085838Z 5432/tcp -> 0.0.0.0:5432
+2026-09-28T16:21:23.7086478Z 5432/tcp -> [::]:5432
+2026-09-28T16:21:23.7128053Z ##[endgroup]
+2026-09-28T16:21:23.7135092Z ##[group]Waiting for all services to be ready
+2026-09-28T16:21:23.7145811Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:23.7254929Z starting
+2026-09-28T16:21:23.7274711Z postgres service is starting, waiting 2 seconds before checking again.
+2026-09-28T16:21:25.7275592Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:25.7377580Z starting
+2026-09-28T16:21:25.7387657Z postgres service is starting, waiting 3 seconds before checking again.
+2026-09-28T16:21:29.5911270Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:29.6012375Z starting
+2026-09-28T16:21:29.6022456Z postgres service is starting, waiting 7 seconds before checking again.
+2026-09-28T16:21:37.5629311Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:21:37.5731110Z healthy
+2026-09-28T16:21:37.5744716Z postgres service is healthy.
+2026-09-28T16:21:37.5745542Z ##[endgroup]
+2026-09-28T16:21:37.6067981Z ##[group]Run actions/checkout@v4
+2026-09-28T16:21:37.6068361Z with:
+2026-09-28T16:21:37.6068576Z   repository: ZoikoGroup/zoiko-billing-platform
+2026-09-28T16:21:37.6070828Z   token: ***
+2026-09-28T16:21:37.6070996Z   ssh-strict: true
+2026-09-28T16:21:37.6071169Z   ssh-user: git
+2026-09-28T16:21:37.6071338Z   persist-credentials: true
+2026-09-28T16:21:37.6071522Z   clean: true
+2026-09-28T16:21:37.6071699Z   sparse-checkout-cone-mode: true
+2026-09-28T16:21:37.6071898Z   fetch-depth: 1
+2026-09-28T16:21:37.6072055Z   fetch-tags: false
+2026-09-28T16:21:37.6072218Z   show-progress: true
+2026-09-28T16:21:37.6072388Z   lfs: false
+2026-09-28T16:21:37.6072541Z   submodules: false
+2026-09-28T16:21:37.6072709Z   set-safe-directory: true
+2026-09-28T16:21:37.6072902Z   allow-unsafe-pr-checkout: false
+2026-09-28T16:21:37.6073281Z env:
+2026-09-28T16:21:37.6073628Z   BILLING_DATABASE_URL: ***localhost:5432/ci?sslmode=disable
+2026-09-28T16:21:37.6074022Z   MFA_ENCRYPTION_KEY: _Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo=
+2026-09-28T16:21:37.6074336Z   STRIPE_SECRET_KEY: sk_test_ci_placeholder
+2026-09-28T16:21:37.6074559Z ##[endgroup]
+2026-09-28T16:21:37.6890862Z Syncing repository: ZoikoGroup/zoiko-billing-platform
+2026-09-28T16:21:37.6891982Z ##[group]Getting Git version info
+2026-09-28T16:21:37.6892354Z Working directory is '/home/runner/work/zoiko-billing-platform/zoiko-billing-platform'
+2026-09-28T16:21:37.6892884Z [command]/usr/bin/git version
+2026-09-28T16:21:37.6933696Z git version 2.55.0
+2026-09-28T16:21:37.6948641Z ##[endgroup]
+2026-09-28T16:21:37.6959494Z Temporarily overriding HOME='/home/runner/work/_temp/42c03af7-1db1-4435-8302-f9267fe23aef' before making global git config changes
+2026-09-28T16:21:37.6960517Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-28T16:21:37.6963990Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/zoiko-billing-platform/zoiko-billing-platform
+2026-09-28T16:21:37.7002349Z Deleting the contents of '/home/runner/work/zoiko-billing-platform/zoiko-billing-platform'
+2026-09-28T16:21:37.7005577Z ##[group]Initializing the repository
+2026-09-28T16:21:37.7009301Z [command]/usr/bin/git init /home/runner/work/zoiko-billing-platform/zoiko-billing-platform
+2026-09-28T16:21:37.7081104Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-09-28T16:21:37.7081806Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-09-28T16:21:37.7082471Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-09-28T16:21:37.7082948Z hint: call:
+2026-09-28T16:21:37.7083183Z hint:
+2026-09-28T16:21:37.7083557Z hint: 	git config --global init.defaultBranch <name>
+2026-09-28T16:21:37.7083943Z hint:
+2026-09-28T16:21:37.7084296Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-09-28T16:21:37.7084896Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-09-28T16:21:37.7085439Z hint:
+2026-09-28T16:21:37.7085698Z hint: 	git branch -m <name>
+2026-09-28T16:21:37.7085993Z hint:
+2026-09-28T16:21:37.7086413Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-09-28T16:21:37.7087187Z Initialized empty Git repository in /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/.git/
+2026-09-28T16:21:37.7089648Z [command]/usr/bin/git remote add origin https://github.com/ZoikoGroup/zoiko-billing-platform
+2026-09-28T16:21:37.7127315Z ##[endgroup]
+2026-09-28T16:21:37.7127780Z ##[group]Disabling automatic garbage collection
+2026-09-28T16:21:37.7131258Z [command]/usr/bin/git config --local gc.auto 0
+2026-09-28T16:21:37.7158338Z ##[endgroup]
+2026-09-28T16:21:37.7158775Z ##[group]Setting up auth
+2026-09-28T16:21:37.7164032Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-28T16:21:37.7192158Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-28T16:21:37.7480464Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-28T16:21:37.7513807Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-28T16:21:37.7723137Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-28T16:21:37.7752650Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-28T16:21:37.7940912Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-09-28T16:21:37.7975632Z ##[endgroup]
+2026-09-28T16:21:37.7976125Z ##[group]Fetching the repository
+2026-09-28T16:21:37.7983530Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +25c82d50f294d19585001ef2d9b301cea8e49a29:refs/remotes/pull/75/merge
+2026-09-28T16:21:38.9997238Z From https://github.com/ZoikoGroup/zoiko-billing-platform
+2026-09-28T16:21:38.9998078Z  * [new ref]         25c82d50f294d19585001ef2d9b301cea8e49a29 -> pull/75/merge
+2026-09-28T16:21:39.0000999Z ##[endgroup]
+2026-09-28T16:21:39.0001460Z ##[group]Determining the checkout info
+2026-09-28T16:21:39.0003622Z ##[endgroup]
+2026-09-28T16:21:39.0009953Z [command]/usr/bin/git sparse-checkout disable
+2026-09-28T16:21:39.0059946Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-09-28T16:21:39.0086903Z ##[group]Checking out the ref
+2026-09-28T16:21:39.0101042Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/75/merge
+2026-09-28T16:21:39.0775269Z Note: switching to 'refs/remotes/pull/75/merge'.
+2026-09-28T16:21:39.0775541Z 
+2026-09-28T16:21:39.0775765Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-28T16:21:39.0776304Z changes and commit them, and you can discard any commits you make in this
+2026-09-28T16:21:39.0777046Z state without impacting any branches by switching back to a branch.
+2026-09-28T16:21:39.0777353Z 
+2026-09-28T16:21:39.0777553Z If you want to create a new branch to retain commits you create, you may
+2026-09-28T16:21:39.0778064Z do so (now or later) by using -c with the switch command. Example:
+2026-09-28T16:21:39.0778355Z 
+2026-09-28T16:21:39.0778487Z   git switch -c <new-branch-name>
+2026-09-28T16:21:39.0778700Z 
+2026-09-28T16:21:39.0778825Z Or undo this operation with:
+2026-09-28T16:21:39.0779157Z 
+2026-09-28T16:21:39.0779266Z   git switch -
+2026-09-28T16:21:39.0779412Z 
+2026-09-28T16:21:39.0779667Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-28T16:21:39.0779970Z 
+2026-09-28T16:21:39.0780239Z HEAD is now at 25c82d5 Merge a74026a753cafcce6330250c5f9cec4822d122d0 into 223e4e6f1d49ee5afc612bdafca971718efafcf4
+2026-09-28T16:21:39.0786404Z ##[endgroup]
+2026-09-28T16:21:39.0825503Z [command]/usr/bin/git log -1 --format=%H
+2026-09-28T16:21:39.0847658Z 25c82d50f294d19585001ef2d9b301cea8e49a29
+2026-09-28T16:21:39.1065023Z ##[group]Run actions/setup-python@v5
+2026-09-28T16:21:39.1065250Z with:
+2026-09-28T16:21:39.1065417Z   python-version: 3.11
+2026-09-28T16:21:39.1065595Z   cache: pip
+2026-09-28T16:21:39.1065788Z   cache-dependency-path: backend/requirements.txt
+2026-09-28T16:21:39.1066033Z   check-latest: false
+2026-09-28T16:21:39.1067933Z   token: ***
+2026-09-28T16:21:39.1068109Z   update-environment: true
+2026-09-28T16:21:39.1068307Z   allow-prereleases: false
+2026-09-28T16:21:39.1068487Z   freethreaded: false
+2026-09-28T16:21:39.1068656Z env:
+2026-09-28T16:21:39.1069156Z   BILLING_DATABASE_URL: ***localhost:5432/ci?sslmode=disable
+2026-09-28T16:21:39.1069498Z   MFA_ENCRYPTION_KEY: _Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo=
+2026-09-28T16:21:39.1069799Z   STRIPE_SECRET_KEY: sk_test_ci_placeholder
+2026-09-28T16:21:39.1070014Z ##[endgroup]
+2026-09-28T16:21:39.2094311Z ##[group]Installed versions
+2026-09-28T16:21:39.2210464Z (node:2452) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-28T16:21:39.2211176Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-28T16:21:39.2211613Z Successfully set up CPython (3.11.16)
+2026-09-28T16:21:39.2212112Z ##[endgroup]
+2026-09-28T16:21:39.2561117Z [command]/opt/hostedtoolcache/Python/3.11.16/x64/bin/pip cache dir
+2026-09-28T16:21:41.1301390Z /home/runner/.cache/pip
+2026-09-28T16:21:41.2587996Z pip cache is not found
+2026-09-28T16:21:41.2707247Z ##[group]Run pip install -r requirements.txt
+2026-09-28T16:21:41.2707566Z [36;1mpip install -r requirements.txt[0m
+2026-09-28T16:21:41.2868338Z shell: /usr/bin/bash -e {0}
+2026-09-28T16:21:41.2868557Z env:
+2026-09-28T16:21:41.2869178Z   BILLING_DATABASE_URL: ***localhost:5432/ci?sslmode=disable
+2026-09-28T16:21:41.2869539Z   MFA_ENCRYPTION_KEY: _Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo=
+2026-09-28T16:21:41.2869847Z   STRIPE_SECRET_KEY: sk_test_ci_placeholder
+2026-09-28T16:21:41.2870115Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:41.2870491Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+2026-09-28T16:21:41.2870821Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:41.2871109Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:41.2871402Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:41.2871716Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+2026-09-28T16:21:41.2871973Z ##[endgroup]
+2026-09-28T16:21:42.4319502Z Collecting fastapi==0.141.1 (from -r requirements.txt (line 6))
+2026-09-28T16:21:42.4695031Z   Downloading fastapi-0.141.1-py3-none-any.whl.metadata (27 kB)
+2026-09-28T16:21:42.4905480Z Collecting uvicorn==0.29.0 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:42.4942186Z   Downloading uvicorn-0.29.0-py3-none-any.whl.metadata (6.3 kB)
+2026-09-28T16:21:42.7063163Z Collecting sqlalchemy>=2.0.31 (from -r requirements.txt (line 8))
+2026-09-28T16:21:42.7097953Z   Downloading sqlalchemy-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.7 kB)
+2026-09-28T16:21:42.7241278Z Collecting psycopg>=3.1.18 (from psycopg[binary]>=3.1.18->-r requirements.txt (line 9))
+2026-09-28T16:21:42.7273061Z   Downloading psycopg-3.3.6-py3-none-any.whl.metadata (4.4 kB)
+2026-09-28T16:21:42.7413542Z Collecting alembic>=1.13.0 (from -r requirements.txt (line 14))
+2026-09-28T16:21:42.7447199Z   Downloading alembic-1.20.0-py3-none-any.whl.metadata (7.3 kB)
+2026-09-28T16:21:42.7548212Z Collecting python-dotenv==1.2.2 (from -r requirements.txt (line 16))
+2026-09-28T16:21:42.7580489Z   Downloading python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+2026-09-28T16:21:42.8343967Z Collecting pydantic>=2.7.1 (from pydantic[email]>=2.7.1->-r requirements.txt (line 17))
+2026-09-28T16:21:42.8375326Z   Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+2026-09-28T16:21:42.8552611Z Collecting pydantic-settings>=2.2.1 (from -r requirements.txt (line 18))
+2026-09-28T16:21:42.8584695Z   Downloading pydantic_settings-2.15.0-py3-none-any.whl.metadata (3.9 kB)
+2026-09-28T16:21:42.8672255Z Collecting python-jose==3.4.0 (from python-jose[cryptography]==3.4.0->-r requirements.txt (line 35))
+2026-09-28T16:21:42.8705522Z   Downloading python_jose-3.4.0-py2.py3-none-any.whl.metadata (5.5 kB)
+2026-09-28T16:21:42.8790798Z Collecting passlib==1.7.4 (from passlib[bcrypt]==1.7.4->-r requirements.txt (line 36))
+2026-09-28T16:21:42.8822061Z   Downloading passlib-1.7.4-py2.py3-none-any.whl.metadata (1.7 kB)
+2026-09-28T16:21:42.9055685Z Collecting bcrypt==4.0.1 (from -r requirements.txt (line 37))
+2026-09-28T16:21:42.9086443Z   Downloading bcrypt-4.0.1-cp36-abi3-manylinux_2_28_x86_64.whl.metadata (9.0 kB)
+2026-09-28T16:21:42.9177801Z Collecting python-multipart==0.0.32 (from -r requirements.txt (line 38))
+2026-09-28T16:21:42.9207197Z   Downloading python_multipart-0.0.32-py3-none-any.whl.metadata (2.1 kB)
+2026-09-28T16:21:43.0239992Z Collecting pillow>=10.0.0 (from -r requirements.txt (line 39))
+2026-09-28T16:21:43.0275490Z   Downloading pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+2026-09-28T16:21:43.0946673Z Collecting reportlab>=4.0.0 (from -r requirements.txt (line 43))
+2026-09-28T16:21:43.0979127Z   Downloading reportlab-5.0.1-py3-none-any.whl.metadata (1.6 kB)
+2026-09-28T16:21:43.1092997Z Collecting httpx>=0.27.0 (from -r requirements.txt (line 44))
+2026-09-28T16:21:43.1126924Z   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+2026-09-28T16:21:43.1521214Z Collecting stripe>=9.0.0 (from -r requirements.txt (line 48))
+2026-09-28T16:21:43.1554649Z   Downloading stripe-15.6.1-py3-none-any.whl.metadata (22 kB)
+2026-09-28T16:21:43.1642697Z Collecting slowapi (from -r requirements.txt (line 50))
+2026-09-28T16:21:43.1673214Z   Downloading slowapi-0.1.10-py3-none-any.whl.metadata (3.3 kB)
+2026-09-28T16:21:43.2578701Z Collecting cachetools (from -r requirements.txt (line 51))
+2026-09-28T16:21:43.2609318Z   Downloading cachetools-7.2.0-py3-none-any.whl.metadata (5.5 kB)
+2026-09-28T16:21:43.2764610Z Collecting redis>=5.0.0 (from -r requirements.txt (line 52))
+2026-09-28T16:21:43.2799381Z   Downloading redis-8.1.0-py3-none-any.whl.metadata (16 kB)
+2026-09-28T16:21:43.2914458Z Collecting openpyxl==3.1.5 (from -r requirements.txt (line 56))
+2026-09-28T16:21:43.2945008Z   Downloading openpyxl-3.1.5-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-09-28T16:21:43.3205809Z Collecting email-validator (from -r requirements.txt (line 57))
+2026-09-28T16:21:43.3236352Z   Downloading email_validator-2.3.0-py3-none-any.whl.metadata (26 kB)
+2026-09-28T16:21:43.3347904Z Collecting apscheduler<4,>=3.10 (from -r requirements.txt (line 58))
+2026-09-28T16:21:43.3381204Z   Downloading apscheduler-3.11.3-py3-none-any.whl.metadata (6.5 kB)
+2026-09-28T16:21:43.3510626Z Collecting certifi>=2024.2.2 (from -r requirements.txt (line 59))
+2026-09-28T16:21:43.3540402Z   Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+2026-09-28T16:21:43.4706490Z Collecting cryptography>=42.0.0 (from -r requirements.txt (line 60))
+2026-09-28T16:21:43.4739425Z   Downloading cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (4.3 kB)
+2026-09-28T16:21:43.4823527Z Collecting pyotp>=2.9.0 (from -r requirements.txt (line 61))
+2026-09-28T16:21:43.4852150Z   Downloading pyotp-2.10.0-py3-none-any.whl.metadata (10 kB)
+2026-09-28T16:21:43.5071790Z Collecting anthropic>=0.34.0 (from -r requirements.txt (line 64))
+2026-09-28T16:21:43.5103368Z   Downloading anthropic-1.8.0-py3-none-any.whl.metadata (3.3 kB)
+2026-09-28T16:21:43.5275244Z Collecting pytest>=8.0.0 (from -r requirements.txt (line 68))
+2026-09-28T16:21:43.5307434Z   Downloading pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-09-28T16:21:43.5479710Z Collecting starlette>=0.46.0 (from fastapi==0.141.1->-r requirements.txt (line 6))
+2026-09-28T16:21:43.5509510Z   Downloading starlette-1.7.0-py3-none-any.whl.metadata (6.6 kB)
+2026-09-28T16:21:43.5642012Z Collecting typing-extensions>=4.8.0 (from fastapi==0.141.1->-r requirements.txt (line 6))
+2026-09-28T16:21:43.5672065Z   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-09-28T16:21:43.5760525Z Collecting typing-inspection>=0.4.2 (from fastapi==0.141.1->-r requirements.txt (line 6))
+2026-09-28T16:21:43.5790486Z   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+2026-09-28T16:21:43.5863445Z Collecting annotated-doc>=0.0.2 (from fastapi==0.141.1->-r requirements.txt (line 6))
+2026-09-28T16:21:43.5892657Z   Downloading annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+2026-09-28T16:21:43.6007060Z Collecting click>=7.0 (from uvicorn==0.29.0->uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.6045968Z   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+2026-09-28T16:21:43.6125092Z Collecting h11>=0.8 (from uvicorn==0.29.0->uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.6154151Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-09-28T16:21:43.6252678Z Collecting ecdsa!=0.15 (from python-jose==3.4.0->python-jose[cryptography]==3.4.0->-r requirements.txt (line 35))
+2026-09-28T16:21:43.6283575Z   Downloading ecdsa-0.19.2-py2.py3-none-any.whl.metadata (29 kB)
+2026-09-28T16:21:43.6389563Z Collecting rsa!=4.1.1,!=4.4,<5.0,>=4.0 (from python-jose==3.4.0->python-jose[cryptography]==3.4.0->-r requirements.txt (line 35))
+2026-09-28T16:21:43.6418383Z   Downloading rsa-4.9.1-py3-none-any.whl.metadata (5.6 kB)
+2026-09-28T16:21:43.6558164Z Collecting pyasn1<0.5.0,>=0.4.1 (from python-jose==3.4.0->python-jose[cryptography]==3.4.0->-r requirements.txt (line 35))
+2026-09-28T16:21:43.6587050Z   Downloading pyasn1-0.4.8-py2.py3-none-any.whl.metadata (1.5 kB)
+2026-09-28T16:21:43.6670410Z Collecting et-xmlfile (from openpyxl==3.1.5->-r requirements.txt (line 56))
+2026-09-28T16:21:43.6700247Z   Downloading et_xmlfile-2.0.0-py3-none-any.whl.metadata (2.7 kB)
+2026-09-28T16:21:43.7074448Z Collecting httptools>=0.5.0 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.7105007Z   Downloading httptools-0.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+2026-09-28T16:21:43.7341395Z Collecting pyyaml>=5.1 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.7378559Z   Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-09-28T16:21:43.7633203Z Collecting uvloop!=0.15.0,!=0.15.1,>=0.14.0 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.7669702Z   Downloading uvloop-0.22.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (4.9 kB)
+2026-09-28T16:21:43.8395140Z Collecting watchfiles>=0.13 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.8428383Z   Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+2026-09-28T16:21:43.9131040Z Collecting websockets>=10.4 (from uvicorn[standard]==0.29.0->-r requirements.txt (line 7))
+2026-09-28T16:21:43.9164667Z   Downloading websockets-17.1-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.3 kB)
+2026-09-28T16:21:43.9270440Z Collecting tzlocal>=3.0 (from apscheduler<4,>=3.10->-r requirements.txt (line 58))
+2026-09-28T16:21:43.9299130Z   Downloading tzlocal-5.4.4-py3-none-any.whl.metadata (7.7 kB)
+2026-09-28T16:21:43.9468759Z Collecting Mako (from alembic>=1.13.0->-r requirements.txt (line 14))
+2026-09-28T16:21:43.9499838Z   Downloading mako-1.4.3-py3-none-any.whl.metadata (2.9 kB)
+2026-09-28T16:21:43.9593285Z Collecting annotated-types>=0.6.0 (from pydantic>=2.7.1->pydantic[email]>=2.7.1->-r requirements.txt (line 17))
+2026-09-28T16:21:43.9627666Z   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+2026-09-28T16:21:44.4331965Z Collecting pydantic-core==2.46.5 (from pydantic>=2.7.1->pydantic[email]>=2.7.1->-r requirements.txt (line 17))
+2026-09-28T16:21:44.4364345Z   Downloading pydantic_core-2.46.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+2026-09-28T16:21:44.5425884Z Collecting charset-normalizer (from reportlab>=4.0.0->-r requirements.txt (line 43))
+2026-09-28T16:21:44.5458769Z   Downloading charset_normalizer-3.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (45 kB)
+2026-09-28T16:21:44.5607970Z Collecting anyio (from httpx>=0.27.0->-r requirements.txt (line 44))
+2026-09-28T16:21:44.5640117Z   Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+2026-09-28T16:21:44.6122297Z Collecting httpcore==1.* (from httpx>=0.27.0->-r requirements.txt (line 44))
+2026-09-28T16:21:44.6153461Z   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+2026-09-28T16:21:44.6260642Z Collecting idna (from httpx>=0.27.0->-r requirements.txt (line 44))
+2026-09-28T16:21:44.6289852Z   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+2026-09-28T16:21:44.6456953Z Collecting requests>=2.20 (from stripe>=9.0.0->-r requirements.txt (line 48))
+2026-09-28T16:21:44.6486976Z   Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+2026-09-28T16:21:44.6641489Z Collecting limits>=2.3 (from slowapi->-r requirements.txt (line 50))
+2026-09-28T16:21:44.6677591Z   Downloading limits-5.8.0-py3-none-any.whl.metadata (10 kB)
+2026-09-28T16:21:44.6807945Z Collecting dnspython>=2.0.0 (from email-validator->-r requirements.txt (line 57))
+2026-09-28T16:21:44.6838664Z   Downloading dnspython-2.8.0-py3-none-any.whl.metadata (5.7 kB)
+2026-09-28T16:21:44.7509302Z Collecting cffi>=2.0.0 (from cryptography>=42.0.0->-r requirements.txt (line 60))
+2026-09-28T16:21:44.7542283Z   Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+2026-09-28T16:21:44.7647574Z Collecting docstring-parser<1,>=0.15 (from anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.7676230Z   Downloading docstring_parser-0.18.0-py3-none-any.whl.metadata (3.5 kB)
+2026-09-28T16:21:44.7765538Z Collecting httpx2<3,>=2.0.0 (from anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.7795172Z   Downloading httpx2-2.13.1-py3-none-any.whl.metadata (9.8 kB)
+2026-09-28T16:21:44.8431879Z Collecting jiter<1,>=0.4.0 (from anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.8465986Z   Downloading jiter-0.17.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.2 kB)
+2026-09-28T16:21:44.8568463Z Collecting sniffio<2,>=1 (from anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.8599558Z   Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+2026-09-28T16:21:44.8730615Z Collecting httpcore2==2.13.1 (from httpx2<3,>=2.0.0->anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.8760264Z   Downloading httpcore2-2.13.1-py3-none-any.whl.metadata (26 kB)
+2026-09-28T16:21:44.8858381Z Collecting truststore>=0.10 (from httpx2<3,>=2.0.0->anthropic>=0.34.0->-r requirements.txt (line 64))
+2026-09-28T16:21:44.8887570Z   Downloading truststore-0.10.4-py3-none-any.whl.metadata (4.4 kB)
+2026-09-28T16:21:44.8994444Z Collecting iniconfig>=1.0.1 (from pytest>=8.0.0->-r requirements.txt (line 68))
+2026-09-28T16:21:44.9025999Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+2026-09-28T16:21:44.9126969Z Collecting packaging>=22 (from pytest>=8.0.0->-r requirements.txt (line 68))
+2026-09-28T16:21:44.9160773Z   Downloading packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+2026-09-28T16:21:44.9243117Z Collecting pluggy<2,>=1.5 (from pytest>=8.0.0->-r requirements.txt (line 68))
+2026-09-28T16:21:44.9293134Z   Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+2026-09-28T16:21:44.9420776Z Collecting pygments>=2.7.2 (from pytest>=8.0.0->-r requirements.txt (line 68))
+2026-09-28T16:21:44.9449361Z   Downloading pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+2026-09-28T16:21:45.0329632Z Collecting pycparser (from cffi>=2.0.0->cryptography>=42.0.0->-r requirements.txt (line 60))
+2026-09-28T16:21:45.0358869Z   Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+2026-09-28T16:21:45.0463635Z Collecting six>=1.9.0 (from ecdsa!=0.15->python-jose==3.4.0->python-jose[cryptography]==3.4.0->-r requirements.txt (line 35))
+2026-09-28T16:21:45.0493067Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+2026-09-28T16:21:45.0628279Z Collecting deprecated>=1.2 (from limits>=2.3->slowapi->-r requirements.txt (line 50))
+2026-09-28T16:21:45.0659809Z   Downloading deprecated-1.3.1-py2.py3-none-any.whl.metadata (5.9 kB)
+2026-09-28T16:21:45.3139622Z Collecting wrapt<3,>=1.10 (from deprecated>=1.2->limits>=2.3->slowapi->-r requirements.txt (line 50))
+2026-09-28T16:21:45.3176424Z   Downloading wrapt-2.5.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (7.6 kB)
+2026-09-28T16:21:45.4179518Z Collecting psycopg-binary==3.3.6 (from psycopg[binary]>=3.1.18->-r requirements.txt (line 9))
+2026-09-28T16:21:45.4219472Z   Downloading psycopg_binary-3.3.6-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.7 kB)
+2026-09-28T16:21:45.4433586Z Collecting urllib3<3,>=1.26 (from requests>=2.20->stripe>=9.0.0->-r requirements.txt (line 48))
+2026-09-28T16:21:45.4462877Z   Downloading urllib3-2.8.0-py3-none-any.whl.metadata (7.4 kB)
+2026-09-28T16:21:45.7043481Z Collecting MarkupSafe>=2.0 (from Mako->alembic>=1.13.0->-r requirements.txt (line 14))
+2026-09-28T16:21:45.7076419Z   Downloading markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-09-28T16:21:45.7149214Z Downloading fastapi-0.141.1-py3-none-any.whl (131 kB)
+2026-09-28T16:21:45.7671642Z Downloading uvicorn-0.29.0-py3-none-any.whl (60 kB)
+2026-09-28T16:21:45.7715470Z Downloading python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+2026-09-28T16:21:45.7775056Z Downloading python_jose-3.4.0-py2.py3-none-any.whl (34 kB)
+2026-09-28T16:21:45.7822317Z Downloading passlib-1.7.4-py2.py3-none-any.whl (525 kB)
+2026-09-28T16:21:45.7899628Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 525.6/525.6 kB 61.8 MB/s  0:00:00
+2026-09-28T16:21:45.7931045Z Downloading bcrypt-4.0.1-cp36-abi3-manylinux_2_28_x86_64.whl (593 kB)
+2026-09-28T16:21:45.8000225Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 593.7/593.7 kB 62.6 MB/s  0:00:00
+2026-09-28T16:21:45.8039498Z Downloading python_multipart-0.0.32-py3-none-any.whl (30 kB)
+2026-09-28T16:21:45.8141246Z Downloading openpyxl-3.1.5-py2.py3-none-any.whl (250 kB)
+2026-09-28T16:21:45.8193731Z Downloading apscheduler-3.11.3-py3-none-any.whl (66 kB)
+2026-09-28T16:21:45.8244866Z Downloading pyasn1-0.4.8-py2.py3-none-any.whl (77 kB)
+2026-09-28T16:21:45.8291077Z Downloading rsa-4.9.1-py3-none-any.whl (34 kB)
+2026-09-28T16:21:45.8347699Z Downloading sqlalchemy-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.6 MB)
+2026-09-28T16:21:45.8693211Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.6/4.6 MB 132.8 MB/s  0:00:00
+2026-09-28T16:21:45.8724396Z Downloading psycopg-3.3.6-py3-none-any.whl (215 kB)
+2026-09-28T16:21:45.8776932Z Downloading alembic-1.20.0-py3-none-any.whl (268 kB)
+2026-09-28T16:21:45.8831830Z Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
+2026-09-28T16:21:45.8902264Z Downloading pydantic_core-2.46.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+2026-09-28T16:21:45.9440956Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 34.7 MB/s  0:00:00
+2026-09-28T16:21:45.9475711Z Downloading pydantic_settings-2.15.0-py3-none-any.whl (69 kB)
+2026-09-28T16:21:45.9522995Z Downloading pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+2026-09-28T16:21:46.0163368Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.9/6.9 MB 108.3 MB/s  0:00:00
+2026-09-28T16:21:46.0201081Z Downloading reportlab-5.0.1-py3-none-any.whl (2.0 MB)
+2026-09-28T16:21:46.0359637Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 118.9 MB/s  0:00:00
+2026-09-28T16:21:46.0396492Z Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+2026-09-28T16:21:46.0442758Z Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+2026-09-28T16:21:46.0486319Z Downloading stripe-15.6.1-py3-none-any.whl (2.2 MB)
+2026-09-28T16:21:46.0659389Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 124.6 MB/s  0:00:00
+2026-09-28T16:21:46.0695708Z Downloading slowapi-0.1.10-py3-none-any.whl (14 kB)
+2026-09-28T16:21:46.0738481Z Downloading cachetools-7.2.0-py3-none-any.whl (16 kB)
+2026-09-28T16:21:46.0785803Z Downloading redis-8.1.0-py3-none-any.whl (560 kB)
+2026-09-28T16:21:46.0845868Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 560.6/560.6 kB 67.0 MB/s  0:00:00
+2026-09-28T16:21:46.1010362Z Downloading email_validator-2.3.0-py3-none-any.whl (35 kB)
+2026-09-28T16:21:46.1054700Z Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+2026-09-28T16:21:46.1102733Z Downloading cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl (4.7 MB)
+2026-09-28T16:21:46.1443588Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.7/4.7 MB 138.4 MB/s  0:00:00
+2026-09-28T16:21:46.1476482Z Downloading pyotp-2.10.0-py3-none-any.whl (13 kB)
+2026-09-28T16:21:46.1524185Z Downloading anthropic-1.8.0-py3-none-any.whl (1.3 MB)
+2026-09-28T16:21:46.1630178Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 121.6 MB/s  0:00:00
+2026-09-28T16:21:46.1661590Z Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+2026-09-28T16:21:46.1714170Z Downloading docstring_parser-0.18.0-py3-none-any.whl (22 kB)
+2026-09-28T16:21:46.2787573Z Downloading httpx2-2.13.1-py3-none-any.whl (95 kB)
+2026-09-28T16:21:46.2834137Z Downloading httpcore2-2.13.1-py3-none-any.whl (83 kB)
+2026-09-28T16:21:46.2878743Z Downloading jiter-0.17.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (346 kB)
+2026-09-28T16:21:46.2940379Z Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+2026-09-28T16:21:46.2988469Z Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-09-28T16:21:46.3031893Z Downloading pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-09-28T16:21:46.3099393Z Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+2026-09-28T16:21:46.3143008Z Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+2026-09-28T16:21:46.3187530Z Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+2026-09-28T16:21:46.3239151Z Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (217 kB)
+2026-09-28T16:21:46.3288429Z Downloading click-8.5.0-py3-none-any.whl (125 kB)
+2026-09-28T16:21:46.3332505Z Downloading dnspython-2.8.0-py3-none-any.whl (331 kB)
+2026-09-28T16:21:46.3390812Z Downloading ecdsa-0.19.2-py2.py3-none-any.whl (150 kB)
+2026-09-28T16:21:46.3437645Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+2026-09-28T16:21:46.3480495Z Downloading httptools-0.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (464 kB)
+2026-09-28T16:21:46.3553635Z Downloading idna-3.20-py3-none-any.whl (69 kB)
+2026-09-28T16:21:46.3612158Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+2026-09-28T16:21:46.3653219Z Downloading limits-5.8.0-py3-none-any.whl (60 kB)
+2026-09-28T16:21:46.3695673Z Downloading deprecated-1.3.1-py2.py3-none-any.whl (11 kB)
+2026-09-28T16:21:46.3741369Z Downloading wrapt-2.5.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (239 kB)
+2026-09-28T16:21:46.3799502Z Downloading packaging-26.3-py3-none-any.whl (129 kB)
+2026-09-28T16:21:46.5749913Z Downloading psycopg_binary-3.3.6-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.3 MB)
+2026-09-28T16:21:46.6120474Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.3/5.3 MB 142.8 MB/s  0:00:00
+2026-09-28T16:21:46.6171618Z Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+2026-09-28T16:21:46.6268781Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 120.0 MB/s  0:00:00
+2026-09-28T16:21:46.6304356Z Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (806 kB)
+2026-09-28T16:21:46.6378335Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 806.6/806.6 kB 92.6 MB/s  0:00:00
+2026-09-28T16:21:46.6410635Z Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+2026-09-28T16:21:46.6456347Z Downloading charset_normalizer-3.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (262 kB)
+2026-09-28T16:21:46.6520497Z Downloading urllib3-2.8.0-py3-none-any.whl (135 kB)
+2026-09-28T16:21:46.6570720Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+2026-09-28T16:21:46.6615746Z Downloading starlette-1.7.0-py3-none-any.whl (78 kB)
+2026-09-28T16:21:46.6659893Z Downloading truststore-0.10.4-py3-none-any.whl (18 kB)
+2026-09-28T16:21:46.6705668Z Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+2026-09-28T16:21:46.6750742Z Downloading tzlocal-5.4.4-py3-none-any.whl (18 kB)
+2026-09-28T16:21:46.6796117Z Downloading uvloop-0.22.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.8 MB)
+2026-09-28T16:21:46.7153879Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.8/3.8 MB 103.9 MB/s  0:00:00
+2026-09-28T16:21:46.7187077Z Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (458 kB)
+2026-09-28T16:21:46.7276048Z Downloading websockets-17.1-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (224 kB)
+2026-09-28T16:21:46.7339685Z Downloading et_xmlfile-2.0.0-py3-none-any.whl (18 kB)
+2026-09-28T16:21:46.7406267Z Downloading mako-1.4.3-py3-none-any.whl (80 kB)
+2026-09-28T16:21:46.7466869Z Downloading markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-09-28T16:21:46.7510557Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+2026-09-28T16:21:47.1101711Z Installing collected packages: pyasn1, passlib, wrapt, websockets, uvloop, urllib3, tzlocal, typing-extensions, truststore, sniffio, six, rsa, redis, pyyaml, python-multipart, python-dotenv, pyotp, pygments, pycparser, psycopg-binary, pluggy, pillow, packaging, MarkupSafe, jiter, iniconfig, idna, httptools, h11, et-xmlfile, docstring-parser, dnspython, click, charset-normalizer, certifi, cachetools, bcrypt, annotated-types, annotated-doc, uvicorn, typing-inspection, sqlalchemy, requests, reportlab, pytest, pydantic-core, psycopg, openpyxl, Mako, httpcore2, httpcore, email-validator, ecdsa, deprecated, cffi, apscheduler, anyio, watchfiles, stripe, starlette, python-jose, pydantic, limits, httpx2, httpx, cryptography, alembic, slowapi, pydantic-settings, fastapi, anthropic
+2026-09-28T16:21:53.9723291Z 
+2026-09-28T16:21:53.9747745Z Successfully installed Mako-1.4.3 MarkupSafe-3.0.3 alembic-1.20.0 annotated-doc-0.0.5 annotated-types-0.8.0 anthropic-1.8.0 anyio-4.15.1 apscheduler-3.11.3 bcrypt-4.0.1 cachetools-7.2.0 certifi-2026.7.22 cffi-2.1.1 charset-normalizer-3.5.1 click-8.5.0 cryptography-50.0.1 deprecated-1.3.1 dnspython-2.8.0 docstring-parser-0.18.0 ecdsa-0.19.2 email-validator-2.3.0 et-xmlfile-2.0.0 fastapi-0.141.1 h11-0.16.0 httpcore-1.0.9 httpcore2-2.13.1 httptools-0.8.0 httpx-0.28.1 httpx2-2.13.1 idna-3.20 iniconfig-2.3.0 jiter-0.17.0 limits-5.8.0 openpyxl-3.1.5 packaging-26.3 passlib-1.7.4 pillow-12.3.0 pluggy-1.6.0 psycopg-3.3.6 psycopg-binary-3.3.6 pyasn1-0.4.8 pycparser-3.0 pydantic-2.13.5 pydantic-core-2.46.5 pydantic-settings-2.15.0 pygments-2.21.0 pyotp-2.10.0 pytest-9.1.1 python-dotenv-1.2.2 python-jose-3.4.0 python-multipart-0.0.32 pyyaml-6.0.3 redis-8.1.0 reportlab-5.0.1 requests-2.34.2 rsa-4.9.1 six-1.17.0 slowapi-0.1.10 sniffio-1.3.1 sqlalchemy-2.1.1 starlette-1.7.0 stripe-15.6.1 truststore-0.10.4 typing-extensions-4.16.0 typing-inspection-0.4.4 tzlocal-5.4.4 urllib3-2.8.0 uvicorn-0.29.0 uvloop-0.22.1 watchfiles-1.3.0 websockets-17.1 wrapt-2.5.0
+2026-09-28T16:21:54.1448533Z ##[group]Run python -m alembic upgrade head
+2026-09-28T16:21:54.1448829Z [36;1mpython -m alembic upgrade head[0m
+2026-09-28T16:21:54.1506285Z shell: /usr/bin/bash -e {0}
+2026-09-28T16:21:54.1506489Z env:
+2026-09-28T16:21:54.1506885Z   BILLING_DATABASE_URL: ***localhost:5432/ci?sslmode=disable
+2026-09-28T16:21:54.1507236Z   MFA_ENCRYPTION_KEY: _Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo=
+2026-09-28T16:21:54.1507545Z   STRIPE_SECRET_KEY: sk_test_ci_placeholder
+2026-09-28T16:21:54.1507838Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:54.1508165Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+2026-09-28T16:21:54.1508485Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:54.1508773Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:54.1509241Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:54.1509567Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+2026-09-28T16:21:54.1509821Z ##[endgroup]
+2026-09-28T16:21:55.0654671Z INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-09-28T16:21:55.0655249Z INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-09-28T16:21:55.1405366Z INFO  [alembic.runtime.migration] Running upgrade  -> 8e483f394797, baseline: full current schema (all modules sharing app.database.Base)
+2026-09-28T16:21:56.1505152Z INFO  [alembic.runtime.migration] Running upgrade 8e483f394797 -> ee85ae4bd5f8, reconcile models to live schema post-baseline drift
+2026-09-28T16:21:56.2114743Z INFO  [alembic.runtime.migration] Running upgrade ee85ae4bd5f8 -> 243a242222e7, add perf composite indexes for payments invoices aggregation
+2026-09-28T16:21:56.2139419Z INFO  [alembic.runtime.migration] Running upgrade 243a242222e7 -> 4f990f372281, add stripe processor reconciliation fields to reconciliation_runs
+2026-09-28T16:21:56.2152421Z INFO  [alembic.runtime.migration] Running upgrade 4f990f372281 -> 7b4c1d9e2f10, add tenant-scoped subscription creation idempotency
+2026-09-28T16:21:56.2175389Z INFO  [alembic.runtime.migration] Running upgrade 7b4c1d9e2f10 -> c1e8f2a4d6b0, add tenant-scoped invoice creation idempotency
+2026-09-28T16:21:56.2198176Z INFO  [alembic.runtime.migration] Running upgrade c1e8f2a4d6b0 -> d4f7a9c2b1e6, add account-level login lockout fields
+2026-09-28T16:21:56.2218546Z INFO  [alembic.runtime.migration] Running upgrade d4f7a9c2b1e6 -> e5a1c3f7b9d2, add previously-unbacked settings-page fields to billing_configurations
+2026-09-28T16:21:56.2267331Z INFO  [alembic.runtime.migration] Running upgrade e5a1c3f7b9d2 -> f2b8d4a6c1e3, add pricing_extra_settings JSON blob to billing_configurations
+2026-09-28T16:21:56.2281120Z INFO  [alembic.runtime.migration] Running upgrade d4f7a9c2b1e6 -> a3c7e91f4d28, add notification platform tables (ZB-* email pipeline foundation)
+2026-09-28T16:21:56.2637260Z INFO  [alembic.runtime.migration] Running upgrade a3c7e91f4d28 -> b5e2f8c0d3a1, add optimistic-lock version to billing_customers and billing_configurations
+2026-09-28T16:21:56.2666322Z INFO  [alembic.runtime.migration] Running upgrade b5e2f8c0d3a1 -> c7d1a9b3f2e4, add optimizer-version NOT NULL + default to price_lists.version
+2026-09-28T16:21:56.2682282Z INFO  [alembic.runtime.migration] Running upgrade c7d1a9b3f2e4 -> f092a8c6d3e1, add converted_at to commercial_subscriptions
+2026-09-28T16:21:56.2690943Z INFO  [alembic.runtime.migration] Running upgrade f092a8c6d3e1, f2b8d4a6c1e3 -> 7709ed1aee3e, merge nikhil settings-persistence branch with main
+2026-09-28T16:21:56.2699504Z INFO  [alembic.runtime.migration] Running upgrade 7709ed1aee3e -> 73e2ebbe6aad, add email foundation tables (suppressions, consents, org preferences, audit logs)
+2026-09-28T16:21:56.2956472Z INFO  [alembic.runtime.migration] Running upgrade 73e2ebbe6aad -> a4c8e2f6b1d9, add missing status indexes on refunds and write_offs
+2026-09-28T16:21:56.2979222Z INFO  [alembic.runtime.migration] Running upgrade 73e2ebbe6aad -> a1c9d3e7f5b2, add auto_send_invoices to billing_configurations
+2026-09-28T16:21:56.2993709Z INFO  [alembic.runtime.migration] Running upgrade a1c9d3e7f5b2, a4c8e2f6b1d9 -> 8b2b6f10e693, merge heads: auto_send_invoices + refund/write_off status indexes
+2026-09-28T16:21:56.5654808Z ##[group]Run python -m pytest tests/ --ignore=tests/ai_assistant -q
+2026-09-28T16:21:56.5655433Z [36;1mpython -m pytest tests/ --ignore=tests/ai_assistant -q[0m
+2026-09-28T16:21:56.5733895Z shell: /usr/bin/bash -e {0}
+2026-09-28T16:21:56.5734207Z env:
+2026-09-28T16:21:56.5734837Z   BILLING_DATABASE_URL: ***localhost:5432/ci?sslmode=disable
+2026-09-28T16:21:56.5735392Z   MFA_ENCRYPTION_KEY: _Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo=
+2026-09-28T16:21:56.5735901Z   STRIPE_SECRET_KEY: sk_test_ci_placeholder
+2026-09-28T16:21:56.5736327Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:56.5736840Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+2026-09-28T16:21:56.5737354Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:56.5737821Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:56.5738272Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-09-28T16:21:56.5738825Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+2026-09-28T16:21:56.5739383Z ##[endgroup]
+2026-09-28T16:22:17.4993096Z ........................................................................ [  6%]
+2026-09-28T16:22:26.0860116Z ........................................................................ [ 13%]
+2026-09-28T16:22:34.6719100Z ........................................................................ [ 20%]
+2026-09-28T16:22:47.5936969Z ........................................................................ [ 27%]
+2026-09-28T16:22:59.1854548Z .........................FFF............................................ [ 34%]
+2026-09-28T16:23:12.7793211Z ........................................................................ [ 40%]
+2026-09-28T16:23:40.4764228Z ........................................................................ [ 47%]
+2026-09-28T16:23:51.7546429Z ........................................................................ [ 54%]
+2026-09-28T16:24:02.3772400Z ........................................................................ [ 61%]
+2026-09-28T16:24:15.7835266Z ........................................................................ [ 68%]
+2026-09-28T16:24:24.9963620Z ...................................................................FF... [ 74%]
+2026-09-28T16:24:41.5310231Z ........................................................................ [ 81%]
+2026-09-28T16:24:50.9727606Z ........................................................................ [ 88%]
+2026-09-28T16:25:02.3591825Z ........................................................................ [ 95%]
+2026-09-28T16:25:16.3532262Z .................................................                        [100%]
+2026-09-28T16:25:16.3532725Z =================================== FAILURES ===================================
+2026-09-28T16:25:16.3533211Z __________________ test_bypass_makes_schema_and_service_agree __________________
+2026-09-28T16:25:16.3533511Z 
+2026-09-28T16:25:16.3533772Z monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f24c65669d0>
+2026-09-28T16:25:16.3534301Z db_session = <sqlalchemy.orm.session.Session object at 0x7f24c66cfd10>
+2026-09-28T16:25:16.3534597Z 
+2026-09-28T16:25:16.3534836Z     def test_bypass_makes_schema_and_service_agree(monkeypatch, db_session):
+2026-09-28T16:25:16.3535454Z         """Regression guard for the whole class of bug: the requirement is enforced
+2026-09-28T16:25:16.3535984Z         in BOTH the schema and the service, and when only the service honoured the
+2026-09-28T16:25:16.3536355Z         bypass the toggle still 422'd with "Either a TOTP code or a recovery code
+2026-09-28T16:25:16.3536730Z         is required" while the UI reported MFA as bypassed. Both must flip
+2026-09-28T16:25:16.3537074Z         together, or the UI will send a payload the server refuses."""
+2026-09-28T16:25:16.3537361Z         from app.config import settings
+2026-09-28T16:25:16.3537589Z         from app.modules.auth import mfa_service
+2026-09-28T16:25:16.3537810Z     
+2026-09-28T16:25:16.3538274Z         security_op, _secret = _security_operator(db_session)
+2026-09-28T16:25:16.3538518Z     
+2026-09-28T16:25:16.3538708Z         # Bypass OFF: schema refuses, and so does the service.
+2026-09-28T16:25:16.3539347Z         assert mfa_service.step_up_is_bypassed() is False
+2026-09-28T16:25:16.3539612Z         with pytest.raises(ValidationError):
+2026-09-28T16:25:16.3540007Z             CircuitBreakerToggleRequest(enabled=False, reason="test", incident_reference="INC-TEST")
+2026-09-28T16:25:16.3540348Z     
+2026-09-28T16:25:16.3540548Z         monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+2026-09-28T16:25:16.3540839Z >       assert mfa_service.step_up_is_bypassed() is True
+2026-09-28T16:25:16.3541136Z E       AssertionError: assert False is True
+2026-09-28T16:25:16.3541413Z E        +  where False = <function step_up_is_bypassed at 0x7f24d46e93a0>()
+2026-09-28T16:25:16.3542203Z E        +    where <function step_up_is_bypassed at 0x7f24d46e93a0> = <module 'app.modules.auth.mfa_service' from '/home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/auth/mfa_service.py'>.step_up_is_bypassed
+2026-09-28T16:25:16.3542875Z 
+2026-09-28T16:25:16.3543005Z tests/test_domain_b_circuit_breaker.py:137: AssertionError
+2026-09-28T16:25:16.3543349Z ________ test_bypass_does_not_relax_the_incident_reference_requirement _________
+2026-09-28T16:25:16.3543579Z 
+2026-09-28T16:25:16.3543741Z monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f24c65d55d0>
+2026-09-28T16:25:16.3544099Z db_session = <sqlalchemy.orm.session.Session object at 0x7f24c65d5050>
+2026-09-28T16:25:16.3544309Z 
+2026-09-28T16:25:16.3544505Z     def test_bypass_does_not_relax_the_incident_reference_requirement(monkeypatch, db_session):
+2026-09-28T16:25:16.3544918Z         """The bypass is about the second factor only. Engaging a platform-wide
+2026-09-28T16:25:16.3545238Z         breaker must still be tied to a tracked incident."""
+2026-09-28T16:25:16.3545491Z         from app.config import settings
+2026-09-28T16:25:16.3545687Z     
+2026-09-28T16:25:16.3545889Z         monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+2026-09-28T16:25:16.3546167Z         with pytest.raises(ValidationError):
+2026-09-28T16:25:16.3546444Z             CircuitBreakerToggleRequest(enabled=False, reason="test")
+2026-09-28T16:25:16.3546914Z         # A resume still needs no incident reference.
+2026-09-28T16:25:16.3547223Z >       CircuitBreakerToggleRequest(enabled=True, reason="resume")
+2026-09-28T16:25:16.3547645Z E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CircuitBreakerToggleRequest
+2026-09-28T16:25:16.3548344Z E         Value error, Either a TOTP code or a recovery code is required to change a circuit breaker. [type=value_error, input_value={'enabled': True, 'reason': 'resume'}, input_type=dict]
+2026-09-28T16:25:16.3549120Z E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+2026-09-28T16:25:16.3549374Z 
+2026-09-28T16:25:16.3549504Z tests/test_domain_b_circuit_breaker.py:155: ValidationError
+2026-09-28T16:25:16.3549847Z ___________ test_privileged_access_step_up_schema_honours_the_bypass ___________
+2026-09-28T16:25:16.3550077Z 
+2026-09-28T16:25:16.3550234Z monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f24c6443f10>
+2026-09-28T16:25:16.3550451Z 
+2026-09-28T16:25:16.3550612Z     def test_privileged_access_step_up_schema_honours_the_bypass(monkeypatch):
+2026-09-28T16:25:16.3550989Z         """The other schema-level enforcement point, covered by the same flag."""
+2026-09-28T16:25:16.3551297Z         from pydantic import ValidationError as VE
+2026-09-28T16:25:16.3551532Z         from app.config import settings
+2026-09-28T16:25:16.3551810Z         from app.modules.super_admin.schemas import PrivilegedAccessStepUp
+2026-09-28T16:25:16.3552081Z     
+2026-09-28T16:25:16.3552237Z         with pytest.raises(VE):
+2026-09-28T16:25:16.3552436Z             PrivilegedAccessStepUp()
+2026-09-28T16:25:16.3552629Z     
+2026-09-28T16:25:16.3552955Z         monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)
+2026-09-28T16:25:16.3553232Z >       PrivilegedAccessStepUp()
+2026-09-28T16:25:16.3553578Z E       pydantic_core._pydantic_core.ValidationError: 1 validation error for PrivilegedAccessStepUp
+2026-09-28T16:25:16.3554112Z E         Value error, Either a TOTP code or a recovery code is required. [type=value_error, input_value={}, input_type=dict]
+2026-09-28T16:25:16.3554608Z E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+2026-09-28T16:25:16.3554857Z 
+2026-09-28T16:25:16.3554981Z tests/test_domain_b_circuit_breaker.py:168: ValidationError
+2026-09-28T16:25:16.3555329Z _________ test_legacy_breaker_alias_resolves_to_its_dedicated_handler __________
+2026-09-28T16:25:16.3555553Z 
+2026-09-28T16:25:16.3555691Z     def test_legacy_breaker_alias_resolves_to_its_dedicated_handler():
+2026-09-28T16:25:16.3556027Z         """The specific regression, pinned by handler identity so a future
+2026-09-28T16:25:16.3556366Z         reordering (or a rename of either path) fails loudly here."""
+2026-09-28T16:25:16.3556694Z         import asyncio
+2026-09-28T16:25:16.3556862Z     
+2026-09-28T16:25:16.3557023Z         from starlette.routing import Match
+2026-09-28T16:25:16.3557223Z     
+2026-09-28T16:25:16.3557390Z         from app.modules.super_admin.router import (
+2026-09-28T16:25:16.3557647Z             get_tenant_invoice_finalization_breaker,
+2026-09-28T16:25:16.3557882Z             set_tenant_invoice_finalization_breaker,
+2026-09-28T16:25:16.3558087Z         )
+2026-09-28T16:25:16.3558221Z     
+2026-09-28T16:25:16.3558383Z         async def _first_full_match(method, path):
+2026-09-28T16:25:16.3558680Z             scope = {"type": "http", "method": method, "path": path, "root_path": ""}
+2026-09-28T16:25:16.3559119Z             for route in app.routes:
+2026-09-28T16:25:16.3559337Z                 match, _ = route.matches(scope)
+2026-09-28T16:25:16.3559554Z                 if match == Match.FULL:
+2026-09-28T16:25:16.3559759Z                     return route
+2026-09-28T16:25:16.3559946Z             return None
+2026-09-28T16:25:16.3560104Z     
+2026-09-28T16:25:16.3560251Z         for method, expected in (
+2026-09-28T16:25:16.3560481Z             ("GET", get_tenant_invoice_finalization_breaker),
+2026-09-28T16:25:16.3560750Z             ("PUT", set_tenant_invoice_finalization_breaker),
+2026-09-28T16:25:16.3561093Z         ):
+2026-09-28T16:25:16.3561339Z             path = "/api/super-admin/circuit-breakers/tenant-invoice-finalization"
+2026-09-28T16:25:16.3561670Z             route = asyncio.run(_first_full_match(method, path))
+2026-09-28T16:25:16.3561993Z             assert route is not None, f"{method} {path} resolves to no route at all"
+2026-09-28T16:25:16.3562296Z >           assert route.endpoint is expected, (
+2026-09-28T16:25:16.3562511Z                    ^^^^^^^^^^^^^^
+2026-09-28T16:25:16.3562732Z                 f"{method} {path} resolves to {route.path} -> "
+2026-09-28T16:25:16.3563024Z                 f"{getattr(route.endpoint, '__name__', route.endpoint)}"
+2026-09-28T16:25:16.3563271Z             )
+2026-09-28T16:25:16.3563509Z E           AttributeError: '_IncludedRouter' object has no attribute 'endpoint'
+2026-09-28T16:25:16.3563731Z 
+2026-09-28T16:25:16.3563830Z tests/test_route_shadowing.py:114: AttributeError
+2026-09-28T16:25:16.3564154Z _____ test_canonical_underscore_scope_still_resolves_through_generic_route _____
+2026-09-28T16:25:16.3564383Z 
+2026-09-28T16:25:16.3564546Z     def test_canonical_underscore_scope_still_resolves_through_generic_route():
+2026-09-28T16:25:16.3564916Z         """The catalog, approval-request flow and break-glass toggle all use the
+2026-09-28T16:25:16.3565313Z         canonical underscore scope, so it must keep hitting the generic handler."""
+2026-09-28T16:25:16.3565605Z         import asyncio
+2026-09-28T16:25:16.3565766Z     
+2026-09-28T16:25:16.3565923Z         from starlette.routing import Match
+2026-09-28T16:25:16.3566128Z     
+2026-09-28T16:25:16.3566296Z         async def _first_full_match(method, path):
+2026-09-28T16:25:16.3566699Z             scope = {"type": "http", "method": method, "path": path, "root_path": ""}
+2026-09-28T16:25:16.3566988Z             for route in app.routes:
+2026-09-28T16:25:16.3567205Z                 match, _ = route.matches(scope)
+2026-09-28T16:25:16.3567420Z                 if match == Match.FULL:
+2026-09-28T16:25:16.3567625Z                     return route
+2026-09-28T16:25:16.3567805Z             return None
+2026-09-28T16:25:16.3567963Z     
+2026-09-28T16:25:16.3568109Z         route = asyncio.run(
+2026-09-28T16:25:16.3568427Z             _first_full_match("GET", "/api/super-admin/circuit-breakers/tenant_invoice_finalization")
+2026-09-28T16:25:16.3568749Z         )
+2026-09-28T16:25:16.3569019Z         assert route is not None
+2026-09-28T16:25:16.3569273Z >       assert route.path == "/api/super-admin/circuit-breakers/{scope}"
+2026-09-28T16:25:16.3569539Z                ^^^^^^^^^^
+2026-09-28T16:25:16.3569778Z E       AttributeError: '_IncludedRouter' object has no attribute 'path'
+2026-09-28T16:25:16.3569990Z 
+2026-09-28T16:25:16.3570087Z tests/test_route_shadowing.py:139: AttributeError
+2026-09-28T16:25:16.3570353Z =============================== warnings summary ===============================
+2026-09-28T16:25:16.3570779Z ../../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/passlib/utils/__init__.py:854
+2026-09-28T16:25:16.3571508Z   /opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+2026-09-28T16:25:16.3572060Z     from crypt import crypt as _crypt
+2026-09-28T16:25:16.3572194Z 
+2026-09-28T16:25:16.3572288Z tests/test_auth_token_security.py: 1 warning
+2026-09-28T16:25:16.3572514Z tests/test_mfa_service.py: 5 warnings
+2026-09-28T16:25:16.3572740Z tests/test_notifications_foundation.py: 1 warning
+2026-09-28T16:25:16.3573001Z tests/test_notifications_sec_templates.py: 4 warnings
+2026-09-28T16:25:16.3573256Z tests/test_org_user_management.py: 1 warning
+2026-09-28T16:25:16.3574338Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/notifications/service.py:281: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3575543Z     send_row = db.query(CommunicationSend).get(send_row_id)
+2026-09-28T16:25:16.3575720Z 
+2026-09-28T16:25:16.3575817Z tests/test_commercial_billing.py: 31 warnings
+2026-09-28T16:25:16.3576072Z tests/test_commercial_trial_conversion.py: 24 warnings
+2026-09-28T16:25:16.3577139Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/commercial/quote_service.py:537: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3578210Z     quote = self.db.query(CommercialQuote).get(quote_id)
+2026-09-28T16:25:16.3578378Z 
+2026-09-28T16:25:16.3578470Z tests/test_commercial_billing.py: 42 warnings
+2026-09-28T16:25:16.3578723Z tests/test_commercial_trial_conversion.py: 9 warnings
+2026-09-28T16:25:16.3579982Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/commercial/platform_invoice_service.py:523: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3581093Z     invoice = self.db.query(PlatformInvoice).get(invoice_id)
+2026-09-28T16:25:16.3581281Z 
+2026-09-28T16:25:16.3581373Z tests/test_commercial_billing.py: 4 warnings
+2026-09-28T16:25:16.3581723Z tests/test_commercial_trial_conversion.py: 5 warnings
+2026-09-28T16:25:16.3581991Z tests/test_platform_stripe_service.py: 1 warning
+2026-09-28T16:25:16.3583068Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/commercial/platform_payment_service.py:153: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3584161Z     invoice = self.db.query(PlatformInvoice).get(invoice_id)
+2026-09-28T16:25:16.3584339Z 
+2026-09-28T16:25:16.3584647Z tests/test_commercial_billing.py::TestPlatformPaymentService::test_allocate_and_deallocate
+2026-09-28T16:25:16.3585840Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/commercial/platform_payment_service.py:240: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3586926Z     invoice = self.db.query(PlatformInvoice).get(invoice_id)
+2026-09-28T16:25:16.3587101Z 
+2026-09-28T16:25:16.3587268Z tests/test_commercial_billing.py::TestPlatformPaymentService::test_reconcile
+2026-09-28T16:25:16.3588415Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/commercial/platform_payment_service.py:261: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3589670Z     payment = self.db.query(PlatformPayment).get(payment_id)
+2026-09-28T16:25:16.3589855Z 
+2026-09-28T16:25:16.3590089Z tests/test_commercial_entitlements.py::test_subscription_carries_trial_and_recovery_snapshot_columns
+2026-09-28T16:25:16.3591260Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_commercial_entitlements.py:333: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3592456Z     fresh = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:16.3592649Z 
+2026-09-28T16:25:16.3592874Z tests/test_phase3f_saas_plane1.py::test_change_plan_supersedes_active_subscription_preserving_history
+2026-09-28T16:25:16.3594032Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:91: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3595073Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3595248Z 
+2026-09-28T16:25:16.3595471Z tests/test_phase3f_saas_plane1.py::test_change_plan_supersedes_active_subscription_preserving_history
+2026-09-28T16:25:16.3596608Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:97: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3597639Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3597811Z 
+2026-09-28T16:25:16.3598002Z tests/test_phase3f_saas_plane1.py::test_change_plan_from_pending_keeps_replacement_pending
+2026-09-28T16:25:16.3599429Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:122: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3600514Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3600689Z 
+2026-09-28T16:25:16.3600857Z tests/test_phase3f_saas_plane1.py::test_change_plan_same_target_is_a_no_op_error
+2026-09-28T16:25:16.3601966Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:135: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3603015Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3603178Z 
+2026-09-28T16:25:16.3603366Z tests/test_phase3f_saas_plane1.py::test_change_plan_to_archived_plan_rejected
+2026-09-28T16:25:16.3604450Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:151: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3605482Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3605652Z 
+2026-09-28T16:25:16.3605831Z tests/test_phase3f_saas_plane1.py::test_change_plan_on_terminal_subscription_rejected
+2026-09-28T16:25:16.3606937Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:161: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3608094Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3608292Z 
+2026-09-28T16:25:16.3608460Z tests/test_phase3f_saas_plane1.py::test_change_plan_on_terminal_subscription_rejected
+2026-09-28T16:25:16.3609679Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:167: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3610728Z     db_session.query(CommercialSubscription).get(created.id),
+2026-09-28T16:25:16.3610919Z 
+2026-09-28T16:25:16.3611065Z tests/test_phase3f_saas_plane1.py::test_change_plan_requires_reason
+2026-09-28T16:25:16.3612118Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:180: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3613147Z     db_session.query(CommercialSubscription).get(sub.id),
+2026-09-28T16:25:16.3613324Z 
+2026-09-28T16:25:16.3613540Z tests/test_phase3f_saas_plane1.py::test_change_plan_active_to_inactive_plan_fails_fast_before_mutation
+2026-09-28T16:25:16.3614792Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:192: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3615859Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3616051Z 
+2026-09-28T16:25:16.3616228Z tests/test_phase3f_saas_plane1.py::test_change_plan_endpoint_writes_both_audit_trails
+2026-09-28T16:25:16.3617326Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:215: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3618402Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3618588Z 
+2026-09-28T16:25:16.3618801Z tests/test_phase3f_saas_plane1.py::test_reporting_mrr_computed_only_from_priced_published_versions
+2026-09-28T16:25:16.3620115Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:306: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3621168Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3621354Z 
+2026-09-28T16:25:16.3621549Z tests/test_phase3f_saas_plane1.py::test_reporting_mrr_includes_priced_trialing_subscription
+2026-09-28T16:25:16.3622669Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:329: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3623709Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3623894Z 
+2026-09-28T16:25:16.3624069Z tests/test_phase3f_saas_plane1.py::test_reporting_mrr_normalizes_annual_prices_monthly
+2026-09-28T16:25:16.3625287Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:352: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3626332Z     row = db_session.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3626518Z 
+2026-09-28T16:25:16.3626747Z tests/test_phase3f_saas_plane1.py::test_reporting_multi_currency_never_fabricates_single_total
+2026-09-28T16:25:16.3627887Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:365: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3629135Z     db_session.query(CommercialSubscription).get(sub_a.id).catalog_version_id = ver_usd.id
+2026-09-28T16:25:16.3629395Z 
+2026-09-28T16:25:16.3629597Z tests/test_phase3f_saas_plane1.py::test_reporting_multi_currency_never_fabricates_single_total
+2026-09-28T16:25:16.3630820Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3f_saas_plane1.py:370: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3631982Z     db_session.query(CommercialSubscription).get(sub_b.id).catalog_version_id = ver_eur.id
+2026-09-28T16:25:16.3632240Z 
+2026-09-28T16:25:16.3632436Z tests/test_phase3g_cross_plane_governance.py::test_plane2_data_cannot_move_plane1_numbers
+2026-09-28T16:25:16.3632926Z tests/test_phase3g_cross_plane_governance.py::test_plane1_subscription_list_excludes_tenant_subscriptions
+2026-09-28T16:25:16.3633491Z tests/test_phase3g_cross_plane_governance.py::test_directory_payload_is_identity_and_counts_only
+2026-09-28T16:25:16.3634028Z tests/test_phase3g_cross_plane_governance.py::test_change_plan_idor_guards
+2026-09-28T16:25:16.3634567Z tests/test_phase3g_cross_plane_governance.py::test_change_plan_writes_correlated_audit_without_secrets
+2026-09-28T16:25:16.3636110Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3g_cross_plane_governance.py:99: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3637328Z     return db.query(CommercialSubscription).get(created.id)
+2026-09-28T16:25:16.3637571Z 
+2026-09-28T16:25:16.3637897Z tests/test_phase3g_cross_plane_governance.py::test_directory_payload_is_identity_and_counts_only
+2026-09-28T16:25:16.3639306Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3g_cross_plane_governance.py:246: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3640518Z     _activate(db_session, db_session.query(CommercialSubscription).get(sub.id))
+2026-09-28T16:25:16.3640876Z 
+2026-09-28T16:25:16.3641111Z tests/test_phase3g_cross_plane_governance.py::test_mid_session_expiry_blocks_summary_read
+2026-09-28T16:25:16.3642419Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3g_cross_plane_governance.py:375: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3643833Z     stored = db_session.query(PrivilegedTenantAccessGrant).get(grant.id)
+2026-09-28T16:25:16.3644086Z 
+2026-09-28T16:25:16.3644337Z tests/test_phase3g_cross_plane_governance.py::test_mid_session_expiry_blocks_summary_read
+2026-09-28T16:25:16.3645566Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase3g_cross_plane_governance.py:381: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3658009Z     refreshed = db_session.query(PrivilegedTenantAccessGrant).get(grant.id)
+2026-09-28T16:25:16.3658367Z 
+2026-09-28T16:25:16.3658656Z tests/test_phase4_governance.py::test_g04_unpriced_plan_is_explained_per_plan
+2026-09-28T16:25:16.3660139Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase4_governance.py:427: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3661228Z     row = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:16.3661418Z 
+2026-09-28T16:25:16.3661770Z tests/test_phase4_governance.py::test_g04_partially_priced_state_identifies_the_gap
+2026-09-28T16:25:16.3662908Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase4_governance.py:475: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3664065Z     db_session.query(CommercialSubscription).get(priced_sub.id).catalog_version_id = priced.id
+2026-09-28T16:25:16.3664358Z 
+2026-09-28T16:25:16.3664547Z tests/test_phase4_governance.py::test_g04_partially_priced_state_identifies_the_gap
+2026-09-28T16:25:16.3665711Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_phase4_governance.py:476: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3666887Z     db_session.query(CommercialSubscription).get(unpriced_sub.id).catalog_version_id = unpriced.id
+2026-09-28T16:25:16.3667174Z 
+2026-09-28T16:25:16.3667432Z tests/test_plan_change_orchestration.py::test_scheduled_downgrade_sets_scheduled_change_and_can_be_reversed
+2026-09-28T16:25:16.3668641Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:263: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3669888Z     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:16.3670092Z 
+2026-09-28T16:25:16.3670265Z tests/test_plan_change_orchestration.py::test_scheduled_job_applies_due_change
+2026-09-28T16:25:16.3671385Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:340: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:16.3672593Z     fresh_change = db_session.query(SubscriptionChange).get(change.id)
+2026-09-28T16:25:16.3672797Z 
+2026-09-28T16:25:16.3672963Z tests/test_plan_change_orchestration.py::test_scheduled_job_applies_due_change
+2026-09-28T16:25:16.3674074Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:341: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3849994Z     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:18.3850442Z 
+2026-09-28T16:25:18.3850942Z tests/test_plan_change_orchestration.py::test_scheduled_job_skips_drifted_subscription
+2026-09-28T16:25:18.3852532Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:371: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3853725Z     fresh_change = db_session.query(SubscriptionChange).get(change.id)
+2026-09-28T16:25:18.3853949Z 
+2026-09-28T16:25:18.3854122Z tests/test_plan_change_orchestration.py::test_downgrade_audit_chain_end_to_end
+2026-09-28T16:25:18.3855586Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:446: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3856757Z     persisted = db_session.query(SubscriptionChange).get(change.id)
+2026-09-28T16:25:18.3856968Z 
+2026-09-28T16:25:18.3857163Z tests/test_plan_change_orchestration.py::test_router_commit_upgrade_applies_immediately
+2026-09-28T16:25:18.3858332Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:495: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3859603Z     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:18.3859806Z 
+2026-09-28T16:25:18.3860007Z tests/test_plan_change_orchestration.py::test_router_commit_downgrade_schedules_by_default
+2026-09-28T16:25:18.3861220Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:514: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3862348Z     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:18.3862557Z 
+2026-09-28T16:25:18.3862809Z tests/test_plan_change_orchestration.py::test_router_commit_immediate_downgrade_blocked_creates_investigable_row
+2026-09-28T16:25:18.3864038Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:553: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3865297Z     persisted = db_session.query(SubscriptionChange).get(change_id)
+2026-09-28T16:25:18.3865502Z 
+2026-09-28T16:25:18.3865744Z tests/test_plan_change_orchestration.py::test_router_commit_immediate_downgrade_blocked_creates_investigable_row
+2026-09-28T16:25:18.3866930Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_plan_change_orchestration.py:555: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+2026-09-28T16:25:18.3868004Z     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+2026-09-28T16:25:18.3868194Z 
+2026-09-28T16:25:18.3868285Z tests/test_stripe_plane2.py: 39 warnings
+2026-09-28T16:25:18.3869758Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_stripe_plane2.py:30: SAWarning: Can't sort tables for DROP; an unresolvable foreign key dependency exists between tables: contracts, invoices, organizations, quotations, subscriptions, users; and backend does not support ALTER.  To restore at least a partial sort, apply use_alter=True to ForeignKey and ForeignKeyConstraint objects involved in the cycle to mark these as known cycles that will be ignored.
+2026-09-28T16:25:18.3871091Z     Base.metadata.drop_all(engine)
+2026-09-28T16:25:18.3871227Z 
+2026-09-28T16:25:18.3871324Z tests/test_stripe_plane2_gap1.py: 28 warnings
+2026-09-28T16:25:18.3872767Z   /home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/tests/test_stripe_plane2_gap1.py:66: SAWarning: Can't sort tables for DROP; an unresolvable foreign key dependency exists between tables: contracts, invoices, organizations, quotations, subscriptions, users; and backend does not support ALTER.  To restore at least a partial sort, apply use_alter=True to ForeignKey and ForeignKeyConstraint objects involved in the cycle to mark these as known cycles that will be ignored.
+2026-09-28T16:25:18.3874085Z     Base.metadata.drop_all(engine)
+2026-09-28T16:25:18.3874217Z 
+2026-09-28T16:25:18.3874370Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2026-09-28T16:25:18.3874710Z =========================== short test summary info ============================
+2026-09-28T16:25:18.3875189Z FAILED tests/test_domain_b_circuit_breaker.py::test_bypass_makes_schema_and_service_agree - AssertionError: assert False is True
+2026-09-28T16:25:18.3875672Z  +  where False = <function step_up_is_bypassed at 0x7f24d46e93a0>()
+2026-09-28T16:25:18.3876432Z  +    where <function step_up_is_bypassed at 0x7f24d46e93a0> = <module 'app.modules.auth.mfa_service' from '/home/runner/work/zoiko-billing-platform/zoiko-billing-platform/backend/app/modules/auth/mfa_service.py'>.step_up_is_bypassed
+2026-09-28T16:25:18.3877539Z FAILED tests/test_domain_b_circuit_breaker.py::test_bypass_does_not_relax_the_incident_reference_requirement - pydantic_core._pydantic_core.ValidationError: 1 validation error for CircuitBreakerToggleRequest
+2026-09-28T16:25:18.3878480Z   Value error, Either a TOTP code or a recovery code is required to change a circuit breaker. [type=value_error, input_value={'enabled': True, 'reason': 'resume'}, input_type=dict]
+2026-09-28T16:25:18.3879228Z     For further information visit https://errors.pydantic.dev/2.13/v/value_error
+2026-09-28T16:25:18.3879927Z FAILED tests/test_domain_b_circuit_breaker.py::test_privileged_access_step_up_schema_honours_the_bypass - pydantic_core._pydantic_core.ValidationError: 1 validation error for PrivilegedAccessStepUp
+2026-09-28T16:25:18.3880693Z   Value error, Either a TOTP code or a recovery code is required. [type=value_error, input_value={}, input_type=dict]
+2026-09-28T16:25:18.3881157Z     For further information visit https://errors.pydantic.dev/2.13/v/value_error
+2026-09-28T16:25:18.3881770Z FAILED tests/test_route_shadowing.py::test_legacy_breaker_alias_resolves_to_its_dedicated_handler - AttributeError: '_IncludedRouter' object has no attribute 'endpoint'
+2026-09-28T16:25:18.3882779Z FAILED tests/test_route_shadowing.py::test_canonical_underscore_scope_still_resolves_through_generic_route - AttributeError: '_IncludedRouter' object has no attribute 'path'
+2026-09-28T16:25:18.3883354Z 5 failed, 1052 passed, 234 warnings in 198.65s (0:03:18)
+2026-09-28T16:25:23.4149408Z ##[error]Process completed with exit code 1.
+2026-09-28T16:25:23.4244389Z Post job cleanup.
+2026-09-28T16:25:23.4918401Z [command]/usr/bin/git version
+2026-09-28T16:25:23.4951935Z git version 2.55.0
+2026-09-28T16:25:23.4978742Z Temporarily overriding HOME='/home/runner/work/_temp/5e4667fc-391b-4402-aada-619a4c33ad9e' before making global git config changes
+2026-09-28T16:25:23.4979884Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-28T16:25:23.4983087Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/zoiko-billing-platform/zoiko-billing-platform
+2026-09-28T16:25:23.5013428Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-28T16:25:23.5041730Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-28T16:25:23.5249099Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-28T16:25:23.5271537Z http.https://github.com/.extraheader
+2026-09-28T16:25:23.5282127Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-09-28T16:25:23.5316648Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-28T16:25:23.5530721Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-28T16:25:23.5562024Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-28T16:25:23.5874905Z Print service container logs: c02516955380400caf5e51db77f45e1c_postgres16_54a800
+2026-09-28T16:25:23.5878874Z ##[command]/usr/bin/docker logs --details 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:25:23.5979428Z  The files belonging to this database system will be owned by user "postgres".
+2026-09-28T16:25:23.5980158Z  This user must also own the server process.
+2026-09-28T16:25:23.5981462Z  initdb: warning: enabling "trust" authentication for local connections
+2026-09-28T16:25:23.5982239Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-09-28T16:25:23.5983196Z  2026-09-28 16:21:24.901 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-28T16:25:23.5983823Z  2026-09-28 16:21:24.902 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-09-28T16:25:23.5984263Z  2026-09-28 16:21:24.902 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-09-28T16:25:23.5984700Z  2026-09-28 16:21:24.902 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-28T16:25:23.5985162Z  2026-09-28 16:21:24.904 UTC [63] LOG:  database system was shut down at 2026-09-28 16:21:24 UTC
+2026-09-28T16:25:23.5985605Z  2026-09-28 16:21:24.907 UTC [1] LOG:  database system is ready to accept connections
+2026-09-28T16:25:23.5986224Z  2026-09-28 16:22:08.349 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_organization_id_fkey"
+2026-09-28T16:25:23.5986881Z  2026-09-28 16:22:08.349 UTC [101] DETAIL:  Key (organization_id)=(1) is not present in table "organizations".
+2026-09-28T16:25:23.5987994Z  2026-09-28 16:22:08.349 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.5989669Z  2026-09-28 16:23:10.383 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_communication_send_id_fkey"
+2026-09-28T16:25:23.5990356Z  2026-09-28 16:23:10.383 UTC [101] DETAIL:  Key (communication_send_id)=(1) is not present in table "communication_sends".
+2026-09-28T16:25:23.5991457Z  2026-09-28 16:23:10.383 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.5992685Z  2026-09-28 16:23:10.625 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_communication_send_id_fkey"
+2026-09-28T16:25:23.5993352Z  2026-09-28 16:23:10.625 UTC [101] DETAIL:  Key (communication_send_id)=(1) is not present in table "communication_sends".
+2026-09-28T16:25:23.5994457Z  2026-09-28 16:23:10.625 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.5995681Z  2026-09-28 16:23:10.971 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_communication_send_id_fkey"
+2026-09-28T16:25:23.5996363Z  2026-09-28 16:23:10.971 UTC [101] DETAIL:  Key (communication_send_id)=(1) is not present in table "communication_sends".
+2026-09-28T16:25:23.5997622Z  2026-09-28 16:23:10.971 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.5998870Z  2026-09-28 16:23:11.107 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_communication_send_id_fkey"
+2026-09-28T16:25:23.6000860Z  2026-09-28 16:23:11.107 UTC [101] DETAIL:  Key (communication_send_id)=(1) is not present in table "communication_sends".
+2026-09-28T16:25:23.6001322Z  
+2026-09-28T16:25:23.6001646Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-09-28T16:25:23.6002153Z  The default database encoding has accordingly been set to "UTF8".
+2026-09-28T16:25:23.6002494Z  The default text search configuration will be set to "english".
+2026-09-28T16:25:23.6002745Z  
+2026-09-28T16:25:23.6002900Z  Data page checksums are disabled.
+2026-09-28T16:25:23.6003095Z  
+2026-09-28T16:25:23.6003323Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-09-28T16:25:23.6003635Z  creating subdirectories ... ok
+2026-09-28T16:25:23.6003879Z  selecting dynamic shared memory implementation ... posix
+2026-09-28T16:25:23.6004143Z  selecting default max_connections ... 100
+2026-09-28T16:25:23.6004363Z  selecting default shared_buffers ... 128MB
+2026-09-28T16:25:23.6004587Z  selecting default time zone ... Etc/UTC
+2026-09-28T16:25:23.6004805Z  creating configuration files ... ok
+2026-09-28T16:25:23.6005015Z  running bootstrap script ... ok
+2026-09-28T16:25:23.6005241Z  performing post-bootstrap initialization ... ok
+2026-09-28T16:25:23.6005504Z  syncing data to disk ... ok
+2026-09-28T16:25:23.6005695Z  
+2026-09-28T16:25:23.6005972Z  
+2026-09-28T16:25:23.6006159Z  Success. You can now start the database server using:
+2026-09-28T16:25:23.6006390Z  
+2026-09-28T16:25:23.6006572Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-09-28T16:25:23.6006798Z  
+2026-09-28T16:25:23.6007274Z  waiting for server to start....2026-09-28 16:21:24.502 UTC [47] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-28T16:25:23.6007917Z  2026-09-28 16:21:24.525 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-28T16:25:23.6008337Z  2026-09-28 16:21:24.527 UTC [50] LOG:  database system was shut down at 2026-09-28 16:21:24 UTC
+2026-09-28T16:25:23.6008711Z  2026-09-28 16:21:24.530 UTC [47] LOG:  database system is ready to accept connections
+2026-09-28T16:25:23.6009145Z   done
+2026-09-28T16:25:23.6009292Z  server started
+2026-09-28T16:25:23.6009447Z  CREATE DATABASE
+2026-09-28T16:25:23.6009599Z  
+2026-09-28T16:25:23.6009742Z  
+2026-09-28T16:25:23.6010183Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-09-28T16:25:23.6010642Z  
+2026-09-28T16:25:23.6011024Z  waiting for server to shut down...2026-09-28 16:21:24.683 UTC [47] LOG:  received fast shutdown request
+2026-09-28T16:25:23.6011631Z  .2026-09-28 16:21:24.683 UTC [47] LOG:  aborting any active transactions
+2026-09-28T16:25:23.6012217Z  2026-09-28 16:21:24.685 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
+2026-09-28T16:25:23.6012620Z  2026-09-28 16:21:24.686 UTC [48] LOG:  shutting down
+2026-09-28T16:25:23.6012912Z  2026-09-28 16:21:24.686 UTC [48] LOG:  checkpoint starting: shutdown immediate
+2026-09-28T16:25:23.6013737Z  2026-09-28 16:21:24.782 UTC [48] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.071 s, sync=0.025 s, total=0.097 s; sync files=301, longest=0.016 s, average=0.001 s; distance=4273 kB, estimate=4273 kB; lsn=0/191F0E0, redo lsn=0/191F0E0
+2026-09-28T16:25:23.6014649Z  2026-09-28 16:21:24.787 UTC [47] LOG:  database system is shut down
+2026-09-28T16:25:23.6014907Z   done
+2026-09-28T16:25:23.6015054Z  server stopped
+2026-09-28T16:25:23.6015209Z  
+2026-09-28T16:25:23.6015398Z  PostgreSQL init process complete; ready for start up.
+2026-09-28T16:25:23.6015630Z  
+2026-09-28T16:25:23.6016719Z  2026-09-28 16:23:11.107 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.6018063Z  2026-09-28 16:23:11.243 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_communication_send_id_fkey"
+2026-09-28T16:25:23.6019082Z  2026-09-28 16:23:11.243 UTC [101] DETAIL:  Key (communication_send_id)=(1) is not present in table "communication_sends".
+2026-09-28T16:25:23.6020981Z  2026-09-28 16:23:11.243 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.6023000Z  2026-09-28 16:23:35.910 UTC [101] ERROR:  insert or update on table "communication_logs" violates foreign key constraint "communication_logs_organization_id_fkey"
+2026-09-28T16:25:23.6023661Z  2026-09-28 16:23:35.910 UTC [101] DETAIL:  Key (organization_id)=(1) is not present in table "organizations".
+2026-09-28T16:25:23.6024724Z  2026-09-28 16:23:35.910 UTC [101] STATEMENT:  INSERT INTO communication_logs (template_id, event_name, organization_id, recipient_email, status, reason, correlation_id, communication_send_id) VALUES ($1::VARCHAR, $2::VARCHAR, $3::INTEGER, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::INTEGER) RETURNING communication_logs.id, communication_logs.created_at
+2026-09-28T16:25:23.6030223Z Stop and remove container: c02516955380400caf5e51db77f45e1c_postgres16_54a800
+2026-09-28T16:25:23.6033834Z ##[command]/usr/bin/docker rm --force 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:25:23.7504157Z 1cfba507f7c1eae3f9e882e175436f8e54434e317b869a4e2c87ab6f17cbf9d6
+2026-09-28T16:25:23.7527811Z Remove container network: github_network_689dd26003214b7cba41283409170c52
+2026-09-28T16:25:23.7531741Z ##[command]/usr/bin/docker network rm github_network_689dd26003214b7cba41283409170c52
+2026-09-28T16:25:23.9579282Z github_network_689dd26003214b7cba41283409170c52
+2026-09-28T16:25:23.9635962Z Cleaning up orphan processes
+2026-09-28T16:25:23.9887687Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

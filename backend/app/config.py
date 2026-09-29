@@ -260,6 +260,30 @@ class Settings(BaseSettings):
     ENABLE_TRIAL_WARNING_JOB: bool = True
     COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES: int = 1440  # daily sweep
 
+    # ── B1: durable email outbox crash-recovery sweep ───────────────────
+    # send_approval_email's async_send=True path writes a QUEUED EmailOutbox
+    # row before handing the send to the in-process ThreadPoolExecutor (see
+    # email_foundation/models.py + email_service.py). This sweep
+    # (email_foundation/recovery.py) finds rows still QUEUED after the grace
+    # period below and redelivers them -- so a process crash between "the
+    # row was committed" and "the background thread actually ran" never
+    # silently drops the email.
+    ENABLE_EMAIL_QUEUE_RECOVERY: bool = True
+    EMAIL_QUEUE_RECOVERY_INTERVAL_MINUTES: int = 10
+    # Periodic SMTP-health evaluation (A3). Deliberately a SEPARATE job from
+    # the outbox recovery sweep above, not an append to it: disabling
+    # crash-recovery must not silently disable health signal, and the two
+    # have different cadences and different JobRunLog summaries.
+    ENABLE_EMAIL_SMTP_HEALTH_CHECK: bool = True
+    EMAIL_SMTP_HEALTH_INTERVAL_MINUTES: int = 15
+    # How long a row must sit in QUEUED before the sweep treats it as stuck
+    # rather than "still legitimately in flight in a live thread pool".
+    EMAIL_QUEUE_RECOVERY_GRACE_MINUTES: int = 10
+    # Bounded retries: a row that has failed this many delivery attempts is
+    # left FAILED for a human (via the admin dashboard) instead of being
+    # retried by the sweep forever.
+    EMAIL_QUEUE_MAX_DELIVERY_ATTEMPTS: int = 5
+
 
 settings = Settings()
 

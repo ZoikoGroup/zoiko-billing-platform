@@ -85,7 +85,7 @@ const defaultForm = {
   gateway_paypal_enabled: true, gateway_cash_enabled: true,
   gateway_bank_transfer_enabled: true, gateway_upi_enabled: false,
   gateway_offline_enabled: true,
-  webhook_secret: "", auto_capture_enabled: true,
+  auto_capture_enabled: true,
   grace_period_days: 0, credit_limit: 0,
 
   tax_calculation_method: "exclusive", default_tax_rate_id: null,
@@ -785,7 +785,7 @@ export default function BillingSettingsPage() {
       gateway_stripe_enabled: "payments", gateway_razorpay_enabled: "payments",
       gateway_paypal_enabled: "payments", gateway_cash_enabled: "payments",
       gateway_bank_transfer_enabled: "payments", gateway_upi_enabled: "payments",
-      gateway_offline_enabled: "payments", webhook_secret: "payments",
+      gateway_offline_enabled: "payments",
 
       tax_calculation_method: "tax", tax_label: "tax", tax_number: "tax",
       tax_rounding_method: "tax", is_tax_inclusive_default: "tax", show_tax_on_invoice: "tax",
@@ -1136,7 +1136,7 @@ export default function BillingSettingsPage() {
       // treats them as absent rather than invalid.
       const nullableStringFields = [
         "default_tax_rate_id", "default_tax_rate",
-        "webhook_secret", "dunning_email_template", "final_notice_template",
+        "dunning_email_template", "final_notice_template",
         "invoice_footer", "invoice_terms", "invoice_notes", "invoice_logo_url",
         "invoice_watermark", "invoice_terms_and_conditions",
         "tax_number", "logo_url", "support_email", "billing_phone", "website",
@@ -2260,11 +2260,6 @@ export default function BillingSettingsPage() {
                 checked={form.gateway_upi_enabled} onChange={() => updateToggle("gateway_upi_enabled")} />
               <Toggle id="gateway_offline_enabled" label="Offline" description="Accept offline payment methods"
                 checked={form.gateway_offline_enabled} onChange={() => updateToggle("gateway_offline_enabled")} />
-            </div>
-            <div className="mt-5">
-              <Field label="Webhook Secret" tooltip="Secret key for payment gateway webhooks">
-                <Input id="webhook_secret" value={form.webhook_secret} onChange={(e) => update("webhook_secret", e.target.value)} />
-              </Field>
             </div>
           </Card>
         </div>

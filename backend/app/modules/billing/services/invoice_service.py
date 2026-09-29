@@ -977,6 +977,44 @@ class InvoiceService:
             event_metadata={"email_delivered": True, "attempt_via": "manual"},
             created_by=sent_by,
         )
+        # ── ZB-ONB-011: First invoice issued milestone ─────────────────────────
+        # Fire once when the org sends its very first invoice.  Safe: any error
+        # here is logged and swallowed — it must never block the response.
+        try:
+            sent_count = (
+                self.db.query(func.count(Invoice.id))
+                .filter(
+                    Invoice.organization_id == organization_id,
+                    Invoice.status == InvoiceStatus.SENT,
+                )
+                .scalar()
+            )
+            if sent_count == 1:
+                from app.modules.auth.models import User, UserRole
+                from app.services.email_service import send_first_invoice_milestone_email
+                admin = (
+                    self.db.query(User)
+                    .filter(
+                        User.organization_id == organization_id,
+                        User.role == UserRole.ORG_ADMIN,
+                        User.is_active.is_(True),
+                    )
+                    .first()
+                )
+                if admin and admin.email:
+                    from app.modules.organizations.models import Organization
+                    org = self.db.query(Organization).filter(Organization.id == organization_id).first()
+                    org_name = org.name if org else "your organization"
+                    send_first_invoice_milestone_email(
+                        email=admin.email,
+                        recipient_first_name=admin.first_name or "there",
+                        organization_name=org_name,
+                        organization_id=organization_id,
+                        db=self.db,
+                    )
+        except Exception as _onb011_err:
+            logger.warning("ZB-ONB-011 milestone trigger failed (non-blocking): %s", _onb011_err)
+        # ── end ZB-ONB-011 ─────────────────────────────────────────────────────
 
         return response
 

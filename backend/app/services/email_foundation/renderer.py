@@ -11,7 +11,7 @@ import os
 import re
 import math
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from app.services.email_foundation.enums import TemplateTier
 from app.services.email_foundation.contract import validate_tier_compliance
 
@@ -28,6 +28,16 @@ COLOR_WARNING = "#F59E0B"
 COLOR_ERROR = "#EF4444"
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "email_templates")
+
+
+def _default_logo_url() -> str:
+    """Hosted product logo. Mirrors email_service._default_logo_url so that the
+    master shell renders a real image instead of <img src=""> when the caller
+    does not supply branding. Resolved lazily to match the deferred app.config
+    import convention."""
+    from app.config import settings as _settings
+
+    return f"{_settings.FRONTEND_URL.rstrip('/')}/zoiko-billing-logo.png"
 
 
 def calculate_relative_luminance(hex_color: str) -> float:
@@ -74,6 +84,21 @@ def determine_eyebrow_accent_color(tier: TemplateTier, outcome_type: str = "neut
     return COLOR_ACCENT_BLUE
 
 
+def _format_body_html(body: str) -> str:
+    """Converts plain text body with newlines into HTML paragraphs if not already HTML."""
+    if "<p" in body or "<div" in body or "<table" in body:
+        return body
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [body.strip()]
+    formatted = []
+    for p in paragraphs:
+        lines = p.split("\n")
+        joined = "<br />".join(lines)
+        formatted.append(f'<p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #CBD5E1;">{joined}</p>')
+    return "".join(formatted)
+
+
 def render_dark_email(
     tier: TemplateTier,
     eyebrow: str,
@@ -93,8 +118,11 @@ def render_dark_email(
     if context is None:
         context = {}
 
+    # Format body paragraphs if needed
+    formatted_body = _format_body_html(body_content)
+
     # Tier compliance validation
-    validate_tier_compliance(tier, context, body_content)
+    validate_tier_compliance(tier, context, formatted_body)
 
     base_path = os.path.join(TEMPLATE_DIR, "_base_dark.html")
     if not os.path.exists(base_path):
@@ -112,11 +140,13 @@ def render_dark_email(
         "eyebrow": eyebrow.upper(),
         "eyebrow_color": eyebrow_color,
         "heading": heading,
-        "body_content": body_content,
+        "body_content": formatted_body,
         "secondary_content": secondary_content,
         "primary_action_label": primary_action_label,
         "primary_action_url": primary_action_url,
         "company_name": context.get("company_name", "Zoiko Billing"),
+        "sender_identity": context.get("sender_identity", "Zoiko Billing"),
+        "logo_url": context.get("logo_url") or _default_logo_url(),
         "legal_entity": context.get("legal_entity", context.get("company_name", "Zoiko Billing Inc.")),
         "billing_address": context.get("billing_address", ""),
         "support_email": context.get("support_email", "support@zoikobilling.com"),
@@ -125,20 +155,72 @@ def render_dark_email(
         "show_radial_glow": show_radial_glow,
     }
 
-    # Handle simple Handlebars-style template interpolation
-    result = shell_html
+    # Merged context for condition evaluation and variable interpolation
+    merged_context = {**context, **render_context}
 
     # Evaluate Handlebars {{#if key}}...{{/if}}
     if_block_re = re.compile(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL)
 
     def _eval_if(match):
         key, inner = match.group(1), match.group(2)
-        return inner if render_context.get(key) else ""
+        return inner if merged_context.get(key) else ""
 
-    result = if_block_re.sub(_eval_if, result)
+    result = if_block_re.sub(_eval_if, shell_html)
 
+    # 1. Substitute render_context variables (shell structure)
     for k, v in render_context.items():
         placeholder = "{{" + k + "}}"
-        result = result.replace(placeholder, str(v or ""))
+        result = result.replace(placeholder, str(v if v is not None else ""))
+
+    # 2. Substitute all caller context variables across the entire template
+    for k, v in context.items():
+        if v is not None:
+            placeholder = "{{" + k + "}}"
+            result = result.replace(placeholder, str(v))
 
     return result
+
+
+def render_template_by_id(template_id: str, context: Dict[str, Any]) -> str:
+    """Renders any catalog template by its ZB-* template ID using the master dark shell."""
+    from app.modules.notifications.template_registry import TEMPLATE_REGISTRY, NotificationTier
+
+    if template_id not in TEMPLATE_REGISTRY:
+        raise KeyError(f"Unknown template ID: {template_id}")
+
+    meta = TEMPLATE_REGISTRY[template_id]
+    tier = TemplateTier(meta.tier.value if hasattr(meta.tier, "value") else meta.tier)
+
+    # Resolve variables in heading, preheader, body
+    heading = meta.subject
+    preheader = meta.preheader
+    body = meta.body_template
+    action_label = meta.primary_action_label
+    sender_identity = context.get("sender_identity") or meta.sender_identity
+
+    # Action URL resolution
+    action_url = (
+        context.get("primary_action_url")
+        or context.get("cta_url")
+        or context.get("action_url")
+        or context.get("invoice_url")
+        or context.get("exception_url")
+        or context.get("incident_url")
+        or context.get("portal_url")
+        or context.get("settings_url")
+        or ""
+    )
+
+    ctx = dict(context)
+    ctx["sender_identity"] = sender_identity
+
+    return render_dark_email(
+        tier=tier,
+        eyebrow=meta.trigger_event_name,
+        heading=heading,
+        body_content=body,
+        primary_action_label=action_label,
+        primary_action_url=action_url,
+        preheader=preheader,
+        context=ctx,
+    )

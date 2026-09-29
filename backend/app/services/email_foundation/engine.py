@@ -22,6 +22,7 @@ from app.services.email_foundation.models import (
     EmailMarketingConsent,
     EmailOrgPreference,
     CommunicationAuditLog,
+    EmailOutbox,
 )
 
 logger = logging.getLogger("zoiko_billing")
@@ -118,7 +119,20 @@ class IdempotencySupersessionEngine:
 
     @staticmethod
     def is_duplicate(db: Session, dedupe_key: str) -> bool:
-        """Checks if a send attempt with this dedupe_key was already processed."""
+        """Checks if a send attempt with this dedupe_key was already processed.
+
+        Checks BOTH the audit trail (CommunicationAuditLog — SENT/QUEUED rows
+        written by completed or historical attempts) and the durable outbox
+        (EmailOutbox — QUEUED/SENT rows written by the async dispatch path
+        before a background thread ever runs, and updated by the recovery
+        sweep). A row can be QUEUED in the outbox without a matching
+        CommunicationAuditLog row yet existing (the SMTP attempt hasn't run),
+        so checking only one table would let a second async send for the same
+        dedupe_key slip through the queue while the first is still in flight.
+        """
+        if not dedupe_key:
+            return False
+
         existing = (
             db.query(CommunicationAuditLog)
             .filter(
@@ -127,7 +141,33 @@ class IdempotencySupersessionEngine:
             )
             .first()
         )
-        return existing is not None
+        if existing is not None:
+            return True
+
+        try:
+            existing_outbox = (
+                db.query(EmailOutbox)
+                .filter(
+                    EmailOutbox.dedupe_key == dedupe_key,
+                    EmailOutbox.status.in_([SendStatus.SENT.value, SendStatus.QUEUED.value]),
+                )
+                .first()
+            )
+            return existing_outbox is not None
+        except Exception as exc:
+            # Defensive: an environment whose email_outbox migration hasn't
+            # rolled out yet (a rolling deploy, an older DB snapshot) must not
+            # break every single send -- fall back to the CommunicationAuditLog
+            # check above, same as before this table existed. A rollback is
+            # required here so this failed SELECT doesn't poison the rest of
+            # the caller's transaction on backends (Postgres) that abort the
+            # whole transaction after an error.
+            logger.warning(f"[EMAIL_ENGINE] Could not query email_outbox for dedupe check (falling back to audit log only): {exc}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return False
 
     @staticmethod
     def apply_supersession(

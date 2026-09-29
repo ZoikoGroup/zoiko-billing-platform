@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Invoice {{invoice_number}} from {{company_name}} has been voided</title>
+
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <style>
+    table, td { font-family: Arial, sans-serif; }
+  </style>
+  <![endif]-->
+
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; }
+
+    @media only screen and (max-width: 600px) {
+      .email-container { width: 100% !important; }
+      .fluid-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .cta-button { width: 100% !important; text-align: center !important; }
+      .hide-mobile { display: none !important; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .dark-bg { background-color: #0F172A !important; }
+      .dark-card { background-color: #1E293B !important; }
+      .dark-text { color: #F1F5F9 !important; }
+      .dark-muted { color: #94A3B8 !important; }
+      .dark-border { border-color: #334155 !important; }
+    }
+  </style>
+</head>
+
+<body style="margin:0; padding:0; background-color:#F8FAFC; font-family: 'Inter', 'Segoe UI', Arial, sans-serif;">
+
+  <!-- Preheader -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">
+    Invoice {{invoice_number}} from {{company_name}} has been voided and no longer requires payment.
+    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+  </div>
+
+  <center style="width:100%; background-color:#F8FAFC;" class="dark-bg">
+    <!--[if mso]>
+    <table role="presentation" width="640" align="center" cellpadding="0" cellspacing="0" border="0">
+    <tr><td>
+    <![endif]-->
+
+    <table role="presentation" class="email-container" width="100%" style="max-width:640px; margin:0 auto;" cellpadding="0" cellspacing="0" border="0" align="center">
+
+      <tr>
+        <td style="padding:32px 20px 0 20px;" class="fluid-padding">
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dark-card" style="background-color:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(15, 23, 42, 0.06); border:1px solid #E2E8F0;">
+
+            <!-- HEADER: canonical block - real logo, always-visible brand text -->
+            <tr>
+              <td style="background-color:#2563EB; background-image:linear-gradient(135deg, #2563EB 0%, #7C3AED 100%); padding:28px 32px; border-radius:16px 16px 0 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="left" valign="middle" style="padding-right:16px;">
+                      <img src="{{logo_url}}" alt="{{company_name}}" width="160" style="display:block; width:160px; max-width:160px; height:auto;" />
+                    </td>
+                    <td align="right" valign="middle" class="hide-mobile">
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; display:inline-block; background-color:#DC2626; color:#FFFFFF; font-size:11px; font-weight:700; padding:6px 14px; border-radius:20px; text-transform:uppercase; letter-spacing:0.6px;">
+                        Voided
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding-top:12px;">
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:700; color:#FFFFFF; letter-spacing:-0.3px;">
+                        Zoiko Billing
+                      </span>
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:400; color:rgba(255,255,255,0.8);">
+                        &middot; {{company_name}}
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- TITLE + GREETING -->
+            <tr>
+              <td style="padding:36px 32px 0 32px;" class="fluid-padding">
+                <h1 style="margin:0 0 16px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:22px; line-height:30px; font-weight:700; color:#1E293B; letter-spacing:-0.5px;" class="dark-text">
+                  Invoice {{invoice_number}} has been voided
+                </h1>
+                <p style="margin:0 0 8px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:16px; line-height:24px; font-weight:600; color:#1E293B;" class="dark-text">
+                  Hi {{recipient_first_name}},
+                </p>
+              </td>
+            </tr>
+
+            <!-- MESSAGE -->
+            <tr>
+              <td style="padding:0 32px;" class="fluid-padding">
+                <p style="margin:0 0 24px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; line-height:24px; color:#475569;" class="dark-muted">
+                  {{company_name}} has voided invoice {{invoice_number}} issued to
+                  {{customer_name}}. This invoice is no longer valid and
+                  <strong style="color:#B91C1C;">no payment is required or due.</strong>
+                </p>
+              </td>
+            </tr>
+
+            <!-- HIGHLIGHT BOX: STATUS -->
+            <tr>
+              <td style="padding:0 32px 12px 32px;" class="fluid-padding">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FEF2F2; border-radius:10px; border-left:4px solid #DC2626;">
+                  <tr>
+                    <td style="padding:20px 20px;">
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#991B1B; margin-bottom:6px;">
+                        Document Status
+                      </div>
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:26px; font-weight:800; color:#7F1D1D; line-height:1.2;" class="dark-text">
+                        Voided
+                      </div>
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px; font-weight:500; color:#B91C1C; margin-top:6px;">
+                        No outstanding balance remains on this invoice.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- METADATA GRID -->
+            <tr>
+              <td style="padding:16px 32px 8px 32px;" class="fluid-padding">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px;">
+                  <tr>
+                    <td style="padding-bottom:6px; color:#64748B; width:50%;">INVOICE NO.</td>
+                    <td style="padding-bottom:6px; color:#64748B; width:50%;">CUSTOMER</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{invoice_number}}</td>
+                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{customer_name}}</td>
+                  </tr>
+                </table>
+                <!-- Reason is optional: callers that void without a reason omit it,
+                     and the block below is dropped entirely rather than rendering
+                     an empty "Reason:" row. -->
+                {{#if reason}}
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px; margin-top:10px;">
+                  <tr>
+                    <td style="color:#64748B;">REASON</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{reason}}</td>
+                  </tr>
+                </table>
+                {{/if}}
+              </td>
+            </tr>
+
+            <!-- PRIMARY CTA -->
+            <tr>
+              <td align="center" style="padding:20px 32px 8px 32px;" class="fluid-padding">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center">
+                      <!--[if mso]>
+                      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{cta_url}}" style="height:50px;v-text-anchor:middle;width:280px;" arcsize="16%" strokecolor="#2563EB" fillcolor="#2563EB">
+                      <w:anchorlock/>
+                      <center style="color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">View Invoice</center>
+                      </v:roundrect>
+                      <![endif]-->
+                      <!--[if !mso]><!-->
+                      <a href="{{cta_url}}" class="cta-button" target="_blank" style="display:inline-block; background-color:#2563EB; background-image:linear-gradient(135deg, #2563EB 0%, #7C3AED 100%); color:#FFFFFF; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; text-decoration:none; padding:15px 40px; border-radius:10px; box-shadow:0 4px 12px rgba(37, 99, 235, 0.3);">
+                        View Invoice
+                      </a>
+                      <!--<![endif]-->
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- WHAT THIS MEANS -->
+            <tr>
+              <td style="padding:20px 32px 8px 32px;" class="fluid-padding">
+                <p style="margin:0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:12px; line-height:18px; color:#94A3B8; text-align:center;">
+                  Any payment already collected against this invoice will be handled
+                  separately according to your agreed billing arrangements. The voided
+                  document remains in your billing history for your records.
+                </p>
+              </td>
+            </tr>
+
+            <!-- DIVIDER -->
+            <tr>
+              <td style="padding:20px 32px 0 32px;" class="fluid-padding">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr><td class="dark-border" style="border-top:1px solid #E2E8F0; font-size:1px; line-height:1px;">&nbsp;</td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- SUPPORT / FOOTER -->
+            <tr>
+              <td style="padding:24px 32px 32px 32px;" class="fluid-padding" align="center">
+                <p style="margin:0 0 6px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:12.5px; color:#57606a; text-align:center;">
+                  {{company_name}} via Zoiko Billing
+                  {{#if support_email}}
+                  <span style="color:#d0d7de;">&nbsp;&middot;&nbsp;</span>
+                  <a href="mailto:{{support_email}}" style="color:#2563EB; text-decoration:none; font-weight:600;">Support</a>
+                  {{/if}}
+                  {{#if website}}
+                  <span style="color:#d0d7de;">&nbsp;&middot;&nbsp;</span>
+                  <a href="{{website}}" style="color:#2563EB; text-decoration:none; font-weight:600;">Website</a>
+                  {{/if}}
+                </p>
+                {{#if legal_entity}}
+                <p style="font-size:11.5px; color:#94A3B8; line-height:1.5; margin:0; text-align:center;">{{legal_entity}}</p>
+                {{/if}}
+                {{#if billing_address}}
+                <p style="font-size:11.5px; color:#94A3B8; line-height:1.5; margin:2px 0 0; text-align:center;">{{billing_address}}</p>
+                {{/if}}
+                <p style="margin:12px 0 4px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; line-height:16px; color:#CBD5E1; text-align:center;">
+                  Mandatory transactional message &mdash; not affected by marketing preferences.
+                </p>
+                <p style="margin:0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; line-height:18px; color:#CBD5E1; text-align:center;">
+                  Sent by Zoiko Billing on behalf of {{company_name}}.
+                </p>
+              </td>
+            </tr>
+
+          </table>
+          <!-- END MAIN CARD -->
+
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:0 20px 32px 20px; font-size:1px; line-height:1px;">&nbsp;</td>
+      </tr>
+
+    </table>
+    <!--[if mso]>
+    </td></tr>
+    </table>
+    <![endif]-->
+  </center>
+
+</body>
+</html>
