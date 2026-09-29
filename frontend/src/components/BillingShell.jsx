@@ -35,6 +35,7 @@ import {
   Power,
   Bell,
   Activity,
+  Mail,
   HelpCircle,
   Gauge,
   AlertTriangle,
@@ -218,6 +219,7 @@ const SUPER_ADMIN_NAV_SECTIONS = [
     items: [
       { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
       { label: "System Health", href: "/super-admin/reliability", icon: Activity },
+      { label: "Email Delivery", href: "/super-admin/email-delivery", icon: Mail },
     ],
   },
 ];

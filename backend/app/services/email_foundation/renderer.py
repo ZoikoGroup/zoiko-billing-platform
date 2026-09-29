@@ -30,6 +30,16 @@ COLOR_ERROR = "#EF4444"
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "email_templates")
 
 
+def _default_logo_url() -> str:
+    """Hosted product logo. Mirrors email_service._default_logo_url so that the
+    master shell renders a real image instead of <img src=""> when the caller
+    does not supply branding. Resolved lazily to match the deferred app.config
+    import convention."""
+    from app.config import settings as _settings
+
+    return f"{_settings.FRONTEND_URL.rstrip('/')}/zoiko-billing-logo.png"
+
+
 def calculate_relative_luminance(hex_color: str) -> float:
     """Calculates relative luminance according to WCAG 2.1 specs."""
     hex_clean = hex_color.lstrip("#")
@@ -117,6 +127,7 @@ def render_dark_email(
         "primary_action_label": primary_action_label,
         "primary_action_url": primary_action_url,
         "company_name": context.get("company_name", "Zoiko Billing"),
+        "logo_url": context.get("logo_url") or _default_logo_url(),
         "legal_entity": context.get("legal_entity", context.get("company_name", "Zoiko Billing Inc.")),
         "billing_address": context.get("billing_address", ""),
         "support_email": context.get("support_email", "support@zoikobilling.com"),

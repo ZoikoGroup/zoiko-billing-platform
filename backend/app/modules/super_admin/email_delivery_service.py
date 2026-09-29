@@ -18,12 +18,50 @@ work in progress elsewhere in this codebase):
     read), and it never edits email_service.py or email_foundation/*.
   - Known, documented limitation: CommunicationAuditLog does not store the
     full render context of a send (recipient name, amounts, line items,
-    etc.) — that level of replay fidelity belongs to the in-flight "outbox"
-    table another engineer is building in email_foundation, which this
-    module deliberately does not depend on. Where no existing, proper
-    "resend" business code path recognizes the row's template family, the
-    row is reported as NOT resendable from here rather than attempting an
-    unsafe blind replay of a stale audit-log row.
+    etc.). Where no existing, proper "resend" business code path recognizes
+    the row's template family, the row is reported as NOT resendable from
+    here rather than attempting an unsafe blind replay of a stale audit-log
+    row.
+
+DELIBERATE NON-GOAL: widening resend via the EmailOutbox table (Option 2)
+--------------------------------------------------------------------------------
+This is a considered decision, not an oversight or an unfinished feature. Do
+NOT "fix" it by replaying from EmailOutbox.context_json without first
+re-reading this section.
+
+`EmailOutbox` (added by B1, same branch) does store everything a blind replay
+would need — pre-render `context_json`, `template_name`, `attachments_json` —
+and shares `dedupe_key` with CommunicationAuditLog, so the join is technically
+possible. We still do not do it, for four reasons:
+
+  1. Replay fidelity is not the actual binding constraint. `context_json` is
+     the PRE-render context, and redelivery deliberately re-renders against
+     the CURRENT template on disk. For most template families in this codebase
+     that template is currently wrong (see the audit noted in
+     `_resend_capability`'s comment) — so an outbox replay would faithfully
+     re-send a broken body. Widening resend would make it EASIER to send bad
+     mail at volume, not better mail. Fix the templates first; the resend
+     surface then widens for free on the business-record path.
+  2. Coverage would be partial and confusing regardless. Only sends dispatched
+     with `async_send=True` ever write an outbox row. A synchronous send that
+     fails has no outbox row to fall back on. So the same UI would show some
+     failures as resendable and others not, for a reason invisible from the
+     audit-log row alone.
+  3. The four templates that ARE resendable today (ZB-INV-006, ZB-INV-018,
+     ZB-PAY-013, ZB-COL-011) are precisely the ones that route through a
+     real business record with its own `send_*_via_email`, so they already get
+     correct, tenant-scoped, re-validated resends.
+  4. An outbox replay would bypass the per-record validation those
+     `send_*_via_email` methods perform (state re-checks, org scoping,
+     re-reading current invoice/credit-note amounts). That validation is the
+     reason this path is safe.
+
+If this is revisited, it needs: (a) the template-rendering defects fixed
+first; (b) an explicit `row.organization_id` == acting-admin-scope check,
+mirroring what `resend()` already enforces for the four supported templates;
+(c) a third UI capability state so operators can tell "outbox-resendable"
+from "business-record-resendable" from "not resendable"; and (d) a test
+proving cross-tenant resend is refused.
 """
 
 from datetime import datetime, timedelta
@@ -65,7 +103,16 @@ class EmailDeliveryService:
 
     def _resend_capability(self, row) -> Tuple[bool, Optional[str]]:
         """Whether — and why (not) — this failed/suppressed row can be
-        resent via an existing, proper business-record resend path."""
+        resent via an existing, proper business-record resend path.
+
+        The template allowlist below is INTENTIONALLY narrow and is a
+        deliberate non-goal to widen via EmailOutbox replay — see the
+        "DELIBERATE NON-GOAL" section in this module's docstring for the
+        reasoning and for what a future attempt would have to satisfy
+        first. `test_email_delivery_resend_scope.py` locks this list so
+        widening it has to be a conscious, tested change rather than a
+        drive-by edit.
+        """
         if row.status not in FAILURE_STATUSES:
             return False, "Only failed or suppressed sends can be resent."
         if row.status == "SUPPRESSED":
@@ -86,7 +133,12 @@ class EmailDeliveryService:
             return True, None
         return False, (
             f"No existing resend code path recognizes template {row.template_id} — "
-            "resend is not available from here (see the Email Delivery known limitation)."
+            "resend is not available from here. This is a deliberate scope limit, "
+            "not a transient failure: replaying from the outbox is intentionally "
+            "not supported (see the DELIBERATE NON-GOAL section in this module's "
+            "docstring) because redelivery re-renders against the current template, "
+            "which is not yet correct for this template family. Re-send from the "
+            "record's own page instead."
         )
 
     # ── read models ──────────────────────────────────────────────────────

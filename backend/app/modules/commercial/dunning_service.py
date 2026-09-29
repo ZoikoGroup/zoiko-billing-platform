@@ -166,6 +166,14 @@ class CommercialDunningService:
                                             organization_id=org_id,
                                             db=db,
                                             smtp_connection=bulk.get(),
+                                            # past_due_notice.html renders both of
+                                            # these, so source them from the
+                                            # subscription being suspended.
+                                            plan_name=(
+                                                getattr(getattr(subscription, "plan", None), "plan_name", "")
+                                                or "Your subscription"
+                                            ),
+                                            subscription_number=f"SUB-{subscription.id}",
                                         )
                             except Exception as mail_exc:
                                 bulk.invalidate()

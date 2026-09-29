@@ -270,6 +270,12 @@ class Settings(BaseSettings):
     # silently drops the email.
     ENABLE_EMAIL_QUEUE_RECOVERY: bool = True
     EMAIL_QUEUE_RECOVERY_INTERVAL_MINUTES: int = 10
+    # Periodic SMTP-health evaluation (A3). Deliberately a SEPARATE job from
+    # the outbox recovery sweep above, not an append to it: disabling
+    # crash-recovery must not silently disable health signal, and the two
+    # have different cadences and different JobRunLog summaries.
+    ENABLE_EMAIL_SMTP_HEALTH_CHECK: bool = True
+    EMAIL_SMTP_HEALTH_INTERVAL_MINUTES: int = 15
     # How long a row must sit in QUEUED before the sweep treats it as stuck
     # rather than "still legitimately in flight in a live thread pool".
     EMAIL_QUEUE_RECOVERY_GRACE_MINUTES: int = 10

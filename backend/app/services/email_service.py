@@ -107,16 +107,43 @@ def _get_smtp_settings(db=None) -> dict:
         return defaults
 
 
-_BRANDING_DEFAULTS = {
-    "company_name": "Zoiko Billing",
-    "support_email": "",
-    "website": "",
-    "logo_url": "",
-    "invoice_footer": "",
-    "legal_entity": "",
-    "billing_address": "",
-    "billing_phone": "",
-}
+# Hosted product logo, served from the frontend's public/ directory so that every
+# tenant gets a real, branded image even when they have not uploaded their own.
+# An empty logo_url would render <img src=""> in every template, which most mail
+# clients show as a broken-image placeholder. Tenants can still override this
+# with their own uploaded logo via BillingConfiguration.
+
+def _default_logo_url() -> str:
+    """Hosted product logo, served from the frontend's public/ directory so that
+    every tenant gets a real, branded image even when they have not uploaded one.
+
+    An empty logo_url would render as <img src=""> in every template, which most
+    mail clients show as a broken-image placeholder. Tenants can still override
+    this with their own uploaded logo via BillingConfiguration.
+
+    Resolved lazily (not at import time) to match the deferred ``app.config``
+    import convention used throughout this module and to avoid a circular
+    import at module load.
+    """
+    from app.config import settings as _settings
+
+    return f"{_settings.FRONTEND_URL.rstrip('/')}/zoiko-billing-logo.png"
+
+
+def _branding_defaults() -> dict:
+    return {
+        "company_name": "Zoiko Billing",
+        "support_email": "",
+        "website": "",
+        "logo_url": _default_logo_url(),
+        "invoice_footer": "",
+        "legal_entity": "",
+        "billing_address": "",
+        "billing_phone": "",
+    }
+
+
+_BRANDING_DEFAULTS = _branding_defaults()
 
 
 def _get_org_branding(organization_id=None, db=None) -> dict:
@@ -166,7 +193,7 @@ def _get_org_branding(organization_id=None, db=None) -> dict:
                 "company_name": company_name,
                 "support_email": config.billing_email or "",
                 "website": config.website or "",
-                "logo_url": config.logo_url or "",
+                "logo_url": config.logo_url or _default_logo_url(),
                 "invoice_footer": config.invoice_footer or "",
                 "legal_entity": legal_entity,
                 "billing_address": billing_address,
@@ -1670,17 +1697,37 @@ def send_invoice_reminder_email(
     """
     from app.config import settings as _settings
     cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/billing/invoices"
+    # invoice_sent.html renders the full line-item table and totals block, so a
+    # pre-due reminder has to supply those same keys. Without them the reminder
+    # shipped an empty items table plus literal placeholders. A reminder is a
+    # notice about an already-issued invoice, so the itemised block is reduced to
+    # a single summary row rather than repeating the whole document.
     return send_approval_email(email, "invoice_sent.html", {
         "subject": f"Reminder: Invoice {invoice_number} from {{{{company_name}}}} is due in {days_until_due} day{'s' if days_until_due != 1 else ''}",
         "preheader": f"Payment of {currency} {balance_due} is due on {due_date}.",
         "customer_name": customer_name,
         "recipient_first_name": customer_name,
         "invoice_number": invoice_number,
+        "issue_date": "—",
         "due_date": due_date,
         "days_until_due": days_until_due,
         "balance_due": balance_due,
+        "total_amount": balance_due,
         "currency": currency,
+        "status": "Due Soon",
+        "reference": "",
+        "notes": "",
         "cta_url": cta_url,
+        "line_items_html": (
+            '<tr><td style="padding:10px 0; color:#475569;">As previously issued</td>'
+            '<td style="padding:10px 0; text-align:center; color:#475569;">1</td>'
+            '<td style="padding:10px 0; text-align:right; color:#475569;">—</td>'
+            f'<td style="padding:10px 0; text-align:right; font-weight:600; color:#1E293B;">{currency} {balance_due}</td></tr>'
+        ),
+        "totals_html": (
+            f'<tr><td style="padding:6px 0; color:#64748B;">Amount due</td>'
+            f'<td style="padding:6px 0; text-align:right; font-weight:700; color:#1E293B;">{currency} {balance_due}</td></tr>'
+        ),
         "template_id": "ZB-INV-011",
     }, db=db, organization_id=organization_id, event_name="invoice.pre_due_reminder")
 
@@ -1703,14 +1750,18 @@ def send_trial_ending_warning_email(
     """
     from app.config import settings as _settings
     upgrade_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
-    return send_approval_email(email, "product_welcome.html", {
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": f"Your Zoiko Billing trial ends in {days_remaining} day{'s' if days_remaining != 1 else ''} — upgrade to keep access",
         "preheader": f"Your free trial expires on {trial_ends_at}. Upgrade now to avoid interruption.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
-        "trial_ends_at": trial_ends_at,
-        "days_remaining": days_remaining,
-        "upgrade_url": upgrade_url,
+        "notification_title": f"Your trial ends in {days_remaining} day{'s' if days_remaining != 1 else ''}",
+        "notification_body": f"The trial for {organization_name} ends on {trial_ends_at}. Upgrade to a paid plan to keep your data and avoid any interruption to billing.",
+        "primary_action_url": upgrade_url,
+        "primary_action_label": "Upgrade now",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
+        "fact_2_label": "Trial ends",
+        "fact_2_value": str(trial_ends_at),
         "template_id": "ZB-COM-003",
     }, db=db, organization_id=organization_id, event_name="commercial.trial_ending_soon")
 
@@ -1731,17 +1782,21 @@ def send_trial_expired_email(
     """
     from app.config import settings as _settings
     upgrade_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
-    return send_approval_email(email, "org_created.html", {
+    return send_approval_email(email, "account_notification.html", {
         "subject": "Your Zoiko Billing trial has ended — reactivate to restore access",
         "preheader": f"Your trial for {organization_name} has expired. Upgrade now to restore access.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
+        "notification_title": "Your trial has ended",
         # §5: the trial-expired email describes the 14-day READ/EXPORT-only
         # recovery window — the recipient has 14 days to view/export their
         # data or convert to a paid plan, NOT an immediate total lockout.
-        "recovery_days": "14",
-        "recovery_url": _settings.FRONTEND_URL.rstrip("/") + "/billing/plans",
-        "upgrade_url": upgrade_url,
+        "notification_body": f"The trial for {organization_name} has ended and the subscription is now suspended. You have 14 days to view and export your data, or reactivate a paid plan to restore full access.",
+        "primary_action_url": upgrade_url,
+        "primary_action_label": "Choose a plan",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
+        "fact_2_label": "Recovery window",
+        "fact_2_value": "14 days to view or export your data",
         "template_id": "ZB-COM-004",
     }, db=db, organization_id=organization_id, event_name="commercial.trial_expired")
 
@@ -1772,12 +1827,17 @@ def send_recovery_window_expired_email(
         except Exception:
             org = None
     support_url = _settings.FRONTEND_URL.rstrip("/") + "/support"
-    return send_approval_email(email, "org_created.html", {
+    org_label = organization_name or (org.organization_name if org else "your organization")
+    return send_approval_email(email, "account_notification.html", {
         "subject": "Your Zoiko Billing recovery window has ended",
-        "preheader": f"Your recovery window for {organization_name} has ended. Contact support to restore access.",
+        "preheader": f"Your recovery window for {org_label} has ended. Contact support to restore access.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name or (org.organization_name if org else "your organization"),
-        "support_url": support_url,
+        "notification_title": "Your recovery window has ended",
+        "notification_body": f"The recovery window for {org_label} has closed, so the subscription is now fully suspended and self-service restore is no longer available. Contact support and data follows your account's retention policy.",
+        "primary_action_url": support_url,
+        "primary_action_label": "Contact support",
+        "fact_1_label": "Organization",
+        "fact_1_value": org_label,
         "template_id": "ZB-COM-014",
     }, db=db, organization_id=organization_id, event_name="commercial.recovery_window_expired")
 
@@ -1800,13 +1860,18 @@ def send_trial_converted_email(
     from app.config import settings as _settings
 
     billing_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/plans"
-    return send_approval_email(email, "product_welcome.html", {
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": f"Your Zoiko Billing subscription is now on {plan_name}",
         "preheader": f"Your trial for {organization_name} has been converted to {plan_name}.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
-        "plan_name": plan_name,
-        "billing_url": billing_url,
+        "notification_title": f"You're now on {plan_name}",
+        "notification_body": f"The trial for {organization_name} has been converted to a paid subscription. Your plan is active and billing has started.",
+        "primary_action_url": billing_url,
+        "primary_action_label": "View billing",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
+        "fact_2_label": "Plan",
+        "fact_2_value": plan_name,
         "template_id": "ZB-COM-015",
     }, db=db, organization_id=organization_id, event_name="commercial.trial_converted")
 
@@ -1823,6 +1888,8 @@ def send_past_due_suspension_warning_email(
     organization_id=None,
     db=None,
     smtp_connection=None,
+    plan_name: str = "",
+    subscription_number: str = "",
 ) -> bool:
     """ZB-COM-011: Past-due suspension warning for paid subscriptions.
 
@@ -1833,6 +1900,12 @@ def send_past_due_suspension_warning_email(
     open_bulk_smtp_connection() to reuse it across the sweep's candidate
     loop instead of a new SMTP connection per subscription. Omit it
     (default) for a normal one-off send.
+
+    plan_name / subscription_number: past_due_notice.html renders both, so the
+    dunning sweep supplies them from the subscription it is suspending. They
+    are optional keyword arguments with empty defaults so existing callers keep
+    working; when omitted the template shows a neutral placeholder rather than
+    an unsubstituted {{token}}.
     """
     from app.config import settings as _settings
     pay_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/payments"
@@ -1840,7 +1913,9 @@ def send_past_due_suspension_warning_email(
         "subject": f"Action required: Your Zoiko Billing subscription is {days_overdue} days past due",
         "preheader": f"Pay {currency} {amount_due} now to avoid suspension of {organization_name}.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
+        "customer_name": organization_name,
+        "plan_name": plan_name or "Your subscription",
+        "subscription_number": subscription_number or "—",
         "days_overdue": days_overdue,
         "overdue_amount": amount_due,
         "currency": currency,
@@ -1861,12 +1936,19 @@ def send_report_ready_email(
     db=None,
 ) -> bool:
     """ZB-RPT-001: Scheduled financial or audit report is ready for download (T2)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    download_url = report_url or f"{_settings.FRONTEND_URL.rstrip('/')}/billing/reports"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Your scheduled report '{report_name}' is ready",
         "preheader": f"Download your {report_name} from Zoiko Billing.",
         "recipient_first_name": recipient_first_name or "there",
-        "report_name": report_name,
-        "report_url": report_url,
+        "notification_title": f"Your report '{report_name}' is ready",
+        "notification_body": "Your scheduled report has finished generating and is ready to download. Reports are retained for the period set in your billing preferences.",
+        "primary_action_url": download_url,
+        "primary_action_label": "Download report",
+        "fact_1_label": "Report",
+        "fact_1_value": report_name,
         "template_id": "ZB-RPT-001",
     }, db=db, organization_id=organization_id, event_name="reports.scheduled_ready")
 
@@ -1881,12 +1963,21 @@ def send_support_ticket_updated_email(
     db=None,
 ) -> bool:
     """ZB-SUP-001: Support ticket status update (T2)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    ticket_url = f"{_settings.FRONTEND_URL.rstrip('/')}/support/tickets"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Support Ticket #{ticket_id}: {subject} [{status}]",
         "preheader": f"Your support ticket #{ticket_id} has been updated.",
         "recipient_first_name": recipient_first_name or "there",
-        "ticket_id": ticket_id,
-        "status": status,
+        "notification_title": f"Support ticket #{ticket_id} was updated",
+        "notification_body": f"Your support ticket has moved to '{status}'. Our team will follow up if any action is needed from you.",
+        "primary_action_url": ticket_url,
+        "primary_action_label": "View ticket",
+        "fact_1_label": "Ticket",
+        "fact_1_value": f"#{ticket_id}",
+        "fact_2_label": "Status",
+        "fact_2_value": status,
         "template_id": "ZB-SUP-001",
     }, db=db, organization_id=organization_id, event_name="support.ticket_updated")
 
@@ -1900,12 +1991,20 @@ def send_service_maintenance_email(
     db=None,
 ) -> bool:
     """ZB-SUP-005: Service incident or scheduled maintenance notice (T2)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    status_url = f"{_settings.FRONTEND_URL.rstrip('/')}/status"
+    maintenance_window = f" (scheduled for {scheduled_time})" if scheduled_time else ""
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Maintenance Notice: {incident_title}",
         "preheader": f"Scheduled maintenance update for Zoiko Billing.",
         "recipient_first_name": recipient_first_name or "there",
-        "incident_title": incident_title,
-        "scheduled_time": scheduled_time,
+        "notification_title": "Scheduled maintenance notice",
+        "notification_body": f"We are performing maintenance to improve reliability. Affected window{maintenance_window}.",
+        "primary_action_url": status_url,
+        "primary_action_label": "View service status",
+        "fact_1_label": "Incident",
+        "fact_1_value": incident_title,
         "template_id": "ZB-SUP-005",
     }, db=db, organization_id=organization_id, event_name="support.service_maintenance")
 
@@ -1919,10 +2018,17 @@ def send_demo_request_received_email(
     db=None,
 ) -> bool:
     """ZB-ACQ-001: Demo request received confirmation (T3 — consent-aware)."""
-    return send_approval_email(email, "product_welcome.html", {
+    from app.config import settings as _settings
+
+    demo_url = f"{_settings.FRONTEND_URL.rstrip('/')}/demo"
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": "We received your Zoiko Billing demo request",
         "preheader": "Thank you for requesting a demo of Zoiko Billing.",
         "recipient_first_name": recipient_first_name or "there",
+        "notification_title": "We received your demo request",
+        "notification_body": "Thanks for your interest in Zoiko Billing. A member of our team will follow up shortly to schedule a walkthrough.",
+        "primary_action_url": demo_url,
+        "primary_action_label": "Explore the product",
         "template_id": "ZB-ACQ-001",
     }, db=db, organization_id=organization_id, event_name="commercial.demo_requested")
 
@@ -1935,11 +2041,19 @@ def send_marketing_newsletter_email(
     db=None,
 ) -> bool:
     """ZB-MKT-001: Promotional newsletter / product announcement (T4 — REQUIRES EXPLICIT OPT-IN CONSENT)."""
-    return send_approval_email(email, "product_welcome.html", {
+    from app.config import settings as _settings
+
+    updates_url = f"{_settings.FRONTEND_URL.rstrip('/')}/changelog"
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": f"Zoiko Billing Updates: {campaign_title}",
         "preheader": f"Latest features and updates: {campaign_title}.",
         "recipient_first_name": recipient_first_name or "there",
-        "campaign_title": campaign_title,
+        "notification_title": campaign_title,
+        "notification_body": "Here is the latest from the Zoiko Billing team. You are receiving this because you opted in to product updates.",
+        "primary_action_url": updates_url,
+        "primary_action_label": "See what's new",
+        "fact_1_label": "Campaign",
+        "fact_1_value": campaign_title,
         "template_id": "ZB-MKT-001",
     }, db=db, organization_id=organization_id, event_name="marketing.newsletter")
 
@@ -1951,10 +2065,17 @@ def send_preference_updated_email(
     db=None,
 ) -> bool:
     """ZB-PRF-001: Email preference updated confirmation (T3 — consent-aware)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    prefs_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/settings/notifications"
+    return send_approval_email(email, "account_notification.html", {
         "subject": "Your email communication preferences have been updated",
         "preheader": "Confirmation of your updated communication settings.",
         "recipient_first_name": recipient_first_name or "there",
+        "notification_title": "Your notification preferences were updated",
+        "notification_body": "We have saved the changes to your email communication preferences. Mandatory transactional messages such as invoices and payment receipts are sent regardless of these settings.",
+        "primary_action_url": prefs_url,
+        "primary_action_label": "Review preferences",
         "template_id": "ZB-PRF-001",
     }, db=db, organization_id=organization_id, event_name="preferences.updated")
 
@@ -1971,13 +2092,23 @@ def send_tenant_subscription_cancelled_email(
     db=None,
 ) -> bool:
     """ZB-GAP-001: Tenant subscription cancelled notification (T1)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    billing_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/subscriptions"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Subscription {subscription_number} Has Been Cancelled",
         "preheader": f"Your subscription {subscription_number} was cancelled ({initiated_by}).",
         "recipient_first_name": recipient_first_name or "there",
-        "subscription_number": subscription_number,
-        "cancellation_reason": cancellation_reason or "None provided",
-        "initiated_by": initiated_by,
+        "notification_title": f"Subscription {subscription_number} was cancelled",
+        "notification_body": "This subscription is no longer active. Any usage recorded after the cancellation date will not be billed.",
+        "primary_action_url": billing_url,
+        "primary_action_label": "Manage subscriptions",
+        "fact_1_label": "Subscription",
+        "fact_1_value": subscription_number,
+        "fact_2_label": "Reason",
+        "fact_2_value": cancellation_reason or "None provided",
+        "fact_3_label": "Cancelled by",
+        "fact_3_value": initiated_by,
         "template_id": "ZB-GAP-001",
     }, db=db, organization_id=organization_id, event_name="subscription.cancelled")
 
@@ -1991,16 +2122,22 @@ def send_invoice_voided_email(
     db=None,
 ) -> bool:
     """ZB-GAP-002: Customer invoice voided notification (T1)."""
-    return send_approval_email(email, "invoice_sent.html", {
+    from app.config import settings as _settings
+
+    cta_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/invoices"
+    # An empty reason is passed through as "": invoice_voided.html wraps the
+    # reason block in a conditional, so a blank value drops the whole block
+    # rather than rendering an empty "REASON" row.
+    return send_approval_email(email, "invoice_voided.html", {
         "subject": f"Notice: Invoice {invoice_number} Has Been Voided",
         "preheader": f"Invoice {invoice_number} is void and no longer requires payment.",
         "customer_name": customer_name,
         "recipient_first_name": customer_name,
         "invoice_number": invoice_number,
-        "reason": reason or "Voided",
+        "reason": reason or "",
+        "cta_url": cta_url,
         "template_id": "ZB-GAP-002",
     }, db=db, organization_id=organization_id, event_name="invoice.voided")
-
 
 def send_commercial_plan_changed_email(
     email: str,
@@ -2012,13 +2149,23 @@ def send_commercial_plan_changed_email(
     db=None,
 ) -> bool:
     """ZB-GAP-003: Commercial platform plan changed notification (T1)."""
-    return send_approval_email(email, "product_welcome.html", {
+    from app.config import settings as _settings
+
+    plans_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/plans"
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": f"Your Zoiko Billing Commercial Plan Has Been Updated ({plan_name})",
         "preheader": f"Plan change ({change_type}) applied for {organization_name}.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
-        "plan_name": plan_name,
-        "change_type": change_type,
+        "notification_title": f"Your plan is now {plan_name}",
+        "notification_body": f"A plan change has been applied to {organization_name}. Review the new entitlements and pricing for your subscription.",
+        "primary_action_url": plans_url,
+        "primary_action_label": "Review plan",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
+        "fact_2_label": "Plan",
+        "fact_2_value": plan_name,
+        "fact_3_label": "Change type",
+        "fact_3_value": change_type,
         "template_id": "ZB-GAP-003",
     }, db=db, organization_id=organization_id, event_name="commercial.plan_changed")
 
@@ -2032,12 +2179,21 @@ def send_plan_version_published_digest_email(
     db=None,
 ) -> bool:
     """ZB-GAP-004: New commercial plan version published digest (T1)."""
-    return send_approval_email(email, "product_welcome.html", {
+    from app.config import settings as _settings
+
+    catalog_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/plans"
+    return send_approval_email(email, "product_update_notification.html", {
         "subject": f"Notice: New Catalog Version Published for Plan '{plan_name}'",
         "preheader": f"Catalog version {version_number} published for plan {plan_name}.",
         "recipient_first_name": recipient_first_name or "there",
-        "plan_name": plan_name,
-        "version_number": version_number,
+        "notification_title": f"New catalog version for {plan_name}",
+        "notification_body": f"Catalog version {version_number} has been published for {plan_name}. Review the updated pricing and entitlements.",
+        "primary_action_url": catalog_url,
+        "primary_action_label": "View catalog",
+        "fact_1_label": "Plan",
+        "fact_1_value": plan_name,
+        "fact_2_label": "Version",
+        "fact_2_value": str(version_number),
         "template_id": "ZB-GAP-004",
     }, db=db, organization_id=organization_id, event_name="commercial.plan_version_published")
 
@@ -2052,13 +2208,23 @@ def send_entitlement_override_decided_email(
     db=None,
 ) -> bool:
     """ZB-GAP-005: Entitlement override decision notification (T1)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    overrides_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/entitlements/overrides"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Entitlement Override Request #{override_id} [{status.upper()}]",
         "preheader": f"Your entitlement override request has been {status}.",
         "recipient_first_name": recipient_first_name or "there",
-        "override_id": str(override_id),
-        "status": status,
-        "reason": reason or "No detail provided",
+        "notification_title": f"Entitlement override #{override_id} was {status}",
+        "notification_body": "The access change for this request has now been applied. Review the decision details below.",
+        "primary_action_url": overrides_url,
+        "primary_action_label": "Review override",
+        "fact_1_label": "Request",
+        "fact_1_value": f"#{override_id}",
+        "fact_2_label": "Decision",
+        "fact_2_value": status,
+        "fact_3_label": "Reason",
+        "fact_3_value": reason or "No detail provided",
         "template_id": "ZB-GAP-005",
     }, db=db, organization_id=organization_id, event_name="override.decided")
 
@@ -2073,13 +2239,23 @@ def send_org_lifecycle_changed_email(
     db=None,
 ) -> bool:
     """ZB-GAP-006: Manual organization lifecycle transition notification (T0)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    org_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/settings/organization"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Important Notice: Organization Status Updated to {target_state}",
         "preheader": f"Lifecycle status update for {organization_name}.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
-        "target_state": target_state,
-        "reason": reason or "Administrative update",
+        "notification_title": f"Organization status changed to {target_state}",
+        "notification_body": f"The status of {organization_name} was updated by an administrator. This may affect who can sign in and what data is accessible.",
+        "primary_action_url": org_url,
+        "primary_action_label": "View organization",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
+        "fact_2_label": "New status",
+        "fact_2_value": target_state,
+        "fact_3_label": "Reason",
+        "fact_3_value": reason or "Administrative update",
         "template_id": "ZB-GAP-006",
     }, db=db, organization_id=organization_id, event_name="organization.lifecycle_changed")
 
@@ -2093,12 +2269,21 @@ def send_user_role_changed_email(
     db=None,
 ) -> bool:
     """ZB-GAP-007: User role changed by admin notification (T1)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    team_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/settings/team"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Your Role in Zoiko Billing Has Been Updated to {new_role}",
         "preheader": f"An administrator updated your account role to {new_role}.",
         "recipient_first_name": recipient_first_name or "there",
-        "user_email": user_email,
-        "new_role": new_role,
+        "notification_title": f"Your role is now {new_role}",
+        "notification_body": "An administrator changed the role assigned to your account. Your new permissions apply immediately across Zoiko Billing.",
+        "primary_action_url": team_url,
+        "primary_action_label": "Review team settings",
+        "fact_1_label": "Account",
+        "fact_1_value": user_email,
+        "fact_2_label": "New role",
+        "fact_2_value": new_role,
         "template_id": "ZB-GAP-007",
     }, db=db, organization_id=organization_id, event_name="user.role_changed_by_admin")
 
@@ -2113,13 +2298,23 @@ def send_user_status_changed_email(
     db=None,
 ) -> bool:
     """ZB-GAP-008: User account status changed by admin notification (T0)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    team_url = f"{_settings.FRONTEND_URL.rstrip('/')}/billing/settings/team"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Security Alert: Your Zoiko Billing Account Status Is Now {status}",
         "preheader": f"Account status update for {user_email}.",
         "recipient_first_name": recipient_first_name or "there",
-        "user_email": user_email,
-        "status": status,
-        "reason": reason or "Administrative action",
+        "notification_title": f"Your account status is now {status}",
+        "notification_body": "An administrator changed the status of your account. If you did not expect this, contact your organization administrator immediately.",
+        "primary_action_url": team_url,
+        "primary_action_label": "Review team settings",
+        "fact_1_label": "Account",
+        "fact_1_value": user_email,
+        "fact_2_label": "New status",
+        "fact_2_value": status,
+        "fact_3_label": "Reason",
+        "fact_3_value": reason or "Administrative action",
         "template_id": "ZB-GAP-008",
     }, db=db, organization_id=organization_id, event_name="user.status_changed_by_admin")
 
@@ -2132,10 +2327,18 @@ def send_privileged_access_ended_email(
     db=None,
 ) -> bool:
     """ZB-GAP-009: Privileged support session exited notification (T0)."""
-    return send_approval_email(email, "org_created.html", {
+    from app.config import settings as _settings
+
+    support_url = f"{_settings.FRONTEND_URL.rstrip('/')}/support"
+    return send_approval_email(email, "account_notification.html", {
         "subject": f"Security Notice: Privileged support access session ended for {organization_name}",
         "preheader": "Support operator session has concluded.",
         "recipient_first_name": recipient_first_name or "there",
-        "organization_name": organization_name,
+        "notification_title": "Privileged support session ended",
+        "notification_body": "A support operator's elevated access session to your organization has concluded and the access has been revoked. No action is required from you.",
+        "primary_action_url": support_url,
+        "primary_action_label": "Contact support",
+        "fact_1_label": "Organization",
+        "fact_1_value": organization_name,
         "template_id": "ZB-GAP-009",
     }, db=db, organization_id=organization_id, event_name="support.privileged_access_exited")

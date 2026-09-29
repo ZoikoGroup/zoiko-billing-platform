@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="utf-8">
@@ -6,7 +6,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="color-scheme" content="light dark">
   <meta name="supported-color-schemes" content="light dark">
-  <title>Invoice {{invoice_number}} from {{company_name}}</title>
+  <title>Invoice {{invoice_number}} from {{company_name}} has been voided</title>
 
   <!--[if mso]>
   <noscript>
@@ -48,8 +48,8 @@
 
   <!-- Preheader -->
   <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">
-    Your invoice {{invoice_number}} from {{company_name}} is ready &mdash; {{currency}} {{balance_due}} due {{due_date}}.
-    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+    Invoice {{invoice_number}} from {{company_name}} has been voided and no longer requires payment.
+    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
   </div>
 
   <center style="width:100%; background-color:#F8FAFC;" class="dark-bg">
@@ -65,23 +65,27 @@
 
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="dark-card" style="background-color:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(15, 23, 42, 0.06); border:1px solid #E2E8F0;">
 
-            <!-- HEADER -->
+            <!-- HEADER: canonical block - real logo, always-visible brand text -->
             <tr>
               <td style="background-color:#2563EB; background-image:linear-gradient(135deg, #2563EB 0%, #7C3AED 100%); padding:28px 32px; border-radius:16px 16px 0 0;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td align="left" valign="middle" style="padding-right:16px;">
                       <img src="{{logo_url}}" alt="{{company_name}}" width="160" style="display:block; width:160px; max-width:160px; height:auto;" />
-                      <span style="display:block; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,0.85); margin-top:8px;">
-                        Zoiko Billing
-                      </span>
-                      <span style="display:block; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; color:rgba(255,255,255,0.75); margin-top:2px;">
-                        {{company_name}}
-                      </span>
                     </td>
                     <td align="right" valign="middle" class="hide-mobile">
-                      <span style="display:inline-block; background-color:rgba(255,255,255,0.18); color:#FFFFFF; font-size:11px; font-weight:700; padding:6px 14px; border-radius:20px; text-transform:uppercase; letter-spacing:0.6px;">
-                        {{status}}
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; display:inline-block; background-color:#DC2626; color:#FFFFFF; font-size:11px; font-weight:700; padding:6px 14px; border-radius:20px; text-transform:uppercase; letter-spacing:0.6px;">
+                        Voided
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding-top:12px;">
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:700; color:#FFFFFF; letter-spacing:-0.3px;">
+                        Zoiko Billing
+                      </span>
+                      <span style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:400; color:rgba(255,255,255,0.8);">
+                        &middot; {{company_name}}
                       </span>
                     </td>
                   </tr>
@@ -93,7 +97,7 @@
             <tr>
               <td style="padding:36px 32px 0 32px;" class="fluid-padding">
                 <h1 style="margin:0 0 16px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:22px; line-height:30px; font-weight:700; color:#1E293B; letter-spacing:-0.5px;" class="dark-text">
-                  Your invoice is ready
+                  Invoice {{invoice_number}} has been voided
                 </h1>
                 <p style="margin:0 0 8px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:16px; line-height:24px; font-weight:600; color:#1E293B;" class="dark-text">
                   Hi {{recipient_first_name}},
@@ -105,27 +109,27 @@
             <tr>
               <td style="padding:0 32px;" class="fluid-padding">
                 <p style="margin:0 0 24px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; line-height:24px; color:#475569;" class="dark-muted">
-                  {{company_name}} has recorded a new billing document event: invoice issued to
-                  {{customer_name}}. The authoritative document details, breakdown, and
-                  balance are outlined below.
+                  {{company_name}} has voided invoice {{invoice_number}} issued to
+                  {{customer_name}}. This invoice is no longer valid and
+                  <strong style="color:#B91C1C;">no payment is required or due.</strong>
                 </p>
               </td>
             </tr>
 
-            <!-- HIGHLIGHT BOX: AMOUNT DUE -->
+            <!-- HIGHLIGHT BOX: STATUS -->
             <tr>
               <td style="padding:0 32px 12px 32px;" class="fluid-padding">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC; border-radius:10px; border-left:4px solid #2563EB;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FEF2F2; border-radius:10px; border-left:4px solid #DC2626;">
                   <tr>
                     <td style="padding:20px 20px;">
-                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#64748B; margin-bottom:6px;">
-                        Amount Due
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#991B1B; margin-bottom:6px;">
+                        Document Status
                       </div>
-                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:26px; font-weight:800; color:#1E293B; line-height:1.2;" class="dark-text">
-                        {{currency}} {{balance_due}}
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:26px; font-weight:800; color:#7F1D1D; line-height:1.2;" class="dark-text">
+                        Voided
                       </div>
-                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px; font-weight:500; color:#EA580C; margin-top:6px;">
-                        Payment is due by {{due_date}}
+                      <div style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px; font-weight:500; color:#B91C1C; margin-top:6px;">
+                        No outstanding balance remains on this invoice.
                       </div>
                     </td>
                   </tr>
@@ -138,66 +142,29 @@
               <td style="padding:16px 32px 8px 32px;" class="fluid-padding">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px;">
                   <tr>
-                    <td style="padding-bottom:6px; color:#64748B; width:25%;">INVOICE NO.</td>
-                    <td style="padding-bottom:6px; color:#64748B; width:25%;">CUSTOMER</td>
-                    <td style="padding-bottom:6px; color:#64748B; width:25%;">ISSUE DATE</td>
-                    <td style="padding-bottom:6px; color:#64748B; width:25%;">DUE DATE</td>
+                    <td style="padding-bottom:6px; color:#64748B; width:50%;">INVOICE NO.</td>
+                    <td style="padding-bottom:6px; color:#64748B; width:50%;">CUSTOMER</td>
                   </tr>
                   <tr>
                     <td style="font-weight:600; color:#1E293B;" class="dark-text">{{invoice_number}}</td>
                     <td style="font-weight:600; color:#1E293B;" class="dark-text">{{customer_name}}</td>
-                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{issue_date}}</td>
-                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{due_date}}</td>
                   </tr>
                 </table>
-                {{#if reference}}
+                <!-- Reason is optional: callers that void without a reason omit it,
+                     and the block below is dropped entirely rather than rendering
+                     an empty "Reason:" row. -->
+                {{#if reason}}
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px; margin-top:10px;">
                   <tr>
-                    <td style="color:#64748B;">REFERENCE</td>
+                    <td style="color:#64748B;">REASON</td>
                   </tr>
                   <tr>
-                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{reference}}</td>
+                    <td style="font-weight:600; color:#1E293B;" class="dark-text">{{reason}}</td>
                   </tr>
                 </table>
                 {{/if}}
               </td>
             </tr>
-
-            <!-- LINE ITEMS -->
-            <tr>
-              <td style="padding:20px 32px 8px 32px;" class="fluid-padding">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:13px;">
-                  <tr style="border-bottom:2px solid #E2E8F0;">
-                    <td style="padding:10px 0; color:#64748B; font-weight:600; text-align:left;">ITEM</td>
-                    <td style="padding:10px 0; color:#64748B; font-weight:600; text-align:center;">QTY</td>
-                    <td style="padding:10px 0; color:#64748B; font-weight:600; text-align:right;">RATE</td>
-                    <td style="padding:10px 0; color:#64748B; font-weight:600; text-align:right;">AMOUNT</td>
-                  </tr>
-                  {{line_items_html}}
-                </table>
-              </td>
-            </tr>
-
-            <!-- TOTALS -->
-            <tr>
-              <td style="padding:8px 32px 12px 32px;" class="fluid-padding">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                  <tr><td align="right">
-                    <table cellpadding="0" cellspacing="0" role="presentation" style="min-width:260px;">
-                      {{totals_html}}
-                    </table>
-                  </td></tr>
-                </table>
-              </td>
-            </tr>
-
-            {{#if notes}}
-            <tr>
-              <td style="padding:0 32px 8px 32px;" class="fluid-padding">
-                <p style="font-size:13px; color:#57606a; line-height:1.6; margin:0; border-top:1px solid #eaeef2; padding-top:12px;"><strong style="color:#1E293B;">Notes:</strong> {{notes}}</p>
-              </td>
-            </tr>
-            {{/if}}
 
             <!-- PRIMARY CTA -->
             <tr>
@@ -208,12 +175,12 @@
                       <!--[if mso]>
                       <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{cta_url}}" style="height:50px;v-text-anchor:middle;width:280px;" arcsize="16%" strokecolor="#2563EB" fillcolor="#2563EB">
                       <w:anchorlock/>
-                      <center style="color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">View Invoice &amp; Payment Options</center>
+                      <center style="color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">View Invoice</center>
                       </v:roundrect>
                       <![endif]-->
                       <!--[if !mso]><!-->
                       <a href="{{cta_url}}" class="cta-button" target="_blank" style="display:inline-block; background-color:#2563EB; background-image:linear-gradient(135deg, #2563EB 0%, #7C3AED 100%); color:#FFFFFF; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; text-decoration:none; padding:15px 40px; border-radius:10px; box-shadow:0 4px 12px rgba(37, 99, 235, 0.3);">
-                        View Invoice &amp; Payment Options
+                        View Invoice
                       </a>
                       <!--<![endif]-->
                     </td>
@@ -222,13 +189,13 @@
               </td>
             </tr>
 
-            <!-- IMMUTABILITY NOTE -->
+            <!-- WHAT THIS MEANS -->
             <tr>
               <td style="padding:20px 32px 8px 32px;" class="fluid-padding">
                 <p style="margin:0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:12px; line-height:18px; color:#94A3B8; text-align:center;">
-                  This is the immutable, issued version of this invoice. If a correction,
-                  credit, debit note, void, or replacement is issued later, it will preserve
-                  this document's history and be sent as a separate notification.
+                  Any payment already collected against this invoice will be handled
+                  separately according to your agreed billing arrangements. The voided
+                  document remains in your billing history for your records.
                 </p>
               </td>
             </tr>
@@ -261,9 +228,6 @@
                 {{/if}}
                 {{#if billing_address}}
                 <p style="font-size:11.5px; color:#94A3B8; line-height:1.5; margin:2px 0 0; text-align:center;">{{billing_address}}</p>
-                {{/if}}
-                {{#if billing_phone}}
-                <p style="font-size:11.5px; color:#94A3B8; line-height:1.5; margin:2px 0 0; text-align:center;">{{billing_phone}}</p>
                 {{/if}}
                 <p style="margin:12px 0 4px 0; font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; line-height:16px; color:#CBD5E1; text-align:center;">
                   Mandatory transactional message &mdash; not affected by marketing preferences.
