@@ -5,16 +5,31 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege for the job's GITHUB_TOKEN: it is only used by the VM to
+# read (fetch) this repository over HTTPS during the deploy.
+permissions:
+  contents: read
+
+# Never run two deploys against the VM at once (they share checkouts and the
+# live html dir); a newer push waits for the in-flight deploy to finish.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: SSH and deploy backend + frontend
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_REPO: ${{ github.repository }}
         with:
           host: ${{ secrets.GCP_SSH_HOST }}
           username: ${{ secrets.GCP_SSH_USER }}
           key: ${{ secrets.GCP_SSH_KEY }}
+          envs: DEPLOY_GIT_TOKEN,DEPLOY_REPO
           script: |
             # Fail fast on any error so a bad install/build is never reported as a success.
             set -euo pipefail
@@ -24,9 +39,6 @@ jobs:
             # the HTTP /ready probe (e.g. 8000 or 8001). If empty, backend health is
             # verified authoritatively via `systemctl is-active`.
             BACKEND_HEALTH_PORT="${{ vars.BACKEND_HEALTH_PORT }}"
-            # SSH remote used to sync the deployment checkouts; defaults to the
-            # backend alias. Override with a GIT_DEPLOY_REMOTE repo variable.
-            GIT_DEPLOY_REMOTE="${{ vars.GIT_DEPLOY_REMOTE }}"
 
             # Bounded retry for transient install/build failures (registry/network/OOM).
             # Final failure still aborts the deployment; it never suppresses errors.
@@ -53,31 +65,42 @@ jobs:
             # log any drift for the record, then force them back onto it and verify the
             # commit that lands is the one actually intended.
             #
-            # The backend checkout's origin is the SSH host alias
-            # "github.com-billingbackend" (configured in the VM's ~/.ssh/config with a
-            # deploy key), which is the only URL that can authenticate from the server.
-            # The frontend checkout was cloned with the plain "git@github.com" URL and
-            # has no usable key for it, so its fetch fails with "Permission denied
-            # (publickey)".  Normalize every checkout to that working alias before
-            # fetching so both directories self-heal regardless of how they were
-            # originally cloned.  Override via a GIT_DEPLOY_REMOTE repo variable if the
-            # host alias ever changes.
-            GIT_DEPLOY_REMOTE="${GIT_DEPLOY_REMOTE:-github.com-billingbackend:ZoikoGroup/zoiko-billing-platform}"
+            # Authentication: fetch over HTTPS with this workflow run's short-lived,
+            # read-only GITHUB_TOKEN rather than an SSH deploy key stored on the VM.
+            # Both SSH routes have broken in production ("git@github.com: Permission
+            # denied (publickey)") - first the frontend checkout's plain
+            # git@github.com origin, then the "github.com-billingbackend" alias key
+            # itself - and there is no way to repair a VM-side key from CI. The token
+            # is passed to git only via GIT_CONFIG_* env vars scoped to the single
+            # fetch command, so it is never written to .git/config, never in git's
+            # argv, and expires when this job ends. The checkout's configured origin
+            # is left untouched (it is no longer used by the deploy).
+            : "${DEPLOY_GIT_TOKEN:?DEPLOY_GIT_TOKEN not provided to deploy script}"
+            : "${DEPLOY_REPO:?DEPLOY_REPO not provided to deploy script}"
+            DEPLOY_FETCH_URL="https://github.com/${DEPLOY_REPO}.git"
+            DEPLOY_AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$DEPLOY_GIT_TOKEN" | base64 | tr -d '\n')"
+            git_fetch_main() {
+              # GIT_CONFIG_COUNT needs git >= 2.31; older git falls back to -c.
+              if ! git version | awk '{split($3,v,"."); exit !(v[1]>2 || (v[1]==2 && v[2]>=31))}'; then
+                GIT_TERMINAL_PROMPT=0 git -c "http.https://github.com/.extraheader=$DEPLOY_AUTH_HEADER" \
+                  fetch --no-tags "$DEPLOY_FETCH_URL" "+refs/heads/main:refs/remotes/origin/main"
+                return
+              fi
+              GIT_TERMINAL_PROMPT=0 \
+              GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+              GIT_CONFIG_VALUE_0="$DEPLOY_AUTH_HEADER" \
+                git fetch --no-tags "$DEPLOY_FETCH_URL" "+refs/heads/main:refs/remotes/origin/main"
+            }
             git_sync_to_main() {
               echo "HEAD before sync: $(git rev-parse HEAD)"
-              local configured
-              configured="$(git remote get-url origin 2>/dev/null || echo 'none')"
-              if [ "$configured" != "$GIT_DEPLOY_REMOTE" ]; then
-                echo "::notice::origin is '$configured' - pointing deployment checkout at '$GIT_DEPLOY_REMOTE'"
-                git remote set-url origin "$GIT_DEPLOY_REMOTE"
-              fi
               local drift
               drift="$(git status --porcelain)"
               if [ -n "$drift" ]; then
                 echo "::warning::Uncommitted drift in $(pwd) before sync (will be discarded):"
                 echo "$drift"
               fi
-              git fetch origin main
+              retry 2 git_fetch_main
               git reset --hard origin/main
               local head origin_head
               head="$(git rev-parse HEAD)"
