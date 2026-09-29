@@ -117,6 +117,34 @@ class AttentionService:
                     )
                     existing.severity = new_severity
                     self._set_sla_deadlines(existing)
+                    # ── ZB-OPS-007: Integration failure threshold crossed ──────
+                    # Only fire for items whose source looks like an integration
+                    # monitor.  Non-blocking — any error is logged and swallowed.
+                    if "integration" in (source or "").lower():
+                        try:
+                            from app.modules.auth.models import User, UserRole
+                            from app.services.email_service import send_integration_failure_alert_email
+                            sa = (
+                                self.db.query(User)
+                                .filter(User.role == UserRole.SUPER_ADMIN, User.is_active.is_(True))
+                                .first()
+                            )
+                            if sa and sa.email:
+                                send_integration_failure_alert_email(
+                                    email=sa.email,
+                                    recipient_first_name=sa.first_name or "there",
+                                    integration_name=title,
+                                    failure_count=existing.occurrence_count,
+                                    attention_item_id=existing.id,
+                                    organization_id=existing.organization_id,
+                                    db=self.db,
+                                )
+                        except Exception as _ops007_err:
+                            logger.warning(
+                                "ZB-OPS-007 integration failure alert failed (non-blocking): %s",
+                                _ops007_err,
+                            )
+                    # ── end ZB-OPS-007 ───────────────────────────────────────
             self.db.flush()
             return existing
 

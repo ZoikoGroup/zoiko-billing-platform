@@ -1943,6 +1943,7 @@ def send_report_ready_email(
         "subject": f"Your scheduled report '{report_name}' is ready",
         "preheader": f"Download your {report_name} from Zoiko Billing.",
         "recipient_first_name": recipient_first_name or "there",
+        "report_name": report_name,
         "notification_title": f"Your report '{report_name}' is ready",
         "notification_body": "Your scheduled report has finished generating and is ready to download. Reports are retained for the period set in your billing preferences.",
         "primary_action_url": download_url,
@@ -1974,6 +1975,7 @@ def send_support_ticket_updated_email(
         "notification_body": f"Your support ticket has moved to '{status}'. Our team will follow up if any action is needed from you.",
         "primary_action_url": ticket_url,
         "primary_action_label": "View ticket",
+        "ticket_id": ticket_id,
         "fact_1_label": "Ticket",
         "fact_1_value": f"#{ticket_id}",
         "fact_2_label": "Status",
@@ -1999,6 +2001,8 @@ def send_service_maintenance_email(
         "subject": f"Maintenance Notice: {incident_title}",
         "preheader": f"Scheduled maintenance update for Zoiko Billing.",
         "recipient_first_name": recipient_first_name or "there",
+        "incident_title": incident_title,
+        "incident_public_title": incident_title,
         "notification_title": "Scheduled maintenance notice",
         "notification_body": f"We are performing maintenance to improve reliability. Affected window{maintenance_window}.",
         "primary_action_url": status_url,
@@ -2048,6 +2052,7 @@ def send_marketing_newsletter_email(
         "subject": f"Zoiko Billing Updates: {campaign_title}",
         "preheader": f"Latest features and updates: {campaign_title}.",
         "recipient_first_name": recipient_first_name or "there",
+        "campaign_title": campaign_title,
         "notification_title": campaign_title,
         "notification_body": "Here is the latest from the Zoiko Billing team. You are receiving this because you opted in to product updates.",
         "primary_action_url": updates_url,
@@ -2099,6 +2104,9 @@ def send_tenant_subscription_cancelled_email(
         "subject": f"Subscription {subscription_number} Has Been Cancelled",
         "preheader": f"Your subscription {subscription_number} was cancelled ({initiated_by}).",
         "recipient_first_name": recipient_first_name or "there",
+        "subscription_number": subscription_number,
+        "cancellation_reason": cancellation_reason,
+        "initiated_by": initiated_by,
         "notification_title": f"Subscription {subscription_number} was cancelled",
         "notification_body": "This subscription is no longer active. Any usage recorded after the cancellation date will not be billed.",
         "primary_action_url": billing_url,
@@ -2342,3 +2350,142 @@ def send_privileged_access_ended_email(
         "fact_1_value": organization_name,
         "template_id": "ZB-GAP-009",
     }, db=db, organization_id=organization_id, event_name="support.privileged_access_exited")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ZB-ONB-011  First invoice issued milestone
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_first_invoice_milestone_email(
+    email: str,
+    recipient_first_name: str,
+    organization_name: str,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-ONB-011: Fires once when an organisation sends its first invoice (T1 lifecycle milestone)."""
+    from app.config import settings as _settings
+
+    dashboard_url = f"{_settings.FRONTEND_URL.rstrip('/')}/invoices"
+    return send_approval_email(email, "account_notification.html", {
+        "subject": f"Congratulations — {organization_name} just sent its first invoice",
+        "preheader": "Your first invoice is out — here's what to watch next.",
+        "recipient_first_name": recipient_first_name or "there",
+        "organization_name": organization_name,
+        "notification_title": "Your first invoice has been sent 🎉",
+        "notification_body": (
+            f"Great news, {recipient_first_name or 'there'}! {organization_name} has just sent its very first invoice. "
+            "You can track payment status, send reminders, and manage all your invoices from the Invoices dashboard."
+        ),
+        "primary_action_url": dashboard_url,
+        "primary_action_label": "View invoices",
+        "template_id": "ZB-ONB-011",
+    }, db=db, organization_id=organization_id, event_name="onboarding.first_invoice_issued")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ZB-PAY-021  Reconciliation exceptions detected
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_reconciliation_exception_email(
+    email: str,
+    recipient_first_name: str,
+    exception_count: int,
+    run_id: int,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-PAY-021: Fires when a reconciliation run surfaces one or more exceptions (T1 ops alert)."""
+    from app.config import settings as _settings
+
+    recon_url = f"{_settings.FRONTEND_URL.rstrip('/')}/super-admin/reconciliation/{run_id}"
+    return send_approval_email(email, "account_notification.html", {
+        "subject": f"Action required: {exception_count} reconciliation exception(s) detected",
+        "preheader": f"{exception_count} payment reconciliation exception(s) need your review.",
+        "recipient_first_name": recipient_first_name or "there",
+        "notification_title": f"{exception_count} reconciliation exception(s) detected",
+        "notification_body": (
+            f"The latest reconciliation run (Run #{run_id}) has flagged {exception_count} exception(s) "
+            "that require manual review. These may indicate mismatches between your internal ledger "
+            "and the payment processor records."
+        ),
+        "primary_action_url": recon_url,
+        "primary_action_label": "Review exceptions",
+        "fact_1_label": "Run ID",
+        "fact_1_value": str(run_id),
+        "fact_2_label": "Exceptions",
+        "fact_2_value": str(exception_count),
+        "template_id": "ZB-PAY-021",
+    }, db=db, organization_id=organization_id, event_name="reconciliation.exceptions_detected")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ZB-PAY-022  Reconciliation run completed (clean)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_reconciliation_completed_email(
+    email: str,
+    recipient_first_name: str,
+    run_id: int,
+    records_inspected: int = 0,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-PAY-022: Fires when a reconciliation run completes with zero exceptions (T1 ops confirmation)."""
+    from app.config import settings as _settings
+
+    recon_url = f"{_settings.FRONTEND_URL.rstrip('/')}/super-admin/reconciliation/{run_id}"
+    return send_approval_email(email, "account_notification.html", {
+        "subject": f"Reconciliation run #{run_id} completed — no exceptions found",
+        "preheader": "All payment records are balanced. No action required.",
+        "recipient_first_name": recipient_first_name or "there",
+        "notification_title": "Reconciliation completed successfully",
+        "notification_body": (
+            f"Reconciliation run #{run_id} has completed. {records_inspected} record(s) were inspected "
+            "and no discrepancies were found between your internal ledger and payment processor records."
+        ),
+        "primary_action_url": recon_url,
+        "primary_action_label": "View run report",
+        "fact_1_label": "Run ID",
+        "fact_1_value": str(run_id),
+        "fact_2_label": "Records inspected",
+        "fact_2_value": str(records_inspected),
+        "template_id": "ZB-PAY-022",
+    }, db=db, organization_id=organization_id, event_name="reconciliation.run_completed")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ZB-OPS-007  Integration failure threshold crossed
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_integration_failure_alert_email(
+    email: str,
+    recipient_first_name: str,
+    integration_name: str,
+    failure_count: int,
+    attention_item_id: int,
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-OPS-007: Fires when an integration's failure count crosses the escalation threshold (T1 ops alert — internal ops channel)."""
+    from app.config import settings as _settings
+
+    ops_url = f"{_settings.FRONTEND_URL.rstrip('/')}/super-admin/attention/{attention_item_id}"
+    return send_approval_email(email, "account_notification.html", {
+        "subject": f"Integration alert: {integration_name} has exceeded the failure threshold",
+        "preheader": f"{integration_name} has failed {failure_count} time(s) — immediate attention required.",
+        "recipient_first_name": recipient_first_name or "there",
+        "notification_title": f"Integration failure threshold crossed: {integration_name}",
+        "notification_body": (
+            f"The integration '{integration_name}' has recorded {failure_count} consecutive failure(s), "
+            "crossing the escalation threshold. This item has been escalated in the Platform Operations "
+            "dashboard and requires immediate review."
+        ),
+        "primary_action_url": ops_url,
+        "primary_action_label": "Review in Ops dashboard",
+        "fact_1_label": "Integration",
+        "fact_1_value": integration_name,
+        "fact_2_label": "Failure count",
+        "fact_2_value": str(failure_count),
+        "template_id": "ZB-OPS-007",
+    }, db=db, organization_id=organization_id, event_name="ops.integration_failure_threshold_crossed")
