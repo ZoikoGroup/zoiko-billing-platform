@@ -220,8 +220,8 @@ TEMPLATE_NAME_TO_ID = {
     "write_off_executed.html": "ZB-COL-011",
     "org_created.html": "ZB-ORG-001",
     "product_welcome.html": "ZB-ONB-001",
-    "org_admin_invite.html": "ZB-COM-002",
-    "org_admin_password_reset.html": "ZB-COM-003",
+    "org_admin_invite.html": "ZB-ORG-002",
+    "org_admin_password_reset.html": "ZB-SEC-003",
     "registration_received.html": "ZB-ORG-002",
     "platform_quote_sent.html": "ZB-CHG-008",
     "contract_activated.html": "ZB-CON-001",
@@ -888,6 +888,8 @@ def send_user_invite_email(
         "subject": "You have been invited to {{workspace_name}}",
         "recipient_name": first_name,
         "first_name": first_name,
+        "recipient_first_name": first_name,
+        "organization_name": workspace,
         "inviter_name": invited_by or "your administrator",
         "workspace_name": workspace,
         "expires_at_local": "24 hours",
@@ -895,6 +897,7 @@ def send_user_invite_email(
         "invite_link": invite_link,
         "action_url": invite_link,
         "support_email": "",
+        "template_id": "ZB-ORG-002",
     }, db=db, organization_id=organization_id, from_display_name_override=SECURITY_SENDER,
       # Every invitation send (first invite AND each resend) is a distinct
       # occurrence: without an event_id the dedupe key collapses to

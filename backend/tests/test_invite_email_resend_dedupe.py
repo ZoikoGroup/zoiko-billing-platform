@@ -175,7 +175,7 @@ class TestInviteSendAndResendAreNotMisDeduped:
         logs = _audit_logs(db_session, HERE)
         assert len(logs) == 1
         assert logs[0].status == "SENT"
-        assert logs[0].template_id == "ZB-COM-002"
+        assert logs[0].template_id == "ZB-ORG-002"
         assert len(FakeSMTP.sent_messages) == 1
 
     def test_resend_after_successful_send_is_delivered_not_marked_duplicate(self, db_session):
