@@ -41,6 +41,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LogOut,
+  Link2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -168,6 +169,7 @@ const NAV_SECTIONS = [
       { label: "Promise to Pay", href: "/billing/promise-to-pay", icon: HandCoins },
       { label: "Collections Dashboard", href: "/billing/collections/dashboard", icon: LayoutDashboard },
       { label: "Reports", href: "/billing/payments/reports", icon: FileText },
+      { label: "Stripe Connect", href: "/billing/payments/stripe-connect", icon: Link2 },
       { label: "Settings", href: "/billing/payments/settings", icon: SlidersHorizontal },
     ],
   },

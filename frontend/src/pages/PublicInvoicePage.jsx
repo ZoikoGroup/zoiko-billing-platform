@@ -1,7 +1,15 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { publicInvoiceApi } from "../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../utils/billing-helpers";
+
+// After a successful Stripe Checkout redirect, the webhook (not this page) is
+// the source of truth for money movement. We poll the public invoice a few
+// times in case the browser redirect wins the race against webhook delivery,
+// so the customer sees a real "confirmed" state instead of a stale "unpaid"
+// one flashing right after they paid. Mirrors PaymentSuccessPage's approach.
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 6;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 function fmtCcy(v, currency) {
@@ -70,23 +78,6 @@ function InfoRow({ label, value, mono }) {
   );
 }
 
-/* Payment method tile — Stripe placeholder */
-function PaymentMethodTile({ icon, label, sublabel, disabled, onClick }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={classNames("pub-pay-tile", disabled && "pub-pay-tile--disabled")}
-    >
-      <span className="pub-pay-tile-icon">{icon}</span>
-      <span className="pub-pay-tile-label">{label}</span>
-      {sublabel && <span className="pub-pay-tile-sub">{sublabel}</span>}
-      {disabled && <span className="pub-pay-tile-soon">Coming soon</span>}
-    </button>
-  );
-}
-
 /* Progress bar for paid vs outstanding */
 function PaymentProgress({ paid, total }) {
   const pct = total > 0 ? Math.min(100, (paid / total) * 100) : 0;
@@ -104,39 +95,66 @@ function PaymentProgress({ paid, total }) {
 }
 
 /* ─── main page ──────────────────────────────────────────────────────────── */
+function isInvoiceSettled(data) {
+  const status = (data?.status || "").toLowerCase();
+  if (status === "paid") return true;
+  const raw = String(data?.balance_due ?? data?.amount_due ?? "0").replace(/,/g, "").trim();
+  const bal = parseFloat(raw);
+  return !isNaN(bal) && bal <= 0.005;
+}
+
 export default function PublicInvoicePage() {
   const { id: rawId } = useParams();
+  const [searchParams] = useSearchParams();
+  const paidParam      = searchParams.get("paid") === "true";
+  const cancelledParam = searchParams.get("cancelled") === "true";
+
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [invoice, setInvoice]   = useState(null);
   const [items, setItems]       = useState([]);
   const [company, setCompany]   = useState(null);
   const [payment, setPayment]   = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError]     = useState(null);
+
+  // Only relevant right after a Stripe Checkout redirect (?paid=true): true
+  // while we're still polling for the webhook to land, so we can show a
+  // "Confirming your payment..." state instead of a stale "unpaid" invoice.
+  const [confirmingPayment, setConfirmingPayment] = useState(paidParam);
+  const [dismissedCancelled, setDismissedCancelled] = useState(false);
+  const pollCountRef = useRef(0);
+
   const handleCheckout = useCallback(async () => {
+    setCheckoutError(null);
+    setCheckoutLoading(true);
     try {
       const successUrl = `${window.location.origin}/invoice/${rawId}?paid=true`;
-      const cancelUrl = `${window.location.origin}/invoice/${rawId}`;
+      const cancelUrl = `${window.location.origin}/invoice/${rawId}?cancelled=true`;
       const result = await publicInvoiceApi.createCheckout(rawId, successUrl, cancelUrl);
       if (result?.checkout_url) {
         window.location.href = result.checkout_url;
+        return;
       } else if (result?.configured === false) {
-        alert(result.message || "Online payments are not enabled yet. Please contact the sender.");
+        setCheckoutError(result.message || "Online payments are not enabled yet. Please contact the sender.");
       }
     } catch (err) {
-      alert(err?.detail || err?.message || "Unable to initiate checkout. Please try again later.");
+      setCheckoutError(err?.detail || err?.message || "Unable to initiate checkout. Please try again later.");
+    } finally {
+      setCheckoutLoading(false);
     }
   }, [rawId]);
 
-  const [payMethod, setPayMethod] = useState(null); // "card" | "bank" | "upi"
-
-  const loadInvoice = useCallback(async () => {
+  const loadInvoice = useCallback(async ({ silent = false } = {}) => {
     if (!rawId) {
       setError("Invalid invoice link. Please check the URL and try again.");
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const token = rawId;
       const data = await publicInvoiceApi.getView(token);
@@ -144,14 +162,34 @@ export default function PublicInvoicePage() {
       setItems(Array.isArray(data.items) ? data.items : []);
       setCompany(data.company || null);
       setPayment(data.payment || null);
-    } catch (err) {
-      setError(err?.detail || err?.message || "Unable to load invoice. The link may have expired or is invalid.");
-    } finally {
-      setLoading(false);
-    }
-  }, [rawId]);
 
-  useEffect(() => { loadInvoice(); }, [loadInvoice]);
+      if (paidParam) {
+        if (isInvoiceSettled(data)) {
+          setConfirmingPayment(false);
+        } else {
+          pollCountRef.current += 1;
+          if (pollCountRef.current < MAX_POLLS) {
+            setTimeout(() => loadInvoice({ silent: true }), POLL_INTERVAL_MS);
+          } else {
+            // Gave it a fair chance — stop the spinner and fall back to the
+            // normal invoice view with a "still processing" note; the
+            // webhook remains the source of truth and will settle this
+            // shortly even if we stop polling here.
+            setConfirmingPayment(false);
+          }
+        }
+      }
+    } catch (err) {
+      if (!silent) {
+        setError(err?.detail || err?.message || "Unable to load invoice. The link may have expired or is invalid.");
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawId, paidParam]);
+
+  useEffect(() => { loadInvoice(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* derived values — public API returns amounts as formatted strings */
   const parseMoney = (v) => {
@@ -164,12 +202,17 @@ export default function PublicInvoicePage() {
   const customer = invoice?.customer || {};
   const currency     = invoice?.currency;
   const status       = (invoice?.status || "").toLowerCase();
-  const isPaid       = status === "paid";
   const isCancelled  = ["cancelled", "void", "written_off"].includes(status);
   const invoiceTotal = parseMoney(invoice?.total_amount ?? invoice?.amount ?? 0);
   const balanceDue   = parseMoney(invoice?.balance_due ?? invoice?.amount_due ?? invoiceTotal);
   const paidAmount   = Math.max(0, invoiceTotal - balanceDue);
   const isOverdue    = status === "overdue";
+  // Once we've returned from a successful Stripe Checkout redirect, treat a
+  // near-zero balance as paid even a beat before the webhook flips the
+  // invoice's own status — the polling above already gave the webhook a
+  // window to land, so this just avoids one last stale render.
+  const isPaid       = status === "paid" || (paidParam && !confirmingPayment && balanceDue <= 0.005);
+  const stillConfirmingNote = paidParam && !confirmingPayment && !isPaid;
   const canPay       = !isPaid && !isCancelled && balanceDue > 0.005;
 
   /* ── loading ── */
@@ -193,6 +236,19 @@ export default function PublicInvoicePage() {
     </div>
   );
 
+  /* ── confirming payment (just returned from Stripe Checkout) ── */
+  if (confirmingPayment) return (
+    <div className="pub-root">
+      <div className="pub-confirm-card">
+        <div className="pub-spinner pub-confirm-spinner" />
+        <h1 className="pub-confirm-title">Confirming Your Payment…</h1>
+        <p className="pub-confirm-msg">
+          This usually takes just a few seconds while we confirm with Stripe. Please don't close this page.
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="pub-root">
       {/* ─── top strip ─── */}
@@ -210,6 +266,29 @@ export default function PublicInvoicePage() {
       </div>
 
       <div className="pub-content">
+
+        {/* ─── stripe redirect notices ─── */}
+        {stillConfirmingNote && (
+          <div className="pub-notice pub-notice--info">
+            <span className="pub-notice-icon">⏳</span>
+            <div>
+              <p className="pub-notice-title">Still confirming your payment</p>
+              <p className="pub-notice-msg">
+                This can occasionally take a minute. Refresh this page shortly, or check your email for a confirmation.
+              </p>
+            </div>
+          </div>
+        )}
+        {cancelledParam && !dismissedCancelled && !isPaid && (
+          <div className="pub-notice pub-notice--warn">
+            <span className="pub-notice-icon">⚠</span>
+            <div>
+              <p className="pub-notice-title">Payment cancelled</p>
+              <p className="pub-notice-msg">You cancelled the checkout before completing payment. No charge was made — you can try again below.</p>
+            </div>
+            <button type="button" className="pub-notice-dismiss" onClick={() => setDismissedCancelled(true)} aria-label="Dismiss">✕</button>
+          </div>
+        )}
 
         {/* ─── invoice hero ─── */}
         <div className="pub-hero">
@@ -463,67 +542,36 @@ export default function PublicInvoicePage() {
                 </div>
               </div>
 
-              <div className="pub-pay-methods-title">Choose Payment Method</div>
-              <div className="pub-pay-tiles">
-                <PaymentMethodTile
-                  icon="💳"
-                  label="Credit / Debit Card"
-                  sublabel="Visa, Mastercard, Amex"
-                  onClick={() => setPayMethod("card")}
-                />
-                <PaymentMethodTile
-                  icon="🏦"
-                  label="Bank Transfer"
-                  sublabel="ACH / SEPA / NEFT"
-                  disabled
-                />
-                <PaymentMethodTile
-                  icon="📱"
-                  label="UPI / Wallets"
-                  sublabel="GPay, PhonePe, Paytm"
-                  disabled
-                />
-                <PaymentMethodTile
-                  icon="🔗"
-                  label="Crypto"
-                  sublabel="BTC, ETH, USDC"
-                  disabled
-                />
-              </div>
+              <p className="pub-stripe-hosted-note">
+                You'll be taken to Stripe's secure hosted checkout page to complete your
+                payment. Your card details are entered directly on Stripe and are never
+                seen or stored by us.
+              </p>
 
-              {payMethod === "card" && (
-                <div className="pub-stripe-form">
-                  <div className="pub-stripe-header">
-                    <span className="pub-stripe-title">Checkout</span>
-                    <div className="pub-stripe-brands">
-                      <span className="pub-card-chip">VISA</span>
-                      <span className="pub-card-chip">MC</span>
-                      <span className="pub-card-chip">AMEX</span>
-                    </div>
-                  </div>
-
-                  <p className="pub-stripe-hosted-note">
-                    You will be taken to Stripe's secure checkout page to complete your
-                    payment. Your card details are never stored on our servers.
-                  </p>
-
-                  <button
-                    type="button"
-                    className="pub-pay-btn"
-                    onClick={handleCheckout}
-                  >
-                    <span className="pub-pay-btn-icon">🔒</span>
-                    Pay {fmtCcy(balanceDue, currency)} Securely
-                  </button>
-
-                  <p className="pub-pay-terms">
-                    By clicking "Pay Securely", you agree to our&nbsp;
-                    <span className="pub-pay-link">Terms of Service</span> and&nbsp;
-                    <span className="pub-pay-link">Privacy Policy</span>.
-                    Payments are processed securely by Stripe.
-                  </p>
-                </div>
+              {checkoutError && (
+                <p className="pub-checkout-error">{checkoutError}</p>
               )}
+
+              <button
+                type="button"
+                className="pub-pay-btn"
+                onClick={handleCheckout}
+                disabled={checkoutLoading}
+              >
+                {checkoutLoading ? (
+                  <span className="pub-pay-btn-spinner" />
+                ) : (
+                  <span className="pub-pay-btn-icon">🔒</span>
+                )}
+                {checkoutLoading ? "Redirecting to Stripe…" : `Pay ${fmtCcy(balanceDue, currency)} with Stripe`}
+              </button>
+
+              <p className="pub-pay-terms">
+                By clicking "Pay with Stripe", you agree to our&nbsp;
+                <span className="pub-pay-link">Terms of Service</span> and&nbsp;
+                <span className="pub-pay-link">Privacy Policy</span>.
+                Payments are processed securely by Stripe.
+              </p>
 
               <div className="pub-pay-footer">
                 <div className="pub-pay-badges">
@@ -812,43 +860,6 @@ export default function PublicInvoicePage() {
         }
         .pub-pay-secure-icon { font-size: 1rem; }
 
-        .pub-pay-methods-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; }
-        .pub-pay-tiles { display: grid; grid-template-columns: repeat(4,1fr); gap: 0.75rem; }
-        @media(max-width:640px){ .pub-pay-tiles { grid-template-columns: repeat(2,1fr); } }
-
-        .pub-pay-tile {
-          display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
-          padding: 1.25rem 0.75rem; border-radius: 0.875rem; cursor: pointer;
-          background: rgba(255,255,255,0.04); border: 2px solid rgba(255,255,255,0.08);
-          transition: all 0.2s; text-align: center;
-          color: #e2e8f0;
-        }
-        .pub-pay-tile:hover:not(:disabled) {
-          background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.4);
-          transform: translateY(-2px);
-          box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-        }
-        .pub-pay-tile--disabled { opacity: 0.5; cursor: not-allowed; }
-        .pub-pay-tile-icon  { font-size: 1.5rem; }
-        .pub-pay-tile-label { font-size: 0.8rem; font-weight: 700; color: #f1f5f9; }
-        .pub-pay-tile-sub   { font-size: 0.68rem; color: #64748b; }
-        .pub-pay-tile-soon  { font-size: 0.62rem; padding: 0.1rem 0.4rem; background: rgba(100,116,139,0.2); border-radius: 4px; color: #64748b; }
-
-        /* ── stripe form placeholder ── */
-        .pub-stripe-form {
-          background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 1rem; padding: 1.5rem;
-          display: flex; flex-direction: column; gap: 1.25rem;
-        }
-        .pub-stripe-header { display: flex; align-items: center; justify-content: space-between; }
-        .pub-stripe-title  { font-size: 0.9rem; font-weight: 700; color: #f8fafc; }
-        .pub-stripe-brands { display: flex; gap: 0.4rem; }
-        .pub-card-chip {
-          font-size: 0.62rem; font-weight: 800; padding: 0.2rem 0.5rem;
-          background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 4px; color: #94a3b8; letter-spacing: 0.05em;
-        }
-
         .pub-stripe-hosted-note {
           padding: 0.75rem 1rem; border-radius: 0.6rem;
           background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.18);
@@ -864,9 +875,21 @@ export default function PublicInvoicePage() {
           color: #0f172a; transition: all 0.2s;
           box-shadow: 0 4px 20px rgba(245,158,11,0.35);
         }
-        .pub-pay-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(245,158,11,0.45); }
-        .pub-pay-btn:active { transform: translateY(0); }
+        .pub-pay-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(245,158,11,0.45); }
+        .pub-pay-btn:active:not(:disabled) { transform: translateY(0); }
+        .pub-pay-btn:disabled { opacity: 0.75; cursor: not-allowed; }
         .pub-pay-btn-icon { font-size: 1.1rem; }
+        .pub-pay-btn-spinner {
+          width: 1.1rem; height: 1.1rem; border-radius: 50%;
+          border: 2px solid rgba(15,23,42,0.25); border-top-color: #0f172a;
+          animation: pub-spin 0.7s linear infinite;
+        }
+
+        .pub-checkout-error {
+          font-size: 0.82rem; color: #f87171; text-align: center;
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+          border-radius: 0.6rem; padding: 0.65rem 1rem;
+        }
 
         .pub-pay-terms {
           font-size: 0.72rem; color: #475569; text-align: center; line-height: 1.6;
@@ -874,6 +897,36 @@ export default function PublicInvoicePage() {
         .pub-pay-link { color: #f59e0b; cursor: pointer; }
 
         .pub-pay-footer { margin-top: 0.5rem; }
+
+        /* ── stripe redirect notices (returning from Checkout) ── */
+        .pub-notice {
+          display: flex; align-items: flex-start; gap: 0.75rem;
+          border-radius: 1rem; padding: 1rem 1.25rem;
+        }
+        .pub-notice--info {
+          background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);
+        }
+        .pub-notice--warn {
+          background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+        }
+        .pub-notice-icon { font-size: 1.25rem; line-height: 1; flex-shrink: 0; }
+        .pub-notice-title { font-size: 0.88rem; font-weight: 700; color: #f8fafc; margin: 0 0 0.2rem; }
+        .pub-notice-msg { font-size: 0.8rem; color: #94a3b8; line-height: 1.5; margin: 0; }
+        .pub-notice-dismiss {
+          margin-left: auto; background: none; border: none; cursor: pointer;
+          color: #64748b; font-size: 0.9rem; padding: 0.1rem 0.3rem; flex-shrink: 0;
+        }
+        .pub-notice-dismiss:hover { color: #cbd5e1; }
+
+        /* ── confirming payment (post-Checkout redirect) ── */
+        .pub-confirm-card {
+          max-width: 460px; margin: 8rem auto; text-align: center; padding: 3rem 2.25rem;
+          background: rgba(30,41,59,0.75); border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 1.5rem; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        }
+        .pub-confirm-spinner { margin: 0 auto 1.5rem; }
+        .pub-confirm-title { font-size: 1.3rem; font-weight: 800; color: #f8fafc; margin: 0 0 0.75rem; }
+        .pub-confirm-msg { font-size: 0.88rem; color: #cbd5e1; line-height: 1.6; margin: 0; }
         .pub-pay-badges { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
         .pub-pay-badge {
           font-size: 0.7rem; font-weight: 600;

@@ -648,7 +648,57 @@ class StripeService:
         # version (Phase 4.1 remediation: this crashed with AttributeError
         # on every real webhook call before test coverage caught it).
         event = event.to_dict() if hasattr(event, "to_dict") else event
+        return self._process_verified_event(event)
 
+    def replay_failed_event(self, event_id: str, organization_id: int) -> Dict[str, Any]:
+        """Operator-triggered replay of ONE specific `stripe_events` row
+        (completes WEB-2: automatic Stripe-driven redelivery already works,
+        but an operator sometimes needs to re-drive a row RIGHT NOW rather
+        than wait for Stripe's own retry window, or the event is one Stripe
+        considers already delivered and will never redeliver).
+
+        This reuses the exact same dedup/reset + handler-dispatch +
+        _finalize_event path as a real Stripe redelivery
+        (_process_verified_event), replayed from the ALREADY
+        signature-verified payload this row stored at original receipt time
+        — no fresh signature is available or required here.
+
+        Deliberately conservative: only a row currently in `failed` status
+        may be replayed. The handlers are individually idempotent (each
+        re-checks its own dedup state before mutating anything — see e.g.
+        _find_payment_by_intent / the existing-Refund lookups), but a
+        `processed` row's side effects were not designed to be re-entered
+        from an out-of-band admin action, so this refuses anything that
+        isn't `failed` rather than assuming that's safe.
+
+        Tenant isolation: organization_id must come from the AUTHENTICATED
+        caller (the router passes current_user.organization_id), never from
+        request input, and must match the stored row's own organization_id
+        — one organization can never replay another organization's event.
+        """
+        row = self.db.query(StripeEvent).filter(StripeEvent.event_id == event_id).first()
+        if row is None:
+            raise BadRequestException(f"Stripe event {event_id} not found")
+        if row.organization_id != organization_id:
+            raise BadRequestException("Stripe event does not belong to this organization")
+        if row.status != "failed":
+            raise BadRequestException(
+                f"Only a 'failed' event can be replayed (current status: {row.status})"
+            )
+        if not row.payload:
+            raise BadRequestException("Stored event payload is missing; cannot replay")
+        # Ensures Stripe is configured (raises a clear error otherwise) even
+        # though replay itself makes no outbound Stripe call.
+        _stripe_module()
+        return self._process_verified_event(row.payload)
+
+    def _process_verified_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Dedup/reset + handler dispatch + finalize for an event whose
+        signature has ALREADY been verified — either just now (handle_webhook)
+        or previously, at original receipt time, and now replayed from its
+        stored payload (replay_failed_event). Extracted as its own method so
+        both entrypoints share one implementation (no second copy of the
+        dedup/retry semantics to keep in sync)."""
         event_id = event.get("id")
         event_type = event.get("type")
         data_object = (event.get("data") or {}).get("object") or {}
@@ -707,6 +757,12 @@ class StripeService:
                 connected_account_id=event_account,
                 environment=environment,
                 processing_attempts=1,
+                # SEC-3: correlation_id == event_id (Stripe's own event id is
+                # already the natural, already-unique lookup key into this
+                # table — no separate generated id is needed). Populated here
+                # AND backfilled in _finalize_event so a legacy pre-fix row
+                # self-heals the next time it's (re)processed.
+                correlation_id=event_id,
             )
             self.db.add(ledger)
             try:
@@ -744,6 +800,10 @@ class StripeService:
             row.error = error
             row.connected_account_id = event_account or row.connected_account_id
             row.environment = _resolve_environment()
+            # SEC-3 backfill: legacy rows created before correlation_id existed
+            # (or any row that somehow still lacks it) get it set here too, so
+            # every row this code touches ends up with a lookup key.
+            row.correlation_id = row.correlation_id or event_id
             try:
                 self.db.commit()
             except Exception:
@@ -754,6 +814,9 @@ class StripeService:
             "status": status,
             "result": result,
             "error": error,
+            # SEC-3: an operator can grep `stripe_events` by this even when the
+            # HTTP response body is otherwise generic (webhook_router.py).
+            "event_id": event_id,
         }
 
     @staticmethod
@@ -863,7 +926,19 @@ class StripeService:
         amount: Optional[Decimal] = None,
         payment_method_id: Optional[str] = None,
         notes: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Payment:
+        """Record a cleared payment for a money-movement webhook handler.
+
+        WEB-4: `idempotency_key` is a SEPARATE, optional override for the
+        dedup check (Payment.transaction_id) — it defaults to
+        `payment_intent_id` when not supplied, preserving every existing
+        caller's behavior exactly. This lets a caller dedup on some other
+        stable Stripe id (e.g. an invoice event id) WITHOUT that value ever
+        touching `payment.stripe_payment_intent_id`, which must only ever
+        hold a real `pi_...` id or NULL (other code, including the
+        reconciliation engine, relies on that invariant).
+        """
         amount = amount or Decimal(str(invoice.balance_due if invoice.balance_due is not None else invoice.total_amount or 0))
         if amount <= 0:
             raise BadRequestException("Cannot record a zero-amount payment")
@@ -871,6 +946,7 @@ class StripeService:
         payment_number = self.sequence_service.next_number(
             organization_id, "payment", "PAY-", NumberFormat.PREFIX_YYYY_SEQ, SequenceReset.ANNUALLY,
         )
+        effective_idempotency_key = idempotency_key or payment_intent_id
         payment = self.payment_service.record_payment(
             organization_id=organization_id,
             customer_id=customer_id,
@@ -878,7 +954,7 @@ class StripeService:
             amount=amount,
             payment_date=date.today(),
             created_by=SYSTEM_ACTOR,
-            idempotency_key=payment_intent_id,
+            idempotency_key=effective_idempotency_key,
             payment_type=PaymentType.INVOICE_PAYMENT,
             status=PaymentStatus.CLEARED,
             gateway=PaymentGatewayType.CREDIT_CARD,
@@ -1143,6 +1219,18 @@ class StripeService:
         if invoice is None:
             return {"action": "ignored", "reason": "no matching local invoice"}
         payment_intent_id = data_object.get("payment_intent")
+        # WEB-4: some invoice.paid events carry NO PaymentIntent at all (e.g.
+        # non-card subscription invoices paid via a source with no PI, such
+        # as certain bank-debit methods). record_payment()'s idempotency
+        # check is skipped entirely when its key is falsy, so without an
+        # explicit fallback here, every redelivery of such an event would
+        # create a second, duplicate Payment row for the same invoice.
+        # This fallback key is ONLY the dedup/transaction_id value — it is
+        # never written to Payment.stripe_payment_intent_id, which must stay
+        # a real `pi_...` id or NULL.
+        fallback_idempotency_key = (
+            None if payment_intent_id else f"invpaid-{data_object.get('id')}"
+        )
         if data_object.get("id") and not invoice.stripe_invoice_id:
             invoice.stripe_invoice_id = data_object.get("id")
         payment = self._record_cleared_payment(
@@ -1151,6 +1239,7 @@ class StripeService:
             payment_intent_id=payment_intent_id,
             amount=_from_cents(data_object.get("amount_paid")) if data_object.get("amount_paid") else None,
             notes=f"Stripe invoice {data_object.get('id')} paid",
+            idempotency_key=fallback_idempotency_key,
         )
         self.db.commit()
         return {"action": "payment_recorded", "payment_id": payment.id}
@@ -1269,7 +1358,14 @@ class StripeService:
         self.payment_service.reverse_allocations_for_refund(org, payment.id, amount, SYSTEM_ACTOR)
         return {"refund_id": refund_id, "action": "recorded", "amount": str(amount)}
 
-    def _create_gateway_refund(self, organization_id: int, payment: Payment, gateway_refund_id: str, amount: Decimal) -> Refund:
+    def _create_gateway_refund(
+        self,
+        organization_id: int,
+        payment: Payment,
+        gateway_refund_id: str,
+        amount: Decimal,
+        reason: Optional[str] = None,
+    ) -> Refund:
         refund_number = self.sequence_service.next_number(
             organization_id, "refund", "RF-", NumberFormat.PREFIX_YYYY_SEQ, SequenceReset.ANNUALLY,
         )
@@ -1287,7 +1383,7 @@ class StripeService:
             currency=payment.currency,
             gateway=PaymentGatewayType.CREDIT_CARD,
             gateway_refund_id=gateway_refund_id,
-            reason=f"Stripe gateway refund {gateway_refund_id}",
+            reason=reason or f"Stripe gateway refund {gateway_refund_id}",
             completed_at=datetime.utcnow(),
         )
         self.db.add(refund)
@@ -1381,14 +1477,21 @@ class StripeService:
             .first()
         )
         if existing:
+            previous_status = existing.status
             existing.status = status
             existing.evidence_due_by = evidence_due_by or existing.evidence_due_by
             if status in (DisputeStatus.WON, DisputeStatus.LOST, DisputeStatus.WARNING_CLOSED):
                 existing.closed_at = datetime.utcnow()
+            # DIS-3: only a genuine transition INTO lost, never a redelivery
+            # of an already-LOST event, so this never double-adjusts.
+            became_lost = previous_status != DisputeStatus.LOST and status == DisputeStatus.LOST
             try:
                 self.db.commit()
             except Exception:
                 self.db.rollback()
+                return {"action": "dispute_updated", "dispute_id": existing.id, "status": status.value}
+            if became_lost:
+                self._apply_lost_dispute_adjustment(existing)
             return {"action": "dispute_updated", "dispute_id": existing.id, "status": status.value}
 
         dispute = Dispute(
@@ -1420,4 +1523,121 @@ class StripeService:
             "[stripe] Dispute %s recorded: payment=%s org=%s status=%s",
             dispute_id, payment.id if payment else None, resolved_org_id, status.value,
         )
+        if status == DisputeStatus.LOST:
+            # Edge case: the very FIRST event we ever see for this dispute
+            # already reports it lost (e.g. a delayed/replayed
+            # charge.dispute.created that arrives after .closed). Still a
+            # genuine transition into lost from our point of view (no prior
+            # row existed), so the same adjustment applies.
+            self._apply_lost_dispute_adjustment(dispute)
         return {"action": "dispute_recorded", "dispute_id": dispute.id, "status": status.value}
+
+    # ── Lost-dispute financial adjustment + ops signal (DIS-3) ──────────────
+
+    def _apply_lost_dispute_adjustment(self, dispute: Dispute) -> None:
+        """A dispute LOST means Stripe has already debited the platform/
+        connected account for the disputed amount — the exact same net
+        financial effect as a refund of that amount. Reuses the existing
+        refund-reversal primitives (_create_gateway_refund +
+        PaymentService.reverse_allocations_for_refund) — the same ones the
+        charge.refunded/refund.updated handlers use — so invoice
+        balance/status stay consistent with every other money-leaving-the-
+        platform event in this codebase, rather than inventing a second way
+        to move the same numbers. Also raises an Attention Engine item
+        (source `stripe_dispute_lost`) so an operator is notified even
+        though no one requested a refund.
+
+        Only the payment/invoice this ONE dispute is attached to is ever
+        touched — resolved via the dispute's own already-attributed
+        `payment_id`/`organization_id` (see the DIS-2 attribution chain
+        above), never a broader lookup.
+        """
+        adjusted = False
+        if dispute.payment_id is not None and dispute.organization_id is not None:
+            payment = (
+                self.db.query(Payment)
+                .filter(
+                    Payment.id == dispute.payment_id,
+                    Payment.organization_id == dispute.organization_id,
+                )
+                .first()
+            )
+            if payment is None:
+                logger.warning(
+                    "[stripe] Lost dispute %s: attributed payment %s not found for org %s; "
+                    "no financial adjustment made, ops signal only",
+                    dispute.gateway_dispute_id, dispute.payment_id, dispute.organization_id,
+                )
+            else:
+                # Idempotency guard (defense-in-depth on top of the
+                # transition-into-LOST gate at the call sites): never create
+                # a second adjustment for the same dispute.
+                already_adjusted = (
+                    self.db.query(Refund)
+                    .filter(Refund.gateway_refund_id == dispute.gateway_dispute_id)
+                    .first()
+                )
+                if already_adjusted is None:
+                    amount = Decimal(str(dispute.amount or 0))
+                    if amount > 0:
+                        try:
+                            self._create_gateway_refund(
+                                dispute.organization_id, payment, dispute.gateway_dispute_id, amount,
+                                reason=f"Stripe dispute {dispute.gateway_dispute_id} lost",
+                            )
+                            self.payment_service.reverse_allocations_for_refund(
+                                dispute.organization_id, payment.id, amount, SYSTEM_ACTOR,
+                            )
+                            adjusted = True
+                        except Exception:
+                            logger.exception(
+                                "[stripe] Failed to apply financial adjustment for lost dispute %s",
+                                dispute.gateway_dispute_id,
+                            )
+                            self.db.rollback()
+                else:
+                    adjusted = True
+        else:
+            logger.warning(
+                "[stripe] Lost dispute %s has no attributed payment/organization; "
+                "no financial adjustment possible, ops signal only",
+                dispute.gateway_dispute_id,
+            )
+        self._report_lost_dispute_attention(dispute, adjusted)
+
+    def _report_lost_dispute_attention(self, dispute: Dispute, adjusted: bool) -> None:
+        """Ops-visible signal for a lost dispute, using the same
+        AttentionService mechanism core/scheduler.py uses for job failures —
+        the established "something needs a human's attention" pattern in
+        this codebase."""
+        try:
+            from app.modules.super_admin.attention_service import AttentionService
+            from app.modules.super_admin.models import AttentionSeverity
+
+            description = (
+                f"Stripe dispute {dispute.gateway_dispute_id} (amount {dispute.amount} "
+                f"{dispute.currency}, payment_id={dispute.payment_id}) was LOST. "
+                + (
+                    "A matching refund-style adjustment was recorded and the "
+                    "invoice/payment balance was reversed automatically."
+                    if adjusted else
+                    "No automatic financial adjustment could be made — the "
+                    "disputed payment could not be resolved locally. Manual "
+                    "review required."
+                )
+            )
+            AttentionService(self.db).report_or_update(
+                source="stripe_dispute_lost",
+                source_key=f"stripe_dispute_lost:{dispute.gateway_dispute_id}",
+                title=f"Stripe dispute lost: {dispute.gateway_dispute_id}",
+                description=description,
+                base_severity=AttentionSeverity.P2,
+                organization_id=dispute.organization_id,
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.exception(
+                "[stripe] Failed to report Attention Engine item for lost dispute %s",
+                dispute.gateway_dispute_id,
+            )

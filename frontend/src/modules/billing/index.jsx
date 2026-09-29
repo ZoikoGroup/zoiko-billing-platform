@@ -74,6 +74,8 @@ export { default as WriteOffDashboardPage } from "./payments/write-off-dashboard
 export { default as WriteOffDetailPage } from "./payments/write-off-detail";
 export { default as PaymentReportsPage } from "./payments/reports";
 export { default as PaymentSettingsPage } from "./payments/settings";
+export { default as StripeConnectSettingsPage } from "./payments/stripe-connect";
+export { default as StripeConnectCallbackPage } from "./payments/stripe-connect-callback";
 export { default as TaxPage } from "./tax/tax-rates";
 export { default as TaxDashboardPage } from "./tax/dashboard";
 export { default as TaxConfigurationPage } from "./tax/tax-configuration";

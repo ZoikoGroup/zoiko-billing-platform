@@ -29,10 +29,17 @@ async def stripe_webhook(
     svc = StripeService(db)
     result = svc.handle_webhook(await request.body(), stripe_signature)
     if result.get("status") == "failed":
-        # Signal Stripe to retry. The response body intentionally stays
-        # generic — internal error strings must not leak to the wire.
+        # Signal Stripe to retry. The message itself intentionally stays
+        # generic — internal error strings must not leak to the wire — but
+        # SEC-3 requires an operator to be able to look up the real error
+        # server-side from the response alone: event_id (== correlation_id,
+        # see StripeService._process_verified_event) is the stripe_events
+        # table's own natural, already-unique lookup key.
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Webhook processing failed; the event will be retried",
+            detail={
+                "message": "Webhook processing failed; the event will be retried",
+                "event_id": result.get("event_id"),
+            },
         )
     return result

@@ -4145,6 +4145,37 @@ def resolve_reconciliation_exception(
     }
 
 
+class RecoverMissingPaymentIntentRequest(BaseModel):
+    organization_id: int
+    payment_intent_id: str
+
+
+@router.post("/reconciliation-runs/recover-payment-intent")
+@limit_route("10/minute")
+def recover_missing_stripe_payment_intent(
+    body: RecoverMissingPaymentIntentRequest,
+    request: Request = None,
+    current_user=Depends(require_capability('financial_consistency.write')),
+    db: Session = Depends(get_db),
+):
+    """Explicit, admin-triggered recovery for ONE PaymentIntent a
+    reconciliation run flagged as `stripe_missing_in_ledger` (Stripe has it,
+    our ledger doesn't — a missed webhook). This is a sibling action to the
+    reconciliation-run endpoints above, not part of the passive nightly
+    comparison: it is never invoked automatically, only by a human who has
+    reviewed the reconciliation exception and decided to recover this
+    specific PaymentIntent for this specific organization.
+    """
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.stripe_reconciliation import recover_missing_payment_intent
+
+    try:
+        result = recover_missing_payment_intent(db, body.organization_id, body.payment_intent_id)
+    except RuntimeError as exc:
+        raise BadRequestException(str(exc))
+    return result
+
+
 def _serialize_reconciliation_run(run) -> dict:
     return {
         "id": run.id,

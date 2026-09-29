@@ -460,3 +460,89 @@ def reconcile_processor_payments(
         "any_comparison_performed": bool(organizations_compared),
         "fully_verified": fully_verified,
     }
+
+
+# ── Missed-webhook recovery (completes REC-1's stated scope) ────────────────
+#
+# `reconcile_organization_payments` above is explicitly READ + COMPARE +
+# CLASSIFY only — it never writes to Payment/Invoice/etc. When it flags a
+# PaymentIntent as KIND_MISSING_IN_LEDGER (Stripe has it, our ledger
+# doesn't — a missed webhook), there was previously no way to actually
+# recover it. This function is that recovery half: a SEPARATE,
+# explicitly-invoked action (never called automatically by the nightly
+# reconciliation job) that re-derives the local Payment from the live
+# Stripe object, by feeding it through the exact same handler logic the
+# real payment_intent.succeeded webhook uses — never a second,
+# independently-maintained copy of that recording logic.
+
+
+def recover_missing_payment_intent(
+    db: Session, organization_id: int, payment_intent_id: str,
+) -> dict:
+    """Recover one PaymentIntent a reconciliation run flagged as
+    KIND_MISSING_IN_LEDGER for `organization_id`.
+
+    Tenant isolation: the connected account is resolved from OUR OWN
+    `stripe_connected_accounts` row for `organization_id` (exactly like
+    `reconcile_organization_payments` does) — never from caller input — and
+    the PaymentIntent is retrieved with `stripe_account=<that account>`, so
+    this can only ever recover a PaymentIntent that actually lives on this
+    organization's own connected account.
+
+    Reuses `StripeService._handle_payment_intent_succeeded` (confirmed
+    idempotent/safe to re-run by its own design — see stripe_service.py) so
+    the recorded Payment is byte-for-byte what the original webhook would
+    have produced. Raises RuntimeError with a safe, secret-free message on
+    any failure (no Stripe internals/keys leaked) — callers (e.g. the
+    super-admin endpoint) are expected to translate that into a 4xx.
+    """
+    environment = _resolve_environment()
+    account_row = get_connected_account_row(db, organization_id, env=environment)
+    if account_row is None or account_row.status != IntegrationConnectionStatus.ACTIVE:
+        raise RuntimeError(
+            f"Organization {organization_id} has no ACTIVE Stripe connection; cannot recover."
+        )
+
+    stripe_module = _stripe_module()
+    try:
+        intent = stripe_module.PaymentIntent.retrieve(
+            payment_intent_id, stripe_account=account_row.connected_account_id,
+        )
+    except Exception as e:  # noqa: BLE001 - classified immediately below
+        diag = classify_stripe_error(stripe_module, e)
+        raise RuntimeError(
+            f"Could not retrieve PaymentIntent {payment_intent_id}: {diag['message']}"
+        ) from e
+
+    data_object = intent.to_dict() if hasattr(intent, "to_dict") else dict(intent)
+
+    # Only recover a PaymentIntent that Stripe itself reports as succeeded —
+    # this action exists to backfill a MISSED payment_intent.succeeded
+    # webhook, not to force-record one that never actually succeeded.
+    stripe_status = data_object.get("status")
+    if stripe_status != "succeeded":
+        raise RuntimeError(
+            f"PaymentIntent {payment_intent_id} is not 'succeeded' on Stripe "
+            f"(status={stripe_status}); refusing to record a payment for it."
+        )
+
+    # Local import: stripe_service.py lives in the billing module and this
+    # module lives in super_admin — importing at call time (not module
+    # level) avoids creating a hard import-time coupling between the two
+    # modules for what is a rare, explicitly-invoked admin action.
+    from app.modules.billing.services.stripe_service import StripeService
+
+    service = StripeService(db)
+    handler_result = service._handle_payment_intent_succeeded(
+        data_object, organization_id, account_row.connected_account_id,
+    )
+    db.commit()
+    logger.info(
+        "[stripe-reconciliation] Recovered PaymentIntent %s for organization %s: %s",
+        payment_intent_id, organization_id, handler_result,
+    )
+    return {
+        "organization_id": organization_id,
+        "payment_intent_id": payment_intent_id,
+        "handler_result": handler_result,
+    }
