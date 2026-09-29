@@ -12,17 +12,22 @@ standalone platform's Organization table — never the old platform's hr/HR
 modules.
 """
 
+import base64
 import html as _html
+import json
 import logging
 import os
 import re
 import smtplib
 import ssl
+import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional
 
 import certifi
 
@@ -197,6 +202,450 @@ TEMPLATE_NAME_TO_ID = {
 }
 
 
+# ── B5: attachment MIME subtype ─────────────────────────────────────────────
+# Previously hardcoded to "pdf" regardless of what was actually attached.
+# Small, explicit map -- every current caller in this codebase only ever
+# attaches PDFs, but a generic fallback keeps a future non-PDF attachment
+# from being silently mislabeled as one.
+_ATTACHMENT_SUBTYPE_MAP = {
+    "pdf": "pdf",
+    "csv": "csv",
+    "png": "png",
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+}
+
+
+def _infer_attachment_subtype(filename: str) -> str:
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if filename and "." in filename else ""
+    return _ATTACHMENT_SUBTYPE_MAP.get(ext, "octet-stream")
+
+
+def _build_attachment_part(filename: str, data: bytes) -> MIMEApplication:
+    part = MIMEApplication(data, _subtype=_infer_attachment_subtype(filename))
+    part.add_header("Content-Disposition", "attachment", filename=filename)
+    return part
+
+
+def _build_email_message(subject, header_from, sender_name, to_email, reply_to, body, attachments=None) -> MIMEMultipart:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{sender_name} <{header_from}>"
+    msg["To"] = to_email
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.attach(MIMEText(_html_to_text(body), "plain", "utf-8"))
+    msg.attach(MIMEText(body, "html", "utf-8"))
+    if attachments:
+        for filename, data in attachments:
+            msg.attach(_build_attachment_part(filename, data))
+    return msg
+
+
+# ── B2: bounded retry with short exponential backoff for transient SMTP
+# failures only. Permanent failures (bad recipient, bad auth, 5xx) fail
+# immediately -- retrying those can't ever succeed and only delays the
+# FAILED audit log / outbox update a caller or the recovery sweep needs.
+_RETRY_BACKOFF_SECONDS = (1, 2)  # waited before the 2nd and 3rd attempt
+_MAX_SMTP_ATTEMPTS = len(_RETRY_BACKOFF_SECONDS) + 1  # 3 attempts total
+
+_PERMANENT_SMTP_EXCEPTIONS = (
+    smtplib.SMTPRecipientsRefused,
+    smtplib.SMTPAuthenticationError,
+    smtplib.SMTPSenderRefused,
+)
+_TRANSIENT_SMTP_EXCEPTIONS = (
+    smtplib.SMTPConnectError,
+    smtplib.SMTPServerDisconnected,
+)
+
+
+def _classify_smtp_exception(exc: Exception) -> str:
+    """Returns "transient" (worth retrying) or "permanent" (fail immediately)."""
+    # Checked before the generic SMTPResponseException branch below since
+    # SMTPAuthenticationError/SMTPSenderRefused ARE SMTPResponseException
+    # subclasses -- being explicit here matches B2's classification exactly
+    # rather than relying on incidentally carrying a 5xx code.
+    if isinstance(exc, _PERMANENT_SMTP_EXCEPTIONS):
+        return "permanent"
+    # SMTPConnectError is also an SMTPResponseException subclass but must
+    # always be treated as transient regardless of the code it carries.
+    if isinstance(exc, _TRANSIENT_SMTP_EXCEPTIONS):
+        return "transient"
+    if isinstance(exc, smtplib.SMTPResponseException):
+        code = getattr(exc, "smtp_code", None)
+        if isinstance(code, int) and 400 <= code < 500:
+            return "transient"
+        return "permanent"
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return "transient"
+    return "permanent"
+
+
+def _send_with_retry(smtp: dict, msg, envelope_from: str, recipient: str, smtp_connection=None, template_name: str = "") -> None:
+    """Sends `msg` via SMTP. Raises the final exception if every attempt is
+    exhausted (or immediately, for a permanent failure -- never retried).
+
+    If `smtp_connection` is given (an already-open, authenticated smtplib
+    connection -- see open_bulk_smtp_connection, B4), it is reused directly
+    and NEVER closed here: the batch caller that opened it owns its
+    lifecycle. Only one extra attempt is made on a shared connection (never a
+    fresh reconnect out from under a batch caller's loop)."""
+    if smtp_connection is not None:
+        last_exc = None
+        for attempt in range(1, 3):
+            try:
+                smtp_connection.sendmail(envelope_from, recipient, msg.as_string())
+                return
+            except Exception as exc:
+                last_exc = exc
+                category = _classify_smtp_exception(exc)
+                logger.warning(
+                    "[email] Bulk SMTP send attempt %d/2 to %s (template=%s) failed (%s): %s",
+                    attempt, recipient, template_name, category, exc,
+                )
+                if category == "permanent" or attempt >= 2:
+                    raise
+                time.sleep(_RETRY_BACKOFF_SECONDS[0])
+        raise last_exc
+
+    port = int(smtp["port"])
+    use_tls = str(smtp.get("use_tls", "true")).strip().lower() in ("1", "true", "yes")
+    context_ssl = ssl.create_default_context(cafile=certifi.where())
+
+    last_exc = None
+    for attempt in range(1, _MAX_SMTP_ATTEMPTS + 1):
+        if attempt > 1:
+            time.sleep(_RETRY_BACKOFF_SECONDS[attempt - 2])
+        try:
+            if use_tls and port != 465:
+                with smtplib.SMTP(smtp["host"], port, timeout=30) as server:
+                    server.starttls(context=context_ssl)
+                    if smtp["username"] and smtp["password"]:
+                        server.login(smtp["username"], smtp["password"])
+                    server.sendmail(envelope_from, recipient, msg.as_string())
+            else:
+                with smtplib.SMTP_SSL(smtp["host"], port, context=context_ssl, timeout=30) as server:
+                    if smtp["username"] and smtp["password"]:
+                        server.login(smtp["username"], smtp["password"])
+                    server.sendmail(envelope_from, recipient, msg.as_string())
+            return
+        except Exception as exc:
+            last_exc = exc
+            category = _classify_smtp_exception(exc)
+            logger.warning(
+                "[email] SMTP send attempt %d/%d to %s (template=%s) failed (%s): %s",
+                attempt, _MAX_SMTP_ATTEMPTS, recipient, template_name, category, exc,
+            )
+            if category == "permanent" or attempt >= _MAX_SMTP_ATTEMPTS:
+                raise
+    raise last_exc
+
+
+# ── B4: SMTP connection reuse for bulk sends ────────────────────────────────
+@contextmanager
+def open_bulk_smtp_connection(db=None):
+    """Opens and authenticates ONE SMTP connection for reuse across many
+    sends in a single batch operation (B4) -- e.g. a dunning sweep emailing
+    dozens of overdue customers in one job run. Genuine one-off sends
+    (send_approval_email's default path) never use this: each of those still
+    opens/handshakes/closes its own connection exactly as before -- this is
+    opt-in, passed as smtp_connection= to send_approval_email / send_*_email
+    wrapper calls, never forced onto every call.
+
+    Yields the live smtplib connection (already started-tls'd/authenticated)
+    on success, or None if the connection could not be opened/authenticated
+    -- callers should treat None as "fall back to a normal per-message
+    connection for this batch" rather than aborting the whole batch. Closes
+    the connection exactly once, on exit.
+    """
+    smtp = _get_smtp_settings(db=db)
+    server = None
+    try:
+        port = int(smtp["port"])
+        use_tls = str(smtp.get("use_tls", "true")).strip().lower() in ("1", "true", "yes")
+        context_ssl = ssl.create_default_context(cafile=certifi.where())
+        if use_tls and port != 465:
+            server = smtplib.SMTP(smtp["host"], port, timeout=30)
+            server.starttls(context=context_ssl)
+        else:
+            server = smtplib.SMTP_SSL(smtp["host"], port, context=context_ssl, timeout=30)
+        if smtp["username"] and smtp["password"]:
+            server.login(smtp["username"], smtp["password"])
+        yield server
+    except Exception as exc:
+        logger.warning(f"[email] Could not open bulk SMTP connection (falling back to per-message connections): {exc}")
+        yield None
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception:
+                try:
+                    server.close()
+                except Exception:
+                    pass
+
+
+class BulkSmtpConnection:
+    """Lazy, batch-scoped SMTP connection holder (B4) for loop callers.
+
+    open_bulk_smtp_connection() is eager: merely entering it performs a
+    connect + TLS + login handshake. Loop callers (the dunning sweeps) do a
+    lot of filtering work before their first send and very often send
+    nothing at all, so this holder defers the handshake until the FIRST
+    send actually happens and only then reuses that one connection for the
+    rest of the batch.
+
+    Never raises and never blocks a send: if the connection can't be
+    opened/authenticated it stays None and every send falls back to its own
+    per-message connection, exactly as if B4 did not exist. A failed open is
+    remembered for the life of the holder so a broken SMTP config costs one
+    connect attempt per batch, not one per recipient.
+
+    invalidate() drops a connection that failed mid-batch. An smtplib
+    connection is not guaranteed reusable after a protocol-level error (the
+    server may have closed it, or left it mid-transaction), so a caller
+    whose send raised should call this -- otherwise one bad recipient
+    poisons every later send in the same batch. The next get() transparently
+    opens a fresh connection.
+
+    Not thread-safe: one holder belongs to one batch running in one thread,
+    which is how every current caller uses it (a smtplib connection is not
+    safe to share across threads).
+    """
+
+    def __init__(self, db=None):
+        self._db = db
+        self._stack = None
+        self._conn = None
+        self._open_failed = False
+
+    def get(self):
+        """The batch connection, or None if unavailable (caller should then
+        omit smtp_connection= and get normal per-message behavior)."""
+        if self._conn is not None:
+            return self._conn
+        if self._open_failed:
+            return None
+        if self._stack is None:
+            self._stack = ExitStack()
+        try:
+            # enter_context keeps ownership here: the connection is closed
+            # exactly once, in close(), and never by an individual send.
+            self._conn = self._stack.enter_context(open_bulk_smtp_connection(db=self._db))
+        except Exception:
+            logger.warning("[email] Bulk SMTP connection holder failed to open", exc_info=True)
+            self._open_failed = True
+            self._conn = None
+        if self._conn is None:
+            self._open_failed = True
+        return self._conn
+
+    def invalidate(self):
+        """Discard the current connection after a failed send so the next
+        get() reconnects instead of reusing a possibly-broken socket."""
+        self._conn = None
+        self._dispose_stack()
+
+    def close(self):
+        """Release the batch connection. Safe to call more than once."""
+        self._conn = None
+        self._dispose_stack()
+
+    def _dispose_stack(self):
+        stack, self._stack = self._stack, None
+        if stack is None:
+            return
+        try:
+            stack.close()
+        except Exception:
+            logger.warning("[email] Error closing bulk SMTP connection", exc_info=True)
+
+
+# ── B1: durable outbox row, written BEFORE the async dispatch ──────────────
+def _create_outbox_row(
+    db, dedupe_key, recipient, organization_id, template_name, template_id,
+    event_name, event_id, target_record_id, context, attachments=None,
+    from_email_override=None, from_display_name_override=None,
+) -> Optional[int]:
+    """Writes a QUEUED EmailOutbox row. This call is synchronous/blocking and
+    completes BEFORE submit_email_task() hands the send off to the
+    background thread pool -- that ordering is the entire point of B1: if
+    the process crashes at any point after this commit (including before the
+    background thread ever runs), the recovery sweep
+    (email_foundation/recovery.py) will still find this row and redeliver
+    it, so a queued send is never silently lost.
+
+    Stores the PRE-render context + template_name (not an already-rendered
+    body) so a redelivery always reflects the current template/branding, not
+    a stale render from whenever this row was queued.
+
+    Returns None (and logs, but never raises) if the row could not be
+    written -- a bug in outbox bookkeeping must never block the send itself,
+    which still proceeds via submit_email_task exactly as before B1 existed.
+    """
+    from app.services.email_foundation import EmailOutbox
+
+    try:
+        attachments_payload = None
+        if attachments:
+            attachments_payload = [
+                [filename, base64.b64encode(data).decode("ascii")]
+                for filename, data in attachments
+            ]
+        row = EmailOutbox(
+            dedupe_key=dedupe_key,
+            recipient=recipient.strip().lower(),
+            organization_id=organization_id,
+            template_name=template_name,
+            template_id=template_id,
+            event_name=event_name,
+            event_id=event_id,
+            target_record_id=target_record_id,
+            context_json=json.dumps(context or {}, default=str),
+            attachments_json=json.dumps(attachments_payload) if attachments_payload else None,
+            from_email_override=from_email_override,
+            from_display_name_override=from_display_name_override,
+            status="QUEUED",
+            attempts=0,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row.id
+    except Exception:
+        logger.exception(f"[email] Failed to write outbox row for {recipient} | template={template_name}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def _deliver_smtp_standalone(
+    email: str,
+    template_name: str,
+    context: dict,
+    db,
+    organization_id=None,
+    template_id: str = None,
+    tier=None,
+    event_name: str = None,
+    event_id: str = None,
+    target_record_id: str = None,
+    dedupe_key: str = None,
+    attachments=None,
+    from_email_override=None,
+    from_display_name_override=None,
+    template_body: str = None,
+    outbox_id: int = None,
+    smtp_connection=None,
+) -> bool:
+    """Core render + SMTP-send (with B2 retry) + audit-log + outbox-update
+    logic. This is the ONE code path used by:
+      - send_approval_email's own sync delivery,
+      - send_approval_email's async (thread-pool) delivery, and
+      - the startup/periodic recovery sweep redelivering a stuck QUEUED
+        outbox row (email_foundation/recovery.py),
+    so all three can never silently drift apart. Always re-renders the
+    template from template_name + context rather than reusing a cached
+    rendered body -- see _create_outbox_row's docstring for why.
+    """
+    from app.services.email_foundation import SendStatus, TemplateTier, CommunicationAuditLogger, get_template_definition
+
+    context = context or {}
+    eff_template_id = template_id or context.get("template_id") or TEMPLATE_NAME_TO_ID.get(template_name, "ZB-GEN-000")
+    if tier is None:
+        template_def = get_template_definition(eff_template_id)
+        tier = template_def.tier if template_def else TemplateTier.T1
+    eff_event_name = event_name or context.get("event_name") or f"email.{eff_template_id.lower()}"
+
+    def _mark_outbox(status: str, error_message: str = None) -> None:
+        if outbox_id is None:
+            return
+        try:
+            from app.services.email_foundation import EmailOutbox
+            row = db.query(EmailOutbox).filter(EmailOutbox.id == outbox_id).first()
+            if row is not None:
+                row.attempts = (row.attempts or 0) + 1
+                row.status = status
+                row.last_error = error_message
+                db.commit()
+        except Exception:
+            logger.exception(f"[email] Failed to update outbox row {outbox_id} to {status}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+    try:
+        template = template_body if template_body is not None else _load_template(template_name)
+        if not template:
+            logger.warning(f"Cannot send email to {email}: template {template_name} not found")
+            _mark_outbox(SendStatus.FAILED.value, "template not found")
+            return False
+
+        branding = _get_org_branding(organization_id, db=db)
+        from app.config import settings as _settings
+        full_context = {**branding, "login_url": _settings.FRONTEND_URL.rstrip("/") + "/login", **context}
+        body = _render_template(template, full_context)
+
+        subject = context.get("subject", "Zoiko Billing — Notification")
+        if "{{" in subject:
+            subject = _render_template(subject, full_context)
+
+        smtp = _get_smtp_settings(db=db)
+        envelope_from = smtp["from_email"]
+        header_from = from_email_override or envelope_from
+        sender_name = from_display_name_override or full_context.get("company_name") or "Zoiko Billing"
+        reply_to = full_context.get("support_email")
+
+        msg = _build_email_message(subject, header_from, sender_name, email, reply_to, body, attachments)
+
+        try:
+            _send_with_retry(smtp, msg, envelope_from, email, smtp_connection=smtp_connection, template_name=template_name)
+            logger.info(f"[email] Sent to {email} | template={template_name}")
+            CommunicationAuditLogger.log_attempt(
+                db=db,
+                dedupe_key=dedupe_key,
+                recipient=email,
+                organization_id=organization_id,
+                template_id=eff_template_id,
+                event_name=eff_event_name,
+                event_id=event_id,
+                target_record_id=target_record_id,
+                tier=tier,
+                status=SendStatus.SENT,
+            )
+            _mark_outbox(SendStatus.SENT.value)
+            return True
+        except Exception as e:
+            logger.error(f"[email] Failed to send to {email} | template={template_name} | error={e}")
+            CommunicationAuditLogger.log_attempt(
+                db=db,
+                dedupe_key=dedupe_key,
+                recipient=email,
+                organization_id=organization_id,
+                template_id=eff_template_id,
+                event_name=eff_event_name,
+                event_id=event_id,
+                target_record_id=target_record_id,
+                tier=tier,
+                status=SendStatus.FAILED,
+                error_message=str(e),
+            )
+            _mark_outbox(SendStatus.FAILED.value, str(e))
+            return False
+    except Exception as outer_exc:
+        logger.error(
+            f"[email] Unexpected error delivering to {email} | template={template_name} | error={outer_exc}",
+            exc_info=True,
+        )
+        _mark_outbox(SendStatus.FAILED.value, str(outer_exc))
+        return False
+
+
 def send_approval_email(
     email: str,
     template_name: str,
@@ -211,6 +660,7 @@ def send_approval_email(
     event_id: str = None,
     target_record_id: str = None,
     async_send: bool = False,
+    smtp_connection=None,
 ) -> bool:
     """Send an email via SMTP passing through the Email Foundation Infrastructure.
 
@@ -318,7 +768,32 @@ def send_approval_email(
         # 6. Tier Compliance Check (T0 Restrictions)
         validate_tier_compliance(tier, full_context, body)
 
-        # Inner SMTP delivery function
+        # 7. B1 — durable outbox row, written BEFORE the background thread
+        # pool ever sees this send. Only for the async path: the sync path
+        # below runs the SMTP attempt inline, in this same request/thread, so
+        # there is no "handed off to a background worker that might never
+        # run" window to protect against.
+        outbox_id = None
+        if async_send:
+            outbox_id = _create_outbox_row(
+                db=db,
+                dedupe_key=dedupe_key,
+                recipient=email,
+                organization_id=organization_id,
+                template_name=template_name,
+                template_id=template_id,
+                event_name=eff_event_name,
+                event_id=eff_event_id,
+                target_record_id=eff_target_id,
+                context=context,
+                attachments=attachments,
+                from_email_override=from_email_override,
+                from_display_name_override=from_display_name_override,
+            )
+
+        # Inner SMTP delivery function -- delegates to _deliver_smtp_standalone
+        # (the single render+send+audit+outbox-update code path shared with
+        # the recovery sweep) using this call's already-resolved values.
         def _deliver_smtp():
             task_db = db
             task_own_db = False
@@ -327,78 +802,25 @@ def send_approval_email(
                 task_own_db = True
 
             try:
-                smtp = _get_smtp_settings(db=task_db)
-                subject = context.get("subject", "Zoiko Billing — Notification")
-                if "{{" in subject:
-                    subject = _render_template(subject, full_context)
-
-                envelope_from = smtp["from_email"]
-                header_from = from_email_override or envelope_from
-                sender_name = from_display_name_override or full_context.get("company_name") or "Zoiko Billing"
-                reply_to = full_context.get("support_email")
-
-                msg = MIMEMultipart("alternative")
-                msg["Subject"] = subject
-                msg["From"] = f"{sender_name} <{header_from}>"
-                msg["To"] = email
-                if reply_to:
-                    msg["Reply-To"] = reply_to
-                msg.attach(MIMEText(_html_to_text(body), "plain", "utf-8"))
-                msg.attach(MIMEText(body, "html", "utf-8"))
-
-                if attachments:
-                    for filename, data in attachments:
-                        part = MIMEApplication(data, _subtype="pdf")
-                        part.add_header("Content-Disposition", "attachment", filename=filename)
-                        msg.attach(part)
-
-                try:
-                    port = int(smtp["port"])
-                    use_tls = str(smtp.get("use_tls", "true")).strip().lower() in ("1", "true", "yes")
-                    context_ssl = ssl.create_default_context(cafile=certifi.where())
-
-                    if use_tls and port != 465:
-                        with smtplib.SMTP(smtp["host"], port, timeout=30) as server:
-                            server.starttls(context=context_ssl)
-                            if smtp["username"] and smtp["password"]:
-                                server.login(smtp["username"], smtp["password"])
-                            server.sendmail(envelope_from, email, msg.as_string())
-                    else:
-                        with smtplib.SMTP_SSL(smtp["host"], port, context=context_ssl, timeout=30) as server:
-                            if smtp["username"] and smtp["password"]:
-                                server.login(smtp["username"], smtp["password"])
-                            server.sendmail(envelope_from, email, msg.as_string())
-
-                    logger.info(f"[email] Sent to {email} | template={template_name}")
-                    CommunicationAuditLogger.log_attempt(
-                        db=task_db,
-                        dedupe_key=dedupe_key,
-                        recipient=email,
-                        organization_id=organization_id,
-                        template_id=template_id,
-                        event_name=eff_event_name,
-                        event_id=eff_event_id,
-                        target_record_id=eff_target_id,
-                        tier=tier,
-                        status=SendStatus.SENT,
-                    )
-                    return True
-                except Exception as e:
-                    logger.error(f"[email] Failed to send to {email} | template={template_name} | error={e}")
-                    CommunicationAuditLogger.log_attempt(
-                        db=task_db,
-                        dedupe_key=dedupe_key,
-                        recipient=email,
-                        organization_id=organization_id,
-                        template_id=template_id,
-                        event_name=eff_event_name,
-                        event_id=eff_event_id,
-                        target_record_id=eff_target_id,
-                        tier=tier,
-                        status=SendStatus.FAILED,
-                        error_message=str(e),
-                    )
-                    return False
+                return _deliver_smtp_standalone(
+                    email=email,
+                    template_name=template_name,
+                    context=context,
+                    db=task_db,
+                    organization_id=organization_id,
+                    template_id=template_id,
+                    tier=tier,
+                    event_name=eff_event_name,
+                    event_id=eff_event_id,
+                    target_record_id=eff_target_id,
+                    dedupe_key=dedupe_key,
+                    attachments=attachments,
+                    from_email_override=from_email_override,
+                    from_display_name_override=from_display_name_override,
+                    template_body=template_body,
+                    outbox_id=outbox_id,
+                    smtp_connection=smtp_connection,
+                )
             finally:
                 if task_own_db and task_db:
                     task_db.close()
@@ -997,7 +1419,13 @@ def send_dunning_reminder_email(
     template_name: str = "dunning_reminder.html",
     custom_body: str = None,
     subject_override: str = None,
+    smtp_connection=None,
 ) -> bool:
+    """smtp_connection (B4): pass a connection opened via
+    open_bulk_smtp_connection() to reuse it across a batch (e.g. a dunning
+    sweep emailing many overdue customers in one job run) instead of opening
+    a new SMTP connection per recipient. Omit it (default) for a normal
+    one-off send -- behavior is unchanged for every existing caller."""
     return send_approval_email(email, template_name, {
         "subject": subject_override or f"Payment reminder: Invoice {invoice_number} is {days_overdue} days overdue",
         "customer_name": customer_name,
@@ -1006,7 +1434,8 @@ def send_dunning_reminder_email(
         "overdue_amount": overdue_amount,
         "currency": currency,
         "late_fee": late_fee,
-    }, db=db, organization_id=organization_id, template_body=custom_body, event_name="dunning.reminder")
+    }, db=db, organization_id=organization_id, template_body=custom_body, event_name="dunning.reminder",
+       smtp_connection=smtp_connection)
 
 
 def send_contract_activated_email(
@@ -1393,11 +1822,17 @@ def send_past_due_suspension_warning_email(
     currency: str = "USD",
     organization_id=None,
     db=None,
+    smtp_connection=None,
 ) -> bool:
     """ZB-COM-011: Past-due suspension warning for paid subscriptions.
 
     T1 template: sent by the commercial dunning job before suspending a paid
     subscription that has been past-due for enough days. Copy matches catalog spec.
+
+    smtp_connection (B4): pass a connection opened via
+    open_bulk_smtp_connection() to reuse it across the sweep's candidate
+    loop instead of a new SMTP connection per subscription. Omit it
+    (default) for a normal one-off send.
     """
     from app.config import settings as _settings
     pay_url = _settings.FRONTEND_URL.rstrip("/") + "/billing/payments"
@@ -1411,7 +1846,8 @@ def send_past_due_suspension_warning_email(
         "currency": currency,
         "pay_url": pay_url,
         "template_id": "ZB-COM-011",
-    }, db=db, organization_id=organization_id, event_name="commercial.past_due_suspension_warning")
+    }, db=db, organization_id=organization_id, event_name="commercial.past_due_suspension_warning",
+       smtp_connection=smtp_connection)
 
 
 # ── Tier 2 Operational & Support Email Dispatches ────────────────────────────

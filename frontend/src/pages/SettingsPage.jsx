@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Save, Settings, ShieldAlert, KeyRound, ShieldCheck } from "lucide-react";
+import { Save, Settings, ShieldAlert, KeyRound, ShieldCheck, Mail, AlertTriangle } from "lucide-react";
 
 import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, Modal, Field, Button } from "../components/billing-ui";
@@ -9,6 +9,110 @@ const CATEGORY_LABELS = {
   general: "Platform Configuration",
   email: "Operational Configuration (Email)",
 };
+
+// B6 — changing either of these without also updating SMTP_PASSWORD in the
+// environment (which is NEVER read from the DB, by design — see
+// email_service.py's header comment) silently breaks outbound mail until
+// someone notices a failure. Warn once, at the moment of save, rather than
+// only after the fact via the Email Delivery page.
+const SMTP_WARNING_KEYS = new Set(["smtp_host", "smtp_username"]);
+
+function ConfirmSmtpChangeModal({ open, settingKey, onCancel, onConfirm, busy }) {
+  return (
+    <Modal open={open} onClose={onCancel} title="Confirm SMTP configuration change" icon={AlertTriangle} size="sm">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          You are changing <span className="font-mono text-xs font-semibold text-slate-800">{settingKey}</span>.
+          The SMTP password (<span className="font-mono text-xs">SMTP_PASSWORD</span>) is always read from the
+          environment only, never from this settings table — so it will <strong>not</strong> update automatically.
+        </p>
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          If this host/username belongs to a different mail provider or account, update{" "}
+          <span className="font-mono">SMTP_PASSWORD</span> in the environment to match — otherwise outbound email
+          will start failing authentication immediately. Recent failures (including this one, if it happens) are
+          visible on the Email Delivery page.
+        </p>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button variant="primary" loading={busy} onClick={onConfirm}>Save anyway</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SendTestEmailModal({ open, onClose }) {
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setRecipient("");
+      setResult(null);
+      setError("");
+    }
+  }, [open]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!recipient) return;
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await apiFetch("/api/super-admin/settings/email/test", {
+        method: "POST",
+        body: { recipient_email: recipient },
+      });
+      setResult(res);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Send test email" icon={Mail} size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Sends a real email synchronously, right now, using the current effective SMTP settings (environment
+          defaults plus any overrides saved below) — this is the fastest way to confirm host/username/password
+          still work together after a change.
+        </p>
+        <Field label="Recipient email" htmlFor="smtp-test-recipient" required>
+          <input
+            id="smtp-test-recipient"
+            type="email"
+            required
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          />
+        </Field>
+        {error && (
+          <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        )}
+        {result && (
+          <p
+            role="status"
+            className={`rounded-lg border px-3 py-2 text-xs ${
+              result.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            {result.message}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={!recipient}>Send test email</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function categoryLabel(category) {
   return CATEGORY_LABELS[category] || `${category.charAt(0).toUpperCase()}${category.slice(1)} Configuration`;
@@ -386,6 +490,11 @@ export default function SettingsPage() {
   const [busyKey, setBusyKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updatingSensitiveKey, setUpdatingSensitiveKey] = useState(null);
+  // B6 — one-time confirmation before saving a changed smtp_host/smtp_username
+  // (see SMTP_WARNING_KEYS above), plus the "Send test email" action.
+  const [pendingSmtpKey, setPendingSmtpKey] = useState(null);
+  const [smtpConfirmBusy, setSmtpConfirmBusy] = useState(false);
+  const [testEmailOpen, setTestEmailOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -403,7 +512,7 @@ export default function SettingsPage() {
     load();
   }, [load]);
 
-  async function save(key) {
+  async function performSave(key) {
     setBusyKey(key);
     setError("");
     setNotice("");
@@ -419,6 +528,26 @@ export default function SettingsPage() {
     } finally {
       setBusyKey(null);
     }
+  }
+
+  // B6 — smtp_host/smtp_username changing value gets a one-time warning
+  // (SMTP_PASSWORD is env-only and will NOT follow along) before the PUT
+  // actually fires; every other setting saves immediately, unchanged.
+  function save(key) {
+    const current = settings.find((s) => s.key === key);
+    const changed = (current?.value || "") !== (edits[key] ?? "");
+    if (changed && current?.category === "email" && SMTP_WARNING_KEYS.has(key)) {
+      setPendingSmtpKey(key);
+      return;
+    }
+    performSave(key);
+  }
+
+  async function confirmSmtpChange() {
+    setSmtpConfirmBusy(true);
+    await performSave(pendingSmtpKey);
+    setSmtpConfirmBusy(false);
+    setPendingSmtpKey(null);
   }
 
   const groups = useMemo(() => {
@@ -520,10 +649,22 @@ export default function SettingsPage() {
           <div className="space-y-8">
             {groups.map(([category, categorySettings]) => (
               <section key={category}>
-                <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
+                <h2 className="mb-3 flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
                   {categorySettings.some((s) => s.is_sensitive) && <ShieldAlert size={13} className="text-amber-500" />}
                   {categoryLabel(category)}
+                  {category === "email" && (
+                    <Button size="sm" variant="secondary" icon={Mail} className="ml-auto normal-case" onClick={() => setTestEmailOpen(true)}>
+                      Send test email
+                    </Button>
+                  )}
                 </h2>
+                {category === "email" && (
+                  <p className="mb-3 text-xs text-slate-500">
+                    Changing <span className="font-mono">smtp_host</span> or <span className="font-mono">smtp_username</span> will
+                    ask you to confirm — <span className="font-mono">SMTP_PASSWORD</span> is environment-only and never follows a
+                    settings change automatically.
+                  </p>
+                )}
                 {categorySettings.some((s) => s.is_sensitive) && (
                   <p className="mb-3 text-xs text-slate-500">
                     Sensitive values in this section are masked and cannot be read back — this platform has no
@@ -552,6 +693,14 @@ export default function SettingsPage() {
           setUpdatingSensitiveKey(null);
         }}
       />
+      <ConfirmSmtpChangeModal
+        open={Boolean(pendingSmtpKey)}
+        settingKey={pendingSmtpKey}
+        busy={smtpConfirmBusy}
+        onCancel={() => setPendingSmtpKey(null)}
+        onConfirm={confirmSmtpChange}
+      />
+      <SendTestEmailModal open={testEmailOpen} onClose={() => setTestEmailOpen(false)} />
     </div>
   );
 }

@@ -69,3 +69,47 @@ class CommunicationAuditLog(Base):
     error_message = Column(Text, nullable=True)
     metadata_json = Column(Text, nullable=True)
     sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class EmailOutbox(Base):
+    """Durable work queue for asynchronously-dispatched emails (B1).
+
+    A sibling table to CommunicationAuditLog, not a replacement: this table
+    exists so a process crash between "the API request returned" and "the
+    background thread pool actually opened an SMTP connection" never silently
+    drops a message. A row here holds everything needed to reconstruct and
+    redeliver the send (template name + pre-render context + attachments),
+    which CommunicationAuditLog was never designed to hold. CommunicationAuditLog
+    keeps recording every attempt (SENT/FAILED/etc) exactly as it did before —
+    this table is only consulted by the async dispatch path and the recovery
+    sweep in email_foundation/recovery.py.
+    """
+    __tablename__ = "email_outbox"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dedupe_key = Column(String(255), nullable=True, index=True)
+    recipient = Column(String(255), nullable=False, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)
+    template_name = Column(String(255), nullable=False)
+    template_id = Column(String(50), nullable=True, index=True)
+    event_name = Column(String(100), nullable=True, index=True)
+    event_id = Column(String(255), nullable=True, index=True)
+    target_record_id = Column(String(255), nullable=True, index=True)
+    # Pre-render context (json.dumps'd dict) + template_name are stored rather
+    # than the already-rendered body so a retry always picks up the current
+    # template/branding, not a stale render from before this row was queued.
+    context_json = Column(Text, nullable=True)
+    # JSON list of [filename, base64_bytes] pairs — see send_approval_email's
+    # async_send path for how this is populated / decoded on redelivery.
+    attachments_json = Column(Text, nullable=True)
+    from_email_override = Column(String(255), nullable=True)
+    from_display_name_override = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False, index=True, default="QUEUED")  # QUEUED, SENT, FAILED
+    attempts = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_error = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_email_outbox_status_created", "status", "created_at"),
+    )

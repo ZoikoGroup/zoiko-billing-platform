@@ -232,6 +232,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "commercial_trial_warning_job",
             "Commercial Trial Ending Warning (ZB-COM-003)",
         ),
+        (
+            "app.services.email_foundation.recovery:run_email_queue_recovery_job",
+            settings.EMAIL_QUEUE_RECOVERY_INTERVAL_MINUTES,
+            "email_queue_recovery_job",
+            "Email Outbox Crash-Recovery Sweep (B1)",
+        ),
     ]
 
 

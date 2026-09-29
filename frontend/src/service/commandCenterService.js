@@ -294,3 +294,15 @@ export const createEvaluationProgram = (data) =>
 
 export const setEvaluationProgramStatus = (programId, isActive) =>
   api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });
+
+// ── B3 — Email delivery health (read model over CommunicationAuditLog) ────
+// Backs the CommandCenterHub's "Email Delivery" tile and its dedicated page.
+
+export const getEmailDeliveryOverview = () =>
+  api.get("/api/super-admin/email-delivery/overview");
+
+export const listEmailDeliveryFailures = (skip = 0, limit = 50) =>
+  api.get("/api/super-admin/email-delivery/failures", { params: { skip, limit } });
+
+export const resendEmailDeliveryFailure = (logId) =>
+  api.post(`/api/super-admin/email-delivery/failures/${logId}/resend`, {});
