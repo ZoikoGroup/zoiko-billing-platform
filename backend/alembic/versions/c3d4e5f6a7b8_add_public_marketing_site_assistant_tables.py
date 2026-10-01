@@ -10,7 +10,7 @@ Adds the ZB-AI-PUB-001 public (unauthenticated) assistant schema:
     shared database so the limit holds across every worker process
 
 Revision ID: c3d4e5f6a7b8
-Revises: f092a8c6d3e1
+Revises: c3f5a7e9d1b4
 Create Date: 2026-09-15
 
 """
@@ -21,7 +21,11 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3d4e5f6a7b8'
-down_revision: Union[str, Sequence[str], None] = 'f092a8c6d3e1'
+# Revises the current single head on main (c3f5a7e9d1b4). Chaining off
+# f092a8c6d3e1 instead would branch mid-history, because main already
+# merged f092a8c6d3e1 away in 7709ed1aee3e. That left two heads and made
+# `alembic upgrade head` fail outright, which would break the deploy.
+down_revision: Union[str, Sequence[str], None] = 'c3f5a7e9d1b4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
