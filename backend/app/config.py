@@ -76,13 +76,18 @@ class Settings(BaseSettings):
         return value
 
     # ── CORS ──────────────────────────────────────────────────────────
+    # Local dev origins + the zoikobilling.com marketing site (hosts the
+    # public assistant widget which calls this API from the visitor's browser).
     BILLING_CORS_ORIGINS: str = (
         "http://localhost:5173,http://localhost:5174,http://localhost:5175,"
-        "http://127.0.0.1:5173,http://127.0.0.1:5174"
+        "http://127.0.0.1:5173,http://127.0.0.1:5174,"
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "https://zoikobilling.com,https://www.zoikobilling.com"
     )
 
     # ── Public-facing links ─────────────────────────────────────────────
     FRONTEND_URL: str = "http://localhost:5173"
+    MARKETING_SITE_URL: str = "https://zoikobilling.com"
 
     # ── Email / SMTP ──────────────────────────────────────────────────
     SMTP_HOST: str = ""
@@ -134,6 +139,16 @@ class Settings(BaseSettings):
     AI_MODEL_TIMEOUT_SECONDS: int = 30
     AI_SAFE_MODE: bool = False
     AI_PROVIDER: str = "groq"
+
+    # ── Public marketing-site assistant (auth-free) ──────────────────────
+    # Serves the zoikobilling.com floating chat widget. No authentication, so
+    # the DB-backed per-IP counter below is the primary abuse gate. Tuned for
+    # a human visitor; never loosen for a public endpoint.
+    PUBLIC_ASSISTANT_ENABLED: bool = True
+    PUBLIC_ASSISTANT_RATE_LIMIT_PER_WINDOW: int = 15
+    PUBLIC_ASSISTANT_RATE_WINDOW_SECONDS: int = 120
+    PUBLIC_ASSISTANT_MAX_SESSION_MESSAGES: int = 20
+    PUBLIC_ASSISTANT_MAX_CONVERSATION_HISTORY: int = 10
 
     # ── AI Model Gateway (Anthropic) ──────────────────────────────────
     ANTHROPIC_API_KEY: str = ""

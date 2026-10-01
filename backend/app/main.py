@@ -257,6 +257,7 @@ from app.modules.auth.router import user_router as auth_user_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.super_admin.router import router as super_admin_router
 from app.modules.chatbot.router import router as chatbot_router
+from app.modules.chatbot.public_router import router as public_assistant_router
 from app.modules.billing.router import billing_router
 from app.modules.billing.routers.quote_router import public_quote_router
 from app.modules.billing.routers.invoice_router import public_invoice_router
@@ -280,6 +281,8 @@ app.include_router(super_admin_router, prefix="/api")
 app.include_router(commercial_billing_router, prefix="/api")
 app.include_router(commercial_entitlement_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
+# Unauthenticated marketing-site assistant (zoikobilling.com widget).
+app.include_router(public_assistant_router, prefix="/api")
 # Billing is mounted at /billing (root), exactly like the ZoikoOne main
 # platform — the billing frontend (modules/billing) calls /billing/* paths.
 app.include_router(billing_router)

@@ -192,3 +192,57 @@ class HealthResponse(BaseModel):
     version: str = "3.0.0"
     safe_mode: bool = False
     model_gateway: str = "unknown"
+
+
+# ── Public Assistant Schemas (zoikobilling.com marketing-site widget) ────────
+# Auth-free. Mirrors the session-based platform paradigm, but lightweight and
+# anonymous — no tenant, user, or financial references anywhere.
+
+class PublicCreateSessionRequest(BaseModel):
+    # Optional client-generated UUID so the widget can survive a page reload
+    # (the same uid can be re-posted; the server treats it as idempotent).
+    session_uid: str | None = Field(None, min_length=8, max_length=64)
+    # Optional current marketing page slug (e.g. "/pricing") for page-context
+    # boosting of retrieval.
+    page: str | None = Field(None, max_length=300)
+
+
+class PublicSendMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    page: str | None = Field(None, max_length=300)
+
+
+class PublicMessage(BaseModel):
+    message_uid: str
+    sender_type: str
+    message_text: str
+    mode: str | None = None
+    risk_class: str = "R0"
+    created_at: datetime | None = None
+
+
+class PublicSessionResponse(BaseModel):
+    session_uid: str
+    status: str
+    messages: list[PublicMessage] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+class PublicSessionSummary(BaseModel):
+    """Lite row for the widget's Recent-conversations history dropdown."""
+    session_uid: str
+    title: str = "New Conversation"
+    status: str
+    message_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class PublicChatResponse(BaseModel):
+    session_uid: str
+    message_uid: str
+    answer: str
+    mode: str = "M0_EXPLAIN"
+    risk_class: str = "R0"
+    evidence: list[ChatbotEvidence] = Field(default_factory=list)
+    suggested_prompts: list[str] = Field(default_factory=list)

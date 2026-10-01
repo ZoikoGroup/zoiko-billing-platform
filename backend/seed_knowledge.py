@@ -15,6 +15,7 @@ from app.modules.chatbot.models import (
 KB_ENTRIES = [
     {
         "title": "Billing Reports",
+        "is_public": True,
         "chunks": [
             "Zoiko Billing provides six billing reports, available on the Reports page and the Forecast Report page: Revenue Report, Invoice Report, Payment Report, Tax Report, Subscription Report, and Forecast Report. Each report can be filtered by date range and exported for accounting or review.",
             "Revenue Report: shows total billed revenue, collected payments, refunds, and net revenue over a chosen period. Use it to track how much money the business earned and spot revenue trends month over month.",
@@ -27,6 +28,7 @@ KB_ENTRIES = [
     },
     {
         "title": "User Roles and Permissions",
+        "is_public": False,
         "chunks": [
             "Zoiko Billing has three user roles: Super Admin, Organization Admin, and Billing Admin. Roles control what a user can see and do; every action is permission-checked and audit-logged.",
             "Super Admin: platform-level operator. Manages platform settings, organizations, kill switches, and cross-tenant support access. Super Admins are not part of a tenant's billing team and use dedicated support access sessions.",
@@ -39,6 +41,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Invoices Overview",
+        "is_public": True,
         "chunks": [
             "An invoice is a commercial document issued by a seller to a buyer, indicating the products, quantities, and agreed prices for services or products provided. In Zoiko Billing, invoices track what customers owe.",
             "How to create an invoice: Go to Invoices, click Create Invoice, select the customer, add line items with descriptions, quantities, and unit prices, set the tax rate and billing period, review the total, and save as Draft.",
@@ -53,6 +56,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Payments and Allocations",
+        "is_public": True,
         "chunks": [
             "A payment records money received from a customer. Each payment is linked to a customer and may be allocated across one or more invoices.",
             "How to record a payment: Navigate to the Payments section, click Record Payment, select the customer, enter the payment amount, choose the payment method (bank transfer, credit card, cash, check), enter the transaction reference or reference number, and submit. The payment will be created in Pending status.",
@@ -65,6 +69,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Credit Notes vs Refunds",
+        "is_public": True,
         "chunks": [
             "A credit note (also called credit memo) is a document issued to a customer that reduces the amount they owe. It does not involve actual money movement — it adjusts the customer's account balance. Use a credit note when you need to correct an invoice error, apply a discount, or adjust billing without returning funds.",
             "A refund is the actual return of money to a customer. It involves a real financial transaction where funds are transferred back to the customer's original payment method. Use a refund when the customer has overpaid or when you need to return money for returned goods or cancelled services.",
@@ -78,6 +83,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Subscriptions and Plans",
+        "is_public": True,
         "chunks": [
             "A subscription represents a recurring billing arrangement where a customer is charged at regular intervals (monthly, annually, etc.) for access to a product or service.",
             "Subscription statuses: Active (currently billing), Paused (temporarily suspended), Cancelled (terminated), Past Due (payment failed on renewal), Trial (in free trial period).",
@@ -90,6 +96,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Proration and Multi-Currency Billing",
+        "is_public": True,
         "chunks": [
             "Proration adjusts charges for partial billing periods. When a subscription starts, upgrades, or downgrades partway through a cycle, Zoiko Billing calculates a prorated amount so the customer only pays for the portion of the billing period they actually use.",
             "Multi-currency invoicing lets an organization bill customers in different currencies. Exchange rates convert foreign-currency amounts into the organization's base reporting currency, and every invoice records both its original currency and the converted amount.",
@@ -97,6 +104,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Overdue Invoices and Dunning",
+        "is_public": True,
         "chunks": [
             "An overdue invoice is one where the due date has passed and the balance remains unpaid. Overdue invoices may trigger dunning processes.",
             "Dunning is the systematic process of communicating with customers to collect overdue payments. It typically involves escalating reminders: friendly reminder, firm notice, final warning, account suspension.",
@@ -108,6 +116,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Customers and Accounts",
+        "is_public": True,
         "chunks": [
             "A customer (or billing customer) represents an organization or individual that purchases products or services. Each customer has contact information, billing address, and payment terms.",
             "Customer details include: company name, contact email, billing address, payment terms (e.g., Net 30), credit limit, and current account balance.",
@@ -116,6 +125,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Contracts and Quotations",
+        "is_public": True,
         "chunks": [
             "A contract defines the commercial terms between Zoiko and a customer, including pricing, duration, renewal terms, and service levels.",
             "A quotation (or quote) is a preliminary document outlining proposed pricing and terms. It can be accepted by the customer to create a contract or generate an invoice.",
@@ -125,6 +135,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Billing Workflows and Policies",
+        "is_public": True,
         "chunks": [
             "The standard billing workflow: Create Invoice -> Issue Invoice -> Receive Payment -> Allocate Payment -> Close Invoice. If payment is not received by due date, dunning begins.",
             "Zoiko Billing enforces tenant isolation: each organization can only see and manage its own billing data. No cross-organization data access is permitted.",
@@ -133,6 +144,7 @@ KB_ENTRIES = [
     },
     {
         "title": "Billing Configuration",
+        "is_public": False,
         "chunks": [
             "Billing Configuration is the central settings page for the Zoiko Billing module, accessed from the Organization Settings. It contains nine tabs that control every aspect of how billing operates: General, Invoicing, Payments, Tax, Dunning, Revenue, Notifications, Advanced, and Administration.",
             "General tab: configure organization details (company name, billing email, support email, phone, website, logo), country-specific tax registration fields (GSTIN, VAT, PAN, EIN, ABN), physical address, and regional settings including default currency, supported currencies, timezone, language, date format, and fiscal year. Smart Organization Intelligence auto-applies country-specific defaults for India, US, UK, Australia, UAE, and Singapore.",
@@ -144,6 +156,146 @@ KB_ENTRIES = [
             "Notifications tab: toggle email and in-app notifications for billing events including Invoice Created, Invoice Sent, Invoice Paid, Invoice Overdue, Subscription Renewed, Subscription Cancelled, Payment Failed, Payment Success, and Customer Created.",
             "Advanced tab: enable or disable billing module capabilities including approval workflow, credit notes, discounts, retainers, schedule invoicing, partial payments, auto-apply credits, quotes, contracts, usage-based billing, refunds, auto-tax calculation, and audit logs.",
             "Administration tab: operational and diagnostic tools including System Health dashboard, SMTP Test for email delivery verification, Email Templates browser, Numbering Diagnostics, Tax Diagnostics, Exchange Rate Diagnostics, and Enhanced Validation.",
+        ],
+    },
+    {
+        "title": "Invoices and Credit Notes (How It Works)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing manages invoices and credit notes from draft and approval through issue, delivery, correction, and connected payment or balance status, with entity, numbering, tax-context and audit controls. The goal is to create and correct billing documents without breaking the record.",
+            "An invoice is the billing document that states what a customer owes for a defined supply, with its own number, dates, lines, tax context and total. A credit note is a separate issued document that reduces the amount owed on an identified invoice or billing context. The credit note does not replace or rewrite the invoice: both documents remain, cross-referenced, so the original and the correction are each visible.",
+            "Issued documents are treated as accountable records. Instead of silently rewriting an issued invoice, supported correction paths such as credit notes, voids or cancellations are used according to the configured workflow and applicable rules.",
+            "Invoice numbers are assigned from the configured numbering series for the relevant issuer, document type and context. Where approval is configured, a document is validated and routed for approval before it becomes issued, and the approval decision and applicable version remain part of the document's evidence.",
+            "Document delivery uses distinct states such as queued, rendering, ready, sent, delivered where verified, failed, bounced, rejected and unknown. A sent state does not by itself prove delivery or receipt.",
+            "Electronic invoicing is supported only where the relevant capability and jurisdiction are confirmed in the current availability configuration; support should not be assumed solely from the country or document language.",
+            "A credit note is not a refund. A credit note changes the billing relationship or the amount owed; a refund is an actual movement of money back to the customer and is handled through payment workflows.",
+        ],
+    },
+    {
+        "title": "Multi-Currency Billing (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing lets you bill customers in supported currencies without losing the meaning of the original amount.",
+            "You can configure approved billing and document currencies, understand where payment or settlement currency may differ, and keep exchange-rate source, timing, rounding, authority and availability explicit.",
+            "Multi-currency operations are supported across the platform, including per-document billing currency, the ability to receive payment in a settlement currency that differs from the billing currency, and recorded conversion evidence so every invoice keeps its original currency and the converted amounts.",
+        ],
+    },
+    {
+        "title": "Payments and Reconciliation (How It Works)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing connects every payment to the right billing record, with exceptions visible. It captures payment evidence, normalizes provider states, matches and allocates funds, manages exceptions and reversals, and updates receivable positions with explicit source, currency, timing and audit context.",
+            "Payment matching associates incoming funds with the correct customer and billing records; allocation applies a payment across one or more invoices so each invoice's receivable position reflects the funds received.",
+            "Exceptions and reversals are handled explicitly rather than silently: failed, disputed or reversed payments are surfaced as exceptions so the receivable position always reflects the true state of each billing record.",
+        ],
+    },
+    {
+        "title": "Automation and Workflows (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing lets you automate repeatable billing work without losing control: explicit rules, reminders, assignments and review steps run around billing events, with clear triggers, permitted actions, owners, exception paths and audit history.",
+            "Workflows are driven by explicit rules with defined triggers, permitted actions and owners; every automated step leaves an audit trail so a rule can be traced from trigger through action to outcome.",
+            "Manual review and exception paths remain part of the workflow: when an automated step cannot proceed, the work is assigned through the configured review and exception process rather than silently skipped.",
+        ],
+    },
+    {
+        "title": "Global and Multi-Entity Billing (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing is built for business across markets: configure billing around the currencies, entities, invoice requirements, payment terms, languages, and operating rules relevant to each market.",
+            "Global capabilities include multi-currency operations, entity-aware billing, jurisdiction configuration, localized documents, tax and e-invoicing readiness, and regional data controls.",
+            "Entity-aware billing keeps each legal entity's documents, numbering, tax context and receivables separate, while configuration is applied per jurisdiction so invoices meet the local requirements of each market you operate in.",
+        ],
+    },
+    {
+        "title": "Zoiko Billing Platform Overview (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing is a global billing and invoicing platform that delivers billing clarity from invoice to payment: it brings charges, invoices, payments, outstanding balances, and financial records into one controlled platform across every customer, currency, entity, and market you operate.",
+            "Key platform capabilities include multi-currency billing, entity-aware billing, role-based access, and complete audit history, so every billing action is traceable.",
+            "Zoiko Billing has a 60 to 90 second guided tour of the product interface available on the website, and new customers can create an account or book a demo directly from the site.",
+        ],
+    },
+    {
+        "title": "Pricing and Plans (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing starts at $29/month. Choose Essentials for core invoicing, Professional for recurring billing and automation, Business for advanced multi-entity finance operations, or Enterprise for contracted scale.",
+            "Essentials is $29/month, Professional is $79/month and Business is $249/month, billed monthly. Annually the effective rates are $23, $63 and $199/month — around 20% lower. Enterprise is contracted and quoted only after solution and volume qualification.",
+            "Essentials covers small businesses and lean finance teams: create, send, collect and reconcile core invoices without operational complexity. Limits include 3 users, 1 legal entity, 2,500 active customers, 1,000 invoices and credit notes per month, 5 currencies, and 1 payment provider.",
+            "Professional is for growing businesses with recurring revenue: it automates recurring billing, collections, integrations and finance workflows. It adds subscriptions and proration, promotions, configurable dunning, automated reconciliation rules, custom roles, write API and webhooks, and 1 sandbox, with limits of 15 users, 3 legal entities and 30 currencies.",
+            "Business is for scaled finance and revenue operations: usage billing, tiered and volume pricing, advanced matching, maker-checker approvals, consolidated multi-entity reports, and ERP or data warehouse integrations, with limits of 50 users, 10 legal entities and all supported currencies.",
+            "Enterprise is for large, regulated or complex organizations and is contracted: SAML/OIDC SSO, SCIM provisioning, contracted retention, dedicated security and compliance review, custom integrations, and SLA and commercial terms. There is no fake 'starting at' price — a quote is given only after solution and volume qualification.",
+            "Zoiko Billing subscription plans are priced as fixed monthly or annual subscriptions rather than as a percentage of your revenue. The listed prices are subscription prices before any applicable taxes.",
+            "Zoiko Billing offers a free trial so you can evaluate the platform before committing to a paid plan. Trial terms and any applicable limits are shown during signup, and starting the Professional trial does not require a card.",
+            "When you reach a plan limit, Zoiko Billing will not silently move you to a higher-priced plan. You will be informed when a limit is reached and can review the available options. You can also request a downgrade to a lower plan; your existing data is not silently deleted as part of the downgrade.",
+        ],
+    },
+    {
+        "title": "Who Zoiko Billing Is For (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing is a global billing and invoicing platform for finance teams that need controlled financial operations across teams, entities, and markets. It is available as standalone SaaS or as an integrated component of Zoiko One.",
+            "It is designed for finance and accounts-receivable teams, revenue operations teams, small businesses, professional services firms, agencies, SaaS and digital services companies, and enterprise organizations.",
+            "The Essentials plan suits solo operators and small teams getting invoicing under control. Professional suits growing teams with recurring and usage-based billing. Business suits multi-entity operators needing approvals and reporting. Enterprise suits global finance teams with jurisdiction and integration needs.",
+            "The billing lifecycle Zoiko Billing covers runs Customer, Charge, Invoice, Payment, Reconciliation to Record — one customer record and one set of terms, then charges, invoices, payments, reconciliation and retention with audit history.",
+        ],
+    },
+    {
+        "title": "Integrations (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing connects to the systems your business already uses: approved connectors, APIs, and webhooks for customer, payment, accounting, tax, commerce, and usage systems.",
+            "Integrations are organized into categories: Payment providers, Accounting and ERP, CRM platforms, Banking and reconciliation, the Zoiko ecosystem, and Integration availability.",
+            "Integration availability is registry-governed: an integration existing does not mean it applies in every jurisdiction or on every plan. Every integration record carries its availability, the plans and regions it applies to, how setup works, and when the information was last verified.",
+            "Setup follows a governed lifecycle: prerequisites, authorization, configuration, verification, and ongoing maintenance. Everything happens in the authenticated product with documentation alongside.",
+            "Write API, webhooks and one sandbox are included from the Professional plan; ERP and data warehouse integrations are included from the Business plan.",
+            "When the directory does not have an integration, you can build with the API and documentation, submit an integration for technical review, or pursue the partner program. A submission is not an approval, and a partnership is not an integration.",
+        ],
+    },
+    {
+        "title": "Security and Compliance Posture (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "Zoiko Billing's security pages publish public-safe summaries of each control domain and keep detailed assurance evidence — with scope, status and date — in the Trust Center.",
+            "Ten security control domains are covered on the public site, and restricted security details such as internal architecture diagrams, detection logic, secrets, exploit detail, and key material are never published anywhere.",
+            "Security operates on shared responsibility: platform controls exist, but access administration (who holds an account and when access is removed), identity configuration, credential hygiene, integration security, and exported data are largely the customer's responsibility to configure and maintain.",
+            "Zoiko Billing does not publish certification badges on its public pages; where approved evidence exists, it renders from the Trust Center with its scope, status, and date rather than as a celebratory badge.",
+            "Up-to-date service and incident information lives on the System Status page, published security advisories on the Security Advisories page, and vulnerability reporting is routed through the Responsible Disclosure page.",
+        ],
+    },
+    {
+        "title": "Getting Started and Requesting a Demo (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "New customers can create an account or book a demo directly from zoikobilling.com. The homepage also offers a 60 to 90 second guided tour of the product interface.",
+            "The pricing page lets you start a 30-day free trial; starting the Professional trial requires no card. Trial terms and any applicable limits are shown during signup.",
+            "The homepage highlights 'Create Your Account' and 'Book a Demo' as the two primary getting-started actions, with a 'View Pricing' link to compare plans.",
+            "For evaluation questions about a specific system, integration, or market, you can contact sales from the site — no coverage is promised in the asking.",
+        ],
+    },
+    {
+        # Capability/introduction entry for the anonymous public assistant.
+        # "What can you help me with?" reduces to a single non-stopword ("help"),
+        # and before this entry no public chunk contained that word, so the
+        # lexical retriever returned nothing and the confidence gate correctly
+        # abstained. This entry is the grounded target for that intent.
+        #
+        # Every claim below is a restatement of another PUBLIC document in this
+        # same file, so the answer stays inside the public knowledge boundary and
+        # invents no capability: invoicing (Invoices and Credit Notes), payments
+        # and reconciliation (Payments and Reconciliation), automation and
+        # dunning (Automation and Workflows), multi-currency and multi-entity
+        # (Global and Multi-Entity Billing), plans and trial (Pricing and
+        # Plans), integrations (Integrations), published security posture
+        # (Security and Compliance Posture), and onboarding (Getting Started
+        # and Requesting a Demo). The second chunk states the honest boundary —
+        # the public assistant is anonymous and read-only.
+        "title": "What This Assistant Can Answer (Marketing)",
+        "is_public": True,
+        "chunks": [
+            "This assistant can help you with Zoiko Billing's public product documentation: how invoicing works, including invoice statuses, balances and credit notes; how payments, allocations and payment reconciliation work; how recurring billing, dunning and collections automation works; how multi-currency and multi-entity billing is configured; pricing, plans and free trial terms; integrations, the write API and webhooks; the security and compliance posture published on the public site; and how to get started or book a demo.",
+            "I answer from Zoiko Billing's public product documentation only. I do not have access to your account or to your invoices, customers, payments or any other billing data, and I cannot change anything in a billing account. For questions about your own billing records, sign in to the product, contact sales, or book a demo from zoikobilling.com.",
         ],
     },
 ]
@@ -201,7 +353,10 @@ def seed():
         created_chunks = 0
         for entry in KB_ENTRIES:
             chunks = entry["chunks"]
-            content_hash = hashlib.sha256("\n".join(chunks).encode("utf-8")).hexdigest()
+            is_public = entry.get("is_public", False)
+            content_hash = hashlib.sha256(
+                (str(is_public) + "\n" + "\n".join(chunks)).encode("utf-8")
+            ).hexdigest()
             docs = db.query(KnowledgeDocument).filter(
                 KnowledgeDocument.source_id == src.id,
                 KnowledgeDocument.title == entry["title"],
@@ -227,6 +382,7 @@ def seed():
                 freshness_status=FreshnessStatus.CURRENT,
                 title=entry["title"],
                 status="approved",
+                is_public=is_public,
             )
             db.add(doc)
             db.flush()
