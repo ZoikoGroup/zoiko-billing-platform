@@ -1,609 +1,220 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
 import {
-  CircleDollarSign,
-  AlertTriangle,
-  CheckCircle2,
-  HelpCircle,
   RefreshCw,
   CreditCard,
-  TrendingDown,
   ShieldCheck,
-  Clock,
+  Receipt,
+  Wallet,
+  Undo2,
+  Percent,
+  GitMerge,
   BarChart3,
 } from "lucide-react";
-import { getFinancialOperationsSummary } from "../../service/commandCenterService";
-import { PageHeader, Button } from "../../components/billing-ui";
-import { ErrorState, Spinner } from "../../components/billing-shared";
+import { PageHeader, Button, HubTabs } from "../../components/billing-ui";
+import BillingCommandCenterPage from "./BillingCommandCenterPage";
+import InvoiceEnginePage from "./InvoiceEnginePage";
+import PaymentsDisputesPage from "./PaymentsDisputesPage";
+import BalancesAllocationsPage from "./BalancesAllocationsPage";
+import CreditsRefundsPage from "./CreditsRefundsPage";
+import TaxEInvoicingPage from "./TaxEInvoicingPage";
+import ReconciliationPage from "./ReconciliationPage";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// The "section" query param (not "tab") is used deliberately. This hub no
+// longer embeds Plane1BillingPage — that was Domain A sitting inside a Domain B
+// hub that stated Domain A was architecturally isolated — but Plane 1 still
+// owns its own `?tab=` for its quotes/invoices/payments/reconciliation/
+// evaluation sub-tabs, so keying this hub off `tab` would still collide with
+// those links landing here.
+const VALID_TABS = [
+  "overview",
+  "invoice-engine",
+  "payments-recovery",
+  "balances-allocations",
+  "credits-refunds",
+  "tax",
+  "tenant-ledger-reconciliation",
+];
 
-function formatCurrency(strAmount) {
-  const n = parseFloat(strAmount || "0");
-  if (isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
-// ── Composite integrity state badge ──────────────────────────────────────────
-
-function IntegrityBadge({ state }) {
-  if (state === "VERIFIED")
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
-        <CheckCircle2 size={12} /> VERIFIED
-      </span>
-    );
-  if (state === "FAILED")
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">
-        <AlertTriangle size={12} /> FAILED
-      </span>
-    );
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">
-      <HelpCircle size={12} /> UNKNOWN
-    </span>
-  );
-}
-
-// ── Individual section cards ──────────────────────────────────────────────────
-
-// ── G-01 currency-honest billings helpers ─────────────────────────────────────
-
-const CURRENCY_STATE_LABELS = {
-  single_currency: "SINGLE CURRENCY",
-  multi_currency: "MULTI-CURRENCY — NO COMBINED TOTAL",
-  unknown: "UNKNOWN — NO INVOICE DATA",
+// Section keys this hub used to expose. Each maps to its replacement so an old
+// bookmark lands on the right content instead of silently falling back to
+// Overview, which is what an unrecognised value used to do.
+const LEGACY_SECTION_ALIASES = {
+  // "Billing Command Center" was merged into Overview (Section 0).
+  "billing-command-center": "overview",
+  "payments-disputes": "payments-recovery",
+  "reconciliation": "tenant-ledger-reconciliation",
 };
 
-function CollectionRateBadge({ invoiced, collected }) {
-  const inv = parseFloat(invoiced || "0");
-  const col = parseFloat(collected || "0");
-  if (!(inv > 0)) return null;
-  const rate = Math.round((col / inv) * 100);
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-        rate >= 95
-          ? "bg-emerald-100 text-emerald-700"
-          : rate >= 80
-          ? "bg-amber-100 text-amber-700"
-          : "bg-rose-100 text-rose-700"
-      }`}
-    >
-      {rate}% collected
-    </span>
-  );
+// The removed "Quotes & Invoices" tab embedded Plane1BillingPage (Domain A).
+// Its internal sub-tabs were reachable as bare `?tab=` values on this hub, so
+// any of these arriving here now belong to Plane 1 and are sent to Plane 1's
+// own route rather than dropped on Overview.
+const PLANE1_LEGACY_TABS = ["quotes", "invoices", "payments", "reconciliation", "evaluation"];
+const PLANE1_ROUTE = "/super-admin/commercial/invoices";
+
+// Each tab carries its own title/description. The header used to be hardcoded
+// to "Financial Operations" no matter which tab was open, so the tab list and
+// the header above it described different things.
+const TABS = [
+  {
+    key: "overview",
+    label: "Overview",
+    icon: BarChart3,
+    title: "Financial Operations Overview",
+    description:
+      "Plane 2 tenant revenue operations — the F1–F4 integrity and recovery summary, live collections signals, overdue aging and recent activity. Auto-refreshes every minute.",
+  },
+  {
+    key: "invoice-engine",
+    label: "Invoice Engine",
+    icon: Receipt,
+    title: "Invoice Engine",
+    description:
+      "Platform-wide invoice lifecycle: status distribution across every tenant and outbound delivery health.",
+  },
+  {
+    key: "payments-recovery",
+    label: "Payments & Recovery",
+    icon: CreditCard,
+    title: "Payments & Recovery",
+    description:
+      "Failed payment recovery queue and dunning engine state across every tenant.",
+  },
+  {
+    key: "balances-allocations",
+    label: "Balances & Allocations",
+    icon: Wallet,
+    title: "Balances & Allocations",
+    description:
+      "Payment-allocation integrity exceptions and the credit-note application ledger, across every tenant.",
+  },
+  {
+    key: "credits-refunds",
+    label: "Credits, Refunds & Write-offs",
+    icon: Undo2,
+    title: "Credits, Refunds & Write-offs",
+    description:
+      "Credit notes, cash refunds and bad-debt write-offs across every tenant (read-only oversight).",
+  },
+  {
+    key: "tax",
+    label: "Tax",
+    icon: Percent,
+    title: "Tax",
+    description:
+      "Applied-tax amounts recorded per invoice and credit note, grouped by currency, jurisdiction and tax type.",
+  },
+  {
+    key: "tenant-ledger-reconciliation",
+    label: "Tenant Ledger Reconciliation",
+    icon: GitMerge,
+    title: "Tenant Ledger Reconciliation",
+    description:
+      "REC-01 internal ledger reconciliation — invoice balance and payment-allocation invariants, on a daily schedule or on demand.",
+  },
+];
+
+function resolveInitialSection(searchParams) {
+  const section = searchParams.get("section");
+  if (VALID_TABS.includes(section)) return { section };
+
+  if (LEGACY_SECTION_ALIASES[section]) {
+    return { section: LEGACY_SECTION_ALIASES[section], replace: true };
+  }
+  if (section === "quotes-invoices") {
+    return { plane1Tab: searchParams.get("tab") || "quotes", replace: true };
+  }
+
+  const tab = searchParams.get("tab");
+  if (PLANE1_LEGACY_TABS.includes(tab)) {
+    return { plane1Tab: tab, replace: true };
+  }
+
+  return { section: "overview" };
 }
-
-function CurrencyBucketTable({ currencies }) {
-  return (
-    <div className="mt-5 overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <th className="py-2 pr-4">Currency</th>
-            <th className="py-2 pr-4">Invoices</th>
-            <th className="py-2 pr-4">Invoiced</th>
-            <th className="py-2 pr-4">Collected</th>
-            <th className="py-2">Overdue</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(currencies || []).map((c) => (
-            <tr key={c.currency} className="border-b border-slate-100 last:border-0">
-              <td className="py-2.5 pr-4 font-extrabold text-slate-900">{c.currency}</td>
-              <td className="py-2.5 pr-4 font-semibold text-slate-700">{c.invoice_count}</td>
-              <td className="py-2.5 pr-4 font-semibold text-slate-900">
-                {formatCurrency(c.invoiced_amount)}
-              </td>
-              <td className="py-2.5 pr-4 font-semibold text-emerald-800">
-                {formatCurrency(c.collected_amount)}
-              </td>
-              <td
-                className={`py-2.5 font-semibold ${
-                  c.overdue_count > 0 ? "text-red-800" : "text-slate-700"
-                }`}
-              >
-                {formatCurrency(c.overdue_amount)}
-                {c.overdue_count > 0 && (
-                  <span className="ml-1 text-xs text-red-600">({c.overdue_count})</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        Amounts are aggregated per currency and deliberately never summed across currencies — a
-        combined figure would be meaningless without an exchange-rate source. Invoice counts remain
-        safe to total.
-      </p>
-    </div>
-  );
-}
-
-export function F1BillingsCard({ billings }) {
-  const state = billings?.currency_state ?? "unknown";
-  const isSingle = state === "single_currency";
-  const isMulti = state === "multi_currency";
-  const isUnknown = state === "unknown";
-  const currencies = billings?.currencies ?? [];
-  const primaryCurrency = isSingle ? currencies[0]?.currency : null;
-  const overdueCount = billings?.overdue_count ?? 0;
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-50">
-            <CircleDollarSign size={16} className="text-brand-600" />
-          </div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-            F1 · Billings & Collections
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          {isSingle && (
-            <CollectionRateBadge
-              invoiced={billings?.invoiced_amount}
-              collected={billings?.collected_amount}
-            />
-          )}
-          <span
-            className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-              state === "multi_currency"
-                ? "bg-blue-100 text-blue-800"
-                : isUnknown
-                ? "bg-amber-100 text-amber-700"
-                : "bg-slate-100 text-slate-700"
-            }`}
-          >
-            {CURRENCY_STATE_LABELS[state] ?? state}
-            {primaryCurrency ? ` · ${primaryCurrency}` : ""}
-          </span>
-        </div>
-      </div>
-
-      {isMulti ? (
-        <>
-          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                Total Invoices
-              </p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">
-                {billings?.total_invoices ?? "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                Currencies
-              </p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">{currencies.length}</p>
-            </div>
-            <div
-              className={`rounded-2xl border p-4 ${
-                overdueCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"
-              }`}
-            >
-              <p
-                className={`text-[10px] font-bold uppercase tracking-wider ${
-                  overdueCount > 0 ? "text-red-700" : "text-slate-600"
-                }`}
-              >
-                Overdue Count
-              </p>
-              <p
-                className={`mt-1 text-2xl font-extrabold ${
-                  overdueCount > 0 ? "text-red-800" : "text-slate-900"
-                }`}
-              >
-                {overdueCount}
-              </p>
-            </div>
-          </div>
-          <CurrencyBucketTable currencies={currencies} />
-        </>
-      ) : isUnknown ? (
-        <div className="mt-5 flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-          <HelpCircle size={22} className="mt-0.5 shrink-0 text-amber-500" />
-          <div className="text-xs">
-            <p className="font-bold text-slate-900">No invoice data — totals UNKNOWN</p>
-            <p className="mt-1 text-slate-600">
-              An empty platform reports UNKNOWN, never zero: with no invoices there is no monetary
-              figure to report, so none is shown.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Total Invoices
-            </p>
-            <p className="mt-1 text-2xl font-extrabold text-slate-900">
-              {billings?.total_invoices ?? "—"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Invoiced {primaryCurrency ? `(${primaryCurrency})` : ""}
-            </p>
-            <p className="mt-1 text-lg font-extrabold text-slate-900">
-              {formatCurrency(billings?.invoiced_amount)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-              Collected {primaryCurrency ? `(${primaryCurrency})` : ""}
-            </p>
-            <p className="mt-1 text-lg font-extrabold text-emerald-800">
-              {formatCurrency(billings?.collected_amount)}
-            </p>
-          </div>
-          <div
-            className={`rounded-2xl border p-4 ${
-              overdueCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"
-            }`}
-          >
-            <p
-              className={`text-[10px] font-bold uppercase tracking-wider ${
-                overdueCount > 0 ? "text-red-700" : "text-slate-600"
-              }`}
-            >
-              Overdue ({overdueCount})
-            </p>
-            <p
-              className={`mt-1 text-lg font-extrabold ${
-                overdueCount > 0 ? "text-red-800" : "text-slate-900"
-              }`}
-            >
-              {formatCurrency(billings?.overdue_amount)}
-            </p>
-          </div>
-        </div>
-      )}
-      <p className="mt-4 text-xs text-slate-500">
-        Domain B aggregate across all tenant organizations via authoritative billing read models.
-        Monetary totals are computed per currency and are never summed across different currencies.
-        {billings?.basis ? ` ${billings.basis}` : ""}
-      </p>
-    </div>
-  );
-}
-
-export function F2RecoveryCard({ recovery }) {
-  const failedCount = recovery?.failed_payments_count ?? 0;
-  const dunningStatus = recovery?.dunning_cycle_status ?? "UNKNOWN";
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50">
-            <CreditCard size={16} className="text-amber-600" />
-          </div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-            F2 · Payment Recovery
-          </h3>
-        </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-            dunningStatus.startsWith("ACTIVE")
-              ? "bg-amber-100 text-amber-800"
-              : dunningStatus.startsWith("IDLE")
-              ? "bg-blue-100 text-blue-800"
-              : "bg-slate-100 text-slate-700"
-          }`}
-        >
-          Dunning: {dunningStatus}
-        </span>
-      </div>
-      <div className="mt-5 grid grid-cols-2 gap-4">
-        <div
-          className={`rounded-2xl border p-4 ${
-            failedCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"
-          }`}
-        >
-          <p
-            className={`text-[10px] font-bold uppercase tracking-wider ${
-              failedCount > 0 ? "text-red-700" : "text-slate-600"
-            }`}
-          >
-            Failed Payments
-          </p>
-          <p
-            className={`mt-1 text-3xl font-extrabold ${
-              failedCount > 0 ? "text-red-800" : "text-slate-900"
-            }`}
-          >
-            {failedCount}
-          </p>
-          {failedCount > 0 && (
-            <p className="mt-1 text-xs text-red-600">
-              In recovery queue — retry schedule active
-            </p>
-          )}
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            Dunning Engine Status
-          </p>
-          <p
-            className={`mt-1 text-lg font-extrabold ${
-              dunningStatus.startsWith("ACTIVE")
-                ? "text-amber-800"
-                : dunningStatus.startsWith("IDLE")
-                ? "text-blue-800"
-                : "text-slate-700"
-            }`}
-          >
-            {dunningStatus}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">Standard 45-day cycle</p>
-        </div>
-      </div>
-
-      <p className="mt-4 text-xs text-slate-500">
-        Failed payments are eligible for automatic retry. Dunning state is evaluated per
-        subscription billing cycle.
-      </p>
-    </div>
-  );
-}
-
-export function F3IntegrityCard({ consistency }) {
-  const state = consistency?.state ?? "UNKNOWN";
-  const totalInvoices = consistency?.total_invoices_checked ?? 0;
-  const overAllocated = consistency?.over_allocated_count ?? 0;
-  const underAllocatedInfo = consistency?.under_allocated_paid_count_informational ?? 0;
-
-  const isVerified = state === "VERIFIED" && totalInvoices > 0;
-  const isFailed = state === "FAILED";
-  const stateLabel = isVerified ? "VERIFIED" : isFailed ? "FAILED" : "UNKNOWN";
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">
-            <ShieldCheck size={16} className="text-slate-600" />
-          </div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-            F3 · Reconciliation & Integrity
-          </h3>
-        </div>
-        <IntegrityBadge state={stateLabel} />
-      </div>
-
-      <div className="mt-5 flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">
-          {isVerified ? (
-            <CheckCircle2 size={22} className="text-emerald-600" />
-          ) : isFailed ? (
-            <AlertTriangle size={22} className="text-rose-600" />
-          ) : (
-            <HelpCircle size={22} className="text-amber-500" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1 text-xs">
-          <p className="font-bold text-slate-900">
-            {isVerified
-              ? "Ledger Allocation Integrity Verified"
-              : isFailed
-              ? "Integrity Check Failed — Over-allocated Payments Detected"
-              : totalInvoices === 0
-              ? "No invoice data — verification state cannot be determined"
-              : "Verification state unknown — check data freshness"}
-          </p>
-          <p className="mt-1 text-slate-600">
-            Invoices checked: <strong>{totalInvoices}</strong> · Over-allocated:{" "}
-            <strong className={overAllocated > 0 ? "text-red-700" : "text-slate-900"}>
-              {overAllocated}
-            </strong>
-          </p>
-          {isFailed && consistency?.over_allocated_examples?.length > 0 && (
-            <div className="mt-2 space-y-1">
-              <p className="font-semibold text-slate-700">Examples:</p>
-              {consistency.over_allocated_examples.slice(0, 3).map((ex) => (
-                <p key={ex.invoice_id} className="text-slate-600">
-                  Invoice #{ex.invoice_number} — total: {ex.total_amount}, allocated:{" "}
-                  {ex.allocated_amount}
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>
-          Scope: <strong className="text-slate-700">Internal PaymentAllocation vs Invoice.total_amount</strong>
-        </span>
-        <span>
-          Processor/bank reconciliation:{" "}
-          <strong className="text-amber-700">Not integrated (ISS-017)</strong>
-        </span>
-      </div>
-
-      {underAllocatedInfo > 0 && (
-        <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          <strong>Informational:</strong> {underAllocatedInfo} PAID invoice(s) show under-allocation.
-          This may be explained by credit note adjustments and is not treated as a failure.
-        </p>
-      )}
-    </div>
-  );
-}
-
-export function F4LeakageCard({ leakage }) {
-  const overAllocated = leakage?.over_allocated_count ?? 0;
-  const underAllocated = leakage?.under_allocated_paid_count ?? 0;
-  const unbilledUsage = leakage?.unbilled_usage_anomalies ?? 0;
-  const activeCredits = leakage?.active_credit_notes_count ?? 0;
-  const hasAnomaly = overAllocated > 0 || unbilledUsage > 0;
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <div className="flex items-center gap-2">
-          <div
-            className={`flex h-8 w-8 items-center justify-center rounded-xl ${
-              hasAnomaly ? "bg-rose-50" : "bg-slate-100"
-            }`}
-          >
-            <TrendingDown size={16} className={hasAnomaly ? "text-rose-600" : "text-slate-500"} />
-          </div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-            F4 · Revenue Leakage
-          </h3>
-        </div>
-        {hasAnomaly && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700">
-            <AlertTriangle size={11} /> Anomalies Detected
-          </span>
-        )}
-      </div>
-      <div className="mt-5 space-y-2.5">
-        {[
-          {
-            label: "Over-allocated Invoices",
-            value: overAllocated,
-            danger: overAllocated > 0,
-            note: "PaymentAllocation exceeds Invoice total — integrity failure",
-          },
-          {
-            label: "Under-allocated Paid Invoices (Informational)",
-            value: underAllocated,
-            danger: false,
-            note: "May be explained by credit notes; not a failure signal",
-          },
-          {
-            label: "Unbilled Usage Anomalies",
-            value: unbilledUsage,
-            danger: unbilledUsage > 0,
-            note: "Usage rated but not yet invoiced",
-          },
-          {
-            label: "Active Credit Notes (Outstanding)",
-            value: activeCredits,
-            danger: false,
-            note: "Issued credit notes not yet fully applied",
-          },
-        ].map(({ label, value, danger, note }) => (
-          <div
-            key={label}
-            className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 ${
-              danger && value > 0
-                ? "border-red-100 bg-red-50"
-                : "border-slate-100 bg-slate-50"
-            }`}
-          >
-            <div>
-              <span
-                className={`text-xs font-medium ${
-                  danger && value > 0 ? "text-red-800" : "text-slate-700"
-                }`}
-              >
-                {label}
-              </span>
-              <p className="text-[10px] text-slate-500">{note}</p>
-            </div>
-            <span
-              className={`text-sm font-extrabold ${
-                danger && value > 0 ? "text-red-700" : "text-slate-900"
-              }`}
-            >
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function FinancialOperationsPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [refreshedAt, setRefreshedAt] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The active tab is derived from the URL on every render rather than copied
+  // into state once, so an in-hub link (e.g. an Overview action card pointing
+  // at ?section=invoice-engine) actually switches tabs.
+  const resolved = resolveInitialSection(searchParams);
+  const activeTab = resolved.section || "overview";
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    getFinancialOperationsSummary()
-      .then((res) => {
-        setData(res);
-        setRefreshedAt(new Date());
-      })
-      .catch((e) => setError(e?.message || "Failed to load financial operations summary."))
-      .finally(() => setLoading(false));
-  }, []);
+  // Bumping the nonce remounts the active tab, which re-runs its fetches. This
+  // is what makes one Refresh control work for all seven tabs and guarantees a
+  // tab re-fetches when it is activated instead of showing whatever it last
+  // cached while it was hidden.
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const setActiveTab = useCallback(
+    (tab) => {
+      setRefreshNonce(0);
+      setSearchParams({ section: tab }, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  if (resolved.plane1Tab) {
+    return <Navigate to={`${PLANE1_ROUTE}?tab=${resolved.plane1Tab}`} replace />;
+  }
+  if (resolved.replace) {
+    return <Navigate to={`/super-admin/financial-operations?section=${resolved.section}`} replace />;
+  }
+
+  const activeMeta = TABS.find((t) => t.key === activeTab) || TABS[0];
+  const isOverview = activeTab === "overview";
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
-        title="Financial Operations"
-        description="Plane 2 tenant revenue operations — F1 Billings & Collections, F2 Payment Recovery, F3 Reconciliation & Integrity, F4 Revenue Leakage. All values sourced from real billing read models."
-        icon={BarChart3}
-        meta={
-          refreshedAt
-            ? `Refreshed ${refreshedAt.toLocaleTimeString()}`
-            : null
-        }
+        title={activeMeta.title}
+        description={activeMeta.description}
+        icon={activeMeta.icon}
+        accent="brand"
         actions={
           <Button
             variant="secondary"
             icon={RefreshCw}
-            onClick={load}
-            loading={loading}
+            onClick={() => setRefreshNonce((n) => n + 1)}
           >
             Refresh
           </Button>
         }
       />
 
-      {/* Domain isolation notice */}
-      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
-        <ShieldCheck size={15} className="mt-0.5 shrink-0 text-blue-600" />
-        <span>
-          <strong>Domain B — Tenant Revenue Operations.</strong> Access to this view requires
-          platform-level authentication. Monetary amounts are tenant aggregate counts and are NOT exposed
-          to tenant users. Domain A (Platform Commercial / Plane 1) is architecturally isolated.
-        </span>
-      </div>
+      <HubTabs tabs={TABS} active={activeTab} onChange={setActiveTab} label="Financial Operations sections" accent="brand" />
 
-      {loading && !data ? (
-        <div className="mt-8">
-          <Spinner />
-        </div>
-      ) : error ? (
-        <div className="mt-6">
-          <ErrorState
-            message={error}
-            onRetry={load}
-            title="Unable to load financial operations"
-          />
-        </div>
-      ) : (
-        <div className="mt-6 grid grid-cols-1 gap-6">
-          <F1BillingsCard billings={data?.billings} />
-          <F2RecoveryCard recovery={data?.recovery} />
-          <F3IntegrityCard consistency={data?.consistency} />
-          <F4LeakageCard leakage={data?.leakage} />
+      {isOverview && (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
+          <ShieldCheck size={15} className="mt-0.5 shrink-0 text-blue-600" />
+          <span>
+            <strong>Domain B — Tenant Revenue Operations.</strong> Access to this view requires
+            platform-level authentication. Monetary amounts are tenant aggregate counts and are NOT exposed
+            to tenant users. Domain A (Platform Commercial / Plane 1) is architecturally isolated — it has
+            its own section under <strong>Finance → Products &amp; Pricing</strong>, not a tab here.
+          </span>
         </div>
       )}
+
+      <div className="mt-6" key={`${activeTab}:${refreshNonce}`}>
+        {isOverview ? (
+          <BillingCommandCenterPage embedded />
+        ) : activeTab === "invoice-engine" ? (
+          <InvoiceEnginePage embedded />
+        ) : activeTab === "payments-recovery" ? (
+          <PaymentsDisputesPage embedded />
+        ) : activeTab === "balances-allocations" ? (
+          <BalancesAllocationsPage embedded />
+        ) : activeTab === "credits-refunds" ? (
+          <CreditsRefundsPage embedded />
+        ) : activeTab === "tax" ? (
+          <TaxEInvoicingPage embedded />
+        ) : activeTab === "tenant-ledger-reconciliation" ? (
+          <ReconciliationPage embedded />
+        ) : null}
+      </div>
     </div>
   );
 }

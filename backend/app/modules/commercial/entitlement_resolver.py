@@ -248,7 +248,34 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
     return the first level that resolves. L7 always resolves, so this never
     returns without a value for a KNOWN key — it only raises
     EntitlementKeyNotFoundError when the key itself doesn't exist in the
-    catalog."""
+    catalog.
+
+    The resolved (value, source_level) is cached in Redis/in-process cache
+    for REDIS_ENTITLEMENT_TTL seconds: entitlement resolution costs up to 9
+    queries per check and is on the request path of every feature-gated
+    endpoint. The EntitlementDefinition row is re-fetched (1 indexed query)
+    on a cache hit so the returned ResolvedEntitlement always carries a live
+    definition. Invalidation: cache_service.invalidate_entitlement_caches()
+    on override approve/revoke, snapshot recompute and plan publish.
+    """
+    from app.config import settings
+    from app.core import cache_service
+
+    cache_entry = cache_service.cache_get(f"ent:resolved:{organization_id}:{key}")
+    if cache_entry is not None:
+        definition = (
+            db.query(EntitlementDefinition).filter(EntitlementDefinition.key == key).first()
+        )
+        if definition is None:
+            raise EntitlementKeyNotFoundError(f"No EntitlementDefinition for key {key!r}.")
+        return ResolvedEntitlement(
+            key=key,
+            value=cache_entry.get("value"),
+            value_type=definition.value_type,
+            source_level=cache_entry.get("source_level", 7),
+            definition=definition,
+        )
+
     definition = (
         db.query(EntitlementDefinition).filter(EntitlementDefinition.key == key).first()
     )
@@ -260,6 +287,11 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
     for level, resolver in enumerate(_RESOLVER_CHAIN, start=1):
         resolved, value = resolver(ctx)
         if resolved:
+            cache_service.cache_set(
+                f"ent:resolved:{organization_id}:{key}",
+                {"value": value, "source_level": level},
+                ttl=settings.REDIS_ENTITLEMENT_TTL,
+            )
             return ResolvedEntitlement(
                 key=key, value=value, value_type=definition.value_type,
                 source_level=level, definition=definition,

@@ -3,7 +3,8 @@ import {
   Percent, Search, Plus, RefreshCw, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { discountApi, settingsApi } from "../../../service/billingService";
+import { discountApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -52,7 +53,7 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
-    settingsApi.getConfig().then((res) => {
+    loadGlobalBillingConfig().then((res) => {
       const cfg = res?.data || res;
       if (cfg?.default_currency) {
         setForm(f => f.currency ? f : { ...f, currency: cfg.default_currency });

@@ -2178,6 +2178,10 @@ class SubscriptionResponse(BaseModel):
     updated_by: Optional[int]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    # Display names (hybrid properties on the Subscription model) so list and
+    # detail views can render the plan and customer without a per-row lookup.
+    plan_name: Optional[str] = None
+    customer_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2339,8 +2343,66 @@ class InvoiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvoiceListItemResponse(BaseModel):
+    """Slimmer per-row shape for GET /invoices (the paginated list endpoint)
+    only -- GET /invoices/{id} keeps the full InvoiceResponse above.
+
+    invoice-list.jsx (the only frontend list view backed by this endpoint)
+    renders a single `customer_name` string per row and never touches the
+    other ~20 customer_* fields (email, phone, billing/shipping address,
+    gst/vat/pan/tax id, credit terms, ...) that InvoiceResponse carries for
+    the invoice *detail* page. Those fields mirror the customer's own
+    record for every invoice row and meaningfully bloat a 20-row page's JSON
+    payload for data the list view discards. Trimmed here; left untouched on
+    InvoiceResponse since /invoices/{id}, /invoices/overdue and
+    /invoices/due-between still need the full customer detail set.
+    """
+    id: int
+    organization_id: int
+    customer_id: int
+    subscription_id: Optional[int]
+    quotation_id: Optional[int]
+    contract_id: Optional[int]
+    invoice_number: str
+    invoice_type: InvoiceType
+    status: InvoiceStatus
+    issue_date: date
+    due_date: date
+    subtotal: Decimal
+    discount_percentage: Decimal
+    discount_amount: Decimal
+    tax_amount: Decimal
+    shipping_amount: Optional[Decimal] = Decimal("0")
+    round_off: Optional[Decimal] = Decimal("0")
+    total_amount: Decimal
+    paid_amount: Decimal
+    balance_due: Decimal
+    currency: str
+    exchange_rate: Decimal
+    notes: Optional[str]
+    sent_at: Optional[datetime]
+    reminded_at: Optional[datetime]
+    paid_at: Optional[datetime]
+    cancelled_at: Optional[datetime]
+    cancellation_reason: Optional[str]
+    payment_terms: Optional[str]
+    po_number: Optional[str]
+    is_recurring: bool
+    is_active: bool
+    created_by: Optional[int]
+    updated_by: Optional[int]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    # Customer details actually rendered by the list view (populated from
+    # the relationship, same as InvoiceResponse.customer_name).
+    customer_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InvoiceListResponse(PaginatedResponse):
-    items: List[InvoiceResponse]
+    items: List[InvoiceListItemResponse]
 
 
 class InvoiceBulkDeleteRequest(BaseModel):
@@ -3680,6 +3742,7 @@ class BillingConfigurationUpdate(BaseModel):
     quote_prefix: Optional[str] = None
     quote_number_format: Optional[NumberFormat] = None
     quote_sequence_reset: Optional[SequenceReset] = None
+    quote_terms_and_conditions: Optional[str] = None
     credit_note_prefix: Optional[str] = None
     credit_note_number_format: Optional[NumberFormat] = None
     credit_note_sequence_reset: Optional[SequenceReset] = None
@@ -3690,6 +3753,7 @@ class BillingConfigurationUpdate(BaseModel):
     write_off_number_format: Optional[NumberFormat] = None
     write_off_sequence_reset: Optional[SequenceReset] = None
     auto_generate_invoice_number: Optional[bool] = None
+    auto_send_invoices: Optional[bool] = None
     invoice_footer: Optional[str] = None
     invoice_terms: Optional[str] = None
     invoice_notes: Optional[str] = None
@@ -3719,6 +3783,9 @@ class BillingConfigurationUpdate(BaseModel):
     exchange_rate_auto_update: Optional[bool] = None
     rounding_method: Optional[RoundingMethod] = None
     rounding_precision: Optional[int] = None
+    default_trial_days: Optional[int] = None
+    default_pricing_strategy: Optional[str] = None
+    default_billing_frequency: Optional[BillingPeriod] = None
 
     gateway_stripe_enabled: Optional[bool] = None
     gateway_razorpay_enabled: Optional[bool] = None
@@ -3832,6 +3899,9 @@ class BillingConfigurationUpdate(BaseModel):
     enable_auto_taxes: Optional[bool] = None
     enable_audit_logs: Optional[bool] = None
     security_settings: Optional[Dict[str, Any]] = None
+    subscription_extra_settings: Optional[Dict[str, Any]] = None
+    payment_extra_settings: Optional[Dict[str, Any]] = None
+    pricing_extra_settings: Optional[Dict[str, Any]] = None
 
     product_numbering_prefix: Optional[str] = None
     product_numbering_format: Optional[str] = None
@@ -3896,6 +3966,7 @@ class BillingConfigurationResponse(BaseModel):
     quote_prefix: str
     quote_number_format: NumberFormat
     quote_sequence_reset: SequenceReset
+    quote_terms_and_conditions: Optional[str] = None
     credit_note_prefix: str
     credit_note_number_format: NumberFormat
     credit_note_sequence_reset: SequenceReset
@@ -3906,6 +3977,7 @@ class BillingConfigurationResponse(BaseModel):
     write_off_number_format: NumberFormat
     write_off_sequence_reset: SequenceReset
     auto_generate_invoice_number: bool
+    auto_send_invoices: bool
     invoice_footer: Optional[str]
     invoice_terms: Optional[str]
     invoice_notes: Optional[str]
@@ -3935,6 +4007,9 @@ class BillingConfigurationResponse(BaseModel):
     exchange_rate_auto_update: bool
     rounding_method: RoundingMethod
     rounding_precision: int
+    default_trial_days: int = 0
+    default_pricing_strategy: str = "flat"
+    default_billing_frequency: BillingPeriod = BillingPeriod.MONTHLY
 
     gateway_stripe_enabled: bool
     gateway_razorpay_enabled: bool
@@ -4046,6 +4121,9 @@ class BillingConfigurationResponse(BaseModel):
     enable_auto_taxes: bool
     enable_audit_logs: bool
     security_settings: Dict[str, Any]
+    subscription_extra_settings: Dict[str, Any] = {}
+    payment_extra_settings: Dict[str, Any] = {}
+    pricing_extra_settings: Dict[str, Any] = {}
 
     product_numbering_prefix: Optional[str]
     product_numbering_format: Optional[str]

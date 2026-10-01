@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { taxPricingApi } from "../../../service/billingService";
-import { formatDisplayDate } from "../../../utils/billing-helpers";
+import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
 
 const TAX_TYPE_OPTIONS = [
@@ -250,7 +250,12 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
     setLoadingMembers(true);
     try {
       const res = await taxPricingApi.listGroupMembers(group.id);
-      setMembers(res?.items || res?.tax_items || []);
+      // The endpoint returns a bare array, not {items:[...]}; the old
+      // unwrapping here always fell through to [], so the Members list and
+      // its already-added dedup set were permanently empty regardless of
+      // what was actually in the group -- letting the same tax be
+      // re-selected and re-submitted into the unique constraint.
+      setMembers(extractArray(res));
     } catch (e) { onError(e.message); }
     finally { setLoadingMembers(false); }
   };

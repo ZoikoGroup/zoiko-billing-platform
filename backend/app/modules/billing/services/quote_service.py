@@ -120,6 +120,12 @@ class QuoteService:
             date_from=date_from, date_to=date_to,
         )
 
+    def get_quotation_summary(self, organization_id: int) -> Dict[str, Any]:
+        """KPI tiles for the quotations list page, computed over the full
+        org dataset -- not just whatever page of results the list endpoint
+        happens to be returning."""
+        return self.repo.get_summary_stats(organization_id)
+
     # ── Items ─────────────────────────────────────────────────────────────
 
     def _validate_tax_rate_ownership(self, organization_id: int, tax_rate_id: Optional[int]) -> None:
@@ -210,9 +216,13 @@ class QuoteService:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
         self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         quote = self.repo.get_by_id(quote_id, organization_id)
+        if quote.status != QuoteStatus.DRAFT:
+            raise BadRequestException("Only draft quotes can have items added")
         price_semantics = self._resolve_item_fields(quote, organization_id, data)
         self._compute_item_amounts(quote, data, price_semantics)
-        return self.item_repo.create(organization_id, quotation_id=quote_id, **data)
+        item = self.item_repo.create(organization_id, quotation_id=quote_id, **data)
+        self.recalculate_quote(quote_id, organization_id)
+        return item
 
     def bulk_add_items(
         self, quote_id: int, organization_id: int, items: List[Dict[str, Any]],

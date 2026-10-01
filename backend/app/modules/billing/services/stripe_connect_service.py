@@ -65,6 +65,18 @@ def _stripe_module():
     return stripe
 
 
+# API-1: the Stripe API version this codebase is written and tested
+# against — stripe-python 15.6.1's own bundled default (see the installed
+# package's stripe/_api_version.py: `_ApiVersion.CURRENT`). Pinned
+# EXPLICITLY here (rather than left to "whatever the installed SDK
+# defaults to") so an unrelated `pip install --upgrade stripe` can never
+# silently change which API version our requests negotiate against.
+# Bumping the stripe package version (requirements.txt) and bumping this
+# constant must always be ONE deliberate, tested, joint change — never two
+# independent drifts.
+_PINNED_STRIPE_API_VERSION = "2026-08-26.dahlia"
+
+
 def configure_stripe_runtime(stripe) -> None:
     """Process-wide Stripe transport hardening (applied once per process).
 
@@ -77,6 +89,11 @@ def configure_stripe_runtime(stripe) -> None:
       an interactive request path).  Applied via RequestsClient; if the
       private http-client module ever moves, we degrade gracefully to the SDK
       default rather than breaking imports.
+    - api_version: explicitly pinned (API-1) so every Stripe call — across
+      both stripe_service.py and stripe_connect_service.py, which both route
+      through this single function — negotiates against the exact API
+      version this codebase was built and tested against, independent of
+      whatever the installed SDK happens to default to.
     """
     retries = int(getattr(settings, "STRIPE_MAX_NETWORK_RETRIES", 2) or 0)
     if getattr(stripe, "max_network_retries", None) != retries:
@@ -91,6 +108,7 @@ def configure_stripe_runtime(stripe) -> None:
             )
         except Exception:  # pragma: no cover - defensive; keep SDK defaults
             logger.warning("[stripe] Could not set custom HTTP client timeout; using SDK default")
+    stripe.api_version = _PINNED_STRIPE_API_VERSION
 
 
 def _resolve_environment() -> IntegrationEnvironment:

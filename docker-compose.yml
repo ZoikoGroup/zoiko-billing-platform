@@ -15,6 +15,19 @@ services:
     volumes:
       - billing_db_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - billing_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+
   backend:
     build: ./backend
     # Host port matches the frontend's baked-in VITE_API_BASE_URL (frontend/.env).
@@ -33,12 +46,15 @@ services:
       BILLING_SECRET_KEY: change-me-to-a-long-random-string
       FRONTEND_URL: http://localhost:5173
       BILLING_CORS_ORIGINS: http://localhost:5173
+      REDIS_URL: redis://redis:6379/0
       # This compose file is the local development stack. Production must set
       # DEBUG=false and inject real secrets through the deployment platform.
       DEBUG: "true"
       APP_PORT: 8001
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
@@ -57,3 +73,4 @@ services:
 
 volumes:
   billing_db_data:
+  billing_redis_data:

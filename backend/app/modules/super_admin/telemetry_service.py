@@ -47,36 +47,60 @@ class TelemetryService:
         recent run and a 24h failure count. An empty list is the honest
         answer when the scheduler has never run (e.g.
         ENABLE_RECURRING_BILLING_SCHEDULER=false) — never backfilled with a
-        fabricated 'healthy' placeholder."""
+        fabricated 'healthy' placeholder.
+
+        Batched into 4 queries total regardless of job count. This used to
+        run 3 queries per distinct job_name in a Python loop (1 + 3N) — the
+        System Health hub's "Queues & Jobs" hero panel calls this on every
+        load, so every additional scheduled job made every page load of that
+        tab slower.
+        """
         job_names = [row[0] for row in self.db.query(JobRunLog.job_name).distinct().all()]
         since_24h = datetime.utcnow() - timedelta(hours=24)
 
+        # Latest row per job_name: group by job_name for the max started_at,
+        # then join back onto JobRunLog for the full row. Portable across
+        # SQLite (tests) and Postgres (prod) — no DISTINCT ON / window funcs.
+        latest_per_job = (
+            self.db.query(JobRunLog.job_name, func.max(JobRunLog.started_at).label("max_started_at"))
+            .group_by(JobRunLog.job_name)
+            .subquery()
+        )
+        latest_rows = (
+            self.db.query(JobRunLog)
+            .join(
+                latest_per_job,
+                (JobRunLog.job_name == latest_per_job.c.job_name)
+                & (JobRunLog.started_at == latest_per_job.c.max_started_at),
+            )
+            .all()
+        )
+        # If two runs of the same job tie on started_at (possible with
+        # frozen-time test fixtures), keep whichever the dict comprehension
+        # sees last — same ambiguity the original .order_by(...).first()
+        # already had on a tie, not a new behavior.
+        latest_by_job = {row.job_name: row for row in latest_rows}
+
+        failure_by_job = dict(
+            self.db.query(JobRunLog.job_name, func.count(JobRunLog.id))
+            .filter(JobRunLog.status == JobRunStatus.FAILED, JobRunLog.started_at >= since_24h)
+            .group_by(JobRunLog.job_name)
+            .all()
+        )
+        run_count_by_job = dict(
+            self.db.query(JobRunLog.job_name, func.count(JobRunLog.id))
+            .filter(JobRunLog.started_at >= since_24h)
+            .group_by(JobRunLog.job_name)
+            .all()
+        )
+
+        from app.core.scheduler import get_job_interval_minutes
+
         results = []
         for job_name in sorted(job_names):
-            latest = (
-                self.db.query(JobRunLog)
-                .filter(JobRunLog.job_name == job_name)
-                .order_by(JobRunLog.started_at.desc())
-                .first()
-            )
-            failure_count_24h = (
-                self.db.query(func.count(JobRunLog.id))
-                .filter(
-                    JobRunLog.job_name == job_name,
-                    JobRunLog.status == JobRunStatus.FAILED,
-                    JobRunLog.started_at >= since_24h,
-                )
-                .scalar()
-                or 0
-            )
-            run_count_24h = (
-                self.db.query(func.count(JobRunLog.id))
-                .filter(JobRunLog.job_name == job_name, JobRunLog.started_at >= since_24h)
-                .scalar()
-                or 0
-            )
-
-            from app.core.scheduler import get_job_interval_minutes
+            latest = latest_by_job.get(job_name)
+            failure_count_24h = failure_by_job.get(job_name, 0)
+            run_count_24h = run_count_by_job.get(job_name, 0)
 
             interval_minutes = get_job_interval_minutes(job_name)
             interval_seconds = interval_minutes * 60 if interval_minutes else None

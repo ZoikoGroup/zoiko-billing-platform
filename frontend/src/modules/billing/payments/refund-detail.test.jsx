@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { AuthProvider } from "../../../context/AuthContext";
 
 // refund-detail.jsx money-affecting actions (approve / reject / process /
-// complete / fail / cancel) fire straight off a single button click via
-// handleAction — there is no window.confirm(), MFA, step-up, or typed
-// audit-reason gate anywhere in the component (verified by reading every
-// action handler below: reject/fail require a typed reason as *business*
-// validation only, and cancel's reason is explicitly optional).
+// complete / fail / cancel) fire via handleAction. Approve and Complete are
+// the two irreversible one-click actions that previously had no gate at all
+// (2026-09-19 audit UX-fix: production-readiness audit flagged this as a
+// missing-confirmation P1 — see docs/CURRENT_PRODUCTION_READINESS_AUDIT.md);
+// they now require a window.confirm() before calling the API, matching the
+// window.confirm pattern already used elsewhere in this codebase (e.g.
+// invoice-detail.jsx's delete-draft-invoice action). Reject/fail still gate
+// on a typed reason as *business* validation, and cancel's reason is still
+// explicitly optional — those are unchanged.
 
 const mockGet = vi.fn();
 const mockGetTimeline = vi.fn();
@@ -70,9 +75,11 @@ function baseRefund(overrides = {}) {
 
 function renderPage() {
   return render(
-    <MemoryRouter>
-      <RefundDetailPage />
-    </MemoryRouter>
+    <AuthProvider>
+      <MemoryRouter>
+        <RefundDetailPage />
+      </MemoryRouter>
+    </AuthProvider>
   );
 }
 
@@ -90,25 +97,49 @@ async function loadPage(overrides = {}) {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("RefundDetailPage — happy path", () => {
-  it("approving a pending-approval refund fires refundApi.approve exactly once with its id (single click, no confirm gate)", async () => {
+  it("approving a pending-approval refund asks for confirmation, then fires refundApi.approve exactly once with its id", async () => {
+    // Approve is gated to finance_approver/super_admin (maker-checker
+    // separation of duties) -- without a stored user in this role, the
+    // component renders an explanatory panel instead of the button.
+    // AuthProvider only trusts the stored user once an access token is also
+    // present (see AuthContext.jsx's mount effect), so both must be set.
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await loadPage({ status: "pending_approval" });
 
     const approveBtn = await screen.findByRole("button", { name: /Approve/i });
     fireEvent.click(approveBtn);
 
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockApprove).toHaveBeenCalledTimes(1));
     expect(mockApprove).toHaveBeenCalledWith(42);
   });
 
-  it("marking a processing refund completed fires refundApi.complete exactly once with its id", async () => {
+  it("declining the approve confirmation does not call refundApi.approve", async () => {
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    await loadPage({ status: "pending_approval" });
+
+    const approveBtn = await screen.findByRole("button", { name: /Approve/i });
+    fireEvent.click(approveBtn);
+
+    expect(mockApprove).not.toHaveBeenCalled();
+  });
+
+  it("marking a processing refund completed asks for confirmation, then fires refundApi.complete exactly once with its id", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await loadPage({ status: "processing" });
 
     const completeBtn = await screen.findByRole("button", { name: /Mark Completed/i });
     fireEvent.click(completeBtn);
 
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockComplete).toHaveBeenCalledTimes(1));
     expect(mockComplete).toHaveBeenCalledWith(42);
   });
@@ -116,6 +147,11 @@ describe("RefundDetailPage — happy path", () => {
 
 describe("RefundDetailPage — reject requires a typed reason (business validation)", () => {
   it("disables the Reject Refund confirm button until a reason is typed, and does not call the API without one", async () => {
+    // Reject is gated to finance_approver/super_admin (maker-checker
+    // separation of duties) -- without a stored user in this role, the
+    // component renders an explanatory panel instead of the button.
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
     await loadPage({ status: "pending_approval" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
@@ -128,6 +164,8 @@ describe("RefundDetailPage — reject requires a typed reason (business validati
   });
 
   it("submits the typed reason and calls refundApi.reject exactly once", async () => {
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "finance_approver" }));
     await loadPage({ status: "pending_approval" });
 
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
@@ -140,6 +178,19 @@ describe("RefundDetailPage — reject requires a typed reason (business validati
 
     await waitFor(() => expect(mockReject).toHaveBeenCalledTimes(1));
     expect(mockReject).toHaveBeenCalledWith(42, "Duplicate charge dispute");
+  });
+
+  it("hides the Reject button from a non-approver and explains the maker-checker gate", async () => {
+    // maker-checker (RBAC §25): a billing admin who lacks the finance-
+    // approver role must not even see/click Reject — the component renders
+    // an explanatory panel and never shows the button.
+    localStorage.setItem("zoiko_billing_access", "test-token");
+    localStorage.setItem("zoiko_billing_user", JSON.stringify({ role: "billing_admin" }));
+    await loadPage({ status: "pending_approval" });
+
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rejection requires a Finance Approver/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockReject).not.toHaveBeenCalled());
   });
 });
 

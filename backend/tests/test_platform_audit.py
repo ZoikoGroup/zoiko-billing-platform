@@ -390,6 +390,42 @@ def test_super_admin_can_list_audit_logs(db_session):
     assert result.logs[0].action == "create"
 
 
+def test_audit_feed_order_param_toggles_direction(db_session):
+    """`order` exists so the Audit & Evidence table sorts server-side over the
+    whole filtered set instead of only the page on screen. Descending is the
+    default (unchanged behavior); `order="asc"` reverses it, and pagination
+    must follow the same direction or the UI would show an inconsistent page."""
+    sa = _sa(db_session)
+    for i in range(3):
+        _create(db_session, code=f"SORT{i}", name=f"Sort {i}", current_user=sa)
+    db_session.commit()
+
+    def feed(skip=0, **kwargs):
+        return list_platform_audit_logs(
+            skip=skip, limit=2, search="", entity_type="", action="",
+            actor_id=None, organization_id=None, date_from=None, date_to=None,
+            current_user=sa, db=db_session, **kwargs,
+        )
+
+    default_feed = feed()
+    assert default_feed.total == 3
+    # desc is the documented default: the last write comes first.
+    assert default_feed.logs[0].created_at >= default_feed.logs[1].created_at
+
+    desc_ids = [log.id for log in default_feed.logs] + [
+        log.id for log in feed(skip=2).logs
+    ]
+    asc_feed = feed(order="asc")
+    asc_ids = [log.id for log in asc_feed.logs] + [
+        log.id for log in feed(skip=2, order="asc").logs
+    ]
+    assert asc_ids == list(reversed(desc_ids))
+    # Pagination has to stay inside one direction, not mix pages.
+    assert asc_feed.logs[0].created_at <= asc_feed.logs[1].created_at
+    assert set(asc_ids) == set(desc_ids)
+    assert len(set(asc_ids)) == 3
+
+
 def test_tenant_denied(db_session):
     tenant = User(
         email="org@audit11.example",

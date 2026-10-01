@@ -7,6 +7,7 @@ import { Save, RefreshCw, AlertCircle, CheckCircle, Check, Settings2,
   ArrowRight, Zap, Mail, Eye, Server, Hash, DollarSign,
   Thermometer, FileJson } from "lucide-react"
 import { settingsApi } from "../../../service/billingService";
+import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import {
   CURRENCY_MASTER, getCurrencySymbol, formatCurrency, getCurrencySelectOptions,
 } from "../../../utils/currency";
@@ -84,7 +85,7 @@ const defaultForm = {
   gateway_paypal_enabled: true, gateway_cash_enabled: true,
   gateway_bank_transfer_enabled: true, gateway_upi_enabled: false,
   gateway_offline_enabled: true,
-  webhook_secret: "", auto_capture_enabled: true,
+  auto_capture_enabled: true,
   grace_period_days: 0, credit_limit: 0,
 
   tax_calculation_method: "exclusive", default_tax_rate_id: null,
@@ -784,7 +785,7 @@ export default function BillingSettingsPage() {
       gateway_stripe_enabled: "payments", gateway_razorpay_enabled: "payments",
       gateway_paypal_enabled: "payments", gateway_cash_enabled: "payments",
       gateway_bank_transfer_enabled: "payments", gateway_upi_enabled: "payments",
-      gateway_offline_enabled: "payments", webhook_secret: "payments",
+      gateway_offline_enabled: "payments",
 
       tax_calculation_method: "tax", tax_label: "tax", tax_number: "tax",
       tax_rounding_method: "tax", is_tax_inclusive_default: "tax", show_tax_on_invoice: "tax",
@@ -894,6 +895,13 @@ export default function BillingSettingsPage() {
     setLoading(true);
     setError(null);
     try {
+      // Deliberately NOT routed through loadGlobalBillingConfig(): this is
+      // the org config EDITOR populating an editable form (and its dirty-diff
+      // `original` baseline below) — it must always see the true current
+      // server state when the page opens, not a shared cache that might be
+      // serving a snapshot from before another tab's save. The save path
+      // below calls invalidateGlobalBillingConfig() so every other (read-only)
+      // consumer picks up this page's changes on its next read.
       const [configData, ratesData] = await Promise.allSettled([
         settingsApi.getConfig(),
         settingsApi.getExchangeRates(),
@@ -1128,7 +1136,7 @@ export default function BillingSettingsPage() {
       // treats them as absent rather than invalid.
       const nullableStringFields = [
         "default_tax_rate_id", "default_tax_rate",
-        "webhook_secret", "dunning_email_template", "final_notice_template",
+        "dunning_email_template", "final_notice_template",
         "invoice_footer", "invoice_terms", "invoice_notes", "invoice_logo_url",
         "invoice_watermark", "invoice_terms_and_conditions",
         "tax_number", "logo_url", "support_email", "billing_phone", "website",
@@ -1147,6 +1155,11 @@ export default function BillingSettingsPage() {
         data.default_tax_rate = String(data.default_tax_rate);
       }
       await settingsApi.updateConfig(data);
+      // This page is the org-wide config editor: every other page's cached
+      // config (CurrencyContext, TerminologyContext, and every read-only
+      // consumer of loadGlobalBillingConfig()) must pick up this save on its
+      // very next read instead of showing a stale snapshot until reload.
+      invalidateGlobalBillingConfig();
       setSaved(true);
       setLastSavedTimestamp(new Date());
       setOriginal(JSON.parse(JSON.stringify(form)));
@@ -1545,8 +1558,8 @@ export default function BillingSettingsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-1.5" role="tablist" aria-label="Billing settings tabs">
-        <div className="flex gap-1 overflow-x-auto" role="tablist">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-1.5">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Billing settings tabs">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -1571,25 +1584,25 @@ export default function BillingSettingsPage() {
           <Card title="Organization Information" icon={Building2} color="brand">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <Field label="Company Name" tooltip="Legal name of your business">
-                <Input value={form.company_name} onChange={(e) => update("company_name", e.target.value)} />
+                <Input ariaLabel="Company Name" value={form.company_name} onChange={(e) => update("company_name", e.target.value)} />
               </Field>
               <Field label="Billing Email" tooltip="Email address for billing correspondence" error={fieldErrors.billing_email}>
-                <Input type="email" value={form.billing_email} onChange={(e) => update("billing_email", e.target.value)} />
+                <Input ariaLabel="Billing Email" type="email" value={form.billing_email} onChange={(e) => update("billing_email", e.target.value)} />
               </Field>
               <Field label="Support Email" tooltip="Support contact email">
-                <Input type="email" value={form.support_email} onChange={(e) => update("support_email", e.target.value)} />
+                <Input ariaLabel="Support Email" type="email" value={form.support_email} onChange={(e) => update("support_email", e.target.value)} />
               </Field>
               <Field label="Short Name" tooltip="Short display name used in compact UI elements">
-                <Input value={form.short_name} onChange={(e) => update("short_name", e.target.value)} />
+                <Input ariaLabel="Short Name" value={form.short_name} onChange={(e) => update("short_name", e.target.value)} />
               </Field>
               <Field label="Billing Phone" tooltip="Contact phone number for billing" error={fieldErrors.billing_phone}>
-                <Input value={form.billing_phone} onChange={(e) => update("billing_phone", e.target.value)} />
+                <Input ariaLabel="Billing Phone" value={form.billing_phone} onChange={(e) => update("billing_phone", e.target.value)} />
               </Field>
               <Field label="Website" tooltip="Your business website URL" error={fieldErrors.website}>
-                <Input type="url" value={form.website} onChange={(e) => update("website", e.target.value)} />
+                <Input ariaLabel="Website" type="url" value={form.website} onChange={(e) => update("website", e.target.value)} />
               </Field>
               <Field label="Logo URL" tooltip="URL to your company logo image">
-                <Input type="url" value={form.logo_url} onChange={(e) => update("logo_url", e.target.value)} />
+                <Input ariaLabel="Logo URL" type="url" value={form.logo_url} onChange={(e) => update("logo_url", e.target.value)} />
               </Field>
               <Field label="Business Registration Number" tooltip="Official business registration or company number">
                 {(() => {
@@ -1598,27 +1611,27 @@ export default function BillingSettingsPage() {
                     <>
                       {cfg.business_registration_number.show && (
                         <Field label={cfg.business_registration_number.label} tooltip="Official business registration or company number">
-                          <Input value={form.business_registration_number} onChange={(e) => update("business_registration_number", e.target.value)} />
+                          <Input ariaLabel={cfg.business_registration_number.label} value={form.business_registration_number} onChange={(e) => update("business_registration_number", e.target.value)} />
                         </Field>
                       )}
                       {cfg.gst_number.show && (
                         <Field label={cfg.gst_number.label} tooltip="Goods and Services Tax registration number" error={fieldErrors.gst_number}>
-                          <Input value={form.gst_number} onChange={(e) => update("gst_number", e.target.value)} />
+                          <Input ariaLabel={cfg.gst_number.label} value={form.gst_number} onChange={(e) => update("gst_number", e.target.value)} />
                         </Field>
                       )}
                       {cfg.vat_number.show && (
                         <Field label={cfg.vat_number.label} tooltip="Value Added Tax registration number" error={fieldErrors.vat_number}>
-                          <Input value={form.vat_number} onChange={(e) => update("vat_number", e.target.value)} />
+                          <Input ariaLabel={cfg.vat_number.label} value={form.vat_number} onChange={(e) => update("vat_number", e.target.value)} />
                         </Field>
                       )}
                       {cfg.pan_number.show && (
                         <Field label={cfg.pan_number.label} tooltip="Permanent Account Number (tax identifier)">
-                          <Input value={form.pan_number} onChange={(e) => update("pan_number", e.target.value)} />
+                          <Input ariaLabel={cfg.pan_number.label} value={form.pan_number} onChange={(e) => update("pan_number", e.target.value)} />
                         </Field>
                       )}
                       {cfg.tin_number.show && (
                         <Field label={cfg.tin_number.label} tooltip="Tax Identification Number">
-                          <Input value={form.tin_number} onChange={(e) => update("tin_number", e.target.value)} />
+                          <Input ariaLabel={cfg.tin_number.label} value={form.tin_number} onChange={(e) => update("tin_number", e.target.value)} />
                         </Field>
                       )}
                     </>
@@ -1631,22 +1644,23 @@ export default function BillingSettingsPage() {
           <Card title="Address" icon={MapPin} color="brand">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <Field label="Address Line 1">
-                <Input value={form.address_line1} onChange={(e) => update("address_line1", e.target.value)} />
+                <Input ariaLabel="Address Line 1" value={form.address_line1} onChange={(e) => update("address_line1", e.target.value)} />
               </Field>
               <Field label="Address Line 2">
-                <Input value={form.address_line2} onChange={(e) => update("address_line2", e.target.value)} />
+                <Input ariaLabel="Address Line 2" value={form.address_line2} onChange={(e) => update("address_line2", e.target.value)} />
               </Field>
               <Field label="City">
-                <Input value={form.city} onChange={(e) => update("city", e.target.value)} />
+                <Input ariaLabel="City" value={form.city} onChange={(e) => update("city", e.target.value)} />
               </Field>
               <Field label="State / Province">
-                <Input value={form.state} onChange={(e) => update("state", e.target.value)} />
+                <Input ariaLabel="State / Province" value={form.state} onChange={(e) => update("state", e.target.value)} />
               </Field>
               <Field label="Postal Code">
-                <Input value={form.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
+                <Input ariaLabel="Postal Code" value={form.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
               </Field>
               <Field label="Country">
                 <Select value={form.country} onChange={(e) => handleCountryChange(e.target.value)}
+                  ariaLabel="Country"
                   options={["", "United States","United Kingdom","Canada","Australia","India","UAE","Saudi Arabia","Qatar","Kuwait","Japan","China","Singapore","Malaysia","Thailand","South Africa","Nigeria","Pakistan","Bangladesh","Sri Lanka","Nepal","Bahrain","Oman","Germany","France","Italy","Spain","Netherlands","Brazil","Mexico","Sweden","Norway","Denmark","Switzerland","New Zealand","Hong Kong","South Korea"]} />
                     {form.country && !SUPPORTED_PHASE1.includes(form.country) && (
                       <p className="mt-2 text-sm text-sky-700 bg-sky-50 border border-sky-100 rounded px-3 py-2 flex items-start gap-2">
@@ -1731,11 +1745,12 @@ export default function BillingSettingsPage() {
                   placeholder="Search currency..." />
               </Field>
               <Field label="Currency Precision" tooltip="Number of decimal places for currency">
-                <Input type="number" value={form.currency_precision} min={0} max={10}
+                <Input ariaLabel="Currency Precision" type="number" value={form.currency_precision} min={0} max={10}
                   onChange={(e) => update("currency_precision", parseInt(e.target.value) || 2)} />
               </Field>
               <Field label="Currency Symbol Position" tooltip="Where to place the currency symbol">
                 <Select value={form.currency_symbol_position} onChange={(e) => update("currency_symbol_position", e.target.value)}
+                  ariaLabel="Currency Symbol Position"
                   options={[
                     {value:"before", label:`Before amount (${formatCurrency(100, form.default_currency, "before")})`},
                     {value:"after", label:`After amount (${formatCurrency(100, form.default_currency, "after")})`},
@@ -1745,6 +1760,7 @@ export default function BillingSettingsPage() {
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <Select value={form.date_format} onChange={(e) => update("date_format", e.target.value)}
+                      ariaLabel="Date Format"
                       options={["DD-MM-YYYY","MM-DD-YYYY","YYYY-MM-DD","DD-MM-YY","MM-DD-YY"]} />
                   </div>
                   <div className="shrink-0">
@@ -1755,7 +1771,7 @@ export default function BillingSettingsPage() {
               <Field label="Fiscal Year Start" tooltip="Month and day when fiscal year starts (MM-DD)" error={fieldErrors.fiscal_year_start}>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <Input value={form.fiscal_year_start} onChange={(e) => update("fiscal_year_start", e.target.value)} placeholder="MM-DD" />
+                    <Input ariaLabel="Fiscal Year Start" value={form.fiscal_year_start} onChange={(e) => update("fiscal_year_start", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_start} /></div>
                 </div>
@@ -1763,7 +1779,7 @@ export default function BillingSettingsPage() {
               <Field label="Fiscal Year End" tooltip="Month and day when fiscal year ends (MM-DD)" error={fieldErrors.fiscal_year_end}>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <Input value={form.fiscal_year_end} onChange={(e) => update("fiscal_year_end", e.target.value)} placeholder="MM-DD" />
+                    <Input ariaLabel="Fiscal Year End" value={form.fiscal_year_end} onChange={(e) => update("fiscal_year_end", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_end} /></div>
                 </div>
@@ -1772,6 +1788,7 @@ export default function BillingSettingsPage() {
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <Select value={form.timezone} onChange={(e) => update("timezone", e.target.value)}
+                      ariaLabel="Timezone"
                       options={["UTC","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Europe/London","Europe/Berlin","Europe/Paris","Asia/Tokyo","Asia/Shanghai","Asia/Dubai","Asia/Kolkata","Australia/Sydney","Africa/Johannesburg"]} />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.timezone} /></div>
@@ -1779,6 +1796,7 @@ export default function BillingSettingsPage() {
               </Field>
               <Field label="Language">
                 <Select value={form.language} onChange={(e) => update("language", e.target.value)}
+                  ariaLabel="Language"
                   options={getLanguageSelectOptions()} />
               </Field>
             </div>
@@ -2242,11 +2260,6 @@ export default function BillingSettingsPage() {
                 checked={form.gateway_upi_enabled} onChange={() => updateToggle("gateway_upi_enabled")} />
               <Toggle id="gateway_offline_enabled" label="Offline" description="Accept offline payment methods"
                 checked={form.gateway_offline_enabled} onChange={() => updateToggle("gateway_offline_enabled")} />
-            </div>
-            <div className="mt-5">
-              <Field label="Webhook Secret" tooltip="Secret key for payment gateway webhooks">
-                <Input id="webhook_secret" value={form.webhook_secret} onChange={(e) => update("webhook_secret", e.target.value)} />
-              </Field>
             </div>
           </Card>
         </div>

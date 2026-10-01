@@ -19,6 +19,17 @@ node_modules/
 backend/search_code.py
 backend/test_chatbot.py
 backend/test_chatbot_api.py
+
+# Local dev-scratch debug scripts and captured server output (2026-09-19 audit
+# hygiene fix) -- untracked from git; not meant to ship, may capture local
+# stack traces/paths.
+backend/debug.py
+backend/debug2.py
+backend/debug3.py
+backend/server_err.txt
+backend/*_err.txt
+backend/*_stdout.txt
+backend/*_stderr.txt
 venv/
 dist/
 build/

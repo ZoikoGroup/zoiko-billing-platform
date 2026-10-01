@@ -569,6 +569,11 @@ class InvoiceService:
     def get_recent_activity(self, organization_id: int, limit: int = 10) -> List:
         return self.repo.get_recent_activity(organization_id, limit)
 
+    def get_top_customers(
+        self, organization_id: int, date_from: Optional[str] = None, date_to: Optional[str] = None, limit: int = 5,
+    ) -> List:
+        return self.repo.get_top_customers(organization_id, date_from=date_from, date_to=date_to, limit=limit)
+
     def bulk_delete_invoices(self, organization_id: int, ids: List[int], updated_by: int) -> int:
         count = self.repo.bulk_delete(ids, organization_id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "Invoice", None, new_values={"deleted_ids": ids})
@@ -638,7 +643,9 @@ class InvoiceService:
         # are 100% consistent with the price resolution semantics (unit vs
         # graduated/lump-sum), exactly like bulk_set_items does.
         data = self._calculate_populate_item_financials_or_use(data)
-        return self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        item = self.item_repo.create(organization_id, invoice_id=invoice_id, **data)
+        self.recalculate_invoice(invoice_id, organization_id)
+        return item
 
     def _calculate_line_total(self, item_data: Dict[str, Any]) -> Decimal:
         """Calculate line item total: (qty * unit_price) - discount + tax"""
@@ -970,6 +977,44 @@ class InvoiceService:
             event_metadata={"email_delivered": True, "attempt_via": "manual"},
             created_by=sent_by,
         )
+        # ── ZB-ONB-011: First invoice issued milestone ─────────────────────────
+        # Fire once when the org sends its very first invoice.  Safe: any error
+        # here is logged and swallowed — it must never block the response.
+        try:
+            sent_count = (
+                self.db.query(func.count(Invoice.id))
+                .filter(
+                    Invoice.organization_id == organization_id,
+                    Invoice.status == InvoiceStatus.SENT,
+                )
+                .scalar()
+            )
+            if sent_count == 1:
+                from app.modules.auth.models import User, UserRole
+                from app.services.email_service import send_first_invoice_milestone_email
+                admin = (
+                    self.db.query(User)
+                    .filter(
+                        User.organization_id == organization_id,
+                        User.role == UserRole.ORG_ADMIN,
+                        User.is_active.is_(True),
+                    )
+                    .first()
+                )
+                if admin and admin.email:
+                    from app.modules.organizations.models import Organization
+                    org = self.db.query(Organization).filter(Organization.id == organization_id).first()
+                    org_name = org.name if org else "your organization"
+                    send_first_invoice_milestone_email(
+                        email=admin.email,
+                        recipient_first_name=admin.first_name or "there",
+                        organization_name=org_name,
+                        organization_id=organization_id,
+                        db=self.db,
+                    )
+        except Exception as _onb011_err:
+            logger.warning("ZB-ONB-011 milestone trigger failed (non-blocking): %s", _onb011_err)
+        # ── end ZB-ONB-011 ─────────────────────────────────────────────────────
 
         return response
 
@@ -1009,6 +1054,18 @@ class InvoiceService:
         if inv is None or inv.deleted_at is not None:
             raise NotFoundException("Invoice", invoice_id)
         return inv
+
+    def get_public_invoice_link(self, invoice_id: int, organization_id: int) -> Dict[str, str]:
+        """Authenticated lookup of the same signed link that gets emailed to
+        the customer, so the internal invoice-detail UI's "preview" button can
+        open a link that actually resolves (a raw invoice id fails the
+        signature check in `_resolve_public_invoice`)."""
+        self.repo.get_by_id(invoice_id, organization_id)  # tenant-isolation check; raises NotFoundException
+        token = self._public_invoice_token(invoice_id)
+        return {
+            "token": token,
+            "url": f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{token}",
+        }
 
     def get_public_invoice(self, token: str) -> Dict[str, Any]:
         """Public-safe snapshot of an invoice for the customer-facing view &

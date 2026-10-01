@@ -19,7 +19,7 @@ Schema lifecycle differs by dialect:
 import logging
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import create_engine, exc, inspect, text  # type: ignore[import]
 from sqlalchemy.dialects import postgresql  # type: ignore[import]
@@ -78,9 +78,18 @@ if resolved_database_url.startswith("sqlite"):
         connect_args={"check_same_thread": False},
     )
 else:
+    # Default to "require" (unchanged production behavior for the common
+    # case of a URL with no explicit sslmode, e.g. a bare Neon connection
+    # string) but honor an explicit ?sslmode=... query param when present --
+    # confirmed by direct testing that the previous hardcoded connect_args
+    # value silently overrode a URL's own ?sslmode=disable rather than
+    # erroring, which made a plain (no-SSL) Postgres, such as a CI service
+    # container, unreachable no matter what the connection string said.
+    _pg_query_params = parse_qs(urlparse(resolved_database_url).query)
+    _pg_sslmode = (_pg_query_params.get("sslmode") or [None])[0] or "require"
     engine = create_engine(
         resolved_database_url,
-        connect_args={"sslmode": "require"},
+        connect_args={"sslmode": _pg_sslmode},
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
@@ -340,6 +349,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "commercial_subscriptions", "trial_ends_at",
         "add_commercial_subscription_trial_ends_at_column.py",
         "trial-eligibility/recovery-window checks in commercial subscription service",
+    ),
+    (
+        "commercial_subscriptions", "converted_at",
+        "add_commercial_subscription_converted_at_column.py",
+        "trial_conversion_service stamps converted_at on trial->paid conversion",
     ),
     (
         "platform_audit_logs", "actor_role",

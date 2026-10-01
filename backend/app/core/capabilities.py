@@ -52,6 +52,11 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     "incident.transition": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "incident.suppress": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR},
     "job.retry": {PlatformRole.RELIABILITY_OPERATOR},
+    # B3 — manual resend of a failed/suppressed email delivery. Same
+    # operational-write precedent as job.retry (RELIABILITY_OPERATOR), plus
+    # SECURITY_OPERATOR since a resend can be the fix for a security-relevant
+    # suppression review.
+    "email_delivery.resend": {PlatformRole.RELIABILITY_OPERATOR, PlatformRole.SECURITY_OPERATOR},
     "audit.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.AUDITOR},
     "launch_readiness.read": {PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR},
     "global_search.read": {
@@ -63,6 +68,20 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
         PlatformRole.AUDITOR, PlatformRole.FINANCE_READONLY,
     },
     "financial_consistency.read": {PlatformRole.AUDITOR, PlatformRole.FINANCE_READONLY},
+    # MUTATING reconciliation actions (manually triggering a run — including
+    # the Stripe-comparison leg — and acknowledging/resolving exceptions)
+    # were previously gated behind the SAME `financial_consistency.read`
+    # capability as the read-only report endpoints. That let a
+    # FINANCE_READONLY account — a role whose own name promises read-only
+    # access — actually mutate reconciliation state, breaking the read/write
+    # split this file otherwise enforces everywhere else (circuit_breaker.read
+    # vs .manage, platform_config.read vs .manage, commercial_financial.read
+    # vs .write). SECURITY_OPERATOR is this codebase's established
+    # "operational write" role for consequential platform mutations
+    # (commercial_payment.write, commercial_financial.write,
+    # circuit_breaker.manage, platform_config.manage) — reconciliation writes
+    # follow the same precedent.
+    "financial_consistency.write": {PlatformRole.SECURITY_OPERATOR},
     "circuit_breaker.read": {
         PlatformRole.SECURITY_OPERATOR, PlatformRole.RELIABILITY_OPERATOR, PlatformRole.AUDITOR,
     },

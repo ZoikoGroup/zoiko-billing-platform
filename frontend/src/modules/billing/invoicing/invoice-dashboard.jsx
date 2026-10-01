@@ -59,7 +59,7 @@ export default function InvoiceDashboard() {
     monthlyRevenue: [],
     recentActivity: [],
     overdueInvoices: [],
-    invoicesForCustomers: [],
+    topCustomers: [],
   });
 
   const fetchData = useCallback(async () => {
@@ -76,14 +76,16 @@ export default function InvoiceDashboard() {
         invoiceApi.getMonthlyRevenue(12),
         invoiceApi.getRecentActivity(10),
         invoiceApi.list({ per_page: 5, status: "overdue", date_from: dateRange.date_from, date_to: dateRange.date_to }),
-        // No dedicated "top customers" endpoint exists on invoiceApi — the Top
-        // Customers panel below is aggregated client-side from this list call
-        // (same data source invoice-list.jsx already uses) rather than inventing
-        // a new backend endpoint.
-        invoiceApi.list({ per_page: 200, date_from: dateRange.date_from, date_to: dateRange.date_to, sort_by: "total_amount", sort_order: "desc" }),
+        // Top Customers panel is backed by a dedicated grouped-aggregate
+        // endpoint (GET /invoices/top-customers) rather than pulling up to
+        // 200 full invoice rows (InvoiceResponse's ~50 fields each,
+        // including the entire embedded customer profile) across the wire
+        // just to group/sum them client-side -- that over-fetch was the
+        // single heaviest of the dashboard's parallel requests.
+        invoiceApi.getTopCustomers(dateRange, 5),
       ]);
 
-      const [statsRes, trendRes, revRes, collRes, distRes, monthlyRes, activityRes, overdueRes, customersRes] = results;
+      const [statsRes, trendRes, revRes, collRes, distRes, monthlyRes, activityRes, overdueRes, topCustomersRes] = results;
       const safeVal = (r, transform) => r.status === "fulfilled" ? (transform ? transform(r.value) : r.value) : null;
 
       if (mountedRef.current) {
@@ -96,7 +98,7 @@ export default function InvoiceDashboard() {
           monthlyRevenue: safeVal(monthlyRes, extractArray) || [],
           recentActivity: safeVal(activityRes, extractArray) || [],
           overdueInvoices: safeVal(overdueRes, (v) => v?.items || extractArray(v)) || [],
-          invoicesForCustomers: safeVal(customersRes, extractArray) || [],
+          topCustomers: safeVal(topCustomersRes, extractArray) || [],
         });
         setLastUpdated(new Date());
       }
@@ -157,25 +159,16 @@ export default function InvoiceDashboard() {
     totalTaxCollected: stats.total_tax_collected || 0,
   }), [stats]);
 
-  // Top Customers — no dedicated backend endpoint for this exists yet, so it's
-  // derived client-side from the same invoice list data invoice-list.jsx uses,
-  // grouped by customer and sorted by total billed amount.
-  const topCustomers = useMemo(() => {
-    const grouped = new Map();
-    for (const inv of d.invoicesForCustomers) {
-      const key = inv.customer_id ?? inv.customer_name ?? "unknown";
-      const name = inv.customer_name || inv.customer?.name || (inv.customer_id ? `Customer #${inv.customer_id}` : "Unknown");
-      const amount = Number(inv.total_amount ?? inv.total ?? inv.amount ?? 0);
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.total += amount;
-        existing.count += 1;
-      } else {
-        grouped.set(key, { id: key, name, total: amount, count: 1 });
-      }
-    }
-    return Array.from(grouped.values()).sort((a, b) => b.total - a.total).slice(0, 5);
-  }, [d.invoicesForCustomers]);
+  // Top Customers — server-aggregated via GET /invoices/top-customers
+  // (a single grouped SUM/COUNT query), already sorted by total billed amount.
+  const topCustomers = useMemo(() => (
+    d.topCustomers.map((c) => ({
+      id: c.customer_id,
+      name: c.customer_name || (c.customer_id ? `Customer #${c.customer_id}` : "Unknown"),
+      total: Number(c.total_amount ?? 0),
+      count: Number(c.invoice_count ?? 0),
+    }))
+  ), [d.topCustomers]);
 
   const invoiceQuickActions = useMemo(() => [
     { label: "Create Invoice", hint: "Bill a customer", href: "/billing/invoices/create", icon: PlusCircle },

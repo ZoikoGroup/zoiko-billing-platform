@@ -52,6 +52,39 @@ class EntitlementBlockedException(ForbiddenException):
     gate denies a request."""
 
 
+class EntitlementLimitExceededException(EntitlementBlockedException):
+    """403 with a structured, stable business-level payload for a numeric
+    limit gate (assert_within_limit's HARD / grace-expired SOFT_THEN_HARD
+    paths). Still an EntitlementBlockedException — anything that only checks
+    for that (e.g. existing tests) keeps working unchanged — but callers that
+    pass `entity=` to assert_within_limit get this richer shape instead, so
+    the frontend can render a proper "Subscription Limit Reached" UI instead
+    of parsing the free-text message for the raw entitlement key.
+
+    `error_code` deliberately overrides ForbiddenException's fixed "FORBIDDEN"
+    to a distinct, frontend-detectable value — same JSON field ("error"),
+    just a more specific value for this one case, matching how every other
+    ZoikoException subclass already carries its own error_code."""
+
+    def __init__(
+        self, *, entity: str, current_usage: int, limit: int, plan_name: str | None,
+        entitlement_key: str, message: str,
+    ):
+        super().__init__(message)
+        self.error_code = "SUBSCRIPTION_LIMIT_REACHED"
+        self.extra = {
+            "error_type": "ENTITLEMENT_LIMIT",
+            "entity": entity,
+            "current_usage": current_usage,
+            "limit": limit,
+            "remaining": max(limit - current_usage, 0),
+            "plan_name": plan_name,
+            # Retained for engineering/support debugging via the Network tab
+            # only — never rendered as the primary message to an org admin.
+            "entitlement_key": entitlement_key,
+        }
+
+
 class EntitlementThrottledException(ForbiddenException):
     """429-flavored block for THROTTLE enforcement — distinct from
     EntitlementBlockedException since throttling is expected/routine, not
@@ -104,6 +137,25 @@ def _emit_usage_signal(
         logger.exception("Audit bookkeeping failed for %s on %s", event, key)
 
 
+def _resolve_plan_name(db: Session, organization_id: int) -> str | None:
+    """Best-effort plan display name for an EntitlementLimitExceededException
+    payload. Deliberately swallows every failure and returns None instead —
+    this is UX polish for an already-failing write; it must never itself
+    become the reason a write fails or a different error is shown."""
+    try:
+        from app.modules.commercial.entitlement_resolver import resolve_open_subscription
+        from app.modules.commercial.models import CommercialPlan
+
+        subscription = resolve_open_subscription(db, organization_id)
+        if subscription is None or subscription.commercial_plan_id is None:
+            return None
+        plan = db.query(CommercialPlan).filter(CommercialPlan.id == subscription.commercial_plan_id).first()
+        return plan.plan_name if plan is not None else None
+    except Exception:  # noqa: BLE001 - best-effort only, see docstring
+        logger.exception("Failed to resolve plan name for organization %s", organization_id)
+        return None
+
+
 class EntitlementEnforcementService:
     def __init__(self, db: Session):
         self.db = db
@@ -142,10 +194,18 @@ class EntitlementEnforcementService:
         current_count: int,
         increment: int = 1,
         actor_id: int | None = None,
+        entity: str | None = None,
     ) -> None:
         """Gate an INTEGER limit. `resolved.value is None` means unlimited
         (Enterprise-contracted with no numeric cap configured, or the safe
-        'no limit enforced' default) -> always allow."""
+        'no limit enforced' default) -> always allow.
+
+        `entity` is an optional, caller-supplied business-facing slug (e.g.
+        "customer", "invoice") for the resource this limit actually gates.
+        When given, an exceeded limit raises EntitlementLimitExceededException
+        (a structured, frontend-detectable payload) instead of the plain
+        EntitlementBlockedException — purely additive: omitting it (every
+        caller before this) preserves the exact prior behavior."""
         if organization_id is None:
             return
 
@@ -180,9 +240,14 @@ class EntitlementEnforcementService:
             if not grace_elapsed:
                 return
             _emit_usage_signal(self.db, organization_id=organization_id, key=key, event="usage.limit.reached")
-            raise EntitlementBlockedException(
-                f"'{key}' limit ({limit}) exceeded and the grace period has elapsed."
-            )
+            message = f"'{key}' limit ({limit}) exceeded and the grace period has elapsed."
+            if entity is not None:
+                raise EntitlementLimitExceededException(
+                    entity=entity, current_usage=current_count, limit=limit,
+                    plan_name=_resolve_plan_name(self.db, organization_id),
+                    entitlement_key=key, message=message,
+                )
+            raise EntitlementBlockedException(message)
 
         if enforcement_type == EntitlementEnforcementType.THROTTLE:
             from app.modules.super_admin.models import AttentionSeverity
@@ -195,7 +260,14 @@ class EntitlementEnforcementService:
 
         # HARD
         _emit_usage_signal(self.db, organization_id=organization_id, key=key, event="usage.limit.reached")
-        raise EntitlementBlockedException(f"'{key}' limit ({limit}) exceeded.")
+        message = f"'{key}' limit ({limit}) exceeded."
+        if entity is not None:
+            raise EntitlementLimitExceededException(
+                entity=entity, current_usage=current_count, limit=limit,
+                plan_name=_resolve_plan_name(self.db, organization_id),
+                entitlement_key=key, message=message,
+            )
+        raise EntitlementBlockedException(message)
 
 
 def require_entitlement(key: str):

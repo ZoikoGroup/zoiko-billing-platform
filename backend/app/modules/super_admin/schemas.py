@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+from app.config import step_up_bypass_active
 from app.modules.auth.models import UserRole
 
 # Platform Settings can legitimately hold operational overrides (e.g. an SMTP
@@ -398,6 +399,8 @@ class CircuitBreakerToggleRequest(BaseModel):
 
     @model_validator(mode="after")
     def _one_factor_required(self):
+        if step_up_bypass_active():
+            return self
         if not self.code and not self.recovery_code:
             raise ValueError("Either a TOTP code or a recovery code is required to change a circuit breaker.")
         return self
@@ -489,6 +492,8 @@ class PrivilegedAccessStepUp(BaseModel):
 
     @model_validator(mode="after")
     def _one_factor_required(self):
+        if step_up_bypass_active():
+            return self
         if not self.code and not self.recovery_code:
             raise ValueError("Either a TOTP code or a recovery code is required.")
         return self
@@ -1218,6 +1223,10 @@ class TriggerReconciliationRunRequest(BaseModel):
     compare_processor: bool = False
     range_start: Optional[date] = None
     range_end: Optional[date] = None
+    # Optional scope: when set, both internal-invariant checks and the
+    # Stripe comparison are limited to this one organization instead of
+    # sweeping every organization (the default when omitted).
+    organization_id: Optional[int] = None
 
 
 class ReconciliationExceptionActionResponse(BaseModel):
@@ -1469,4 +1478,66 @@ class SaasReportingResponse(BaseModel):
     subscriptions: SaasSubscriptionsReporting
     mrr: SaasMrr
     plane: str = "PLATFORM"
-    honesty_notes: list[str]
+    honesty_notes: list[str] = []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# B3 — Email delivery health (read model over CommunicationAuditLog)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EmailFailureRow(BaseModel):
+    id: int
+    recipient: str
+    organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
+    template_id: str
+    event_name: str
+    status: str
+    suppression_reason: Optional[str] = None
+    error_message: Optional[str] = None
+    sent_at: datetime
+    # Server-computed: whether an existing, proper business-record resend
+    # path recognizes this row's template family (never a client-supplied
+    # claim — see EmailDeliveryService._resend_capability).
+    resendable: bool
+    resend_note: Optional[str] = None
+
+
+class EmailFailureListResponse(BaseModel):
+    items: list[EmailFailureRow]
+    total: int
+
+
+class EmailVolumeWindow(BaseModel):
+    total_attempts: int
+    sent: int
+    failed: int
+    suppressed: int
+    duplicate: int
+    superseded: int
+    queued: int
+    failure_rate_pct: Optional[float] = None
+
+
+class EmailDeliveryOverviewResponse(BaseModel):
+    generated_at: datetime
+    last_24h: EmailVolumeWindow
+    last_7d: EmailVolumeWindow
+    # "healthy" | "degraded" | "unknown" — mirrors the email_delivery/
+    # smtp_health AttentionItem this same read lazily opens/auto-resolves.
+    smtp_health: str
+
+
+class EmailResendResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class EmailTestSendRequest(BaseModel):
+    recipient_email: EmailStr
+
+
+class EmailTestSendResponse(BaseModel):
+    success: bool
+    message: str
+

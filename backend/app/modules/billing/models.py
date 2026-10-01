@@ -1526,6 +1526,23 @@ class Subscription(Base):
         UniqueConstraint("organization_id", "idempotency_key", name="uq_subscriptions_org_idempotency_key"),
     )
 
+    # -- Plan/Customer display-name hybrid properties (read-only, from
+    # relationship) --
+    # Same established pattern as WriteOff/Refund/CreditNote: the schema
+    # (SubscriptionResponse.plan_name/customer_name) declares these fields
+    # and Pydantic reads them off the ORM object via from_attributes=True.
+    # The paginated list repository eager-loads plan/customer so a page of
+    # subscriptions never lazy-loads per row.
+    @hybrid_property
+    def plan_name(self):
+        return self.plan.plan_name if self.plan else None
+
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
     def __repr__(self):
         return f"<Subscription id={self.id} number={self.subscription_number} status={self.status}>"
 
@@ -2165,7 +2182,7 @@ class Refund(Base):
     refund_type     = Column(CaseInsensitiveEnum(RefundType), nullable=False)
     refund_source   = Column(CaseInsensitiveEnum(RefundSource), nullable=False, default=RefundSource.PAYMENT)
     refund_method   = Column(CaseInsensitiveEnum(RefundMethod), nullable=True)
-    status          = Column(CaseInsensitiveEnum(RefundStatus), default=RefundStatus.DRAFT, nullable=False)
+    status          = Column(CaseInsensitiveEnum(RefundStatus), default=RefundStatus.DRAFT, nullable=False, index=True)
     amount          = Column(Numeric(14, 2), nullable=False)
     currency        = Column(String(3), default="USD")
     exchange_rate   = Column(Numeric(12, 6), nullable=True)
@@ -2210,6 +2227,20 @@ class Refund(Base):
 
     def __repr__(self):
         return f"<Refund id={self.id} number={self.refund_number} status={self.status}>"
+
+    # -- Customer detail hybrid properties (read-only, from relationship) --
+    # Same established pattern as Invoice/CreditNote: the schema
+    # (RefundResponse.customer_name/customer_email) declares these fields and
+    # Pydantic reads them off the ORM object via from_attributes=True.
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
+    @hybrid_property
+    def customer_email(self):
+        return self.customer.email if self.customer else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2283,7 +2314,7 @@ class WriteOff(Base):
     write_off_type    = Column(CaseInsensitiveEnum(WriteOffType), nullable=False)
     adjustment_type   = Column(CaseInsensitiveEnum(AdjustmentType), nullable=True)
     write_off_source  = Column(CaseInsensitiveEnum(WriteOffSource), nullable=False, default=WriteOffSource.INVOICE)
-    status            = Column(CaseInsensitiveEnum(WriteOffStatus), default=WriteOffStatus.DRAFT, nullable=False)
+    status            = Column(CaseInsensitiveEnum(WriteOffStatus), default=WriteOffStatus.DRAFT, nullable=False, index=True)
     amount            = Column(Numeric(14, 2), nullable=False)
     currency          = Column(String(3), default="USD")
     exchange_rate     = Column(Numeric(12, 6), nullable=True)
@@ -2318,6 +2349,20 @@ class WriteOff(Base):
 
     def __repr__(self):
         return f"<WriteOff id={self.id} number={self.write_off_number} status={self.status}>"
+
+    # -- Customer detail hybrid properties (read-only, from relationship) --
+    # Same established pattern as Invoice/CreditNote/Refund: the schema
+    # (WriteOffResponse.customer_name/customer_email) declares these fields
+    # and Pydantic reads them off the ORM object via from_attributes=True.
+    @hybrid_property
+    def customer_name(self):
+        if self.customer:
+            return self.customer.company_name or self.customer.display_name
+        return None
+
+    @hybrid_property
+    def customer_email(self):
+        return self.customer.email if self.customer else None
 
 
 class WriteOffStatusHistory(Base):
@@ -2935,6 +2980,7 @@ class BillingConfiguration(Base):
     quote_prefix                    = Column(String(10), default="QTE-")
     quote_number_format             = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     quote_sequence_reset            = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
+    quote_terms_and_conditions      = Column(Text, nullable=True)
     credit_note_prefix              = Column(String(10), default="CN-")
     credit_note_number_format       = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     credit_note_sequence_reset      = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
@@ -2945,6 +2991,7 @@ class BillingConfiguration(Base):
     write_off_number_format         = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_YYYY_SEQ, nullable=False)
     write_off_sequence_reset        = Column(CaseInsensitiveEnum(SequenceReset), default=SequenceReset.ANNUALLY, nullable=False)
     auto_generate_invoice_number    = Column(Boolean, default=True)
+    auto_send_invoices              = Column(Boolean, default=False)
     invoice_footer                  = Column(Text, nullable=True)
     invoice_terms                   = Column(Text, nullable=True)
     invoice_notes                   = Column(Text, nullable=True)
@@ -2987,6 +3034,9 @@ class BillingConfiguration(Base):
     exchange_rate_updated_by        = Column(Integer, nullable=True)
     rounding_method                 = Column(CaseInsensitiveEnum(RoundingMethod), default=RoundingMethod.HALF_UP, nullable=False)
     rounding_precision              = Column(Integer, default=2)
+    default_trial_days              = Column(Integer, default=0)
+    default_pricing_strategy        = Column(String(20), default="flat")
+    default_billing_frequency       = Column(CaseInsensitiveEnum(BillingPeriod), default=BillingPeriod.MONTHLY, nullable=False)
 
     # ── Payment Gateways ──
     gateway_stripe_enabled          = Column(Boolean, default=False)
@@ -3099,6 +3149,22 @@ class BillingConfiguration(Base):
     enable_auto_taxes               = Column(Boolean, default=False)
     enable_audit_logs               = Column(Boolean, default=True)
     security_settings               = Column(JSON, default=lambda: {})
+
+    # ── Subscription / Payment module settings (frontend-only fields with
+    # no dedicated column -- same "typed JSON blob, shallow-merged on
+    # update" idiom already used above for tax_preferences/tax_profiles,
+    # rather than one migration per field for two settings pages that are
+    # almost entirely composed of these) ──
+    subscription_extra_settings     = Column(JSON, default=lambda: {})
+    payment_extra_settings          = Column(JSON, default=lambda: {})
+    # Pricing Settings' "Rounding Rule" is a nearest-increment concept
+    # (nearest $0.01/$0.10/$1.00) distinct from -- and not a valid member
+    # of -- the strict `rounding_method` enum above (none/up/down/half_up/
+    # half_down/half_even, consumed nowhere in the calculation pipeline
+    # today; round_money() always uses ROUND_HALF_UP regardless of that
+    # setting). Storing it here rather than forcing it into that column
+    # avoids either an invalid-enum error or a user-facing copy change.
+    pricing_extra_settings          = Column(JSON, default=lambda: {})
 
     # ── Relationship Terminology ──
     relationship_terminology        = Column(String(20), default="customer")

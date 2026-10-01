@@ -165,10 +165,6 @@ export const rejectCommercialOverride = (overrideId, rejectionReason) =>
 export const revokeCommercialOverride = (overrideId, reason) =>
   api.post(`/api/super-admin/commercial-overrides/${overrideId}/revoke`, { reason });
 
-// ── Maker-checker approval queue (ZB-COM-BILL-001 Phase 5) ──────────────
-export const listApprovalRequests = (params = {}) =>
-  api.get("/api/super-admin/approval-requests", { params });
-
 // ── Billing kill switch (ZB-COM-BILL-001 §30.1) ─────────────────────────
 export const getBillingKillSwitch = () =>
   api.get("/api/super-admin/billing-kill-switch");

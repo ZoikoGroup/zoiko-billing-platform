@@ -43,13 +43,26 @@ export const getMetricDictionary = (domain) =>
 export const getInvoiceFinalizationBreaker = () =>
   api.get("/api/super-admin/circuit-breakers/tenant-invoice-finalization");
 
-export const setInvoiceFinalizationBreaker = (enabled, reason, code, recoveryCode) =>
+// `incident_reference` is NOT optional in practice: CircuitBreakerToggleRequest
+// rejects any engage (enabled=false) without it. Sending it only when present
+// keeps resume calls valid while making the engage case send what the server
+// demands, rather than collecting it and dropping it on the floor.
+export const setInvoiceFinalizationBreaker = (enabled, reason, code, recoveryCode, incidentReference) =>
   api.put("/api/super-admin/circuit-breakers/tenant-invoice-finalization", {
     enabled,
     reason,
+    incident_reference: incidentReference || undefined,
     code: code || undefined,
     recovery_code: recoveryCode || undefined,
   });
+
+// Whether the CALLING super_admin has MFA enrolled. Every breaker change runs
+// verify_step_up(), which refuses outright when this is false — so a UI that
+// offers the action without checking leaves the operator at a dead end with a
+// raw "MFA is not enabled on this account" error and no path forward.
+// Enrollment itself lives in SettingsPage's "Security — MFA step-up" card.
+export const getMfaStepUpStatus = () =>
+  api.get("/api/auth/mfa/status");
 
 // ZB-SA-CMD-003 §9 — generalized breaker catalog + break-glass toggle
 // (session 7). Engaging REQUIRES an incident_reference; every engaged pause
@@ -77,16 +90,6 @@ export const proposeCircuitBreakerChange = (scope, { enabled, reason, incidentRe
     reason,
     incident_reference: incidentReference || undefined,
     auto_expire_minutes: autoExpireMinutes ?? undefined,
-  });
-
-// Generic checker decision endpoint (request_type="circuit_breaker_change").
-// The checker must also present fresh MFA step-up.
-export const decideApprovalRequest = (requestId, { decision, reason, code, recoveryCode }) =>
-  api.post(`/api/super-admin/approval-requests/${requestId}/decision`, {
-    decision,
-    reason,
-    code: code || undefined,
-    recovery_code: recoveryCode || undefined,
   });
 
 // §11 — Triage lens: one pane composing incidents, pipeline stages, safety
@@ -177,14 +180,16 @@ export const getTaxSummary = (dateFrom, dateTo) =>
 
 // ── Reconciliation (REC-01 / ISS-017) ────────────────────────────────────
 
-// `compareProcessor`/`rangeStart`/`rangeEnd` are all optional — omitting
-// them preserves the original internal-checks-only run exactly, matching
-// the backend's TriggerReconciliationRunRequest defaults.
-export const triggerReconciliationRun = ({ compareProcessor = false, rangeStart, rangeEnd } = {}) =>
+// `compareProcessor`/`rangeStart`/`rangeEnd`/`organizationId` are all
+// optional — omitting them preserves the original internal-checks-only,
+// platform-wide run exactly, matching the backend's
+// TriggerReconciliationRunRequest defaults.
+export const triggerReconciliationRun = ({ compareProcessor = false, rangeStart, rangeEnd, organizationId } = {}) =>
   api.post("/api/super-admin/reconciliation-runs/run", {
     compare_processor: compareProcessor,
     range_start: compareProcessor ? rangeStart : undefined,
     range_end: compareProcessor ? rangeEnd : undefined,
+    organization_id: organizationId ? Number(organizationId) : undefined,
   });
 
 export const listReconciliationRuns = (limit = 10) =>
@@ -289,3 +294,15 @@ export const createEvaluationProgram = (data) =>
 
 export const setEvaluationProgramStatus = (programId, isActive) =>
   api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });
+
+// ── B3 — Email delivery health (read model over CommunicationAuditLog) ────
+// Backs the CommandCenterHub's "Email Delivery" tile and its dedicated page.
+
+export const getEmailDeliveryOverview = () =>
+  api.get("/api/super-admin/email-delivery/overview");
+
+export const listEmailDeliveryFailures = (skip = 0, limit = 50) =>
+  api.get("/api/super-admin/email-delivery/failures", { params: { skip, limit } });
+
+export const resendEmailDeliveryFailure = (logId) =>
+  api.post(`/api/super-admin/email-delivery/failures/${logId}/resend`, {});

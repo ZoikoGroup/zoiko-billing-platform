@@ -26,7 +26,6 @@ import { globalSearch } from "../service/commandCenterService";
 
 const STATIC_COMMANDS = [
   { label: "Open Attention queue", route: "/super-admin/governance", domain: "governance" },
-  { label: "Open Approval Center", route: "/super-admin/approval-queue", domain: "governance" },
   { label: "Request tenant support access", route: "/super-admin/support-access", domain: "governance" },
   { label: "Open Reliability overview", route: "/super-admin/reliability", domain: "platform" },
   { label: "Open Tenant Health", route: "/super-admin/tenant-health", domain: "platform" },

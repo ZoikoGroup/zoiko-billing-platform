@@ -88,6 +88,20 @@ def list_quotes(
     )
 
 
+@router.get(
+    "/summary",
+    summary="Get quotation summary and status KPI counts over the full dataset",
+)
+def get_quotation_summary(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    # NOTE: registered before "/{quote_id}" (below) so "/quotations/summary"
+    # is matched here instead of being swallowed by the int-typed path param.
+    svc = QuoteService(db)
+    return svc.get_quotation_summary(organization_id=current_user.organization_id)
+
+
 # ── Public Estimate Review (no auth — token in the emailed link) ─────────
 # Mounted OUTSIDE billing_router (see main.py) because billing_router has a
 # router-level subscription gate that would 401 the public link.

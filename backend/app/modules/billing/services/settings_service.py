@@ -488,12 +488,30 @@ class BillingConfigurationService:
             data["tax_profiles"] = preserved + incoming_profiles
             logger.info("Merged incoming tax_profiles entries by type for organization_id=%s", organization_id)
 
+        # ── Shallow-merge the subscription/payment settings-page fields ────
+        # that have no dedicated column (Subscription Settings and Payment
+        # Settings are almost entirely composed of these). Merging instead
+        # of a full-replace protects against wiping previously-saved keys
+        # if a caller ever sends a partial update.
+        for blob_field in ("subscription_extra_settings", "payment_extra_settings", "pricing_extra_settings"):
+            incoming_blob = data.get(blob_field)
+            if isinstance(incoming_blob, dict):
+                try:
+                    existing_config = self.repo.get_by_organization(organization_id)
+                    current_blob = dict(getattr(existing_config, blob_field, None) or {}) if existing_config else {}
+                except Exception:
+                    current_blob = {}
+                current_blob.update(incoming_blob)
+                data[blob_field] = current_blob
+
         try:
             config = self.repo.upsert(organization_id, updated_by=updated_by, **data)
             self.audit.log(
                 organization_id, updated_by, BillingAuditAction.UPDATE,
                 "BillingConfiguration", config.id, new_values=data,
             )
+            from app.core import cache_service
+            cache_service.invalidate_billing_config(organization_id)
             logger.info("Billing configuration updated successfully for organization_id=%s", organization_id)
             return config
         except Exception as e:
@@ -510,6 +528,8 @@ class BillingConfigurationService:
                 organization_id, updated_by, BillingAuditAction.UPDATE,
                 "BillingConfiguration", config.id, new_values={"reset": True},
             )
+            from app.core import cache_service
+            cache_service.invalidate_billing_config(organization_id)
             logger.info("Billing configuration reset successfully for organization_id=%s, config_id=%s", organization_id, config.id)
             return config
         except Exception as e:
@@ -571,16 +591,26 @@ class BillingConfigurationService:
         return config.quote_prefix or "QTE-"
 
     def get_default_currency(self, organization_id: int) -> str:
+        from app.config import settings as _settings
+        from app.core import cache_service
+        key = f"billing:config:{organization_id}:currency"
+        cached = cache_service.cache_get(key)
+        if cached is not None:
+            return str(cached)
         config = self.get_configuration(organization_id)
         # Prefer base_currency over default_currency as the authoritative org currency
         if hasattr(config, "base_currency") and config.base_currency:
             val = config.base_currency.value if hasattr(config.base_currency, 'value') else config.base_currency
             if val:
-                return str(val)
+                result = str(val)
+                cache_service.cache_set(key, result, ttl=_settings.REDIS_CONFIG_TTL)
+                return result
         if hasattr(config, "default_currency") and config.default_currency:
             val = config.default_currency.value if hasattr(config.default_currency, 'value') else config.default_currency
             if val:
-                return str(val)
+                result = str(val)
+                cache_service.cache_set(key, result, ttl=_settings.REDIS_CONFIG_TTL)
+                return result
         return "USD"
 
     def get_currency_symbol(self, organization_id: int) -> str:

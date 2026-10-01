@@ -292,9 +292,9 @@ export default function UsersPage() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand to-brand-hover text-xs font-bold text-white shadow-sm">
               {initialsOf(u.first_name, u.last_name, u.email)}
             </span>
-            <span className="min-w-0">
-              <span className="block font-semibold text-slate-800">{u.first_name} {u.last_name}</span>
-              <span className="block text-xs text-slate-500">{u.email}</span>
+            <span className="min-w-0 overflow-hidden">
+              <span className="block truncate font-semibold text-slate-800">{u.first_name} {u.last_name}</span>
+              <span className="block truncate text-xs text-slate-500" title={u.email}>{u.email}</span>
             </span>
           </span>
         ),
@@ -302,16 +302,18 @@ export default function UsersPage() {
       {
         key: "organization",
         label: "Organization",
+        hideBelow: "md",
         render: (u) => (
-          <span className="flex items-center gap-1.5 text-slate-600">
+          <span className="flex min-w-0 items-center gap-1.5 text-slate-600">
             <Building2 size={13} className="shrink-0 text-slate-400" />
-            {u.organization_name || "—"}
+            <span className="truncate" title={u.organization_name || "—"}>{u.organization_name || "—"}</span>
           </span>
         ),
       },
       {
         key: "plan",
         label: "Plan",
+        hideBelow: "lg",
         render: (u) =>
           u.subscription_plan_code ? (
             <span>
@@ -325,13 +327,6 @@ export default function UsersPage() {
           ),
       },
       {
-        key: "trial_remaining",
-        label: "Free Trial Remaining",
-        render: (u) => (
-          <TrialProgressBar trial={formatTrialRemaining(u.trial_ends_at, u.subscription_status, u.recovery_ends_at)} />
-        ),
-      },
-      {
         key: "derived_status",
         label: "Status",
         render: (u) => (
@@ -343,40 +338,36 @@ export default function UsersPage() {
         ),
       },
       {
-        key: "last_login_at",
-        label: "Last Login",
+        key: "login_created",
+        label: "Login / Created",
+        hideBelow: "xl",
         render: (u) => {
           const formatted = formatDateTimeSafe(u.last_login_at);
           return (
-            <span className="text-xs text-slate-500" title={formatted ? undefined : "No successful login recorded"}>
-              {formatted || "Never"}
+            <span className="block text-xs text-slate-500 leading-5">
+              <span className="block" title="Last login">{formatted || "Never"}</span>
+              <span className="block text-slate-400" title="Created">{new Date(u.created_at).toLocaleDateString()}</span>
             </span>
           );
         },
       },
-      { key: "created_at", label: "Created", render: (u) => <span className="text-xs text-slate-500">{new Date(u.created_at).toLocaleDateString()}</span> },
       {
         key: "actions",
-        label: "Actions",
-        width: 220,
+        label: "",
+        width: 100,
         render: (u) => (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              size="sm"
-              variant={u.is_active ? "danger" : "secondary"}
+          <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5">
+            <IconAction
+              title={u.is_active ? "Deactivate" : "Activate"}
               icon={Power}
               disabled={busyId === u.id || (me && me.id === u.id)}
               onClick={() => openStatus(u)}
-            >
-              {u.is_active ? "Deactivate" : "Activate"}
-            </Button>
-            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5">
-              {u.derived_status === "invited" && (
-                <IconAction title="Resend invitation email" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)} />
-              )}
-              <IconAction title="Move to another organization" icon={GitBranch} disabled={busyId === u.id} onClick={() => openMembership(u)} />
-              <IconAction title="Send password reset link" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)} />
-            </div>
+            />
+            {u.derived_status === "invited" && (
+              <IconAction title="Resend invitation email" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)} />
+            )}
+            <IconAction title="Move to another organization" icon={GitBranch} disabled={busyId === u.id} onClick={() => openMembership(u)} />
+            <IconAction title="Send password reset link" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)} />
           </div>
         ),
       },
@@ -409,7 +400,7 @@ export default function UsersPage() {
   }, [users]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <PageHeader
         crumbs={[{ label: "Platform" }, { label: "Organization Admins" }]}
         title="Organization Admins"
@@ -480,7 +471,8 @@ export default function UsersPage() {
               rowKey={(u) => u.id}
               emptyTitle="No organization admins found"
               emptyMessage={search || status ? "No organization admins match your current filters." : "Organization admins will appear here once organizations are provisioned."}
-              minWidth={1080}
+              minWidth={0}
+              tableClassName="table-fixed"
             />
           </div>
 

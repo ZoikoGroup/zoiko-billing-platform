@@ -82,7 +82,7 @@ export default function PromiseToPayPage() {
   const fetchPromises = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await promiseToPayApi.list({
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,

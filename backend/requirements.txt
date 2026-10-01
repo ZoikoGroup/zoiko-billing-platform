@@ -45,10 +45,15 @@ httpx>=0.27.0
 
 # Stripe Checkout/webhooks (services/stripe_service.py, routers/stripe_router.py,
 # routers/webhook_router.py). Inert until STRIPE_* env vars are set.
-stripe>=9.0.0
+# API-1: pinned to a single major version range (was >=9.0.0, six majors
+# open) — tested against 15.6.1. The SDK major version and the
+# stripe.api_version pin in stripe_connect_service.configure_stripe_runtime()
+# must only ever move together, as one deliberate, tested change.
+stripe>=15.0.0,<16.0.0
 
 slowapi
 cachetools
+redis>=5.0.0
 # Pinned (was unpinned) — this is the server-side parser for uploaded
 # product/customer spreadsheets (product_import_service.py,
 # customer_import_service.py); a security-relevant dependency shouldn't float.

@@ -58,6 +58,11 @@ class EntitlementSnapshotService:
         # transaction (e.g. a plan-change commit) without relying on
         # computed_at's timestamp resolution.
         snapshot.snapshot_version = (snapshot.snapshot_version or 0) + 1
+        # Recompute is the single choke point for every entitlement mutation
+        # (override approve/revoke, subscription transitions, provisioning,
+        # plan publish) — invalidate derived caches here once.
+        from app.core import cache_service
+        cache_service.invalidate_entitlement_caches(organization_id)
         self.db.flush()
         return snapshot
 

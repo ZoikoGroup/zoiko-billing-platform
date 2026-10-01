@@ -372,6 +372,8 @@ class PlatformInvoiceService:
             tax_amount=str(invoice.tax_amount),
             amount_paid=str(invoice.paid_amount),
             review_url=review_url,
+            event_id=f"platform_invoice:{invoice.id}:sent",
+            target_record_id=str(invoice.id),
         )
 
     def mark_delivered(self, *, invoice_id: int) -> PlatformInvoice:

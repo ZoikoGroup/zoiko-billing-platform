@@ -927,8 +927,8 @@ export default function SubscriptionDetailPage() {
 
       {showGenerateInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowGenerateInvoice(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">Generate Invoice</h3>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" role="dialog" aria-modal="true" aria-labelledby="generate-invoice-dialog-title" onClick={(e) => e.stopPropagation()}>
+            <h3 id="generate-invoice-dialog-title" className="text-lg font-semibold text-slate-800 mb-1">Generate Invoice</h3>
             <p className="text-sm text-slate-500 mb-4">Create an invoice for the current billing period.</p>
             <div className="space-y-3 mb-4 p-4 bg-slate-50 rounded-xl">
               <div className="flex justify-between"><span className="text-sm text-slate-500">Subscription</span><span className="font-medium text-slate-800">{subscription.subscription_number}</span></div>

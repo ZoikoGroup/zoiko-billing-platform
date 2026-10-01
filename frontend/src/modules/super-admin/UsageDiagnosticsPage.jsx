@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { listCommercialUsageCounters, listOrganizations } from "../../service/commercialService";
-import { PageHeader, DataTable, SearchInput } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, SearchInput } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 import { formatDateTime, displayValue } from "./constants";
 
-export default function UsageDiagnosticsPage() {
+// `embedded` drops this page's own PageHeader (and its page padding) when it
+// is mounted as a tab of the Products & Pricing hub. `onOpenKey`, if given,
+// turns each row's entitlement key into a link that jumps to that key's own
+// entry in the Entitlement Catalog tab — the catalog cross-reference this
+// page's own description already promises, made followable instead of manual.
+export default function UsageDiagnosticsPage({ embedded = false, onOpenKey } = {}) {
   const [counters, setCounters] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [search, setSearch] = useState("");
@@ -70,10 +75,21 @@ export default function UsageDiagnosticsPage() {
       {
         key: "key",
         label: "Entitlement Key",
-        render: (row) => <span className="font-mono text-xs font-semibold text-slate-800">{row.entitlement_key}</span>,
+        render: (row) =>
+          onOpenKey ? (
+            <button
+              type="button"
+              onClick={() => onOpenKey(row.entitlement_key)}
+              className="font-mono text-xs font-semibold text-brand-600 underline decoration-dotted underline-offset-2 hover:text-brand-700"
+            >
+              {row.entitlement_key}
+            </button>
+          ) : (
+            <span className="font-mono text-xs font-semibold text-slate-800">{row.entitlement_key}</span>
+          ),
       },
       { key: "window", label: "Window", render: (row) => <span className="text-xs text-slate-500">{row.window_key}</span> },
-      { key: "count", label: "Count", render: (row) => <span className="text-sm font-semibold text-slate-700">{displayValue(row.count)}</span> },
+      { key: "count", label: "Count", numeric: true, render: (row) => <span className="text-sm font-semibold text-slate-700">{displayValue(row.count)}</span> },
       {
         key: "soft_warned",
         label: "Soft-limit grace started",
@@ -85,43 +101,55 @@ export default function UsageDiagnosticsPage() {
         render: (row) => <span className="text-xs text-slate-500">{formatDateTime(row.updated_at)}</span>,
       },
     ],
-    [orgById]
+    [orgById, onOpenKey]
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
+        embedded={embedded}
+        accent="violet"
         title="Usage Diagnostics"
-        description="ZB-COM-ENT-001 · Part 3 §16 · UsageCounter values per organization, for keys enforced with a numeric limit. Threshold percentages require the org's resolved limit — cross-reference the Entitlement Catalog page for context on a specific key."
+        description="ZB-COM-ENT-001 · Part 3 §16 · UsageCounter values per organization, for keys enforced with a numeric limit. Threshold percentages require the org's resolved limit — click a key below to open it in the Entitlement Catalog."
         icon={Gauge}
         meta={`${displayValue(counters.length)} counter(s)`}
       />
 
-      <div className="mt-6 space-y-4">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
-          Only entitlement keys that route through <span className="font-semibold">UsageMeteringService</span> (or a
-          route-level <span className="font-semibold">COUNT(*)</span> check, per the enforcement checklist) ever
-          produce a row here — a key with no row simply hasn't been exercised, not necessarily unused.
-        </div>
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
+        <SectionCard variant="quiet">
+          <p className="text-xs leading-5 text-slate-600">
+            Only entitlement keys that route through <span className="font-semibold">UsageMeteringService</span> (or a
+            route-level <span className="font-semibold">COUNT(*)</span> check, per the enforcement checklist) ever
+            produce a row here — a key with no row simply hasn't been exercised, not necessarily unused.
+          </p>
+        </SectionCard>
 
         <SearchInput value={search} onChange={setSearch} placeholder="Search by organization or key…" className="w-full max-w-sm" />
 
         {error ? (
-          <div className="rounded-3xl border border-slate-200 bg-white">
-            <ErrorState message={error} onRetry={load} title="Unable to load usage diagnostics" />
-          </div>
-        ) : loading && rows.length === 0 ? (
-          <Spinner />
+          <ErrorState message={error} onRetry={load} title="Unable to load usage diagnostics" />
         ) : (
-          <DataTable
-            columns={columns}
-            data={rows}
-            loading={loading}
-            rowKey={(row) => row.id}
-            emptyTitle="No usage counters yet"
-            emptyMessage={search ? "No counters match your search." : "No entitlement key with a numeric limit has been exercised yet."}
-            minWidth={960}
-          />
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={Gauge}
+            title="Usage Counters"
+            description="UsageCounter values per organization, for entitlement keys enforced with a numeric limit."
+          >
+            {loading && rows.length === 0 ? (
+              <Spinner />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={rows}
+                loading={loading}
+                rowKey={(row) => row.id}
+                emptyTitle="No usage counters yet"
+                emptyMessage={search ? "No counters match your search." : "No entitlement key with a numeric limit has been exercised yet."}
+                minWidth={960}
+              />
+            )}
+          </SectionCard>
         )}
       </div>
     </div>

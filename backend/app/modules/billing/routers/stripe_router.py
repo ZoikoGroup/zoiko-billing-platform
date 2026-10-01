@@ -143,3 +143,23 @@ def push_refund_to_stripe(
         refund_id=refund_id,
         updated_by=current_user.id,
     )
+
+
+@router.post("/webhooks/{event_id}/replay")
+def replay_stripe_webhook_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
+):
+    """Operator-triggered replay of one specific `stripe_events` row
+    (completes WEB-2's manual re-drive path). Only a row currently in
+    `failed` status may be replayed, and only if it belongs to the caller's
+    own organization — StripeService.replay_failed_event enforces both,
+    scoped from the authenticated current_user, never from request input.
+    """
+    svc = StripeService(db)
+    return svc.replay_failed_event(
+        event_id=event_id,
+        organization_id=current_user.organization_id,
+    )

@@ -9,11 +9,18 @@ const ROLE_PATH_RULES = {
   // surface (/organization-admin/*) assumes exactly one — its endpoints
   // call get_organization_id(), which rejects a super_admin token outright
   // ("Super Admin must use get_super_admin_organization_id() to explicitly
-  // select an organization"). Rather than let a super_admin land on a page
-  // that's guaranteed to crash, route them to their own equivalent tooling
-  // (Super Admin → Platform → Administrators & Users, Organizations, etc.).
+  // select an organization"). /billing/* is org-scoped the same way, just
+  // via a different failure path: its endpoints pass through
+  // current_user.organization_id (None for super_admin) into
+  // BillingDashboardService etc., which hits seed_billing_configuration()
+  // and raises "Organization with id 'id' not found" — confirmed by
+  // calling get_full_dashboard(organization_id=None) directly against the
+  // real DB. Rather than let a super_admin land on a page that's
+  // guaranteed to crash, route them to their own equivalent tooling
+  // (Super Admin → Tenants → Administrators & Users, Organizations, etc.).
   super_admin: (pathname) =>
-    pathname !== "/organization-admin" && !pathname.startsWith("/organization-admin/"),
+    pathname !== "/organization-admin" && !pathname.startsWith("/organization-admin/") &&
+    pathname !== "/billing" && !pathname.startsWith("/billing/"),
   org_admin: (pathname) =>
     pathname === "/organization-admin" ||
     pathname.startsWith("/organization-admin/") ||

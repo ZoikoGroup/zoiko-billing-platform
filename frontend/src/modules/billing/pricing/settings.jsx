@@ -28,8 +28,6 @@ const ROUNDING_OPTIONS = [
   { value: "ceil_1.00", label: "Ceil to $1.00" },
 ];
 
-const SETTINGS_PREFIX = "pricing_";
-
 const DEFAULT_SETTINGS = {
   default_currency: "USD",
   default_billing_frequency: "monthly",
@@ -40,61 +38,12 @@ const DEFAULT_SETTINGS = {
   rounding_rule: "none",
 };
 
-export default function PricingSettingsPage() {
-  const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
-  const [initial, setInitial] = useState({ ...DEFAULT_SETTINGS });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-
-  const fetchSettings = useCallback(async () => {
-    try {
-      setLoading(true); setError(null);
-      const data = await settingsApi.get();
-      const raw = data?.settings || data || {};
-      const prefixed = {};
-      Object.entries(DEFAULT_SETTINGS).forEach(([key, def]) => {
-        const val = raw[`${SETTINGS_PREFIX}${key}`] ?? raw[key] ?? def;
-        prefixed[key] = String(val);
-      });
-      setSettings(prefixed);
-      setInitial(prefixed);
-    } catch (err) {
-      setError(err.message || "Failed to load settings");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchSettings(); }, [fetchSettings]);
-
-  const hasChanges = Object.keys(DEFAULT_SETTINGS).some((key) => settings[key] !== initial[key]);
-
-  const handleSave = async () => {
-    setSaving(true); setError(null); setSuccess(false);
-    try {
-      const payload = {};
-      Object.entries(settings).forEach(([key, val]) => {
-        payload[key] = val;
-        payload[`${SETTINGS_PREFIX}${key}`] = val;
-      });
-      await settingsApi.update(payload);
-      setInitial({ ...settings });
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      setError(err.message || "Failed to save settings");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChange = (key, value) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-    setSuccess(false);
-  };
-
+// Hoisted to module scope: this used to be declared inside the component
+// body, which gave it a brand-new function identity on every render --
+// React then treated every <SettingsField> as a different component type
+// on each keystroke/selection and unmounted+remounted its children (the
+// actual <input>/<select> DOM nodes), which is the classic cause of a
+// field losing focus or appearing to "snap back" after one interaction.
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
     <div className="bg-white border border-slate-200 rounded-3xl p-6">
@@ -111,6 +60,77 @@ function SettingsField({ label, icon: Icon, children, description }) {
     </div>
   );
 }
+
+export default function PricingSettingsPage() {
+  const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
+  const [initial, setInitial] = useState({ ...DEFAULT_SETTINGS });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      setLoading(true); setError(null);
+      const raw = await settingsApi.get();
+      // Every one of these except default_currency previously read/wrote a
+      // key (price_precision, tax_inclusive, default_pricing_strategy,
+      // rounding_rule, default_trial_days, default_billing_frequency) that
+      // did not exist anywhere on BillingConfiguration -- Pydantic silently
+      // dropped them from every save, which is why they always reverted to
+      // these defaults on reload. Mapped here to the fields that actually
+      // exist (some real columns, some a JSON extras blob -- see backend
+      // migration e5a1c3f7b9d2/f2b8d4a6c1e3 for why).
+      const pricingExtra = raw?.pricing_extra_settings || {};
+      const values = {
+        default_currency: raw?.default_currency ?? DEFAULT_SETTINGS.default_currency,
+        default_billing_frequency: raw?.default_billing_frequency ?? DEFAULT_SETTINGS.default_billing_frequency,
+        default_trial_days: String(raw?.default_trial_days ?? DEFAULT_SETTINGS.default_trial_days),
+        price_precision: String(raw?.rounding_precision ?? DEFAULT_SETTINGS.price_precision),
+        tax_inclusive: raw?.is_tax_inclusive_default ? "yes" : "no",
+        default_pricing_strategy: raw?.default_pricing_strategy ?? DEFAULT_SETTINGS.default_pricing_strategy,
+        rounding_rule: pricingExtra.rounding_rule ?? DEFAULT_SETTINGS.rounding_rule,
+      };
+      setSettings(values);
+      setInitial(values);
+    } catch (err) {
+      setError(err.message || "Failed to load settings");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  const hasChanges = Object.keys(DEFAULT_SETTINGS).some((key) => settings[key] !== initial[key]);
+
+  const handleSave = async () => {
+    setSaving(true); setError(null); setSuccess(false);
+    try {
+      const payload = {
+        default_currency: settings.default_currency,
+        default_billing_frequency: settings.default_billing_frequency,
+        default_trial_days: parseInt(settings.default_trial_days, 10) || 0,
+        rounding_precision: parseInt(settings.price_precision, 10) || 0,
+        is_tax_inclusive_default: settings.tax_inclusive === "yes",
+        default_pricing_strategy: settings.default_pricing_strategy,
+        pricing_extra_settings: { rounding_rule: settings.rounding_rule },
+      };
+      await settingsApi.update(payload);
+      setInitial({ ...settings });
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err.message || "Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChange = (key, value) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    setSuccess(false);
+  };
 
   if (loading) {
     return (

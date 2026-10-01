@@ -118,6 +118,7 @@ export default function RegisterPage() {
     try {
       await apiFetch("/api/auth/register", {
         method: "POST",
+        timeout: 60000,
         body: {
           organization: form.orgName,
           name: form.adminName,

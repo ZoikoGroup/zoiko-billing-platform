@@ -519,7 +519,15 @@ class CreditNoteService:
     # ── Dashboard / Reporting ───────────────────────────────────────────────
 
     def get_dashboard_stats(self, organization_id: int) -> Dict[str, Any]:
-        return self.repo.get_dashboard_stats(organization_id)
+        # Convert every credit note to the org's base currency before summing
+        # -- see CreditNoteRepository.get_dashboard_stats's docstring. Same
+        # BillingDashboardService._build_currency_rates() already used by
+        # CustomerService.get_kpi_data / InvoiceRepository / PaymentRepository
+        # dashboard aggregates, imported locally to avoid a service-to-service
+        # import cycle at module load time.
+        from app.modules.billing.services.dashboard_service import BillingDashboardService
+        currency_rates = BillingDashboardService(self.db)._build_currency_rates(organization_id)
+        return self.repo.get_dashboard_stats(organization_id, currency_rates=currency_rates)
 
     def get_status_distribution(self, organization_id: int) -> List[Dict[str, Any]]:
         return self.repo.get_status_distribution(organization_id)

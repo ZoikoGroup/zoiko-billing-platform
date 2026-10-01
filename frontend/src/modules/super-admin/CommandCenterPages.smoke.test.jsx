@@ -20,6 +20,9 @@ vi.mock("../../service/commandCenterService", () => ({
     Promise.resolve({ p95_ms: 120, p95_budget_ms: 800, error_rate: 0.001, sample_count: 50, slo: { status: "NOT_CONFIGURED" } })
   ),
   listAttentionItems: vi.fn(() => Promise.resolve([])),
+  getEmailDeliveryOverview: vi.fn(() =>
+    Promise.resolve({ total_sent: 100, failures: 0, suppressed: 0, deliverability_rate: 1.0, recent_events: [] })
+  ),
 }));
 
 vi.mock("../../service/commercialService", () => ({

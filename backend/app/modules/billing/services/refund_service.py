@@ -333,6 +333,15 @@ class RefundService:
 
     def reject_refund(self, refund_id: int, organization_id: int, updated_by: int, reason: str) -> Refund:
         refund = self.repo.get_by_id(refund_id, organization_id)
+        # §25 SoD: mirrors approve_refund's self-action guard (and
+        # DiscountService.reject_discount's identical check) -- the user who
+        # requested/submitted a refund cannot also be the one who rejects it,
+        # even if they hold a role that could reject someone else's.
+        if refund.created_by == updated_by:
+            raise ForbiddenException(
+                "You cannot reject a refund you submitted yourself. "
+                "Ask another Finance Approver to review it."
+            )
         self._validate_status_transition(refund.status, RefundStatus.REJECTED)
         old_status = refund.status.value
         refund.status = RefundStatus.REJECTED

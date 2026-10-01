@@ -136,11 +136,18 @@ def login(request: Request, data: LoginRequest, background_tasks: BackgroundTask
     summary="Begin Super Admin MFA enrollment (issues a TOTP secret)",
 )
 @limiter.limit("10/minute")
-def mfa_setup_start(request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def mfa_setup_start(
+    request: Request,
+    regenerate: bool = False,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from app.modules.auth import mfa_service
 
     _require_super_admin(current_user)
-    return mfa_service.start_enrollment(db, current_user)
+    # regenerate=False replays an unconfirmed enrollment instead of replacing
+    # it; only regenerate=True mints a new secret.
+    return mfa_service.start_enrollment(db, current_user, regenerate=regenerate)
 
 
 @router.post(
@@ -169,7 +176,14 @@ def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get
     from app.modules.auth import mfa_service
 
     _require_super_admin(current_user)
-    return {"enabled": mfa_service.is_mfa_enabled(db, current_user.id)}
+    bypassed = mfa_service.step_up_is_bypassed()
+    # Under the dev bypass, step-up will accept the action without a factor, so
+    # reporting enabled=False would make the UI block a control that is in fact
+    # open. Report what will actually happen, and say why.
+    return {
+        "enabled": bypassed or mfa_service.is_mfa_enabled(db, current_user.id),
+        "bypassed": bypassed,
+    }
 
 
 @router.post(

@@ -98,19 +98,34 @@ def get_zoiko_subscription(
             detail="This view requires an organization context.",
         )
 
+    # Fired by the TrialBanner on every route change — cache the 5-query
+    # payload. Invalidation: invalidate_subscription_caches() clears this key
+    # on subscription status transitions; a short TTL bounds invoice/payment
+    # staleness for a dashboard read.
+    from app.config import settings as _settings
+    from app.core import cache_service
+
+    org_id = current_user.organization_id
+    cache_key = "org:zoiko_sub:{org_id}".format(org_id=org_id)
+    cached = cache_service.cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     account = (
         db.query(CommercialAccount)
-        .filter(CommercialAccount.organization_id == current_user.organization_id)
+        .filter(CommercialAccount.organization_id == org_id)
         .first()
     )
     if account is None:
-        return {
+        result = {
             "account": None,
             "subscription": None,
             "invoices": [],
             "payments": [],
             "quotes": [],
         }
+        cache_service.cache_set(cache_key, result, ttl=_settings.REDIS_DASHBOARD_TTL)
+        return result
 
     subscription = None
     from app.modules.commercial.service import CommercialSubscriptionService
@@ -139,13 +154,15 @@ def get_zoiko_subscription(
         .all()
     )
 
-    return {
+    result = {
         "account": {"id": account.id, "status": account.status.value, "intended_plan_code": account.intended_plan_code},
         "subscription": _serialize_subscription(subscription),
         "invoices": [_serialize_invoice(i) for i in invoices],
         "payments": [_serialize_payment(p) for p in payments],
         "quotes": [_serialize_quote(q) for q in quotes],
     }
+    cache_service.cache_set(cache_key, result, ttl=_settings.REDIS_DASHBOARD_TTL)
+    return result
 
 
 @router.get("/usage", summary="The organization's usage counters against its resolved entitlement limits")

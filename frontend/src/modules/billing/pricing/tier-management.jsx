@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tag, Layers, Plus, X, AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { pricingApi, settingsApi } from "../../../service/billingService";
+import { pricingApi } from "../../../service/billingService";
+import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { Spinner, ErrorState, EmptyState } from "../../../components/billing-shared";
 import { extractArray } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/currency";
@@ -38,7 +39,7 @@ export default function TierManagementPage() {
   const [orgCurrency, setOrgCurrency] = useState("");
 
   useEffect(() => {
-    settingsApi.getConfig().then((res) => {
+    loadGlobalBillingConfig().then((res) => {
       const cfg = res?.data || res;
       if (cfg?.default_currency) setOrgCurrency(cfg.default_currency);
     }).catch((err) => console.error("[TierManagement] Failed to load config:", err));
@@ -52,7 +53,13 @@ export default function TierManagementPage() {
 
   useEffect(() => {
     if (selectedPlanId) {
-      const found = plans.find((p) => p.id === selectedPlanId);
+      // selectedPlanId originates from a URL query param (?plan_id=4), so
+      // it's always a string, while plan.id from the API is a number --
+      // the strict === here never matched, so arriving via a direct/shared
+      // link silently never resolved a plan name even though fetchTiers
+      // (which passes selectedPlanId straight to the API, no comparison)
+      // worked fine.
+      const found = plans.find((p) => String(p.id) === String(selectedPlanId));
       setSelectedPlanName(found ? found.name : "");
     } else {
       setSelectedPlanName("");
@@ -67,7 +74,7 @@ export default function TierManagementPage() {
     }
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await pricingApi.listTiers(selectedPlanId);
       const items = data.items || data.data || data || [];
       setTiers(Array.isArray(items) ? items : []);

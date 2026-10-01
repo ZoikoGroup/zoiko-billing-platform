@@ -8,8 +8,8 @@ import {
   listCommercialAccounts,
   listCommercialPlans,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Button, Modal, Field, Select, SearchInput } from "../../components/billing-ui";
-import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
+import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select, SearchInput } from "../../components/billing-ui";
+import { Pagination, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
   SUBSCRIPTION_STATUS_OPTIONS,
@@ -23,7 +23,9 @@ import {
 
 const EMPTY_FORM = { organization_id: "", plan_id: "", status: "pending" };
 
-export default function SubscriptionsPage() {
+// `embedded` drops this page's own PageHeader when it is mounted as a tab of
+// the Products & Pricing hub.
+export default function SubscriptionsPage({ embedded = false } = {}) {
   const [subscriptions, setSubscriptions] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -293,9 +295,11 @@ export default function SubscriptionsPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
-        title="Commercial Subscriptions"
+        embedded={embedded}
+        accent="violet"
+        title="Platform Subscriptions"
         description="PLANE 1 · Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only; plan changes supersede the subscription and preserve history."
         icon={UserCheck}
         actions={
@@ -306,7 +310,7 @@ export default function SubscriptionsPage() {
         meta={`${displayValue(total)} subscription(s)`}
       />
 
-      <div className="mt-6 space-y-4">
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
         {error && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
@@ -318,23 +322,35 @@ export default function SubscriptionsPage() {
 
         <SearchInput value={search} onChange={onSearch} placeholder="Search by organization name/code or plan code…" className="w-full max-w-sm" />
 
-        {loading && subscriptions.length === 0 ? (
-          <Spinner />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={subscriptions}
-            loading={loading}
-            emptyTitle="No commercial subscriptions yet"
-            emptyMessage="Create the first subscription to assign a plan to an organization."
-            emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create subscription</Button>}
-            minWidth={1120}
-          />
+        {/* A failed fetch also clears `subscriptions` to [], so rendering the
+            table unconditionally showed "No commercial subscriptions yet"
+            directly under the error banner above — a failure read as an
+            empty catalogue. */}
+        {!(error && subscriptions.length === 0) && (
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={UserCheck}
+            title="Subscription Directory"
+            description="Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only."
+          >
+            <DataTable
+              columns={columns}
+              data={subscriptions}
+              loading={loading}
+              emptyTitle="No commercial subscriptions yet"
+              emptyMessage="Create the first subscription to assign a plan to an organization."
+              emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create subscription</Button>}
+              minWidth={1120}
+            />
+          </SectionCard>
         )}
 
-        <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
-          {displayValue(total)} subscription(s)
-        </Pagination>
+        {!(error && subscriptions.length === 0) && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
+            {displayValue(total)} subscription(s)
+          </Pagination>
+        )}
       </div>
 
       <Modal

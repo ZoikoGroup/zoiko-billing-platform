@@ -67,6 +67,23 @@ export default function QuotationListPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
+  // ── Summary KPIs (fetched independently of pagination, over the full
+  // org dataset -- not just the current 10-row page) ───────────────────────
+  const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+
+  const fetchSummary = useCallback(async () => {
+    try {
+      setSummaryLoading(true);
+      const data = await quoteApi.summary();
+      setSummary(data);
+    } catch {
+      // Non-critical: fall back to page-derived values if summary fails
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, []);
+
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardData, setWizardData] = useState({
@@ -123,6 +140,7 @@ export default function QuotationListPage() {
   }, [safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
 
   useEffect(() => { fetchQuotes(true); }, [fetchQuotes]);
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
 
   const handleSort = (field) => {
@@ -162,6 +180,7 @@ export default function QuotationListPage() {
       }
       setSelectedIds(new Set()); setSelectAll(false);
       fetchQuotes();
+      fetchSummary();
     } catch (err) {
       setError(err.message || `Failed to ${action} quotations`);
     } finally { setBulkLoading(false); }
@@ -440,6 +459,7 @@ export default function QuotationListPage() {
       setShowWizard(false);
       setCurrentPage(1);
       fetchQuotes();
+      fetchSummary();
       navigate(`/billing/quotations/${quoteId}`);
     } catch (err) {
       setWizardError(err?.detail || err?.message || "Failed to create quotation");
@@ -447,6 +467,20 @@ export default function QuotationListPage() {
   };
 
   const filteredByStatus = (status) => quotes.filter((q) => q.status === status);
+
+  // ── KPI values: prefer the full-dataset summary aggregate, fall back to
+  // page-derived values (only the current page) if the summary call failed ──
+  const kpiTotal      = summary?.total           ?? total;
+  const kpiDraft      = summary?.draft_count     ?? filteredByStatus("draft").length;
+  const kpiSent       = summary?.sent_count      ?? filteredByStatus("sent").length;
+  const kpiAccepted   = summary?.accepted_count  ?? filteredByStatus("accepted").length;
+  const kpiRejected   = summary?.rejected_count  ?? filteredByStatus("rejected").length;
+  const kpiConverted  = summary?.converted_count ?? filteredByStatus("converted").length;
+  const kpiCancelled  = summary?.cancelled_count ?? filteredByStatus("cancelled").length;
+  const kpiExpired    = summary?.expired_count   ?? filteredByStatus("expired").length;
+  const kpiTotalValue = summary?.total_value != null
+    ? Number(summary.total_value)
+    : quotes.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0);
 
   if (loading) {
     return <HRPage title="Quotations" subtitle="Manage quotations"><PageSkeleton rows={6} /></HRPage>;
@@ -460,16 +494,16 @@ export default function QuotationListPage() {
     <HRPage title="Quotations" subtitle="Enterprise sales proposal workspace">
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Total" value={total} icon={FileText} color="from-slate-500 to-slate-600" onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
-          <DashboardStatCard title="Draft" value={filteredByStatus("draft").length} icon={Clock} color="from-slate-500 to-slate-600" subtitle={`${total > 0 ? ((filteredByStatus("draft").length / total) * 100).toFixed(0) : 0}%`} onClick={() => { setStatusFilter("draft"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Sent" value={filteredByStatus("sent").length} icon={Send} color="from-blue-500 to-blue-600" onClick={() => { setStatusFilter("sent"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Accepted" value={filteredByStatus("accepted").length} icon={CheckCircle} color="from-emerald-500 to-emerald-600" onClick={() => { setStatusFilter("accepted"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Total" value={kpiTotal} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
+          <DashboardStatCard title="Draft" value={kpiDraft} icon={Clock} color="from-slate-500 to-slate-600" loading={summaryLoading} subtitle={`${kpiTotal > 0 ? ((kpiDraft / kpiTotal) * 100).toFixed(0) : 0}%`} onClick={() => { setStatusFilter("draft"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Sent" value={kpiSent} icon={Send} color="from-blue-500 to-blue-600" loading={summaryLoading} onClick={() => { setStatusFilter("sent"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Accepted" value={kpiAccepted} icon={CheckCircle} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => { setStatusFilter("accepted"); setCurrentPage(1); }} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Rejected" value={filteredByStatus("rejected").length} icon={XCircle} color="from-red-500 to-rose-500" onClick={() => { setStatusFilter("rejected"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Converted" value={filteredByStatus("converted").length} icon={RefreshCw} color="from-brand to-brand-hover" onClick={() => { setStatusFilter("converted"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Cancelled/Exp" value={filteredByStatus("cancelled").length + filteredByStatus("expired").length} icon={Ban} color="from-amber-500 to-orange-500" />
-          <DashboardStatCard title="Total Value" value={quotes.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0)} currency={defaultCurrency} icon={DollarSign} color="from-brand to-brand-hover" />
+          <DashboardStatCard title="Rejected" value={kpiRejected} icon={XCircle} color="from-red-500 to-rose-500" loading={summaryLoading} onClick={() => { setStatusFilter("rejected"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Converted" value={kpiConverted} icon={RefreshCw} color="from-brand to-brand-hover" loading={summaryLoading} onClick={() => { setStatusFilter("converted"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Cancelled/Exp" value={kpiCancelled + kpiExpired} icon={Ban} color="from-amber-500 to-orange-500" loading={summaryLoading} />
+          <DashboardStatCard title="Total Value" value={kpiTotalValue} currency={defaultCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
@@ -489,7 +523,7 @@ export default function QuotationListPage() {
                   aria-label="Toggle filters" aria-expanded={showFilters}>
                   <Filter size={18} />
                 </button>
-                <button onClick={() => { setRefreshing(true); fetchQuotes(); }} disabled={refreshing}
+                <button onClick={() => { setRefreshing(true); fetchQuotes(); fetchSummary(); }} disabled={refreshing}
                   className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh quotations">
                   <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
                 </button>

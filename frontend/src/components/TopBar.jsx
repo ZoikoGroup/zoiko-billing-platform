@@ -5,6 +5,12 @@ import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import { getOrganizationDetails } from "../service/orgAdminService";
 
+const NOTIFICATIONS_ROUTE_BY_ROLE = {
+  billing_admin: "/billing/workspace/notifications",
+  org_admin: "/organization-admin/notifications",
+  super_admin: "/super-admin/notifications",
+};
+
 function initialsOf(user) {
   if (!user) return "JD";
   if (user.name) {
@@ -67,7 +73,7 @@ function OrgContext({ role }) {
   );
 }
 
-export default function TopBar({ menuOpen = false, onMenuClick }) {
+export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed = false }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
@@ -102,7 +108,7 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 lg:left-72 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm">
+    <header className={`fixed top-0 left-0 right-0 h-[65px] bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-4 sm:px-6 z-50 shadow-sm transition-[left] ${sidebarCollapsed ? "lg:left-[76px]" : "lg:left-72"}`}>
       {/* Left: Brand + Organization/Workspace Context */}
       <div className="flex min-w-0 items-center gap-2">
         {onMenuClick && (
@@ -138,15 +144,34 @@ export default function TopBar({ menuOpen = false, onMenuClick }) {
           </Link>
         )}
 
-        {/* Notification Icon */}
-        <button
-          type="button"
-          className="relative p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-          aria-label="Notifications"
-        >
-          <Bell size={20} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ff6b00] rounded-full border-2 border-white" />
-        </button>
+        {/* Notification Icon — links to the real (non-fabricated) billing
+            workspace notifications feed. The feed itself (WorkspaceNotificationsPage)
+            only calls org-scoped billing endpoints (overdue invoices, expiring
+            contracts, aging buckets, billing config) that both org_admin and
+            billing_admin are already authorized to call, and org_admin is the
+            default landing role for /organization-admin/dashboard — the exact
+            page this was reported broken on — so it must not be billing_admin-only.
+            For every other role this is an inert placeholder: it must never show
+            a fake "unread" dot when nothing was ever fetched (ORG-01). */}
+        {ORG_CONTEXT_ROLES.includes(role) ? (
+          <Link
+            to={NOTIFICATIONS_ROUTE_BY_ROLE[role]}
+            className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            aria-label="Notifications"
+          >
+            <Bell size={20} />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="Notifications are not yet available for this workspace"
+            aria-label="Notifications (not yet available)"
+            className="p-2 rounded-full text-gray-300 cursor-not-allowed"
+          >
+            <Bell size={20} />
+          </button>
+        )}
 
         {/* Divider */}
         <div className="hidden sm:block w-px h-7 bg-gray-200" />

@@ -547,18 +547,20 @@ class InvoiceRepository(BaseRepository[Invoice]):
         this_month_revenue = float(this_month_revenue)
         total_tax = float(total_tax)
 
-        status_query = self.db.query(
+        # Deliberately NOT filtered by date_from/date_to: this is a snapshot
+        # of how many invoices are CURRENTLY in each status (an inventory
+        # count), not a "created within this period" metric. Terminal
+        # statuses (cancelled/refunded/written_off/partially_paid) are
+        # reached long after issue_date, so windowing this by issue_date
+        # silently zeroed them out under the default 30-day dashboard
+        # range even when real matching invoices existed.
+        status_rows = self.db.query(
             Invoice.status,
             func.count(Invoice.id),
         ).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
-        )
-        if date_from:
-            status_query = status_query.filter(Invoice.issue_date >= date_from)
-        if date_to:
-            status_query = status_query.filter(Invoice.issue_date <= date_to)
-        status_rows = status_query.group_by(Invoice.status).all()
+        ).group_by(Invoice.status).all()
         status_counts = {row[0].value if hasattr(row[0], "value") else str(row[0]): row[1] for row in status_rows}
 
         avg_days_query = self.db.query(
@@ -828,6 +830,58 @@ class InvoiceRepository(BaseRepository[Invoice]):
                 "action": f"Status changed from {h.from_status or 'new'} to {h.to_status}",
             }
             for h in history
+        ]
+
+    def get_top_customers(
+        self,
+        organization_id: int,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        currency_rates: Optional[Dict[str, float]] = None,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Top-N customers by billed amount for the Invoice Dashboard's "Top
+        Customers" panel -- a single grouped aggregate (same idiom as
+        get_overdue_by_customer above) instead of the dashboard pulling up to
+        200 full invoice rows (InvoiceResponse's ~50 fields each, including
+        the entire customer profile) across the wire just to group/sum them
+        in the browser."""
+        from app.modules.billing.models import BillingCustomer
+
+        rate = self._rate_case(Invoice.currency, currency_rates)
+        filters = [
+            Invoice.organization_id == organization_id,
+            Invoice.is_active == True,
+        ]
+        if date_from:
+            filters.append(Invoice.issue_date >= self._parse_date_boundary(date_from, "date_from").date())
+        if date_to:
+            filters.append(Invoice.issue_date <= self._parse_date_boundary(date_to, "date_to").date())
+
+        total_expr = func.coalesce(func.sum(Invoice.total_amount * rate), 0)
+        rows = (
+            self.db.query(
+                Invoice.customer_id,
+                BillingCustomer.company_name,
+                BillingCustomer.display_name,
+                total_expr,
+                func.count(Invoice.id),
+            )
+            .join(BillingCustomer, BillingCustomer.id == Invoice.customer_id)
+            .filter(*filters)
+            .group_by(Invoice.customer_id, BillingCustomer.company_name, BillingCustomer.display_name)
+            .order_by(total_expr.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "customer_id": customer_id,
+                "customer_name": display_name or company_name,
+                "total_amount": float(total),
+                "invoice_count": count,
+            }
+            for customer_id, company_name, display_name, total, count in rows
         ]
 
     def bulk_delete(self, ids: List[int], organization_id: int) -> int:

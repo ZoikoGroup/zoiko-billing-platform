@@ -95,7 +95,7 @@ export default function ReportsPage() {
   const fetchReports = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
 
       const results = await Promise.allSettled([
         dashboardApi.getMonthlyRevenue(12),

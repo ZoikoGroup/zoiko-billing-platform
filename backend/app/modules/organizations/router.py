@@ -177,7 +177,7 @@ def get_my_organization_dashboard_stats(
     """Org-scoped KPIs for the Organization Admin dashboard — computed from
     the billing module's own tables using SQL-level aggregations."""
 
-    from sqlalchemy import func
+    from sqlalchemy import func, case
     from app.core.dependencies import get_organization_id
     from app.modules.auth.models import User, UserRole
     from app.modules.billing.models import (
@@ -191,20 +191,23 @@ def get_my_organization_dashboard_stats(
     org = db.query(Organization).filter(Organization.id == org_id).first()
     org_currency = org.currency if org else None
 
-    total_customers = (
-        db.query(func.count(BillingCustomer.id))
-        .filter(BillingCustomer.organization_id == org_id)
-        .scalar()
-    ) or 0
-
-    active_customers = (
-        db.query(func.count(BillingCustomer.id))
-        .filter(
-            BillingCustomer.organization_id == org_id,
-            BillingCustomer.status == CustomerStatus.ACTIVE,
+    # Perf (QA bug #42): this endpoint used to issue 6 separate round trips
+    # for what are really just 3 tables' worth of counts (customers,
+    # invoices, users) plus a 1-query subscription count -- each paying full
+    # network latency to the remote Postgres instance. Collapsing same-table
+    # counts into one conditional-aggregation query each cuts that to 4
+    # round trips (customers, invoices, subscriptions, users) without
+    # changing any of the returned values.
+    total_customers, active_customers = (
+        db.query(
+            func.count(BillingCustomer.id),
+            func.count(case((BillingCustomer.status == CustomerStatus.ACTIVE, 1))),
         )
-        .scalar()
-    ) or 0
+        .filter(BillingCustomer.organization_id == org_id)
+        .one()
+    )
+    total_customers = total_customers or 0
+    active_customers = active_customers or 0
 
     active_subscriptions = (
         db.query(func.count(Subscription.id))
@@ -216,17 +219,16 @@ def get_my_organization_dashboard_stats(
     ) or 0
 
     open_statuses = (InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID)
-    open_invoices = (
-        db.query(func.count(Invoice.id))
-        .filter(Invoice.organization_id == org_id, Invoice.status.in_(open_statuses))
-        .scalar()
-    ) or 0
-
-    overdue_invoices = (
-        db.query(func.count(Invoice.id))
-        .filter(Invoice.organization_id == org_id, Invoice.status == InvoiceStatus.OVERDUE)
-        .scalar()
-    ) or 0
+    open_invoices, overdue_invoices = (
+        db.query(
+            func.count(case((Invoice.status.in_(open_statuses), 1))),
+            func.count(case((Invoice.status == InvoiceStatus.OVERDUE, 1))),
+        )
+        .filter(Invoice.organization_id == org_id)
+        .one()
+    )
+    open_invoices = open_invoices or 0
+    overdue_invoices = overdue_invoices or 0
 
     # Keep financial totals aligned with the main billing dashboard, including
     # conversion from invoice currencies into the organization's base currency.

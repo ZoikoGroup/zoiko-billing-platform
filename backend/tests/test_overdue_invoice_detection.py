@@ -28,7 +28,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.modules.billing.models import Invoice, InvoiceStatus
+from app.modules.billing.models import DunningStatus, Invoice, InvoiceStatus
 from app.modules.billing.repositories.invoice import InvoiceRepository
 from app.modules.billing.services.collection_service import CollectionService
 from app.modules.billing.services.dunning_service import DunningService
@@ -149,6 +149,64 @@ class TestDunningProcessSeesRealOverdueInvoices:
         )
         results = svc.process_dunning(org.id)
         assert any(r.get("invoice_id") == inv.id for r in results)
+
+
+class TestDunningAutoResolvesOnSettlement:
+    """A dunning case opened for a genuinely overdue invoice must not stay
+    ACTIVE forever once that invoice is fully paid -- nothing else in the
+    codebase (payment/credit-note/write-off services) ever calls
+    resolve_case/close_case, so without process_dunning closing this loop
+    itself, a settled invoice's case remains open and eligible for further
+    reminders/escalation. Confirmed live: preview-reminder on a stale case
+    for a paid invoice still generated a sendable 'Payment Reminder'."""
+
+    def test_case_is_auto_resolved_once_invoice_is_paid(self, db_session):
+        org = make_organization(db_session)
+        cust = make_customer(db_session, org.id)
+        inv = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.SENT, total_amount="3000.00")
+        _backdate(db_session, inv, days_overdue=10)
+
+        svc = DunningService(db_session)
+        svc.create_level(
+            organization_id=org.id, created_by=USER_ID,
+            level_number=1, name="Reminder", min_days_overdue=0, max_days_overdue=30,
+            action_type="email_reminder",
+        )
+        svc.process_dunning(org.id)
+        case = svc.case_repo.get_by_invoice_active(org.id, inv.id)
+        assert case is not None
+        assert case.status == DunningStatus.ACTIVE
+
+        inv.status = InvoiceStatus.PAID
+        inv.paid_amount = inv.total_amount
+        inv.balance_due = "0.00"
+        db_session.commit()
+
+        svc.process_dunning(org.id)
+        db_session.refresh(case)
+        assert case.status == DunningStatus.RESOLVED
+        assert case.resolved_at is not None
+
+    def test_active_case_for_still_overdue_invoice_is_untouched(self, db_session):
+        """The auto-resolve pass must not touch cases whose invoice is still
+        genuinely overdue -- only settled invoices should be resolved."""
+        org = make_organization(db_session)
+        cust = make_customer(db_session, org.id)
+        inv = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.SENT, total_amount="3000.00")
+        _backdate(db_session, inv, days_overdue=10)
+
+        svc = DunningService(db_session)
+        svc.create_level(
+            organization_id=org.id, created_by=USER_ID,
+            level_number=1, name="Reminder", min_days_overdue=0, max_days_overdue=30,
+            action_type="email_reminder",
+        )
+        svc.process_dunning(org.id)
+        svc.process_dunning(org.id)  # second run, invoice still unpaid
+
+        case = svc.case_repo.get_by_invoice_active(org.id, inv.id)
+        assert case is not None
+        assert case.status == DunningStatus.ACTIVE
 
 
 class TestManualProcessOverdueTrigger:

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from 'react-router-dom';
 import HRPage from '../../../components/HRPage';
-import { customerApi, invoiceApi, paymentApi, contractApi, subscriptionApi, creditNoteApi, settingsApi, quoteApi } from '../../../service/billingService';
+import { customerApi, invoiceApi, paymentApi, contractApi, subscriptionApi, creditNoteApi, quoteApi } from '../../../service/billingService';
+import { loadGlobalBillingConfig } from '../../../service/billingConfigCache';
 import { ArrowLeft, Mail, Phone, Building2, User, CreditCard,
   FileText, RefreshCw, Plus, Pencil, Trash2, CheckCircle,
   AlertCircle, Loader2, Star, Ban, Play, Activity, Files, StickyNote,
@@ -316,7 +317,7 @@ export default function CustomerProfilePage() {
         tags: data.tags || [],
         notes: data.notes || '',
       });
-      settingsApi.getConfig().then(setOrgConfig).catch((err) => console.error("[CustomerProfile] Failed to load config:", err));
+      loadGlobalBillingConfig().then(setOrgConfig).catch((err) => console.error("[CustomerProfile] Failed to load config:", err));
     } catch (err) {
       setError(err?.detail || err?.message || `Failed to load ${singular.toLowerCase()}`);
     } finally {

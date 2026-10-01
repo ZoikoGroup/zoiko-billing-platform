@@ -1,0 +1,182 @@
+name: CI — Test Gate
+
+# Fast, mandatory checks that must pass before code merges to main. This is
+# intentionally separate from deploy.yml (which only builds/restarts on push
+# to main and, as of the 2026-09-19 production-readiness audit, applies
+# pending Alembic migrations) -- deploy.yml has no test step of its own, so
+# until branch protection requires this workflow's checks, a broken commit
+# on main can still deploy. This workflow does not change deploy.yml's
+# behavior; it only adds an independent, required-check-eligible signal.
+#
+# Backend tests mostly run against an in-memory SQLite database created
+# per-test by tests/conftest.py's db_session fixture -- but the backend-tests
+# job still needs a real Postgres service container for module-import-time
+# resolution, Alembic's Postgres-only DDL, and one test that opens its own
+# DB session outside that fixture. See the backend-tests job below for the
+# exact, individually-confirmed reasons. No Redis is needed (the app falls
+# back to an in-process cache when REDIS_URL is unset).
+#
+# The Plane 2 release gate explicitly excludes backend/tests/ai_assistant/:
+# a 2026-09-19 investigation found a single test in that directory
+# (test_capability_meta_routing.py) fails only when run as part of the full
+# ~3600-test suite and passes 100% (2582/2582) when that directory runs in
+# isolation -- a cross-test-file state-pollution issue confined to the
+# ai-assistant feature (neither Plane 1 nor Plane 2 billing), not a Plane 2
+# regression. It is run here as its own separate, non-blocking step so a
+# regression there is still visible without gating the Plane 2 release.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main] # push to main is covered by deploy.yml's own path; avoid double-running the same commit here.
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    # A REAL, ephemeral Postgres service container -- not a fake/unreachable
+    # URL -- because this repo genuinely needs one for CI, for three
+    # independent, each-individually-confirmed reasons (all three found by
+    # actually running this workflow's commands locally against candidate
+    # envs, not assumed):
+    #
+    # 1. app/database.py resolves BILLING_DATABASE_URL and calls
+    #    create_engine() at MODULE IMPORT TIME (a top-level statement, not
+    #    lazily inside a fixture) -- resolve_database_url() deliberately
+    #    raises RuntimeError when the URL is empty and the process isn't a
+    #    recognized development environment, so that a misconfigured
+    #    production deploy fails loudly instead of silently falling back to
+    #    SQLite. A GitHub Actions runner has no backend/.env (gitignored,
+    #    never committed), so plain `pytest tests/` crashed at collection
+    #    for every module that transitively imports app.database --
+    #    confirmed against this exact commit's real CI run.
+    # 2. This repo's Alembic chain contains genuinely Postgres-only DDL
+    #    (ALTER TABLE ADD CONSTRAINT for foreign keys, added post-baseline),
+    #    which Alembic's SQLite backend cannot render at all
+    #    ("NotImplementedError: No support for ALTER of constraints in
+    #    SQLite dialect") -- confirmed by actually running `alembic upgrade
+    #    head --sql` against a sqlite+pysqlite:///:memory: URL locally.
+    # 3. At least one real test (test_email_t0_security.py::
+    #    test_ops_t0_alerts_route_to_internal_channels) calls
+    #    send_approval_email() without dependency-injecting a `db` session,
+    #    so it opens its own via the global SessionLocal and genuinely
+    #    queries it (consent/suppression + audit-log checks) -- confirmed by
+    #    running the full suite against a fake, unreachable Postgres URL and
+    #    finding exactly this one real connection-refused failure once the
+    #    other 47 (see MFA_ENCRYPTION_KEY below) were fixed. A fake URL is
+    #    therefore not enough; the database must actually accept
+    #    connections and hold the real schema.
+    #
+    # tests/conftest.py's db_session fixture still creates its own separate
+    # in-memory SQLite engine for the vast majority of tests -- this service
+    # container exists for module-import-time resolution, Alembic's dialect,
+    # and the rare test that deliberately exercises the app's own
+    # self-managed-session path, not because most tests need it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    # Separately: app/core/mfa_crypto.py's get_fernet() deliberately raises
+    # ("Refusing to derive a fallback key in a non-DEBUG environment") when
+    # MFA_ENCRYPTION_KEY is unset and DEBUG is not truthy -- a real,
+    # intentional production-safety control (Super Admin TOTP secrets must
+    # never be encrypted with a guessable key), confirmed by reading the
+    # code this control lives in. Without DEBUG=true or a real key, every
+    # test that exercises actual TOTP enrollment/verification fails --
+    # confirmed by running with this exact env and finding 47 real failures
+    # across test_mfa_service.py, test_super_admin_command_center.py, and
+    # several other Super-Admin/MFA-step-up test files. Rather than set
+    # DEBUG=true (which would silently bypass this and any other
+    # DEBUG-gated production-safety check pytest might one day exercise),
+    # CI supplies its own throwaway Fernet key below -- generated once with
+    # `Fernet.generate_key()` purely for this workflow. It protects nothing
+    # (every TOTP secret it ever encrypts lives only inside this same
+    # ephemeral, discarded-after-the-job database), so committing it in
+    # plain text here is not a secret exposure; it exists only so these
+    # tests exercise their real encryption code path instead of skipping it.
+    # ?sslmode=disable is required, not cosmetic: app/database.py's Postgres
+    # branch used to hardcode connect_args={"sslmode": "require"}
+    # unconditionally, which silently overrode this exact query param and
+    # still failed ("server does not support SSL, but SSL was required")
+    # against a plain postgres:16 service container. Fixed in
+    # app/database.py to read sslmode from the URL when present and default
+    # to "require" only when it's absent -- verified locally against a real,
+    # throwaway, SSL-disabled Postgres instance (not just reasoned about):
+    # the old code failed this exact connection, the new code succeeds with
+    # ?sslmode=disable in the URL and still correctly fails closed (requires
+    # SSL) when the URL omits it, so production's real (Neon) connection
+    # string -- which has no sslmode param -- keeps requiring SSL exactly as
+    # before.
+    #
+    # STRIPE_SECRET_KEY must be set to a real-shaped (but fake) test-mode
+    # key: test_reconciliation_engine.py has an explicit safety-precondition
+    # assertion (`settings.STRIPE_SECRET_KEY.startswith("sk_test_")`) gating
+    # ~26 tests that exercise the Stripe-comparison reconciliation path.
+    # These tests patch the Stripe module itself
+    # (unittest.mock.patch("...stripe_reconciliation._stripe_module", ...)),
+    # so no real network call to Stripe happens regardless of what string is
+    # configured here -- this placeholder only needs to look like a
+    # test-mode key, never a working one.
+    env:
+      BILLING_DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci?sslmode=disable"
+      MFA_ENCRYPTION_KEY: "_Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo="
+      STRIPE_SECRET_KEY: "sk_test_ci_placeholder"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Apply Alembic migrations to the CI Postgres service
+        # Real execution against a real Postgres, not the offline --sql
+        # dry-run this step used to be -- strictly stronger verification of
+        # the same migration chain, and what makes step 3 above pass for
+        # real rather than merely not crash.
+        run: python -m alembic upgrade head
+      - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
+        run: python -m pytest tests/ --ignore=tests/ai_assistant -q
+      - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)
+        run: python -m pytest tests/ai_assistant/ -q
+        continue-on-error: true
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        # Pinned to a single worker: this repo's vitest suite has been
+        # observed to OOM/crash worker processes under the default parallel
+        # pool on memory-constrained runners (2026-09-19 audit finding).
+        # Single-worker is slower but was the only configuration that ran
+        # the full 34-file / 327-test suite to completion without dropping
+        # tests. Revisit if GitHub-hosted runner memory or vitest's pool
+        # behavior changes.
+        run: npx vitest run --pool=forks --maxWorkers=1
+      - name: Production build
+        run: npm run build

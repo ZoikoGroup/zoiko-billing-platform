@@ -1,6 +1,6 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, CheckCircle, Minus, RefreshCw, Search, Star, Clock, X, ChevronDown, Calendar, Download, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, FileText, Sparkles, Lock } from "lucide-react";
 import { formatCompactMoney, formatCompactNumber } from "../utils/billing-helpers";
 // ZB-SA-CMD-003 §17 — Domain B containment: shared export entry points are
 // gated on the privileged-session suppression flag owned by
@@ -60,15 +60,20 @@ export function SuccessMessage({ message, onDismiss }) {
   );
 }
 
+// Both ErrorState and EmptyState appear often (every failed fetch, every
+// zero-row table) and shouldn't visually shout each time — a calmer
+// treatment consistent with SectionCard's "quiet" tier, in billing-ui.jsx.
+// Neither's structure (message/onRetry/title, or icon/title/message/
+// actionLabel/onAction) changed — only the presentational classes did.
 export function ErrorState({ message, onRetry, title }) {
   const content = (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4"><AlertCircle size={32} /></div>
-      {title && <h3 className="text-xl font-bold text-slate-800 mb-2">{title}</h3>}
-      <p className="text-sm text-slate-600 mb-6 max-w-md">{message}</p>
+      <div className="h-14 w-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-4"><AlertCircle size={28} /></div>
+      {title && <h3 className="text-base font-bold text-slate-800 mb-1.5">{title}</h3>}
+      <p className="text-sm text-slate-500 mb-6 max-w-md">{message}</p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 px-6 py-3 bg-linear-to-r from-brand to-brand-hover text-white rounded-xl font-medium hover:shadow-lg">
-          <RefreshCw size={18} /> Try Again
+        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+          <RefreshCw size={16} /> Try Again
         </button>
       )}
     </div>
@@ -78,9 +83,9 @@ export function ErrorState({ message, onRetry, title }) {
 
 export function EmptyState({ icon: Icon, title, message, actionLabel, onAction }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center">
-      {Icon && <Icon className="mb-3 h-10 w-10 text-slate-300" />}
-      <p className="mb-1 text-sm font-semibold text-slate-700">{title}</p>
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-12 text-center">
+      {Icon && <Icon className="mb-3 h-9 w-9 text-slate-300" />}
+      <p className="mb-1 text-sm font-semibold text-slate-600">{title}</p>
       {message && <p className="max-w-sm text-xs text-slate-500">{message}</p>}
       {actionLabel && onAction && (
         <button type="button" onClick={onAction} className="mt-4 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2">
@@ -173,18 +178,79 @@ export const DOMAIN_ACCENTS = {
   },
 };
 
+// Every `{ value, label, color }` option across the app already encodes its
+// semantic meaning in its Tailwind color family (red/rose = bad, emerald/
+// green = good, amber/orange/yellow = caution, slate/gray/zinc = neutral,
+// everything else = informational) — that's ~150 option definitions across
+// every hub's constants file, none of which needed to change to get a
+// severity-tiered visual weight. StatusBadge derives the tier from the
+// family already present in `color` and renders a refined treatment for it;
+// an unrecognised family falls back to the exact original pill unchanged.
+const FAMILY_TIER = {
+  red: "critical", rose: "critical",
+  emerald: "positive", green: "positive",
+  amber: "caution", orange: "caution", yellow: "caution",
+  slate: "neutral", gray: "neutral", zinc: "neutral",
+};
+
+// One literal, fully-written class string per (tier, family) pair — never
+// built from a template string, so Tailwind's build-time scanner can see and
+// emit every one of them. Reuses the exact "-50 background / -700 text"
+// pairing already trusted elsewhere in this file (ErrorState, SuccessMessage)
+// rather than inventing new, unverified color combinations.
+const TIER_PILL_CLASSES = {
+  critical_red: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/15 font-semibold",
+  critical_rose: "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15 font-semibold",
+  caution_amber: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/10",
+  caution_orange: "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/10",
+  caution_yellow: "bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/10",
+  neutral_slate: "bg-slate-100/70 text-slate-600",
+  neutral_gray: "bg-gray-100/70 text-gray-600",
+  neutral_zinc: "bg-zinc-100/70 text-zinc-600",
+};
+
+// Steady-state positive statuses (Active, Verified, Healthy, Resolved) get
+// the calmest treatment of all — a dot, not a filled pill — so they never
+// compete for attention with an amber or red status sitting next to them.
+const POSITIVE_DOT_CLASSES = {
+  emerald: { text: "text-emerald-700", dot: "bg-emerald-500" },
+  green: { text: "text-green-700", dot: "bg-green-500" },
+};
+
+function extractColorFamily(colorClasses) {
+  const match = /bg-([a-z]+)-\d+/.exec(colorClasses || "");
+  return match ? match[1] : null;
+}
+
 /**
  * Shared status pill — renders a colored badge from a per-page `options`
  * list of `{ value, label, color }`, falling back to the canonical
- * STATUS_META map. `icon` (a component) is optional.
+ * STATUS_META map. `icon` (a component) is optional. The color-to-meaning
+ * mapping every `options` array already defines is unchanged; only the
+ * visual weight per severity tier is refined (see FAMILY_TIER above).
  */
 export function StatusBadge({ status, options, icon: Icon, fallbackColor = "bg-gray-100 text-gray-700" }) {
   const option = options?.find((o) => o.value === status) ||
     (status && !options ? STATUS_META[status] : null);
+  const label = option?.label || humanizeStatus(status);
+  const family = extractColorFamily(option?.color);
+  const tier = family ? FAMILY_TIER[family] : null;
+
+  if (tier === "positive" && POSITIVE_DOT_CLASSES[family] && !Icon) {
+    const dot = POSITIVE_DOT_CLASSES[family];
+    return (
+      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${dot.text}`}>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.dot}`} aria-hidden="true" />
+        {label}
+      </span>
+    );
+  }
+
+  const pillClasses = tier && family ? TIER_PILL_CLASSES[`${tier}_${family}`] : null;
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${option?.color || fallbackColor}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${pillClasses || option?.color || fallbackColor}`}>
       {Icon && <Icon size={12} />}
-      {option?.label || humanizeStatus(status)}
+      {label}
     </span>
   );
 }
@@ -1576,6 +1642,123 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- *
+ * Entitlement / subscription limit UX — shared across every create flow
+ * gated by a numeric entitlement (see service/api.js's
+ * isEntitlementLimitError and backend/app/modules/commercial/
+ * entitlement_enforcement.py's EntitlementLimitExceededException).
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Business-facing labels for an entitlement error's `entity` slug. Only
+ * "customer" and "invoice" are wired to a real route-enforced limit today
+ * (POST /billing/customers -> org.entity.max, POST /billing/invoices ->
+ * billing.invoice.monthly_limit) — the rest are included so a future
+ * limit-gated create flow needs no new frontend mapping, just a backend
+ * call site that passes `entity=` to assert_within_limit.
+ */
+const ENTITLEMENT_ENTITY_LABELS = {
+  customer: { singular: "Customer", plural: "Customers" },
+  invoice: { singular: "Invoice", plural: "Invoices" },
+  product: { singular: "Product", plural: "Products" },
+  quotation: { singular: "Quotation", plural: "Quotations" },
+  contract: { singular: "Contract", plural: "Contracts" },
+  subscription: { singular: "Subscription", plural: "Subscriptions" },
+  payment: { singular: "Payment", plural: "Payments" },
+  payment_provider: { singular: "Payment Provider", plural: "Payment Providers" },
+  currency: { singular: "Currency", plural: "Currencies" },
+  webhook: { singular: "Webhook", plural: "Webhooks" },
+  sandbox: { singular: "Sandbox", plural: "Sandboxes" },
+};
+
+/**
+ * Resolves a display label for an entitlement error's `entity` slug.
+ * `terminology` is the optional `{ singular, plural }` pair from
+ * useTerminology() (utils/TerminologyContext) — the "customer" entity
+ * specifically respects the org's configured synonym (Client/Patient/
+ * Member/...) instead of always saying "Customer", matching how the rest
+ * of the app already refers to it.
+ */
+export function getEntitlementEntityLabel(entity, { plural = false, terminology } = {}) {
+  if (entity === "customer" && terminology?.singular) {
+    return plural ? terminology.plural : terminology.singular;
+  }
+  const entry = ENTITLEMENT_ENTITY_LABELS[entity];
+  if (!entry) return plural ? "Items" : "Item";
+  return plural ? entry.plural : entry.singular;
+}
+
+/**
+ * SubscriptionLimitReached — the reusable "your plan's limit is reached"
+ * panel for a SUBSCRIPTION_LIMIT_REACHED entitlement error. Renders in
+ * place of a raw 403/technical message wherever a limit-gated create flow
+ * hits its plan cap; never displays the internal entitlement key
+ * (e.g. "org.entity.max") — only the resolved entity label, counts, and
+ * plan name. Wording stays accurate even when existing usage is already
+ * above the limit (pre-existing data from before a plan downgrade, a demo
+ * org, etc.) — it never claims a remaining count in that case.
+ *
+ * `error` is the normalized error thrown by service/api.js's apiRequest:
+ * `{ entity, currentUsage, limit, remaining, planName, message }` (see
+ * isEntitlementLimitError). `onPrimaryAction`/`primaryActionLabel` are
+ * opt-in — omit them when no real subscription-management route exists for
+ * the current viewer rather than pointing at one that doesn't.
+ */
+export function SubscriptionLimitReached({ error, terminology, onClose, onPrimaryAction, primaryActionLabel }) {
+  if (!error) return null;
+  const entityPlural = getEntitlementEntityLabel(error.entity, { plural: true, terminology }).toLowerCase();
+  const entitySingular = getEntitlementEntityLabel(error.entity, { plural: false, terminology });
+  const hasCounts = typeof error.currentUsage === "number" && typeof error.limit === "number";
+  const overLimit = hasCounts && error.currentUsage > error.limit;
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5" role="alert">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+          <Lock size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-slate-800">{entitySingular} Limit Reached</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            {error.planName ? `Your ${error.planName} subscription` : "Your current subscription"}
+            {hasCounts
+              ? ` allows a maximum of ${error.limit} ${error.limit === 1 ? entitySingular.toLowerCase() : entityPlural}.`
+              : ` has reached its ${entitySingular.toLowerCase()} limit.`}
+          </p>
+          {hasCounts && (
+            <p className="mt-2 text-sm text-slate-600">
+              {overLimit ? (
+                <>
+                  Current usage: <span className="font-semibold text-slate-800">{error.currentUsage}</span>.
+                  {" "}Your organization is already above the current plan limit, so additional {entityPlural} cannot be created.
+                </>
+              ) : (
+                <>Current usage: <span className="font-semibold text-slate-800">{error.currentUsage} / {error.limit}</span></>
+              )}
+            </p>
+          )}
+          <p className="mt-2 text-sm text-slate-600">
+            To add more {entityPlural}, upgrade your subscription or contact your administrator.
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            {onPrimaryAction && (
+              <button type="button" onClick={onPrimaryAction}
+                className="px-4 py-2 text-sm font-medium bg-white border border-amber-300 text-amber-800 rounded-xl hover:bg-amber-100">
+                {primaryActionLabel || "View Subscription"}
+              </button>
+            )}
+            {onClose && (
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-white/70 rounded-xl">
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   createEvaluationProgram,
   setEvaluationProgramStatus,
 } from "../../service/commandCenterService";
-import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 import { displayValue } from "./constants";
 
@@ -49,7 +49,9 @@ function programStatusPill(isActive) {
   );
 }
 
-export default function EvaluationProgramsPage() {
+// `embedded` drops this page's own PageHeader when it is mounted as a tab of
+// the Products & Pricing hub.
+export default function EvaluationProgramsPage({ embedded = false } = {}) {
   const [programs, setPrograms] = useState([]);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -158,6 +160,7 @@ export default function EvaluationProgramsPage() {
       {
         key: "duration",
         label: "Duration",
+        numeric: true,
         render: (row) => (
           <span className="flex items-center gap-1.5 text-xs text-slate-600">
             <Timer size={13} /> {displayValue(row.duration_days)} days
@@ -227,8 +230,10 @@ export default function EvaluationProgramsPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
+        embedded={embedded}
+        accent="violet"
         title="Evaluation Programs"
         description="ZB-COM-ENT-001 · §B3 · bounded trial configurations. A program exists only when deliberately created, and grants trials only once activated. Per-§5 the trial grants the granted_plan's entitlement bundle."
         icon={Clock}
@@ -240,30 +245,46 @@ export default function EvaluationProgramsPage() {
         meta={`${displayValue(programs.length)} program(s)`}
       />
 
-      <div className="mt-6 space-y-4">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
-          Every new self-serve signup already gets an automatic default trial (see COMMERCIAL_DEFAULT_TRIAL_DAYS)
-          even with no program configured here. Create a program only when a specific plan needs custom trial
-          terms (duration, payment requirement, conversion policy) — it then overrides the default for that plan.
-          A program with an <span className="font-semibold">unset grant plan</span> falls back to the §5 default
-          (Professional bundle) at provision time. Activation is blocked without{" "}
-          <span className="font-semibold">approved_by</span>.
-        </div>
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
+        <SectionCard variant="quiet">
+          <p className="text-xs leading-5 text-slate-600">
+            Every new self-serve signup already gets an automatic default trial (see COMMERCIAL_DEFAULT_TRIAL_DAYS)
+            even with no program configured here. Create a program only when a specific plan needs custom trial
+            terms (duration, payment requirement, conversion policy) — it then overrides the default for that plan.
+            A program with an <span className="font-semibold">unset grant plan</span> falls back to the §5 default
+            (Professional bundle) at provision time. Activation is blocked without{" "}
+            <span className="font-semibold">approved_by</span>.
+          </p>
+        </SectionCard>
 
-        {error && <ErrorState message={error} onRetry={load} title="Unable to load evaluation programs" />}
-
-        {loading && programs.length === 0 ? (
-          <Spinner />
+        {/* error and the table used to render independently, so a failed
+            fetch (which also clears `programs` to []) showed the error banner
+            stacked directly above "No evaluation programs" — a fetch failure
+            presented as an empty catalogue. They're mutually exclusive now. */}
+        {error ? (
+          <ErrorState message={error} onRetry={load} title="Unable to load evaluation programs" />
         ) : (
-          <DataTable
-            columns={columns}
-            data={programs}
-            loading={loading}
-            emptyTitle="No evaluation programs"
-            emptyMessage="Create the first bounded trial program here, or manage programs from the Billing Command Center."
-            emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create program</Button>}
-            minWidth={960}
-          />
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={Clock}
+            title="Configured Trial Programs"
+            description="Bounded trial configurations recorded against signup plans — a program grants a trial only once activated."
+          >
+            {loading && programs.length === 0 ? (
+              <Spinner />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={programs}
+                loading={loading}
+                emptyTitle="No evaluation programs"
+                emptyMessage="Create the first bounded trial program here, or manage programs from the Billing Command Center."
+                emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create program</Button>}
+                minWidth={960}
+              />
+            )}
+          </SectionCard>
         )}
       </div>
 

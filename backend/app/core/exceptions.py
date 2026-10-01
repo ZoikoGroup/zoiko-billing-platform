@@ -60,10 +60,15 @@ def _request_id(request: Request):
 
 class ZoikoException(HTTPException):
     """Base exception for all Zoiko errors. All custom errors inherit from this."""
-    def __init__(self, status_code: int, error_code: str, message: str):
+    def __init__(self, status_code: int, error_code: str, message: str, extra: dict | None = None):
         super().__init__(status_code=status_code, detail=message)
         self.error_code = error_code
         self.message = message
+        # Additive, structured fields merged into the JSON body alongside the
+        # standard success/error/message/detail/request_id shape (e.g. a
+        # SUBSCRIPTION_LIMIT_REACHED payload's entity/current_usage/limit).
+        # Never used to override those standard keys.
+        self.extra = extra or {}
 
 
 class NotFoundException(ZoikoException):
@@ -116,15 +121,17 @@ class ServiceUnavailableException(ZoikoException):
 
 async def zoiko_exception_handler(request: Request, exc: ZoikoException):
     """Handles all our custom ZoikoException errors."""
+    content = {
+        "success": False,
+        "error": exc.error_code,
+        "message": exc.message,
+        "detail": exc.message,
+        "request_id": _request_id(request),
+    }
+    content.update(getattr(exc, "extra", None) or {})
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": exc.error_code,
-            "message": exc.message,
-            "detail": exc.message,
-            "request_id": _request_id(request),
-        },
+        content=content,
         headers=_cors_headers(request),
     )
 

@@ -1161,6 +1161,23 @@ class CommercialSubscriptionService:
         max_day = calendar.monthrange(target_year, target_month)[1]
         return start.replace(year=target_year, month=target_month, day=min(start.day, max_day))
 
+    @staticmethod
+    def _invalidate_org_cache(db, account_id: int) -> None:
+        """Drop Redis caches derived from the org that owns `account_id`.
+
+        Called on every subscription status mutation so the access gate and
+        resolved entitlements reflect the new state immediately rather than
+        after the short gate TTL expires.
+        """
+        from app.core import cache_service
+        account = (
+            db.query(CommercialAccount)
+            .filter(CommercialAccount.id == account_id)
+            .first()
+        )
+        if account is not None:
+            cache_service.invalidate_subscription_caches(account.organization_id)
+
     def transition(
         self,
         subscription: CommercialSubscription,
@@ -1195,6 +1212,7 @@ class CommercialSubscriptionService:
         self._recompute_snapshot_for_account(
             subscription.commercial_account_id, reason=f"subscription_transition:{new_status.value}",
         )
+        self._invalidate_org_cache(self.db, subscription.commercial_account_id)
         return subscription
 
     def provision_default_subscription(
@@ -1345,6 +1363,7 @@ class CommercialSubscriptionService:
         subscription.evaluation_expiry_action = expiry_action
         subscription.trial_granted_entitlements = granted_entitlements
         self.db.flush()
+        self._invalidate_org_cache(self.db, subscription.commercial_account_id)
         logger.info(
             "Subscription %s: TRIALING (%s-day trial, program_id=%s, "
             "recovery_ends_at=%s).",

@@ -151,10 +151,10 @@ def get_total_deferred(
     current_user=Depends(get_current_user),
 ):
     svc = RevenueRecognitionService(db)
-    total = svc.get_total_deferred(
+    by_currency = svc.get_total_deferred_by_currency(
         organization_id=current_user.organization_id,
     )
-    return {"total_deferred": total}
+    return {"by_currency": by_currency}
 
 
 @router.post(

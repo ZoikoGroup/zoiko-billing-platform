@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { invoiceApi, contractApi, collectionApi, settingsApi } from "../../service/billingService";
+import { invoiceApi, contractApi, collectionApi } from "../../service/billingService";
+import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney } from "./workspace-format";
 import { Bell, FileText, CreditCard, Repeat, Clock, Activity, AlertTriangle, ScrollText, Loader2 } from "lucide-react";
@@ -49,7 +50,7 @@ export default function WorkspaceNotificationsPage() {
           invoiceApi.listOverdue(),
           contractApi.listExpiring(30),
           collectionApi.getAgingBuckets(),
-          settingsApi.getConfig(),
+          loadGlobalBillingConfig(),
         ]);
         if (cancelled) return;
         if (ov.status === "fulfilled") setOverdueInvoices(Array.isArray(ov.value) ? ov.value : ov.value?.items || []);

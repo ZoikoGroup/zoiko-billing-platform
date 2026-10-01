@@ -87,6 +87,7 @@ def create_invoice(
         key="billing.invoice.monthly_limit",
         current_count=invoices_this_period,
         actor_id=current_user.id,
+        entity="invoice",
     )
 
     return svc.create_invoice(
@@ -264,6 +265,20 @@ def get_recent_activity(
     return svc.get_recent_activity(organization_id=current_user.organization_id, limit=limit)
 
 
+@router.get("/top-customers", response_model=list)
+def get_top_customers(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    limit: int = Query(5, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = InvoiceService(db)
+    return svc.get_top_customers(
+        organization_id=current_user.organization_id, date_from=date_from, date_to=date_to, limit=limit,
+    )
+
+
 @router.post("/bulk-delete", response_model=SuccessResponse)
 def bulk_delete_invoices(
     body: InvoiceBulkDeleteRequest,
@@ -306,6 +321,16 @@ def get_invoice(
 ):
     svc = InvoiceService(db)
     return svc.get_invoice(invoice_id=invoice_id, organization_id=current_user.organization_id)
+
+
+@router.get("/{invoice_id}/public-link", response_model=dict)
+def get_invoice_public_link(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = InvoiceService(db)
+    return svc.get_public_invoice_link(invoice_id=invoice_id, organization_id=current_user.organization_id)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceResponse)

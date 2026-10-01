@@ -77,11 +77,12 @@ export default function InvoicingPage() {
   // near-identical GET /billing/invoices request on mount.
   const recentCapturedRef = useRef(false);
   const [recentInvoices, setRecentInvoices] = useState([]);
+  const tableSectionRef = useRef(null);
 
   const fetchInvoices = useCallback(async () => {
     try {
       setError(null);
-      if (!loading) setRefreshing(true);
+      setRefreshing(true);
       const data = await invoiceApi.list({
         page: safePage,
         per_page: ITEMS_PER_PAGE,
@@ -129,6 +130,31 @@ export default function InvoicingPage() {
 
   const handleRefresh = () => { setRefreshing(true); fetchInvoices(); };
 
+  // "Recently Created" only ever shows the same top-N-by-created_at-desc
+  // set that the main table already shows on its default (no filters, page
+  // 1, created_at desc) view -- so if the user is already looking at that
+  // default view (the common case: they just landed on this page), clearing
+  // only statusFilter was a no-op with no visible or perceptible effect.
+  // "View all" now clears every filter/search/sort override back to that
+  // default and scrolls the table into view so the click always does
+  // something the user can see.
+  const handleViewAllRecent = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setStatusFilter("");
+    setCurrencyFilter("");
+    setDateFrom("");
+    setDateTo("");
+    setMinAmount("");
+    setMaxAmount("");
+    setSortField("created_at");
+    setSortDir("desc");
+    setCurrentPage(1);
+    if (typeof tableSectionRef.current?.scrollIntoView === "function") {
+      tableSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   const StatusBadge = ({ status }) => (
     <SharedStatusBadge status={status} options={STATUS_OPTIONS} icon={STATUS_ICONS[status] || Clock} />
   );
@@ -175,7 +201,12 @@ export default function InvoicingPage() {
       
       const calls = selectedInvoices.map((id) => {
         if (action === "finalize") return invoiceApi.finalize(id);
-        if (action === "send") return invoiceApi.markSent(id);
+        // "Send" must actually email the customer -- invoiceApi.markSent() only
+        // flips the status flag with no delivery, which is what the single-invoice
+        // detail page correctly avoids by calling sendEmail() instead. Bulk "Send"
+        // used to silently do the status-only version, so customers picked for a
+        // bulk send never received anything despite the invoice showing as "Sent".
+        if (action === "send") return invoiceApi.sendEmail(id);
         if (action === "cancel") return invoiceApi.cancel(id, "Cancelled from invoice list");
         return Promise.resolve();
       });
@@ -240,7 +271,7 @@ export default function InvoicingPage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Recently Created</p>
-              <button onClick={() => { setStatusFilter(""); setCurrentPage(1); }} className="text-xs font-medium text-brand-600 hover:text-brand-hover" aria-label="View all invoices">View all</button>
+              <button onClick={handleViewAllRecent} className="text-xs font-medium text-brand-600 hover:text-brand-hover" aria-label="View all invoices">View all</button>
             </div>
             <div className="grid gap-2 md:grid-cols-3">
               {recentInvoices.map((inv) => (
@@ -254,7 +285,7 @@ export default function InvoicingPage() {
           </div>
         )}
 
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+      <div ref={tableSectionRef} className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">

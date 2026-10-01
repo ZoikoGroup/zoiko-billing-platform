@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import Date, cast, func
 from sqlalchemy.orm import Session
 
+from app.config import settings
+
 # Open receivable statuses — an invoice counts toward outstanding balance only
 # while it can still be collected.
 OPEN_INVOICE_STATUSES = ("sent", "overdue", "partially_paid")
@@ -239,6 +241,12 @@ class BillingCommandCenterService:
     # ── read models ────────────────────────────────────────────────────────
 
     def get_overview(self) -> Dict[str, Any]:
+        from app.core import cache_service
+
+        cached = cache_service.cache_get("sa:bcc:overview")
+        if cached is not None:
+            return cached
+
         from app.modules.billing.models import (
             CreditNote,
             CreditNoteStatus,
@@ -439,7 +447,7 @@ class BillingCommandCenterService:
             for start in daily_starts:
                 sparklines["newly_overdue"].append(float(overdue_by_day.get(start, Decimal("0"))))
 
-        return {
+        result = {
             "generated_at": datetime.utcnow(),
             "kpis": {
                 "currency_state": currency_state,
@@ -492,6 +500,10 @@ class BillingCommandCenterService:
             },
             "customers_at_risk": customers_at_risk,
         }
+        cache_service.cache_set(
+            "sa:bcc:overview", result, ttl=settings.REDIS_DASHBOARD_TTL
+        )
+        return result
 
     @staticmethod
     def _rate_for(buckets: List[Dict[str, Any]], currency: Optional[str]) -> Optional[float]:

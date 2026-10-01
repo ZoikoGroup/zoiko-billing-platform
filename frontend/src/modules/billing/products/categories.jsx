@@ -7,6 +7,22 @@ import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers"
 import { useCurrency } from "../utils/CurrencyContext";
 import { Spinner, ErrorState, EmptyState, useConfirmationDialog } from "../../../components/billing-shared";
 
+// ProductCategoryCreate.code is a required, org-unique identifier the
+// create/edit form never exposed a field for -- every "Add New Category"
+// submission 422'd server-side, so no organization could ever successfully
+// create a category (the root cause of the category dropdowns being empty
+// everywhere else in the Products module). Derived automatically from the
+// name rather than adding a user-facing field, since the name is already
+// the meaningful identifier from the user's perspective.
+function slugifyCategoryCode(name) {
+  return (name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "category";
+}
+
 function CategoryNode({ category, depth, selectedId, onSelect, onToggle, productCount, expandedMap, getCount }) {
   const isSelected = selectedId === category.id;
   const hasChildren = (category.children_count ?? category.children?.length ?? 0) > 0;
@@ -166,8 +182,24 @@ export default function CategoriesPage() {
         parent_id: form.parent_id ? parseInt(form.parent_id) : null,
         is_active: form.is_active,
       };
-      if (editCategory) await productApi.updateCategory(editCategory.id, payload);
-      else await productApi.createCategory(payload);
+      if (editCategory) {
+        await productApi.updateCategory(editCategory.id, payload);
+      } else {
+        const baseCode = slugifyCategoryCode(form.name);
+        try {
+          await productApi.createCategory({ ...payload, code: baseCode });
+        } catch (err) {
+          // A code collision (same slug already used in this org) is the
+          // only expected failure mode here -- retry once with a short
+          // random suffix rather than surfacing an internal "code" concept
+          // the user never entered.
+          if (err.status === 409) {
+            await productApi.createCategory({ ...payload, code: `${baseCode}-${Math.random().toString(36).slice(2, 6)}` });
+          } else {
+            throw err;
+          }
+        }
+      }
       setShowModal(false);
       setRefreshKey((k) => k + 1);
       showSuccess(editCategory ? "Category updated" : "Category created");

@@ -10,7 +10,7 @@ import {
   listEntitlementDefinitions,
   listOrganizations,
 } from "../../service/commercialService";
-import { PageHeader, DataTable, Button, Modal, Field, Select, SearchInput } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select, SearchInput } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, useConfirmationDialog } from "../../components/billing-shared";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -226,7 +226,9 @@ function ReasonModal({ open, onClose, title, icon, submitLabel, submitVariant = 
   );
 }
 
-export default function OverridesPage() {
+// `embedded` drops this page's own PageHeader when it is mounted as a tab of
+// the Products & Pricing hub.
+export default function OverridesPage({ embedded = false } = {}) {
   const { user } = useAuth();
   const [overrides, setOverrides] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -385,22 +387,26 @@ export default function OverridesPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
       <PageHeader
-        title="Commercial Overrides"
+        embedded={embedded}
+        accent="violet"
+        title="Entitlement Overrides"
         description="ZB-COM-ENT-001 · Part 2 §16.1 · per-org entitlement overrides with maker-checker approval. An override beats the org's plan entitlement (resolver precedence L3) until it expires or is revoked."
         icon={ShieldAlert}
         meta={`${displayValue(overrides.length)} override(s)`}
         actions={<Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>New override</Button>}
       />
 
-      <div className="mt-6 space-y-4">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
-          Every override — regardless of risk classification — requires a different Super Admin to approve it than the
-          one who submitted it. An <span className="font-semibold">expired</span> override is excluded automatically
-          by the resolver; no cleanup step is needed. At most one live <span className="font-semibold">Approved</span>{" "}
-          override may exist per organization + entitlement key at a time.
-        </div>
+      <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
+        <SectionCard variant="quiet">
+          <p className="text-xs leading-5 text-slate-600">
+            Every override — regardless of risk classification — requires a different Super Admin to approve it than the
+            one who submitted it. An <span className="font-semibold">expired</span> override is excluded automatically
+            by the resolver; no cleanup step is needed. At most one live <span className="font-semibold">Approved</span>{" "}
+            override may exist per organization + entitlement key at a time.
+          </p>
+        </SectionCard>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SearchInput value={search} onChange={setSearch} placeholder="Search by organization or key…" className="w-full max-w-sm" />
@@ -408,25 +414,38 @@ export default function OverridesPage() {
         </div>
 
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
-        {error && (
+
+        {/* error and the table used to render independently, so a failed
+            fetch (which also clears `rows` to []) showed the error banner
+            stacked above "No commercial overrides yet" — a failure read as an
+            empty catalogue. */}
+        {error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
             {error}
             <button type="button" onClick={load} className="ml-3 font-semibold underline">Retry</button>
           </div>
-        )}
-
-        {loading && rows.length === 0 ? (
-          <Spinner />
         ) : (
-          <DataTable
-            columns={columns}
-            data={rows}
-            loading={loading}
-            rowKey={(row) => row.id}
-            emptyTitle="No commercial overrides yet"
-            emptyMessage={search || statusFilter ? "No overrides match your filters." : "Create the first override to grant an org a non-standard entitlement value."}
-            minWidth={1080}
-          />
+          <SectionCard
+            variant="hero"
+            accent="violet"
+            icon={ShieldAlert}
+            title="Override Requests"
+            description="Per-organization overrides awaiting or holding maker-checker approval — an approved override beats the org's plan entitlement until it expires or is revoked."
+          >
+            {loading && rows.length === 0 ? (
+              <Spinner />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={rows}
+                loading={loading}
+                rowKey={(row) => row.id}
+                emptyTitle="No commercial overrides yet"
+                emptyMessage={search || statusFilter ? "No overrides match your filters." : "Create the first override to grant an org a non-standard entitlement value."}
+                minWidth={1080}
+              />
+            )}
+          </SectionCard>
         )}
       </div>
 

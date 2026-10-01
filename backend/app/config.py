@@ -11,7 +11,7 @@ old repo's app.config.
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anchored to THIS file's directory (backend/.env), not the process CWD.
@@ -109,6 +109,24 @@ class Settings(BaseSettings):
     MFA_MAX_FAILED_ATTEMPTS: int = 5
     MFA_LOCKOUT_MINUTES: int = 15
     MFA_PENDING_TOKEN_EXPIRE_MINUTES: int = 10
+    # Dev-only escape hatch: skip MFA step-up entirely (login is unaffected
+    # either way). Exists so local development is not blocked on provisioning
+    # an authenticator for every seeded super-admin.
+    #
+    # Hard-refused unless DEBUG is on — see _guard_mfa_bypass. This is a
+    # development convenience, not a way to run production without step-up.
+    MFA_STEP_UP_BYPASS: bool = False
+
+    @model_validator(mode="after")
+    def _guard_mfa_bypass(self):
+        if self.MFA_STEP_UP_BYPASS and not self.DEBUG:
+            raise ValueError(
+                "MFA_STEP_UP_BYPASS cannot be enabled while DEBUG is off. "
+                "Disabling step-up verification on a production deployment would "
+                "leave a single stolen password able to flip platform-wide billing "
+                "controls. Set DEBUG=false and MFA_STEP_UP_BYPASS=false for real deployments."
+            )
+        return self
 
     # ── Stripe (ported from the old platform's billing module) ─────────
     # Blank/inert by default. Fill these in once real Stripe credentials
@@ -155,6 +173,17 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL_DEFAULT: str = "claude-3-5-sonnet-20241022"
     ANTHROPIC_MAX_TOKENS: int = 2048
     ANTHROPIC_TEMPERATURE: float = 0.1
+
+    # ── Redis (distributed cache + rate limiting) ──────────────────────
+    # Empty string disables Redis: falls back to in-process cachetools.TTLCache
+    # and slowapi MemoryStorage. Works for single-worker dev/test.
+    REDIS_URL: str = ""
+    REDIS_KEY_PREFIX: str = "zb"
+    REDIS_DEFAULT_TTL: int = 60
+    REDIS_GATE_TTL: int = 20
+    REDIS_CONFIG_TTL: int = 60
+    REDIS_ENTITLEMENT_TTL: int = 60
+    REDIS_DASHBOARD_TTL: int = 30
 
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
@@ -246,5 +275,45 @@ class Settings(BaseSettings):
     ENABLE_TRIAL_WARNING_JOB: bool = True
     COMMERCIAL_TRIAL_WARNING_INTERVAL_MINUTES: int = 1440  # daily sweep
 
+    # ── B1: durable email outbox crash-recovery sweep ───────────────────
+    # send_approval_email's async_send=True path writes a QUEUED EmailOutbox
+    # row before handing the send to the in-process ThreadPoolExecutor (see
+    # email_foundation/models.py + email_service.py). This sweep
+    # (email_foundation/recovery.py) finds rows still QUEUED after the grace
+    # period below and redelivers them -- so a process crash between "the
+    # row was committed" and "the background thread actually ran" never
+    # silently drops the email.
+    ENABLE_EMAIL_QUEUE_RECOVERY: bool = True
+    EMAIL_QUEUE_RECOVERY_INTERVAL_MINUTES: int = 10
+    # Periodic SMTP-health evaluation (A3). Deliberately a SEPARATE job from
+    # the outbox recovery sweep above, not an append to it: disabling
+    # crash-recovery must not silently disable health signal, and the two
+    # have different cadences and different JobRunLog summaries.
+    ENABLE_EMAIL_SMTP_HEALTH_CHECK: bool = True
+    EMAIL_SMTP_HEALTH_INTERVAL_MINUTES: int = 15
+    # How long a row must sit in QUEUED before the sweep treats it as stuck
+    # rather than "still legitimately in flight in a live thread pool".
+    EMAIL_QUEUE_RECOVERY_GRACE_MINUTES: int = 10
+    # Bounded retries: a row that has failed this many delivery attempts is
+    # left FAILED for a human (via the admin dashboard) instead of being
+    # retried by the sweep forever.
+    EMAIL_QUEUE_MAX_DELIVERY_ATTEMPTS: int = 5
+
 
 settings = Settings()
+
+
+def step_up_bypass_active() -> bool:
+    """Single source of truth for "is MFA step-up being skipped right now?".
+
+    Lives here, not in mfa_service, because the requirement is enforced in
+    THREE separate places: the request schemas (which reject a payload with no
+    factor before a handler ever runs) and mfa_service.verify_step_up. Bypassing
+    only the service left the schema validators still rejecting the request, so
+    the toggle still 422'd. Every enforcement point must consult this one
+    function or they will drift apart again.
+
+    Always False unless DEBUG is also on — Settings refuses to construct
+    otherwise — so it can never be true in a production deployment.
+    """
+    return bool(settings.MFA_STEP_UP_BYPASS and settings.DEBUG)

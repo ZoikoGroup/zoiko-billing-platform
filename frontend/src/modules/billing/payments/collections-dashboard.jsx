@@ -155,10 +155,29 @@ export default function CollectionsDashboard() {
     .map((p) => ({ name: p.priority, value: p.count }))
     .filter((p) => p.value > 0);
 
-  // Collection rate — recovered vs. total receivables currently tracked by
-  // the collections module, derived from data already fetched above.
-  const collectedAmt = collectionsStats.amount_collected || 0;
-  const outstandingAmt = collectionsStats.total_outstanding || 0;
+  // QA-36 fix: the three headline tiles below ("Total Overdue" / "Amount
+  // Collected" / "Still Outstanding") used to read dunningStats.total_overdue_amount
+  // and collectionsStats.{amount_collected,total_outstanding} — figures scoped
+  // to whichever invoices happen to have an open DunningCase/CollectionsCase.
+  // A case is only ever created by the dunning scheduler escalating an
+  // invoice, or by someone opening/escalating one manually — never
+  // automatically for every overdue invoice — so on a freshly-tested or
+  // lower-volume org (no case opened yet) these tiles showed a real $0 even
+  // though genuinely overdue invoices and collected payments exist.
+  //
+  // The backend now also returns invoice/payment-level ("financial reality")
+  // figures on the same collectionsStats payload — real_overdue_amount,
+  // real_amount_collected, real_total_outstanding — computed from actual
+  // invoice balances and payments org-wide, independent of case existence
+  // (see CollectionService.get_dashboard_stats' docstring for the full
+  // reasoning). Those are what the headline tiles read now. The case-scoped
+  // numbers are preserved unchanged as case_amount_collected/
+  // case_total_outstanding (and dunningStats.total_overdue_amount) for
+  // whatever "open workflow inventory" value they still have elsewhere on
+  // this page (Action Center, insights, etc.).
+  const totalOverdueAmt = collectionsStats.real_overdue_amount || 0;
+  const collectedAmt = collectionsStats.real_amount_collected || 0;
+  const outstandingAmt = collectionsStats.real_total_outstanding || 0;
   const collectionRate = (collectedAmt + outstandingAmt) > 0 ? (collectedAmt / (collectedAmt + outstandingAmt)) * 100 : 0;
   const topPriority = [...collectionsPriorityData].sort((a, b) => b.value - a.value)[0];
 
@@ -167,7 +186,7 @@ export default function CollectionsDashboard() {
     insightItems.push({
       tone: collectionRate >= 50 ? "up" : "warning",
       icon: TrendingUp,
-      text: `Collection rate improved to ${collectionRate.toFixed(1)}% of tracked receivables`,
+      text: `Collection rate improved to ${collectionRate.toFixed(1)}% of overdue receivables`,
     });
   }
   if (dunningStats.escalated_count > 0) {
@@ -178,6 +197,11 @@ export default function CollectionsDashboard() {
   }
   if ((dunningStats.active_count || 0) > 0) {
     insightItems.push({ tone: "warning", icon: Bell, text: `${dunningStats.active_count} active dunning case${dunningStats.active_count === 1 ? "" : "s"} in progress` });
+  }
+  if (!insightItems.length && totalOverdueAmt > 0) {
+    // Real overdue money exists org-wide but nothing above (case-based)
+    // fired — surface that instead of the misleading "all current" message.
+    insightItems.push({ tone: "warning", icon: AlertTriangle, text: "Overdue invoices exist with no dunning or collections case opened yet" });
   }
   if (!insightItems.length) {
     insightItems.push({ tone: "up", icon: CheckCircle, text: "No overdue balances — all accounts current" });
@@ -242,13 +266,13 @@ export default function CollectionsDashboard() {
       <div className={DASHBOARD_KPI_GRID}>
         <EnterpriseStatCard title="Active Dunning Cases" value={(dunningStats.active_count || 0).toLocaleString()} icon={Bell} color={CARD_GRADIENTS[0]} href="/billing/dunning" />
         <EnterpriseStatCard title="Open Collections Cases" value={((collectionsStats.open_count || 0) + (collectionsStats.in_progress_count || 0)).toLocaleString()} icon={Users} color={CARD_GRADIENTS[1]} href="/billing/collections-receivables" />
-        <EnterpriseStatCard title="Total Overdue" value={Number(dunningStats.total_overdue_amount || 0)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[2]} />
+        <EnterpriseStatCard title="Total Overdue" value={Number(totalOverdueAmt)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[2]} />
         <EnterpriseStatCard title="Promise-to-Pay Success" value={`${promiseSuccessRate.toFixed?.(1) ?? promiseSuccessRate.toFixed(1)}%`} icon={HandCoins} color={CARD_GRADIENTS[3]} href="/billing/promise-to-pay" />
       </div>
 
       <StatGroup title="More Metrics">
-        <EnterpriseStatCard title="Amount Collected" value={Number(collectionsStats.amount_collected || 0)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} sparkline={dashboard.recoveryTrend.map((m) => m.amount_collected)} />
-        <EnterpriseStatCard title="Still Outstanding" value={Number(collectionsStats.total_outstanding || 0)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[2]} />
+        <EnterpriseStatCard title="Amount Collected" value={Number(collectedAmt)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} sparkline={dashboard.recoveryTrend.map((m) => m.amount_collected)} />
+        <EnterpriseStatCard title="Still Outstanding" value={Number(outstandingAmt)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[2]} />
         <EnterpriseStatCard title="Escalated to Collections" value={(dunningStats.escalated_count || 0).toLocaleString()} icon={TrendingUp} color={CARD_GRADIENTS[4]} href="/billing/collections-receivables?status=escalated" />
         <EnterpriseStatCard title="Pending Promises" value={((promiseStats.pending_count || 0) + (promiseStats.overdue_count || 0)).toLocaleString()} icon={HandCoins} color={CARD_GRADIENTS[3]} href="/billing/promise-to-pay" />
       </StatGroup>

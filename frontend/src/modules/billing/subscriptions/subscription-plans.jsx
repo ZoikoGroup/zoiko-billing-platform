@@ -574,7 +574,7 @@ export default function SubscriptionPlansPage() {
               emptyTitle="No subscription plans found"
               emptyMessage="Try adjusting your search or filters."
               emptyAction={
-                <Button variant="secondary" icon={<Plus size={14} />} onClick={openCreate}>
+                <Button variant="secondary" icon={Plus} onClick={openCreate}>
                   Create Plan
                 </Button>
               }

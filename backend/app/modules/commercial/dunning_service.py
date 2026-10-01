@@ -94,75 +94,99 @@ class CommercialDunningService:
         )
         summary["checked"] = len(candidates)
 
-        for subscription in candidates:
-            try:
-                days = (datetime.utcnow() - subscription.payment_failed_at).days
+        # B4: one SMTP connection is opened lazily on this sweep's first
+        # actual warning email and reused for every remaining subscription,
+        # instead of a connect+TLS+login handshake per recipient. bulk.get()
+        # returns None whenever the connection is unavailable, in which case
+        # each send falls back to its own per-message connection exactly as it
+        # did before B4 -- an optimization, never a new failure mode. A failed
+        # send invalidates the shared connection so one bad recipient cannot
+        # poison the rest of the batch.
+        from app.services.email_service import BulkSmtpConnection
 
-                # Determine the schedule step this subscription should be at
-                # today, then walk forward through every intermediate status
-                # between where it is now and that target — never a single
-                # direct hop, since the state machine forbids skipping steps.
-                target_status = None
-                for threshold, status in _SCHEDULE:
-                    if days >= threshold:
-                        target_status = status
+        bulk = BulkSmtpConnection(db=db)
+        try:
+            for subscription in candidates:
+                try:
+                    days = (datetime.utcnow() - subscription.payment_failed_at).days
 
-                if target_status is None:
-                    continue
+                    # Determine the schedule step this subscription should be at
+                    # today, then walk forward through every intermediate status
+                    # between where it is now and that target — never a single
+                    # direct hop, since the state machine forbids skipping steps.
+                    target_status = None
+                    for threshold, status in _SCHEDULE:
+                        if days >= threshold:
+                            target_status = status
 
-                target_index = next(i for i, (_, s) in enumerate(_SCHEDULE) if s == target_status)
-                while subscription.status != target_status:
-                    current_index = next(
-                        (i for i, (_, s) in enumerate(_SCHEDULE) if s == subscription.status), -1,
+                    if target_status is None:
+                        continue
+
+                    target_index = next(i for i, (_, s) in enumerate(_SCHEDULE) if s == target_status)
+                    while subscription.status != target_status:
+                        current_index = next(
+                            (i for i, (_, s) in enumerate(_SCHEDULE) if s == subscription.status), -1,
+                        )
+                        if current_index >= target_index:
+                            break  # already past the target on the schedule (e.g. manually restored higher) — leave it
+                        next_status = _SCHEDULE[current_index + 1][1]
+                        old_status = subscription.status
+                        self.subscription_service.transition(subscription, next_status)
+                        self._log(subscription, old_status.value, next_status.value, f"N1: {days}d past due")
+
+                        if next_status == CommercialSubscriptionStatus.PAST_DUE:
+                            summary["past_due"] += 1
+                        elif next_status == CommercialSubscriptionStatus.RESTRICTED:
+                            summary["restricted"] += 1
+                        elif next_status == CommercialSubscriptionStatus.SUSPENDED:
+                            summary["suspended"] += 1
+                        elif next_status == CommercialSubscriptionStatus.CANCELLED:
+                            summary["terminated"] += 1
+
+                        # Send ZB-COM-011: Past-Due Subscription Warning email
+                        if next_status in (CommercialSubscriptionStatus.PAST_DUE, CommercialSubscriptionStatus.RESTRICTED):
+                            try:
+                                from app.modules.auth.models import User
+                                from app.modules.commercial.models import CommercialAccount
+                                from app.services.email_service import send_past_due_suspension_warning_email
+
+                                acct = db.query(CommercialAccount).filter(CommercialAccount.id == subscription.commercial_account_id).first()
+                                if acct and acct.organization_id:
+                                    org_id = acct.organization_id
+                                    org_name = getattr(acct.organization, "name", "Your Organization")
+                                    admin_user = db.query(User).filter(User.organization_id == org_id, User.is_active == True).first()
+                                    if admin_user and admin_user.email:
+                                        send_past_due_suspension_warning_email(
+                                            email=admin_user.email,
+                                            recipient_first_name=admin_user.first_name or "there",
+                                            organization_name=org_name,
+                                            days_overdue=days,
+                                            amount_due="0.00",
+                                            currency="USD",
+                                            organization_id=org_id,
+                                            db=db,
+                                            smtp_connection=bulk.get(),
+                                            # past_due_notice.html renders both of
+                                            # these, so source them from the
+                                            # subscription being suspended.
+                                            plan_name=(
+                                                getattr(getattr(subscription, "plan", None), "plan_name", "")
+                                                or "Your subscription"
+                                            ),
+                                            subscription_number=f"SUB-{subscription.id}",
+                                        )
+                            except Exception as mail_exc:
+                                bulk.invalidate()
+                                logger.warning("Failed to dispatch ZB-COM-011 warning email for subscription %s: %s", subscription.id, mail_exc)
+                except Exception as exc:
+                    summary["errors"].append(f"subscription {subscription.id}: {exc}")
+                    logger.error(
+                        "[N1] Dunning sweep failed for subscription %s: %s",
+                        subscription.id, exc, exc_info=True,
                     )
-                    if current_index >= target_index:
-                        break  # already past the target on the schedule (e.g. manually restored higher) — leave it
-                    next_status = _SCHEDULE[current_index + 1][1]
-                    old_status = subscription.status
-                    self.subscription_service.transition(subscription, next_status)
-                    self._log(subscription, old_status.value, next_status.value, f"N1: {days}d past due")
-
-                    if next_status == CommercialSubscriptionStatus.PAST_DUE:
-                        summary["past_due"] += 1
-                    elif next_status == CommercialSubscriptionStatus.RESTRICTED:
-                        summary["restricted"] += 1
-                    elif next_status == CommercialSubscriptionStatus.SUSPENDED:
-                        summary["suspended"] += 1
-                    elif next_status == CommercialSubscriptionStatus.CANCELLED:
-                        summary["terminated"] += 1
-
-                    # Send ZB-COM-011: Past-Due Subscription Warning email
-                    if next_status in (CommercialSubscriptionStatus.PAST_DUE, CommercialSubscriptionStatus.RESTRICTED):
-                        try:
-                            from app.modules.auth.models import User
-                            from app.modules.commercial.models import CommercialAccount
-                            from app.services.email_service import send_past_due_suspension_warning_email
-
-                            acct = db.query(CommercialAccount).filter(CommercialAccount.id == subscription.commercial_account_id).first()
-                            if acct and acct.organization_id:
-                                org_id = acct.organization_id
-                                org_name = getattr(acct.organization, "name", "Your Organization")
-                                admin_user = db.query(User).filter(User.organization_id == org_id, User.is_active == True).first()
-                                if admin_user and admin_user.email:
-                                    send_past_due_suspension_warning_email(
-                                        email=admin_user.email,
-                                        recipient_first_name=admin_user.first_name or "there",
-                                        organization_name=org_name,
-                                        days_overdue=days,
-                                        amount_due="0.00",
-                                        currency="USD",
-                                        organization_id=org_id,
-                                        db=db,
-                                    )
-                        except Exception as mail_exc:
-                            logger.warning("Failed to dispatch ZB-COM-011 warning email for subscription %s: %s", subscription.id, mail_exc)
-            except Exception as exc:
-                summary["errors"].append(f"subscription {subscription.id}: {exc}")
-                logger.error(
-                    "[N1] Dunning sweep failed for subscription %s: %s",
-                    subscription.id, exc, exc_info=True,
-                )
-                db.rollback()
+                    db.rollback()
+        finally:
+            bulk.close()
 
         return summary
 

@@ -354,6 +354,9 @@ def test_legacy_toggle_endpoint_still_enforces_mfa_and_state(db_session):
     )
     assert resp.enabled is False
     assert resp.expires_at is not None
+    # NOTE: the HTTP-level reachability of the legacy hyphenated alias is
+    # covered in tests/test_route_shadowing.py. Calling the handler directly,
+    # as this file does throughout, cannot detect route shadowing.
 
 
 def test_get_db_returns_503_service_unavailable_when_db_unreachable(monkeypatch):

@@ -8,13 +8,15 @@ and PlatformSetting configuration.
 
 import logging
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.core.cache_service import cache_get_or_set
 from app.core.capabilities import require_capability
 from app.core.dependencies import get_current_super_admin
 from app.core.rate_limiter import limit_route
@@ -164,7 +166,13 @@ from app.modules.super_admin.schemas import (
     CollectionsRiskListResponse,
     BillingActivityItem,
     BillingActivityListResponse,
+    EmailFailureListResponse,
+    EmailDeliveryOverviewResponse,
+    EmailResendResponse,
+    EmailTestSendRequest,
+    EmailTestSendResponse,
 )
+from app.modules.super_admin.email_delivery_service import EmailDeliveryService
 
 
 logger = logging.getLogger("zoiko_billing.super_admin")
@@ -174,6 +182,13 @@ router = APIRouter(prefix="/super-admin", tags=["Super Admin"])
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session = Depends(get_db)):
+    from app.config import settings as _settings
+    from app.core import cache_service
+
+    cached = cache_service.cache_get("sa:stats:global")
+    if cached is not None:
+        return DashboardStats(**cached)
+
     total_orgs = db.query(Organization).count()
     active_orgs = db.query(Organization).filter(Organization.is_active == True).count()
     total_users = db.query(User).count()
@@ -196,7 +211,7 @@ def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session =
         total_customers = 0
         total_invoices = 0
 
-    return DashboardStats(
+    stats = DashboardStats(
         total_organizations=total_orgs,
         active_organizations=active_orgs,
         total_users=total_users,
@@ -215,6 +230,12 @@ def dashboard_stats(current_user=Depends(get_current_super_admin), db: Session =
             for o in recent_orgs
         ],
     )
+    cache_service.cache_set(
+        "sa:stats:global",
+        stats.model_dump(mode="json"),
+        ttl=_settings.REDIS_DASHBOARD_TTL,
+    )
+    return stats
 
 
 @router.get("/users", response_model=SuperAdminUserListResponse)
@@ -1174,10 +1195,29 @@ def list_commercial_plan_versions(
     if plan is None:
         raise NotFoundException("Commercial Plan", "id")
 
-    versions = CommercialPlanVersionService(db).list_versions_for_plan(plan_id)
-    return CommercialPlanVersionListResponse(
-        versions=[_version_payload(v) for v in versions], total=len(versions)
+    # The Entitlement Catalog tab calls this once per commercial plan
+    # (concurrently, via Promise.all) to build its plan-vs-entitlement
+    # matrix — N plans means N of these plus N more to the entitlements
+    # endpoint below, on every load of that tab. Plan versions are
+    # admin-configured and change rarely, so a short cache absorbs repeat
+    # tab loads without needing an invalidation hook on every version-write
+    # path (worst case: a just-published version is invisible for up to
+    # REDIS_ENTITLEMENT_TTL seconds).
+    versions = cache_get_or_set(
+        f"plan:versions:{plan_id}",
+        # cache_get_or_set round-trips through json.dumps/json.loads on a
+        # Redis hit — must hand it plain JSON-safe dicts, not
+        # CommercialPlanVersionResponse instances (which json.dumps can't
+        # serialize; that failure would silently degrade this key to the
+        # in-process fallback only, defeating the point of caching it in
+        # Redis at all).
+        lambda: [
+            _version_payload(v).model_dump(mode="json")
+            for v in CommercialPlanVersionService(db).list_versions_for_plan(plan_id)
+        ],
+        ttl=settings.REDIS_ENTITLEMENT_TTL,
     )
+    return CommercialPlanVersionListResponse(versions=versions, total=len(versions))
 
 
 @router.post("/commercial-plans/{plan_id}/versions", response_model=CommercialPlanVersionResponse)
@@ -1459,19 +1499,18 @@ def list_plan_version_entitlements(
     if version is None:
         raise NotFoundException("Commercial Plan Version", "id")
 
-    rows = (
-        db.query(PlanEntitlement, EntitlementDefinition)
-        .join(
-            EntitlementDefinition,
-            EntitlementDefinition.id == PlanEntitlement.entitlement_definition_id,
+    def _load_entitlements():
+        rows = (
+            db.query(PlanEntitlement, EntitlementDefinition)
+            .join(
+                EntitlementDefinition,
+                EntitlementDefinition.id == PlanEntitlement.entitlement_definition_id,
+            )
+            .filter(PlanEntitlement.plan_version_id == version_id)
+            .order_by(EntitlementDefinition.key)
+            .all()
         )
-        .filter(PlanEntitlement.plan_version_id == version_id)
-        .order_by(EntitlementDefinition.key)
-        .all()
-    )
-    return PlanVersionEntitlementsResponse(
-        version_id=version_id,
-        entitlements=[
+        return [
             {
                 "id": pe.id,
                 "plan_version_id": pe.plan_version_id,
@@ -1484,9 +1523,17 @@ def list_plan_version_entitlements(
                 "is_contracted": pe.is_contracted,
             }
             for pe, definition in rows
-        ],
-        total=len(rows),
+        ]
+
+    # Same N-per-tab-load shape as list_commercial_plan_versions above (the
+    # Entitlement Catalog tab calls this once per published version, for
+    # every plan) — same short-TTL rationale.
+    entitlements = cache_get_or_set(
+        f"plan:version-entitlements:{version_id}",
+        _load_entitlements,
+        ttl=settings.REDIS_ENTITLEMENT_TTL,
     )
+    return PlanVersionEntitlementsResponse(version_id=version_id, entitlements=entitlements, total=len(entitlements))
 
 
 # ── Commercial Overrides (ZB-COM-ENT-001 Part 2 §16.1, dual-approval) ──────
@@ -1533,10 +1580,24 @@ def list_commercial_overrides(
     if organization_id is not None:
         query = query.filter(CommercialOverride.organization_id == organization_id)
     if status:
-        try:
-            query = query.filter(CommercialOverride.status == CommercialOverrideStatus(status))
-        except ValueError:
-            raise BadRequestException(f"Invalid status '{status}'.")
+        # "expired" is never a *stored* status (see CommercialOverrideStatus.EXPIRED
+        # docstring, AC-10): expiry is judged dynamically off expires_at, and no
+        # code path ever writes that enum value to a row. Filtering with a naive
+        # `status == CommercialOverrideStatus.EXPIRED` equality is therefore a dead
+        # filter that always returns zero rows, even when APPROVED overrides have
+        # actually lapsed. Interpret "expired" as its real-world meaning instead:
+        # APPROVED overrides whose expires_at has passed.
+        if status == CommercialOverrideStatus.EXPIRED.value:
+            query = query.filter(
+                CommercialOverride.status == CommercialOverrideStatus.APPROVED,
+                CommercialOverride.expires_at.isnot(None),
+                CommercialOverride.expires_at <= datetime.utcnow(),
+            )
+        else:
+            try:
+                query = query.filter(CommercialOverride.status == CommercialOverrideStatus(status))
+            except ValueError:
+                raise BadRequestException(f"Invalid status '{status}'.")
     rows = query.order_by(CommercialOverride.id.desc()).all()
     return CommercialOverrideListResponse(overrides=[_override_payload(o) for o in rows], total=len(rows))
 
@@ -2183,6 +2244,38 @@ def list_circuit_breakers(
     return CircuitBreakerCatalogResponse(breakers=entries, generated_at=_dt.utcnow())
 
 
+# Legacy single-scope endpoints (kept for backward compatibility with the
+# session-6 frontend/tests; thin delegates to the generic implementations).
+#
+# These MUST stay registered ABOVE "/circuit-breakers/{scope}". Starlette
+# matches routes in declaration order, so a literal path declared after a
+# path-parameter route is unreachable: the {scope} handler wins, looks the
+# hyphenated alias up in KNOWN_BREAKER_SCOPES, fails to find it (the canonical
+# scope is "tenant_invoice_finalization", underscore) and 404s — which is
+# exactly how the Data Governance tab's breaker card got stuck on
+# "Unknown circuit breaker scope".
+
+@router.get("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
+def get_tenant_invoice_finalization_breaker(
+    current_user=Depends(require_capability("circuit_breaker.read")),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
+
+    return _breaker_state_response(TENANT_INVOICE_FINALIZATION, db)
+
+
+@router.put("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
+def set_tenant_invoice_finalization_breaker(
+    data: CircuitBreakerToggleRequest,
+    current_user=Depends(require_capability("circuit_breaker.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
+
+    return _apply_breaker_toggle(TENANT_INVOICE_FINALIZATION, data, current_user, db)
+
+
 @router.get("/circuit-breakers/{scope}", response_model=BillingKillSwitchResponse)
 def get_circuit_breaker(
     scope: str,
@@ -2376,30 +2469,6 @@ def decide_approval_request(
     )
 
 
-# Legacy single-scope endpoints (kept for backward compatibility with the
-# session-6 frontend/tests; thin delegates to the generic implementations).
-
-@router.get("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
-def get_tenant_invoice_finalization_breaker(
-    current_user=Depends(require_capability("circuit_breaker.read")),
-    db: Session = Depends(get_db),
-):
-    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
-
-    return _breaker_state_response(TENANT_INVOICE_FINALIZATION, db)
-
-
-@router.put("/circuit-breakers/tenant-invoice-finalization", response_model=BillingKillSwitchResponse)
-def set_tenant_invoice_finalization_breaker(
-    data: CircuitBreakerToggleRequest,
-    current_user=Depends(require_capability("circuit_breaker.manage")),
-    db: Session = Depends(get_db),
-):
-    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
-
-    return _apply_breaker_toggle(TENANT_INVOICE_FINALIZATION, data, current_user, db)
-
-
 # ── Platform audit feed (PHASE 11, Super Admin only) ────────────────────────
 # Cross-organization, platform-plane audit trail (PlatformAuditLog). Entries
 # are written by CommercialPlanService mutations (CREATE / UPDATE / ACTIVATE /
@@ -2419,14 +2488,18 @@ def list_platform_audit_logs(
     organization_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    order: Literal["asc", "desc"] = "desc",
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
-    """Cross-organization platform audit feed, newest first.
+    """Cross-organization platform audit feed, newest first by default.
 
     Filters (all optional): search (matches entity_type / action text),
     entity_type, action, actor_id, organization_id, and inclusive day bounds
-    date_from / date_to. Non-super-admin callers receive 403.
+    date_from / date_to. `order` toggles the timestamp direction (asc = oldest
+    first) so the Audit & Evidence table can sort server-side over the whole
+    result set rather than only the page it happens to be showing. Non-
+    super-admin callers receive 403.
     """
     from app.modules.super_admin.models import PlatformAuditLog
 
@@ -2463,12 +2536,12 @@ def list_platform_audit_logs(
         )
 
     total = query.count()
-    rows = (
-        query.order_by(PlatformAuditLog.created_at.desc(), PlatformAuditLog.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+    direction = (
+        (PlatformAuditLog.created_at.asc(), PlatformAuditLog.id.asc())
+        if order == "asc"
+        else (PlatformAuditLog.created_at.desc(), PlatformAuditLog.id.desc())
     )
+    rows = query.order_by(*direction).offset(skip).limit(limit).all()
     return PlatformAuditLogListResponse(
         logs=[
             PlatformAuditLogResponse(
@@ -2532,14 +2605,16 @@ def list_subscription_audit_logs(
     actor_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    order: Literal["asc", "desc"] = "desc",
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
     """Cross-organization, read-only view of CommercialSubscription lifecycle
-    events, newest first. Non-super-admin callers receive 403 before the
-    query runs. Never exposes anything beyond what billing_audit_logs already
-    stores (no passwords/tokens/secrets are ever written into that table's
-    old_values/new_values by the subscription endpoints below)."""
+    events, newest first by default; `order=asc` returns oldest first. Non-
+    super-admin callers receive 403 before the query runs. Never exposes
+    anything beyond what billing_audit_logs already stores (no passwords/
+    tokens/secrets are ever written into that table's old_values/new_values by
+    the subscription endpoints below)."""
     from app.modules.billing.models import BillingAuditLog
 
     query = (
@@ -2568,12 +2643,12 @@ def list_subscription_audit_logs(
         )
 
     total = query.count()
-    rows = (
-        query.order_by(BillingAuditLog.timestamp.desc(), BillingAuditLog.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+    direction = (
+        (BillingAuditLog.timestamp.asc(), BillingAuditLog.id.asc())
+        if order == "asc"
+        else (BillingAuditLog.timestamp.desc(), BillingAuditLog.id.desc())
     )
+    rows = query.order_by(*direction).offset(skip).limit(limit).all()
     return SubscriptionAuditLogListResponse(
         logs=[
             SubscriptionAuditLogResponse(
@@ -2956,6 +3031,54 @@ def update_setting(
     response = SettingResponse.model_validate(setting)
     response.updated_by_email = current_user.email
     return response
+
+
+# ── B6: synchronous SMTP test send ──────────────────────────────────────────
+# Lives next to the platform settings endpoints above since it always tests
+# the SAME effective SMTP configuration those settings write to (env +
+# PlatformSetting category="email" overrides) — gated the same way a setting
+# mutation is (platform_config.manage), since sending mail with the current
+# credentials is an operational action taken from that same settings page.
+
+@router.post("/settings/email/test", response_model=EmailTestSendResponse)
+def send_smtp_test_email(
+    data: EmailTestSendRequest,
+    current_user=Depends(require_capability("platform_config.manage")),
+    db: Session = Depends(get_db),
+):
+    result = EmailDeliveryService(db).send_test_email(str(data.recipient_email))
+    return EmailTestSendResponse(**result)
+
+
+# ── B3: Email delivery health (read model over CommunicationAuditLog) ──────
+# See email_delivery_service.py's module docstring for scope/limitations.
+
+@router.get("/email-delivery/overview", response_model=EmailDeliveryOverviewResponse)
+def get_email_delivery_overview(
+    current_user=Depends(require_capability("reliability.read")),
+    db: Session = Depends(get_db),
+):
+    return EmailDeliveryService(db).get_overview()
+
+
+@router.get("/email-delivery/failures", response_model=EmailFailureListResponse)
+def list_email_delivery_failures(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(require_capability("reliability.read")),
+    db: Session = Depends(get_db),
+):
+    return EmailDeliveryService(db).list_recent_failures(skip=skip, limit=limit)
+
+
+@router.post("/email-delivery/failures/{log_id}/resend", response_model=EmailResendResponse)
+def resend_email_delivery_failure(
+    log_id: int,
+    current_user=Depends(require_capability("email_delivery.resend")),
+    db: Session = Depends(get_db),
+):
+    result = EmailDeliveryService(db).resend(log_id, actor=current_user)
+    return EmailResendResponse(**result)
 
 
 # ── Production Acceptance Center (ZB-COM-BILL-001 §26, Super Admin only) ────
@@ -3637,7 +3760,16 @@ def get_financial_consistency(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return FinancialConsistencyResponse(**FinancialConsistencyService(db).check_allocation_consistency())
+    # Joins PaymentAllocation against every Invoice platform-wide with no
+    # date bound — cost grows with total row count, and this is the single
+    # most expensive read in the hub. A short cache turns N concurrent page
+    # loads within the TTL window into one real query.
+    consistency = cache_get_or_set(
+        "fo:consistency",
+        lambda: FinancialConsistencyService(db).check_allocation_consistency(),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
+    return FinancialConsistencyResponse(**consistency)
 
 
 @router.get("/financial-operations", response_model=FinancialOperationsSummaryResponse)
@@ -3652,7 +3784,15 @@ def get_financial_operations_summary(
     All values are real database aggregates — no client-side math, no fabricated
     numbers.
     """
-    summary = FinancialConsistencyService(db).get_financial_operations_summary()
+    # This backs the F1-F4 strip on the Overview tab — the first thing loaded
+    # on every visit to the Financial Operations hub, and it internally calls
+    # check_allocation_consistency() plus ~5 more whole-table aggregate
+    # queries. Uncached, this ran fresh on every single page load.
+    summary = cache_get_or_set(
+        "fo:summary",
+        lambda: FinancialConsistencyService(db).get_financial_operations_summary(),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
     from app.modules.super_admin.schemas import (
         FinancialBillingsSummary, FinancialRecoverySummary, FinancialLeakageSummary,
     )
@@ -3684,7 +3824,11 @@ def get_invoice_status_distribution(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).invoice_status_distribution()
+    return cache_get_or_set(
+        "fo:invoice-status-distribution",
+        lambda: _fo_detail_service(db).invoice_status_distribution(),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/invoice-delivery-diagnostics", response_model=InvoiceDeliveryDiagnosticsResponse)
@@ -3692,7 +3836,11 @@ def get_invoice_delivery_diagnostics(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).invoice_delivery_diagnostics()
+    return cache_get_or_set(
+        "fo:invoice-delivery-diagnostics",
+        lambda: _fo_detail_service(db).invoice_delivery_diagnostics(),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/failed-payments", response_model=FailedPaymentListResponse)
@@ -3701,7 +3849,11 @@ def list_failed_payments(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_failed_payments(limit)
+    return cache_get_or_set(
+        f"fo:failed-payments:{limit}",
+        lambda: _fo_detail_service(db).list_failed_payments(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/dunning-cases", response_model=DunningCaseListResponse)
@@ -3710,7 +3862,11 @@ def list_dunning_cases(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_dunning_cases(limit)
+    return cache_get_or_set(
+        f"fo:dunning-cases:{limit}",
+        lambda: _fo_detail_service(db).list_dunning_cases(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/allocation-exceptions", response_model=AllocationExceptionListResponse)
@@ -3719,7 +3875,11 @@ def list_allocation_exceptions(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_allocation_exceptions(limit)
+    return cache_get_or_set(
+        f"fo:allocation-exceptions:{limit}",
+        lambda: _fo_detail_service(db).list_allocation_exceptions(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/credit-applications", response_model=CreditApplicationListResponse)
@@ -3728,7 +3888,11 @@ def list_credit_applications(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_credit_applications(limit)
+    return cache_get_or_set(
+        f"fo:credit-applications:{limit}",
+        lambda: _fo_detail_service(db).list_credit_applications(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/credit-notes", response_model=CreditNoteListResponse)
@@ -3737,7 +3901,11 @@ def list_credit_notes(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_credit_notes(limit)
+    return cache_get_or_set(
+        f"fo:credit-notes:{limit}",
+        lambda: _fo_detail_service(db).list_credit_notes(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/refunds", response_model=RefundListResponse)
@@ -3746,7 +3914,11 @@ def list_refunds(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_refunds(limit)
+    return cache_get_or_set(
+        f"fo:refunds:{limit}",
+        lambda: _fo_detail_service(db).list_refunds(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/write-offs", response_model=WriteOffListResponse)
@@ -3755,7 +3927,11 @@ def list_write_offs(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).list_write_offs(limit)
+    return cache_get_or_set(
+        f"fo:write-offs:{limit}",
+        lambda: _fo_detail_service(db).list_write_offs(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 @router.get("/financial-operations/tax-summary", response_model=TaxSummaryResponse)
@@ -3765,7 +3941,11 @@ def get_tax_summary(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    return _fo_detail_service(db).get_tax_summary(date_from, date_to)
+    return cache_get_or_set(
+        f"fo:tax-summary:{date_from}:{date_to}",
+        lambda: _fo_detail_service(db).get_tax_summary(date_from, date_to),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
 
 
 #
@@ -3807,7 +3987,11 @@ def get_billing_command_trend(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    data = _bcc_service(db).get_trend(granularity, currency)
+    data = cache_get_or_set(
+        f"bcc:trend:{granularity}:{currency}",
+        lambda: _bcc_service(db).get_trend(granularity, currency),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
     return BillingTrendResponse(
         granularity=data["granularity"],
         currency=data["currency"],
@@ -3823,7 +4007,11 @@ def list_billing_command_overdue_invoices(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    data = _bcc_service(db).list_overdue_invoices(limit)
+    data = cache_get_or_set(
+        f"bcc:overdue-invoices:{limit}",
+        lambda: _bcc_service(db).list_overdue_invoices(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
     return OverdueInvoiceListResponse(
         total=data["total"],
         invoices=[OverdueInvoiceRow(**row) for row in data["invoices"]],
@@ -3836,7 +4024,11 @@ def list_billing_command_collections_risk(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    data = _bcc_service(db).list_collections_risk(limit)
+    data = cache_get_or_set(
+        f"bcc:collections-risk:{limit}",
+        lambda: _bcc_service(db).list_collections_risk(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
     return CollectionsRiskListResponse(rows=[CollectionsRiskRow(**row) for row in data["rows"]])
 
 
@@ -3846,7 +4038,11 @@ def list_billing_command_recent_activity(
     current_user=Depends(require_capability('financial_consistency.read')),
     db: Session = Depends(get_db),
 ):
-    data = _bcc_service(db).list_recent_activity(limit)
+    data = cache_get_or_set(
+        f"bcc:recent-activity:{limit}",
+        lambda: _bcc_service(db).list_recent_activity(limit),
+        ttl=settings.REDIS_DASHBOARD_TTL,
+    )
     return BillingActivityListResponse(items=[BillingActivityItem(**item) for item in data["items"]])
 
 
@@ -3859,14 +4055,16 @@ def list_billing_command_recent_activity(
 def trigger_reconciliation_run(
     body: TriggerReconciliationRunRequest = Body(default_factory=TriggerReconciliationRunRequest),
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
     """Manually trigger a reconciliation run. `compare_processor=true`
     (ISS-017) additionally runs a genuine, bounded Payment<->Stripe
     comparison across every organization with an active Stripe connection —
     omit it (the default) to preserve the original internal-checks-only
-    behavior exactly."""
+    behavior exactly. `organization_id`, when given, scopes the entire run
+    (internal checks and the Stripe comparison) to that one organization
+    instead of the whole platform."""
     from app.core.exceptions import BadRequestException
     from app.modules.super_admin.reconciliation_service import ReconciliationService
 
@@ -3877,6 +4075,7 @@ def trigger_reconciliation_run(
             compare_processor=body.compare_processor,
             range_start=body.range_start,
             range_end=body.range_end,
+            organization_id=body.organization_id,
         )
     except ValueError as exc:
         raise BadRequestException(str(exc))
@@ -3952,14 +4151,20 @@ def acknowledge_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest = Body(default=None),
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
+    from app.core.exceptions import BadRequestException
     from app.modules.super_admin.reconciliation_service import ReconciliationService
 
-    exc = ReconciliationService(db).acknowledge_exception(
-        exception_id, owner_user_id=current_user.id
-    )
+    # Same ValueError contract as resolve below: not-found / already-resolved
+    # is a client error, not a 500.
+    try:
+        exc = ReconciliationService(db).acknowledge_exception(
+            exception_id, owner_user_id=current_user.id
+        )
+    except ValueError as err:
+        raise BadRequestException(str(err))
     db.commit()
     return {
         "id": exc.id,
@@ -3975,7 +4180,7 @@ def resolve_reconciliation_exception(
     exception_id: int,
     body: ReconciliationExceptionActionRequest,
     request: Request = None,
-    current_user=Depends(require_capability('financial_consistency.read')),
+    current_user=Depends(require_capability('financial_consistency.write')),
     db: Session = Depends(get_db),
 ):
     from app.core.exceptions import BadRequestException
@@ -3992,6 +4197,37 @@ def resolve_reconciliation_exception(
         "resolved_at": str(exc.resolved_at) if exc.resolved_at else None,
         "resolution_note": exc.resolution_note,
     }
+
+
+class RecoverMissingPaymentIntentRequest(BaseModel):
+    organization_id: int
+    payment_intent_id: str
+
+
+@router.post("/reconciliation-runs/recover-payment-intent")
+@limit_route("10/minute")
+def recover_missing_stripe_payment_intent(
+    body: RecoverMissingPaymentIntentRequest,
+    request: Request = None,
+    current_user=Depends(require_capability('financial_consistency.write')),
+    db: Session = Depends(get_db),
+):
+    """Explicit, admin-triggered recovery for ONE PaymentIntent a
+    reconciliation run flagged as `stripe_missing_in_ledger` (Stripe has it,
+    our ledger doesn't — a missed webhook). This is a sibling action to the
+    reconciliation-run endpoints above, not part of the passive nightly
+    comparison: it is never invoked automatically, only by a human who has
+    reviewed the reconciliation exception and decided to recover this
+    specific PaymentIntent for this specific organization.
+    """
+    from app.core.exceptions import BadRequestException
+    from app.modules.super_admin.stripe_reconciliation import recover_missing_payment_intent
+
+    try:
+        result = recover_missing_payment_intent(db, body.organization_id, body.payment_intent_id)
+    except RuntimeError as exc:
+        raise BadRequestException(str(exc))
+    return result
 
 
 def _serialize_reconciliation_run(run) -> dict:

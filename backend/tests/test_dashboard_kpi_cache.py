@@ -11,15 +11,15 @@ Covers:
 import pytest
 
 from app.config import settings
-from app.modules.billing.services.dashboard_service import BillingDashboardService, _KPI_CACHE
+from app.core.cache_service import cache_flush
+from app.modules.billing.services.dashboard_service import BillingDashboardService
 from tests.conftest import make_customer, make_invoice, make_organization
 
 
 @pytest.fixture()
-def kpi_cache(monkeypatch):
-    cache = _KPI_CACHE
+def kpi_cache():
     assert settings.DASHBOARD_KPI_CACHE_TTL_SECONDS > 0
-    yield cache
+    yield None
 
 
 def test_repeat_call_within_ttl_is_cached(db_session, kpi_cache):
@@ -38,7 +38,7 @@ def test_repeat_call_within_ttl_is_cached(db_session, kpi_cache):
     second = service.get_kpis(organization_id=org.id)
     assert second["total_revenue"] == 1000.0, "cached result must not see the new invoice"
 
-    kpi_cache.clear()
+    cache_flush()
     third = service.get_kpis(organization_id=org.id)
     assert third["total_revenue"] == 3000.0, "after expiry the aggregate must be fresh"
 

@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 
 from app.modules.billing.models import (
+    Invoice,
     RevenueRecognitionEntry,
     RevenueRecognitionSchedule,
 )
@@ -40,14 +41,22 @@ class RevenueRecognitionScheduleRepository(BaseRepository[RevenueRecognitionSche
     def list_pending(self, organization_id: int) -> List[RevenueRecognitionSchedule]:
         return self.list_all(organization_id, active_only=True, status="pending")
 
-    def get_total_deferred(self, organization_id: int) -> float:
-        result = self.db.query(
-            func.coalesce(func.sum(RevenueRecognitionSchedule.deferred_amount), 0)
+    def get_total_deferred_by_currency(self, organization_id: int) -> List[Dict[str, Any]]:
+        """Deferred revenue summed per currency -- a schedule's currency is
+        whatever its linked invoice was issued in, which varies by customer/
+        contract, so a single cross-currency SUM() would silently add e.g.
+        INR and USD amounts together into one meaningless number. Never
+        fabricates a single blended total."""
+        rows = self.db.query(
+            Invoice.currency,
+            func.coalesce(func.sum(RevenueRecognitionSchedule.deferred_amount), 0),
+        ).join(
+            Invoice, Invoice.id == RevenueRecognitionSchedule.invoice_id,
         ).filter(
             RevenueRecognitionSchedule.organization_id == organization_id,
             RevenueRecognitionSchedule.is_active == True,
-        ).scalar()
-        return float(result)
+        ).group_by(Invoice.currency).all()
+        return [{"currency": currency, "total_deferred": float(total)} for currency, total in rows]
 
     def list_paginated(
         self,

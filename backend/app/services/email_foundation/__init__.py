@@ -15,6 +15,7 @@ from app.services.email_foundation.models import (
     EmailMarketingConsent,
     EmailOrgPreference,
     CommunicationAuditLog,
+    EmailOutbox,
 )
 from app.services.email_foundation.registries import (
     TemplateDefinition,
@@ -48,6 +49,7 @@ __all__ = [
     "EmailMarketingConsent",
     "EmailOrgPreference",
     "CommunicationAuditLog",
+    "EmailOutbox",
     "TemplateDefinition",
     "TEMPLATE_REGISTRY",
     "EVENT_REGISTRY",
