@@ -3,6 +3,7 @@ import {
   Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, FileText, Image, Loader2,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -29,6 +30,7 @@ export default function QuotationSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [form, setForm] = useState({
@@ -63,8 +65,10 @@ export default function QuotationSettingsPage() {
       };
       setForm(values);
       setOriginal({ ...values });
+      setLoadFailed(false);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally { setLoading(false); }
   }
 
@@ -76,8 +80,11 @@ export default function QuotationSettingsPage() {
       const payload = {
         quote_prefix: form.quote_prefix,
         default_currency: form.default_currency,
-        quote_terms_and_conditions: form.default_terms_and_conditions || undefined,
-        logo_url: form.quote_logo_url || undefined,
+        // Cleared fields are sent as null (the API applies explicit nulls).
+        // `|| undefined` dropped them from the JSON, so clearing the terms or
+        // logo showed "Saved" while the old value stayed on the server.
+        quote_terms_and_conditions: form.default_terms_and_conditions?.trim() ? form.default_terms_and_conditions : null,
+        logo_url: form.quote_logo_url?.trim() ? form.quote_logo_url.trim() : null,
       };
       await settingsApi.update(payload);
       setOriginal({ ...form });
@@ -96,6 +103,18 @@ export default function QuotationSettingsPage() {
     return (
       <HRPage title="Quotation Settings" subtitle="Loading settings...">
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+      </HRPage>
+    );
+  }
+
+  // Never render an editable form built from hard-coded defaults: if the
+  // saved configuration could not be loaded, Save would write those
+  // defaults over the organization's real settings (same guard as
+  // invoicing/settings.jsx and tax/settings.jsx).
+  if (loadFailed) {
+    return (
+      <HRPage title="Quotation Settings" subtitle="Configure quotation defaults and behavior">
+        <ErrorState title="Couldn't load quotation settings" message={error} onRetry={fetchSettings} />
       </HRPage>
     );
   }
@@ -137,6 +156,7 @@ export default function QuotationSettingsPage() {
         >
           <input
             type="text"
+            aria-label="Quote number prefix"
             value={form.quote_prefix}
             onChange={(e) => updateField("quote_prefix", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
@@ -148,7 +168,7 @@ export default function QuotationSettingsPage() {
           icon={DollarSign}
           description="Default currency for new quotations"
         >
-          <select value={form.default_currency} onChange={(e) => updateField("default_currency", e.target.value)}
+          <select aria-label="Default quotation currency" value={form.default_currency} onChange={(e) => updateField("default_currency", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             {getCurrencySelectOptions().map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
@@ -160,11 +180,12 @@ export default function QuotationSettingsPage() {
           description="Standard terms shown on all quotations"
         >
           <textarea
+            aria-label="Default terms and conditions"
             value={form.default_terms_and_conditions}
             onChange={(e) => updateField("default_terms_and_conditions", e.target.value)}
-            rows={4}
+            rows={6}
             placeholder="Payment terms, delivery terms, validity..."
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+            className="block w-full max-w-2xl rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </SettingsField>
 
@@ -175,6 +196,7 @@ export default function QuotationSettingsPage() {
         >
           <input
             type="url"
+            aria-label="Quotation logo URL"
             value={form.quote_logo_url}
             onChange={(e) => updateField("quote_logo_url", e.target.value)}
             placeholder="https://example.com/logo.png"
@@ -188,36 +210,34 @@ export default function QuotationSettingsPage() {
               <AlertCircle size={20} />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-slate-800">Advanced Settings (Not Yet Implemented)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">The following settings require backend support and are currently disabled:</p>
+              <h3 className="text-base font-semibold text-slate-800">Planned Quotation Controls</h3>
+              <p className="text-xs text-slate-500 mt-0.5">These are not available for quotations yet and have no effect today. They are listed so you know what is planned.</p>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-500">
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">Auto-Approval Workflow</p>
-              <p className="mt-1">Require approval before sending quotations</p>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">Discount Approval Threshold</p>
-              <p className="mt-1">Require approval for discounts above X%</p>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">{singular} Approval Required</p>
-              <p className="mt-1">Require {singular.toLowerCase()} acceptance before conversion</p>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">Version History</p>
-              <p className="mt-1">Track quotation revisions automatically</p>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">Expiry Reminder Days</p>
-              <p className="mt-1">Days before expiry to send reminders</p>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-slate-200">
-              <p className="font-medium text-slate-600">Quote Number Format</p>
-              <p className="mt-1">{'Custom format like QT-{YEAR}-{NUMBER}'}</p>
-            </div>
-          </div>
+          {/* Each item states its real status (see the Batch 2 audit): four have
+              no backend support at all; two have a setting elsewhere that is
+              saved but NOT applied to quotations. Not interactive by design. */}
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-500" aria-label="Planned quotation controls">
+            {[
+              { name: "Auto-Approval Workflow", desc: "Require approval before sending quotations",
+                status: "A related \"approval workflow\" switch exists in Billing Settings, but quotations don't use it yet." },
+              { name: "Discount Approval Threshold", desc: "Require approval for discounts above X%", status: "Not available yet." },
+              { name: `${singular} Approval Required`, desc: `Require ${singular.toLowerCase()} acceptance before conversion`, status: "Not available yet." },
+              { name: "Version History", desc: "Track quotation revisions automatically", status: "Not available yet." },
+              { name: "Expiry Reminder Days", desc: "Days before expiry to send reminders", status: "Not available yet." },
+              { name: "Quote Number Format", desc: "Custom numbering such as QT-{YEAR}-{NUMBER}",
+                status: "Can be saved in Billing Settings, but quotation numbers don't use it yet (only the prefix above applies)." },
+            ].map((item) => (
+              <li key={item.name} className="bg-white p-3 rounded-lg border border-slate-200">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium text-slate-600">{item.name}</p>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Not available</span>
+                </div>
+                <p className="mt-1">{item.desc}</p>
+                <p className="mt-1 text-xs text-slate-400">{item.status}</p>
+              </li>
+            ))}
+          </ul>
         </div>
 
       </div>

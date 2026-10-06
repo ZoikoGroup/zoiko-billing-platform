@@ -492,15 +492,24 @@ class StripeConnectService:
         return self._get_account(organization_id)
 
     def get_status_dict(self, organization_id: int) -> Dict[str, Any]:
-        """Return a safe, frontend-consumable status summary (no secrets)."""
-        row = self._get_account(organization_id)
+        """Return a safe, frontend-consumable status summary (no secrets).
+
+        Scoped to the CURRENT Stripe environment (test/live from the secret
+        key), exactly like resolve_connected_account -- the check every
+        payment path uses. Unscoped, this could report an account connected
+        in the other environment as "connected" while checkout correctly
+        refused with "Stripe is not connected for this organization".
+        "connected" also requires charges_enabled, for the same reason."""
+        env = _resolve_environment()
+        row = self._get_account(organization_id, env)
         if row is None:
             return {
                 "connected": False,
                 "status": IntegrationConnectionStatus.PENDING_ONBOARDING.value,
+                "environment": env.value,
             }
         return {
-            "connected": row.status == IntegrationConnectionStatus.ACTIVE,
+            "connected": row.status == IntegrationConnectionStatus.ACTIVE and bool(row.charges_enabled),
             "status": row.status.value,
             "environment": row.environment.value,
             "connected_account_id": row.connected_account_id,

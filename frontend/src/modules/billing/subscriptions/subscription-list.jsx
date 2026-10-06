@@ -7,6 +7,8 @@ import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../..
 import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
+import { useListUrlFilters } from "../utils/useListUrlFilters";
+import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -17,6 +19,8 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-500" },
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-700" },
 ];
+
+const STATUS_FILTER_OPTIONS = [...STATUS_OPTIONS];
 
 function StatusBadge({ status }) {
   const s = STATUS_OPTIONS.find((o) => o.value === status);
@@ -54,12 +58,25 @@ export default function SubscriptionListPage() {
     const timer = setTimeout(() => { setDebouncedSearch(search); setCurrentPage(1); }, 400);
     return () => clearTimeout(timer);
   }, [search]);
-  const [statusFilter, setStatusFilter] = useState("");
+  // Status (and the KPI-link flags) live in the URL: dashboard links such as
+  // ?status=active used to be ignored by this page entirely.
+  const urlFilters = useListUrlFilters(STATUS_FILTER_OPTIONS.map((o) => o.value));
+  const statusFilter = urlFilters.status;
+  const setStatusFilter = urlFilters.setStatus;
   const { range: dateRangeValue, setRange: setDateRangeValue, customStart, customEnd, applyCustomRange, reset: resetDateRange, dateRange } = useBillingDateRange();
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(() => Boolean(statusFilter));
   const [sortField, setSortField] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Every KPI card filters to exactly the records it counts -- all-time, like
+  // the KPI numbers themselves -- through the URL, so the view is shareable
+  // and the applied filter is visible (dropdown / chips).
+  const applyCard = (opts = {}) => {
+    urlFilters.applyCardFilter(opts);
+    setCurrentPage(1);
+    if (opts.status) setShowFilters(true);
+  };
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
@@ -119,8 +136,9 @@ export default function SubscriptionListPage() {
         page: safePage, per_page: ITEMS_PER_PAGE,
         search_term: debouncedSearch || undefined,
         status: statusFilter || undefined,
-        date_from: dateRange.date_from || undefined,
-        date_to: dateRange.date_to || undefined,
+        date_from: urlFilters.allDates ? undefined : (dateRange.date_from || undefined),
+        date_to: urlFilters.allDates ? undefined : (dateRange.date_to || undefined),
+        expiring_within_days: urlFilters.expiringDays || undefined,
         sort_by: sortBy, sort_order: sortDir,
       });
       const items = extractArray(data);
@@ -133,7 +151,7 @@ export default function SubscriptionListPage() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, [safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
+  }, [safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, urlFilters.expiringDays, sortField, sortDir]);
 
   useEffect(() => { fetchSubscriptions(true); }, [fetchSubscriptions]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
@@ -234,10 +252,10 @@ export default function SubscriptionListPage() {
     onExportCSV: handleExportCSV,
     onExportJSON: handleExportJSON,
     dateRange: dateRangeValue,
-    onDateRangeChange: setDateRangeValue,
+    onDateRangeChange: (v) => { urlFilters.setAllDates(false); setDateRangeValue(v); },
     customStart,
     customEnd,
-    onApplyCustomRange: applyCustomRange,
+    onApplyCustomRange: (a, b) => { urlFilters.setAllDates(false); applyCustomRange(a, b); },
     onResetDateRange: resetDateRange,
   };
 
@@ -249,16 +267,16 @@ export default function SubscriptionListPage() {
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Subscriptions" value={kpiTotal} icon={UserCheck} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
-          <DashboardStatCard title="Active" value={kpiActive} icon={CheckCircle} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => { setStatusFilter("active"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Paused" value={kpiPaused} icon={PauseCircle} color="from-amber-500 to-orange-500" loading={summaryLoading} onClick={() => { setStatusFilter("paused"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Cancelled" value={kpiCancelled} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => { setStatusFilter("cancelled"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Subscriptions" value={kpiTotal} icon={UserCheck} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => applyCard()} />
+          <DashboardStatCard title="Active" value={kpiActive} icon={CheckCircle} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => applyCard({ status: "active" })} />
+          <DashboardStatCard title="Paused" value={kpiPaused} icon={PauseCircle} color="from-amber-500 to-orange-500" loading={summaryLoading} onClick={() => applyCard({ status: "paused" })} />
+          <DashboardStatCard title="Cancelled" value={kpiCancelled} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => applyCard({ status: "cancelled" })} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={AlertCircle} color="from-red-500 to-rose-500" loading={summaryLoading} />
-          <DashboardStatCard title="MRR" value={Number(kpiMrr)} currency={reportingCurrency} icon={TrendingUp} color="from-blue-500 to-blue-600" loading={summaryLoading} />
-          <DashboardStatCard title="ARR" value={Number(kpiArr)} currency={reportingCurrency} icon={Percent} color="from-brand to-brand-hover" loading={summaryLoading} />
-          <DashboardStatCard title="Next Billing Amt" value={Number(nextBillingAmount)} currency={reportingCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} />
+          <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={AlertCircle} color="from-red-500 to-rose-500" loading={summaryLoading} onClick={() => applyCard({ expiring: 30 })} />
+          <DashboardStatCard title="MRR" value={Number(kpiMrr)} currency={reportingCurrency} icon={TrendingUp} color="from-blue-500 to-blue-600" loading={summaryLoading} href="/billing/subscriptions/reports?tab=mrr" />
+          <DashboardStatCard title="ARR" value={Number(kpiArr)} currency={reportingCurrency} icon={Percent} color="from-brand to-brand-hover" loading={summaryLoading} href="/billing/subscriptions/reports?tab=mrr" />
+          <DashboardStatCard title="Next Billing Amt" value={Number(nextBillingAmount)} currency={reportingCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} href="/billing/invoice-schedules" />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
@@ -304,18 +322,26 @@ export default function SubscriptionListPage() {
               </div>
             </div>
 
+            <div className="mt-3">
+              <ActiveUrlFilterChips
+                expiringDays={urlFilters.expiringDays}
+                onClearExpiring={() => { urlFilters.setExpiringDays(null); setCurrentPage(1); }}
+                allDates={urlFilters.allDates}
+                onClearAllDates={() => { urlFilters.setAllDates(false); setCurrentPage(1); }} />
+            </div>
+
             {showFilters && (
               <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
                 <div className="relative">
                   <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                     className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                     <option value="">All Statuses</option>
-                    {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {STATUS_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
-                {(statusFilter || dateRange.date_from || dateRange.date_to) && (
-                  <button onClick={() => { setStatusFilter(""); resetDateRange(); setCurrentPage(1); }}
+                {(statusFilter || urlFilters.expiringDays || urlFilters.allDates || dateRange.date_from || dateRange.date_to) && (
+                  <button onClick={() => { urlFilters.clearUrlFilters(); resetDateRange(); setCurrentPage(1); }}
                     className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
                 )}
               </div>

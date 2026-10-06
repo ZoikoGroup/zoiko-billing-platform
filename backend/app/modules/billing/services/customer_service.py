@@ -271,6 +271,11 @@ class CustomerService:
         data = filter_allowed(data, CONTACT_ALLOWED_FIELDS)
         self.repo.get_by_id(customer_id, organization_id)
         contact = self.contact_repo.create(organization_id, customer_id=customer_id, **data)
+        if data.get("is_primary"):
+            # Exactly one primary per customer: the same rule set_primary
+            # enforces. Creating a contact as primary used to leave the
+            # previous primary flagged too.
+            contact = self.contact_repo.set_primary(organization_id, contact.id)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "CustomerContact", contact.id)
         return contact
 
@@ -282,6 +287,11 @@ class CustomerService:
             if hasattr(contact, field) and value is not None:
                 setattr(contact, field, value)
         safe_commit_and_refresh(self.db, contact)
+        if data.get("is_primary") is True:
+            # Same single-primary rule as set_primary. is_primary=False is
+            # accepted as-is: it is how a primary ("starred") contact is
+            # un-starred, leaving the customer with no primary contact.
+            contact = self.contact_repo.set_primary(organization_id, contact.id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "CustomerContact", contact_id)
         return contact
 
@@ -525,8 +535,12 @@ class CustomerService:
         active = self.repo.count(organization_id, active_only=True)
         inactive = total - active
         
+        # Soft-deleted customers are excluded, matching `total` above
+        # (BaseRepository.count filters deleted_at): a deleted customer used to
+        # still count as "new" and as "over credit limit".
         new_customers_30d = self.db.query(func.count(self.repo.model.id)).filter(
             self.repo.model.organization_id == organization_id,
+            self.repo.model.deleted_at.is_(None),
             self.repo.model.created_at >= thirty_days_ago,
         ).scalar() or 0
         
@@ -538,6 +552,7 @@ class CustomerService:
         
         customers_over_credit_limit = self.db.query(func.count(self.repo.model.id)).filter(
             self.repo.model.organization_id == organization_id,
+            self.repo.model.deleted_at.is_(None),
             self.repo.model.credit_limit > 0,
             self.repo.model.outstanding_balance > self.repo.model.credit_limit,
         ).scalar() or 0

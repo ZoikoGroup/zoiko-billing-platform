@@ -361,8 +361,8 @@ export default function PaymentDashboardPage() {
       </p>
 
       <StatGroup title="More Metrics">
-        <StatCard title="Cleared Amount" value={Number(kpis.clearedAmount)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} />
-        <StatCard title="Avg Payment Value" value={Number(kpis.avgPaymentValue)} currency={baseCurrency} icon={TrendingUp} color={CARD_GRADIENTS[4]} />
+        <StatCard title="Cleared Amount" value={Number(kpis.clearedAmount)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} href="/billing/payments?status=cleared" />
+        <StatCard title="Avg Payment Value" value={Number(kpis.avgPaymentValue)} currency={baseCurrency} icon={TrendingUp} color={CARD_GRADIENTS[4]} subtitle="Per cleared payment" href="/billing/payments?status=cleared" />
         <StatCard title="Unallocated Amount" value={Number(kpis.unallocatedAmount)} currency={baseCurrency} icon={Layers} color={CARD_GRADIENTS[2]} subtitle={`${kpis.unallocatedCount} payment(s)`} href="/billing/payments" />
         <StatCard title="Unallocated Count" value={kpis.unallocatedCount.toLocaleString()} icon={AlertCircle} color={CARD_GRADIENTS[5]} href="/billing/payments" />
       </StatGroup>

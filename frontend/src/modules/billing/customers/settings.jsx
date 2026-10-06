@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Users, Hash, Bell, FileText, CreditCard } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { settingsApi } from "../../../service/billingService";
+import { ErrorState } from "../../../components/billing-shared";
 
 const FRONTEND_TO_BACKEND = {
   default_customer_type: null,
@@ -42,16 +43,23 @@ function toPayload(form) {
   return payload;
 }
 
+// The read-only fields below have no backend setting. They now display what
+// the system actually does today instead of invented values: new customers
+// default to "business" (BillingCustomer.customer_type default and the create
+// form), codes left blank are generated as CUST-<timestamp>, and neither a
+// billing address nor a tax ID is required (both optional in CustomerCreate).
+export const CURRENT_BEHAVIOUR_NOTE = "Not configurable yet — shows how new customers are handled today";
+
 function toForm(settings) {
   return {
-    default_customer_type: "individual",
+    default_customer_type: "business",
     customer_numbering_prefix: "CUST-",
-    customer_numbering_format: "{PREFIX}{NUMBER}",
+    customer_numbering_format: "{PREFIX}{TIMESTAMP}",
     default_payment_terms: settings.default_payment_terms || "net_30",
     credit_limit: settings.credit_limit != null ? String(settings.credit_limit) : "",
     customer_notification: settings.notify_customer_created ? "yes" : "no",
     auto_suspend_days: settings.grace_period_days != null ? String(settings.grace_period_days) : "",
-    require_billing_address: "yes",
+    require_billing_address: "no",
     require_tax_id: "no",
   };
 }
@@ -74,14 +82,14 @@ function SettingsField({ label, icon: Icon, children, description }) {
 }
 
 const DEFAULTS = {
-  default_customer_type: "individual",
+  default_customer_type: "business",
   customer_numbering_prefix: "CUST-",
-  customer_numbering_format: "{PREFIX}{NUMBER}",
+  customer_numbering_format: "{PREFIX}{TIMESTAMP}",
   default_payment_terms: "net_30",
   credit_limit: "",
   customer_notification: "yes",
   auto_suspend_days: "",
-  require_billing_address: "yes",
+  require_billing_address: "no",
   require_tax_id: "no",
 };
 
@@ -90,6 +98,7 @@ export default function CustomerSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const timerRef = useRef(null);
 
   const [form, setForm] = useState(DEFAULTS);
@@ -110,8 +119,10 @@ export default function CustomerSettingsPage() {
       const values = toForm(data || {});
       setForm(values);
       setOriginal(values);
+      setLoadFailed(false);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -148,6 +159,16 @@ export default function CustomerSettingsPage() {
     );
   }
 
+  // A failed load must not render editable defaults: Save would overwrite the
+  // real payment terms / credit limit / notification settings with them.
+  if (loadFailed) {
+    return (
+      <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
+        <ErrorState title="Couldn't load customer settings" message={error} onRetry={fetchSettings} />
+      </HRPage>
+    );
+  }
+
   return (
     <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
 
@@ -178,8 +199,8 @@ export default function CustomerSettingsPage() {
       )}
 
       <div className="space-y-6">
-        <SettingsField label="Default Customer Type" icon={Users} description="Not yet available — this preference is not persisted or enforced yet">
-          <select value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)} disabled
+        <SettingsField label="Default Customer Type" icon={Users} description={CURRENT_BEHAVIOUR_NOTE}>
+          <select aria-label="Default customer type" value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)} disabled
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="individual">Individual</option>
             <option value="business">Business</option>
@@ -188,19 +209,19 @@ export default function CustomerSettingsPage() {
           </select>
         </SettingsField>
 
-        <SettingsField label="Customer Numbering Prefix" icon={Hash} description="Not yet available — this preference is not persisted or enforced yet">
-          <input type="text" value={form.customer_numbering_prefix} onChange={(e) => updateField("customer_numbering_prefix", e.target.value)} disabled
+        <SettingsField label="Customer Numbering Prefix" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
+          <input type="text" aria-label="Customer numbering prefix" value={form.customer_numbering_prefix} onChange={(e) => updateField("customer_numbering_prefix", e.target.value)} disabled
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
         </SettingsField>
 
-        <SettingsField label="Customer Numbering Format" icon={Hash} description="Not yet available — this preference is not persisted or enforced yet">
-          <input type="text" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)} disabled
+        <SettingsField label="Customer Numbering Format" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
+          <input type="text" aria-label="Customer numbering format" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)} disabled
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
-          <p className="mt-1 text-xs text-slate-500">Preview: {form.customer_numbering_format.replace("{PREFIX}", form.customer_numbering_prefix).replace("{NUMBER}", "0001")}</p>
+          <p className="mt-1 text-xs text-slate-500">Codes left blank on the create form are generated as CUST- followed by a timestamp (e.g. CUST-1767225600000).</p>
         </SettingsField>
 
         <SettingsField label="Default Payment Terms" icon={CreditCard} description="Default payment terms assigned to new customers">
-          <select value={form.default_payment_terms} onChange={(e) => updateField("default_payment_terms", e.target.value)}
+          <select aria-label="Default payment terms" value={form.default_payment_terms} onChange={(e) => updateField("default_payment_terms", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="due_on_receipt">Due on Receipt</option>
             <option value="net_15">Net 15</option>
@@ -212,33 +233,33 @@ export default function CustomerSettingsPage() {
         </SettingsField>
 
         <SettingsField label="Default Credit Limit" icon={CreditCard} description="Default credit limit assigned to new customers (leave empty for no limit)">
-          <input type="number" min="0" step="0.01" value={form.credit_limit} onChange={(e) => updateField("credit_limit", e.target.value)}
+          <input type="number" aria-label="Default credit limit" min="0" step="0.01" value={form.credit_limit} onChange={(e) => updateField("credit_limit", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Auto-Suspend After (Days)" icon={Bell} description="Automatically suspend customer after N days of payment overdue (leave empty to disable)">
-          <input type="number" min="1" value={form.auto_suspend_days} onChange={(e) => updateField("auto_suspend_days", e.target.value)}
+          <input type="number" aria-label="Auto-suspend after days" min="1" value={form.auto_suspend_days} onChange={(e) => updateField("auto_suspend_days", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
 
         <SettingsField label="Customer Notifications" icon={Bell} description="Send billing notifications to customers">
-          <select value={form.customer_notification} onChange={(e) => updateField("customer_notification", e.target.value)}
+          <select aria-label="Customer notifications" value={form.customer_notification} onChange={(e) => updateField("customer_notification", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="yes">Enabled</option>
             <option value="no">Disabled</option>
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Billing Address" icon={FileText} description="Not yet available — this preference is not persisted or enforced yet">
-          <select value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)} disabled
+        <SettingsField label="Require Billing Address" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
+          <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)} disabled
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="yes">Required</option>
             <option value="no">Optional</option>
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Tax ID" icon={FileText} description="Not yet available — this preference is not persisted or enforced yet">
-          <select value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)} disabled
+        <SettingsField label="Require Tax ID" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
+          <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)} disabled
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
             <option value="yes">Required</option>
             <option value="no">Optional</option>

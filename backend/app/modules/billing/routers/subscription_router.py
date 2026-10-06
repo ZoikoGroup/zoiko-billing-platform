@@ -179,6 +179,10 @@ def list_subscriptions(
     contract_id: Optional[int] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    expiring_within_days: Optional[int] = Query(
+        None, ge=1, le=365,
+        description="Only active subscriptions whose current term ends within this many days from today (inclusive)",
+    ),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -194,6 +198,7 @@ def list_subscriptions(
         contract_id=contract_id,
         date_from=date_from,
         date_to=date_to,
+        expiring_within_days=expiring_within_days,
     )
 
 

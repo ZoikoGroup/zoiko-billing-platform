@@ -26,6 +26,12 @@ const TABS = [
   { key: "cashflow", label: "Cashflow Trends", icon: BarChart3 },
 ];
 
+// Monthly Trend tooltip. Recharts passes the series `name` ("Count"), not the
+// dataKey ("count"), so the old `name === "count"` check never matched and the
+// payment count was rendered as a currency amount.
+export const monthlyTrendTooltip = (formatMoney) => (value, name) =>
+  [name === "Count" ? value : formatMoney(value), name];
+
 export default function PaymentReportsPage() {
   const { baseCurrency } = useCurrency();
   const { range, setRange, customStart, setCustomStart, customEnd, setCustomEnd } = useDateRange();
@@ -41,20 +47,31 @@ export default function PaymentReportsPage() {
   const [collectionsCases, setCollectionsCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Each source used to fall back to [] on failure with no indication, so a
+  // failed refunds/credits/... call rendered as confident zeros.
+  const [failedSources, setFailedSources] = useState([]);
+  const [truncated, setTruncated] = useState(null);
+  const [exportError, setExportError] = useState(null);
 
   const fetchAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      const failed = [];
+      const load = (label, promise) => promise.catch(() => { failed.push(label); return { items: [] }; });
       const [payData, invData, refData, credData, woData, dunData, colData] = await Promise.all([
-        paymentApi.list({ per_page: 200 }).catch(() => ({ items: [] })),
-        invoiceApi.list({ per_page: 200 }).catch(() => ({ items: [] })),
-        refundApi.list({ per_page: 200 }).catch(() => ({ items: [] })),
-        creditNoteApi.list({ per_page: 200 }).catch(() => ({ items: [] })),
-        writeOffApi.list({ per_page: 200 }).catch(() => ({ items: [] })),
-        dunningApi.listCases({ per_page: 200 }).catch(() => ({ items: [] })),
-        collectionApi.listCases({ per_page: 200 }).catch(() => ({ items: [] })),
+        load("Payments", paymentApi.list({ per_page: 200 })),
+        load("Invoices", invoiceApi.list({ per_page: 200 })),
+        load("Refunds", refundApi.list({ per_page: 200 })),
+        load("Credit notes", creditNoteApi.list({ per_page: 200 })),
+        load("Write-offs", writeOffApi.list({ per_page: 200 })),
+        load("Dunning cases", dunningApi.listCases({ per_page: 200 })),
+        load("Collections cases", collectionApi.listCases({ per_page: 200 })),
       ]);
+      setFailedSources(failed);
+      const shown = extractArray(payData).length;
+      const total = Number(payData?.total);
+      setTruncated(Number.isFinite(total) && total > shown ? { shown, total } : null);
       setPayments(extractArray(payData));
       setInvoices(extractArray(invData));
       setRefunds(extractArray(refData));
@@ -175,15 +192,15 @@ export default function PaymentReportsPage() {
 
   const [exportLoading, setExportLoading] = useState(null);
   const handleExcelExport = async () => {
-    setExportLoading('excel');
+    setExportLoading('excel'); setExportError(null);
     try {
       const rows = fPayments.map((p) => [p.id, p.payment_date, p.amount, p.status, p.method, p.currency, p.invoice_id]);
       await downloadExcel(rows, ['id','payment_date','amount','status','method','currency','invoice_id'], 'payments-report.xlsx');
     }
-    catch (e) { /* Excel export failed */ } finally { setExportLoading(null); }
+    catch (e) { setExportError(e?.message || "Excel export failed"); } finally { setExportLoading(null); }
   };
   const handleAllExport = async (format) => {
-    setExportLoading(format);
+    setExportLoading(format); setExportError(null);
     try {
       if (format === 'json') await downloadJSON({ payments: fPayments, invoices: fInvoices, refunds: fRefunds, writeOffs: fWriteOffs }, 'payments-data.json');
       else if (format === 'csv') {
@@ -191,7 +208,7 @@ export default function PaymentReportsPage() {
         await downloadCSV(rows, ['id','payment_date','amount','status','method'], 'payments.csv');
       }
       else if (format === 'excel') await handleExcelExport();
-    } catch (e) { /* Export failed */ } finally { setExportLoading(null); }
+    } catch (e) { setExportError(e?.message || "Export failed"); } finally { setExportLoading(null); }
   };
 
   const renderTabNav = () => (
@@ -228,9 +245,9 @@ export default function PaymentReportsPage() {
 
   return (
     <HRPage title="Payment Reports" subtitle="Comprehensive payment and receivables analytics">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         {renderTabNav()}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DateRangeFilter value={range} onChange={setRange} customStart={customStart} customEnd={customEnd}
             onCustomStartChange={setCustomStart} onCustomEndChange={setCustomEnd} />
           <ExportMenu
@@ -244,6 +261,21 @@ export default function PaymentReportsPage() {
           </button>
         </div>
       </div>
+
+      {failedSources.length > 0 && (
+        <div role="alert" className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <span>Couldn't load: {failedSources.join(", ")}. Figures based on this data are incomplete and may show as 0.</span>
+          <button type="button" onClick={refreshAll} className="font-medium underline">Retry</button>
+        </div>
+      )}
+      {exportError && (
+        <p role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p>
+      )}
+      {truncated && (
+        <p role="status" className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          These reports cover the {truncated.shown} most recent payments of {truncated.total}. Older payments are not included.
+        </p>
+      )}
 
       {activeTab === "overview" && (
         <div className="space-y-6">
@@ -438,7 +470,9 @@ export default function PaymentReportsPage() {
             </div>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <h3 className="text-sm font-semibold text-slate-900 mb-4">Outstanding Over Time</h3>
+            {/* Was titled "Outstanding Over Time" but the bars are monthly
+                collections and refunds, not an outstanding balance. */}
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Collections vs Refunds by Month</h3>
             {monthlyChartData.length === 0 ? <EmptyState icon={BarChart3} title="No trend data" /> : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={monthlyChartData}>
@@ -660,7 +694,7 @@ export default function PaymentReportsPage() {
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(v, baseCurrency)} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v, name) => [name === "count" ? v : formatCurrency(v, baseCurrency)]} />
+                  <Tooltip formatter={monthlyTrendTooltip((v) => formatCurrency(v, baseCurrency))} />
                   <Line yAxisId="left" type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} name="Collected" />
                   <Line yAxisId="right" type="monotone" dataKey="count" stroke="var(--color-accent-payments)" strokeWidth={2} dot={{ r: 3 }} name="Count" />
                   <Line yAxisId="left" type="monotone" dataKey="net" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="Net" />

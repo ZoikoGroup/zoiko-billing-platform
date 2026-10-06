@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -280,8 +281,39 @@ class PricingRuleService:
         self.tier_repo = PricingRuleTierRepository(db)
         self.audit = BillingAuditService(db)
 
+    # Rule types whose whole effect IS an amount: a percentage/fixed discount
+    # with no value is meaningless (the UI rendered it as "null%"/"$null").
+    _VALUE_REQUIRED_TYPES = {"percentage_discount", "fixed_discount"}
+
+    @classmethod
+    def _validate_rule_contract(cls, rule: Dict[str, Any]) -> None:
+        """Server-side business rules for a pricing rule (create, and update
+        after merging the change onto the stored rule). Only what the rule
+        type/scope actually require is enforced -- description, priority,
+        effective_to, usage_limit etc. stay optional because NULL there has a
+        real meaning (no description / priority 0 / open-ended / unlimited)."""
+        def _v(key):
+            val = rule.get(key)
+            return getattr(val, "value", val)
+
+        rule_type, scope = _v("rule_type"), _v("scope")
+        value = rule.get("value")
+        if rule_type in cls._VALUE_REQUIRED_TYPES and value is None:
+            raise BadRequestException("A value is required for percentage and fixed discount rules.")
+        # Only where the meaning of `value` is unambiguous: a percentage
+        # discount above 100% would price below zero.
+        if value is not None and rule_type == "percentage_discount" and Decimal(str(value)) > Decimal("100"):
+            raise BadRequestException("A percentage value cannot exceed 100.")
+        # A scoped rule with no target would silently apply to EVERYTHING
+        # (get_applicable_rules treats NULL product_id/region as "all").
+        if scope == "product" and not rule.get("product_id"):
+            raise BadRequestException("Choose the product this product-scoped rule applies to.")
+        if scope == "region" and not (rule.get("region") or "").strip():
+            raise BadRequestException("Enter the region this region-scoped rule applies to.")
+
     def create(self, organization_id: int, created_by: int, **data: Any) -> PricingRule:
         data = filter_allowed(data, PRICING_RULE_ALLOWED)
+        self._validate_rule_contract(data)
         existing = self.repo.get_by_code(organization_id, data.get("code"))
         if existing:
             raise AlreadyExistsException("PricingRule", data.get("code"))
@@ -296,6 +328,9 @@ class PricingRuleService:
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:
                 raise AlreadyExistsException("PricingRule", data["code"])
+        merged = {k: getattr(current, k, None) for k in ("rule_type", "scope", "value", "value_type", "product_id", "region")}
+        merged.update({k: v for k, v in data.items() if k in merged})
+        self._validate_rule_contract(merged)
         updated = self.repo.update(pk, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "PricingRule", pk, new_values=data)
         return updated

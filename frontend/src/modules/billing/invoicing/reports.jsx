@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useUrlTab } from "../utils/useListUrlFilters";
 import { useNavigate } from "react-router-dom";
 import {
   Download, RefreshCw, AlertCircle, TrendingUp, PieChart as PieChartIcon,
@@ -30,28 +31,40 @@ export default function InvoiceReportsPage() {
   const navigate = useNavigate();
   const { baseCurrency, currencySymbol } = useCurrency();
   const { range, setRange, customStart, setCustomStart, customEnd, setCustomEnd } = useDateRange();
-  const [activeTab, setActiveTab] = useState("overview");
+  // ?tab=<key> deep links (dashboard KPI cards open the tab for their metric).
+  const [activeTab, setActiveTab] = useUrlTab(TABS.map((t) => t.key), "overview");
   const [refreshing, setRefreshing] = useState(false);
 
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [invoiceTotal, setInvoiceTotal] = useState(null);
   const [creditNotes, setCreditNotes] = useState([]);
   const [loadingCN, setLoadingCN] = useState(false);
+  // Credit-note and export failures used to be swallowed: the Credit Notes
+  // card then showed a confident 0 and an export click did nothing.
+  const [cnError, setCnError] = useState(null);
+  const [exportError, setExportError] = useState(null);
 
   const [dashboardStats, setDashboardStats] = useState(null);
   const [loadingDS, setLoadingDS] = useState(false);
 
   const fetchInvoices = useCallback(async () => {
-    try { setLoading(true); setError(null); const data = await invoiceApi.list({ per_page: 100 }); setInvoices(extractArray(data)); }
+    try {
+      setLoading(true); setError(null);
+      const data = await invoiceApi.list({ per_page: 100 });
+      const items = extractArray(data);
+      setInvoices(items);
+      setInvoiceTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : null);
+    }
     catch (err) { setError(err.message || "Failed to load invoices"); }
     finally { setLoading(false); }
   }, []);
 
   const fetchCreditNotes = useCallback(async () => {
-    try { setLoadingCN(true); const data = await creditNoteApi.list({ per_page: 100 }); setCreditNotes(extractArray(data)); }
-    catch (e) { /* silent */ }
+    try { setLoadingCN(true); setCnError(null); const data = await creditNoteApi.list({ per_page: 100 }); setCreditNotes(extractArray(data)); }
+    catch (e) { setCreditNotes([]); setCnError(e?.message || "Failed to load credit notes"); }
     finally { setLoadingCN(false); }
   }, []);
 
@@ -140,15 +153,15 @@ export default function InvoiceReportsPage() {
   };
   const [exportLoading, setExportLoading] = useState(null);
   const handleExcelExport = async () => {
-    setExportLoading('excel');
+    setExportLoading('excel'); setExportError(null);
     try {
       const rows = fInvoices.map((inv) => [inv.id, inv.invoice_number, inv.customer_name, inv.total, inv.status, inv.due_date, inv.created_at]);
       await downloadExcel(rows, ['id','invoice_number','customer_name','total','status','due_date','created_at'], 'invoices-report.xlsx');
     }
-    catch (e) { /* Excel export failed */ } finally { setExportLoading(null); }
+    catch (e) { setExportError(e?.message || "Excel export failed"); } finally { setExportLoading(null); }
   };
   const handleAllExport = async (format) => {
-    setExportLoading(format);
+    setExportLoading(format); setExportError(null);
     try {
       if (format === 'json') await downloadJSON({ invoices: fInvoices, creditNotes: fCreditNotes }, 'invoices-data.json');
       else if (format === 'csv') {
@@ -156,7 +169,7 @@ export default function InvoiceReportsPage() {
         await downloadCSV(rows, ['id','invoice_number','total','status'], 'invoices.csv');
       }
       else if (format === 'excel') await handleExcelExport();
-    } catch (e) { /* Export failed */ } finally { setExportLoading(null); }
+    } catch (e) { setExportError(e?.message || "Export failed"); } finally { setExportLoading(null); }
   };
 
   const renderTabNav = () => (
@@ -200,6 +213,15 @@ export default function InvoiceReportsPage() {
         </div>
       </div>
 
+      {exportError && (
+        <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p>
+      )}
+      {!loading && !error && invoiceTotal != null && invoiceTotal > invoices.length && (
+        <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          These reports cover the {invoices.length} most recent invoices of {invoiceTotal}. Totals for older invoices are not included.
+        </p>
+      )}
+
       {activeTab === "overview" && (
         <div className="space-y-6">
           {loading ? <Spinner /> : error ? <ErrorState message={error} onRetry={fetchInvoices} /> : (
@@ -219,8 +241,17 @@ export default function InvoiceReportsPage() {
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Notes</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalCN, baseCurrency)}</p>
-                  <p className="text-xs text-slate-500 mt-1">{fCreditNotes.length} notes</p>
+                  {cnError ? (
+                    <div role="alert" className="mt-1">
+                      <p className="text-sm font-medium text-red-700">Couldn't load credit notes</p>
+                      <button type="button" onClick={fetchCreditNotes} className="mt-1 text-xs font-medium text-brand-600 hover:text-brand-700">Retry</button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalCN, baseCurrency)}</p>
+                      <p className="text-xs text-slate-500 mt-1">{fCreditNotes.length} notes</p>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -229,7 +260,7 @@ export default function InvoiceReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Invoice Status Distribution</h3>
                     <button onClick={() => downloadJSON(statusData, "invoice-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export" aria-label="Export chart data"><Download size={15} /></button>
                   </div>
                   {statusData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -265,9 +296,9 @@ export default function InvoiceReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-slate-900">Credit Note Status</h3>
                     <button onClick={() => downloadJSON(cnStatusData, "credit-note-status-distribution.json")}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export"><Download size={15} /></button>
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600" title="Export" aria-label="Export chart data"><Download size={15} /></button>
                   </div>
-                  {cnStatusData.length === 0 ? <EmptyState icon={Receipt} title="No credit note data" /> : (
+                  {cnError ? <ErrorState message="Couldn't load credit notes" onRetry={fetchCreditNotes} /> : cnStatusData.length === 0 ? <EmptyState icon={Receipt} title="No credit note data" /> : (
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie data={cnStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value"

@@ -19,8 +19,17 @@ export const DASHBOARD_DATE_RANGE_OPTIONS = [
   { value: "custom", label: "Custom Range" },
 ];
 
-function toIso(d) {
-  return d.toISOString().slice(0, 10);
+// Formats the LOCAL calendar date as YYYY-MM-DD. Every range below is built
+// from local-time Date objects (new Date(), new Date(y, m, 1), ...), so the
+// day must be read back in local time too. The previous
+// `d.toISOString().slice(0, 10)` re-read it in UTC, which east of UTC (e.g.
+// IST, +05:30) moved every month/quarter/FY start -- local midnight -- to the
+// previous day, and made "Today" resolve to yesterday before 05:30.
+export function toIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**

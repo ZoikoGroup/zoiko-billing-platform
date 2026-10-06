@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useListUrlFilters } from "../utils/useListUrlFilters";
 import {
   Receipt, Filter, X, RefreshCw, Download,
   Plus, AlertCircle, CheckCircle, FileText, Ban, Send, Eye, Edit,
@@ -21,6 +22,8 @@ const STATUS_OPTIONS = [
   { value: "fully_applied", label: "Fully Applied", color: "bg-emerald-100 text-emerald-700" },
   { value: "voided", label: "Voided", color: "bg-red-100 text-red-700" },
 ];
+
+const STATUS_FILTER_OPTIONS = [...STATUS_OPTIONS, { value: "issued,partially_applied", label: "Issued / Outstanding" }];
 
 const TYPE_OPTIONS = [
   { value: "full_credit", label: "Full Credit" },
@@ -53,9 +56,13 @@ export default function CreditNotesPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // Status (and the KPI-link flags) live in the URL: dashboard links such as
+  // ?status=active used to be ignored by this page entirely.
+  const urlFilters = useListUrlFilters(STATUS_FILTER_OPTIONS.map((o) => o.value));
+  const statusFilter = urlFilters.status;
+  const setStatusFilter = urlFilters.setStatus;
   const [typeFilter, setTypeFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(() => Boolean(statusFilter));
   const [currentPage, setCurrentPage] = useState(1);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -445,7 +452,7 @@ export default function CreditNotesPage() {
                   <Select
                     value={statusFilter}
                     onChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}
-                    options={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    options={STATUS_FILTER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
                     placeholder="All Statuses"
                     className="w-44"
                   />

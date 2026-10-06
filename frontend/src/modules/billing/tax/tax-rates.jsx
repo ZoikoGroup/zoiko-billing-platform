@@ -11,27 +11,21 @@ import {
   PageSkeleton, ErrorState, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID,
   StatusBadge, Pagination, useConfirmationDialog, exportDashboardToCsv, exportDashboardToJson,
 } from "../../../components/billing-shared";
-import { useBillingDateRange } from "../utils/DateRangeContext";
+import { countCoveredJurisdictions } from "./tax-helpers";
 
 const ITEMS_PER_PAGE = 10;
-
-function filterByCreatedAt(items, dateFrom, dateTo) {
-  if (!dateFrom && !dateTo) return items;
-  return items.filter((item) => {
-    if (!item?.created_at) return true;
-    const created = String(item.created_at).slice(0, 10);
-    if (dateFrom && created < dateFrom) return false;
-    if (dateTo && created > dateTo) return false;
-    return true;
-  });
-}
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Inactive" },
 ];
 
+// "vat,gst" is the VAT / GST KPI card's filter: the tax-rate list API takes a
+// comma-separated tax_type, the same convention invoices and credit notes use.
+const VAT_GST_FILTER = "vat,gst";
+
 const TAX_TYPE_OPTIONS = [
+  { value: VAT_GST_FILTER, label: "VAT / GST" },
   { value: "sales_tax", label: "Sales Tax" },
   { value: "vat", label: "VAT" },
   { value: "gst", label: "GST" },
@@ -80,11 +74,6 @@ const TAX_TYPE_BADGE_OPTIONS = [
 ];
 
 export default function TaxRatesPage() {
-  const {
-    range: dateRangeValue, setRange: setDateRangeValue,
-    customStart, customEnd, applyCustomRange, reset: resetDateRange,
-    dateRange,
-  } = useBillingDateRange();
   const [taxRates, setTaxRates] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -219,8 +208,6 @@ export default function TaxRatesPage() {
     }
   };
 
-  const filteredTaxRates = filterByCreatedAt(taxRates, dateRange.date_from, dateRange.date_to);
-
   const sortedRates = [...taxRates].sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
     if (sortField === "name") return (a.name || "").localeCompare(b.name || "") * dir;
@@ -246,12 +233,25 @@ export default function TaxRatesPage() {
     refreshing,
     onExportCSV: () => handleExport("csv"),
     onExportJSON: () => handleExport("json"),
-    dateRange: dateRangeValue,
-    onDateRangeChange: setDateRangeValue,
-    customStart,
-    customEnd,
-    onApplyCustomRange: applyCustomRange,
-    onResetDateRange: resetDateRange,
+    // No date-range control: tax rates are a configuration catalog, not
+    // dated transactions. The shared range used to be offered here but only
+    // narrowed one KPI over the current table page by created_at -- the
+    // table itself ignored it -- so Today/Yesterday/Last 7 Days appeared to
+    // do nothing. A rate configured months ago is still in force today.
+  };
+
+  const hasActiveFilters = Boolean(search || typeFilter || statusFilter);
+  const clearFilters = () => {
+    setSearch(""); setDebouncedSearch("");
+    setTypeFilter(""); setStatusFilter("");
+    setCurrentPage(1);
+  };
+  // Every type-filter KPI card goes through here, so the filter row opens and
+  // the applied filter is visible in its dropdown.
+  const applyTypeCard = (type) => {
+    setTypeFilter(type); setStatusFilter("");
+    setCurrentPage(1);
+    setShowFilters(Boolean(type));
   };
 
   if (loading) {
@@ -283,26 +283,29 @@ export default function TaxRatesPage() {
           subtitle={`${taxRates.filter((r) => r.is_active === true).length} active on this page`}
           icon={Receipt}
           color="from-brand to-brand-hover"
-          onClick={() => { setTypeFilter(""); setStatusFilter(""); setCurrentPage(1); }}
+          onClick={() => applyTypeCard("")}
         />
         <DashboardStatCard
           title="Sales Tax"
-          value={filteredTaxRates.filter((r) => r.tax_type === "sales_tax").length}
+          value={allTaxRates.filter((r) => r.tax_type === "sales_tax").length}
           icon={DollarSign}
           color="from-blue-500 to-blue-600"
-          onClick={() => { setTypeFilter("sales_tax"); setCurrentPage(1); }}
+          onClick={() => applyTypeCard("sales_tax")}
         />
         <DashboardStatCard
           title="VAT / GST"
           value={allTaxRates.filter((r) => r.tax_type === "vat" || r.tax_type === "gst").length}
           icon={Landmark}
           color="from-emerald-500 to-emerald-600"
+          onClick={() => applyTypeCard(VAT_GST_FILTER)}
         />
         <DashboardStatCard
           title="Countries Covered"
-          value={new Set(allTaxRates.map((r) => r.jurisdiction)).size}
+          value={countCoveredJurisdictions(allTaxRates)}
+          subtitle="Distinct jurisdictions"
           icon={Globe}
           color="from-amber-500 to-orange-500"
+          href="/billing/tax/reports?tab=jurisdiction"
         />
       </div>
 
@@ -322,6 +325,12 @@ export default function TaxRatesPage() {
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
+              {hasActiveFilters && (
+                <button onClick={clearFilters}
+                  className="text-xs font-medium text-brand-600 hover:text-brand-700 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded">
+                  Clear filters
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setShowImportWizard(true)}
@@ -389,8 +398,11 @@ export default function TaxRatesPage() {
                   <td colSpan={9} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No tax rates found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || typeFilter || statusFilter ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}</p>
+                      <p className="text-slate-500 font-medium">{hasActiveFilters ? "No tax rates match your filters" : "No tax rates yet"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}</p>
+                      {hasActiveFilters && (
+                        <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+                      )}
                     </div>
                   </td>
                 </tr>

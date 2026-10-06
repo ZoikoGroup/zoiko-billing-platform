@@ -42,6 +42,28 @@ function filterByCreatedAt(items, dateFrom, dateTo) {
   });
 }
 
+// Product <-> plan coverage. Ids are compared as strings: the API returns
+// integer ids, and the old check `!has(id) || !has(String(id))` was true for
+// every product, so "N products without a pricing plan" always listed the
+// whole catalog. Plans for products outside the loaded catalog (or with no
+// product) are not counted, so coverage can never exceed 100%.
+export function pricingCoverage(products, plans) {
+  const planned = new Set(plans.filter((p) => p.product_id != null).map((p) => String(p.product_id)));
+  const covered = products.filter((p) => planned.has(String(p.id)));
+  const uncovered = products.filter((p) => !planned.has(String(p.id)));
+  const pct = products.length ? ((covered.length / products.length) * 100).toFixed(1) : "0.0";
+  return { covered, uncovered, pct };
+}
+
+// Average of active plan unit prices. Plans are NOT FX-converted (multi-currency
+// aggregation is an open product decision), so the caller is told when the
+// average mixes currencies instead of presenting it as a base-currency figure.
+export function averagePlanPrice(activePlans, baseCurrency) {
+  const avg = activePlans.length ? activePlans.reduce((s, p) => s + parseFloat(p.unit_price || 0), 0) / activePlans.length : 0;
+  const currencies = new Set(activePlans.map((p) => (p.currency || baseCurrency || "").toUpperCase()).filter(Boolean));
+  return { avg, mixedCurrencies: currencies.size > 1 };
+}
+
 export default function PricingDashboardPage() {
   const navigate = useNavigate();
   const { baseCurrency } = useCurrency();
@@ -103,12 +125,12 @@ export default function PricingDashboardPage() {
   const today = todayStr();
   const expiredPlans = filteredPlans.filter((p) => p.effective_to && p.effective_to < today);
   const upcomingExpirations = filteredPlans.filter((p) => p.effective_to && p.effective_to >= today && daysFromNow(p.effective_to) <= 30 && daysFromNow(p.effective_to) >= 0);
-  const productsWithPlans = new Set(filteredPlans.map((p) => p.product_id));
-  const productsWithoutPlans = products.filter((p) => !productsWithPlans.has(p.id) || !productsWithPlans.has(String(p.id)));
+  const coverage = pricingCoverage(products, filteredPlans);
+  const productsWithoutPlans = coverage.uncovered;
 
-  const avgPrice = activePlans.length ? activePlans.reduce((s, p) => s + parseFloat(p.unit_price || 0), 0) / activePlans.length : 0;
+  const { avg: avgPrice, mixedCurrencies: avgMixesCurrencies } = averagePlanPrice(activePlans, baseCurrency);
   const subRevenue = subscriptions.reduce((s, sub) => s + parseFloat(sub.amount || sub.price || 0), 0);
-  const revenueCoveragePct = products.length ? ((productsWithPlans.size / products.length) * 100).toFixed(1) : "0.0";
+  const revenueCoveragePct = coverage.pct;
 
   const statusData = [
     { name: "Active", value: activePlans.length, color: "#10b981" },
@@ -304,9 +326,11 @@ export default function PricingDashboardPage() {
 
       <StatGroup title="More Metrics">
         <DashboardStatCard title="Revenue" value={Number(revenue)} currency={baseCurrency} icon={DollarSign} color="from-emerald-500 to-green-600" subtitle="From active subscriptions on these plans" href="/billing/subscriptions" />
-        <DashboardStatCard title="Avg Plan Price" value={Number(avgPrice)} currency={baseCurrency} icon={TrendingUp} color="from-teal-500 to-cyan-600" subtitle="Active plans only" />
-        <DashboardStatCard title="Revenue Coverage" value={`${revenueCoveragePct}%`} icon={BarChart3} color="from-amber-500 to-orange-500"
-          subtitle={`${productsWithPlans.size} of ${products.length} products have pricing`} />
+        <DashboardStatCard title="Avg Plan Price" value={Number(avgPrice)} currency={baseCurrency} icon={TrendingUp} color="from-teal-500 to-cyan-600" subtitle={avgMixesCurrencies ? "Active plans only · mixed currencies, not converted" : "Active plans only"} />
+        {/* Was titled "Revenue Coverage" but it measures catalog coverage
+            (products that have at least one pricing plan), not revenue. */}
+        <DashboardStatCard title="Pricing Coverage" value={`${revenueCoveragePct}%`} icon={BarChart3} color="from-amber-500 to-orange-500"
+          subtitle={`${coverage.covered.length} of ${products.length} products have pricing`} />
         <DashboardStatCard title="Total Tiers" value={tierCount} icon={Layers} color="from-indigo-500 to-blue-600" subtitle="Across all tiered plans" href="/billing/pricing/tier-management" />
         <DashboardStatCard title="Active Plans" value={activePlans.length} icon={Layers} color="from-emerald-500 to-emerald-600"
           subtitle={`${filteredPlans.length ? ((activePlans.length / filteredPlans.length) * 100).toFixed(1) : 0}% of ${filteredPlans.length} total`} href="/billing/pricing" />

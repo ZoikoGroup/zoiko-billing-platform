@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import logging
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -928,6 +929,12 @@ class InvoiceService:
                 pdf_bytes=pdf_bytes,
                 pdf_filename=f"{inv.invoice_number or f'invoice-{inv.id}'}.pdf",
                 review_url=review_url,
+                # One event per explicit send: draft AND sent invoices may be
+                # (re)emailed, so each user-initiated send is distinct. Without
+                # an event_id the dedupe key was template+recipient, which
+                # refused every invoice after the first to the same customer.
+                event_id=f"invoice_sent:{invoice_id}:{uuid.uuid4().hex}",
+                target_record_id=str(invoice_id),
             )
         except Exception as e:
             logger.warning("Failed to send invoice email for invoice %d: %s", invoice_id, e)
