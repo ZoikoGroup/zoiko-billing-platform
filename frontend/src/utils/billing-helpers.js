@@ -108,6 +108,23 @@ export function formatCompactMoney(value, currencyCode) {
   return `${sign}${symbol}${Math.round(abs).toLocaleString("en-US")}`;
 }
 
+// TaxRate.rate is stored and returned as a percentage (Numeric(5,2):
+// 18.00 = 18%, 0.50 = 0.5% -- see utils/tax_catalogue.py and
+// currency_utils.apply_percentage's `amount * pct / 100`). Never scale it:
+// a "<= 1 means fraction" guess turns a real 0.5% or 1% rate into 50%/100%.
+// The numeric percentage to use in calculations (tax_percentage on a line):
+// the stored value as-is, or 0 when missing/invalid. 1.00 -> 1, 0.50 -> 0.5.
+export function parseTaxRatePercent(rate) {
+  const n = Number(rate);
+  return rate == null || rate === "" || !Number.isFinite(n) ? 0 : n;
+}
+
+export function formatTaxRatePercent(rate) {
+  const n = Number(rate);
+  if (rate == null || rate === "" || !Number.isFinite(n)) return "—";
+  return `${n.toFixed(2)}%`;
+}
+
 export function formatDisplayDate(d) {
   if (d == null || d === "") return "\u2014";
   const date = new Date(d);

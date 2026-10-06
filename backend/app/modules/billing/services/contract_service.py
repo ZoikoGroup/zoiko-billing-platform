@@ -108,6 +108,7 @@ class ContractService:
         status: Optional[str] = None, sort_by: str = "created_at",
         sort_order: str = "desc",
         date_from: Optional[str] = None, date_to: Optional[str] = None,
+        expiring_within_days: Optional[int] = None,
     ) -> Dict[str, Any]:
         return self.repo.list_paginated(
             organization_id=organization_id, page=page, per_page=per_page,
@@ -115,6 +116,7 @@ class ContractService:
             search_term=search_term, customer_id=customer_id, status=status,
             quotation_id=quotation_id,
             date_from=date_from, date_to=date_to,
+            expiring_within_days=expiring_within_days,
         )
 
     def list_active_contracts(self, organization_id: int) -> List[Contract]:

@@ -10,11 +10,22 @@ import { invoiceApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { PageSkeleton, ErrorState, StatusBadge as SharedStatusBadge, Pagination } from "../../../components/billing-shared";
+import { toIso } from "../utils/DateRangeContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { PageHeader, Button, DataTable, SearchInput, Select } from "../../../components/billing-ui";
 
 
 const ITEMS_PER_PAGE = 15;
+
+// Open and past its due date but not yet flagged OVERDUE (that flag is only set
+// by an off-by-default scheduler). Mirrors the backend's shared overdue rule
+// (InvoiceRepository.effectively_overdue_clause), which the "Overdue" filter
+// uses, so these rows explain why they appear under it. Local business date.
+const OPEN_STATUSES = new Set(["sent", "partially_paid"]);
+function isPastDueUnflagged(inv) {
+  if (!inv?.due_date || !OPEN_STATUSES.has(inv.status)) return false;
+  return String(inv.due_date).slice(0, 10) < toIso(new Date());
+}
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "Draft", color: "bg-slate-100 text-slate-700" },
@@ -170,7 +181,14 @@ export default function InvoicingPage() {
     { key: "paid_amount", label: "Paid", align: "right", render: (r) => <span className="text-sm text-emerald-700 whitespace-nowrap">{formatDisplayCurrency(r.paid_amount, "—", r.currency)}</span> },
     { key: "balance_due", label: "Balance", align: "right", render: (r) => <span className="text-sm text-red-600 whitespace-nowrap">{formatDisplayCurrency(r.balance_due, "—", r.currency)}</span> },
     { key: "currency", label: "Currency", align: "center", render: (r) => <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{r.currency}</span> },
-    { key: "status", label: "Status", sortable: true, render: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", label: "Status", sortable: true, render: (r) => (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        <StatusBadge status={r.status} />
+        {isPastDueUnflagged(r) && (
+          <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700" title="Past its due date; included in Overdue">Past due</span>
+        )}
+      </span>
+    ) },
     { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-500">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</span> },
   ];
 

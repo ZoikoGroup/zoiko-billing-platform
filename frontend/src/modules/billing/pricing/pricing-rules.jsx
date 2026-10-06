@@ -53,6 +53,22 @@ const EMPTY_FORM = {
   max_stack_count: 1, product_id: "", customer_id: "", region: "", country: "",
 };
 
+// Which fields a rule genuinely needs depends on its type and scope; everything
+// else (description, priority, effective-to, usage limit) is optional because
+// empty has a real meaning (none / 0 / open-ended / unlimited). Mirrors
+// PricingRuleService._validate_rule_contract -- the backend is authoritative.
+const VALUE_REQUIRED_TYPES = new Set(["percentage_discount", "fixed_discount"]);
+export function validateRuleContract(form) {
+  if (VALUE_REQUIRED_TYPES.has(form.rule_type) && (form.value === "" || form.value == null)) {
+    return "Value is required for percentage and fixed discount rules";
+  }
+  if (form.value !== "" && form.value != null && Number(form.value) < 0) return "Value cannot be negative";
+  if (form.rule_type === "percentage_discount" && Number(form.value) > 100) return "A percentage discount cannot exceed 100";
+  if (form.scope === "product" && !String(form.product_id ?? "").trim()) return "Product ID is required for a product-scoped rule";
+  if (form.scope === "region" && !String(form.region ?? "").trim()) return "Region is required for a region-scoped rule";
+  return null;
+}
+
 function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState("");
@@ -87,6 +103,8 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
     if (!form.name.trim()) return setFormError("Name is required");
     if (!form.code.trim()) return setFormError("Code is required");
     if (!form.effective_from) return setFormError("Effective from date is required");
+    const contractError = validateRuleContract(form);
+    if (contractError) return setFormError(contractError);
 
     const payload = {
       name: form.name.trim(),
@@ -114,7 +132,11 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
       max_quantity: form.max_quantity !== "" ? Number(form.max_quantity) : null,
     };
 
-    await onSave(payload);
+    try {
+      await onSave(payload);
+    } catch (e) {
+      setFormError(e?.detail || e?.message || "Failed to save rule");
+    }
   };
 
   return (
@@ -125,48 +147,48 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
           <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="px-6 py-4 space-y-4">
-          {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+          {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
+            <div><label htmlFor="rule-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="rule-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+            <div><label htmlFor="rule-code" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="rule-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+          <div><label htmlFor="rule-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="rule-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Rule Type *</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rule_type} onChange={e => set("rule_type", e.target.value)}>
+            <div><label htmlFor="rule-type" className="block text-xs font-medium text-slate-500 mb-1">Rule Type *</label>
+              <select id="rule-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rule_type} onChange={e => set("rule_type", e.target.value)}>
                 {RULE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Scope</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.scope} onChange={e => set("scope", e.target.value)}>
+            <div><label htmlFor="rule-scope" className="block text-xs font-medium text-slate-500 mb-1">Scope</label>
+              <select id="rule-scope" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.scope} onChange={e => set("scope", e.target.value)}>
                 {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
+            <div><label htmlFor="rule-value-type" className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
+              <select id="rule-value-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
                 {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Value</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
+            <div><label htmlFor="rule-value" className="block text-xs font-medium text-slate-500 mb-1">Value{VALUE_REQUIRED_TYPES.has(form.rule_type) ? " *" : ""}</label><input id="rule-value" type="number" step="0.01" min="0" max={form.rule_type === "percentage_discount" ? 100 : undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
+            <div><label htmlFor="rule-priority" className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input id="rule-priority" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+            <div><label htmlFor="rule-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="rule-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+            <div><label htmlFor="rule-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="rule-to" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
+            <div><label htmlFor="rule-status-field" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+              <select id="rule-status-field" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
                 <option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="scheduled">Scheduled</option>
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
+            <div><label htmlFor="rule-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="rule-usage-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Product ID</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder="Optional" /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder="Optional" /></div>
+            <div><label htmlFor="rule-product" className="block text-xs font-medium text-slate-500 mb-1">Product ID{form.scope === "product" ? " *" : ""}</label><input id="rule-product" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder={form.scope === "product" ? "Required for Product scope" : "Optional — all products"} /></div>
+            <div><label htmlFor="rule-region" className="block text-xs font-medium text-slate-500 mb-1">Region{form.scope === "region" ? " *" : ""}</label><input id="rule-region" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder={form.scope === "region" ? "Required for Region scope" : "Optional — all regions"} /></div>
           </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -246,6 +268,9 @@ export default function PricingRulesPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const hasActiveFilters = Boolean(searchTerm || ruleTypeFilter || statusFilter || showInactive);
+  const clearFilters = () => { setSearchTerm(""); setRuleTypeFilter(""); setStatusFilter(""); setShowInactive(false); };
+
   const handleSave = async (payload) => {
     setSaving(true);
     try {
@@ -257,8 +282,7 @@ export default function PricingRulesPage() {
       setShowForm(false);
       setEditRule(null);
       fetchData();
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -268,13 +292,14 @@ export default function PricingRulesPage() {
           <div className="flex gap-2 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              {searchTerm && <button onClick={() => setSearchTerm("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"><X size={14} /></button>}
             </div>
-            <select className="border rounded-lg px-3 py-2 text-sm" value={ruleTypeFilter} onChange={e => setRuleTypeFilter(e.target.value)}>
+            <select aria-label="Rule type" className="border rounded-lg px-3 py-2 text-sm" value={ruleTypeFilter} onChange={e => setRuleTypeFilter(e.target.value)}>
               <option value="">All Types</option>
               {RULE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select className="border rounded-lg px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <select aria-label="Rule status" className="border rounded-lg px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">All Status</option>
               <option value="active">Active</option>
               <option value="draft">Draft</option>
@@ -282,17 +307,26 @@ export default function PricingRulesPage() {
               <option value="expired">Expired</option>
               <option value="scheduled">Scheduled</option>
             </select>
-            <label className="flex items-center gap-2 text-sm text-slate-600 px-1">
+            {/* active_only=false: deactivated rules are listed ALONGSIDE active
+                ones (it never meant "only inactive" -- use Status for that). */}
+            <label className="flex items-center gap-2 text-sm text-slate-600 px-1" title="Also list deactivated rules">
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-              Show inactive
+              Include deactivated
             </label>
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} aria-label="Refresh rules" className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-xs font-medium text-brand-600 hover:text-brand-700 px-1">Clear filters</button>
+            )}
           </div>
           <button onClick={() => { setEditRule(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Rule</button>
         </div>
 
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
-        {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No pricing rules found" /> : (
+        {loading ? <Spinner /> : !data.items?.length ? (
+          hasActiveFilters
+            ? <EmptyState title="No pricing rules match your filters" message="Try adjusting or clearing the filters." actionLabel="Clear filters" onAction={clearFilters} />
+            : <EmptyState title="No pricing rules yet" message="Create your first pricing rule to get started." />
+        ) : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 text-xs text-slate-500 uppercase">

@@ -10,6 +10,7 @@ import { taxApi } from "../../../service/billingService";
 import { extractArray, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange, DEFAULT_RANGE } from "../utils/DateRangeContext";
+import { countCoveredJurisdictions } from "./tax-helpers";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -125,6 +126,8 @@ export default function TaxDashboardPage() {
 
   const activeRates = useMemo(() => taxRates.filter((r) => r.is_active !== false), [taxRates]);
 
+  const coveredJurisdictions = useMemo(() => countCoveredJurisdictions(taxRates), [taxRates]);
+
   const jurisdictionCounts = useMemo(() => {
     return taxRates.reduce((acc, r) => {
       const key = r.jurisdiction || "Unknown";
@@ -163,7 +166,7 @@ export default function TaxDashboardPage() {
     if (inactiveCount > 0) {
       items.push({ tone: "warning", icon: AlertTriangle, text: `${inactiveCount} inactive tax rate${inactiveCount === 1 ? "" : "s"} configured` });
     }
-    const jurisdictionCount = Object.keys(jurisdictionCounts).length;
+    const jurisdictionCount = coveredJurisdictions;
     if (jurisdictionCount > 0) {
       items.push({ tone: "neutral", icon: Globe, text: `${jurisdictionCount} jurisdiction${jurisdictionCount === 1 ? "" : "s"} covered by configured tax rates` });
     }
@@ -171,7 +174,7 @@ export default function TaxDashboardPage() {
       items.push({ tone: "neutral", icon: CheckCircle, text: isDefaultDateRange ? "No tax activity recorded yet" : "No tax activity recorded for this period" });
     }
     return items;
-  }, [totalTax, baseCurrency, taxRates.length, activeRates.length, jurisdictionCounts, isDefaultDateRange]);
+  }, [totalTax, baseCurrency, taxRates.length, activeRates.length, coveredJurisdictions, isDefaultDateRange]);
 
   const taxQuickActions = useMemo(() => [
     { label: "Tax Rates", hint: "View and manage configured rates", href: "/billing/tax", icon: Receipt },
@@ -301,6 +304,7 @@ export default function TaxDashboardPage() {
           icon={DollarSign}
           color="from-brand to-brand-hover"
           sparkline={monthlyTax.map((m) => m.tax)}
+          href="/billing/tax/reports?tab=collection"
         />
         <DashboardStatCard
           title="GST Collected"
@@ -308,6 +312,7 @@ export default function TaxDashboardPage() {
           subtitle={breakdown.gst != null ? "From GST-type tax records" : (isDefaultDateRange ? "No GST records yet" : "No GST records in range")}
           icon={Landmark}
           color="from-amber-500 to-orange-500"
+          href="/billing/tax/reports?tab=collection"
         />
         <DashboardStatCard
           title="VAT Collected"
@@ -315,6 +320,7 @@ export default function TaxDashboardPage() {
           subtitle={breakdown.vat != null ? "From VAT-type tax records" : (isDefaultDateRange ? "No VAT records yet" : "No VAT records in range")}
           icon={Landmark}
           color="from-blue-500 to-cyan-500"
+          href="/billing/tax/reports?tab=collection"
         />
         <DashboardStatCard
           title="Tax Records"
@@ -345,10 +351,11 @@ export default function TaxDashboardPage() {
         />
         <DashboardStatCard
           title="Countries Covered"
-          value={Object.keys(jurisdictionCounts).length}
+          value={coveredJurisdictions}
           subtitle="Distinct jurisdictions configured"
           icon={Globe}
           color="from-pink-500 to-rose-500"
+          href="/billing/tax/reports?tab=jurisdiction"
         />
       </StatGroup>
 

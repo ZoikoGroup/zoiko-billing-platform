@@ -273,6 +273,27 @@ class InvoiceRepository(BaseRepository[Invoice]):
     def list_overdue(self, organization_id: int) -> List[Invoice]:
         return self.list_effectively_overdue(organization_id)
 
+    @staticmethod
+    def effectively_overdue_clause():
+        """SQL condition for "this invoice is overdue" -- the business
+        definition every overdue read path shares (see
+        list_effectively_overdue): open (SENT/OVERDUE/PARTIALLY_PAID) and
+        past its due date, whether or not the OVERDUE status flag has been
+        set yet. An invoice due today is not yet overdue."""
+        return and_(
+            Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID]),
+            Invoice.due_date.isnot(None),
+            Invoice.due_date < date.today(),
+        )
+
+    @classmethod
+    def overdue_filter_clause(cls):
+        """What "overdue" means in a list/status FILTER: flagged OVERDUE (even
+        if marked manually before its due date) OR open and past due. A strict
+        superset of the old `status == "overdue"` filter, so no invoice that
+        filter returned can disappear from it."""
+        return or_(Invoice.status == InvoiceStatus.OVERDUE, cls.effectively_overdue_clause())
+
     def list_effectively_overdue(self, organization_id: int, with_customer: bool = False) -> List[Invoice]:
         """Invoices that are functionally overdue by due_date, regardless of
         whether the OVERDUE status flag has actually been set on the row yet.
@@ -292,13 +313,10 @@ class InvoiceRepository(BaseRepository[Invoice]):
         """
         from sqlalchemy.orm import joinedload
 
-        today = date.today()
         query = self.db.query(Invoice).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
-            Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID]),
-            Invoice.due_date.isnot(None),
-            Invoice.due_date < today,
+            self.effectively_overdue_clause(),
         )
         if with_customer:
             query = query.options(joinedload(Invoice.customer))
@@ -941,8 +959,19 @@ class InvoiceRepository(BaseRepository[Invoice]):
         page = max(page, 1)
         if customer_id:
             filters["customer_id"] = customer_id
+        # "overdue" in a status filter means the shared due-date definition
+        # (effectively_overdue_clause), not just rows whose OVERDUE flag the
+        # (off-by-default) scheduler has set -- otherwise every dashboard
+        # "Overdue" link (counted by due date) opens a list missing most of
+        # those invoices. Other statuses in a comma list still match exactly.
+        overdue_requested = False
+        exact_statuses: List[str] = []
         if status:
-            filters["status"] = status
+            parts = [p.strip() for p in str(status).split(",") if p.strip()]
+            overdue_requested = any(p.lower() == "overdue" for p in parts)
+            exact_statuses = [p for p in parts if p.lower() != "overdue"]
+            if not overdue_requested:
+                filters["status"] = status
         if invoice_type:
             filters["invoice_type"] = invoice_type
         if "contract_id" in filters and filters["contract_id"] is None:
@@ -953,6 +982,11 @@ class InvoiceRepository(BaseRepository[Invoice]):
             organization_id, active_only, **filters
         )
         base_query = base_query.options(joinedload(Invoice.customer))
+        if overdue_requested:
+            if exact_statuses:
+                base_query = base_query.filter(or_(Invoice.status.in_(exact_statuses), self.overdue_filter_clause()))
+            else:
+                base_query = base_query.filter(self.overdue_filter_clause())
         if search_term:
             base_query = base_query.filter(
                 or_(
@@ -971,7 +1005,7 @@ class InvoiceRepository(BaseRepository[Invoice]):
         if max_amount is not None:
             base_query = base_query.filter(Invoice.total_amount <= max_amount)
         if is_overdue:
-            base_query = base_query.filter(Invoice.status == "overdue")
+            base_query = base_query.filter(self.overdue_filter_clause())
         if owner_id:
             base_query = base_query.filter(Invoice.created_by == owner_id)
         total = base_query.count()

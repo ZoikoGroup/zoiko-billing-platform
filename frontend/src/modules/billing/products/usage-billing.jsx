@@ -128,6 +128,12 @@ export default function UsageBillingPage() {
   }, [usageProducts, allProducts, search, dateRange]);
 
   const activeMeters = mergedProducts.filter((p) => p.status === "active");
+
+  // Refresh deliberately keeps the current search/date filter (it re-fetches
+  // with the same view); Clear is the explicit way back to everything.
+  const hasActiveFilters = Boolean(search || dateRange.from || dateRange.to);
+  const clearFilters = () => { setSearch(""); setDateRange({ from: "", to: "" }); };
+  const invalidRange = Boolean(dateRange.from && dateRange.to && dateRange.from > dateRange.to);
   const totalBaseValue = activeMeters.reduce((s, p) => s + parseFloat(p.default_price || 0), 0);
   const activeCurrencies = [...new Set(activeMeters.map((p) => p.currency || baseCurrency))];
   const subscribableCount = mergedProducts.filter((p) => p.is_subscribable).length;
@@ -285,15 +291,23 @@ export default function UsageBillingPage() {
                   aria-label="Search usage products"
                   className="w-44 pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="hidden lg:flex items-center gap-2">
-                <Calendar size={14} className="text-slate-500" />
-                <input type="date" value={dateRange.from} onChange={(e) => setDateRange((p) => ({ ...p, from: e.target.value }))}
-                  aria-label="Filter from date"
+              {/* Was `hidden lg:flex` -- the date filter didn't exist below
+                  laptop width. It filters meters by their CREATION date. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Calendar size={14} className="text-slate-500" aria-hidden="true" />
+                <span className="text-xs text-slate-500">Created</span>
+                <input type="date" value={dateRange.from} max={dateRange.to || undefined} onChange={(e) => setDateRange((p) => ({ ...p, from: e.target.value }))}
+                  aria-label="Created from date"
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                <span className="text-slate-500 text-sm">—</span>
-                <input type="date" value={dateRange.to} onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
-                  aria-label="Filter to date"
+                <span className="text-slate-500 text-sm" aria-hidden="true">—</span>
+                <input type="date" value={dateRange.to} min={dateRange.from || undefined} onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
+                  aria-label="Created to date"
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} className="whitespace-nowrap px-2 text-xs font-medium text-brand-600 hover:text-brand-700">
+                    Clear filters
+                  </button>
+                )}
               </div>
               <button onClick={handleDownloadLog}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
@@ -307,10 +321,23 @@ export default function UsageBillingPage() {
           </div>
         </div>
 
+        {invalidRange && (
+          <p role="alert" className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            The start date is after the end date, so no meters can match. Adjust the dates or clear the filter.
+          </p>
+        )}
+        {error && mergedProducts.length > 0 && (
+          <p role="alert" className="mx-6 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        )}
         {mergedProducts.length === 0 ? (
           <div className="p-6">
-            <EmptyState icon={BarChart3} title="No usage meters yet" message="Create a meter to start tracking usage-based revenue. Meters appear here once created with type 'Usage'."
-              actionLabel="Create Meter" onAction={() => { setShowCreate(true); setFormError(null); }} />
+            {hasActiveFilters ? (
+              <EmptyState icon={BarChart3} title="No meters match your filters" message="Try a different search or date range."
+                actionLabel="Clear filters" onAction={clearFilters} />
+            ) : (
+              <EmptyState icon={BarChart3} title="No usage meters yet" message="Create a meter to start tracking usage-based revenue. Meters appear here once created with type 'Usage'."
+                actionLabel="Create Meter" onAction={() => { setShowCreate(true); setFormError(null); }} />
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -383,8 +410,8 @@ export default function UsageBillingPage() {
 
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-slate-500">{mergedProducts.length} meter(s) · {activeMeters.length} active</p>
-          {dateRange.from && dateRange.to && (
-            <p className="text-xs text-slate-500">Filtering by: {formatDisplayDate(dateRange.from)} — {formatDisplayDate(dateRange.to)}</p>
+          {(dateRange.from || dateRange.to) && (
+            <p className="text-xs text-slate-500">Created {dateRange.from ? `from ${formatDisplayDate(dateRange.from)}` : ""}{dateRange.from && dateRange.to ? " " : ""}{dateRange.to ? `to ${formatDisplayDate(dateRange.to)}` : ""}</p>
           )}
         </div>
       </div>

@@ -56,6 +56,11 @@ export default function ProductPricingPlansPage() {
   const [sortField, setSortField] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
+
+  const hasActiveFilters = Boolean(search || typeFilter || statusFilter);
+  const clearFilters = () => {
+    setSearch(""); setDebouncedSearch(""); setTypeFilter(""); setStatusFilter(""); setCurrentPage(1);
+  };
   const [view, setView] = useState("cards");
   const [annual, setAnnual] = useState(false);
 
@@ -339,15 +344,20 @@ export default function ProductPricingPlansPage() {
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="text" placeholder="Search pricing plans..." value={search}
+                <input type="text" placeholder="Search pricing plans..." value={search} aria-label="Search pricing plans"
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
+                {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
-              <button onClick={() => setShowFilters(!showFilters)}
+              <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
+                  Clear filters
+                </button>
+              )}
               <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing}
                 className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
@@ -387,7 +397,7 @@ export default function ProductPricingPlansPage() {
           {showFilters && (
             <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
               <div className="relative">
-                <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
+                <select aria-label="Plan type" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Types</option>
                   {PLAN_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -395,7 +405,7 @@ export default function ProductPricingPlansPage() {
                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
-                <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                <select aria-label="Plan status" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Statuses</option>
                   <option value="active">Active</option>
@@ -427,8 +437,11 @@ export default function ProductPricingPlansPage() {
                   <td colSpan={8} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center">
                       <DollarSign size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No pricing plans found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || typeFilter ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                      <p className="text-slate-500 font-medium">{hasActiveFilters ? "No pricing plans match your filters" : "No pricing plans yet"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                      {hasActiveFilters && (
+                        <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+                      )}
                     </div>
                   </td>
                 </tr>

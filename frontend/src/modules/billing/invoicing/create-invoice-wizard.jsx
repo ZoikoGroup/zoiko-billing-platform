@@ -7,7 +7,7 @@ import { User, Package, FileText, Calculator, Eye, Download, Send,
 import { invoiceApi, customerApi, productApi, settingsApi, taxApi, pricingApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { isEntitlementLimitError } from "../../../service/api";
-import { formatDisplayCurrency as fmtCurrency } from "../../../utils/billing-helpers";
+import { formatDisplayCurrency as fmtCurrency, parseTaxRatePercent, formatTaxRatePercent } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions, normalizeCountryCode } from "../../../utils/currency";
 import { CalculationEngine, calcItemNet, calcItemTotal, calcItemDiscount } from "../utils/calculation-engine";
 import InvoicePDFPreview from "./invoice-pdf-preview";
@@ -92,6 +92,30 @@ const detectCountryFromVAT = (vat) => {
 const RECENT_CUSTOMERS_KEY = "zoiko_recent_customers";
 const MAX_RECENT_CUSTOMERS = 5;
 const INVOICE_DRAFT_KEY = "zoiko_invoice_draft_v1";
+
+// Recomputes a line's discount/tax/total preview from its inputs. The backend
+// recalculates these from tax_percentage on save, but the wizard's previews
+// and running totals read them, so they must follow every input change --
+// including a tax-rate change, which previously only rewrote tax_percentage.
+function withLineFinancials(item) {
+  const qty = Number(item.quantity) || 0;
+  const price = Number(item.unit_price) || 0;
+  const discPct = Number(item.discount_percentage) || 0;
+  const taxPct = Number(item.tax_percentage) || 0;
+  const subtotal = qty * price;
+  const discountAmt = (subtotal * discPct) / 100;
+  const taxable = subtotal - discountAmt;
+  const taxAmt = (taxable * taxPct) / 100;
+  return { ...item, discount_amount: discountAmt, tax_amount: taxAmt, total: taxable + taxAmt };
+}
+
+// TaxRate.rate is a percentage (Numeric(5,2), 0-100: 18.00 = 18%, 0.50 = 0.5%)
+// and is applied to lines unchanged -- see parseTaxRatePercent. This wizard
+// used to treat any rate <= 1 as a fraction and multiply it by 100, so 1% and
+// 0.5% rates were invoiced at 100% and 50%.
+function applyTaxPercentToLines(lines, taxPct) {
+  return lines.map((item) => withLineFinancials({ ...item, tax_percentage: taxPct }));
+}
 
 const loadJson = (key, fallback) => {
   try {
@@ -277,13 +301,12 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
         }
 
         if (matchedRate) {
-          const rate = Number(matchedRate.rate || 0);
-          const normalizedRate = rate > 0 && rate <= 1 ? rate * 100 : rate;
-          setSelectedTaxRate({ id: matchedRate.id, name: matchedRate.name, rate: normalizedRate });
-          setLineItems((prev) => prev.map((item) => ({ ...item, tax_percentage: normalizedRate })));
+          const ratePct = parseTaxRatePercent(matchedRate.rate);
+          setSelectedTaxRate({ id: matchedRate.id, name: matchedRate.name, rate: ratePct });
+          setLineItems((prev) => applyTaxPercentToLines(prev, ratePct));
         } else {
           setSelectedTaxRate({ id: null, name: "", rate: 0 });
-          setLineItems((prev) => prev.map((item) => ({ ...item, tax_percentage: 0 })));
+          setLineItems((prev) => applyTaxPercentToLines(prev, 0));
         }
       }
     }).catch((err) => console.error("[CreateInvoice] Failed to load tax rates:", err));
@@ -369,6 +392,24 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
     }, 600);
     return () => clearTimeout(t);
   }, [step, form, lineItems, selectedTaxRate, taxRateSelectionMode, shippingAmount, roundOff, draftRestored]);
+
+  // The tax-rate catalog is the source of truth for a selected rate's value.
+  // A draft autosaved by the old wizard stored rates <= 1 multiplied by 100
+  // (1% saved as 100); when the selection's value differs from the catalog,
+  // correct it and every line still carrying the stale value. Lines whose
+  // tax was hand-edited to something else are left alone.
+  useEffect(() => {
+    if (!selectedTaxRate.id || taxRates.length === 0) return;
+    const current = taxRates.find((r) => r.id === selectedTaxRate.id);
+    if (!current) return;
+    const catalogPct = parseTaxRatePercent(current.rate);
+    const stalePct = Number(selectedTaxRate.rate);
+    if (catalogPct === stalePct) return;
+    setSelectedTaxRate((p) => ({ ...p, rate: catalogPct }));
+    setLineItems((prev) => prev.map((item) => (
+      Number(item.tax_percentage) === stalePct ? withLineFinancials({ ...item, tax_percentage: catalogPct }) : item
+    )));
+  }, [taxRates, selectedTaxRate.id, selectedTaxRate.rate]);
 
   const restoreDraft = () => {
     const d = loadJson(INVOICE_DRAFT_KEY, null);
@@ -503,7 +544,11 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
     }
 
     const productTaxRate = parseFloat(full.tax_percentage || 0);
-    const normalizedTaxRate = selectedTaxRate?.rate > 0 && selectedTaxRate?.rate <= 1 ? selectedTaxRate.rate * 100 : (selectedTaxRate?.rate || productTaxRate);
+    // A selected invoice tax rate wins -- including an explicit 0% rate (the
+    // old `rate || productTaxRate` fell through to the product's own rate
+    // whenever a 0% rate was chosen). Only with no rate selected does the
+    // product's tax_percentage apply.
+    const normalizedTaxRate = selectedTaxRate?.id ? parseTaxRatePercent(selectedTaxRate.rate) : productTaxRate;
     const productDiscount = parseFloat(full.default_discount || 0);
     const calcs = CalculationEngine.calculateLineItem(quantity, price, productDiscount, 0, normalizedTaxRate, exchangeRate);
 
@@ -578,7 +623,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   };
 
   const addLineItem = () => {
-    const normalizedTaxRate = selectedTaxRate?.rate > 0 && selectedTaxRate?.rate <= 1 ? selectedTaxRate.rate * 100 : (selectedTaxRate?.rate || 0);
+    const normalizedTaxRate = selectedTaxRate?.id ? parseTaxRatePercent(selectedTaxRate.rate) : 0;
     const invoiceCurrency = form.currency || orgSettings?.default_currency || "";
     setLineItems((p) => [...p, {
       product_id: null, description: "", quantity: 1, unit_price: 0,
@@ -603,22 +648,10 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
 
   const updateLineItem = (index, field, value) => setLineItems((p) => {
     const next = [...p];
-    const item = { ...next[index], [field]: value };
+    let item = { ...next[index], [field]: value };
 
     if (["quantity", "unit_price", "discount_percentage", "tax_percentage"].includes(field)) {
-      const qty = Number(item.quantity) || 0;
-      const price = Number(item.unit_price) || 0;
-      const discPct = Number(item.discount_percentage) || 0;
-      const taxPct = Number(item.tax_percentage) || 0;
-
-      const subtotal = qty * price;
-      const discountAmt = (subtotal * discPct) / 100;
-      const taxable = subtotal - discountAmt;
-      const taxAmt = (taxable * taxPct) / 100;
-
-      item.discount_amount = discountAmt;
-      item.tax_amount = taxAmt;
-      item.total = taxable + taxAmt;
+      item = withLineFinancials(item);
     }
 
     next[index] = item;
@@ -1224,23 +1257,22 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                 <select value={selectedTaxRate.id || ""}
                   onChange={(e) => {
                     const tr = taxRates.find((r) => r.id === Number(e.target.value));
-                    const rate = tr ? (Number(tr.rate) <= 1 && Number(tr.rate) > 0 ? Number(tr.rate) * 100 : Number(tr.rate)) : 0;
+                    const rate = tr ? parseTaxRatePercent(tr.rate) : 0;
                     setTaxRateSelectionMode("MANUAL");
                     setSelectedTaxRate(tr ? { id: tr.id, name: tr.name, rate } : { id: null, name: "", rate: 0 });
-                    setLineItems((prev) => prev.map((item) => ({ ...item, tax_percentage: rate })));
+                    setLineItems((prev) => applyTaxPercentToLines(prev, rate));
                   }}
                   aria-label="Tax rate"
                   className="block w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">No tax</option>
                   {taxRates.map((tr) => {
-                    const displayRate = Number(tr.rate) <= 1 && Number(tr.rate) > 0 ? Number(tr.rate) * 100 : Number(tr.rate);
                     const label = tr.tax_type_label ? ` [${tr.tax_type_label}]` : "";
-                    return <option key={tr.id} value={tr.id}>{tr.name}{label} ({displayRate}%)</option>;
+                    return <option key={tr.id} value={tr.id}>{tr.name}{label} ({formatTaxRatePercent(tr.rate)})</option>;
                   })}
                 </select>
                 {selectedTaxRate.id && selectedTaxRate.name && (
                   <p className="text-xs text-slate-500 mt-1">
-                    Selected: {selectedTaxRate.name} at {selectedTaxRate.rate}%
+                    Selected: {selectedTaxRate.name} at {formatTaxRatePercent(selectedTaxRate.rate)}
                   </p>
                 )}
                 {warning && (
@@ -1306,7 +1338,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
           {selectedTaxRate.id && selectedTaxRate.name && (
             <div className="p-3 rounded-lg bg-brand-50 border border-brand-200 text-xs text-brand-700 flex items-center gap-2">
               <CheckCircle size={14} className="shrink-0" />
-              <span>Tax: <strong>{selectedTaxRate.name}</strong> at <strong>{selectedTaxRate.rate}%</strong> for <strong>{form.currency}</strong></span>
+              <span>Tax: <strong>{selectedTaxRate.name}</strong> at <strong>{formatTaxRatePercent(selectedTaxRate.rate)}</strong> for <strong>{form.currency}</strong></span>
             </div>
           )}
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">

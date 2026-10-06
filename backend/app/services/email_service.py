@@ -1211,7 +1211,12 @@ def send_invoice_email(
     amount_paid: str = "",
     reference: str = "",
     review_url: str = "",
+    event_id: str = None,
+    target_record_id: str = None,
 ) -> bool:
+    """event_id scopes the email engine's dedupe key. Without it the key falls
+    back to template+recipient, which blocks every invoice email after the
+    first one sent to the same address -- callers should pass one per send."""
     from app.config import settings as _settings
     attachments = [(pdf_filename or f"{invoice_number}.pdf", pdf_bytes)] if pdf_bytes else None
     balance_due = balance_due or total_amount
@@ -1234,7 +1239,8 @@ def send_invoice_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_invoice_totals_html(subtotal, tax_amount, amount_paid, balance_due, currency),
-    }, db=db, organization_id=organization_id, attachments=attachments, event_name="invoice.sent")
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="invoice.sent",
+       event_id=event_id, target_record_id=target_record_id)
 
 
 def _get_platform_commercial_from_email(db=None):

@@ -197,8 +197,11 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         search_fields: Optional[List[str]] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        expiring_within_days: Optional[int] = None,
         **filters: Any,
     ) -> Dict[str, Any]:
+        if expiring_within_days:
+            filters["extra_conditions"] = self.expiring_conditions(expiring_within_days)
         if customer_id:
             filters["customer_id"] = customer_id
         if plan_id:
@@ -221,6 +224,22 @@ class SubscriptionRepository(BaseRepository[Subscription]):
             **filters,
         )
 
+
+    @staticmethod
+    def expiring_conditions(within_days: int) -> List[Any]:
+        """"Expiring within N days": active, with the current term ending from
+        today up to today + N (inclusive) -- the same rule
+        SubscriptionService.get_subscription_summary uses for the
+        "Expiring Soon (30d)" count, so that card's list matches its number."""
+        from datetime import date as _date, timedelta as _timedelta
+        today = _date.today()
+        cutoff = today + _timedelta(days=within_days)
+        return [
+            Subscription.status == "active",
+            Subscription.current_term_end.isnot(None),
+            Subscription.current_term_end >= today,
+            Subscription.current_term_end <= cutoff,
+        ]
 
     def list_active_with_plan(self, organization_id: int) -> List[Subscription]:
         """Return all active subscriptions eagerly loaded with their plan."""

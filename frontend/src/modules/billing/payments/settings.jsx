@@ -4,6 +4,7 @@ import {
   DollarSign, Percent, Clock, FileText, CreditCard, Ban, Repeat, Bell,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 
@@ -28,6 +29,7 @@ export default function PaymentSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
   const timerRef = useRef(null);
 
@@ -109,8 +111,10 @@ export default function PaymentSettingsPage() {
       };
       setForm(values);
       setOriginal({ ...values });
+      setLoadFailed(false);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -151,6 +155,18 @@ export default function PaymentSettingsPage() {
   const numberingPreview = form.payment_number_format
     .replace("{PREFIX}", form.default_payment_prefix)
     .replace("{NUMBER}", "0001");
+
+  // Never render an editable form built from hard-coded defaults: if the
+  // saved configuration could not be loaded, Save would write those
+  // defaults over the organization's real settings (same guard as
+  // invoicing/settings.jsx and tax/settings.jsx).
+  if (loadFailed) {
+    return (
+      <HRPage title="Payment Settings" subtitle="Configure payment module preferences">
+        <ErrorState title="Couldn't load payment settings" message={error} onRetry={fetchSettings} />
+      </HRPage>
+    );
+  }
 
   return (
     <HRPage title="Payment Settings" subtitle="Configure payment module preferences">

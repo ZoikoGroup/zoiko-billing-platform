@@ -23,6 +23,25 @@ function slugifyCategoryCode(name) {
     .slice(0, 50) || "category";
 }
 
+// GET /product-categories?root_only=false returns a FLAT list (parent_id on
+// each row, ProductCategoryResponse.product_count = products directly in the
+// category). The page expected nested `children` and a `direct_count` /
+// `products_count` field, so the tree never nested and every count was 0.
+export function buildCategoryTree(items) {
+  if (items.some((c) => Array.isArray(c.children) && c.children.length > 0)) return items; // already nested
+  const byId = new Map(items.map((c) => [c.id, { ...c, children: [] }]));
+  const roots = [];
+  for (const node of byId.values()) {
+    const parent = node.parent_id != null && node.parent_id !== node.id ? byId.get(node.parent_id) : null;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+}
+
+export const directProductCount = (category) =>
+  Number(category.product_count ?? category.direct_count ?? category.products_count ?? 0) || 0;
+
 function CategoryNode({ category, depth, selectedId, onSelect, onToggle, productCount, expandedMap, getCount }) {
   const isSelected = selectedId === category.id;
   const hasChildren = (category.children_count ?? category.children?.length ?? 0) > 0;
@@ -98,7 +117,7 @@ export default function CategoriesPage() {
       setLoading(true);
       setError(null);
       const data = await productApi.listCategories({ root_only: false });
-      setCategories(extractArray(data));
+      setCategories(buildCategoryTree(extractArray(data)));
     } catch (err) {
       setError(err.message || "Failed to load categories");
     } finally {
@@ -125,12 +144,25 @@ export default function CategoriesPage() {
     if (selected) fetchProducts(selected);
   }, [selected, fetchProducts]);
 
+  const subtreeIds = (category, tree) => {
+    const find = (list) => {
+      for (const c of list) {
+        if (c.id === category.id) return c;
+        const hit = find(c.children || []);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const node = find(tree) || category;
+    return new Set(flatten([node]).map((c) => c.id));
+  };
+
   const toggle = (id) => {
     setExpandedChildren((p) => ({ ...p, [id]: !p[id] }));
   };
 
   const productCountFor = (category) => {
-    const direct = category.direct_count ?? category.products_count ?? 0;
+    const direct = directProductCount(category);
     const children = category.children || [];
     const nested = children.reduce((s, c) => s + productCountFor(c), 0);
     return direct + nested;
@@ -155,7 +187,9 @@ export default function CategoriesPage() {
   }, [filtered, selected, search]);
 
   const activeCount = filtered.filter((c) => c.status === "active" || c.is_active !== false).length;
-  const totalProducts = filtered.reduce((s, c) => s + productCountFor(c), 0);
+  // `filtered` is the flattened tree, so sum DIRECT counts -- productCountFor
+  // already includes descendants and would count nested products twice.
+  const totalProducts = filtered.reduce((s, c) => s + directProductCount(c), 0);
 
   const openCreate = () => {
     setEditCategory(null);
@@ -449,13 +483,16 @@ export default function CategoriesPage() {
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Parent Category</label>
-                <select value={form.parent_id} onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
+                <label htmlFor="category-parent" className="block text-sm font-medium text-slate-700 mb-1">Parent Category</label>
+                <select id="category-parent" value={form.parent_id} onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">None (root category)</option>
-                  {categories
-                    .filter((c) => !editCategory || c.id !== editCategory.id)
-                    .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {/* Every category (not just roots), indented by depth. When
+                      editing, the category itself and its descendants are
+                      excluded so it can't be made its own ancestor. */}
+                  {flatten(categories)
+                    .filter((c) => !editCategory || !subtreeIds(editCategory, categories).has(c.id))
+                    .map((c) => <option key={c.id} value={c.id}>{"  ".repeat(c.depth)}{c.name}</option>)}
                 </select>
               </div>
               <div>

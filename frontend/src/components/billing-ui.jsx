@@ -105,6 +105,10 @@ const BUTTON_VARIANTS = {
     "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300",
   ghost: "bg-transparent border-transparent text-slate-600 hover:bg-slate-100",
   danger: "bg-red-50 border border-red-200 text-red-700 hover:bg-red-100",
+  // Confirming money received (e.g. Mark as Paid). Use variants for colour --
+  // never colour classes via className, which lose to the variant's own
+  // background/text utilities in the generated stylesheet.
+  success: "bg-emerald-600 border border-transparent text-white shadow-sm hover:bg-emerald-700",
 };
 
 const BUTTON_SIZES = {

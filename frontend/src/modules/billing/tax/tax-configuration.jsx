@@ -3,6 +3,7 @@ import { Save, RefreshCw, AlertCircle, CheckCircle, Globe, Shield, Plus, X, Tras
 import HRPage from "../../../components/HRPage";
 import { taxApi, settingsApi } from "../../../service/billingService";
 import { extractArray } from "../../../utils/billing-helpers";
+import { ErrorState } from "../../../components/billing-shared";
 
 const TAX_RULE_OPTIONS = [
   { value: "standard", label: "Standard Rate" },
@@ -23,6 +24,7 @@ export default function TaxConfigurationPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [taxRates, setTaxRates] = useState([]);
@@ -39,6 +41,16 @@ export default function TaxConfigurationPage() {
         taxApi.list({ per_page: 100, taxable_type: "both" }),
         settingsApi.get(),
       ]);
+
+      if (settingsRes.status !== "fulfilled") {
+        // Without the saved profiles we must not show (and let the user save)
+        // a configuration rebuilt from defaults.
+        const reason = settingsRes.reason;
+        setError(reason?.detail || reason?.message || "Failed to load tax configuration");
+        setLoadFailed(true);
+        return;
+      }
+      setLoadFailed(false);
 
       if (ratesRes.status === "fulfilled") {
         const items = extractArray(ratesRes.value);
@@ -121,6 +133,14 @@ export default function TaxConfigurationPage() {
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
+      </HRPage>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <HRPage title="Tax Configuration" subtitle="Configure tax settings">
+        <ErrorState title="Couldn't load tax configuration" message={error} onRetry={fetchData} />
       </HRPage>
     );
   }

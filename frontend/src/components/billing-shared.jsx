@@ -1265,7 +1265,10 @@ export function ProductSelector({
         </div>
       )}
 
-      <div className={isPanel ? "max-h-112 overflow-y-auto" : "max-h-64 overflow-y-auto"} role="listbox" aria-multiselectable={multiSelect}>
+      {/* Panel (modal) list height is viewport-relative: a fixed max-h-112
+          (448px) pushed the Prev/Next and Clear Selection controls below the
+          fold of the 85vh modal on laptop-height screens. */}
+      <div className={isPanel ? "max-h-[40vh] overflow-y-auto" : "max-h-64 overflow-y-auto"} role="listbox" aria-multiselectable={multiSelect}>
         {activeTab === "search" && noQueryYet && (
           <div className="px-3 py-4 text-center text-xs text-slate-500">Type to search products or select a category above</div>
         )}
@@ -1305,15 +1308,15 @@ export function ProductSelector({
       )}
 
       {multiSelect && (
-        <div className="px-3 py-2 border-t border-slate-100 bg-brand-50/50 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-3">
+        <div className={`px-3 py-2 border-t border-slate-100 bg-brand-50 flex items-center justify-between gap-2 flex-wrap ${isPanel ? "sticky bottom-0 z-10" : ""}`}>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-brand-700">{selectedProducts.length} selected</span>
             <button type="button" onClick={handleSelectAllVisible} disabled={visibleList.length === 0}
-              className="text-xs text-brand-600 hover:text-brand-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-2 py-1 rounded-lg border border-brand-200 bg-white text-xs text-brand-700 hover:bg-brand-50 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
               Select All ({visibleList.length})
             </button>
             <button type="button" onClick={handleClearSelection} disabled={selectedProducts.length === 0}
-              className="text-xs text-slate-500 hover:text-slate-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs text-slate-700 hover:bg-slate-50 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
               Clear Selection
             </button>
           </div>
@@ -1388,10 +1391,10 @@ export function BulkProductPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={handleClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="bulk-product-picker-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+            <h2 id="bulk-product-picker-title" className="text-lg font-bold text-slate-900">{title}</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Search the catalog, check the items you need, set quantities, then add them all as editable line items.
               {selectedProducts.length > 0 && <span className="ml-1 font-medium text-brand-600">{selectedProducts.length} selected</span>}
