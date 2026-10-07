@@ -143,7 +143,9 @@ export default function InvoiceDashboard() {
     draft: stats.status_counts?.draft || 0,
     sent: stats.status_counts?.sent || 0,
     paid: stats.status_counts?.paid || 0,
-    overdue: stats.status_counts?.overdue || 0,
+    // overdue_count uses the same rule as the Overdue list filter (flagged or
+    // open and past due); status_counts.overdue only counts the flag.
+    overdue: stats.overdue_count ?? stats.status_counts?.overdue ?? 0,
     cancelled: stats.status_counts?.cancelled || 0,
     partiallyPaid: stats.status_counts?.partially_paid || 0,
     refunded: stats.status_counts?.refunded || 0,
