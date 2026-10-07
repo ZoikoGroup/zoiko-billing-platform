@@ -216,6 +216,7 @@ TEMPLATE_NAME_TO_ID = {
     "payment_received.html": "ZB-PAY-002",
     "refund_processed.html": "ZB-PAY-013",
     "subscription_renewed.html": "ZB-SUB-005",
+    "renewal_reminder.html": "ZB-COM-016",
     "dunning_reminder.html": "ZB-COL-001",
     "write_off_executed.html": "ZB-COL-011",
     "org_created.html": "ZB-ORG-001",
@@ -1531,6 +1532,42 @@ def send_subscription_renewed_email(
         "term_end": term_end,
         "amount": amount,
         "currency": currency,
+    }, db=db, organization_id=organization_id)
+
+
+def send_renewal_reminder_email(
+    email: str,
+    customer_name: str,
+    organization_name: str,
+    plan_name: str,
+    billing_interval: str,
+    renewal_date: str,
+    amount: str,
+    currency: str = "USD",
+    days_until_renewal: int = 7,
+    payment_method_last4: str | None = None,
+    billing_url: str = "",
+    organization_id=None,
+    db=None,
+) -> bool:
+    """ZB-COM-016 — advance renewal notification email.
+
+    Sent ~7 days before current_period_end on a Plane-1 (SaaS) subscription.
+    Includes plan name, billing interval (monthly/annual), exact amount, renewal
+    date, and the card-on-file last-4 digits when available.
+    """
+    return send_approval_email(email, "renewal_reminder.html", {
+        "subject": f"Heads up: your {plan_name} plan renews on {renewal_date}",
+        "customer_name": customer_name,
+        "organization_name": organization_name,
+        "plan_name": plan_name,
+        "billing_interval": billing_interval,
+        "renewal_date": renewal_date,
+        "amount": amount,
+        "currency": currency,
+        "days_until_renewal": days_until_renewal,
+        "payment_method_last4": payment_method_last4,
+        "billing_url": billing_url,
     }, db=db, organization_id=organization_id)
 
 
