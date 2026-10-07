@@ -191,6 +191,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Commercial (Plane-1) Recurring Invoice Generation",
         ),
         (
+            "app.modules.commercial.tasks.renewal_reminder:run_commercial_renewal_reminder_job",
+            getattr(settings, "COMMERCIAL_RENEWAL_REMINDER_INTERVAL_MINUTES", 1440),
+            "commercial_renewal_reminder_job",
+            "Commercial (Plane-1) Renewal Reminder & Auto-Charge",
+        ),
+        (
             "app.modules.commercial.tasks.trial_expiry:run_commercial_trial_expiry_job",
             settings.COMMERCIAL_TRIAL_EXPIRY_CHECK_INTERVAL_MINUTES,
             "commercial_trial_expiry_job",

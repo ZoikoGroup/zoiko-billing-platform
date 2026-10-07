@@ -124,6 +124,7 @@ def test_every_wrapper_renders_the_logo(wrapper):
 
 @pytest.mark.parametrize("wrapper", WRAPPERS, ids=WRAPPER_IDS)
 def test_every_wrapper_shows_brand_text(wrapper):
+    _name, template, _keys = wrapper
     html = _render(wrapper)
     assert "Zoiko Billing" in html, f"{wrapper[0]} -> {template} has no brand text"
 
