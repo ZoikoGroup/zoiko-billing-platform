@@ -357,7 +357,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                 <div>
                   <div className="relative mb-3">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input type="text" placeholder="Search active contracts by name or number..." value={contractSearch}
+                    <input type="text" placeholder="Search active contracts by name or number..." aria-label="Search active contracts by name or number" value={contractSearch}
                       onChange={(e) => setContractSearch(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
@@ -539,7 +539,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
           <div className="space-y-4">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text" placeholder="Search plans..." value={planSearch}
+              <input type="text" placeholder="Search plans..." aria-label="Search plans" value={planSearch}
                 onChange={(e) => setPlanSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>

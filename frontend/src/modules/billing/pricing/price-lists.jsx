@@ -102,9 +102,9 @@ export default function PriceListsPage() {
           <div className="flex gap-2 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-60" placeholder="Search price lists..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-60" placeholder="Search price lists..." aria-label="Search price lists" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
-            <select className="border rounded-lg px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <select aria-label="Filter by status" className="border rounded-lg px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">All Status</option>
               <option value="draft">Draft</option>
               <option value="active">Active</option>

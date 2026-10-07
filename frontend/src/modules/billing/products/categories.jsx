@@ -317,7 +317,7 @@ export default function CategoriesPage() {
           <div className="p-3 border-b border-slate-100">
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text" placeholder="Search categories..." value={search} onChange={(e) => setSearch(e.target.value)}
+              <input type="text" placeholder="Search categories..." aria-label="Search categories" value={search} onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search categories"
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>

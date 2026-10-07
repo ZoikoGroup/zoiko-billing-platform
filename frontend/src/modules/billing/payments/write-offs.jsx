@@ -13,6 +13,7 @@ import {
 import {
   Button, ListToolbar, FormModal, DataTable, Field, Select,
 } from "../../../components/billing-ui";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -73,6 +74,9 @@ export default function WriteOffsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [typeFilter, setTypeFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -335,7 +339,7 @@ export default function WriteOffsPage() {
 
         {showFilters && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
+            <select value={statusFilter} onChange={(e) => { chooseStatus(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
               className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -350,7 +354,7 @@ export default function WriteOffsPage() {
               // one at a time -- the most concrete, reproducible reading of QA
               // defect #33's "the Filters button is not working". Matches the
               // Clear filters pattern already established on refunds.jsx.
-              <button onClick={() => { setSearch(""); setStatusFilter(""); setTypeFilter(""); setCurrentPage(1); }}
+              <button onClick={() => { setSearch(""); chooseStatus(""); setTypeFilter(""); setCurrentPage(1); }}
                 className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
             )}
           </div>

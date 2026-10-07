@@ -570,7 +570,7 @@ export default function PaymentListPage() {
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="text" placeholder="Search payments..." value={search}
+                  <input type="text" placeholder="Search payments..." aria-label="Search payments" value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded"><X size={16} /></button>}
@@ -792,7 +792,7 @@ export default function PaymentListPage() {
                     <div>
                       <div className="relative mb-3">
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input type="text" placeholder="Search customers by name, email, or phone..." value={customerSearch}
+                        <input type="text" placeholder="Search customers by name, email, or phone..." aria-label="Search customers by name, email, or phone" value={customerSearch}
                           onChange={(e) => setCustomerSearch(e.target.value)}
                           className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>

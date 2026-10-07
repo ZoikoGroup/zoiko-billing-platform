@@ -559,7 +559,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input
           type="text"
-          placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`}
+          placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`} aria-label={`Search ${singular.toLowerCase()} by name, email, or company`}
           value={customerSearch}
           onChange={(e) => setCustomerSearch(e.target.value)}
           className="w-full pl-9 pr-4 py-3 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand/30"

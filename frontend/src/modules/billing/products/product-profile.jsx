@@ -388,9 +388,15 @@ export default function ProductProfilePage() {
               <div><p className="text-xs text-slate-500 uppercase tracking-wider">Tax Inclusive</p><p className="text-sm font-medium text-slate-900 mt-1">{product.tax_inclusive ? 'Yes' : 'No'}</p></div>
               <div><p className="text-xs text-slate-500 uppercase tracking-wider">Cost Price</p><p className="text-sm font-medium text-slate-900 mt-1">{formatDisplayCurrency(product.cost_price || 0, product.currency)}</p></div>
               <div><p className="text-xs text-slate-500 uppercase tracking-wider">Margin</p><p className="text-sm font-medium text-slate-900 mt-1">
-                {product.default_price && product.cost_price !== null && product.cost_price !== undefined && product.cost_price !== ''
-                  ? `${((1 - Number(product.cost_price) / Number(product.default_price)) * 100).toFixed(1)}%`
-                  : '—'}
+                {(() => {
+                  // Prices arrive as strings ("0.00" is truthy): only show a margin
+                  // for a real positive price and a known cost — never NaN%/Infinity%.
+                  const price = Number(product.default_price);
+                  const cost = product.cost_price === null || product.cost_price === undefined || product.cost_price === '' ? NaN : Number(product.cost_price);
+                  return Number.isFinite(price) && price > 0 && Number.isFinite(cost)
+                    ? `${((1 - cost / price) * 100).toFixed(1)}%`
+                    : '—';
+                })()}
               </p></div>
             </div>
           </div>
