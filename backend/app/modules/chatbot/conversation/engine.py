@@ -73,6 +73,18 @@ from ..models import (
 from ..model_gateway.base import ModelGateway, ModelMessage, ModelTool, ModelGatewayError
 from ..model_gateway.router_config import get_model_config
 from ..knowledge.retrieval import KnowledgeRetriever, QUERY_STOPWORDS
+from .escalation import (
+    EscalationReply,
+    EscalationService,
+    SNAPSHOT_MAX_TURNS,
+    STATUS_DISPATCHED,
+    build_snapshot,
+    classify_escalation_reply,
+    is_direct_handoff_request,
+    offer_state,
+    read_state as read_escalation_state,
+)
+from .intent_matrix import resolve_semantic_route
 from .period_utils import resolve_period
 
 logger = logging.getLogger("zoiko_billing.ai.conversation")
@@ -129,6 +141,10 @@ BILLING_DOMAIN_VOCABULARY = frozenset((
     # Plans / lifecycle
     "plan", "tier", "trial", "coupon", "voucher", "promo", "renewal",
     "cancellation", "upgrade", "downgrade", "seat", "usage", "metered",
+    # Payment rails & hardware of a billing account (QA P1: "card" inquiries
+    # were screened OUT_OF_DOMAIN before these were added)
+    "card", "cards", "debit", "credit", "ach", "wallet", "wallets", "online",
+    "gateway", "gateways", "pay", "activate", "enable", "grace",
     # Recurring-revenue metrics (acronyms must pass the topic gate)
     "mrr", "arr", "recurring",
     # Product / governance surface
@@ -150,6 +166,12 @@ BILLING_DOMAIN_PHRASES = (
     "multi currency", "pro rata", "pro-rated", "bank transfer",
     "wire transfer", "stripe", "invoice status", "aging report",
     "general ledger", "fiscal year", "tax rate",
+    # Payment rails / capabilities (QA P1: "add-on"/"my card"/"pay online"
+    # were screened OUT_OF_DOMAIN before these entries existed)
+    "add-on", "add on", "add-ons", "add ons", "addon", "credit card",
+    "debit card", "digital wallet", "pay online", "online payment",
+    "payment method", "payment methods", "payment options", "payment gateway",
+    "card payment", "card details", "update my card", "grace period",
     # UI navigation surfaces (dashboard panels/sections)
     "quick action",
     # Roles & permissions are first-class billing-product concepts (PRD §05)
@@ -396,6 +418,17 @@ _CAPABILITY_ASK_RE = re.compile(
     r")[\s.!?]*(?:for\s+(?:me|us))?[\s.!?]*(?:today|tonight)?[\s.!?]*(?:exactly|actually)?[\s.!?]*",
     re.IGNORECASE,
 )
+
+# ── Undocumented capability: add-on activation (QA P1-RAG) ──────────────────
+# Zoiko Billing has no add-on entity and the approved knowledge base carries
+# no add-on document, so ANY add-on ask ("How do I activate an add-on?",
+# "How do I add an add-on to my subscription?") can only be answered by
+# guessing. Both shapes used to misroute: the first quoted an unrelated KB
+# chunk ("A customer (or billing customer) represents…"), the second was
+# answered with the *create a subscription* SOP steps. Answer honestly and
+# offer a human instead — never invent activation steps, never hand back
+# subscription-creation guidance as if it were an add-on procedure.
+_ADD_ON_RE = re.compile(r"\badd-?ons?\b|\badd\s+ons\b", re.IGNORECASE)
 
 # ── Compound-term normalization (tokenization drift) ────────────────────────
 # Users (and speech-to-text) split or fuse compound billing terms:
@@ -1072,6 +1105,51 @@ _SOP_GLOSSARY: tuple[tuple[str, "re.Pattern", "re.Pattern", str, str], ...] = (
         "the customer's billing history, outstanding balance, and recent invoices "
         "will be shown.",
     ),
+    (
+        "pay_bill_online",
+        re.compile(r"\b(?:pay|settle|clear|make\s+an?\s+online\s+payment)\b"),
+        re.compile(
+            r"\b(?:bill|bills|invoice|invoices|payment|payments|balance)"
+            r"[\s\S]*\b(?:online|checkout|payment\s+link|payment\s+portal|pay\s+now|hosted)\b"
+            r"|\b(?:online|checkout|payment\s+link|pay\s+now)\b[\s\S]*(?:bill|invoice|payment)",
+            re.IGNORECASE,
+        ),
+        "Pay a bill online",
+        "How to pay a bill online: Open the invoice and use its secure payment "
+        "link (Pay Online / hosted checkout). The customer is taken to a secure "
+        "checkout page where the payment is completed through the payment "
+        "gateway. Once the gateway confirms the transaction, the payment is "
+        "reflected on the invoice balance. (When recording a payment manually, "
+        "the accepted payment methods are bank transfer, credit card, cash, and "
+        "check.)",
+    ),
+    (
+        "update_payment_method",
+        re.compile(r"\b(?:update|change|edit|replace|modify|add|remove|set\s*default)\b"),
+        re.compile(
+            r"\b(?:card|cards|payment\s*method|payment\s*methods|"
+            r"debit\s*card|credit\s*card|ach|bank\s*account)\b"
+        ),
+        "Update a customer's saved payment method",
+        "How to update a customer's saved payment method: Go to Payments and "
+        "open the customer's Payment Methods. Click Update on a saved method "
+        "(for example a saved card) to change its card details or billing "
+        "information, or click Add to record a new method. Use Set Default to "
+        "make a method the preferred payment method for future payments. A "
+        "payment method can be removed when it is no longer needed.",
+    ),
+    (
+        "retry_payment",
+        re.compile(r"\b(?:retry|re\s*-?\s*attempt|re\s*charge|re\s*submit|resubmit)\b"),
+        re.compile(r"\b(?:payment|payments|card|charge|transaction|checkout)\b"),
+        "Handle a payment that needs to be retried",
+        "How to retry a payment: Open the original payment in the Payments "
+        "section. If the transaction failed, update the payment status to match "
+        "the actual outcome, then record the payment again once it succeeds, or "
+        "allocate the received funds to the invoice. For an online payment, "
+        "generate a fresh checkout session for the invoice so the customer can "
+        "complete the payment again.",
+    ),
 )
 
 # "verify/check/why is X" hybrid explanation intent signals — combine a metric's
@@ -1471,6 +1549,37 @@ _ACCOUNT_SPECIFIC_RE = re.compile(
     r"|\bwhat(?:'s| is| are) the status\b"
     # "why did my" — account-specific causal
     r"|\bwhy\s+(?:did|does|is|was)\s+(?:my|our)\b"
+    , re.IGNORECASE,
+)
+
+# ── Concept frame vs. deictic article ───────────────────────────────────────
+# The `this|that|the <entity>` clause above is a deictic pointer to one of the
+# user's OWN records ("show the payment", "this payment", "open that invoice").
+# Inside a concept frame the same article is just English grammar on a generic
+# noun: "what is the payment" asks what a payment IS. Reading it as deictic
+# suppresses the WHAT_IS flag, which skips the whole §2.1 definitional gate and
+# drops the question into the bare-topic "query contains payment -> payment_list"
+# catch-all — a knowledge question answered from empty live records. The split
+# is the FRAME plus the absence of a value subject, never the noun itself, so
+# this generalizes to every entity in the clause above instead of one sentence.
+#
+# Mirrors the entity alternation of the deictic clause exactly (singular nouns
+# only), so it relaxes precisely the cases that clause flags and nothing else.
+_BARE_ARTICLE_ENTITY_RE = re.compile(
+    r"\bthe\s+(?:invoice|payment|subscription|customer|account|credit\s*note|refund|contract)\b"
+    , re.IGNORECASE,
+)
+# Frames where "the <entity>" heads a definition rather than a record lookup.
+_CONCEPT_ARTICLE_FRAME_RE = re.compile(
+    r"\b(?:"
+    r"what\s+(?:is|are|'s)\s+the\s+"        # what is the payment / what are the
+    r"|explain\s+(?:me\s+)?(?:about\s+)?the\s+"   # explain me about the payment
+    r"|describe\s+the\s+"                   # describe the invoice
+    r"|what\s+does\s+the\s+"                # what does the invoice mean
+    r"|how\s+does\s+the\s+"                 # how does the invoice work
+    r"|tell\s+me\s+about\s+the\s+"          # tell me about the payment
+    r"|what\s+are\s+the\s+"                 # what are the payments
+    r")"
     , re.IGNORECASE,
 )
 
@@ -3132,14 +3241,59 @@ class ConversationEngine:
             pending = self._get_pending_clarification(conv)
         resolved_text = self._resolve_references(text, conv, ctx, context)
 
-        # ── Clarification follow-through ────────────────────────────────
+        # ── Escalation follow-through (QA P0: dead-end escalation loop) ──
+        # The previous assistant message offered a human handoff. Its reply is
+        # answered BEFORE fresh intent classification runs, because otherwise
+        # "yes connect me" is routed from scratch and lands in the
+        # out-of-scope blocklist — refusing the user at the exact moment they
+        # asked for help. A decline or an unrelated reply consumes the offer
+        # and continues into the normal pipeline below (nothing latches).
+        executed = False
+        if not _fresh_conversation:
+            esc_state = self._get_pending_escalation(conv)
+        else:
+            esc_state = None
+        if esc_state is not None:
+            escalation_reply = classify_escalation_reply(resolved_text)
+            logger.debug("[CHATBOT-DIAG] escalation-pending reply=%r -> %s",
+                         resolved_text[:80], escalation_reply.value)
+            if escalation_reply is EscalationReply.AFFIRM:
+                intent = {
+                    "intent": "escalation_request",
+                    "domain": "out_of_scope",
+                    "risk_class": "R0",
+                    "confidence": 0.99,
+                    "classified_by": IntentClassifiedBy.RULES,
+                }
+                result = self._dispatch_escalation(
+                    conv, ctx, resolved_text, esc_state,
+                )
+                handler = self._get_handler(intent["domain"])
+                executed = True
+            elif escalation_reply is EscalationReply.DECLINE:
+                # Bare "no thanks" — acknowledge, and because this assistant
+                # message carries no escalation_state the pending offer is
+                # consumed here.
+                intent = {
+                    "intent": "escalation_declined",
+                    "domain": "out_of_scope",
+                    "risk_class": "R0",
+                    "confidence": 0.99,
+                    "classified_by": IntentClassifiedBy.RULES,
+                }
+                result = self._escalation_declined_response()
+                handler = self._get_handler(intent["domain"])
+                executed = True
+            # EscalationReply.UNRELATED → the offer is simply consumed; this
+            # message is a normal request and is classified from scratch.
+
+        # ── Clarification follow-through (D-11 loop prevention) ────────────
         # If the previous assistant message asked a disambiguation question,
         # treat THIS message as its answer first — before fresh intent
         # detection re-triggers the same clarification (loop prevention).
         clarification_note: str | None = None
-        executed = False
 
-        if pending:
+        if pending and not executed:
             matched = self._match_clarify_option(resolved_text, pending)
             if matched and pending.get("kind") == "dashboard_scope":
                 # An option backed only by the help_general placeholder (no
@@ -3276,6 +3430,11 @@ class ConversationEngine:
                 # Pending disambiguation state: lets the NEXT user message be
                 # matched against the options just offered (loop prevention).
                 "clarify": result.get("clarify_state"),
+                # Pending human-handoff state: lets the NEXT user message be
+                # read as an acceptance / decline of the offer (QA P0).
+                # Null on every non-offer answer, which is exactly what
+                # consumes a previously-pending offer.
+                "escalation": result.get("escalation_state"),
             },
         )
         self.db.add(assistant_msg)
@@ -3723,6 +3882,18 @@ class ConversationEngine:
         ):
             return {"intent": "cross_tenant", "domain": "out_of_scope", "risk_class": "R0", "confidence": 0.95, "classified_by": IntentClassifiedBy.RULES}
 
+        # ── Semantic intent matrix (QA P1: informational / field-level) ────
+        # Precise, shape-anchored routes that must win over the token-weighted
+        # catch-alls below: informational payment questions, payment-failure
+        # troubleshooting, field-level entity attributes (due_date, billing
+        # cycle, tax breakdown), dunning grace-period, and "what-if"
+        # estimations.  See conversation/intent_matrix.py for the exact shapes.
+        matrix_route = resolve_semantic_route(normalized)
+        if matrix_route is not None:
+            logger.debug("[CHATBOT-DIAG] intent-matrix -> %s/%s conf=%s",
+                         matrix_route["domain"], matrix_route["intent"], matrix_route["confidence"])
+            return matrix_route
+
         # ── HARD how-to / question gate (runs BEFORE PREPARE, INSPECT, and any
         # customer-name extraction) ───────────────────────────────────────
         # Any message that LEADS with a how-to / procedural-question pattern
@@ -3777,6 +3948,16 @@ class ConversationEngine:
         # whether the user wants a concept explanation or their own data.
         _has_what_is_how_to = _detect_what_is_how_to(normalized)
         _has_account_specific = bool(_ACCOUNT_SPECIFIC_RE.search(normalized))
+        # A bare definite article on a generic entity inside a concept frame
+        # ("what is the payment") is a grammatical article, not a deictic
+        # pointer to one of the user's own records. Left as account-specific it
+        # suppresses the WHAT_IS flag below, which skips the entire §2.1
+        # definitional gate and lets the bare-topic "contains <entity> ->
+        # <entity>_list" catch-all answer a knowledge question from live
+        # records. Requests, value nouns, and every other account-specific
+        # signal are deliberately preserved.
+        if _has_account_specific and self._is_generic_entity_question(normalized):
+            _has_account_specific = False
         # Possessive/deictic signals ("my", "our", "this invoice") override
         # the WHAT_IS/HOW_TO flag: "what is my outstanding balance?" is a
         # live-data ask, not a KB glossary query.  Suppress the WHAT_IS flag
@@ -5163,6 +5344,7 @@ class ConversationEngine:
                 "authoritative Billing records could not be retrieved (P-06 fail closed)."
             ),
             "suggested_prompts": [],
+            "escalation_state": offer_state(reason="authoritative_records_unavailable"),
         }
 
     def _verify_response(self, result: dict, intent: dict, ctx: "AIContext | None") -> dict:
@@ -5270,6 +5452,7 @@ class ConversationEngine:
             "next_actions": [],
             "qualification": f"VERIFY blocked emission: {reason}.",
             "suggested_prompts": [],
+            "escalation_state": offer_state(reason="verify_blocked_emission"),
         }
 
     def _abstention_response(self) -> dict:
@@ -5288,6 +5471,7 @@ class ConversationEngine:
             "qualification": "No strong knowledge-base match for this question; no unrelated content substituted.",
             "next_actions": [],
             "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "What can this assistant do?"],
+            "escalation_state": offer_state(reason="no_strong_knowledge_match"),
         }
 
     # ── Conversation Context Resolution ──────────────────────────────
@@ -5576,6 +5760,137 @@ class ConversationEngine:
             return state
         return None
 
+    # ── Escalation (human-handoff) follow-through (QA P0) ──────────────
+
+    def _get_pending_escalation(self, conv: AIConversation) -> object:
+        """Return the live escalation offer from the LAST assistant message.
+
+        Mirrors clarification state: the marker rides on the message that made
+        the offer, expires after the configured TTL, and is consumed by the
+        first message that follows — whatever that message turns out to be.
+        """
+        last = (
+            self.db.query(AIConversationMessage)
+            .filter(
+                AIConversationMessage.conversation_id == conv.id,
+                AIConversationMessage.sender_type == SenderType.ASSISTANT,
+            )
+            .order_by(AIConversationMessage.id.desc())
+            .first()
+        )
+        if not last or not last.structured_payload:
+            return None
+        return read_escalation_state(last.structured_payload)
+
+    def _dispatch_escalation(
+        self, conv: AIConversation, ctx: AIContext, user_text: str, esc_state, history: list | None = None
+    ) -> dict:
+        """Accept an escalation offer: record the request with the recent
+        conversation attached, deliver it to the support webhook when that is
+        configured, and answer truthfully about what just happened.
+
+        Nothing here can raise into the user path — dispatch is best-effort
+        by design (see EscalationService).
+        """
+        try:
+            from app.config import settings as _settings
+
+            timeout = float(_settings.AI_ESCALATION_WEBHOOK_TIMEOUT_SECONDS or 5.0)
+            service = EscalationService(
+                self.db,
+                webhook_url=_settings.AI_ESCALATION_WEBHOOK_URL,
+                timeout_seconds=timeout,
+            )
+            recent = (
+                self.db.query(AIConversationMessage)
+                .filter(
+                    AIConversationMessage.conversation_id == conv.id,
+                )
+                .order_by(AIConversationMessage.id.desc())
+                .limit(SNAPSHOT_MAX_TURNS)
+                .all()
+            )
+            snapshot = build_snapshot(list(reversed(recent)))
+            dispatch = service.dispatch(
+                conversation=conv,
+                ctx=ctx,
+                trigger_text=esc_state.reason or "assistant offered human handoff",
+                confirmation_text=user_text,
+                reason=getattr(esc_state, "reason", None),
+                history=snapshot,
+            )
+        except Exception as exc:  # noqa: BLE001 — handoff must never crash the chat
+            logger.exception("[ESCALATION] dispatch failed locally for conv=%s", conv.id)
+            dispatch = None
+
+        reference = getattr(dispatch, "reference", None)
+        delivered = bool(getattr(dispatch, "delivered", False))
+        channel = getattr(dispatch, "channel", "queue")
+
+        self._audit(AuditEventType.ESCALATION, conv, ctx, {
+            "escalation_reference": reference,
+            "channel": channel,
+            "delivered": delivered,
+            "trigger": getattr(esc_state, "reason", None),
+        })
+
+        if reference is None:
+            answer = (
+                "I've noted that you'd like to speak to a team member, but I "
+                "couldn't record the handoff request right now. Please try again "
+                "in a moment."
+            )
+        elif delivered:
+            answer = (
+                f"Absolutely — I've connected you to the support desk. Your "
+                f"request ({reference}) has been placed and the recent "
+                f"conversation context was attached, so the team members will "
+                f"already know what you're working on. Keep an eye on your "
+                f"inbox / notifications for their reply."
+            )
+        else:
+            answer = (
+                f"Absolutely — I've logged your request ({reference}) with the "
+                f"support team. Your recent conversation context was attached "
+                f"so they'll already know what you're working on. Keep an eye "
+                f"on your inbox / notifications for their reply."
+            )
+
+        return {
+            "answer": answer,
+            "mode": "M5_ESCALATE",
+            "risk_class": "R0",
+            "evidence": [],
+            "next_actions": [],
+            "qualification": (
+                f"Human handoff accepted; escalation_reference={reference}; "
+                f"channel={channel}; delivered={delivered}"
+            ),
+            "suggested_prompts": [],
+            # Trayline data for the UI: an escalated handoff should not re-offer.
+            "escalation_state": {
+                "status": STATUS_DISPATCHED,
+                "offered_at": esc_state.offered_at,
+                "reason": esc_state.reason,
+            },
+        }
+
+    def _escalation_declined_response(self) -> dict:
+        """Reply to a bare 'no thanks' after an escalation offer, and consume
+        the pending offer (this message carries no escalation_state)."""
+        return {
+            "answer": (
+                "No problem — I'll keep helping you right here in chat. "
+                "What would you like to do?"
+            ),
+            "mode": "M0_EXPLAIN",
+            "risk_class": "R0",
+            "evidence": [],
+            "next_actions": [],
+            "qualification": "User declined a human-handoff offer; confirming they remain in chat.",
+            "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "What can this assistant do?"],
+        }
+
     def _match_clarify_option(self, text: str, pending: dict) -> dict | None:
         """Match a user's reply against the options a clarification just
         offered. Keyword-based (not exact-phrase): 'customer Dashboard
@@ -5721,6 +6036,36 @@ class ConversationEngine:
             "suggested_prompts": ["Draft an invoice for Acme Corp", "Dashboard summary"],
         }
 
+    def _unsupported_add_on_activation_response(self) -> dict:
+        """Honest capability-gap answer for add-on asks (QA P1-RAG).
+
+        The product has no add-on entity and the approved knowledge base has
+        no add-on document, so ANY answer here would be invented. Abstain by
+        name, offer the handoff — never quote an unrelated chunk ("A customer
+        represents…") and never pass the *create a subscription* SOP off as
+        an add-on procedure."""
+        return {
+            "answer": (
+                "I don't have specific information on activating an add-on in "
+                "my knowledge base yet, and I'd rather not guess — there is no "
+                "approved add-on procedure documented for me to quote.\n\n"
+                "Would you like me to connect you to a team member? In the "
+                "meantime, I can help with invoices, payments, customers, "
+                "subscriptions, credit notes, refunds, dunning, contracts, or "
+                "your billing dashboard."
+            ),
+            "mode": "M5_ESCALATE",
+            "risk_class": "R0",
+            "evidence": [],
+            "qualification": (
+                "Add-on activation is not covered by the approved knowledge "
+                "base; no steps invented and no unrelated document substituted."
+            ),
+            "next_actions": [],
+            "suggested_prompts": ["Show subscriptions", "Show recent invoices", "Dashboard summary"],
+            "escalation_state": offer_state(reason="add_on_activation_undocumented"),
+        }
+
     def _handle_help(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
         # Definitional metric questions ("explain me about Revenue") compose
         # the definition-first answer with the live figure.
@@ -5766,6 +6111,22 @@ class ConversationEngine:
                 "next_actions": [],
                 "suggested_prompts": ["Dashboard summary", "Show overdue invoices", "Look up customer details"],
             }
+
+        # Payment failure troubleshooting: "my card payment failed, can you
+        # retry?" — explain what happened and the supported ways to proceed.
+        # Must NEVER open a blank PrepareR2 payment-allocation draft.
+        if intent.get("intent") == "payment_troubleshoot":
+            return self._payment_troubleshoot_response(ctx)
+
+        # Add-on activation (QA P1-RAG): no add-on entity exists in the
+        # product and the approved KB has no add-on document, so this can
+        # only be answered by guessing. It must abstain BEFORE the SOP
+        # glossary ("How do I add an add-on to my subscription?" used to
+        # return the *create a subscription* steps) and before retrieval
+        # ("How do I activate an add-on?" used to quote the customer-model
+        # chunk).
+        if _ADD_ON_RE.search(text):
+            return self._unsupported_add_on_activation_response()
 
         # Self-identification: "who are you", "what are you", "what do you do", etc.
         normalized = _strip_courtesy_frame(text.strip().lower())
@@ -6054,6 +6415,34 @@ class ConversationEngine:
             "next_actions": ["Dashboard summary"],
             "suggested_prompts": ["Dashboard summary", "Show overdue invoices"],
         }
+
+    def _is_generic_entity_question(self, normalized: str) -> bool:
+        """True when the ONLY account-specific signal in `normalized` is a bare
+        definite article on a generic entity inside a concept frame.
+
+        "what is the payment" asks what a payment IS (knowledge), so the
+        article must not be read as a pointer to the user's payment list.
+        Stays account-specific (live inspection) when:
+          * the subject is a value/metric noun - "what is the account balance",
+            "what is the current collection rate" want the live figure;
+          * the frame is a request, not a definition - "show the payment";
+          * any other account-specific signal is present - "my"/"our",
+            "this"/"that", "today", "INV-1001", or a deictic + possessive
+            combination such as "the payment for my customer".
+        """
+        if not _CONCEPT_ARTICLE_FRAME_RE.search(normalized):
+            return False
+        # A metric/value subject means the user wants a number, not a concept.
+        if self._match_definitional_metric(normalized):
+            return False
+        deictic = _BARE_ARTICLE_ENTITY_RE.search(normalized)
+        if deictic is None:
+            return False  # signal came from my/our/this/that/INV-123/...
+        # Any OTHER account-specific signal keeps this on the live path.
+        remainder = normalized[:deictic.start()] + " " + normalized[deictic.end():]
+        if _ACCOUNT_SPECIFIC_RE.search(remainder):
+            return False
+        return True
 
     def _match_definitional_metric(self, normalized: str) -> str | None:
         """Return a METRIC_DEFINITIONS key when `normalized` is a definitional
@@ -6948,6 +7337,34 @@ class ConversationEngine:
                 "qualification": "Tenant isolation is enforced at the data layer.",
                 "next_actions": [],
                 "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
+            }
+
+        # QA P0 (dead-end escalation loop): a handoff request that never got
+        # an offer must not be refused as "outside my scope" — that refusal is
+        # the exact dead end the gap analysis flagged. Nothing is dispatched
+        # here either (no offer has been accepted yet, so a handoff row would
+        # be fabricated): the user gets the EscalateR0 offer and their next
+        # "yes" / "connect" is answered by the stateful accept path in
+        # _process_message.
+        if is_direct_handoff_request(text):
+            return {
+                "answer": (
+                    "I can pass this to the support team. "
+                    "Would you like me to connect you to a team member?\n\n"
+                    "In the meantime, I can help with invoices, payments, "
+                    "customers, subscriptions, credit notes, refunds, dunning, "
+                    "contracts, and billing workflows."
+                ),
+                "mode": "M5_ESCALATE",
+                "risk_class": "R0",
+                "evidence": [],
+                "qualification": (
+                    "Human handoff offered; no request is recorded until you "
+                    "confirm, so nothing is dispatched on your behalf."
+                ),
+                "next_actions": ["Reply **yes** to be connected, or ask me a billing question."],
+                "suggested_prompts": ["Show overdue invoices", "Dashboard summary"],
+                "escalation_state": offer_state(reason="direct_handoff_request"),
             }
 
         topic = None
@@ -8062,6 +8479,18 @@ class ConversationEngine:
             return self._count_subscriptions(normalized, conv, ctx)
         if intent_code == "subscription_list":
             return self._list_subscriptions(normalized, conv, ctx)
+        if intent_code == "invoice_due_date":
+            return self._invoice_due_date_response(ctx)
+        if intent_code == "subscription_billing_cycle":
+            return self._subscription_billing_cycle_response(ctx)
+        if intent_code == "invoice_tax_breakdown":
+            return self._invoice_tax_breakdown_response(ctx)
+        if intent_code == "invoice_line_items":
+            return self._invoice_line_items_response(ctx)
+        if intent_code == "dunning_grace_period":
+            return self._dunning_grace_period_response(ctx)
+        if intent_code == "estimate_change":
+            return self._estimate_change_response(conv, text, intent, ctx)
         if intent_code == "contract_count":
             return self._count_contracts(normalized, conv, ctx)
         if intent_code == "contract_list":
@@ -8577,7 +9006,8 @@ class ConversationEngine:
         for inv in invoices:
             customer_name = inv.customer.company_name if inv.customer else "—"
             status = enum_value(inv.status)
-            lines.append(f"- **{inv.invoice_number}** — {customer_name} — {status} — {money_sym(inv.balance_due, inv.currency)} due")
+            when = f" — due {iso(inv.due_date)}" if inv.due_date else ""
+            lines.append(f"- **{inv.invoice_number}** — {customer_name} — {status}{when} — {money_sym(inv.balance_due, inv.currency)} due")
 
         totals = self._ccy_group((inv.balance_due, inv.currency) for inv in invoices)
         if len(totals) == 1:
@@ -8684,6 +9114,7 @@ class ConversationEngine:
                 f"Total: {money(invoice.total_amount, invoice.currency)} | "
                 f"Paid: {money(invoice.paid_amount, invoice.currency)} | "
                 f"Balance Due: {money(invoice.balance_due, invoice.currency)}"
+                + (f"\nDue Date: {iso(invoice.due_date)}" if invoice.due_date else "")
                 + (f"\n\n**{ (date.today() - invoice.due_date).days } days overdue**" if invoice.due_date and invoice.balance_due and invoice.due_date < date.today() else "")
             ),
             "mode": "M1_INSPECT",
@@ -9430,14 +9861,20 @@ class ConversationEngine:
             }
 
         totals = self._ccy_group((inv.balance_due, inv.currency) for inv in invoices)
+        lines = "\n".join(
+            f"- **{inv.invoice_number}** — {inv.customer.company_name if inv.customer else '—'} — "
+            f"due {iso(inv.due_date)} — {money_sym(inv.balance_due, inv.currency)}"
+            f"{f' — { (date.today() - inv.due_date).days } days overdue' if inv.due_date else ''}"
+            for inv in invoices
+        )
         if len(totals) == 1:
             single_ccy, total = next(iter(totals.items()))
-            answer = f"Found **{len(invoices)} overdue invoice(s)** totaling **{money(total, single_ccy)}**. Oldest due: {iso(invoices[0].due_date)}."
+            answer = f"Found **{len(invoices)} overdue invoice(s)** totaling **{money(total, single_ccy)}**. Oldest due: {iso(invoices[0].due_date)}.\n\n{lines}"
             ev_total = str(total)
         else:
             answer = (
                 f"Found **{len(invoices)} overdue invoice(s)** in multiple currencies "
-                f"(per currency: {self._ccy_label(totals)}). Oldest due: {iso(invoices[0].due_date)}."
+                f"(per currency: {self._ccy_label(totals)}). Oldest due: {iso(invoices[0].due_date)}.\n\n{lines}"
             )
             ev_total = json.dumps({c: str(v) for c, v in totals.items()})
         return {
@@ -9499,6 +9936,61 @@ class ConversationEngine:
 
     # ── Helpers ────────────────────────────────────────────────────────
 
+    def _payment_troubleshoot_response(self, ctx: AIContext) -> dict:
+        """QA P1-B: a failed/declined payment is a troubleshooting ask. Explain
+        what happened, invite an Inspect of the failed payment, and route to
+        supported retry actions — never open a blank PrepareR2 allocation draft
+        and never fabricate a retry that was not executed."""
+        from app.modules.billing.models import Payment, PaymentStatus
+
+        recent = (
+            self.db.query(Payment)
+            .filter(Payment.organization_id == ctx.organization_id)
+            .order_by(Payment.created_at.desc())
+            .first()
+        )
+        lines = [
+            "- I can investigate the failed charge (why it was declined) and whether a "
+            "retry is permitted on this tenant.",
+            "- You can retry through the same gateway, or the customer can switch to "
+            "another accepted method (bank transfer, credit card, cash, check).",
+            "- Zoiko never auto-retries a declined card by default — retries are "
+            "gateway/invoice-restart actions, so I'd draft one only if you confirm.",
+        ]
+        if recent:
+            status_label = enum_value(recent.status)
+            lines.insert(0, (
+                f"I see a recently recorded payment on this account "
+                f"(**{recent.payment_number}** — {money(recent.amount, recent.currency)}, "
+                f"status **{status_label}**)."
+            ))
+        return {
+            "answer": (
+                "I can help with that — I'll never fake a retry.\n\n"
+                + "\n".join(f"- {ln}" for ln in lines)
+            ),
+            "mode": "M0_EXPLAIN",
+            "risk_class": "R0",
+            "evidence": [{
+                "source": "Zoiko Billing payments",
+                "type": "payment_troubleshooting",
+                "fields": {
+                    "last_payment": recent.payment_number if recent else None,
+                    "last_payment_status": enum_value(recent.status) if recent else None,
+                },
+            }],
+            "qualification": (
+                "No retry executed; troubleshooting-only response. A retry draft is "
+                "created only on explicit confirmation."
+            ),
+            "next_actions": ["Inspect the failed payment"],
+            "suggested_prompts": [
+                "Show recent payments",
+                "Show the payment that failed",
+                "Dashboard summary",
+            ],
+        }
+
     def _get_conversation(self, conversation_uid: str, ctx: AIContext) -> AIConversation | None:
         return (
             self.db.query(AIConversation)
@@ -9509,6 +10001,535 @@ class ConversationEngine:
             )
             .first()
         )
+
+    # ── QA P1: field-level entity attributes & informational routes ─────────
+
+    def _latest_payable_invoice(self, ctx: AIContext):
+        """The invoice whose due date the user most reasonably means: the most
+        recently-dated unpaid (balance due) invoice, else the most recent
+        issued invoice. Never guesses — returns None when none exists."""
+        from app.modules.billing.models import Invoice, InvoiceStatus
+
+        q = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.organization_id == ctx.organization_id,
+                Invoice.status.in_([
+                    InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID,
+                    InvoiceStatus.OVERDUE, InvoiceStatus.PAID,
+                ]),
+            )
+            .order_by(Invoice.balance_due.desc())
+        )
+        unpaid = (
+            q.filter(Invoice.balance_due > 0)
+            .order_by(Invoice.due_date.desc())
+            .first()
+        )
+        if unpaid:
+            return unpaid
+        return (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.organization_id == ctx.organization_id,
+                Invoice.status.in_([InvoiceStatus.PAID, InvoiceStatus.SENT]),
+            )
+            .order_by(Invoice.created_at.desc())
+            .first()
+        )
+
+    def _invoice_due_date_response(self, ctx: AIContext) -> dict:
+        """Field-level Inspect: the Invoice.due_date attribute for the invoice
+        the user is asking about ("What's my due date?")."""
+        invoice = self._latest_payable_invoice(ctx)
+        if not invoice or not invoice.due_date:
+            return {
+                "answer": "I don't see an invoice with a due date on your account yet.",
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No issued invoice carries a due date; nothing guessed.",
+                "next_actions": [],
+                "suggested_prompts": ["Show recent invoices", "Dashboard summary"],
+            }
+        customer_name = invoice.customer.company_name if invoice.customer else "your customer"
+        return {
+            "answer": (
+                f"Your next payment due date is **{iso(invoice.due_date)}** — for "
+                f"**{invoice.invoice_number}** ({customer_name}), "
+                f"**{money(invoice.balance_due, invoice.currency)}** due on the balance "
+                f"of {money(invoice.total_amount, invoice.currency)}."
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Invoices",
+                "type": "invoice",
+                "resource_id": invoice.id,
+                "reference": invoice.invoice_number,
+                "fields": {
+                    "due_date": iso(invoice.due_date),
+                    "balance_due": str(invoice.balance_due or 0),
+                    "total": str(invoice.total_amount or 0),
+                    "currency": invoice.currency,
+                    "status": enum_value(invoice.status),
+                },
+            }],
+            "qualification": "Due date from the authoritative invoice record.",
+            "next_actions": [f"Open invoice /billing/invoices/{invoice.id}"],
+            "suggested_prompts": ["Show overdue invoices", "Show recent invoices", "Dashboard summary"],
+        }
+
+    def _subscription_billing_cycle_response(self, ctx: AIContext) -> dict:
+        """Field-level Inspect: Subscription.plan.billing_period + term window."""
+        from app.modules.billing.models import (
+            BillingSubscriptionStatus,
+            Subscription,
+            SubscriptionPlan,
+        )
+
+        subs = (
+            self.db.query(Subscription)
+            .filter(
+                Subscription.organization_id == ctx.organization_id,
+                Subscription.status == BillingSubscriptionStatus.ACTIVE,
+                Subscription.is_active.is_(True),
+            )
+            .order_by(Subscription.id.asc())
+            .all()
+        )
+        if not subs:
+            return {
+                "answer": (
+                    "You don't have an active subscription right now, so there is "
+                    "no active billing cycle. I can show your subscription history "
+                    "or help set one up."
+                ),
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No active subscription found; nothing guessed.",
+                "next_actions": ["Create a subscription"],
+                "suggested_prompts": ["Show subscriptions", "Create a subscription"],
+            }
+
+        plan_ids = {s.plan_id for s in subs}
+        plans = {
+            p.id: p
+            for p in (
+                self.db.query(SubscriptionPlan)
+                .filter(SubscriptionPlan.id.in_(plan_ids))
+                .all()
+            )
+        }
+        lines = []
+        fields = []
+        for s in subs:
+            plan = plans.get(s.plan_id)
+            period = enum_value(plan.billing_period) if plan else None
+            label = {
+                "monthly": "monthly", "quarterly": "quarterly",
+                "semi_annual": "semi-annually", "annual": "annually",
+                "one_time": "one-time",
+            }.get(period, period or "unknown")
+            lines.append(
+                f"- **{s.subscription_number}** — **{label}** cycle "
+                f"(current term {iso(s.current_term_start)} → {iso(s.current_term_end)})"
+                + (f"; next bill date {iso(s.next_billing_at)}" if s.next_billing_at else "")
+            )
+            fields.append({
+                "subscription": s.subscription_number,
+                "billing_period": period,
+                "current_term_start": iso(s.current_term_start),
+                "current_term_end": iso(s.current_term_end),
+                "next_billing_at": iso(s.next_billing_at) if s.next_billing_at else None,
+                "currency": s.currency,
+                "amount": str(s.unit_price or 0),
+            })
+
+        return {
+            "answer": "Your billing cycle(s) (from the active subscription plan):\n\n" + "\n".join(lines),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Subscriptions",
+                "type": "subscription_billing_cycle",
+                "fields": fields,
+            }],
+            "qualification": (
+                "Billing cycle from the authoritative subscription plan; a "
+                "subscription's cycle auto-generates invoices on each renewal date."
+            ),
+            "next_actions": [],
+            "suggested_prompts": ["Show active subscriptions", "Renewal dates", "Dashboard summary"],
+        }
+
+    def _invoice_tax_breakdown_response(self, ctx: AIContext) -> dict:
+        """Field-level Inspect: Invoice.tax_amount and per-line-item tax."""
+        from app.modules.billing.models import Invoice, InvoiceItem
+
+        invoice = self._latest_payable_invoice(ctx)
+        if not invoice:
+            return {
+                "answer": "I don't see an invoice with tax on your account yet.",
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No invoice found; nothing guessed.",
+                "next_actions": [],
+                "suggested_prompts": ["Show recent invoices", "Dashboard summary"],
+            }
+        items = (
+            self.db.query(InvoiceItem)
+            .filter(InvoiceItem.invoice_id == invoice.id)
+            .all()
+        )
+        tax_lines = [
+            f"- {item.description or 'Line item'} — {money(item.tax_amount or 0, invoice.currency)} "
+            f"tax at {item.tax_percentage or 0}%"
+            for item in items
+            if (item.tax_amount or 0) > 0 or (item.tax_percentage or 0) > 0
+        ]
+        breakdown = "\n".join(tax_lines) if tax_lines else "(no per-line tax — all tax is at invoice level)"
+        return {
+            "answer": (
+                f"On **{invoice.invoice_number}** the tax charged is "
+                f"**{money(invoice.tax_amount or 0, invoice.currency)}** "
+                f"(invoice subtotal {money(invoice.subtotal or 0, invoice.currency)}, "
+                f"total {money(invoice.total_amount or 0, invoice.currency)}).\n\n"
+                f"Tax component:\n{breakdown}"
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Invoices",
+                "type": "invoice_tax",
+                "resource_id": invoice.id,
+                "reference": invoice.invoice_number,
+                "fields": {
+                    "tax_amount": str(invoice.tax_amount or 0),
+                    "subtotal": str(invoice.subtotal or 0),
+                    "total": str(invoice.total_amount or 0),
+                    "currency": invoice.currency,
+                    "line_items": [
+                        {
+                            "description": item.description,
+                            "quantity": str(item.quantity or 0),
+                            "unit_price": str(item.unit_price or 0),
+                            "tax_percentage": str(item.tax_percentage or 0),
+                            "tax_amount": str(item.tax_amount or 0),
+                        }
+                        for item in items
+                    ],
+                },
+            }],
+            "qualification": "Tax figures from the authoritative invoice record.",
+            "next_actions": [f"Open invoice /billing/invoices/{invoice.id}"],
+            "suggested_prompts": ["Show recent invoices", "How much was my last bill", "Dashboard summary"],
+        }
+
+    def _invoice_line_items_response(self, ctx: AIContext) -> dict:
+        """Field-level Inspect: the InvoiceItem rows behind "the items on my
+        bill" — description, quantity, unit price, discount, tax and line
+        total per row. Never a knowledge-base explainer about what an invoice
+        or a line item is (QA P1-ENT)."""
+        from app.modules.billing.models import InvoiceItem
+
+        invoice = self._latest_payable_invoice(ctx)
+        if not invoice:
+            return {
+                "answer": (
+                    "I don't see an invoice on your account yet, so there are "
+                    "no line items to show."
+                ),
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No invoice found; nothing guessed.",
+                "next_actions": [],
+                "suggested_prompts": ["Show recent invoices", "Dashboard summary"],
+            }
+        items = (
+            self.db.query(InvoiceItem)
+            .filter(InvoiceItem.invoice_id == invoice.id)
+            .order_by(InvoiceItem.line_number.asc())
+            .all()
+        )
+        if not items:
+            return {
+                "answer": (
+                    f"**{invoice.invoice_number}** has no line items recorded — "
+                    "its total is set at invoice level only."
+                ),
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [{
+                    "source": "Zoiko Billing Invoices",
+                    "type": "invoice_line_items",
+                    "resource_id": invoice.id,
+                    "reference": invoice.invoice_number,
+                    "fields": {"line_items": [], "total": str(invoice.total_amount or 0)},
+                }],
+                "qualification": "Invoice has no item rows; nothing invented.",
+                "next_actions": [f"Open invoice /billing/invoices/{invoice.id}"],
+                "suggested_prompts": ["Show recent invoices", "Dashboard summary"],
+            }
+
+        def _qty(value) -> str:
+            rendered = str(value)
+            if "." in rendered:
+                rendered = rendered.rstrip("0").rstrip(".")
+            return rendered or "0"
+
+        lines = [
+            (
+                f"{pos}. **{item.description or 'Line item'}** — "
+                f"{_qty(item.quantity)} × {money(item.unit_price, invoice.currency)}"
+                + (
+                    f" ({item.discount_percentage}% discount)"
+                    if (item.discount_percentage or 0) > 0
+                    else ""
+                )
+                + f" = **{money(item.total, invoice.currency)}**"
+                + (
+                    f" (incl. {money(item.tax_amount, invoice.currency)} tax "
+                    f"at {item.tax_percentage or 0}%)"
+                    if (item.tax_amount or 0) > 0 or (item.tax_percentage or 0) > 0
+                    else ""
+                )
+            )
+            for pos, item in enumerate(items, 1)
+        ]
+        due_line = (
+            f"\n\n**{money(invoice.balance_due, invoice.currency)}** outstanding, "
+            f"due **{iso(invoice.due_date)}**."
+            if invoice.due_date
+            else f"\n\n**{money(invoice.balance_due, invoice.currency)}** outstanding."
+        )
+        customer_name = invoice.customer.company_name if invoice.customer else "your customer"
+        return {
+            "answer": (
+                f"**{invoice.invoice_number}** ({customer_name}) has "
+                f"{len(items)} line item{'s' if len(items) != 1 else ''}:\n\n"
+                + "\n".join(lines)
+                + f"\n\nSubtotal {money(invoice.subtotal or 0, invoice.currency)} · "
+                f"tax {money(invoice.tax_amount or 0, invoice.currency)} · "
+                f"total {money(invoice.total_amount or 0, invoice.currency)}."
+                + due_line
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Invoices",
+                "type": "invoice_line_items",
+                "resource_id": invoice.id,
+                "reference": invoice.invoice_number,
+                "fields": {
+                    "due_date": iso(invoice.due_date) if invoice.due_date else None,
+                    "subtotal": str(invoice.subtotal or 0),
+                    "tax_amount": str(invoice.tax_amount or 0),
+                    "total": str(invoice.total_amount or 0),
+                    "balance_due": str(invoice.balance_due or 0),
+                    "currency": invoice.currency,
+                    "status": enum_value(invoice.status),
+                    "line_items": [
+                        {
+                            "line_number": item.line_number,
+                            "description": item.description,
+                            "quantity": str(item.quantity or 0),
+                            "unit_price": str(item.unit_price or 0),
+                            "discount_percentage": str(item.discount_percentage or 0),
+                            "tax_percentage": str(item.tax_percentage or 0),
+                            "tax_amount": str(item.tax_amount or 0),
+                            "total": str(item.total or 0),
+                        }
+                        for item in items
+                    ],
+                },
+            }],
+            "qualification": "Line items read from the authoritative invoice record.",
+            "next_actions": [f"Open invoice /billing/invoices/{invoice.id}"],
+            "suggested_prompts": ["Show recent invoices", "How much tax was charged?", "Dashboard summary"],
+        }
+
+    def _dunning_grace_period_response(self, ctx: AIContext) -> dict:
+        """Live configuration Inspect: DunningLevel thresholds — the actual
+        documented grace the tenant configured, never an invented number."""
+        from app.modules.billing.models import DunningLevel
+
+        levels = (
+            self.db.query(DunningLevel)
+            .filter(
+                DunningLevel.organization_id == ctx.organization_id,
+                DunningLevel.is_active.is_(True),
+            )
+            .order_by(DunningLevel.level_number.asc())
+            .all()
+        )
+        if not levels:
+            return {
+                "answer": (
+                    "Dunning isn't configured with any levels for this tenant yet, so "
+                    "I can't quote a grace period. Your Billing Admin can set dunning "
+                    "levels in Billing Settings → Dunning."
+                ),
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No active dunning level configured; nothing guessed.",
+                "next_actions": [],
+                "suggested_prompts": ["Show overdue invoices", "Set up dunning"],
+            }
+        lines = [
+            f"- **Level {lv.level_number}** — reached at **{lv.min_days_overdue} days** past due"
+            for lv in levels
+        ]
+        return {
+            "answer": (
+                "Dunning grace on this tenant (live configuration):\n\n" + "\n".join(lines)
+                + "\n\nAn invoice that remains unpaid past its due date is first escalated "
+                "at the earliest level above. Dunning runs automatically on overdue invoices."
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing dunning configuration",
+                "type": "dunning_levels",
+                "fields": [
+                    {"level": lv.level_number, "min_days_overdue": lv.min_days_overdue}
+                    for lv in levels
+                ],
+            }],
+            "qualification": "Dunning thresholds read live from the authoritative tenant configuration.",
+            "next_actions": [],
+            "suggested_prompts": ["Show overdue invoices", "Set up dunning", "How does dunning work"],
+        }
+
+    def _estimate_change_response(self, conv: AIConversation, text: str, intent: dict, ctx: AIContext) -> dict:
+        """QA P2: "what-if" estimation for a subscription change.
+
+        Returns a clearly-labeled ESTIMATE derived from authoritative inputs
+        (plan price, billing period, current term dates) and the documented
+        pro-rata method — never a transactional PrepareR2 refund draft, and
+        never a fabricated total presented as final financial state.
+        """
+        from datetime import date as _date
+        from decimal import Decimal as _Decimal
+        from decimal import InvalidOperation as _InvalidOperation
+
+        from app.modules.billing.models import (
+            BillingSubscriptionStatus,
+            Subscription,
+            SubscriptionPlan,
+        )
+
+        normalized = text.strip().lower()
+        subs = (
+            self.db.query(Subscription)
+            .filter(
+                Subscription.organization_id == ctx.organization_id,
+                Subscription.status == BillingSubscriptionStatus.ACTIVE,
+                Subscription.is_active.is_(True),
+            )
+            .order_by(Subscription.id.asc())
+            .all()
+        )
+        if not subs:
+            return {
+                "answer": (
+                    "I can't estimate that — there's no active subscription on this "
+                    "account to prorate. Would you like to see your subscriptions?"
+                ),
+                "mode": "M1_INSPECT",
+                "risk_class": "R1",
+                "evidence": [],
+                "qualification": "No active subscription; no estimate produced.",
+                "next_actions": ["Show subscriptions"],
+                "suggested_prompts": ["Show active subscriptions", "Dashboard summary"],
+            }
+
+        # Prefer the subscription the user named; otherwise the first active one.
+        target = subs[0]
+        for s in subs:
+            if s.subscription_number and s.subscription_number.lower() in normalized:
+                target = s
+                break
+
+        plan = (
+            self.db.query(SubscriptionPlan)
+            .filter(SubscriptionPlan.id == target.plan_id)
+            .first()
+        )
+        period = enum_value(plan.billing_period) if plan else None
+        term_days = 30
+        period_label = {"monthly": "monthly", "quarterly": "90-day", "semi_annual": "180-day", "annual": "365-day"}.get(period, "billing")
+        if period == "annual":
+            term_days = 365
+        elif period == "semi_annual":
+            term_days = 180
+        elif period == "quarterly":
+            term_days = 90
+
+        today = _date.today()
+        term_start = target.current_term_start
+        term_end = target.current_term_end
+        price = _Decimal(str(target.unit_price or 0))
+        remaining_days = 0
+        if term_start and term_end and term_start <= today <= term_end:
+            remaining_days = (term_end - today).days
+
+        estimate = _Decimal("0.00")
+        delta_label = "this change"
+        if period == "monthly" and remaining_days > 0:
+            try:
+                estimate = (price * _Decimal(remaining_days)) / _Decimal(term_days)
+            except _InvalidOperation:
+                estimate = _Decimal("0.00")
+            delta_label = f"the {remaining_days}-day remainder of this term"
+        elif remaining_days <= 0:
+            delta_label = "the current term (already ended — billed at normal price)"
+
+        fields = {
+            "subscription": target.subscription_number,
+            "billing_period": period,
+            "unit_price": str(price),
+            "currency": target.currency,
+            "current_term_start": iso(term_start),
+            "current_term_end": iso(term_end),
+            "remaining_days": remaining_days,
+            "proration_basis": "documented pro-rata (unused portion of current period)",
+            "estimate_label": "illustrative estimate — not a final financial figure",
+        }
+
+        return {
+            "answer": (
+                f"Here's a **what-if estimate** for a change to **{target.subscription_number}** "
+                f"({period_label} plan at {money(price, target.currency)}/{period_label or 'period'}):\n\n"
+                f"- Current term: {iso(term_start)} → {iso(term_end)} "
+                f"({remaining_days} days remaining today)\n"
+                f"- Pro-rated credit for the unused portion of the term "
+                f"(documented pro-rata method): **≈ {money(estimate, target.currency)}** {delta_label}.\n\n"
+                f"This is an **estimate for planning only** — the final prorated amount is "
+                f"calculated by Zoiko Billing at the time the change is processed, and "
+                f"downgrades are documented to apply from the next renewal. I won't draft "
+                f"any refund or change; tell me if you'd like a draft prepared."
+            ),
+            "mode": "M1_INSPECT",
+            "risk_class": "R1",
+            "evidence": [{
+                "source": "Zoiko Billing Subscriptions",
+                "type": "change_estimate",
+                "resource_id": target.id,
+                "reference": target.subscription_number,
+                "fields": fields,
+            }],
+            "qualification": (
+                "Estimate computed from authoritative subscription/plan inputs and the "
+                "documented pro-rata method; explicitly non-authoritative, no write executed."
+            ),
+            "next_actions": [],
+            "suggested_prompts": ["Show active subscriptions", "How does proration work", "Dashboard summary"],
+        }
 
     def _extract_reference(self, text: str, *, prefixes: tuple[str, ...]) -> str | None:
         # Longest prefix first: "INVOICE" must be tried before "INV", else the

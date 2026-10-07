@@ -158,6 +158,18 @@ class Settings(BaseSettings):
     AI_SAFE_MODE: bool = False
     AI_PROVIDER: str = "groq"
 
+    # ── Human handoff (EscalateR0) ─────────────────────────────────────
+    # Support-desk webhook that receives a chatbot.escalation_requested POST
+    # when the user accepts an offer to speak to a team member. Empty string
+    # (the default) disables delivery: the request is still durably recorded
+    # and reported to the user as queued for the support team, never as sent.
+    AI_ESCALATION_WEBHOOK_URL: str = ""
+    AI_ESCALATION_WEBHOOK_TIMEOUT_SECONDS: float = 5.0
+    # How long an unanswered "connect you to a team member?" offer stays live.
+    # After this the next message is classified normally again, so the
+    # conversation can never be latched into escalation mode.
+    AI_ESCALATION_TTL_SECONDS: int = 900
+
     # ── Public marketing-site assistant (auth-free) ──────────────────────
     # Serves the zoikobilling.com floating chat widget. No authentication, so
     # the DB-backed per-IP counter below is the primary abuse gate. Tuned for

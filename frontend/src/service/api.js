@@ -5,8 +5,8 @@ import {
   setStoredSession,
   clearStoredSession,
 } from "./sessionStorage";
+import { API_BASE_URL, apiUrl } from "../config/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
 const AUTH_INVALID_EVENT = "zoiko-billing-auth-session-invalid";
 
 let refreshPromise = null;
@@ -86,7 +86,9 @@ async function ensureFreshAccessToken() {
 }
 
 /**
- * Low level request helper. Talks to the FastAPI backend at VITE_API_BASE_URL.
+ * Low level request helper. Talks to the FastAPI backend over the same-origin
+ * /api path (see ../config/apiBase.js), or to VITE_API_BASE_URL when the API is
+ * deployed on a separate origin.
  * Automatically attaches the bearer token (if present) and JSON headers,
  * attempts a single silent refresh on a 401 response, and enforces a
  * per-request timeout so a hung backend never freezes the UI.
@@ -96,7 +98,7 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
     await ensureFreshAccessToken();
   }
 
-  let url = path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
+  let url = path.startsWith("http") ? path : apiUrl(path);
   if (params) {
     const query = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -205,7 +207,7 @@ async function refreshAccessToken() {
   }
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    const res = await fetch(apiUrl("/api/auth/refresh"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),

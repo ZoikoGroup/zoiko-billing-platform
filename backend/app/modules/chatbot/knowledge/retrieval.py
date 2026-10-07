@@ -70,6 +70,28 @@ QUERY_STOPWORDS = frozenset((
 ))
 
 
+# Question scaffolding: quantifiers and enumeration nouns that REQUEST a list
+# or a magnitude but never name a topic. QUERY_STOPWORDS above already removes
+# question FRAMES ("what", "how", "explain"), but the scaffolding that follows
+# them was still scored as topical content, and because the score is
+# query-normalized (matched_weight / total_weight) every extra scaffolding word
+# shrank the denominator. "explain about the payment" reduces to ["payment"] and
+# scores 1.0, while "how many types of payment are there" reduced to
+# ["many", "types", "payment"] and capped the best on-topic chunk at
+# 1/3 + title bonus = 0.43 — below the 0.5 confidence gate — so the public
+# assistant abstained on a question its own evidence could answer. Excluding
+# these words fixes the dilution without touching thresholds: the topical term
+# is the only thing that decides the score again, so an out-of-domain query
+# built purely from scaffolding ("how many types are there") now yields no
+# topical signal at all and abstains, rather than matching everything.
+_QUESTION_SCAFFOLD_WORDS = frozenset({
+    # Magnitude / quantifier scaffolding ("how many ...", "how much ...").
+    "many", "much", "few", "several", "number", "numbers",
+    # Enumeration scaffolding ("what types of ...", "list the ...").
+    "type", "types", "kind", "kinds", "level", "levels", "stage", "stages",
+    "list", "option", "options", "different", "available",
+})
+
 # Enumeration/count-signal constants: used to boost chunks containing
 # structural list markers when the query asks about types, levels, etc.
 _ENUM_SIGNALS = frozenset({
@@ -80,6 +102,17 @@ _STRUCT_MARKERS = re.compile(
     r"(?:level\s+\d|step\s+\d|(?:type|kind|stage|tier)\s+\d"
     r"|\b\d+\.\s|option\s+[a-d])",
 )
+
+# Directory/capability documents enumerate every topic the assistant covers —
+# a table of contents for the KB ("what can you help me with?"). They are the
+# grounded target ONLY for questions that carry no concrete topic. When a
+# query names 2+ topical terms they must never out-rank the document actually
+# about that topic (the intro once ranked #1 over "Payments and Reconciliation"
+# for "how does payment reconciliation work?" because it literally lists
+# "payments, allocations and payment reconciliation"), so their chunks are
+# demoted below any real topic match.
+DIRECTORY_DOC_TITLES = frozenset({"what this assistant can answer (marketing)"})
+_DIRECTORY_DEMOTION = 0.5
 
 
 def _uid() -> str:
@@ -329,12 +362,22 @@ class KnowledgeRetriever:
         # no topical signal and must not match anything. Tokenize on
         # alphanumeric runs so punctuation never rides along ("reports?"
         # must match chunks containing "reports").
+        raw_query_words = [
+            w for w in re.findall(r"[a-z0-9]+", query_lower) if len(w) > 1
+        ]
         query_words = [
-            w for w in re.findall(r"[a-z0-9]+", query_lower)
-            if len(w) > 1 and w not in QUERY_STOPWORDS
+            w for w in raw_query_words
+            if w not in QUERY_STOPWORDS and w not in _QUESTION_SCAFFOLD_WORDS
         ]
         if not query_words:
             return [], []
+
+        # Enumeration intent is read from the RAW query, not from the scored
+        # words: the scaffolding that expresses it ("many", "types", "levels")
+        # is excluded from topical scoring precisely because it carries no
+        # topic signal, so deriving the signal from the scored words would
+        # switch the enum boost off for exactly the queries it exists for.
+        enum_words = set(raw_query_words) & _ENUM_SIGNALS
 
         unique_words = set(query_words)
 
@@ -501,6 +544,16 @@ class KnowledgeRetriever:
                 score = min(score + 0.05, 1.0)
                 if trace_enabled:
                     stage_trace[id(chunk)]["heading"] = 0.05
+            # Directory/capability demotion (see DIRECTORY_DOC_TITLES above):
+            # pointer content must not defeat the real topic document once the
+            # query names concrete topics.
+            if (
+                len(unique_words) >= 2
+                and title_by_doc.get(chunk.document_id, "") in DIRECTORY_DOC_TITLES
+            ):
+                score = max(score - _DIRECTORY_DEMOTION, 0.0)
+                if trace_enabled:
+                    stage_trace[id(chunk)]["directory"] = -_DIRECTORY_DEMOTION
             # Enumeration/count-signal boost: when the query asks "how many
             # types", "what are the levels", "list the stages", etc., chunks
             # containing structural list markers (Level 1, Step 2, numbered
@@ -508,7 +561,7 @@ class KnowledgeRetriever:
             # chunk matches the same words and scores equally or higher
             # because it contains the term more times, even though it doesn't
             # enumerate the types the user is asking about.
-            if unique_words & _ENUM_SIGNALS and _STRUCT_MARKERS.search(chunk_lower):
+            if enum_words and _STRUCT_MARKERS.search(chunk_lower):
                 score = min(score + 0.20, 1.0)
                 if trace_enabled:
                     stage_trace[id(chunk)]["enum"] = 0.20

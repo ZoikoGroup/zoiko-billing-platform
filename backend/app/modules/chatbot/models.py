@@ -29,6 +29,9 @@ Tables (28):
     ai_knowledge_chunk, ai_retrieval_run, ai_retrieval_citation,
     ai_policy_evaluation
 
+  Human Handoff:
+    ai_escalation_request
+
   Audit:
     ai_audit_event, ai_evidence_packet, ai_support_access_session
 """
@@ -765,6 +768,56 @@ class AIAuditEvent(Base):
     __table_args__ = (
         Index("ix_ai_audit_org_created", "organization_id", "created_at"),
         Index("ix_ai_audit_tenant_type", "tenant_context_id", "event_type"),
+    )
+
+
+class EscalationRequestStatus(str, enum.Enum):
+    """Dispatch lifecycle of a human-handoff request.
+
+    The chatbot promises a team-member connection; the promise is only
+    honest if the request is durably recorded first and the delivery
+    channel is reported truthfully afterwards.  Nothing here implies the
+    webhook succeeded — that is what dispatch_error / webhook_status_code
+    record.
+    """
+    QUEUED = "queued"            # persisted; no webhook configured (or not yet attempted)
+    DISPATCHED = "dispatched"    # webhook acknowledged with 2xx
+    FAILED = "failed"            # webhook attempted and failed — operator must retry
+
+
+class AIEscalationRequest(Base):
+    """A human-handoff request raised when the assistant offered a team
+    member and the user confirmed (EscalateR0 confirmation, QA P0).
+
+    conversation_snapshot carries the recent turns verbatim so the human
+    picking the case up never has to ask the user to repeat the issue.
+    """
+    __tablename__ = "ai_escalation_request"
+
+    id = Column(Integer, primary_key=True, index=True)
+    escalation_uid = Column(String(36), unique=True, nullable=False, index=True)
+    reference = Column(String(64), nullable=False, index=True)
+    conversation_id = Column(Integer, ForeignKey("ai_conversation.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_context_id = Column(Integer, ForeignKey("ai_tenant_context.id", ondelete="RESTRICT"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    trigger_text = Column(Text, nullable=False)
+    confirmation_text = Column(Text, nullable=True)
+    conversation_snapshot = Column(JSON, nullable=True)
+    dispatch_status = Column(SAEnum(EscalationRequestStatus, native_enum=False),
+                             default=EscalationRequestStatus.QUEUED, nullable=False)
+    dispatch_channel = Column(String(32), nullable=True)
+    webhook_status_code = Column(Integer, nullable=True)
+    dispatch_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    dispatched_at = Column(DateTime(timezone=True), nullable=True)
+
+    conversation = relationship("AIConversation")
+
+    __table_args__ = (
+        Index("ix_ai_escalation_org_created", "organization_id", "created_at"),
+        Index("ix_ai_escalation_status_created", "dispatch_status", "created_at"),
     )
 
 
