@@ -1116,6 +1116,15 @@ class InvoiceService:
             if enabled:
                 gateways.append(name)
 
+        stripe_configured = False
+        if StripeService.is_configured():
+            try:
+                from app.modules.billing.services.stripe_connect_service import resolve_connected_account
+                resolve_connected_account(self.db, inv.organization_id)
+                stripe_configured = True
+            except BadRequestException:
+                stripe_configured = False
+
         return {
             "id": inv.id,
             "invoice_number": inv.invoice_number,
@@ -1179,8 +1188,8 @@ class InvoiceService:
                 "payment_terms": inv.payment_terms or (config.default_payment_terms.value if config.default_payment_terms else None),
                 "gateways": gateways,
                 "stripe": {
-                    "configured": StripeService.is_configured(),
-                    "publishable_key": StripeService.publishable_key(),
+                    "configured": stripe_configured,
+                    "publishable_key": StripeService.publishable_key() if stripe_configured else None,
                 },
             },
         }
@@ -1189,9 +1198,9 @@ class InvoiceService:
         """Create a Stripe Checkout session from the public invoice link.
 
         This is the hook the frontend "Pay now" button calls. When Stripe is
-        not configured (STRIPE_SECRET_KEY unset) it returns a graceful
-        placeholder so the payment UI can advertise "online payments coming
-        soon" — the same contract the StripeService exposes once configured.
+        not configured (STRIPE_SECRET_KEY unset or tenant has not connected/activated
+        Stripe Connect), it returns a graceful placeholder so the payment UI
+        can display a friendly notice instead of failing raw.
         """
         from app.modules.billing.services.stripe_service import StripeService
 
@@ -1204,15 +1213,30 @@ class InvoiceService:
                 "message": "Online card payments are not enabled yet. Please contact the sender to complete payment.",
             }
         svc = StripeService(self.db)
-        result = svc.create_checkout_session(
-            organization_id=inv.organization_id,
-            invoice_id=inv.id,
-            success_url=success_url,
-            cancel_url=cancel_url,
-            created_by=None,
-        )
-        result["configured"] = True
-        return result
+        try:
+            result = svc.create_checkout_session(
+                organization_id=inv.organization_id,
+                invoice_id=inv.id,
+                success_url=success_url,
+                cancel_url=cancel_url,
+                created_by=None,
+            )
+            result["configured"] = True
+            return result
+        except BadRequestException as exc:
+            msg = str(exc)
+            if (
+                "Stripe is not connected" in msg
+                or "Stripe connection is not active" in msg
+                or "charges are disabled" in msg
+            ):
+                return {
+                    "configured": False,
+                    "checkout_url": None,
+                    "invoice_number": inv.invoice_number,
+                    "message": "Online card payments are not enabled yet for this merchant. Please contact the sender to complete payment.",
+                }
+            raise
 
     def record_payment(self, invoice_id: int, organization_id: int, amount: Decimal, updated_by: int) -> Invoice:
         inv = self.repo.get_by_id(invoice_id, organization_id)
