@@ -299,6 +299,23 @@ class TrialConversionService:
                 f"Cannot convert a {previous.value} subscription to a paid plan"
             )
 
+        # ── Stamp the first real billing period and end the evaluation ────
+        # trial_ends_at is cleared: the evaluation is over; the paid plan
+        # starts now. current_period_start/end are set so advance_billing_period
+        # (renewal invoicing) and the API exposure of "next billing date" have
+        # correct anchors from the very first payment.
+        now = datetime.utcnow()
+        subscription.trial_ends_at = None
+        subscription.recovery_ends_at = None
+        subscription.current_period_start = now
+        plan = subscription.plan
+        if plan is not None and plan.billing_interval is not None:
+            subscription.current_period_end = svc._add_months(
+                now,
+                12 if plan.billing_interval.value == "annual" else 1,
+            )
+        self.db.flush()
+
         organization_id = subscription.account.organization_id if subscription.account else None
         PlatformAuditService(self.db).log_no_commit(
             actor_id=actor_id,

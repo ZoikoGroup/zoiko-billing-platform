@@ -414,3 +414,4 @@ def _dispatch_renewal_confirmed_email(db, subscription, invoice, account) -> Non
         )
     except Exception:
         logger.exception("Failed to dispatch renewal confirmation email for subscription %s", subscription.id)
+

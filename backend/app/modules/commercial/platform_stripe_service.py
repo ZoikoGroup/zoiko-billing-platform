@@ -412,6 +412,24 @@ class PlatformStripeService:
                 CommercialSubscriptionService(self.db).transition(
                     subscription, CommercialSubscriptionStatus.ACTIVE,
                 )
+                # Stamp the billing period start/end from the payment date so
+                # that renewal invoicing and the "next billing date" API field
+                # have correct anchors. For PENDING first-time activations this
+                # is the canonical plan-start moment; trial_ends_at is already
+                # None for PENDING (never trialing), but cleared defensively for
+                # SUSPENDED (trial had expired and they are now paying).
+                now = datetime.utcnow()
+                subscription.trial_ends_at = None
+                subscription.recovery_ends_at = None
+                subscription.current_period_start = now
+                plan = subscription.plan
+                if plan is not None and plan.billing_interval is not None:
+                    from app.modules.commercial.service import CommercialSubscriptionService as _CSS
+                    subscription.current_period_end = _CSS._add_months(
+                        now,
+                        12 if plan.billing_interval.value == "annual" else 1,
+                    )
+                self.db.flush()
 
         return {"action": "payment_recorded", "payment_id": payment.id}
 
