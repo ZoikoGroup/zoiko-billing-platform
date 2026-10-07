@@ -10,6 +10,8 @@ Two routers, both mounted OUTSIDE the authenticated commercial_billing_router:
     /billing/webhooks/stripe.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,8 @@ from app.core.exceptions import BadRequestException
 from app.database import get_db
 from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
 from app.modules.commercial.platform_stripe_service import PlatformStripeService
+
+logger = logging.getLogger(__name__)
 
 checkout_router = APIRouter(
     prefix="/commercial-invoices/public",
@@ -41,6 +45,18 @@ def create_checkout_session(token: str, db: Session = Depends(get_db)):
         return PlatformStripeService(db).create_checkout_session_for_invoice(invoice)
     except BadRequestException as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        # A Stripe API failure (bad/missing key, network, rejected request)
+        # used to surface as an unhandled HTTP 500 on a public page. Report it
+        # as an upstream failure instead; nothing was committed (the PENDING
+        # payment row is only committed after the session is created).
+        if type(e).__module__.split(".")[0] != "stripe":
+            raise
+        logger.warning("Platform Stripe checkout failed for invoice %s: %s", invoice.id, e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The payment provider could not start checkout. Please try again shortly.",
+        )
 
 
 @webhook_router.post("/webhook", status_code=status.HTTP_200_OK)
