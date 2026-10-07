@@ -6,6 +6,8 @@ const inputClass =
   "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
 import { settingsApi, taxApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
+import { extractArray, formatTaxRatePercent } from "../../../utils/billing-helpers";
+import { ErrorState } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
 
 const TERMINOLOGY_OPTIONS = [
@@ -38,6 +40,18 @@ function SettingsField({ label, icon: Icon, children, description }) {
   );
 }
 
+// Groups related SettingsField cards under a heading in a responsive two-
+// column grid -- the page previously stacked ~25 single-field cards in one
+// full-width column with no grouping.
+function SettingsSection({ title, children }) {
+  return (
+    <section aria-label={title}>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</h2>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
 export default function InvoiceSettingsPage() {
@@ -47,6 +61,8 @@ export default function InvoiceSettingsPage() {
   const [saved, setSaved] = useState(false);
   const timerRef = useRef(null);
   const [taxRates, setTaxRates] = useState([]);
+  const [taxRatesError, setTaxRatesError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const { singular: entityLabel, pluralLower: entityPluralLower } = useTerminology();
 
   const [form, setForm] = useState({
@@ -102,11 +118,24 @@ const [original, setOriginal] = useState({});
         settingsApi.get(),
         taxApi.list({ per_page: 100 }),
       ]);
-      let settings = {};
-      if (settingsRes.status === "fulfilled") settings = settingsRes.value || {};
+      // Without the saved configuration the form would silently fall back to
+      // its hard-coded defaults, and saving any single field would then write
+      // every one of those defaults over the organization's real settings
+      // (handleSave sends the whole form). Refuse to render an editable form.
+      if (settingsRes.status !== "fulfilled") {
+        const reason = settingsRes.reason;
+        setLoadFailed(true);
+        setError(reason?.detail || reason?.message || "Failed to load settings");
+        return;
+      }
+      setLoadFailed(false);
+      const settings = settingsRes.value || {};
       if (taxRes.status === "fulfilled") {
-        const data = taxRes.value;
-        setTaxRates(Array.isArray(data) ? data : data?.items || data?.data || []);
+        setTaxRates(extractArray(taxRes.value));
+        setTaxRatesError(null);
+      } else {
+        setTaxRates([]);
+        setTaxRatesError(taxRes.reason?.detail || taxRes.reason?.message || "Failed to load tax rates");
       }
 
       const values = {
@@ -193,18 +222,32 @@ const [original, setOriginal] = useState({});
     setSaved(false);
   }
 
+  const header = (extraActions = []) => (
+    <PageHeader
+      icon={Settings}
+      title="Invoice Settings"
+      description="Configure invoice module preferences"
+      crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Settings" }]}
+      actions={extraActions}
+    />
+  );
+
   if (loading) {
     return (
-      <div className="space-y-6">
-        <PageHeader
-          icon={Settings}
-          title="Invoice Settings"
-          description="Configure invoice module preferences"
-          crumbs={[{ label: "Billing" }, { label: "Settings" }]}
-        />
-        <div className="flex items-center justify-center py-12">
+      <div className="px-4 py-6 sm:px-6">
+        {header()}
+        <div className="flex items-center justify-center py-12" role="status" aria-label="Loading invoice settings">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
         </div>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="px-4 py-6 sm:px-6">
+        {header()}
+        <ErrorState title="Couldn't load invoice settings" message={error} onRetry={fetchSettings} />
       </div>
     );
   }
@@ -221,258 +264,285 @@ const [original, setOriginal] = useState({});
       .replace("{SEQ}", "000001");
   })();
 
+  // TaxRateResponse exposes `is_active` (bool) -- it has no `status` field, so
+  // the old `r.status === "active"` filter dropped every rate and left this
+  // dropdown permanently empty. A saved default that has since been
+  // deactivated is still listed (marked inactive) so the select shows the
+  // real stored value instead of silently reading "None".
+  const activeTaxRates = taxRates.filter((r) => r.is_active !== false);
+  const savedTaxRate = taxRates.find((r) => String(r.id) === String(form.default_tax_rate_id));
+  const taxRateOptions = savedTaxRate && savedTaxRate.is_active === false ? [...activeTaxRates, savedTaxRate] : activeTaxRates;
+
+  let taxRateHint;
+  if (taxRatesError) taxRateHint = `Couldn't load tax rates: ${taxRatesError}`;
+  else if (activeTaxRates.length === 0) taxRateHint = (
+    <>No active tax rates yet. <a href="/billing/tax" className="font-medium text-brand-600 underline hover:text-brand-700">Add a tax rate</a> to choose a default.</>
+  );
+  else if (savedTaxRate && savedTaxRate.is_active === false) taxRateHint = "The saved default rate is inactive; choose an active rate.";
+  else taxRateHint = `${activeTaxRates.length} active rate${activeTaxRates.length === 1 ? "" : "s"} available`;
+
   return (
     <div className="px-4 py-6 sm:px-6">
-      <PageHeader
-        icon={Settings}
-        title="Invoice Settings"
-        description="Configure invoice module preferences"
-        crumbs={[{ label: "Billing" }, { label: "Settings" }]}
-        actions={[
-          saved && (
-            <span key="saved" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          ),
-          <Button key="refresh" variant="secondary" size="md" onClick={fetchSettings} icon={RefreshCw}>
-            Refresh
-          </Button>,
-          <Button key="save" variant="primary" size="md" onClick={handleSave} disabled={!hasChanges || saving || Boolean(validationError)} loading={saving} icon={Save}>
-            Save Changes
-          </Button>,
-        ]}
-      />
+      {header([
+        saved && (
+          <span key="saved" role="status" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
+            <CheckCircle className="h-4 w-4" /> Saved
+          </span>
+        ),
+        <Button key="refresh" variant="secondary" size="md" onClick={fetchSettings} icon={RefreshCw}>
+          Refresh
+        </Button>,
+        <Button key="save" variant="primary" size="md" onClick={handleSave} disabled={!hasChanges || saving || Boolean(validationError)} loading={saving} icon={Save}>
+          Save Changes
+        </Button>,
+      ])}
 
       {error && (
-        <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
+        <div role="alert" className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" /> {error}
         </div>
       )}
       {validationError && (
-        <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {validationError}
+        <div role="alert" className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" /> {validationError}
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-4">
-        <div>
+      <div className="mb-6 grid grid-cols-1 gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 md:grid-cols-4">
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Number Preview</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">{numberingPreview}</p>
+          <p className="mt-1 text-lg font-bold text-slate-900 truncate" title={numberingPreview}>{numberingPreview}</p>
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Currency</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">{form.default_currency}</p>
+          <p className="mt-1 text-lg font-bold text-slate-900">{form.default_currency || "—"}</p>
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Payment Terms</p>
           <p className="mt-1 text-lg font-bold capitalize text-slate-900">{form.default_payment_terms.replace(/_/g, " ")}</p>
         </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Automation</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">{form.auto_generate_invoice_number ? "Numbering on" : "Manual numbers"}</p>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Default Tax</p>
+          <p className="mt-1 text-lg font-bold text-slate-900 truncate">{savedTaxRate ? `${savedTaxRate.name} (${formatTaxRatePercent(savedTaxRate.rate)})` : "None"}</p>
         </div>
       </div>
 
-      <div className="space-y-6">
-        <SettingsField label="Entity Terminology" icon={Globe} description={`Customize what ${entityLabel}s are called throughout the system`}>
-          <select value={form.relationship_terminology} onChange={(e) => updateField("relationship_terminology", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            {TERMINOLOGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </SettingsField>
+      <div className="space-y-8">
+        <SettingsSection title="General">
+          <SettingsField label="Entity Terminology" icon={Globe} description={`Customize what ${entityLabel}s are called throughout the system`}>
+            <select aria-label="Entity Terminology" value={form.relationship_terminology} onChange={(e) => updateField("relationship_terminology", e.target.value)}
+              className={inputClass}>
+              {TERMINOLOGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Default Currency" icon={Globe} description="Default currency for invoices and transactions">
-          <select value={form.default_currency} onChange={(e) => updateField("default_currency", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </SettingsField>
+          <SettingsField label="Default Currency" icon={Globe} description="Default currency for invoices and transactions">
+            <select aria-label="Default Currency" value={form.default_currency} onChange={(e) => updateField("default_currency", e.target.value)}
+              className={inputClass}>
+              {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Invoice Numbering Prefix" icon={Hash} description="Prefix used when auto-generating invoice numbers">
-          <input type="text" value={form.invoice_prefix} onChange={(e) => updateField("invoice_prefix", e.target.value)}
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+          <SettingsField label="Fiscal Year Start" icon={Calendar} description="Start month of your fiscal year for revenue recognition">
+            <select aria-label="Fiscal Year Start" value={form.fiscal_year_start} onChange={(e) => updateField("fiscal_year_start", e.target.value)}
+              className={inputClass}>
+              {["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].map((m) => (
+                <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
+              ))}
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Invoice Numbering Format" icon={Hash} description="Pattern for generating invoice numbers">
-          <select value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            <option value="PREFIX-{SEQ}">Simple Sequential (INV-000001)</option>
-            <option value="PREFIX-{YYYY}-{SEQ}">Annual Sequential (INV-2026-000001)</option>
-            <option value="PREFIX-{YYYYMM}-{SEQ}">Monthly Sequential (INV-202601-000001)</option>
-            <option value="PREFIX-{YYYY}-{MM}-{SEQ}">Year-Month-Seq (INV-2026-01-000001)</option>
-            <option value="PREFIX-{MM}-{YYYY}-{SEQ}">Month-Year-Seq (INV-01-2026-000001)</option>
-          </select>
-          <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
-        </SettingsField>
+          <SettingsField label="Default Payment Terms" icon={DollarSign} description="Default payment terms assigned to new invoices">
+            <select aria-label="Default Payment Terms" value={form.default_payment_terms} onChange={(e) => updateField("default_payment_terms", e.target.value)}
+              className={inputClass}>
+              <option value="due_on_receipt">Due on Receipt</option>
+              <option value="net_15">Net 15</option>
+              <option value="net_30">Net 30</option>
+              <option value="net_45">Net 45</option>
+              <option value="net_60">Net 60</option>
+              <option value="net_90">Net 90</option>
+              <option value="custom">Custom</option>
+            </select>
+          </SettingsField>
+        </SettingsSection>
 
-        <SettingsField label="Auto-Generate Invoice Numbers" icon={ToggleLeft} description="Automatically generate invoice numbers using the configured prefix/format">
-          <select value={String(form.auto_generate_invoice_number)} onChange={(e) => updateField("auto_generate_invoice_number", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+        <SettingsSection title="Invoice Numbering">
+          <SettingsField label="Invoice Numbering Prefix" icon={Hash} description="Prefix used when auto-generating invoice numbers">
+            <input aria-label="Invoice Numbering Prefix" type="text" value={form.invoice_prefix} onChange={(e) => updateField("invoice_prefix", e.target.value)}
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Default Payment Terms" icon={DollarSign} description="Default payment terms assigned to new invoices">
-          <select value={form.default_payment_terms} onChange={(e) => updateField("default_payment_terms", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            <option value="due_on_receipt">Due on Receipt</option>
-            <option value="net_15">Net 15</option>
-            <option value="net_30">Net 30</option>
-            <option value="net_45">Net 45</option>
-            <option value="net_60">Net 60</option>
-            <option value="net_90">Net 90</option>
-            <option value="custom">Custom</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Invoice Numbering Format" icon={Hash} description="Pattern for generating invoice numbers">
+            <select aria-label="Invoice Numbering Format" value={form.invoice_number_format} onChange={(e) => updateField("invoice_number_format", e.target.value)}
+              className={inputClass}>
+              <option value="PREFIX-{SEQ}">Simple Sequential (INV-000001)</option>
+              <option value="PREFIX-{YYYY}-{SEQ}">Annual Sequential (INV-2026-000001)</option>
+              <option value="PREFIX-{YYYYMM}-{SEQ}">Monthly Sequential (INV-202601-000001)</option>
+              <option value="PREFIX-{YYYY}-{MM}-{SEQ}">Year-Month-Seq (INV-2026-01-000001)</option>
+              <option value="PREFIX-{MM}-{YYYY}-{SEQ}">Month-Year-Seq (INV-01-2026-000001)</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">Preview: {numberingPreview}</p>
+          </SettingsField>
 
-        <SettingsField label="Default Tax Rate" icon={Percent} description="Default tax rate applied to invoices">
-          <select value={form.default_tax_rate_id} onChange={(e) => updateField("default_tax_rate_id", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            <option value="">None</option>
-            {taxRates.filter((r) => r.status === "active").map((r) => (
-              <option key={r.id} value={r.id}>{r.name} ({(parseFloat(r.rate || 0) * 100).toFixed(2)}%)</option>
-            ))}
-          </select>
-        </SettingsField>
+          <SettingsField label="Auto-Generate Invoice Numbers" icon={ToggleLeft} description="Automatically generate invoice numbers using the configured prefix/format">
+            <select aria-label="Auto-Generate Invoice Numbers" value={String(form.auto_generate_invoice_number)} onChange={(e) => updateField("auto_generate_invoice_number", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
+        </SettingsSection>
 
-        <SettingsField label="Auto-Apply Credits" icon={ToggleLeft} description="Automatically apply available credit notes to new invoices">
-          <select value={String(form.enable_auto_apply_credits)} onChange={(e) => updateField("enable_auto_apply_credits", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+        <SettingsSection title="Tax & Late Fees">
+          <SettingsField label="Default Tax Rate" icon={Percent} description="Default tax rate applied to invoices">
+            <select aria-label="Default Tax Rate" aria-describedby="default-tax-rate-hint" value={form.default_tax_rate_id} onChange={(e) => updateField("default_tax_rate_id", e.target.value)}
+              className={inputClass}>
+              <option value="">None</option>
+              {taxRateOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({formatTaxRatePercent(r.rate)}){r.is_active === false ? " — inactive" : ""}
+                </option>
+              ))}
+            </select>
+            <p id="default-tax-rate-hint" className={`mt-1 text-xs ${taxRatesError ? "text-red-600" : "text-slate-500"}`}>{taxRateHint}</p>
+          </SettingsField>
 
-        <SettingsField label="Auto-Send Invoices" icon={ToggleLeft} description={`Automatically send invoices to ${entityPluralLower} when finalized`}>
-          <select value={String(form.auto_send_invoices)} onChange={(e) => updateField("auto_send_invoices", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Late Payment Fee (%)" icon={Percent} description="Percentage fee applied to overdue invoices">
+            <input aria-label="Late Payment Fee (%)" type="number" min="0" max="100" step="0.1" value={form.late_payment_fee_percentage} onChange={(e) => updateField("late_payment_fee_percentage", e.target.value)}
+              placeholder="e.g. 1.5"
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Auto-Send Receipts" icon={ToggleLeft} description={`Automatically send payment receipts to ${entityPluralLower}`}>
-          <select value={String(form.auto_send_receipts)} onChange={(e) => updateField("auto_send_receipts", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Late Payment Flat Fee" icon={DollarSign} description="Flat fee applied to overdue invoices">
+            <input aria-label="Late Payment Flat Fee" type="number" min="0" step="0.01" value={form.late_payment_fee_flat} onChange={(e) => updateField("late_payment_fee_flat", e.target.value)}
+              placeholder="e.g. 25.00"
+              className={inputClass} />
+          </SettingsField>
+        </SettingsSection>
 
-        <SettingsField label="Payment Reminder Days Before Due" icon={Calendar} description="Number of days before due date to send payment reminders">
-          <input type="number" min="1" value={form.payment_reminder_days_before} onChange={(e) => updateField("payment_reminder_days_before", e.target.value)}
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+        <SettingsSection title="Automation">
+          <SettingsField label="Auto-Apply Credits" icon={ToggleLeft} description="Automatically apply available credit notes to new invoices">
+            <select aria-label="Auto-Apply Credits" value={String(form.enable_auto_apply_credits)} onChange={(e) => updateField("enable_auto_apply_credits", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Late Payment Fee (%)" icon={Percent} description="Percentage fee applied to overdue invoices">
-          <input type="number" min="0" max="100" step="0.1" value={form.late_payment_fee_percentage} onChange={(e) => updateField("late_payment_fee_percentage", e.target.value)}
-            placeholder="e.g. 1.5"
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+          <SettingsField label="Auto-Send Invoices" icon={ToggleLeft} description={`Automatically send invoices to ${entityPluralLower} when finalized`}>
+            <select aria-label="Auto-Send Invoices" value={String(form.auto_send_invoices)} onChange={(e) => updateField("auto_send_invoices", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Late Payment Flat Fee" icon={DollarSign} description="Flat fee applied to overdue invoices">
-          <input type="number" min="0" step="0.01" value={form.late_payment_fee_flat} onChange={(e) => updateField("late_payment_fee_flat", e.target.value)}
-            placeholder="e.g. 25.00"
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+          <SettingsField label="Auto-Send Receipts" icon={ToggleLeft} description={`Automatically send payment receipts to ${entityPluralLower}`}>
+            <select aria-label="Auto-Send Receipts" value={String(form.auto_send_receipts)} onChange={(e) => updateField("auto_send_receipts", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Auto Dunning" icon={ToggleLeft} description="Automatically escalate dunning process for overdue invoices">
-          <select value={String(form.auto_dunning)} onChange={(e) => updateField("auto_dunning", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Enable Revenue Recognition" icon={ToggleLeft} description="Enable ASC 606 revenue recognition schedules">
+            <select aria-label="Enable Revenue Recognition" value={String(form.enable_revenue_recognition)} onChange={(e) => updateField("enable_revenue_recognition", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
+        </SettingsSection>
 
-        <SettingsField label="Dunning Level Count" icon={Hash} description="Number of dunning levels before escalation">
-          <input type="number" min="1" max="10" value={form.dunning_level_count} onChange={(e) => updateField("dunning_level_count", e.target.value)}
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+        <SettingsSection title="Reminders & Dunning">
+          <SettingsField label="Payment Reminder Days Before Due" icon={Calendar} description="Number of days before due date to send payment reminders">
+            <input aria-label="Payment Reminder Days Before Due" type="number" min="1" value={form.payment_reminder_days_before} onChange={(e) => updateField("payment_reminder_days_before", e.target.value)}
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Enable Revenue Recognition" icon={ToggleLeft} description="Enable ASC 606 revenue recognition schedules">
-          <select value={String(form.enable_revenue_recognition)} onChange={(e) => updateField("enable_revenue_recognition", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Auto Dunning" icon={ToggleLeft} description="Automatically escalate dunning process for overdue invoices">
+            <select aria-label="Auto Dunning" value={String(form.auto_dunning)} onChange={(e) => updateField("auto_dunning", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
 
-        <SettingsField label="Enable Multi-Currency" icon={Globe} description="Allow invoices and transactions in multiple currencies">
-          <select value={String(form.enable_multi_currency)} onChange={(e) => updateField("enable_multi_currency", e.target.value === "true")}
-            className={`${inputClass} max-w-xs`}>
-            <option value="true">Enabled</option>
-            <option value="false">Disabled</option>
-          </select>
-        </SettingsField>
+          <SettingsField label="Dunning Level Count" icon={Hash} description="Number of dunning levels before escalation">
+            <input aria-label="Dunning Level Count" type="number" min="1" max="10" value={form.dunning_level_count} onChange={(e) => updateField("dunning_level_count", e.target.value)}
+              className={inputClass} />
+          </SettingsField>
+        </SettingsSection>
 
-        {form.enable_multi_currency && (
-          <>
-            <SettingsField label="Exchange Rate: USD" icon={DollarSign} description="1 USD = X home currency (e.g., 1 USD = 83 INR)">
-              <input type="number" min="0" step="0.000001" value={form.exchange_rate_usd} onChange={(e) => updateField("exchange_rate_usd", e.target.value)}
-                placeholder="e.g. 1.000000"
-                className={`${inputClass} max-w-xs`} />
-            </SettingsField>
+        <SettingsSection title="Multi-Currency">
+          <SettingsField label="Enable Multi-Currency" icon={Globe} description="Allow invoices and transactions in multiple currencies">
+            <select aria-label="Enable Multi-Currency" value={String(form.enable_multi_currency)} onChange={(e) => updateField("enable_multi_currency", e.target.value === "true")}
+              className={inputClass}>
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </SettingsField>
 
-            <SettingsField label="Exchange Rate: INR" icon={DollarSign} description="1 INR = X home currency (e.g., 1 INR = 0.012 USD)">
-              <input type="number" min="0" step="0.000001" value={form.exchange_rate_inr} onChange={(e) => updateField("exchange_rate_inr", e.target.value)}
-                placeholder="e.g. 0.012000"
-                className={`${inputClass} max-w-xs`} />
-            </SettingsField>
+          {form.enable_multi_currency && (
+            <>
+              <SettingsField label="Exchange Rate: USD" icon={DollarSign} description="1 USD = X home currency (e.g., 1 USD = 83 INR)">
+                <input aria-label="Exchange Rate: USD" type="number" min="0" step="0.000001" value={form.exchange_rate_usd} onChange={(e) => updateField("exchange_rate_usd", e.target.value)}
+                  placeholder="e.g. 1.000000"
+                  className={inputClass} />
+              </SettingsField>
 
-            <SettingsField label="Exchange Rate: GBP" icon={DollarSign} description="1 GBP = X home currency (e.g., 1 GBP = 1.25 USD)">
-              <input type="number" min="0" step="0.000001" value={form.exchange_rate_gbp} onChange={(e) => updateField("exchange_rate_gbp", e.target.value)}
-                placeholder="e.g. 1.250000"
-                className={`${inputClass} max-w-xs`} />
-            </SettingsField>
+              <SettingsField label="Exchange Rate: INR" icon={DollarSign} description="1 INR = X home currency (e.g., 1 INR = 0.012 USD)">
+                <input aria-label="Exchange Rate: INR" type="number" min="0" step="0.000001" value={form.exchange_rate_inr} onChange={(e) => updateField("exchange_rate_inr", e.target.value)}
+                  placeholder="e.g. 0.012000"
+                  className={inputClass} />
+              </SettingsField>
 
-            <SettingsField label="Exchange Rate: EUR" icon={DollarSign} description="1 EUR = X home currency (e.g., 1 EUR = 1.08 USD)">
-              <input type="number" min="0" step="0.000001" value={form.exchange_rate_eur} onChange={(e) => updateField("exchange_rate_eur", e.target.value)}
-                placeholder="e.g. 1.080000"
-                className={`${inputClass} max-w-xs`} />
-            </SettingsField>
+              <SettingsField label="Exchange Rate: GBP" icon={DollarSign} description="1 GBP = X home currency (e.g., 1 GBP = 1.25 USD)">
+                <input aria-label="Exchange Rate: GBP" type="number" min="0" step="0.000001" value={form.exchange_rate_gbp} onChange={(e) => updateField("exchange_rate_gbp", e.target.value)}
+                  placeholder="e.g. 1.250000"
+                  className={inputClass} />
+              </SettingsField>
 
-            <SettingsField label="Exchange Rate: AED" icon={DollarSign} description="1 AED = X home currency (e.g., 1 AED = 0.27 USD)">
-              <input type="number" min="0" step="0.000001" value={form.exchange_rate_aed} onChange={(e) => updateField("exchange_rate_aed", e.target.value)}
-                placeholder="e.g. 0.270000"
-                className={`${inputClass} max-w-xs`} />
-            </SettingsField>
-          </>
-        )}
+              <SettingsField label="Exchange Rate: EUR" icon={DollarSign} description="1 EUR = X home currency (e.g., 1 EUR = 1.08 USD)">
+                <input aria-label="Exchange Rate: EUR" type="number" min="0" step="0.000001" value={form.exchange_rate_eur} onChange={(e) => updateField("exchange_rate_eur", e.target.value)}
+                  placeholder="e.g. 1.080000"
+                  className={inputClass} />
+              </SettingsField>
 
-        <SettingsField label="Fiscal Year Start" icon={Calendar} description="Start month of your fiscal year for revenue recognition">
-          <select value={form.fiscal_year_start} onChange={(e) => updateField("fiscal_year_start", e.target.value)}
-            className={`${inputClass} max-w-xs`}>
-            {["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].map((m) => (
-              <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
-            ))}
-          </select>
-        </SettingsField>
+              <SettingsField label="Exchange Rate: AED" icon={DollarSign} description="1 AED = X home currency (e.g., 1 AED = 0.27 USD)">
+                <input aria-label="Exchange Rate: AED" type="number" min="0" step="0.000001" value={form.exchange_rate_aed} onChange={(e) => updateField("exchange_rate_aed", e.target.value)}
+                  placeholder="e.g. 0.270000"
+                  className={inputClass} />
+              </SettingsField>
+            </>
+          )}
+        </SettingsSection>
 
-        <SettingsField label="Billing Email" icon={Mail} description="Email address displayed on invoices for billing inquiries">
-          <input type="email" value={form.billing_email} onChange={(e) => updateField("billing_email", e.target.value)}
-            placeholder="billing@example.com"
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+        <SettingsSection title="Contact & Branding">
+          <SettingsField label="Billing Email" icon={Mail} description="Email address displayed on invoices for billing inquiries">
+            <input aria-label="Billing Email" type="email" value={form.billing_email} onChange={(e) => updateField("billing_email", e.target.value)}
+              placeholder="billing@example.com"
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Billing Phone" icon={Phone} description="Phone number displayed on invoices for billing inquiries">
-          <input type="text" value={form.billing_phone} onChange={(e) => updateField("billing_phone", e.target.value)}
-            placeholder="+1 (555) 000-0000"
-            className={`${inputClass} max-w-xs`} />
-        </SettingsField>
+          <SettingsField label="Billing Phone" icon={Phone} description="Phone number displayed on invoices for billing inquiries">
+            <input aria-label="Billing Phone" type="text" value={form.billing_phone} onChange={(e) => updateField("billing_phone", e.target.value)}
+              placeholder="+1 (555) 000-0000"
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Terms & Conditions" icon={FileText} description="Default terms and conditions printed on invoices">
-          <textarea value={form.invoice_terms_and_conditions} onChange={(e) => updateField("invoice_terms_and_conditions", e.target.value)}
-            rows={3} placeholder="Payment is due within 30 days..."
-            className={inputClass} />
-        </SettingsField>
+          <SettingsField label="Logo URL" icon={Image} description="URL to company logo displayed on invoices">
+            <input aria-label="Logo URL" type="url" value={form.logo_url} onChange={(e) => updateField("logo_url", e.target.value)}
+              placeholder="https://example.com/logo.png"
+              className={inputClass} />
+          </SettingsField>
 
-        <SettingsField label="Logo URL" icon={Image} description="URL to company logo displayed on invoices">
-          <input type="url" value={form.logo_url} onChange={(e) => updateField("logo_url", e.target.value)}
-            placeholder="https://example.com/logo.png"
-            className={`${inputClass} max-w-xs`} />
-          {form.logo_url && <p className="mt-1 text-xs text-slate-500 truncate max-w-xs">{form.logo_url}</p>}
-        </SettingsField>
+          <SettingsField label="Terms & Conditions" icon={FileText} description="Default terms and conditions printed on invoices">
+            <textarea aria-label="Terms & Conditions" value={form.invoice_terms_and_conditions} onChange={(e) => updateField("invoice_terms_and_conditions", e.target.value)}
+              rows={3} placeholder="Payment is due within 30 days..."
+              className={inputClass} />
+          </SettingsField>
+        </SettingsSection>
       </div>
     </div>
   );

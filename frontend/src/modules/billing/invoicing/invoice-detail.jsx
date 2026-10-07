@@ -121,7 +121,11 @@ export default function InvoiceDetailPage() {
       await actionFn();
       await fetchInvoice({ silent: true });
     } catch (err) {
-      setError(err?.detail || err?.message || `Failed to ${action} invoice`);
+      // `error` is only rendered when the invoice itself failed to load, so
+      // an action failure set there (e.g. Mark as Paid rejected by the
+      // backend after its modal had already closed) was never shown. Surface
+      // it in the page's alert banner instead.
+      setFlashMessage({ type: "warning", text: err?.detail || err?.message || `Failed to ${action} invoice` });
     } finally {
       setActionLoading(null);
     }
@@ -207,7 +211,7 @@ export default function InvoiceDetailPage() {
       await invoiceApi.bulkDelete([Number(id)]);
       navigate("/billing/invoices");
     } catch (err) {
-      setError(err?.detail || err?.message || "Failed to delete draft invoice");
+      setFlashMessage({ type: "warning", text: err?.detail || err?.message || "Failed to delete draft invoice" });
       setActionLoading(null);
     }
   };
@@ -246,12 +250,15 @@ export default function InvoiceDetailPage() {
       }
     } catch (err) {
       const msg = err?.detail || err?.message || "Unable to start Stripe checkout. Please try again later.";
-      const missingConnect = /not connected|not active|connect|onboarding/i.test(msg);
+      // The backend refuses online payment unless this organization has an
+      // ACTIVE, charges-enabled Stripe Connect account (resolve_connected_
+      // account). That is correct and must not be bypassed -- point the user
+      // at the place to fix it instead of a dead-end message.
+      const missingConnect = /not connected|not active|charges are disabled|onboarding/i.test(msg);
       setFlashMessage({
         type: "warning",
-        text: missingConnect
-          ? `${msg} Connect Stripe in Organization settings before accepting online payments.`
-          : msg,
+        text: missingConnect ? `Online payment isn't available yet: ${msg}` : msg,
+        action: missingConnect ? { label: "Connect Stripe", href: "/billing/payments/stripe-connect" } : null,
       });
       setActionLoading(null);
     }
@@ -429,14 +436,22 @@ export default function InvoiceDetailPage() {
         />
 
         {flashMessage && (
-          <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+          <div role={flashMessage.type === "warning" ? "alert" : "status"} className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
             flashMessage.type === "warning"
               ? "border-amber-200 bg-amber-50 text-amber-800"
               : "border-emerald-200 bg-emerald-50 text-emerald-800"
           }`}>
             {flashMessage.type === "warning" ? <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> : <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />}
-            <span className="flex-1">{flashMessage.text}</span>
-            <button onClick={() => setFlashMessage(null)} className="shrink-0 opacity-70 hover:opacity-100">
+            <span className="flex-1">
+              {flashMessage.text}
+              {flashMessage.action && (
+                <button type="button" onClick={() => navigate(flashMessage.action.href)}
+                  className="ml-2 font-semibold underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded">
+                  {flashMessage.action.label}
+                </button>
+              )}
+            </span>
+            <button onClick={() => setFlashMessage(null)} aria-label="Dismiss message" className="shrink-0 opacity-70 hover:opacity-100">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -865,7 +880,7 @@ export default function InvoiceDetailPage() {
               </Button>
             )}
             {isPartiallyPaid && (
-              <Button className="border-transparent bg-emerald-600 text-white hover:bg-emerald-700" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={() => setShowMarkPaidModal(true)}>
+              <Button variant="success" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={() => setShowMarkPaidModal(true)}>
                 Mark as Paid
               </Button>
             )}
@@ -949,7 +964,7 @@ export default function InvoiceDetailPage() {
             <Button variant="ghost" onClick={() => setShowMarkPaidModal(false)}>
               Cancel
             </Button>
-            <Button className="border-transparent bg-emerald-600 text-white hover:bg-emerald-700" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={async () => { setShowMarkPaidModal(false); await handleAction("mark-paid", () => handleMarkPaid(balanceDue, currency)); }}>
+            <Button variant="success" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={async () => { setShowMarkPaidModal(false); await handleAction("mark-paid", () => handleMarkPaid(balanceDue, currency)); }}>
               Confirm Payment
             </Button>
           </>

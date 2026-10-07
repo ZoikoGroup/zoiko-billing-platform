@@ -134,36 +134,36 @@ class KnowledgeRetriever:
         self._doc_obj_cache: dict[tuple, tuple[list, float]] = {}  # cache document objects
         self._cache_ttl = 300  # 5 minutes
 
-    def _get_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str) -> list[int] | None:
+    def _get_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str, is_public: bool = False) -> list[int] | None:
         """Get cached document IDs if valid."""
         import time
-        cache_key = (namespace_ids, freshness_policy)
+        cache_key = (namespace_ids, freshness_policy, is_public)
         if cache_key in self._doc_cache:
             doc_ids, cached_time = self._doc_cache[cache_key]
             if time.time() - cached_time < self._cache_ttl:
                 return doc_ids
         return None
 
-    def _set_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str, doc_ids: list[int]) -> None:
+    def _set_cached_doc_ids(self, namespace_ids: tuple[int, ...], freshness_policy: str, is_public: bool, doc_ids: list[int]) -> None:
         """Cache document IDs."""
         import time
-        cache_key = (namespace_ids, freshness_policy)
+        cache_key = (namespace_ids, freshness_policy, is_public)
         self._doc_cache[cache_key] = (doc_ids, time.time())
 
-    def _get_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str) -> list | None:
+    def _get_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str, is_public: bool = False) -> list | None:
         """Get cached document objects if valid."""
         import time
-        cache_key = (namespace_ids, freshness_policy)
+        cache_key = (namespace_ids, freshness_policy, is_public)
         if cache_key in self._doc_obj_cache:
             docs, cached_time = self._doc_obj_cache[cache_key]
             if time.time() - cached_time < self._cache_ttl:
                 return docs
         return None
 
-    def _set_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str, docs: list) -> None:
+    def _set_cached_docs(self, namespace_ids: tuple[int, ...], freshness_policy: str, is_public: bool, docs: list) -> None:
         """Cache document objects."""
         import time
-        cache_key = (namespace_ids, freshness_policy)
+        cache_key = (namespace_ids, freshness_policy, is_public)
         self._doc_obj_cache[cache_key] = (docs, time.time())
 
     def _validate_cached_docs(
@@ -171,6 +171,7 @@ class KnowledgeRetriever:
         namespace_ids: tuple[int, ...],
         freshness_policy: str,
         cached_docs: list,
+        is_public: bool = False,
     ) -> list | None:
         """RT-022: a document can be revoked/expired while it still sits in the
         retriever's document cache (TTL 300s). On a cache hit we re-verify the
@@ -197,7 +198,7 @@ class KnowledgeRetriever:
                 )
             )
         if invalid.count():
-            cache_key = (namespace_ids, freshness_policy)
+            cache_key = (namespace_ids, freshness_policy, is_public)
             self._doc_obj_cache.pop(cache_key, None)
             self._doc_cache.pop(cache_key, None)
             return None
@@ -222,6 +223,7 @@ class KnowledgeRetriever:
         message_id: int | None = None,
         boost_terms: list[str] | None = None,
         domains: list[str] | None = None,
+        is_public_only: bool = False,
     ) -> tuple[list[RetrievalResult], list[dict]]:
         """Retrieve knowledge chunks relevant to a query.
 
@@ -231,28 +233,41 @@ class KnowledgeRetriever:
                 allowed_domains/blocked_domains are restricted to the current
                 surface. When empty or None, no domain restriction is applied
                 (matches pre-restriction behavior).
+            is_public_only: Restrict to is_public=True documents in the
+                billing_public namespace ONLY (the unauthenticated marketing
+                assistant). Callers cannot widen this scope — billing_public
+                is hard-coded here so a mis-specified namespace list can never
+                leak tenant/seed documents into the public path.
 
         Returns:
             (results, citations_dict) — results for grounding, citations for DB storage
         """
         start_time = time.monotonic()
-        
+
+        # Public path: lock the namespace to billing_public regardless of what
+        # a caller passes. Tenant namespaces (tenant_id == org) may contain
+        # is_public=False docs and must never resolve for an unauthenticated
+        # visitor.
+        effective_namespace_codes = (
+            ["billing_public"] if is_public_only else namespace_codes
+        )
+
         # Resolve allowed namespaces
-        namespaces = self._resolve_namespaces(ctx, namespace_codes, domains=domains)
+        namespaces = self._resolve_namespaces(ctx, effective_namespace_codes, domains=domains)
         if not namespaces:
             return [], []
 
         # Build namespace-scoped query
         namespace_ids = tuple(ns.id for ns in namespaces)
-        
+
         # Try cache first for document objects
-        approved_docs = self._get_cached_docs(namespace_ids, freshness_policy)
+        approved_docs = self._get_cached_docs(namespace_ids, freshness_policy, is_public=is_public_only)
         if approved_docs is not None:
             # RT-022: a document can be revoked/expired while it sits in the
             # cache. On a cache hit we re-verify the cached set is still
             # approved/current; if not, the cache is evicted and we rebuild
             # from the DB so a revoked chunk is never served from the cache.
-            approved_docs = self._validate_cached_docs(namespace_ids, freshness_policy, approved_docs)
+            approved_docs = self._validate_cached_docs(namespace_ids, freshness_policy, approved_docs, is_public=is_public_only)
             if approved_docs is not None:
                 doc_ids = [d.id for d in approved_docs]
                 cache_hit = True
@@ -272,17 +287,20 @@ class KnowledgeRetriever:
                 )
             )
 
+            if is_public_only:
+                doc_query = doc_query.filter(KnowledgeDocument.is_public.is_(True))
+
             if freshness_policy == "current_only":
                 doc_query = doc_query.filter(KnowledgeDocument.freshness_status == FreshnessStatus.CURRENT)
 
             approved_docs = doc_query.all()
-            
+
             if not approved_docs:
                 return [], []
-            
+
             doc_ids = [d.id for d in approved_docs]
             # Cache the document objects
-            self._set_cached_docs(namespace_ids, freshness_policy, approved_docs)
+            self._set_cached_docs(namespace_ids, freshness_policy, is_public_only, approved_docs)
             cache_hit = False
         
         logger.debug("KB retrieve: namespace_ids=%s doc_ids=%d cache_hit=%s time=%dms",
@@ -578,6 +596,41 @@ class KnowledgeRetriever:
             })
 
         return results, citations_data
+
+    def retrieve_public(
+        self,
+        *,
+        query: str,
+        top_k: int = 5,
+        min_score: float = 0.3,
+        freshness_policy: str = "current_only",
+        boost_terms: list[str] | None = None,
+    ) -> tuple[list[RetrievalResult], list[dict]]:
+        """Retrieve ONLY public-safe knowledge for the unauthenticated
+        marketing-site assistant.
+
+        Hard-scoped to the billing_public namespace AND is_public=True
+        documents (enforced inside retrieve(), not by this wrapper). Uses a
+        minimal entity-free AIContext — user_id=0 denotes "no authenticated
+        user" and organization_id=None keeps tenant namespaces off the table.
+        """
+        public_ctx = AIContext(
+            user_id=0,
+            organization_id=None,
+            role="public",
+            billing_plane="public",
+            permissions=[],
+        )
+        return self.retrieve(
+            query=query,
+            ctx=public_ctx,
+            namespace_codes=["billing_public"],
+            top_k=top_k,
+            min_score=min_score,
+            freshness_policy=freshness_policy,
+            boost_terms=boost_terms,
+            is_public_only=True,
+        )
 
     def store_retrieval(
         self,

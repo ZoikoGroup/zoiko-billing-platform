@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Bell, AlertCircle, ArrowUpCircle, FileText, Loader2, CheckCircle, Wallet,
 } from "lucide-react";
@@ -18,6 +18,7 @@ const ITEMS_PER_PAGE = 10;
 const STATUS_OPTIONS = [
   { value: "", label: "All Statuses" },
   { value: "active", label: "Active" },
+  { value: "escalated", label: "Escalated" },
   { value: "resolved", label: "Resolved" },
   { value: "closed", label: "Closed" },
 ];
@@ -60,9 +61,14 @@ export default function DunningPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // ?status= deep links (e.g. Collections Dashboard "Escalated to
+  // Collections", which counts escalated DUNNING cases) seed the filter and
+  // open the filter row so the applied filter is visible.
+  const [searchParams] = useSearchParams();
+  const urlStatus = STATUS_OPTIONS.some((o) => o.value && o.value === searchParams.get("status")) ? searchParams.get("status") : "";
+  const [statusFilter, setStatusFilter] = useState(urlStatus);
   const [levelFilter, setLevelFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(Boolean(urlStatus));
 
   const [currentPage, setCurrentPage] = useState(1);
   const [actionLoading, setActionLoading] = useState(null);

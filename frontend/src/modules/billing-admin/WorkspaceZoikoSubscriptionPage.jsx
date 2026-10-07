@@ -68,6 +68,22 @@ function EmptyState({ icon: Icon, title, hint }) {
 // Plane 1 (Zoiko-billing-the-org) self-service view: this organization's own
 // billing relationship with Zoiko, not the org's own customers' Plane 2
 // subscriptions (see WorkspaceSubscriptionPage.jsx for that).
+// Statuses the platform checkout refuses (platform_stripe_service
+// _NON_PAYABLE_INVOICE_STATUSES). The page used to pick ANY non-"voided"
+// invoice with a balance -- including a draft, paid-but-stale or credited one
+// -- so Pay Now could point at an invoice checkout rejects.
+const NON_PAYABLE_PLATFORM_INVOICE_STATUSES = new Set(["draft", "paid", "voided", "credited"]);
+
+// The invoice Pay Now should use: payable, with a balance, preferring one that
+// already has a public payment link (a link token is only created when the
+// invoice is issued/sent, so a newer invoice may not have one yet).
+export function pickPayableInvoice(invoices = []) {
+  const payable = invoices.filter(
+    (i) => Number(i.balance_due) > 0.005 && !NON_PAYABLE_PLATFORM_INVOICE_STATUSES.has(String(i.status || "").toLowerCase()),
+  );
+  return payable.find((i) => i.public_token) || payable[0] || null;
+}
+
 export default function WorkspaceZoikoSubscriptionPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -88,7 +104,8 @@ export default function WorkspaceZoikoSubscriptionPage() {
 
   const { account, subscription, invoices = [], payments = [], quotes = [] } = data || {};
   const currency = subscription?.currency || "USD";
-  const unpaidInvoice = invoices.find((i) => Number(i.balance_due) > 0.005 && i.status !== "voided");
+  const unpaidInvoice = pickPayableInvoice(invoices);
+  const payLinkMissing = Boolean(unpaidInvoice && !unpaidInvoice.public_token);
   const openQuote = quotes.find((q) => q.status === "sent");
   const isActive = subscription?.status === "active";
   const isSuspended = subscription?.status === "suspended";
@@ -214,9 +231,15 @@ export default function WorkspaceZoikoSubscriptionPage() {
                     </div>
                   </div>
 
+                  {payLinkMissing && (
+                    <p role="status" className="text-xs text-amber-800 sm:max-w-xs">
+                      The payment link for this invoice isn't available yet. Zoiko Billing Accounts will send it once the invoice is issued.
+                    </p>
+                  )}
                   <button
                     onClick={handlePayNow}
-                    className="group relative inline-flex items-center justify-center gap-3 px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] hover:from-[#1546B0] hover:to-[#0B419A] rounded-xl shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/35 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 shrink-0 cursor-pointer"
+                    disabled={payLinkMissing}
+                    className="disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 group relative inline-flex items-center justify-center gap-3 px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] hover:from-[#1546B0] hover:to-[#0B419A] rounded-xl shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/35 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 shrink-0 cursor-pointer"
                   >
                     <ShieldCheck className="w-4 h-4 text-blue-200" />
                     <span>Pay {formatOrgMoney(unpaidInvoice.balance_due, { default_currency: unpaidInvoice.currency })} Now</span>

@@ -2927,6 +2927,11 @@ class RefundCreate(BaseModel):
     gateway: Optional[PaymentGatewayType] = None
     reference_number: Optional[str] = Field(None, max_length=100)
     reason: Optional[str] = None
+    # Client-generated key making "create refund" safe to retry: a repeat with
+    # the same key returns the refund the first request created instead of a
+    # second one (RefundService.create_refund; backed by the
+    # uq_refunds_org_idempotency_key constraint, scoped per organization).
+    idempotency_key: Optional[str] = Field(None, min_length=1, max_length=255)
 
     @field_validator("currency", mode="before")
     @classmethod

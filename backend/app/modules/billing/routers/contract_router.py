@@ -71,6 +71,10 @@ def list_contracts(
     sort_order: str = Query("desc"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    expiring_within_days: Optional[int] = Query(
+        None, ge=1, le=365,
+        description="Only active contracts whose end_date is within this many days from today (inclusive)",
+    ),
 ):
     svc = ContractService(db)
     return svc.list_contracts(
@@ -85,6 +89,7 @@ def list_contracts(
         sort_order=sort_order,
         date_from=date_from,
         date_to=date_to,
+        expiring_within_days=expiring_within_days,
     )
 
 

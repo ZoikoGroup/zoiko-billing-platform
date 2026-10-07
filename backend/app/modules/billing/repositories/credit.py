@@ -404,6 +404,36 @@ class RefundRepository(BaseRepository[Refund]):
     ) -> Decimal:
         return self._get_total_refunded(organization_id, "credit_note_id", credit_note_id)
 
+    def get_in_flight_credit_balance_refunds(self, organization_id: int, customer_id: int) -> Decimal:
+        """Sum of customer-credit-balance refunds that are committed but have
+        NOT yet moved money (draft/pending approval/approved/processing).
+
+        Unlike the payment/invoice/credit-note "reserved" totals, COMPLETED
+        refunds are excluded here: completing a credit-balance refund already
+        decrements BillingCustomer.credit_balance itself, so counting it again
+        would double-deduct. Without this reservation, several drafts could
+        each pass `amount <= credit_balance` and jointly exceed it."""
+        from sqlalchemy import and_
+        from app.modules.billing.models import RefundSource, RefundStatus
+        result = self.db.query(
+            func.coalesce(func.sum(Refund.amount), 0)
+        ).filter(
+            and_(
+                Refund.organization_id == organization_id,
+                Refund.customer_id == customer_id,
+                Refund.refund_source == RefundSource.CUSTOMER_CREDIT_BALANCE,
+                Refund.is_active == True,
+                Refund.status.in_([
+                    RefundStatus.DRAFT,
+                    RefundStatus.PENDING_APPROVAL,
+                    RefundStatus.APPROVED,
+                    RefundStatus.PROCESSING,
+                    RefundStatus.PENDING,
+                ]),
+            )
+        ).scalar()
+        return Decimal(str(result))
+
     def get_total_reserved_for_payment(
         self, organization_id: int, payment_id: int,
     ) -> Decimal:

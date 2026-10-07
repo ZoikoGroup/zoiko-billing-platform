@@ -148,6 +148,20 @@ jobs:
             # and closes the gap for any future fresh environment.
             python -m scripts.seed_commercial_plans
             python -m scripts.seed_entitlement_definitions
+            # Public marketing-site assistant (ZB-AI-PUB-001) knowledge.
+            # seed_knowledge.py is what actually loads the approved public KB
+            # documents into the `billing_public` namespace and stamps each with
+            # `is_public=True`. Without it the public assistant has an empty
+            # reachable index, so every public question (e.g. "Explain about
+            # the payments") hits the low-confidence gate and returns the
+            # abstention with `evidence: []` even though the retrieval code,
+            # seed flags, and is_public column are all present. It is
+            # idempotent (unchanged documents are skipped by content hash), so
+            # running it on every deploy is a no-op against an
+            # already-seeded database and closes the gap for any fresh
+            # environment. Must run AFTER `alembic upgrade head` so the
+            # `ai_knowledge_document.is_public` column exists.
+            python -m seed_knowledge
             deactivate
             sudo systemctl restart zoiko-billing-backend
             sudo systemctl is-active --quiet zoiko-billing-backend \

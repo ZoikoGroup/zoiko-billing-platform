@@ -658,6 +658,11 @@ class KnowledgeDocument(Base):
     object_uri = Column(String(500), nullable=True)
     title = Column(String(255), nullable=True)
     status = Column(String(20), default="approved", nullable=False)
+    # ZB-AI-PUB-001: only is_public=True documents may be retrieved by the
+    # UNAUTHENTICATED marketing-site assistant. Tenant/seed docs that are not
+    # public-safe must stay False so the public retrieve path can never cite
+    # them (enforced in retrieval.retrieve_public, not just in seeds).
+    is_public = Column(Boolean, default=False, server_default="0", nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
     superseded_at = Column(DateTime(timezone=True), nullable=True)
@@ -665,6 +670,7 @@ class KnowledgeDocument(Base):
 
     __table_args__ = (
         Index("ix_ai_knowledge_doc_source_status", "source_id", "status"),
+        Index("ix_ai_knowledge_doc_public_status", "is_public", "status"),
     )
 
 
@@ -790,3 +796,62 @@ class SupportAccessSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC ASSISTANT (zoikobilling.com marketing-site widget)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Auth-free, session-based chat for unauthenticated visitors. Deliberately
+# separate from AIConversation / AIConversationMessage (which require tenant
+# + user FKs): anonymous sessions hold no financial data, are kept light, and
+# are rate-limited per IP in the database (cross-worker safe).
+
+
+class PublicAssistantSession(Base):
+    """Anonymous session for the public marketing-site assistant."""
+    __tablename__ = "ai_public_assistant_session"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_uid = Column(String(36), unique=True, nullable=False, index=True)
+    ip_hash = Column(String(64), nullable=True)
+    status = Column(String(20), default="active", nullable=False)
+    message_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PublicAssistantMessage(Base):
+    """One message turn within a public assistant session."""
+    __tablename__ = "ai_public_assistant_message"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_uid = Column(String(36), unique=True, nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("ai_public_assistant_session.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_type = Column(SAEnum(SenderType, native_enum=False), nullable=False)
+    message_text = Column(Text, nullable=False)
+    mode = Column(String(20), nullable=True)
+    risk_class = Column(SAEnum(RiskClass, native_enum=False), default=RiskClass.R0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_ai_public_msg_session_created", "session_id", "created_at"),
+    )
+
+
+class PublicRateLimitCounter(Base):
+    """DB-backed per-IP window counter for the public assistant.
+
+    A row per (rate_key, window_start); incremented atomically via
+    INSERT ... ON CONFLICT ... DO UPDATE. Lives in the database (not process
+    memory like slowapi) so the limit holds across every worker process.
+    """
+    __tablename__ = "ai_public_rate_limit_counter"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rate_key = Column(String(96), nullable=False, index=True)
+    window_start = Column(DateTime(timezone=True), nullable=False, index=True)
+    count = Column(Integer, default=1, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("rate_key", "window_start", name="uq_ai_public_rate_window"),
+    )

@@ -377,20 +377,20 @@ export default function ContractDashboardPage() {
         <>
           <div className={DASHBOARD_KPI_GRID}>
             <DashboardStatCard title="Total Contracts" value={contractsTotal.toLocaleString()} icon={FileSignature} color="from-brand to-brand-hover" href="/billing/contracts" />
-            <DashboardStatCard title="Active" value={kpis.activeCount.toLocaleString()} subtitle={contractsTotal ? `${Math.round((kpis.activeCount / contractsTotal) * 100)}% of total` : undefined} icon={CheckCircle} color="from-emerald-500 to-emerald-600" href="/billing/contracts?status=active" />
+            <DashboardStatCard title="Active" value={kpis.activeCount.toLocaleString()} subtitle={contractsTotal ? `${Math.round((kpis.activeCount / contractsTotal) * 100)}% of total` : undefined} icon={CheckCircle} color="from-emerald-500 to-emerald-600" href="/billing/contracts?status=active&all_dates=1" />
             <DashboardStatCard title="Expired" value={kpis.expiredCount.toLocaleString()} subtitle={isSampled ? "In most recent sample" : undefined} icon={XCircle} color="from-slate-500 to-slate-600" href="/billing/contracts?status=expired" />
-            <DashboardStatCard title="Upcoming Expiry (30d)" value={expiringContracts.length.toLocaleString()} subtitle="Renewal window" icon={Clock} color="from-amber-500 to-orange-500" />
+            <DashboardStatCard title="Upcoming Expiry (30d)" value={expiringContracts.length.toLocaleString()} subtitle="Renewal window" icon={Clock} color="from-amber-500 to-orange-500" href="/billing/contracts?expiring=30&all_dates=1" />
           </div>
 
           <StatGroup title="More Metrics">
             <DashboardStatCard title="Renewals" value={kpis.renewals.toLocaleString()} subtitle="Active with auto-renew enabled" icon={RotateCcw} color="from-blue-500 to-cyan-500" />
-            <DashboardStatCard title="Total Contract Value" value={Number(kpis.totalValue)} currency={sampleCurrency} subtitle="Sum of all contracts" icon={DollarSign} color="from-brand to-brand-hover" sparkline={monthlyTrend.map((m) => m.value)} />
-            <DashboardStatCard title="Active Value" value={Number(kpis.activeValue)} currency={sampleCurrency} subtitle="Sum of active contracts" icon={Wallet} color="from-emerald-500 to-emerald-600" />
-            <DashboardStatCard title="Retention Rate" value={kpis.retentionRate == null ? "—" : `${kpis.retentionRate.toFixed(1)}%`} subtitle="Active vs. Active + Expired" icon={Percent} color="from-teal-500 to-green-500" />
+            <DashboardStatCard title="Total Contract Value" value={Number(kpis.totalValue)} currency={sampleCurrency} subtitle="Sum of all contracts" icon={DollarSign} color="from-brand to-brand-hover" sparkline={monthlyTrend.map((m) => m.value)} href="/billing/contracts?all_dates=1" />
+            <DashboardStatCard title="Active Value" value={Number(kpis.activeValue)} currency={sampleCurrency} subtitle="Sum of active contracts" icon={Wallet} color="from-emerald-500 to-emerald-600" href="/billing/contracts?status=active&all_dates=1" />
+            <DashboardStatCard title="Retention Rate" value={kpis.retentionRate == null ? "—" : `${kpis.retentionRate.toFixed(1)}%`} subtitle="Active vs. Active + Expired" icon={Percent} color="from-teal-500 to-green-500" href="/billing/contracts/reports?tab=status" />
           </StatGroup>
 
           <StatGroup title="Recurring Revenue">
-            <DashboardStatCard title="Monthly Recurring" value={Number(kpis.mrr)} currency={sampleCurrency} subtitle="Normalized to a monthly cadence" icon={TrendingUp} color="from-blue-500 to-blue-600" />
+            <DashboardStatCard title="Monthly Recurring" value={Number(kpis.mrr)} currency={sampleCurrency} subtitle="Normalized to a monthly cadence" icon={TrendingUp} color="from-blue-500 to-blue-600" href="/billing/contracts/reports" />
             <DashboardStatCard title="Annual Recurring" value={Number(kpis.arr)} currency={sampleCurrency} subtitle="Annualized, from active contracts" icon={TrendingUp} color="from-indigo-500 to-blue-500" href="/billing/contracts/reports" />
           </StatGroup>
 

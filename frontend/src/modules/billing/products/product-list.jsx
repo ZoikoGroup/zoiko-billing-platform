@@ -295,6 +295,16 @@ export default function ProductListPage() {
     }
   };
 
+  const hasActiveFilters = Boolean(search || statusFilter || typeFilter || categoryFilter || currencyFilter);
+  // Same full reset the import/duplicate flows already use (fetch with the
+  // clearFilters flag so no stale filter state is sent), now user-facing.
+  const clearAllFilters = () => {
+    setSearch(""); setDebouncedSearch("");
+    setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
+    setCurrentPage(1);
+    fetchProducts(false, 1, true);
+  };
+
   const handleDuplicateProduct = async (id) => {
     if (duplicatingId) return;
     setDuplicatingId(id);
@@ -801,6 +811,11 @@ export default function ProductListPage() {
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
+              {hasActiveFilters && (
+                <button onClick={clearAllFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
+                  Clear filters
+                </button>
+              )}
               <div className="relative">
                 <button onClick={() => setShowColumnMenu(!showColumnMenu)} aria-label="Choose visible columns" aria-expanded={showColumnMenu}
                   className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
@@ -1020,6 +1035,9 @@ export default function ProductListPage() {
                             : "Add your first product or service to start creating invoices, quotations, and subscriptions."}
                         </p>
                       </div>
+                      {hasActiveFilters && (
+                        <button onClick={clearAllFilters} className="px-4 py-2 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+                      )}
                       {!search && !statusFilter && !typeFilter && !categoryFilter && !currencyFilter && (
                         <div className="flex gap-3">
                           <button

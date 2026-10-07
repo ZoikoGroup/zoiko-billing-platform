@@ -67,6 +67,7 @@ export default function PricingSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const fetchSettings = useCallback(async () => {
@@ -93,8 +94,10 @@ export default function PricingSettingsPage() {
       };
       setSettings(values);
       setInitial(values);
+      setLoadFailed(false);
     } catch (err) {
       setError(err.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -140,10 +143,12 @@ export default function PricingSettingsPage() {
     );
   }
 
-  if (error && !settings.default_currency) {
+  // A failed load must never leave an editable form of defaults that Save
+  // would write over the real configuration.
+  if (loadFailed) {
     return (
       <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
-        <ErrorState message={error} onRetry={fetchSettings} />
+        <ErrorState title="Couldn't load pricing settings" message={error} onRetry={fetchSettings} />
       </HRPage>
     );
   }

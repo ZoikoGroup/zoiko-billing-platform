@@ -233,6 +233,7 @@ export const ENDPOINTS = {
   REFUNDS_MONTHLY_TREND: `${BILLING}/refunds/monthly-trend`,
   REFUNDS_BY_CUSTOMER: (customerId) => `${BILLING}/refunds/customer/${customerId}`,
   REFUNDS_CUSTOMER_SUMMARY: (customerId) => `${BILLING}/refunds/customer/${customerId}/summary`,
+  REFUNDS_REFUNDABLE_SOURCES: (customerId) => `${BILLING}/refunds/customer/${customerId}/refundable-sources`,
   REFUND: (id) => `${BILLING}/refunds/${id}`,
   REFUND_SUBMIT: (id) => `${BILLING}/refunds/${id}/submit`,
   REFUND_APPROVE: (id) => `${BILLING}/refunds/${id}/approve`,

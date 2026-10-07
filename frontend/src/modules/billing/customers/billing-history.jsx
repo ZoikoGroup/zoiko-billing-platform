@@ -104,6 +104,14 @@ export default function BillingHistoryPage() {
 
   const [currentPage, setCurrentPage] = useState(1);
 
+  const hasActiveFilters = Boolean(search || statusFilter || dateStart || dateEnd);
+  // One reset for every filter on the page (search, status, dates) -- there
+  // was no way to clear them except one by one.
+  const clearFilters = () => {
+    setSearch(""); setDebouncedSearch(""); setStatusFilter("");
+    setDateStart(""); setDateEnd(""); setCurrentPage(1);
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
@@ -259,13 +267,15 @@ export default function BillingHistoryPage() {
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
                 />
                 {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600">
+                  <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600">
                     <X size={16} />
                   </button>
                 )}
               </div>
               <button
                 onClick={() => setShowFilters(!showFilters)}
+                aria-label="Toggle filters"
+                aria-pressed={showFilters}
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
               >
                 <Filter size={18} />
@@ -273,6 +283,11 @@ export default function BillingHistoryPage() {
               <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
+                  Clear filters
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
@@ -286,6 +301,7 @@ export default function BillingHistoryPage() {
               <div className="relative">
                 <select
                   value={statusFilter}
+                  aria-label="Filter by status"
                   onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"
                 >
@@ -322,7 +338,7 @@ export default function BillingHistoryPage() {
         <div className="border-b border-slate-100">
           <div className="flex">
             <button
-              onClick={() => { setActiveTab("invoices"); setCurrentPage(1); setError(null); setShowFilters(false); }}
+              onClick={() => { setActiveTab("invoices"); setStatusFilter(""); setCurrentPage(1); setError(null); setShowFilters(false); }}
               className={`relative px-6 py-3 text-sm font-medium transition-colors ${
                 activeTab === "invoices"
                   ? "text-brand-600 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand-600"
@@ -335,7 +351,7 @@ export default function BillingHistoryPage() {
               </div>
             </button>
             <button
-              onClick={() => { setActiveTab("payments"); setCurrentPage(1); setError(null); setShowFilters(false); }}
+              onClick={() => { setActiveTab("payments"); setStatusFilter(""); setCurrentPage(1); setError(null); setShowFilters(false); }}
               className={`relative px-6 py-3 text-sm font-medium transition-colors ${
                 activeTab === "payments"
                   ? "text-brand-600 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand-600"
@@ -370,7 +386,10 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <FileText size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No invoices found</p>
-                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No invoices have been created yet"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "No invoices match your filters" : "No invoices have been created yet"}</p>
+                        {hasActiveFilters && (
+                          <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -405,7 +424,10 @@ export default function BillingHistoryPage() {
                       <div className="flex flex-col items-center">
                         <CreditCard size={40} className="text-slate-300 mb-3" />
                         <p className="text-slate-500 font-medium">No payments found</p>
-                        <p className="text-slate-500 text-sm mt-1">{search || statusFilter || dateStart || dateEnd ? "Try adjusting your search or filters" : "No payments have been recorded yet"}</p>
+                        <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "No payments match your filters" : "No payments have been recorded yet"}</p>
+                        {hasActiveFilters && (
+                          <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+                        )}
                       </div>
                     </td>
                   </tr>

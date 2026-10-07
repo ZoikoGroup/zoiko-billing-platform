@@ -17,6 +17,7 @@ import {
   BusinessInsights, QuickActions, ActionCenter,
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
+import { REFUND_IN_FLIGHT_STATUSES, REFUND_FAILED_OR_CANCELLED_STATUSES } from "./refund-constants";
 
 const REFUND_CRUMBS = [{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments" }, { label: "Refunds" }];
 
@@ -162,7 +163,7 @@ export default function RefundDashboard() {
         icon: Ban, tone: "danger", priority: "low",
         title: `${kpis.failedCount + kpis.cancelledCount} refund${kpis.failedCount + kpis.cancelledCount === 1 ? "" : "s"} failed or cancelled`,
         description: "Needs follow-up or a re-issue",
-        href: "/billing/refunds?status=failed",
+        href: `/billing/refunds?status=${REFUND_FAILED_OR_CANCELLED_STATUSES}`,
       });
     }
     return items;
@@ -265,10 +266,10 @@ export default function RefundDashboard() {
       </div>
 
       <StatGroup title="More Metrics">
-        <EnterpriseStatCard title="Total Value" value={Number(kpis.totalValue)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[0]} sparkline={dashboard.monthlyTrend.map((m) => m.total_amount)} />
-        <EnterpriseStatCard title="Completed Value" value={Number(kpis.completedValue)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} />
-        <EnterpriseStatCard title="Outstanding (In Flight)" value={Number(kpis.outstandingValue)} currency={baseCurrency} icon={Clock} color={CARD_GRADIENTS[2]} />
-        <EnterpriseStatCard title="Failed / Cancelled" value={(kpis.failedCount + kpis.cancelledCount).toLocaleString()} icon={Ban} color={CARD_GRADIENTS[4]} href="/billing/refunds?status=failed" />
+        <EnterpriseStatCard title="Total Value" value={Number(kpis.totalValue)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[0]} sparkline={dashboard.monthlyTrend.map((m) => m.total_amount)} href="/billing/refunds" />
+        <EnterpriseStatCard title="Completed Value" value={Number(kpis.completedValue)} currency={baseCurrency} icon={CheckCircle} color={CARD_GRADIENTS[1]} href="/billing/refunds?status=completed" />
+        <EnterpriseStatCard title="Outstanding (In Flight)" value={Number(kpis.outstandingValue)} currency={baseCurrency} icon={Clock} color={CARD_GRADIENTS[2]} href={`/billing/refunds?status=${REFUND_IN_FLIGHT_STATUSES}`} />
+        <EnterpriseStatCard title="Failed / Cancelled" value={(kpis.failedCount + kpis.cancelledCount).toLocaleString()} icon={Ban} color={CARD_GRADIENTS[4]} href={`/billing/refunds?status=${REFUND_FAILED_OR_CANCELLED_STATUSES}`} />
       </StatGroup>
 
       <QuickActions actions={refundQuickActions} />

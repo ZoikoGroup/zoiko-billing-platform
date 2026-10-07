@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useUrlTab } from "../utils/useListUrlFilters";
 import { Download, RefreshCw, TrendingUp, PieChart as PieChartIcon,
   BarChart3, FileText, Clock } from "lucide-react"
 import {
@@ -23,7 +24,8 @@ const TABS = [
 export default function ContractReportsPage() {
   const { singular } = useTerminology();
   const { range, setRange, customStart, setCustomStart, customEnd, setCustomEnd } = useDateRange();
-  const [activeTab, setActiveTab] = useState("overview");
+  // ?tab=<key> deep links (dashboard KPI cards open the tab for their metric).
+  const [activeTab, setActiveTab] = useUrlTab(TABS.map((t) => t.key), "overview");
   const [refreshing, setRefreshing] = useState(false);
 
   const [contracts, setContracts] = useState([]);

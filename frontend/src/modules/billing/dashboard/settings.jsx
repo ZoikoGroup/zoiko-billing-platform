@@ -13,7 +13,8 @@ import {
 } from "../../../utils/currency";
 import { getLanguageSelectOptions } from "../../../utils/language";
 import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
-import { formatLastUpdated, DashboardHeader } from "../../../components/billing-shared";
+import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
+import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -716,6 +717,10 @@ export default function BillingSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState(null);
+  // True when the organization's configuration could not be read. The page
+  // then shows an error with Retry instead of an editable form, so Save can
+  // never write defaults over configuration it never saw.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -909,16 +914,11 @@ export default function BillingSettingsPage() {
 
       if (configData.status === "rejected") {
         const reason = configData.reason?.message || String(configData.reason || "Unknown error");
-        // Config fetch rejected — initialize with defaults
-        // Ensure UI remains editable and dirty-tracking works even when the
-        // backend fails to respond. Initialize form + original from defaults
-        // so user can still make changes locally and Save/Reset become active
-        // once edits occur.
-        const merged = { ...defaultForm };
-        // Initialized with defaults due to config fetch failure
-        setForm(merged);
-        setOriginal(JSON.parse(JSON.stringify(merged)));
+        // Do NOT fall back to an editable form of defaults: Save would then
+        // overwrite the organization's real (unloaded) configuration with
+        // them. Show the error with Retry instead.
         setError(`Failed to load billing configuration: ${reason}`);
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -938,6 +938,7 @@ export default function BillingSettingsPage() {
       setForm(merged);
       const deep = JSON.parse(JSON.stringify(merged));
       setOriginal(deep);
+      setLoadFailed(false);
 
       const initialStatus = {};
       const country = merged.country;
@@ -960,6 +961,7 @@ export default function BillingSettingsPage() {
     } catch (err) {
       console.error("[BillingConfiguration] fetchConfig threw after fetch resolved:", err);
       setError("Failed to load billing configuration. The backend may not be available.");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -1371,6 +1373,14 @@ export default function BillingSettingsPage() {
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
+        <ErrorState title="Couldn't load billing configuration" message={error} onRetry={fetchConfig} />
       </div>
     );
   }
@@ -2284,7 +2294,7 @@ export default function BillingSettingsPage() {
               <Field label="Tax Registration Number">
                 <Input id="tax_number" value={form.tax_number} onChange={(e) => update("tax_number", e.target.value)} />
               </Field>
-              <Field label="Tax Rounding Method">
+              <Field label="Tax Rounding Method" description={TAX_ROUNDING_NOT_APPLIED_NOTICE}>
                 <Select id="tax_rounding_method" value={form.tax_rounding_method} onChange={(e) => update("tax_rounding_method", e.target.value)}
                   options={[{value:"per_line",label:"Per Line"},{value:"per_invoice",label:"Per Invoice"},{value:"per_line_item",label:"Per Line Item"}]} />
               </Field>

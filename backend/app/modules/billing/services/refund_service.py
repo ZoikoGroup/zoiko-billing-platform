@@ -16,6 +16,8 @@ from app.modules.billing.models import (
     CommunicationEventType,
     CreditNoteStatus,
     InvoiceStatus,
+    Payment,
+    PaymentStatus,
     Refund,
     RefundCommunication,
     RefundSource,
@@ -35,6 +37,8 @@ from app.modules.billing.services.base import (
     filter_allowed, render_document_number, safe_commit_and_refresh, sequence_window_start,
 )
 from app.modules.billing.models import Refund as RefundModel
+from app.modules.billing.models import CreditNote as CreditNoteModel
+from app.modules.billing.models import Invoice as InvoiceModel
 from app.modules.billing.models import NumberFormat, SequenceReset
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.invoice_service import InvoiceService
@@ -153,7 +157,7 @@ class RefundService:
         if idempotency_key:
             existing = self.repo.get_first(organization_id, idempotency_key=idempotency_key)
             if existing:
-                return existing
+                return self._idempotent_replay(existing, customer_id, amount, data)
 
         customer = self.customer_service.get_customer(customer_id, organization_id)
 
@@ -177,6 +181,16 @@ class RefundService:
             payment = self.payment_repo.get_by_id_for_update(payment_id, organization_id)
             if payment.customer_id != customer_id:
                 raise BadRequestException("Payment does not belong to this customer")
+            # Only money that actually cleared can be returned. The UI only
+            # offers cleared payments, but this must hold for direct API
+            # callers too: a pending/processing payment has not settled, a
+            # failed/cancelled one never moved money, and a REFUNDED one is
+            # already fully returned.
+            if payment.status != PaymentStatus.CLEARED:
+                status_label = getattr(payment.status, "value", payment.status)
+                raise BadRequestException(
+                    f"Only cleared payments can be refunded; payment {payment.payment_number} is '{status_label}'."
+                )
         if invoice_id:
             invoice = self.invoice_repo.get_by_id_for_update(invoice_id, organization_id)
             if invoice.customer_id != customer_id:
@@ -255,20 +269,60 @@ class RefundService:
             if amount > remaining:
                 raise BadRequestException(f"Refund amount {amount} exceeds the credit note's remaining balance {remaining}")
         else:  # CUSTOMER_CREDIT_BALANCE
-            available = Decimal(str(customer.credit_balance or 0))
+            # Row-lock the customer so two concurrent requests can't both see
+            # the same headroom, and subtract credit-balance refunds already in
+            # flight: the balance is only decremented when a refund completes
+            # (complete_refund), so without this several drafts could each pass
+            # and jointly exceed the balance.
+            locked_customer = self.customer_service.repo.get_by_id_for_update(customer_id, organization_id)
+            balance = Decimal(str(locked_customer.credit_balance or 0))
+            in_flight = self.repo.get_in_flight_credit_balance_refunds(organization_id, customer_id)
+            available = balance - in_flight
             if amount > available:
                 raise BadRequestException(
-                    f"Refund amount {amount} exceeds the customer's available credit balance {available}"
+                    f"Refund amount {amount} exceeds the customer's available credit balance {available} "
+                    f"(balance: {balance}, already committed to other refunds: {in_flight})"
                 )
 
-        refund = self.repo.create(
-            organization_id, customer_id=customer_id,
-            refund_number=refund_number, refund_type=refund_type,
-            amount=amount, status=RefundStatus.DRAFT, created_by=created_by, **data,
-        )
+        try:
+            refund = self.repo.create(
+                organization_id, customer_id=customer_id,
+                refund_number=refund_number, refund_type=refund_type,
+                amount=amount, status=RefundStatus.DRAFT, created_by=created_by, **data,
+            )
+        except AlreadyExistsException:
+            # A concurrent request with the same idempotency key won the race
+            # between the replay lookup above and this insert (the
+            # uq_refunds_org_idempotency_key constraint rejected ours): return
+            # that refund rather than a conflict, so retries stay deterministic.
+            if idempotency_key:
+                existing = self.repo.get_first(organization_id, idempotency_key=idempotency_key)
+                if existing:
+                    return self._idempotent_replay(existing, customer_id, amount, data)
+            raise
         self._record_status_history(organization_id, refund.id, None, RefundStatus.DRAFT.value, created_by)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Refund", refund.id, new_values=data)
         return refund
+
+    @staticmethod
+    def _idempotent_replay(existing: Refund, customer_id: int, amount: Decimal, data: Dict[str, Any]) -> Refund:
+        """Return the refund an earlier request with this idempotency key
+        created -- but only if this request is the same financial operation.
+        Reusing a key for a different customer/amount/source would otherwise
+        silently return an unrelated refund (the same rule as the invoice
+        module's find_idempotent_invoice)."""
+        source = getattr(existing.refund_source, "value", existing.refund_source)
+        same = (
+            existing.customer_id == customer_id
+            and Decimal(str(existing.amount)) == Decimal(str(amount))
+            and source == getattr(data.get("refund_source"), "value", data.get("refund_source") or source)
+            and existing.payment_id == data.get("payment_id")
+            and existing.invoice_id == data.get("invoice_id")
+            and existing.credit_note_id == data.get("credit_note_id")
+        )
+        if not same:
+            raise AlreadyExistsException("Refund", "idempotency_key")
+        return existing
 
     def update_refund(self, refund_id: int, organization_id: int, updated_by: int, **data: Any) -> Refund:
         data = filter_allowed(data, REFUND_ALLOWED_FIELDS)
@@ -645,6 +699,122 @@ class RefundService:
             "outstanding_refund_requests": float(outstanding),
             "refund_count": len(refunds),
             "completed_count": len(completed),
+        }
+
+    def list_refundable_payments(self, organization_id: int, customer_id: int) -> List[Dict[str, Any]]:
+        """Payments of this customer that a new refund may be raised against,
+        each with the amount still refundable. Applies exactly the rules
+        create_refund enforces for refund_source='payment' -- payment is
+        CLEARED, belongs to the customer, and its committed refunds (every
+        non-failed/rejected/cancelled refund, see _get_total_reserved) leave
+        something to refund -- so the New Refund form never offers a payment
+        the create call would reject, and can show the real ceiling."""
+        self.customer_service.get_customer(customer_id, organization_id)
+        payments = (
+            self.db.query(Payment)
+            .filter(
+                Payment.organization_id == organization_id,
+                Payment.customer_id == customer_id,
+                Payment.is_active == True,
+                Payment.status == PaymentStatus.CLEARED,
+            )
+            .order_by(Payment.payment_date.desc(), Payment.id.desc())
+            .limit(200)
+            .all()
+        )
+        result = []
+        for p in payments:
+            amount = Decimal(str(p.amount))
+            reserved = self.repo.get_total_reserved_for_payment(organization_id, p.id)
+            refundable = amount - reserved
+            if refundable <= 0:
+                continue
+            result.append({
+                "id": p.id,
+                "payment_number": p.payment_number,
+                "payment_date": p.payment_date.isoformat() if p.payment_date else None,
+                "currency": p.currency,
+                "amount": float(amount),
+                "reserved_amount": float(reserved),
+                "refundable_amount": float(refundable),
+            })
+        return result
+
+    def list_refundable_sources(self, organization_id: int, customer_id: int) -> Dict[str, Any]:
+        """Everything a new refund for this customer can be drawn from, each
+        with the amount still refundable -- computed with exactly the rules
+        create_refund enforces per source, so the New Refund form can show a
+        ceiling the server will actually accept:
+
+          payment       : CLEARED, amount - every committed refund
+          invoice       : not CANCELLED, paid_amount - every committed refund
+          credit note   : ISSUED/PARTIALLY_APPLIED, remaining - committed refunds
+          credit balance: balance - credit-balance refunds still in flight
+
+        Read-only and tenant-scoped (get_customer 404s for another org)."""
+        customer = self.customer_service.get_customer(customer_id, organization_id)
+
+        invoices = (
+            self.db.query(InvoiceModel)
+            .filter(
+                InvoiceModel.organization_id == organization_id,
+                InvoiceModel.customer_id == customer_id,
+                InvoiceModel.is_active == True,
+                InvoiceModel.status != InvoiceStatus.CANCELLED,
+                InvoiceModel.paid_amount > 0,
+            )
+            .order_by(InvoiceModel.issue_date.desc(), InvoiceModel.id.desc())
+            .limit(200)
+            .all()
+        )
+        invoice_rows = []
+        for inv in invoices:
+            paid = Decimal(str(inv.paid_amount or 0))
+            reserved = self.repo.get_total_reserved_for_invoice(organization_id, inv.id)
+            refundable = paid - reserved
+            if refundable > 0:
+                invoice_rows.append({
+                    "id": inv.id, "invoice_number": inv.invoice_number, "currency": inv.currency,
+                    "paid_amount": float(paid), "reserved_amount": float(reserved),
+                    "refundable_amount": float(refundable),
+                })
+
+        credit_notes = (
+            self.db.query(CreditNoteModel)
+            .filter(
+                CreditNoteModel.organization_id == organization_id,
+                CreditNoteModel.customer_id == customer_id,
+                CreditNoteModel.is_active == True,
+                CreditNoteModel.status.in_([CreditNoteStatus.ISSUED, CreditNoteStatus.PARTIALLY_APPLIED]),
+            )
+            .order_by(CreditNoteModel.issue_date.desc(), CreditNoteModel.id.desc())
+            .limit(200)
+            .all()
+        )
+        credit_note_rows = []
+        for cn in credit_notes:
+            remaining = Decimal(str(cn.remaining_amount or 0))
+            reserved = self.repo.get_total_reserved_for_credit_note(organization_id, cn.id)
+            refundable = remaining - reserved
+            if refundable > 0:
+                credit_note_rows.append({
+                    "id": cn.id, "credit_note_number": cn.credit_note_number, "currency": cn.currency,
+                    "remaining_amount": float(remaining), "reserved_amount": float(reserved),
+                    "refundable_amount": float(refundable),
+                })
+
+        balance = Decimal(str(customer.credit_balance or 0))
+        in_flight = self.repo.get_in_flight_credit_balance_refunds(organization_id, customer_id)
+        return {
+            "payments": self.list_refundable_payments(organization_id, customer_id),
+            "invoices": invoice_rows,
+            "credit_notes": credit_note_rows,
+            "credit_balance": {
+                "currency": customer.currency,
+                "balance": float(balance),
+                "reserved_amount": float(in_flight),
+                "refundable_amount": float(max(balance - in_flight, Decimal("0"))),
+            },
         }
 
     # ── Dashboard / Reporting ───────────────────────────────────────────────

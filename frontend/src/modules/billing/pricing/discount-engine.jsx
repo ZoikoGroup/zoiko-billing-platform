@@ -29,13 +29,61 @@ const VALUE_TYPE_OPTIONS = [
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
+// Business rule (backend validators.validate_validity_date_range): Valid To,
+// when set, must be AFTER Valid From. Datetime-local strings compare
+// correctly as strings; Date parsing avoids format edge cases.
+export function validateDiscountDates(validFrom, validTo) {
+  if (!validTo) return null;
+  const from = new Date(validFrom).getTime();
+  const to = new Date(validTo).getTime();
+  if (Number.isNaN(to)) return "Valid to is not a valid date";
+  if (!Number.isNaN(from) && to <= from) return "Valid to must be after valid from";
+  return null;
+}
+
+// Helper text under Valid To: explains an empty value, and warns (without
+// blocking) when a NEW discount would already be expired.
+export function discountDatesNote(form, isEdit) {
+  if (!form.valid_to) return { tone: "info", text: "Leave empty for no end date." };
+  if (!isEdit && new Date(form.valid_to).getTime() < Date.now()) {
+    return { tone: "warn", text: "This date is in the past, so the discount will already be expired." };
+  }
+  return { tone: "info", text: "The discount stops applying after this date and time." };
+}
+
 function StatusBadge({ status }) {
   const colors = { draft: "bg-slate-100 text-slate-600", active: "bg-green-100 text-green-700", paused: "bg-amber-100 text-amber-700", expired: "bg-red-100 text-red-600", exhausted: "bg-orange-100 text-orange-600", cancelled: "bg-slate-100 text-slate-500", pending_approval: "bg-blue-100 text-blue-600" };
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-slate-100 text-slate-700"}`}>{status?.replace("_", " ") || "unknown"}</span>;
 }
 
+// <input type="datetime-local"> holds LOCAL wall-clock time, and the payload
+// converts it back with new Date(localValue).toISOString(). Filling the input
+// from toISOString() (UTC) shifted every date by the UTC offset: in IST a new
+// discount started 5h30 in the past, and each save of an unchanged discount
+// moved its dates 5h30 earlier.
+//
+// Discount.valid_from/valid_to are timezone-naive columns holding UTC (the
+// payload is a UTC instant, Postgres drops the offset, and the active-window
+// query compares against datetime.utcnow()), so the API returns them WITHOUT
+// an offset. JS would parse such a string as local time, so an offset-less API
+// value is read as UTC here; values that carry Z/an offset are used as-is.
+export function parseApiUtcDatetime(value) {
+  if (value instanceof Date) return value;
+  const s = String(value ?? "").trim();
+  const hasTime = /T\d{2}:\d{2}/.test(s);
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  return new Date(hasTime && !hasOffset ? `${s}Z` : s);
+}
+
+export function toLocalDatetimeInput(value) {
+  const d = parseApiUtcDatetime(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function nowIsoDatetime() {
-  return new Date().toISOString().slice(0, 16);
+  return toLocalDatetimeInput(new Date());
 }
 
 const EMPTY_FORM = {
@@ -63,8 +111,8 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
 
   useEffect(() => {
     if (editItem) {
-      const vf = editItem.valid_from ? new Date(editItem.valid_from).toISOString().slice(0, 16) : "";
-      const vt = editItem.valid_to ? new Date(editItem.valid_to).toISOString().slice(0, 16) : "";
+      const vf = editItem.valid_from ? toLocalDatetimeInput(editItem.valid_from) : "";
+      const vt = editItem.valid_to ? toLocalDatetimeInput(editItem.valid_to) : "";
       setForm({
         name: editItem.name || "", code: editItem.code || "", description: editItem.description || "",
         discount_type: editItem.discount_type || "coupon", discount_value: editItem.discount_value ?? "",
@@ -93,6 +141,8 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
     if (!form.name.trim()) return setFormError("Name is required");
     if (form.discount_value === "" || Number(form.discount_value) < 0) return setFormError("Discount value is required");
     if (!form.valid_from) return setFormError("Valid from date is required");
+    const rangeError = validateDiscountDates(form.valid_from, form.valid_to);
+    if (rangeError) return setFormError(rangeError);
 
     const payload = {
       name: form.name.trim(),
@@ -118,7 +168,13 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
       first_order_only: form.first_order_only,
     };
 
-    await onSave(payload);
+    try {
+      await onSave(payload);
+    } catch (e) {
+      // Shown in the form (the backend's own date-range 422 included), not
+      // behind it on the page.
+      setFormError(e?.detail || e?.message || "Failed to save discount");
+    }
   };
 
   return (
@@ -129,7 +185,7 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
           <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="px-6 py-4 space-y-4">
-          {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+          {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
             <div><label className="block text-xs font-medium text-slate-500 mb-1">Code</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. SUMMER25" /></div>
@@ -158,8 +214,19 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
             <div><label className="block text-xs font-medium text-slate-500 mb-1">Max Discount</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.max_discount_amount} onChange={e => set("max_discount_amount", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Valid From *</label><input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_from} onChange={e => set("valid_from", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Valid To</label><input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_to} onChange={e => set("valid_to", e.target.value)} /></div>
+            <div><label htmlFor="discount-valid-from" className="block text-xs font-medium text-slate-500 mb-1">Valid From *</label><input id="discount-valid-from" type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_from} onChange={e => set("valid_from", e.target.value)} /></div>
+            <div>
+              <label htmlFor="discount-valid-to" className="block text-xs font-medium text-slate-500 mb-1">Valid To</label>
+              {/* The picker can't go before Valid From (the backend rejects
+                  Valid To <= Valid From). Past dates are NOT blocked outright:
+                  existing discounts legitimately carry historical dates. */}
+              <input id="discount-valid-to" type="datetime-local" min={form.valid_from || undefined}
+                aria-describedby="discount-valid-to-hint"
+                className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_to} onChange={e => set("valid_to", e.target.value)} />
+              <p id="discount-valid-to-hint" className={`mt-1 text-xs ${discountDatesNote(form, Boolean(editItem)).tone === "warn" ? "text-amber-600" : "text-slate-500"}`}>
+                {discountDatesNote(form, Boolean(editItem)).text}
+              </p>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div><label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
@@ -258,8 +325,7 @@ export default function DiscountEnginePage() {
       setShowForm(false);
       setEditItem(null);
       fetchData();
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+    } finally { setSaving(false); }
   };
 
   return (

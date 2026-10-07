@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Undo2, Send, Ban, Eye, Loader2, Clock, CheckCircle, Wallet,
 } from "lucide-react";
-import { refundApi, customerApi, paymentApi, invoiceApi, creditNoteApi } from "../../../service/billingService";
+import { refundApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import {
   Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
@@ -12,11 +12,14 @@ import {
 import {
   Button, ListToolbar, FormModal, DataTable, Field, Select,
 } from "../../../components/billing-ui";
+import { REFUND_IN_FLIGHT_STATUSES, REFUND_FAILED_OR_CANCELLED_STATUSES } from "./refund-constants";
 
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_OPTIONS = [
   { value: "", label: "All Statuses" },
+  { value: REFUND_IN_FLIGHT_STATUSES, label: "In Flight (outstanding)" },
+  { value: REFUND_FAILED_OR_CANCELLED_STATUSES, label: "Failed / Cancelled / Rejected" },
   { value: "draft", label: "Draft" },
   { value: "pending_approval", label: "Pending Approval" },
   { value: "approved", label: "Approved" },
@@ -54,6 +57,28 @@ const METHOD_OPTIONS = [
   { value: "manual_adjustment", label: "Manual Adjustment" },
 ];
 
+// Client-side mirror of the backend refund guards (RefundCreate.amount gt=0
+// and RefundService.create_refund's per-source ceiling) so the user sees the
+// problem inline before submitting. The backend stays authoritative --
+// in particular the invoice/credit-note ceilings below don't know about
+// refunds already committed against them, so the server may still refuse.
+// Compared in integer cents to avoid float drift (0.1 + 0.2 style).
+export function validateRefundAmount(raw, ceiling, currency) {
+  if (raw === "" || raw == null) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return "Enter an amount greater than zero.";
+  if (!/^\d+(\.\d{1,2})?$/.test(String(raw).trim())) return "Amount can have at most 2 decimal places.";
+  if (ceiling != null && Math.round(n * 100) > Math.round(Number(ceiling) * 100)) {
+    return `Amount exceeds the refundable amount of ${formatDisplayCurrency(ceiling, currency)}.`;
+  }
+  return null;
+}
+
+function newIdempotencyKey() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return `refund-${crypto.randomUUID()}`;
+  return `refund-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 const emptyCreateForm = (currency) => ({
   customer_id: "", refund_source: "payment", payment_id: "", invoice_id: "", credit_note_id: "",
   refund_type: "partial", amount: "", currency, refund_method: "", reference_number: "", reason: "",
@@ -76,7 +101,9 @@ export default function RefundsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
   const [typeFilter, setTypeFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  // Open the filter row when arriving via a ?status= deep link (dashboard
+  // tiles) so the applied filter is visible, not just silently in effect.
+  const [showFilters, setShowFilters] = useState(Boolean(searchParams.get("status")));
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
@@ -88,6 +115,15 @@ export default function RefundsPage() {
   const [invoices, setInvoices] = useState([]);
   const [creditNotes, setCreditNotes] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [sourcesError, setSourcesError] = useState(null);
+  // Server-computed customer credit available for refunds (balance minus
+  // credit-balance refunds already in flight) -- from listRefundableSources.
+  const [creditBalance, setCreditBalance] = useState(null);
+  // One key per form session, sent with every create attempt from it: if a
+  // request times out after the server created the refund, the retry returns
+  // that refund instead of creating a second one.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [formError, setFormError] = useState(null);
@@ -158,10 +194,16 @@ export default function RefundsPage() {
           refund_source: "invoice",
           customer_id: inv.customer_id ? String(inv.customer_id) : p.customer_id,
           invoice_id: String(inv.id),
-          amount: String(inv.balance_due ?? inv.total_amount ?? p.amount ?? ""),
+          // An invoice refund is capped at what was actually paid on it
+          // (RefundService: amount <= paid_amount - committed refunds).
+          // Prefilling balance_due -- the UNPAID amount -- produced an
+          // amount the server always rejected as exceeding the refundable
+          // paid amount (or 0 for a fully paid invoice).
+          amount: inv.paid_amount != null && Number(inv.paid_amount) > 0 ? String(inv.paid_amount) : "",
           currency: inv.currency || p.currency,
         }));
         setInvoices((prev) => (prev.some((item) => item.id === inv.id) ? prev : [inv, ...prev]));
+        if (inv.customer_id) loadSources(String(inv.customer_id));
         if (inv.customer_id) {
           const customer = await customerApi.get(inv.customer_id).catch(() => null);
           if (!cancelled && customer) {
@@ -187,28 +229,84 @@ export default function RefundsPage() {
   const openCreateModal = () => {
     setCreateForm(emptyCreateForm(""));
     setSelectedCustomer(null);
-    setPayments([]); setInvoices([]); setCreditNotes([]);
+    setPayments([]); setInvoices([]); setCreditNotes([]); setCreditBalance(null);
+    setSourcesError(null); setSourcesLoading(false);
+    setIdempotencyKey(newIdempotencyKey());
     setFormError(null); setShowCreateModal(true);
+  };
+
+  // Every source this customer can be refunded from, each with the amount
+  // still refundable as computed by the server with the same rules it
+  // enforces on create (committed refunds already subtracted). A failure is
+  // shown as an error with Retry -- never as an empty "nothing to refund".
+  const loadSources = async (customerId) => {
+    setSourcesLoading(true); setSourcesError(null);
+    try {
+      const res = await refundApi.listRefundableSources(customerId);
+      setPayments(extractArray(res?.payments));
+      setInvoices(extractArray(res?.invoices));
+      setCreditNotes(extractArray(res?.credit_notes));
+      setCreditBalance(res?.credit_balance || null);
+    } catch (err) {
+      setPayments([]); setInvoices([]); setCreditNotes([]); setCreditBalance(null);
+      setSourcesError(`Unable to load refundable payments, invoices and credit notes for this customer${err?.message ? ` (${err.message})` : ""}.`);
+    } finally {
+      setSourcesLoading(false);
+    }
   };
 
   const handleCustomerChange = async (customerId) => {
     setCreateForm((p) => ({ ...p, customer_id: customerId, payment_id: "", invoice_id: "", credit_note_id: "" }));
+    setPayments([]); setInvoices([]); setCreditNotes([]); setCreditBalance(null); setSourcesError(null);
     if (!customerId) { setSelectedCustomer(null); return; }
     try {
       const customer = await customerApi.get(customerId);
       setSelectedCustomer(customer);
       setCreateForm((p) => ({ ...p, currency: customer.currency || p.currency }));
     } catch (e) { setSelectedCustomer(null); }
-    try {
-      const [payRes, invRes, cnRes] = await Promise.all([
-        paymentApi.list({ customer_id: customerId, per_page: 50, status: "cleared" }).catch(() => null),
-        invoiceApi.list({ customer_id: customerId, per_page: 50, status: "paid,partially_paid,sent,overdue" }).catch(() => null),
-        creditNoteApi.list({ customer_id: customerId, per_page: 50, status: "issued,partially_applied" }).catch(() => null),
-      ]);
-      setPayments(payRes ? extractArray(payRes) : []);
-      setInvoices(invRes ? extractArray(invRes) : []);
-      setCreditNotes(cnRes ? extractArray(cnRes) : []);
-    } catch (e) { /* silent */ }
+    await loadSources(customerId);
+  };
+
+  // The entity the refund is drawn from, with the currency it must be issued
+  // in and the most that can be refunded from it. The refund currency is
+  // always taken from the source: the backend rejects any refund whose
+  // currency differs from its payment/invoice/credit note, and the form used
+  // to send the customer's default currency regardless of the source chosen.
+  const refundSource = (() => {
+    const f = createForm;
+    if (f.refund_source === "payment") {
+      const p = payments.find((x) => String(x.id) === String(f.payment_id));
+      return p ? { currency: p.currency, ceiling: p.refundable_amount, total: p.amount, committed: p.reserved_amount, kind: "payment" } : null;
+    }
+    if (f.refund_source === "invoice") {
+      const inv = invoices.find((x) => String(x.id) === String(f.invoice_id));
+      // refundable_amount comes from listRefundableSources; a deep-linked
+      // invoice not (yet) in that list falls back to its paid amount and the
+      // server stays authoritative.
+      return inv ? { currency: inv.currency, ceiling: Number(inv.refundable_amount ?? inv.paid_amount ?? 0), committed: inv.reserved_amount, kind: "invoice" } : null;
+    }
+    if (f.refund_source === "credit_note") {
+      const cn = creditNotes.find((x) => String(x.id) === String(f.credit_note_id));
+      return cn ? { currency: cn.currency, ceiling: Number(cn.refundable_amount ?? cn.remaining_amount ?? 0), committed: cn.reserved_amount, kind: "credit_note" } : null;
+    }
+    if (f.refund_source === "customer_credit_balance" && (creditBalance || selectedCustomer)) {
+      return creditBalance
+        ? { currency: creditBalance.currency || selectedCustomer?.currency, ceiling: Number(creditBalance.refundable_amount || 0), committed: creditBalance.reserved_amount, kind: "credit_balance" }
+        : { currency: selectedCustomer.currency, ceiling: Number(selectedCustomer.credit_balance || 0), kind: "credit_balance" };
+    }
+    return null;
+  })();
+  const refundCurrency = refundSource?.currency || createForm.currency;
+  const amountError = validateRefundAmount(createForm.amount, refundSource?.ceiling, refundCurrency);
+
+  // Field hint for a source dropdown: distinguishes "pick a customer first",
+  // "loading", and "this customer has none" (an API failure is shown
+  // separately, with Retry, by the sourcesError banner).
+  const sourceHint = (count, noun, rule) => {
+    if (!createForm.customer_id) return `Select a customer to see their refundable ${noun}.`;
+    if (sourcesLoading) return `Loading refundable ${noun}…`;
+    if (count === 0 && !sourcesError) return `No refundable ${noun} are available for this customer. ${rule}`;
+    return undefined;
   };
 
   const handleSourceChange = (source) => {
@@ -221,7 +319,12 @@ export default function RefundsPage() {
     (createForm.refund_source !== "credit_note" || createForm.credit_note_id);
 
   const handleCreate = async () => {
-    if (!canSubmitAmount) return;
+    if (saving) return;
+    if (!canSubmitAmount) {
+      setFormError("Select a customer, the refund source and an amount before creating the refund.");
+      return;
+    }
+    if (amountError) { setFormError(amountError); return; }
     try {
       setSaving(true); setFormError(null);
       const body = {
@@ -230,10 +333,11 @@ export default function RefundsPage() {
         refund_type: createForm.refund_type,
         refund_source: createForm.refund_source,
         amount: Number(createForm.amount),
-        currency: createForm.currency || undefined,
+        currency: refundCurrency || undefined,
         refund_method: createForm.refund_method || undefined,
         reference_number: createForm.reference_number || undefined,
         reason: createForm.reason || undefined,
+        idempotency_key: idempotencyKey,
       };
       if (createForm.refund_source === "payment") body.payment_id = Number(createForm.payment_id);
       if (createForm.refund_source === "invoice") body.invoice_id = Number(createForm.invoice_id);
@@ -242,7 +346,9 @@ export default function RefundsPage() {
       setShowCreateModal(false);
       fetchRefunds();
     } catch (err) {
-      setFormError(err?.detail || err?.message || "Failed to create refund");
+      setFormError(err?.status === 409
+        ? "A refund from this form was already submitted. Close the form and check the refunds list before trying again."
+        : (err?.detail || err?.message || "Failed to create refund"));
     } finally { setSaving(false); }
   };
 
@@ -447,7 +553,10 @@ export default function RefundsPage() {
         </Field>
         {selectedCustomer && (
           <p className="-mt-2 text-xs text-slate-500">
-            Available credit balance: {formatDisplayCurrency(selectedCustomer.credit_balance || 0, "—", selectedCustomer.currency)}
+            Credit balance available to refund: {formatDisplayCurrency(creditBalance ? creditBalance.refundable_amount : (selectedCustomer.credit_balance || 0), "—", selectedCustomer.currency)}
+            {creditBalance && Number(creditBalance.reserved_amount) > 0 && (
+              <> ({formatDisplayCurrency(creditBalance.reserved_amount, "—", selectedCustomer.currency)} of {formatDisplayCurrency(creditBalance.balance, "—", selectedCustomer.currency)} already committed to refunds in progress)</>
+            )}
           </p>
         )}
         <div className="grid grid-cols-2 gap-4">
@@ -463,43 +572,73 @@ export default function RefundsPage() {
           </Field>
         </div>
 
+        {sourcesError && (
+          <div role="alert" className="-mt-2 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <span>{sourcesError}</span>
+            <button type="button" onClick={() => loadSources(createForm.customer_id)}
+              className="shrink-0 font-semibold underline hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
+              Retry
+            </button>
+          </div>
+        )}
         {createForm.refund_source === "payment" && (
-          <Field label="Payment" htmlFor="refund-payment" required>
+          <Field label="Payment" htmlFor="refund-payment" required
+            hint={sourceHint(payments.length, "payments", "Only cleared payments with an unrefunded balance can be refunded.")}>
             <Select id="refund-payment" value={createForm.payment_id} onChange={(v) => setCreateForm((p) => ({ ...p, payment_id: v }))}
-              placeholder="Select payment"
+              placeholder={sourcesLoading ? "Loading…" : payments.length ? "Select payment" : "No refundable payments"}
+              disabled={!createForm.customer_id || sourcesLoading || payments.length === 0}
               options={payments.map((p) => ({
                 value: String(p.id),
-                label: `${p.payment_number || `#${p.id}`} — ${formatDisplayCurrency(p.amount, p.currency)}`,
+                label: `${p.payment_number || `#${p.id}`} — refundable ${formatDisplayCurrency(p.refundable_amount, p.currency)} of ${formatDisplayCurrency(p.amount, p.currency)}`,
               }))} />
           </Field>
         )}
         {createForm.refund_source === "invoice" && (
-          <Field label="Invoice" htmlFor="refund-invoice" required>
+          <Field label="Invoice" htmlFor="refund-invoice" required
+            hint={sourceHint(invoices.length, "invoices", "Only invoices with a paid amount that hasn't already been refunded can be refunded.")}>
             <Select id="refund-invoice" value={createForm.invoice_id} onChange={(v) => setCreateForm((p) => ({ ...p, invoice_id: v }))}
-              placeholder="Select invoice"
+              placeholder={sourcesLoading ? "Loading…" : invoices.length ? "Select invoice" : "No refundable invoices"}
+              disabled={!createForm.customer_id || sourcesLoading || invoices.length === 0}
               options={invoices.map((inv) => ({
                 value: String(inv.id),
-                label: `${inv.invoice_number || `#${inv.id}`} — paid ${formatDisplayCurrency(inv.paid_amount, inv.currency)}`,
+                label: inv.refundable_amount != null
+                  ? `${inv.invoice_number || `#${inv.id}`} — refundable ${formatDisplayCurrency(inv.refundable_amount, inv.currency)} of ${formatDisplayCurrency(inv.paid_amount, inv.currency)} paid`
+                  : `${inv.invoice_number || `#${inv.id}`} — paid ${formatDisplayCurrency(inv.paid_amount, inv.currency)}`,
               }))} />
           </Field>
         )}
         {createForm.refund_source === "credit_note" && (
-          <Field label="Credit Note" htmlFor="refund-cn" required>
+          <Field label="Credit Note" htmlFor="refund-cn" required
+            hint={sourceHint(creditNotes.length, "credit notes", "Only issued credit notes with an unrefunded remaining balance can be refunded.")}>
             <Select id="refund-cn" value={createForm.credit_note_id} onChange={(v) => setCreateForm((p) => ({ ...p, credit_note_id: v }))}
-              placeholder="Select credit note"
+              placeholder={sourcesLoading ? "Loading…" : creditNotes.length ? "Select credit note" : "No refundable credit notes"}
+              disabled={!createForm.customer_id || sourcesLoading || creditNotes.length === 0}
               options={creditNotes.map((cn) => ({
                 value: String(cn.id),
-                label: `${cn.credit_note_number || `#${cn.id}`} — remaining ${formatDisplayCurrency(cn.remaining_amount, cn.currency)}`,
+                label: cn.refundable_amount != null
+                  ? `${cn.credit_note_number || `#${cn.id}`} — refundable ${formatDisplayCurrency(cn.refundable_amount, cn.currency)} of ${formatDisplayCurrency(cn.remaining_amount, cn.currency)} remaining`
+                  : `${cn.credit_note_number || `#${cn.id}`} — remaining ${formatDisplayCurrency(cn.remaining_amount, cn.currency)}`,
               }))} />
           </Field>
         )}
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Amount" htmlFor="refund-amount" required>
-            <input id="refund-amount" type="number" min="0" step="0.01" placeholder="0.00"
+          <Field label={refundCurrency ? `Amount (${refundCurrency})` : "Amount"} htmlFor="refund-amount" required
+            error={amountError}
+            hint={refundSource ? (() => {
+              const remaining = Math.max(0, Number(refundSource.ceiling) - (Number(createForm.amount) || 0));
+              const base = `Refundable: ${formatDisplayCurrency(refundSource.ceiling, refundCurrency)}`
+                + (Number(refundSource.committed) > 0
+                  ? ` (${formatDisplayCurrency(refundSource.committed, refundCurrency)} already committed to other refunds)`
+                  : "");
+              return createForm.amount ? `${base} · Remaining after this refund: ${formatDisplayCurrency(remaining, refundCurrency)}` : base;
+            })() : undefined}>
+            <input id="refund-amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+              max={refundSource?.ceiling ?? undefined}
+              aria-invalid={amountError ? "true" : undefined}
               value={createForm.amount}
               onChange={(e) => setCreateForm((p) => ({ ...p, amount: e.target.value }))}
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              className={`block w-full rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 ${amountError ? "border-red-300 focus:border-red-400 focus:ring-red-200" : "border-slate-200 focus:border-brand-300 focus:ring-brand/30"}`} />
           </Field>
           <Field label="Method" htmlFor="refund-method">
             <Select id="refund-method" value={createForm.refund_method} onChange={(v) => setCreateForm((p) => ({ ...p, refund_method: v }))}

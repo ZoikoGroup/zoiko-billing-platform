@@ -7,15 +7,42 @@ import { publicPlatformInvoiceApi } from "../service/platformPublicService";
 // Stripe Checkout session and forwards the browser there. If Stripe isn't
 // configured yet, that failure is shown here, on a dedicated page, instead
 // of as a small inline error on the invoice page.
+// What the error page says depends on WHY checkout failed. Every failure used
+// to show "Online payment isn't set up yet", including an invalid/expired
+// link (404), which sent people chasing a Stripe problem that wasn't there.
+export function checkoutErrorView(err) {
+  const status = err?.status;
+  const message = err?.detail || err?.message || "Unable to start checkout. Please try again.";
+  if (status === 404) {
+    return {
+      title: "Payment Link Not Valid",
+      linkInvalid: true,
+      message,
+      hint: "This payment link has expired or was replaced. Open Zoiko Subscription in your Billing workspace and use Pay Now there, or contact Zoiko Billing Accounts.",
+    };
+  }
+  if (status === 400 && /not configured|not installed/i.test(message)) {
+    return {
+      title: "Checkout Unavailable",
+      message,
+      hint: "Online payment isn't set up yet for this account. Zoiko Billing Accounts will follow up separately with payment instructions.",
+    };
+  }
+  if (status === 400) {
+    return { title: "This Invoice Can't Be Paid Online", message, hint: "Check the invoice status, or contact Zoiko Billing Accounts." };
+  }
+  return { title: "Checkout Unavailable", message, hint: "Please try again shortly. If this keeps happening, contact Zoiko Billing Accounts." };
+}
+
 export default function PlatformCheckoutPage() {
   const { token } = useParams();
   const [state, setState] = useState("starting"); // starting | redirecting | error
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // checkoutErrorView() result
 
   useEffect(() => {
     let cancelled = false;
     if (!token) {
-      setError("Invalid invoice link.");
+      setError(checkoutErrorView({ status: 404, message: "Invalid invoice link." }));
       setState("error");
       return;
     }
@@ -26,13 +53,13 @@ export default function PlatformCheckoutPage() {
           setState("redirecting");
           window.location.href = result.checkout_url;
         } else {
-          setError("Unable to start checkout. Please try again.");
+          setError(checkoutErrorView({ message: "Unable to start checkout. Please try again." }));
           setState("error");
         }
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err?.detail || err?.message || "Unable to start checkout. Please try again.");
+        setError(checkoutErrorView(err));
         setState("error");
       });
     return () => { cancelled = true; };
@@ -52,16 +79,13 @@ export default function PlatformCheckoutPage() {
         ) : (
           <>
             <span className="pcp-icon">⚠️</span>
-            <h1 className="pcp-title">Checkout Unavailable</h1>
-            <p className="pcp-msg pcp-msg--error">{error}</p>
-            <p className="pcp-hint">
-              Online payment isn't set up yet for this account. Zoiko Billing Accounts will follow up
-              separately with payment instructions, or try again shortly.
-            </p>
+            <h1 className="pcp-title">{error?.title}</h1>
+            <p className="pcp-msg pcp-msg--error" role="alert">{error?.message}</p>
+            <p className="pcp-hint">{error?.hint}</p>
           </>
         )}
 
-        {token && (
+        {token && !error?.linkInvalid && (
           <Link to={`/platform-invoice/${token}`} className="pcp-link">
             ← Back to invoice
           </Link>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, Folder, DollarSign, BarChart3, Eye, Tag, Percent, Globe, SlidersHorizontal, Archive, ScrollText, Store, X } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi, productApi } from "../../../service/billingService";
 import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions, getCurrencySymbol } from "../../../utils/currency";
@@ -71,6 +72,7 @@ export default function ProductSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
   const timerRef = useRef(null);
   const [categories, setCategories] = useState([]);
@@ -115,6 +117,7 @@ export default function ProductSettingsPage() {
       ]);
       if (settingsRes.status === "rejected") {
         setError(settingsRes.reason?.detail || settingsRes.reason?.message || "Failed to load settings");
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -144,8 +147,10 @@ export default function ProductSettingsPage() {
       };
       setForm(values);
       setOriginal({ ...values });
+      setLoadFailed(false);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -201,6 +206,18 @@ export default function ProductSettingsPage() {
   const numberingPreview = form.product_numbering_format
     .replace("{PREFIX}", form.product_numbering_prefix)
     .replace("{NUMBER}", "0001");
+
+  // Never render an editable form built from hard-coded defaults: if the
+  // saved configuration could not be loaded, Save would write those
+  // defaults over the organization's real settings (same guard as
+  // invoicing/settings.jsx and tax/settings.jsx).
+  if (loadFailed) {
+    return (
+      <HRPage title="Product Settings" subtitle="Product configuration and preferences">
+        <ErrorState title="Couldn't load product settings" message={error} onRetry={fetchSettings} />
+      </HRPage>
+    );
+  }
 
   return (
     <HRPage title="Product Settings" subtitle="Product configuration and preferences">

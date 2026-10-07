@@ -374,7 +374,7 @@ export default function SubscriptionDashboardPage() {
 
       <StatGroup title="More Metrics">
         <DashboardStatCard title="Revenue" value={Number(activeValue)} currency={reportingCurrency} subtitle="Active subscription value" icon={Wallet} color={CARD_COLORS[8]} href="/billing/subscriptions/reports" />
-        <DashboardStatCard title="Avg Revenue / Sub" value={Number(avgRevenuePerSub)} currency={reportingCurrency} subtitle="Per active subscription" icon={Percent} color={CARD_COLORS[9]} />
+        <DashboardStatCard title="Avg Revenue / Sub" value={Number(avgRevenuePerSub)} currency={reportingCurrency} subtitle="Per active subscription" icon={Percent} color={CARD_COLORS[9]} href="/billing/subscriptions/reports?tab=mrr" />
         <DashboardStatCard title="Plans in Use" value={distinctPlanCount} icon={Layers} color={CARD_COLORS[10]} href="/billing/subscriptions/create" />
         <DashboardStatCard title="Past Due" value={pastDue.length} icon={AlertTriangle} color={CARD_COLORS[11]} href="/billing/subscriptions" />
       </StatGroup>

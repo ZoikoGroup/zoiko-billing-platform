@@ -94,7 +94,15 @@ class DunningService:
         return level
 
     def update_level(self, level_id: int, organization_id: int, updated_by: int, **data: Any) -> DunningLevel:
+        # max_days_overdue is nullable and NULL means "no upper bound"; an
+        # explicit None (the router passes only fields the client actually
+        # sent) must clear it rather than be dropped as "not provided" by
+        # filter_allowed -- otherwise a level can never be set back to
+        # unlimited once it has a max.
+        clear_max = "max_days_overdue" in data and data["max_days_overdue"] is None
         data = filter_allowed(data, LEVEL_ALLOWED_FIELDS)
+        if clear_max:
+            data["max_days_overdue"] = None
         self.level_repo.get_by_id(level_id, organization_id)
         updated = self.level_repo.update(level_id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "DunningLevel", level_id)

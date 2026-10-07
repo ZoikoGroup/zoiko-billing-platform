@@ -254,6 +254,31 @@ function isActive(href, pathname, search = "") {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
+// Sidebar sections open independently (multi-open is intentional, see the
+// openSections comment below). The open/closed decision must be derived from
+// the Set handed to the state updater, not from the render-time closure:
+// two toggles queued in one render (fast double-click) both read the same
+// stale snapshot, so the second click never reverted the first.
+export function sectionExpandedIn(openSet, section, pathname, search) {
+  if (openSet.has(section.label)) return true;
+  if (openSet.has(`!${section.label}`)) return false;
+  return section.children?.some((c) => isActive(c.href, pathname, search)) ?? false;
+}
+
+export function toggleSectionIn(openSet, section, pathname, search) {
+  const next = new Set(openSet);
+  if (sectionExpandedIn(openSet, section, pathname, search)) {
+    next.delete(section.label);
+    next.add(`!${section.label}`);
+  } else {
+    next.delete(`!${section.label}`);
+    next.add(section.label);
+  }
+  return next;
+}
+
+const sectionPanelId = (label) => `nav-section-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
 function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false }) {
   const hasActiveChild = item.children
     ? item.children.some((child) => isActive(child.href, pathname, search))
@@ -268,6 +293,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
+          aria-controls={sectionPanelId(item.label)}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
               ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
@@ -281,7 +307,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180 text-white" : "text-[#94A3B8]"}`} />
         </button>
         {expanded ? (
-          <div className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
+          <div id={sectionPanelId(item.label)} className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
             {item.children.map((child) => (
               <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate} />
             ))}
@@ -419,24 +445,11 @@ function SidebarContent({ onNavigate, role }) {
   const [openSections, setOpenSections] = useState(() => new Set());
 
   function isSectionExpanded(section) {
-    if (openSections.has(section.label)) return true;
-    if (openSections.has(`!${section.label}`)) return false;
-    return section.children?.some((c) => isActive(c.href, pathname, search)) ?? false;
+    return sectionExpandedIn(openSections, section, pathname, search);
   }
 
   function toggleSection(section) {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      const currentlyExpanded = isSectionExpanded(section);
-      if (currentlyExpanded) {
-        next.delete(section.label);
-        next.add(`!${section.label}`);
-      } else {
-        next.delete(`!${section.label}`);
-        next.add(section.label);
-      }
-      return next;
-    });
+    setOpenSections((prev) => toggleSectionIn(prev, section, pathname, search));
   }
 
   return (
@@ -459,6 +472,7 @@ function SidebarContent({ onNavigate, role }) {
         <button
           type="button"
           onClick={onNavigate}
+          aria-label="Close navigation"
           className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white transition hover:border-white/20 hover:bg-white/10 lg:hidden"
         >
           <X className="h-4 w-4" />
@@ -592,6 +606,7 @@ function SuperAdminSidebarContent({ onNavigate, cockpit, collapsed, onToggleColl
         <button
           type="button"
           onClick={onNavigate}
+          aria-label="Close navigation"
           className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white transition hover:border-white/20 hover:bg-white/10 lg:hidden"
         >
           <X className="h-4 w-4" />
@@ -781,7 +796,11 @@ export default function BillingShell({ children }) {
           {/* Single source of truth for the sidebar-to-content gutter and page
               margins — every page renders here as {children} with no need to
               (and no longer any reason to) set its own horizontal padding. */}
-          <div className="min-w-0 max-w-full overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+          {/* pb-24 reserves room under every page for the fixed AI-assistant
+              launcher (bottom-6 right-6, ~56px): without it the launcher sat
+              on top of a page's bottom-right control when scrolled to the end
+              -- e.g. the invoice wizard's Next button. */}
+          <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
             {children}
           </div>
         </main>

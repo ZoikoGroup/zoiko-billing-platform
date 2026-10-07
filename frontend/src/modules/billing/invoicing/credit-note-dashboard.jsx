@@ -293,13 +293,13 @@ export default function CreditNoteDashboard() {
       <div className={DASHBOARD_KPI_GRID}>
         <EnterpriseStatCard title="Total Credit Notes" value={kpis.totalCount.toLocaleString()} icon={Receipt} color={CARD_GRADIENTS[0]} href="/billing/credit-notes" />
         <EnterpriseStatCard title="Draft" value={kpis.draftCount.toLocaleString()} icon={Clock} color={CARD_GRADIENTS[2]} href="/billing/credit-notes?status=draft" />
-        <EnterpriseStatCard title="Issued / Outstanding" value={kpis.issuedCount.toLocaleString()} icon={FileText} color={CARD_GRADIENTS[3]} href="/billing/credit-notes?status=issued" />
+        <EnterpriseStatCard title="Issued / Outstanding" value={kpis.issuedCount.toLocaleString()} icon={FileText} color={CARD_GRADIENTS[3]} href="/billing/credit-notes?status=issued,partially_applied" />
         <EnterpriseStatCard title="Fully Applied" value={kpis.fullyAppliedCount.toLocaleString()} icon={CheckCircle} color={CARD_GRADIENTS[1]} href="/billing/credit-notes?status=fully_applied" />
       </div>
 
       <StatGroup title="More Metrics">
-        <EnterpriseStatCard title="Total Value" value={Number(kpis.totalValue)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[0]} sparkline={dashboard.monthlyTrend.map((m) => m.total_amount)} />
-        <EnterpriseStatCard title="Outstanding Credits" value={Number(kpis.outstandingCredits)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[4]} />
+        <EnterpriseStatCard title="Total Value" value={Number(kpis.totalValue)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[0]} sparkline={dashboard.monthlyTrend.map((m) => m.total_amount)} href="/billing/credit-notes" />
+        <EnterpriseStatCard title="Outstanding Credits" value={Number(kpis.outstandingCredits)} currency={baseCurrency} icon={Wallet} color={CARD_GRADIENTS[4]} href="/billing/credit-notes?status=issued,partially_applied" />
         <EnterpriseStatCard title="Voided" value={kpis.voidedCount.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} href="/billing/credit-notes?status=voided" />
       </StatGroup>
 

@@ -632,6 +632,7 @@ export const refundApi = {
   getMonthlyTrend: (months = 12) => api.get(buildUrl(ENDPOINTS.REFUNDS_MONTHLY_TREND, { months })),
   listByCustomer: (customerId, params) => api.get(buildUrl(ENDPOINTS.REFUNDS_BY_CUSTOMER(customerId), params)),
   getCustomerSummary: (customerId) => api.get(ENDPOINTS.REFUNDS_CUSTOMER_SUMMARY(customerId)),
+  listRefundableSources: (customerId) => api.get(ENDPOINTS.REFUNDS_REFUNDABLE_SOURCES(customerId)),
   submit: (id, reason) => api.post(ENDPOINTS.REFUND_SUBMIT(id), { reason }),
   approve: (id, reason) => api.post(ENDPOINTS.REFUND_APPROVE(id), { reason }),
   reject: (id, reason) => api.post(ENDPOINTS.REFUND_REJECT(id), { reason }),
