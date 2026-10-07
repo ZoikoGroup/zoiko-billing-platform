@@ -58,7 +58,11 @@ export default function InvoicingPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // Seeded from ?status= so the FIRST request is already filtered. Starting
+  // from "" fired an unfiltered request and then a filtered one; whichever
+  // response arrived last won, so a KPI link like ?status=overdue could show
+  // every invoice under an active "Overdue" filter.
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") || "");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -90,7 +94,10 @@ export default function InvoicingPage() {
   const [recentInvoices, setRecentInvoices] = useState([]);
   const tableSectionRef = useRef(null);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const fetchSeqRef = useRef(0);
   const fetchInvoices = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     try {
       setError(null);
       setRefreshing(true);
@@ -107,6 +114,7 @@ export default function InvoicingPage() {
         sort_by: sortField,
         sort_order: sortDir,
       });
+      if (seq !== fetchSeqRef.current) return;
       const items = data.items || data.data || data || [];
       setInvoices(Array.isArray(items) ? items : []);
       setTotal(data.total || items.length || 0);
@@ -115,12 +123,15 @@ export default function InvoicingPage() {
         setRecentInvoices(Array.isArray(items) ? items.slice(0, 3) : []);
       }
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       setError(err.message || "Failed to load invoices");
       setInvoices([]);
       setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [safePage, debouncedSearch, statusFilter, currencyFilter, dateFrom, dateTo, minAmount, maxAmount, sortField, sortDir]);
 
