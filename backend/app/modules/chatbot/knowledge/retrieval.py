@@ -98,6 +98,17 @@ _ENUM_SIGNALS = frozenset({
     "how", "many", "types", "levels", "stages",
     "list", "kinds", "what", "are", "different",
 })
+# Bare question frames. They are part of _ENUM_SIGNALS (a raw-query signal is
+# read AFTER stopword removal, so the frame that introduces the enumeration
+# must stay in the set — see the test on _ENUM_SIGNALS ⊆ scaffolding), but an
+# enumeration intent holding ONLY frames is not an enumeration: "how many
+# types ..." carries {how, many, types, are} while "How much does Zoiko
+# Billing cost?" carries only {how}. Without this guard the latter earned the
+# +0.20 structural boost for any chunk containing "Level 1"/"Step 1", which is
+# exactly how a dunning chunk outranked the pricing document for the pricing
+# question the marketing site actually asks.
+_ENUM_FRAME_WORDS = frozenset({"how", "what", "are"})
+
 _STRUCT_MARKERS = re.compile(
     r"(?:level\s+\d|step\s+\d|(?:type|kind|stage|tier)\s+\d"
     r"|\b\d+\.\s|option\s+[a-d])",
@@ -113,6 +124,55 @@ _STRUCT_MARKERS = re.compile(
 # demoted below any real topic match.
 DIRECTORY_DOC_TITLES = frozenset({"what this assistant can answer (marketing)"})
 _DIRECTORY_DEMOTION = 0.5
+
+# ── Brand vocabulary ────────────────────────────────────────────────────────
+# The company name is in most document titles, so the topical-title exemption
+# below keeps it at full weight — which makes it match almost every chunk and
+# lets unrelated documents ride in on brand recognition alone. For
+# "How much does Zoiko Billing cost?" the words {zoiko, billing, cost} gave
+# the dunning document 0.67 on brand alone while the pricing chunk that never
+# repeats the brand name ("Essentials is $29/month, ...") scored 0 and was
+# discarded. The brand is never a topic, so it carries a token weight: still
+# present, never decisive. ("billing" is deliberately NOT listed — it is a
+# domain topic that names its own document, see test_title_topical_word_is_not_dampened.)
+_BRAND_TERMS = frozenset({"zoiko", "zoikobilling"})
+_BRAND_WEIGHT = 0.15
+
+# ── Price / magnitude questions ─────────────────────────────────────────────
+# "How much does it cost?" cannot match a pricing chunk lexically: the chunk
+# states "$29/month" and never says "cost". When the question asks for a
+# price, a chunk that QUOTES a price is answering it, so price vocabulary in
+# the query is credited against chunks carrying a currency/amount pattern.
+_PRICE_QUERY_WORDS = frozenset({
+    "cost", "costs", "price", "prices", "pricing", "priced",
+    "charge", "charges", "fee", "fees",
+})
+_PRICE_PATTERN = re.compile(
+    r"(?:[$€£]\s?\d)"
+    r"|\b\d+(?:\.\d+)?\s*/\s*(?:month|year|yr)\b"
+    r"|\bper month\b"
+)
+
+# ── Vocabulary gaps ─────────────────────────────────────────────────────────
+# Visitors and the KB sometimes name the same concept differently: the
+# marketing-site visitor writes "set up recurring billing", while the KB
+# answers with "How to create a subscription". Widening MATCHING only — IDF
+# and term-frequency keep measuring the words the visitor actually wrote, so
+# a synonym can admit the right chunk but cannot inflate it past a chunk
+# that really discusses the query's own terms.
+_QUERY_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "recurring": ("subscription",),
+    "subscription": ("recurring",),
+    "subscriptions": ("recurring",),
+}
+
+# Boosts are allowed past 1.0 so they can still SEPARATE candidates: every
+# saturating bonus collapsed to a flat 1.0, and a flat 1.0 tie is broken by
+# document insertion order — which is why the visitor got the subscription
+# STATUS list instead of the free-trial answer, and a credit-note definition
+# instead of the account-balance field. Ranking uses this cap; the reported
+# score stays <= 1.0.
+_SCORE_CAP = 1.5
 
 
 def _uid() -> str:
@@ -378,6 +438,10 @@ class KnowledgeRetriever:
         # topic signal, so deriving the signal from the scored words would
         # switch the enum boost off for exactly the queries it exists for.
         enum_words = set(raw_query_words) & _ENUM_SIGNALS
+        # An intent made only of question frames is a question, not an
+        # enumeration (see _ENUM_FRAME_WORDS).
+        if enum_words and enum_words <= _ENUM_FRAME_WORDS:
+            enum_words = set()
 
         unique_words = set(query_words)
 
@@ -385,12 +449,20 @@ class KnowledgeRetriever:
         # match chunks discussing "refund"/"refunded"). The short stem is
         # used for occurrence counting so plurals never double-count.
         variants: dict[str, tuple[str, ...]] = {}
+        match_variants: dict[str, tuple[str, ...]] = {}
         for w in unique_words:
             stem = w[:-1] if w.endswith("s") and len(w) > 3 else w
             variants[w] = (w, stem) if stem != w else (w,)
+            forms = list(variants[w])
+            for syn in _QUERY_SYNONYMS.get(w, ()):
+                syn_stem = syn[:-1] if syn.endswith("s") and len(syn) > 3 else syn
+                for form in (syn, syn_stem):
+                    if form not in forms:
+                        forms.append(form)
+            match_variants[w] = tuple(forms)
 
         def _chunk_matches(chunk_lower: str, word: str) -> bool:
-            return any(v in chunk_lower for v in variants[word])
+            return any(v in chunk_lower for v in match_variants[word])
 
         # IDF-style dampening, SCALE-INVARIANT: measure how many distinct
         # source DOCUMENTS contain the word (as a fraction of all documents),
@@ -420,12 +492,23 @@ class KnowledgeRetriever:
             for tok in re.findall(r"[a-z0-9]+", _t):
                 titled_stems.add(tok[:-1] if tok.endswith("s") and len(tok) > 3 else tok)
         doc_ids_by_word = {
-            w: {c.document_id for c in chunks if _chunk_matches(c.chunk_text.lower(), w)}
+            # Measured on the words the visitor wrote: a synonym may widen
+            # matching, but it must not make a term look corpus-frequent and
+            # get dampened out of its own question.
+            w: {
+                c.document_id for c in chunks
+                if any(v in c.chunk_text.lower() for v in variants[w])
+            }
             for w in unique_words
         }
         word_weight = {
             w: (
-                0.25
+                # Brand vocabulary is never dampened-to-topic and never full
+                # weight: it names the product, not the subject (see
+                # _BRAND_TERMS above).
+                _BRAND_WEIGHT
+                if {w, variants[w][-1]} & _BRAND_TERMS
+                else 0.25
                 if len(doc_ids_by_word[w]) > 0.5 * n_docs
                 and not {w, variants[w][-1]} & titled_stems
                 else 1.0
@@ -443,22 +526,43 @@ class KnowledgeRetriever:
             )
 
         boost_terms = [t for t in (boost_terms or []) if t]
+
+        # Price questions and price answers share no vocabulary: the visitor
+        # writes "cost", the chunk quotes "$29/month". When the query asks for
+        # a price, a chunk that QUOTES one is treated as answering it, so the
+        # price vocabulary counts toward its matched weight (see
+        # _PRICE_QUERY_WORDS / _PRICE_PATTERN above).
+        price_words = [w for w in unique_words if w in _PRICE_QUERY_WORDS]
+
         candidates = []  # (chunk, score, term_occurrences)
         for chunk in chunks:
             chunk_lower = chunk.chunk_text.lower()
             matched_weight = sum(
                 word_weight[w] for w in query_words if _chunk_matches(chunk_lower, w)
             )
+            # A chunk that quotes a price IS the answer to a price question,
+            # so it earns the full matched weight rather than the fraction its
+            # literal word overlap would give it ("Essentials is $29/month, ..."
+            # shares no word with "How much does ... cost?"). The quoted
+            # amounts then feed the TF factor below, so a chunk listing
+            # several prices outranks one that mentions a single figure.
+            price_hits = (
+                len(_PRICE_PATTERN.findall(chunk_lower)) if price_words else 0
+            )
+            if price_words and price_hits:
+                matched_weight = total_weight
             score = matched_weight / total_weight
 
             # Boost for exact phrase match
             if query_lower in chunk_lower:
-                score = min(score + 0.3, 1.0)
+                score = min(score + 0.3, _SCORE_CAP)
 
             if score >= min_score:
                 occurrences = sum(
                     chunk_lower.count(variants[w][-1]) for w in unique_words
                 )
+                if price_hits:
+                    occurrences += price_hits
                 candidates.append((chunk, score, occurrences))
 
         # Term-frequency factor: among chunks matching the same words, prefer
@@ -496,7 +600,7 @@ class KnowledgeRetriever:
                                 pat.search(c.chunk_text.lower())
                                 for pat in phrase_patterns
                             ) else 0.0),
-                            1.0,
+                            _SCORE_CAP,
                         ),
                         o,
                     )
@@ -522,14 +626,14 @@ class KnowledgeRetriever:
                 _chunk_matches(title_by_doc.get(chunk.document_id, ""), w)
                 for w in unique_words
             ):
-                score = min(score + 0.1, 1.0)
+                score = min(score + 0.1, _SCORE_CAP)
                 if trace_enabled:
                     stage_trace[id(chunk)]["title"] = 0.1
             # Page-context boost re-ranks already-relevant chunks toward
             # the surface the user is currently on. Applied only AFTER the
             # relevance bar is met, so it can never rescue weak matches.
             if boost_terms and any(t in chunk.chunk_text.lower() for t in boost_terms):
-                score = min(score + 0.1, 1.0)
+                score = min(score + 0.1, _SCORE_CAP)
                 if trace_enabled:
                     stage_trace[id(chunk)]["page"] = 0.1
             # Heading-zone boost: a chunk whose OPENING region (the section
@@ -541,7 +645,7 @@ class KnowledgeRetriever:
             if (
                 len({w for w in unique_words if w in chunk.chunk_text[:120].lower()}) >= 2
             ):
-                score = min(score + 0.05, 1.0)
+                score = min(score + 0.05, _SCORE_CAP)
                 if trace_enabled:
                     stage_trace[id(chunk)]["heading"] = 0.05
             # Directory/capability demotion (see DIRECTORY_DOC_TITLES above):
@@ -562,7 +666,7 @@ class KnowledgeRetriever:
             # because it contains the term more times, even though it doesn't
             # enumerate the types the user is asking about.
             if enum_words and _STRUCT_MARKERS.search(chunk_lower):
-                score = min(score + 0.20, 1.0)
+                score = min(score + 0.20, _SCORE_CAP)
                 if trace_enabled:
                     stage_trace[id(chunk)]["enum"] = 0.20
             # Table-fragment demotion: chunks dominated by pipe-delimited
@@ -597,7 +701,13 @@ class KnowledgeRetriever:
         # Weak-top queries are handled downstream by confidence gating, not
         # by pretending nothing was found.
         if top_chunks:
-            floor = top_chunks[0][1] * 0.85
+            # The relative floor is measured on the CAPPED (0..1) scale so it
+            # keeps the same meaning now that ranking scores may exceed 1.0:
+            # a weak chunk must not ride along with the best match, but a
+            # strongly-boosted top must not tighten the bar against the
+            # genuinely-relevant second chunk either.
+            capped_top = min(top_chunks[0][1], 1.0)
+            floor = capped_top * 0.85
             top_chunks = [(c, s) for c, s in top_chunks if s >= floor]
             # Guarantee at least 2 chunks from the TOP document for LLM
             # synthesis — the strict 85% floor can drop a genuinely relevant
@@ -607,7 +717,7 @@ class KnowledgeRetriever:
             if len(top_chunks) < 2:
                 top_doc_id = scored_chunks[0][0].document_id if scored_chunks else None
                 if top_doc_id:
-                    relaxed_floor = top_chunks[0][1] * 0.80
+                    relaxed_floor = capped_top * 0.80
                     same_doc_relaxed = [
                         (c, s) for c, s in scored_chunks
                         if c.document_id == top_doc_id and s >= relaxed_floor
@@ -631,7 +741,9 @@ class KnowledgeRetriever:
 
             result = RetrievalResult(
                 chunk_text=chunk.chunk_text,
-                score=score,
+                # Ranking may use boosts past 1.0 (see _SCORE_CAP); the score
+                # reported to callers stays on the 0..1 scale it always had.
+                score=min(score, 1.0),
                 rank=rank,
                 source_title=doc.title if doc else "Unknown",
                 source_type=source.source_type.value if source else "unknown",
@@ -644,7 +756,7 @@ class KnowledgeRetriever:
             citations_data.append({
                 "chunk_id": chunk.id,
                 "rank": rank,
-                "score": score,
+                "score": min(score, 1.0),
                 "source_title": doc.title if doc else "Unknown",
             })
 
