@@ -13,6 +13,7 @@ import {
 } from "../../../components/billing-shared";
 import { Button, ListToolbar, FormModal, DataTable, Field } from "../../../components/billing-ui";
 import { useCurrency } from "../utils/CurrencyContext";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -68,6 +69,9 @@ export default function DunningPage() {
   const [searchParams] = useSearchParams();
   const urlStatus = STATUS_OPTIONS.some((o) => o.value && o.value === searchParams.get("status")) ? searchParams.get("status") : "";
   const [statusFilter, setStatusFilter] = useState(urlStatus);
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [levelFilter, setLevelFilter] = useState("");
   const [showFilters, setShowFilters] = useState(Boolean(urlStatus));
 
@@ -169,7 +173,7 @@ export default function DunningPage() {
 
   function clearFilters() {
     setSearch("");
-    setStatusFilter("");
+    chooseStatus("");
     setLevelFilter("");
     setCurrentPage(1);
   }
@@ -308,7 +312,7 @@ export default function DunningPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Status" htmlFor="dunning-status">
               <select id="dunning-status" value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => { chooseStatus(e.target.value); setCurrentPage(1); }}
                 className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>

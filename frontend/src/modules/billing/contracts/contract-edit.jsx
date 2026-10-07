@@ -515,7 +515,7 @@ export default function ContractEditPage() {
 
           <div className="relative mb-4">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input type="text" placeholder="Search products to add..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className={`${inputClass} pl-9`} />
+            <input type="text" placeholder="Search products to add..." aria-label="Search products to add" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className={`${inputClass} pl-9`} />
             {productSearching && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={16} className="animate-spin text-brand-500" /></div>}
             {productResults.length > 0 && (
               <div className="absolute z-20 mt-1 w-full border border-slate-200 rounded-xl bg-white shadow-lg max-h-48 overflow-y-auto">

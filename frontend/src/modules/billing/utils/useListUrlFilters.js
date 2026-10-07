@@ -70,3 +70,18 @@ export function useUrlTab(tabKeys, defaultTab) {
   }, [setSearchParams, defaultTab]);
   return [tab, setTab];
 }
+
+// For pages that only SEED a filter from a ?status= deep link: once the user
+// picks or clears a status themselves, drop the param so a reload or shared
+// link doesn't resurrect the stale deep-link filter (Clear must clear the URL).
+export function useDropUrlParam() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  return useCallback((key) => {
+    if (!searchParams.has(key)) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete(key);
+      return next;
+    }, { replace: true });
+  }, [searchParams, setSearchParams]);
+}

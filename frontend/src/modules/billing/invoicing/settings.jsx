@@ -75,7 +75,9 @@ export default function InvoiceSettingsPage() {
   const [taxRates, setTaxRates] = useState([]);
   const [taxRatesError, setTaxRatesError] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const { singular: entityLabel, pluralLower: entityPluralLower } = useTerminology();
+  // useTerminology() exposes singular/plural; lower-case forms come from getLabel.
+  const { singular: entityLabel, getLabel } = useTerminology();
+  const entityPluralLower = getLabel("pluralLower");
 
   const [form, setForm] = useState({
     relationship_terminology: "customer",

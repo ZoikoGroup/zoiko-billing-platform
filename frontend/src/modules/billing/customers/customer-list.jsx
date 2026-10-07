@@ -16,6 +16,7 @@ import { useCurrency, getOrgBaseCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import useLatestRequest from "../utils/useLatestRequest";
 import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 const ITEMS_PER_PAGE = 15;
 
@@ -82,6 +83,9 @@ export default function CustomerListPage() {
   // Seeded from ?status= so the FIRST request is already filtered (a KPI link
   // like ?status=active used to fire an unfiltered request first).
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") || "");
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [typeFilter, setTypeFilter] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [paymentTermsFilter, setPaymentTermsFilter] = useState("");
@@ -160,7 +164,7 @@ export default function CustomerListPage() {
   const hasActiveFilters = statusFilter || typeFilter || currencyFilter || paymentTermsFilter || industryFilter || creditLimitMin || creditLimitMax || dateFrom || dateTo;
 
   const clearFilters = () => {
-    setStatusFilter(""); setTypeFilter(""); setCurrencyFilter(""); setPaymentTermsFilter("");
+    chooseStatus(""); setTypeFilter(""); setCurrencyFilter(""); setPaymentTermsFilter("");
     setIndustryFilter(""); setCreditLimitMin(""); setCreditLimitMax("");
     setDateFrom(""); setDateTo(""); setCurrentPage(1);
   };
@@ -578,7 +582,7 @@ export default function CustomerListPage() {
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="text" placeholder={getLabel("searchPlaceholder")} value={search}
+                <input type="text" placeholder={getLabel("searchPlaceholder")} aria-label={getLabel("searchPlaceholder")} value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
@@ -628,7 +632,7 @@ export default function CustomerListPage() {
           {showFilters && (
             <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
               <div>
-                <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                <select value={statusFilter} onChange={(e) => { chooseStatus(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-3 py-2 pr-7 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Statuses</option>
                   {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

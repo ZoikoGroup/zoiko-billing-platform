@@ -268,7 +268,7 @@ export default function BillingHistoryPage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
-                  placeholder="Search by invoice, receipt, customer..."
+                  placeholder="Search by invoice, receipt, customer..." aria-label="Search by invoice, receipt, customer"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   aria-label="Search billing history"

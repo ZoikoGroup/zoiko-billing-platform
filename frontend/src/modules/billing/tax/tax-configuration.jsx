@@ -200,14 +200,14 @@ export default function TaxConfigurationPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <input type="text" placeholder="Jurisdiction name" value={newJurisdiction.name}
+            <input type="text" placeholder="Jurisdiction name" aria-label="Jurisdiction name" value={newJurisdiction.name}
               onChange={(e) => setNewJurisdiction((p) => ({ ...p, name: e.target.value }))}
               className="flex-1 min-w-[200px] px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            <select value={newJurisdiction.type} onChange={(e) => setNewJurisdiction((p) => ({ ...p, type: e.target.value }))}
+            <select aria-label="Jurisdiction type" value={newJurisdiction.type} onChange={(e) => setNewJurisdiction((p) => ({ ...p, type: e.target.value }))}
               className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               {JURISDICTION_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={newJurisdiction.tax_rule} onChange={(e) => setNewJurisdiction((p) => ({ ...p, tax_rule: e.target.value }))}
+            <select aria-label="Tax rule" value={newJurisdiction.tax_rule} onChange={(e) => setNewJurisdiction((p) => ({ ...p, tax_rule: e.target.value }))}
               className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               {TAX_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -254,13 +254,13 @@ export default function TaxConfigurationPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <input type="text" placeholder="Exemption name" value={newExemption.name}
+            <input type="text" placeholder="Exemption name" aria-label="Exemption name" value={newExemption.name}
               onChange={(e) => setNewExemption((p) => ({ ...p, name: e.target.value }))}
               className="flex-1 min-w-[180px] px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            <input type="text" placeholder="Description" value={newExemption.description}
+            <input type="text" placeholder="Description" aria-label="Exemption description" value={newExemption.description}
               onChange={(e) => setNewExemption((p) => ({ ...p, description: e.target.value }))}
               className="flex-1 min-w-[180px] px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            <select value={newExemption.tax_rate_id} onChange={(e) => setNewExemption((p) => ({ ...p, tax_rate_id: e.target.value }))}
+            <select aria-label="Tax rate" value={newExemption.tax_rate_id} onChange={(e) => setNewExemption((p) => ({ ...p, tax_rate_id: e.target.value }))}
               className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               <option value="">No specific rate</option>
               {taxRates.filter((r) => r.is_active !== false).map((r) => (

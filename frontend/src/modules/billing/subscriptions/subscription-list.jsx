@@ -291,7 +291,7 @@ export default function SubscriptionListPage() {
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="text" placeholder="Search subscriptions..." value={search}
+                  <input type="text" placeholder="Search subscriptions..." aria-label="Search subscriptions" value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
