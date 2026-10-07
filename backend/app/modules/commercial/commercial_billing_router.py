@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
@@ -1065,13 +1065,24 @@ def _serialize_invoice_detail(invoice: PlatformInvoice) -> dict:
     return data
 
 
+def _public_quote_or_404(svc: "CommercialQuoteService", token: str):
+    """Resolve a public quote link token, or 404. The service raises
+    ValueError("Quote not found or link expired") for an unknown token, which
+    these unauthenticated routes used to let escape as an HTTP 500 -- the same
+    mapping the platform invoice checkout route already applies."""
+    try:
+        return svc.get_public_quote(token)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
 @public_quote_router.get(
     "/{token}",
     summary="Publicly view a quote via signed link token",
 )
 def get_public_quote(token: str, db: Session = Depends(get_db)):
     svc = CommercialQuoteService(db)
-    return _serialize_public_quote(svc.get_public_quote(token))
+    return _serialize_public_quote(_public_quote_or_404(svc, token))
 
 
 @public_quote_router.post(
@@ -1080,7 +1091,11 @@ def get_public_quote(token: str, db: Session = Depends(get_db)):
 )
 def accept_public_quote(token: str, db: Session = Depends(get_db)):
     svc = CommercialQuoteService(db)
-    quote = svc.accept_public_quote(token)
+    _public_quote_or_404(svc, token)
+    try:
+        quote = svc.accept_public_quote(token)
+    except ValueError as e:  # e.g. "Quote cannot be accepted in status: ..."
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     db.commit()
     _convert_and_invoice_accepted_quote(db, quote, quote.created_by)
     return _serialize_public_quote(quote)
@@ -1096,7 +1111,11 @@ def reject_public_quote(
     db: Session = Depends(get_db),
 ):
     svc = CommercialQuoteService(db)
-    quote = svc.reject_public_quote(token, data.reason)
+    _public_quote_or_404(svc, token)
+    try:
+        quote = svc.reject_public_quote(token, data.reason)
+    except ValueError as e:  # e.g. "Quote cannot be rejected in status: ..."
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     db.commit()
     return _serialize_public_quote(quote)
 
@@ -1107,4 +1126,8 @@ def reject_public_quote(
 )
 def get_public_invoice(token: str, db: Session = Depends(get_db)):
     svc = PlatformInvoiceService(db)
-    return _serialize_public_invoice(svc.get_public_invoice(token))
+    try:
+        invoice = svc.get_public_invoice(token)
+    except ValueError as e:  # unknown/expired link token
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return _serialize_public_invoice(invoice)
