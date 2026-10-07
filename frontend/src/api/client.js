@@ -6,8 +6,7 @@ import {
   setStoredSession,
   clearStoredSession,
 } from "../service/sessionStorage";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
+import { API_BASE_URL, apiUrl } from "../config/apiBase";
 
 // Storage is delegated to service/sessionStorage.js (the single source of
 // truth — see that file's header comment / Mandatory Fix 5). This module
@@ -54,7 +53,7 @@ async function refreshSession() {
   const refresh = getRefreshToken();
   if (!refresh) return false;
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const res = await fetch(apiUrl("/api/auth/refresh"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refresh }),
@@ -74,7 +73,7 @@ async function refreshSession() {
 }
 
 export async function apiFetch(path, { method = "GET", body, params, timeout = 30000 } = {}) {
-  const url = new URL(API_BASE + path);
+  const url = new URL(apiUrl(path));
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== "" && v !== undefined && v !== null) {

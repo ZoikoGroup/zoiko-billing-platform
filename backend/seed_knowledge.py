@@ -184,9 +184,10 @@ KB_ENTRIES = [
         "title": "Payments and Reconciliation (How It Works)",
         "is_public": True,
         "chunks": [
-            "Zoiko Billing connects every payment to the right billing record, with exceptions visible. It captures payment evidence, normalizes provider states, matches and allocates funds, manages exceptions and reversals, and updates receivable positions with explicit source, currency, timing and audit context.",
-            "Payment matching associates incoming funds with the correct customer and billing records; allocation applies a payment across one or more invoices so each invoice's receivable position reflects the funds received.",
-            "Exceptions and reversals are handled explicitly rather than silently: failed, disputed or reversed payments are surfaced as exceptions so the receivable position always reflects the true state of each billing record.",
+            "Payment reconciliation in Zoiko Billing connects every payment to the right billing record with exceptions visible: it captures payment evidence, normalizes provider states, matches and allocates funds, manages exceptions and reversals, and updates receivable positions with explicit source, currency, timing and audit context.",
+            "Payment reconciliation works by matching: incoming funds are matched to the correct customer and billing records, then allocation applies a payment across one or more invoices so each invoice's receivable position reflects the funds received. This is how payments, allocations and reconciliation keep the ledger in sync with the payment provider.",
+            "Reconciliation exceptions and reversals are handled explicitly rather than silently: failed, disputed or reversed payments are surfaced as exceptions so the receivable position always reflects the true state of each billing record.",
+            "Payment reconciliation can be automated: automated reconciliation rules run around billing events, and the Payment Report is the place to reconcile bank deposits against customer payments.",
         ],
     },
     {
