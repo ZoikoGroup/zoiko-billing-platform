@@ -472,6 +472,59 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Selected Plan Details & Limitations */}
+              {form.intendedPlan && (
+                <div style={{
+                  padding: "16px",
+                  background: "rgba(37, 99, 235, 0.08)",
+                  border: "1px solid rgba(37, 99, 235, 0.2)",
+                  borderRadius: "10px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  marginTop: "4px",
+                  marginBottom: "4px"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4 style={{ margin: 0, color: "#E2E8F0", fontSize: "14px", fontWeight: "600" }}>
+                      {form.intendedPlan.charAt(0).toUpperCase() + form.intendedPlan.slice(1)} Plan Features & Limits
+                    </h4>
+                    <span style={{ fontSize: "14px", fontWeight: "700", color: "#60A5FA" }}>
+                      {form.intendedPlan === 'essentials' ? '$49.00 / month' : form.intendedPlan === 'professional' ? '$149.00 / month' : '$399.00 / month'}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "12px", color: "#94A3B8" }}>
+                    {form.intendedPlan === 'essentials' ? "Entry-level self-serve plan for small teams." : form.intendedPlan === 'professional' ? "Growing-team self-serve plan with expanded limits." : "Self-serve plan for larger teams needing higher limits."}
+                  </p>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: "18px", fontSize: "12.5px", color: "#CBD5E1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                    {form.intendedPlan === 'essentials' && (
+                      <>
+                        <li><strong>Max 5 Users</strong></li>
+                        <li>Standard API Rate Limits</li>
+                        <li>Core Invoicing & Billing</li>
+                        <li>Standard Email Support</li>
+                      </>
+                    )}
+                    {form.intendedPlan === 'professional' && (
+                      <>
+                        <li><strong>Max 25 Users</strong></li>
+                        <li>Higher API Rate Limits</li>
+                        <li>Advanced Billing & Proration</li>
+                        <li>Priority Support</li>
+                      </>
+                    )}
+                    {form.intendedPlan === 'business' && (
+                      <>
+                        <li><strong>Max 100 Users</strong></li>
+                        <li>Maximum API Rate Limits</li>
+                        <li>Custom RBAC Roles & Multi-Entity</li>
+                        <li>24/7 Dedicated Support</li>
+                      </>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                 <input
                   id="termsAccepted"

@@ -230,6 +230,12 @@ class Settings(BaseSettings):
     # independent of ENABLE_RECURRING_BILLING_SCHEDULER's Plane-2 jobs.
     ENABLE_COMMERCIAL_RECURRING_INVOICING: bool = False
     COMMERCIAL_RECURRING_INVOICING_INTERVAL_MINUTES: int = 1440
+    # ZB-COM-016: renewal reminder emails + automatic Stripe off-session charge.
+    # Sends a 7-day advance warning to the org admin and auto-charges the stored
+    # Stripe payment method when current_period_end passes.
+    # Set to True once PLATFORM_STRIPE_SECRET_KEY is live; safe in test mode too.
+    ENABLE_COMMERCIAL_RENEWAL_REMINDER: bool = False
+    COMMERCIAL_RENEWAL_REMINDER_INTERVAL_MINUTES: int = 1440  # daily
 
     # ── Commercial (Plane 1) free-trial enforcement (§B3) ───────────────
     # A self-serve subscription gets a trial_ends_at deadline either from an

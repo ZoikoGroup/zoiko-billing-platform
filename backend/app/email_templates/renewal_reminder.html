@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px;">
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">Notice of upcoming subscription renewal.</div>
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td align="center">
+    <table width="600" cellpadding="20" cellspacing="0" role="presentation" style="background: #ffffff; border-radius: 12px;">
+      <tr><td style="background: #2563EB; border-radius: 12px 12px 0 0; text-align: center; padding: 20px;">
+        <img src="{{logo_url}}" alt="{{company_name}}" width="160" style="display:block; width:160px; max-width:160px; height:auto; margin:0 auto 10px;" /><br/>
+        <span style="display:block; font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,0.85); margin-bottom:10px;">Zoiko Billing</span>
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Subscription Renewal Notice</h1>
+      </td></tr>
+      <tr><td style="font-size: 16px; color: #111827;">
+        <p>Dear {{customer_name}},</p>
+        <p>This is a notice that your {{plan_name}} plan for {{organization_name}} will automatically renew in {{days_until_renewal}} days on {{renewal_date}}.</p>
+        <table width="100%" cellpadding="8" cellspacing="0" role="presentation" style="background: #eff6ff; border-radius: 8px; margin: 16px 0; font-size: 16px;">
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Plan</td>
+            <td style="font-size: 16px; font-weight: bold; color: #111827;">{{plan_name}}</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Billing Cycle</td>
+            <td style="font-size: 16px; color: #111827;">{{billing_interval}}</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Renewal Date</td>
+            <td style="font-size: 16px; color: #111827;">{{renewal_date}}</td>
+          </tr>
+          <tr>
+            <td style="font-size: 16px; color: #6b7280;">Amount</td>
+            <td style="font-size: 16px; font-weight: bold; color: #2563EB;">{{currency}} {{amount}}</td>
+          </tr>
+        </table>
+        {{#if payment_method_last4}}<p style="color: #6b7280; font-size: 16px;">Payment will be charged automatically to your card ending in <strong>{{payment_method_last4}}</strong>.</p>{{/if}}
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="{{billing_url}}" style="display: inline-block; background: #2563EB; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold; line-height: 1; padding: 15px 32px; border-radius: 8px; min-height: 44px; box-sizing: border-box;">Manage Billing</a>
+        </p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        {{#if invoice_footer}}<p style="color: #6b7280; font-size: 16px;">{{invoice_footer}}</p>{{/if}}
+        <p style="color: #6b7280; font-size: 16px;">This is an automated billing message sent by {{company_name}}.{{#if support_email}} Questions? Contact <a href="mailto:{{support_email}}" style="color: #2563EB;">{{support_email}}</a>.{{/if}}</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body>
+</html>
