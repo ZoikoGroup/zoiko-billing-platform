@@ -526,15 +526,21 @@ class InvoiceRepository(BaseRepository[Invoice]):
         currency_rates: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         rate = self._rate_case(Invoice.currency, currency_rates)
+        # Parse the query-string dates before they reach SQL, like every other
+        # issue_date filter in this repository: under psycopg 3 a raw str is
+        # bound as text and Postgres rejects `date >= text`, so the dashboard's
+        # default 30-day range made this endpoint return HTTP 500.
+        issue_from = self._parse_date_boundary(date_from, "date_from").date() if date_from else None
+        issue_to = self._parse_date_boundary(date_to, "date_to").date() if date_to else None
         base_filters = [
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
             Invoice.status != "draft",
         ]
-        if date_from:
-            base_filters.append(Invoice.issue_date >= date_from)
-        if date_to:
-            base_filters.append(Invoice.issue_date <= date_to)
+        if issue_from:
+            base_filters.append(Invoice.issue_date >= issue_from)
+        if issue_to:
+            base_filters.append(Invoice.issue_date <= issue_to)
 
         now = datetime.utcnow()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -592,10 +598,10 @@ class InvoiceRepository(BaseRepository[Invoice]):
             Invoice.paid_at.isnot(None),
             Invoice.issue_date.isnot(None),
         )
-        if date_from:
-            avg_days_query = avg_days_query.filter(Invoice.issue_date >= date_from)
-        if date_to:
-            avg_days_query = avg_days_query.filter(Invoice.issue_date <= date_to)
+        if issue_from:
+            avg_days_query = avg_days_query.filter(Invoice.issue_date >= issue_from)
+        if issue_to:
+            avg_days_query = avg_days_query.filter(Invoice.issue_date <= issue_to)
         avg_days = float(avg_days_query.scalar() or 0)
 
         collection_rate = (paid_amount / total_amount * 100) if total_amount > 0 else 0
