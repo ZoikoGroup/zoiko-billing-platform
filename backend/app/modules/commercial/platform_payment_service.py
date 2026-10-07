@@ -27,6 +27,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.modules.commercial.enums import (
+    PlatformInvoicePaymentStatus,
+    PlatformInvoiceStatus,
     PlatformPaymentMethod,
     PlatformPaymentStatus,
 )
@@ -187,11 +189,17 @@ class PlatformPaymentService:
         self.db.add(allocation)
         self.db.flush()
 
-        # Update invoice paid_amount and balance_due
+        # Update invoice paid_amount, balance_due, and payment status
         invoice.paid_amount = invoice.paid_amount + amount
         invoice.balance_due = invoice.total_amount - invoice.paid_amount
-        if invoice.balance_due < Decimal("0"):
+        if invoice.balance_due <= Decimal("0"):
             invoice.balance_due = Decimal("0")
+            invoice.paid_at = datetime.utcnow()
+            invoice.status = PlatformInvoiceStatus.PAID
+            invoice.payment_status = PlatformInvoicePaymentStatus.FULL
+        else:
+            invoice.status = PlatformInvoiceStatus.PARTIALLY_PAID
+            invoice.payment_status = PlatformInvoicePaymentStatus.PARTIAL
         self.db.flush()
 
         self._audit.log_no_commit(
@@ -243,6 +251,15 @@ class PlatformPaymentService:
             invoice.balance_due = invoice.total_amount - invoice.paid_amount
             if invoice.balance_due < Decimal("0"):
                 invoice.balance_due = Decimal("0")
+            if invoice.paid_amount <= Decimal("0"):
+                invoice.paid_amount = Decimal("0")
+                invoice.payment_status = PlatformInvoicePaymentStatus.NONE
+                invoice.paid_at = None
+                if invoice.status == PlatformInvoiceStatus.PAID:
+                    invoice.status = PlatformInvoiceStatus.ISSUED
+            else:
+                invoice.payment_status = PlatformInvoicePaymentStatus.PARTIAL
+                invoice.status = PlatformInvoiceStatus.PARTIALLY_PAID
             self.db.flush()
 
         self._audit.log_no_commit(
