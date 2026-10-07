@@ -324,6 +324,10 @@ def test_triage_read_is_role_gated(db_session):
 def test_api_metrics_p95_math():
     import app.core.api_metrics as api_metrics
 
+    # The window is process-global and the request middleware records every
+    # /api/super-admin/* call made by earlier tests; a slow one (e.g. 1077.8 ms
+    # on a CI runner) would otherwise become max_ms. Start from a clean window.
+    api_metrics._WINDOW.clear()
     for ms in [10, 20, 30, 40, 50, 60, 70, 80, 90, 1000]:
         api_metrics.record(ms)
     stats = api_metrics.snapshot(window_seconds=3600)
