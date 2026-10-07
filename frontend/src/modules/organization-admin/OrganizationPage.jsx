@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getOrganizationDetails, updateOrganizationDetails } from "../../service/orgAdminService";
 import { stripeConnectApi } from "../../service/billingService";
 import { X, CheckCircle, AlertTriangle } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+import { ROLES } from "../../config/roles";
 
 // Palette + type match the Login page: Inter/JetBrains Mono, blue/navy primary,
 // emerald success, red danger, slate ink. See src/pages/LoginPage.jsx.
@@ -61,7 +63,7 @@ const styles = `
 
   .org-dash .btn{
     font-family:'Inter', sans-serif; font-size:13.5px; font-weight:600;
-    padding:12px 22px; border-radius:50px; cursor:pointer;
+    padding:12px 22px; border-radius:8px; cursor:pointer;
     display:inline-flex; align-items:center; gap:8px; border:1px solid transparent;
     transition:transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
     white-space:nowrap;
@@ -151,9 +153,11 @@ const styles = `
   .org-dash .rows{ padding:6px 24px 18px; }
   .org-dash .row{
     display:flex; align-items:center; justify-content:space-between;
-    padding:13px 0; border-bottom:1px solid #F3F4F6;
+    gap:16px; padding:13px 0; border-bottom:1px solid #F3F4F6;
     font-size:13.5px;
   }
+  .org-dash .row .label{ flex:none; }
+  .org-dash .row .value{ min-width:0; overflow-wrap:anywhere; }
   .org-dash .row:last-child{ border-bottom:none; }
   .org-dash .row .label{ color:var(--ink-soft); }
   .org-dash .row .value{ font-weight:600; color:var(--ink); text-align:right; }
@@ -181,6 +185,9 @@ const styles = `
   .org-dash .modal-close:hover{ color:var(--ink); border-color:#D1D5DB; }
   .org-dash .modal-body{ padding:20px 26px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
   .org-dash .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:520px){ .org-dash .form-grid{ grid-template-columns:1fr; } }
+  .org-dash .form-field .field-error{ margin:6px 0 0; font-size:12px; color:var(--danger); }
+  .org-dash .form-field [aria-invalid="true"]{ border-color:var(--danger); }
   .org-dash .form-field label{ display:block; font-size:13px; font-weight:500; color:var(--ink-soft); margin-bottom:6px; }
   .org-dash .form-field input, .org-dash .form-field textarea{
     width:100%; font-family:'Inter', sans-serif; font-size:14px; color:#111827;
@@ -296,6 +303,40 @@ const DetailRow = ({ label, value, mono, faint, pill }) => (
   </div>
 );
 
+// Must stay at module scope: a component declared inside the page body is a new
+// type on every render, so React remounts the input and focus is lost per keystroke.
+const EditField = ({ id, label, value, onChange, textarea, mono, error, maxLength }) => {
+  const Tag = textarea ? "textarea" : "input";
+  return (
+    <div className="form-field">
+      <label htmlFor={id}>{label}</label>
+      <Tag
+        id={id}
+        type={textarea ? undefined : "text"}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        rows={textarea ? 3 : undefined}
+        maxLength={maxLength}
+        className={mono ? "mono" : undefined}
+        aria-invalid={error ? "true" : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+      />
+      {error && <p id={`${id}-error`} className="field-error">{error}</p>}
+    </div>
+  );
+};
+
+// Mirrors the backend OrganizationUpdate rules (organizations/schemas.py).
+export function validateOrgForm(form) {
+  const errors = {};
+  const name = (form.name || "").trim();
+  if (!name) errors.name = "Organization name is required.";
+  else if (name.length > 200) errors.name = "Organization name must be 200 characters or fewer.";
+  const currency = (form.currency || "").trim();
+  if (currency && !/^[A-Za-z]{3}$/.test(currency)) errors.currency = "Use a 3-letter currency code, e.g. USD.";
+  return errors;
+}
+
 const StatTile = ({ glowColor, label, value, sub, valueColor }) => (
   <div className="glass stat-tile">
     <div className="glow" style={{ background: glowColor }} />
@@ -312,7 +353,11 @@ export default function OrgAdminOrganizationPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const [toast, setToast] = useState({ msg: null, type: "success" });
+  const { user } = useAuth();
+  // PUT /organizations/me is org-admin only; billing admins get a read-only view.
+  const canEdit = user?.role === ROLES.ORG_ADMIN || user?.role === ROLES.SUPER_ADMIN;
   const [stripe, setStripe] = useState(null);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeBusy, setStripeBusy] = useState(null);
@@ -396,21 +441,50 @@ export default function OrgAdminOrganizationPage() {
 
   useEffect(() => { fetchOrg(); }, []);
 
+  // Auto-dismiss toasts so stale messages don't linger over the page.
+  useEffect(() => {
+    if (!toast.msg) return undefined;
+    const t = setTimeout(() => setToast({ msg: null, type: "success" }), 5000);
+    return () => clearTimeout(t);
+  }, [toast.msg]);
+
+  const closeEdit = useCallback(() => { if (!saving) setShowEdit(false); }, [saving]);
+
+  useEffect(() => {
+    if (!showEdit) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") closeEdit(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showEdit, closeEdit]);
+
+  const setField = (key) => (v) => {
+    setEditForm((f) => ({ ...f, [key]: v }));
+    setFormErrors((e) => (e[key] ? { ...e, [key]: undefined } : e));
+  };
+
   const openEdit = () => {
     setEditForm({
       name: org.name || "",
       industry: org.industry || "",
       address: org.address || "",
       timezone: org.timezone || "UTC",
-      currency: org.currency,
+      currency: org.currency || "",
     });
+    setFormErrors({});
     setShowEdit(true);
   };
 
   const handleSave = async () => {
+    const errors = validateOrgForm(editForm);
+    setFormErrors(errors);
+    if (Object.keys(errors).length) return;
     setSaving(true);
     try {
-      await updateOrganizationDetails(editForm);
+      await updateOrganizationDetails({
+        ...editForm,
+        name: editForm.name.trim(),
+        currency: (editForm.currency || "").trim().toUpperCase() || undefined,
+      });
       setShowEdit(false);
       setToast({ msg: "Organization updated successfully.", type: "success" });
       fetchOrg();
@@ -478,22 +552,6 @@ export default function OrgAdminOrganizationPage() {
   const currency = org.currency;
   const regDate = org.created_at ? new Date(org.created_at).toLocaleDateString() : "—";
 
-  const EditField = ({ label, value, onChange, textarea, mono }) => {
-    const Tag = textarea ? "textarea" : "input";
-    return (
-      <div className="form-field">
-        <label>{label}</label>
-        <Tag
-          type="text"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          rows={textarea ? 3 : undefined}
-          className={mono ? "mono" : undefined}
-        />
-      </div>
-    );
-  };
-
   return (
     <div className="org-dash">
       <style>{styles}</style>
@@ -507,9 +565,11 @@ export default function OrgAdminOrganizationPage() {
             <h1 className="title">My Organization</h1>
             <p className="subtitle">A live record of your organization's identity and billing activity.</p>
           </div>
-          <div className="head-actions">
-            <button className="btn btn-primary" onClick={openEdit}>Edit organization</button>
-          </div>
+          {canEdit && (
+            <div className="head-actions">
+              <button className="btn btn-primary" onClick={openEdit}>Edit organization</button>
+            </div>
+          )}
         </div>
 
         <div className="id-card glass rise" style={{ animationDelay: ".1s" }}>
@@ -601,7 +661,7 @@ export default function OrgAdminOrganizationPage() {
                   </button>
                 </>
               ) : (
-                <button className="btn btn-primary btn-sm" onClick={handleConnectStripe} disabled={stripeBusy === "connect" || stripeBusy === "callback"}>
+                <button className="btn btn-primary btn-sm" onClick={handleConnectStripe} disabled={stripe?.connect_configured === false || stripeBusy === "connect" || stripeBusy === "callback"}>
                   {stripeBusy === "connect" || stripeBusy === "callback" ? "Connecting..." : "Connect Stripe"}
                 </button>
               )}
@@ -610,7 +670,7 @@ export default function OrgAdminOrganizationPage() {
 
           <div className="stripe-panel-body">
             {stripeLoading && !stripe ? (
-              <div className="stripe-loading">Loading Stripe connection status…</div>
+              <div className="stripe-loading" role="status">Loading Stripe connection status…</div>
             ) : (
               <>
                 <div className="stripe-status-summary">
@@ -622,6 +682,7 @@ export default function OrgAdminOrganizationPage() {
                   )}
                 </div>
 
+                {stripe?.connected_account_id && (
                 <div className="rows">
                   <DetailRow label="Account ID" value={stripe?.connected_account_id} mono faint />
                   <DetailRow label="Country" value={stripe?.country} mono />
@@ -632,10 +693,13 @@ export default function OrgAdminOrganizationPage() {
                     <DetailRow label="Connected At" value={new Date(stripe.connected_at).toLocaleDateString()} mono />
                   )}
                 </div>
+                )}
 
                 {!stripe?.connected && (
                   <div className="stripe-hint">
-                    {stripe?.status === "pending_onboarding" || !stripe?.status
+                    {stripe?.connect_configured === false
+                      ? "Stripe Connect isn't available on this platform yet. Please contact Zoiko support to enable online card payments."
+                      : stripe?.status === "pending_onboarding" || !stripe?.status
                       ? "Connect your Stripe account to start accepting card payments on invoices."
                       : "Complete the remaining Stripe requirements to activate online payments."}
                   </div>
@@ -648,11 +712,6 @@ export default function OrgAdminOrganizationPage() {
                     {stripe?.requirements_currently_due?.length > 0 && (
                       <p className="stripe-warning-item">Requirements due: {stripe.requirements_currently_due.join(", ")}</p>
                     )}
-                    {stripe?.connected && (
-                      <button className="btn btn-ghost btn-sm stripe-warning-btn" onClick={refreshStripeStatus} disabled={stripeBusy === "sync"}>
-                        {stripeBusy === "sync" ? "Syncing..." : "Refresh Status"}
-                      </button>
-                    )}
                   </div>
                 )}
               </>
@@ -663,34 +722,34 @@ export default function OrgAdminOrganizationPage() {
       </div>
 
       {toast.msg && (
-        <div className={`toast ${toast.type === "success" ? "toast-success" : "toast-danger"}`}>
+        <div className={`toast ${toast.type === "success" ? "toast-success" : "toast-danger"}`} role={toast.type === "success" ? "status" : "alert"}>
           {toast.type === "success" ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
           {toast.msg}
-          <button onClick={() => setToast({ msg: null })}><X className="w-3.5 h-3.5" /></button>
+          <button aria-label="Dismiss notification" onClick={() => setToast({ msg: null, type: "success" })}><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 
       {showEdit && (
-        <div className="modal-overlay" onClick={() => setShowEdit(false)}>
-          <div className="glass modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="glass modal" role="dialog" aria-modal="true" aria-labelledby="org-edit-title">
             <div className="modal-head">
               <div>
-                <h2 className="modal-title">Edit Organization</h2>
+                <h2 className="modal-title" id="org-edit-title">Edit Organization</h2>
                 <p className="modal-sub">Update your organization details</p>
               </div>
-              <button className="modal-close" onClick={() => setShowEdit(false)}><X className="w-4 h-4" /></button>
+              <button className="modal-close" aria-label="Close" onClick={closeEdit}><X className="w-4 h-4" /></button>
             </div>
             <div className="modal-body">
-              <EditField label="Organization Name" value={editForm.name} onChange={(v) => setEditForm({ ...editForm, name: v })} />
-              <EditField label="Industry" value={editForm.industry} onChange={(v) => setEditForm({ ...editForm, industry: v })} />
-              <EditField label="Address" value={editForm.address} onChange={(v) => setEditForm({ ...editForm, address: v })} textarea />
+              <EditField id="org-edit-name" label="Organization Name" value={editForm.name} onChange={setField("name")} error={formErrors.name} maxLength={200} />
+              <EditField id="org-edit-industry" label="Industry" value={editForm.industry} onChange={setField("industry")} />
+              <EditField id="org-edit-address" label="Address" value={editForm.address} onChange={setField("address")} textarea />
               <div className="form-grid">
-                <EditField label="Currency" value={editForm.currency} onChange={(v) => setEditForm({ ...editForm, currency: v })} mono />
-                <EditField label="Timezone" value={editForm.timezone} onChange={(v) => setEditForm({ ...editForm, timezone: v })} mono />
+                <EditField id="org-edit-currency" label="Currency" value={editForm.currency} onChange={setField("currency")} error={formErrors.currency} maxLength={3} mono />
+                <EditField id="org-edit-timezone" label="Timezone" value={editForm.timezone} onChange={setField("timezone")} mono />
               </div>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={() => setShowEdit(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={closeEdit} disabled={saving}>Cancel</button>
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                 {saving ? "Saving..." : "Save Changes"}
               </button>

@@ -407,8 +407,14 @@ export default function CategoriesPage() {
                   <div className="flex items-center justify-center py-10"><Spinner /></div>
                 ) : selectedProducts.length === 0 ? (
                   <div className="px-6 py-12">
-                    <EmptyState icon={Package} title="No products in this category"
-                      message="Products added to this category will appear here." />
+                    {/* Totals include nested categories; say so instead of implying the category is empty. */}
+                    {productCountFor(selected) > 0 ? (
+                      <EmptyState icon={Package} title="No products directly in this category"
+                        message={`${productCountFor(selected)} product(s) are in its nested categories — select a nested category to see them.`} />
+                    ) : (
+                      <EmptyState icon={Package} title="No products in this category"
+                        message="Products added to this category will appear here." />
+                    )}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

@@ -268,7 +268,9 @@ class BillingAdminService:
             return []
         items = []
         for fname in sorted(os.listdir(TEMPLATE_DIR)):
-            if not fname.endswith(".html"):
+            # "_"-prefixed files (e.g. _base_dark.html) are shared layout
+            # partials, not sendable templates.
+            if not fname.endswith(".html") or fname.startswith("_"):
                 continue
             fpath = os.path.join(TEMPLATE_DIR, fname)
             try:
@@ -311,7 +313,8 @@ class BillingAdminService:
         context = dict(variables) if variables else {}
         rendered_html = _render_local_template(html_content, context)
         subject = f"Template: {template_name}"
-        title_match = re.search(r"<title[^>]*>(.*?)</title>", html_content, re.IGNORECASE)
+        # Subject from the rendered title, so provided variables show up in it.
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", rendered_html, re.IGNORECASE | re.DOTALL)
         if title_match:
             subject = title_match.group(1).strip()
         return EmailTemplatePreviewResponse(

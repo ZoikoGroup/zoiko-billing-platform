@@ -20,6 +20,7 @@ import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
+import BillingSettingsErrorBoundary from "./modules/billing/dashboard/BillingSettingsErrorBoundary";
 
 const BillingAdminWorkspaceDashboard = lazy(() => import("./modules/billing-admin/WorkspaceDashboardPage"));
 const BillingAdminWorkspaceOrganization = lazy(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
@@ -158,7 +159,7 @@ const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
   { path: "/billing/reports", element: <ReportsPage /> },
   { path: "/billing/reports/forecast", element: <ForecastReport /> },
-  { path: "/billing/settings", element: <BillingSettingsPage /> },
+  { path: "/billing/settings", element: <BillingSettingsErrorBoundary><BillingSettingsPage /></BillingSettingsErrorBoundary> },
   { path: "/billing/customers", element: <CustomerListPage /> },
   { path: "/billing/customers/dashboard", element: <CustomerDashboardPage /> },
   { path: "/billing/customers/:id", element: <CustomerProfilePage /> },

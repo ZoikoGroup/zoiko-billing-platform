@@ -75,8 +75,10 @@ def _stripe_module():
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
     if not settings.PLATFORM_STRIPE_SECRET_KEY:
+        # The missing setting name is for operators (logs), not for end users.
+        logger.warning("Platform Stripe is not configured: PLATFORM_STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
-            "Platform Stripe is not configured. Set PLATFORM_STRIPE_SECRET_KEY in the environment."
+            "Online payment is not available yet. Please contact Zoiko support to complete payment."
         )
     stripe.api_key = settings.PLATFORM_STRIPE_SECRET_KEY
     return stripe

@@ -403,6 +403,8 @@ def preview_email_template(
         parsed_vars: Optional[Dict[str, str]] = None
         if variables:
             parsed_vars = json.loads(variables)
+            if not isinstance(parsed_vars, dict):
+                raise HTTPException(status_code=400, detail="Variables must be a JSON object, e.g. {\"customer_name\": \"Jane\"}")
         result = svc.preview_email_template(template_name=template_name, variables=parsed_vars)
         logger.info("GET /billing/settings/email-templates/%s/preview -> 200, vars_found=%d", template_name, len(result.variables_found))
         return result
@@ -410,6 +412,8 @@ def preview_email_template(
         raise HTTPException(status_code=404, detail=str(e))
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON in variables parameter: {e}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("GET /billing/settings/email-templates/%s/preview failed: %s", template_name, str(e), exc_info=True)
         raise
