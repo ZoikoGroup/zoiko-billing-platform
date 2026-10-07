@@ -546,11 +546,6 @@ class InvoiceRepository(BaseRepository[Invoice]):
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         outstanding_cond = Invoice.status.in_(["sent", "overdue", "partially_paid"])
         paid_cond = Invoice.status == "paid"
-        # The shared overdue rule the invoice list's "overdue" filter uses
-        # (flagged OVERDUE, or open and past due). Counting only the OVERDUE
-        # flag -- set by an off-by-default scheduler -- showed "Overdue 0" while
-        # the list the card opens contained past-due invoices.
-        overdue_cond = self.overdue_filter_clause()
         this_month_cond = and_(paid_cond, Invoice.paid_at >= month_start)
 
         # Single grouped-aggregate query instead of 7 separate round trips
@@ -559,19 +554,17 @@ class InvoiceRepository(BaseRepository[Invoice]):
         # is computed here too, before month_start was previously used
         # further down -- moved up so it's available for this same query.
         (total_invoices, total_amount, paid_amount, outstanding_amount,
-         overdue_amount, this_month_revenue, total_tax) = self.db.query(
+         this_month_revenue, total_tax) = self.db.query(
             func.count(Invoice.id),
             func.coalesce(func.sum(Invoice.total_amount * rate), 0),
             func.coalesce(func.sum(case((paid_cond, Invoice.total_amount * rate), else_=0)), 0),
             func.coalesce(func.sum(case((outstanding_cond, Invoice.balance_due * rate), else_=0)), 0),
-            func.coalesce(func.sum(case((overdue_cond, Invoice.balance_due * rate), else_=0)), 0),
             func.coalesce(func.sum(case((this_month_cond, Invoice.total_amount * rate), else_=0)), 0),
             func.coalesce(func.sum(Invoice.tax_amount * rate), 0),
         ).filter(*base_filters).one()
         total_amount = float(total_amount)
         paid_amount = float(paid_amount)
         outstanding_amount = float(outstanding_amount)
-        overdue_amount = float(overdue_amount)
         this_month_revenue = float(this_month_revenue)
         total_tax = float(total_tax)
 
@@ -590,13 +583,22 @@ class InvoiceRepository(BaseRepository[Invoice]):
             Invoice.is_active == True,
         ).group_by(Invoice.status).all()
         status_counts = {row[0].value if hasattr(row[0], "value") else str(row[0]): row[1] for row in status_rows}
-        # Same snapshot semantics as status_counts (not date-windowed), but with
-        # the shared overdue rule, so it equals what /invoices?status=overdue lists.
-        overdue_count = self.db.query(func.count(Invoice.id)).filter(
+        # Overdue is a current-state figure: count AND amount are a snapshot
+        # (not windowed by issue_date) using the shared overdue rule (flagged
+        # OVERDUE, or open and past due -- the flag alone depends on an
+        # off-by-default scheduler), so both equal what /invoices?status=overdue
+        # lists. Windowing only the amount showed "1 invoice overdue — ₹0.00"
+        # for an invoice issued before the selected range.
+        overdue_count, overdue_amount = self.db.query(
+            func.count(Invoice.id),
+            func.coalesce(func.sum(Invoice.balance_due * rate), 0),
+        ).filter(
             Invoice.organization_id == organization_id,
             Invoice.is_active == True,
             self.overdue_filter_clause(),
-        ).scalar() or 0
+        ).one()
+        overdue_count = overdue_count or 0
+        overdue_amount = float(overdue_amount)
 
         avg_days_query = self.db.query(
             func.avg(
