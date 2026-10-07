@@ -542,8 +542,20 @@ export function DataTable({
                     <tr
                       key={key}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      // Clickable rows must also be reachable/activatable by
+                      // keyboard. Only react to keys pressed on the row itself
+                      // so Enter/Space inside a cell's own control (checkbox,
+                      // action button) keeps its native behaviour.
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onKeyDown={onRowClick ? (e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                          e.preventDefault();
+                          onRowClick(row);
+                        }
+                      } : undefined}
                       className={`border-b border-slate-100 last:border-0 transition-colors ${
-                        onRowClick ? "cursor-pointer hover:bg-slate-50/70" : "hover:bg-slate-50/40"
+                        onRowClick ? "cursor-pointer hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50" : "hover:bg-slate-50/40"
                       } ${striped && idx % 2 === 1 ? "bg-slate-50/40" : ""} ${selected ? "bg-brand-50/50" : ""}`}
                     >
                       {onSelectionChange && (

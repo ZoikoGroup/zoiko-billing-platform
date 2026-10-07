@@ -11,6 +11,7 @@ import { quoteApi, customerApi } from "../../../service/billingService";
 import { extractArray, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -62,8 +63,15 @@ export default function QuotationDashboardPage() {
   } = useBillingDateRange();
 
   const hasLoadedOnce = useRef(false);
+  // The customer list (id -> name map) is not date-filtered, so it is only
+  // (re)fetched on first load and on an explicit refresh.
+  const customersLoadedRef = useRef(false);
+  // Only the most recently started fetch may update state, so a previous
+  // range's slower response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
 
-  const fetchData = useCallback(async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false, includeCustomers = true) => {
+    const isCurrent = beginRequest();
     try {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
@@ -75,23 +83,30 @@ export default function QuotationDashboardPage() {
           date_from: dateRange.date_from || undefined,
           date_to: dateRange.date_to || undefined,
         }),
-        customerApi.list({ per_page: 200 }).catch(() => null),
+        includeCustomers ? customerApi.list({ per_page: 200 }).catch(() => null) : Promise.resolve(null),
       ]);
+      if (!isCurrent()) return;
       const items = extractArray(quotesResp);
       setQuotes(items);
       setTotal(Number(quotesResp?.total ?? items.length));
-      if (customersResp) setCustomers(extractArray(customersResp));
+      if (customersResp) {
+        setCustomers(extractArray(customersResp));
+        customersLoadedRef.current = true;
+      }
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.detail || err?.message || "Failed to load quotation dashboard data");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
-  }, [dateRange.date_from, dateRange.date_to]);
+  }, [beginRequest, dateRange.date_from, dateRange.date_to]);
 
-  useEffect(() => { fetchData(hasLoadedOnce.current); }, [fetchData]);
+  useEffect(() => { fetchData(hasLoadedOnce.current, !customersLoadedRef.current); }, [fetchData]);
 
   const customerMap = useMemo(() => {
     const map = {};

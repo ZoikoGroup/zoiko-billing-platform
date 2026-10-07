@@ -410,8 +410,8 @@ def preview_email_template(
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON in variables parameter: {e}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Variables must be valid JSON, e.g. {\"customer_name\": \"Jane\"}")
     except HTTPException:
         raise
     except Exception as e:

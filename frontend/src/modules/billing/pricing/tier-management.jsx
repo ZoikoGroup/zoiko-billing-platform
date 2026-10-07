@@ -55,7 +55,7 @@ function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, err
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="tier-from" className="block text-sm font-medium text-slate-700 mb-1">Min Units *</label>
-              <input id="tier-from" type="number" min="1" step="1" value={values.from_quantity} onChange={set("from_quantity")} className={inputCls} />
+              <input id="tier-from" autoFocus type="number" min="1" step="1" value={values.from_quantity} onChange={set("from_quantity")} className={inputCls} />
             </div>
             <div>
               <label htmlFor="tier-to" className="block text-sm font-medium text-slate-700 mb-1">Max Units</label>
@@ -104,7 +104,7 @@ function ConfirmRemoveModal({ tier, label, onCancel, onConfirm, loading, error }
         </div>
         {error && <p role="alert" className="mb-2 text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
+          <button autoFocus onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
             className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
             {loading ? "Removing..." : "Remove"}

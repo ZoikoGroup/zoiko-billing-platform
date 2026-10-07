@@ -14,6 +14,7 @@ import { getCurrencySelectOptions, getCountrySelectOptions, getCurrencyForCountr
 import { getCustomerTaxFields } from "../utils/countryIntelligence";
 import { useCurrency, getOrgBaseCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 15;
@@ -78,7 +79,9 @@ export default function CustomerListPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // Seeded from ?status= so the FIRST request is already filtered (a KPI link
+  // like ?status=active used to fire an unfiltered request first).
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") || "");
   const [typeFilter, setTypeFilter] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [paymentTermsFilter, setPaymentTermsFilter] = useState("");
@@ -165,7 +168,10 @@ export default function CustomerListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchCustomers = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -188,20 +194,24 @@ export default function CustomerListPage() {
       };
 
       const data = await customerApi.list(params);
+      if (!isCurrent()) return;
       const items = data.items || data.data || data || [];
       setCustomers(Array.isArray(items) ? items : []);
       setTotal(data.total || items.length || 0);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load customers");
       setCustomers([]);
       setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -403,10 +413,10 @@ export default function CustomerListPage() {
   });
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8" onClick={() => { setShowCreateModal(false); clearForm(); }}>
-      <div className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
+      <div role="dialog" aria-modal="true" aria-labelledby="customer-create-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800">New {singular}</h2>
+          <h2 id="customer-create-title" className="text-xl font-bold text-slate-800">New {singular}</h2>
           <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button>
         </div>
         {limitError ? (
@@ -479,9 +489,9 @@ export default function CustomerListPage() {
   const renderEditModal = () => {
     if (!editCustomer) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8" onClick={() => setShowEditModal(false)}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-slate-800">Edit {singular}</h2><button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button></div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
+        <div role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-6"><h2 id="customer-edit-title" className="text-xl font-bold text-slate-800">Edit {singular}</h2><button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button></div>
           {formError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             {["company_name", "display_name", "email", "phone", "website"].map((field) => (

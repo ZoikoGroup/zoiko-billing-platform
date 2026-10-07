@@ -7,6 +7,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, Pagination, ProductSelector } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -147,7 +148,10 @@ export default function PricingPlansPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchPlans = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -161,19 +165,23 @@ export default function PricingPlansPage() {
         sort_order: sortDir,
       };
       const data = await pricingApi.list(params);
+      if (!isCurrent()) return;
       const items = data.items || data.data || data || [];
       setPlans(Array.isArray(items) ? items : []);
       setTotal(data.total || items.length || 0);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load pricing plans");
       setPlans([]); setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
   useEffect(() => {
@@ -698,15 +706,16 @@ export default function PricingPlansPage() {
     const setData = isEdit ? setEditPlan : setNewPlan;
     const onSubmit = isEdit ? handleUpdate : handleCreate;
     const title = isEdit ? "Edit Pricing Plan" : "New Pricing Plan";
+    const titleId = isEdit ? "pricing-plan-edit-title" : "pricing-plan-create-title";
     const btnLabel = isEdit ? (formLoading ? "Saving..." : "Save Changes") : (formLoading ? "Creating..." : "Create Plan");
     if (!show) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+              <h2 id={titleId} className="text-xl font-bold text-slate-800">{title}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{isEdit ? "Update pricing plan parameters" : "Define how this product is priced and billed"}</p>
             </div>
             <button onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }} className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Close dialog"><X size={20} /></button>

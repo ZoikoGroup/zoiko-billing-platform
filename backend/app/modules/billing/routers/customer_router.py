@@ -3,12 +3,14 @@ modules/billing/routers/customer_router.py
 ------------------------------------------
 """
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.exceptions import ZoikoException
 from app.core.dependencies import (
     get_current_user,
     get_current_billing_admin,
@@ -46,6 +48,8 @@ from app.modules.billing.schemas import (
 from fastapi.responses import Response as HTTPResponse
 import json as _json
 from app.modules.billing.services.customer_import_service import CustomerImportService
+
+logger = logging.getLogger("zoiko_billing")
 
 router = APIRouter(prefix="/customers", tags=["🧾 Customers"])
 
@@ -358,8 +362,12 @@ async def customer_import_preview(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Import preview failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Import preview failed")
+        raise HTTPException(status_code=500, detail="Import preview failed. Please check the file and try again, or contact support.")
 
     return result
 
@@ -402,8 +410,12 @@ def customer_import_confirm(
         raise HTTPException(status_code=410, detail=str(exc))
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Import confirmation failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Import confirmation failed")
+        raise HTTPException(status_code=500, detail="Import confirmation failed. Please check the file and try again, or contact support.")
 
     return result
 
@@ -430,8 +442,12 @@ def customer_import_template(
     try:
         svc = CustomerImportService(db)
         content, mimetype = svc.generate_template(fmt=format)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Template generation failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Template generation failed")
+        raise HTTPException(status_code=500, detail="Template generation failed. Please try again, or contact support if it keeps happening.")
 
     ext = "xlsx" if format == "xlsx" else "csv"
     return HTTPResponse(

@@ -39,6 +39,8 @@ from app.modules.billing.services.customer_service import (
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES as VALID_CURRENCIES
 from app.modules.billing.utils.validators import validate_gst_format, validate_pan_format
 
+from app.modules.billing.services.import_row_errors import row_error_message
+
 logger = logging.getLogger("zoiko_billing")
 
 # ---------------------------------------------------------------------------
@@ -630,7 +632,7 @@ class CustomerImportService:
                         )
                         imported.append(row_idx)
                     except Exception as exc:
-                        failed.append({"row": row_idx, "error": str(exc)})
+                        failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Customer")})
                     continue
                 elif action == "create_copy":
                     mapped = self._make_unique_code(mapped, organization_id)
@@ -647,7 +649,7 @@ class CustomerImportService:
                 )
                 imported.append(row_idx)
             except Exception as exc:
-                failed.append({"row": row_idx, "error": str(exc)})
+                failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Customer")})
 
         # Only evict the cache once the final batch has been processed
         if is_complete:

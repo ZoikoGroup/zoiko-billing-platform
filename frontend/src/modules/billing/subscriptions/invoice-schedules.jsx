@@ -7,6 +7,7 @@ import { ErrorState } from "../../../components/billing-shared";
 import { subscriptionApi } from "../../../service/billingService";
 import { extractArray } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/locale";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -49,7 +50,10 @@ export default function InvoiceSchedulesPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchSchedules = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setLoading(true);
       setError(null);
@@ -57,15 +61,17 @@ export default function InvoiceSchedulesPage() {
       if (debouncedSearch) params.search_term = debouncedSearch;
       if (statusFilter) params.status = statusFilter;
       const data = await subscriptionApi.list(params);
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setSchedules(items);
       setTotal(data?.total || data?.total_count || items.length);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.detail || err?.message || "Failed to load schedules");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [safePage, debouncedSearch, statusFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter]);
 
   const refreshAll = useCallback(async () => {
     setRefreshing(true);

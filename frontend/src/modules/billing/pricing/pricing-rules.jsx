@@ -6,6 +6,7 @@ import HRPage from "../../../components/HRPage";
 import { pricingRuleApi } from "../../../service/billingService";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const RULE_TYPE_OPTIONS = [
   { value: "percentage_discount", label: "Percentage Discount" },
@@ -245,6 +246,12 @@ export default function PricingRulesPage() {
   const [error, setError] = useState(null);
   const [data, setData] = useState({ items: [], total: 0, page: 1, per_page: 20, pages: 0 });
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced so typing fires one request, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [ruleTypeFilter, setRuleTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -253,18 +260,22 @@ export default function PricingRulesPage() {
   const [saving, setSaving] = useState(false);
   const [viewItem, setViewItem] = useState(null);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async (page = 1) => {
+    const isCurrent = beginRequest();
     setLoading(true); setError(null);
     try {
       const params = { page, per_page: 20, active_only: !showInactive };
-      if (searchTerm) params.search_term = searchTerm;
+      if (debouncedSearch) params.search_term = debouncedSearch;
       if (ruleTypeFilter) params.rule_type = ruleTypeFilter;
       if (statusFilter) params.status = statusFilter;
       const res = await pricingRuleApi.list(params);
+      if (!isCurrent()) return;
       setData(res);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [searchTerm, ruleTypeFilter, statusFilter, showInactive]);
+    } catch (e) { if (isCurrent()) setError(e.message); }
+    finally { if (isCurrent()) setLoading(false); }
+  }, [beginRequest, debouncedSearch, ruleTypeFilter, statusFilter, showInactive]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

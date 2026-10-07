@@ -7,6 +7,7 @@ import HRPage from "../../../components/HRPage";
 import { invoiceApi, paymentApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Pagination } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -125,8 +126,11 @@ export default function BillingHistoryPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the lists (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async () => {
     const api = activeTab === "invoices" ? invoiceApi : paymentApi;
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -141,6 +145,7 @@ export default function BillingHistoryPage() {
       };
 
       const data = await api.list(params);
+      if (!isCurrent()) return;
       const items = data.items || data.data || data || [];
       const arr = Array.isArray(items) ? items : [];
 
@@ -152,14 +157,17 @@ export default function BillingHistoryPage() {
         setPaymentsTotal(data.total || arr.length || 0);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load billing data");
       if (activeTab === "invoices") { setInvoices([]); setInvoicesTotal(0); }
       else { setPayments([]); setPaymentsTotal(0); }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd]);
+  }, [beginRequest, activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd]);
 
   useEffect(() => {
     fetchData();

@@ -828,7 +828,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <span className="flex-1">{productAddWarning}</span>
-          <button onClick={() => setProductAddWarning(null)} className="text-amber-600 hover:text-amber-800 shrink-0">
+          <button type="button" onClick={() => setProductAddWarning(null)} aria-label="Dismiss warning" className="text-amber-600 hover:text-amber-800 shrink-0">
             <X size={14} />
           </button>
         </div>

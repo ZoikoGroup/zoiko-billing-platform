@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import HRPage from '../../../components/HRPage';
 import { productApi, pricingApi, invoiceApi, quoteApi, contractApi, subscriptionApi } from '../../../service/billingService';
@@ -45,6 +45,10 @@ function TypeBadge({ type }) {
     </span>
   );
 }
+
+// Lists that also feed the header KPIs, so they are loaded once per product
+// regardless of the active tab.
+const SUMMARY_TABS = ['pricing', 'invoices', 'contracts', 'subscriptions'];
 
 const FREQ_LABELS = {
   one_time: 'One Time', monthly: 'Monthly', quarterly: 'Quarterly',
@@ -169,35 +173,56 @@ export default function ProductProfilePage() {
     }).catch((err) => console.error("[ProductProfile] Failed to load categories:", err));
   }, []);
 
-  // Refetching the product alone is enough — its resulting state change is
-  // what the effects below already react to, cascading into a refresh of
-  // whichever of invoices/subscriptions/contracts/pricing/quotations/audit
-  // are relevant. Calling those fetchers here too would just duplicate the
-  // network calls those effects are about to make anyway.
-  const refreshAll = useCallback(() => {
-    setRefreshing(true);
-    fetchProduct().finally(() => setRefreshing(false));
-  }, [fetchProduct]);
-
-  useEffect(() => {
-    if (!activeTab || !product) return;
-    switch (activeTab) {
+  const fetchTabList = useCallback((tab) => {
+    switch (tab) {
       case 'pricing': fetchPricingPlans(); break;
       case 'quotations': fetchQuotations(); break;
       case 'invoices': fetchInvoices(); break;
       case 'contracts': fetchContracts(); break;
       case 'subscriptions': fetchSubscriptions(); break;
       case 'audit': fetchAuditLogs(); break;
+      default: break;
     }
-  }, [activeTab, product, fetchPricingPlans, fetchQuotations, fetchInvoices, fetchContracts, fetchSubscriptions, fetchAuditLogs]);
+  }, [fetchPricingPlans, fetchQuotations, fetchInvoices, fetchContracts, fetchSubscriptions, fetchAuditLogs]);
 
-  useEffect(() => {
-    if (!product) return;
+  const fetchSummaryLists = useCallback(() => {
     fetchInvoices();
     fetchSubscriptions();
     fetchContracts();
     fetchPricingPlans();
-  }, [product, fetchInvoices, fetchSubscriptions, fetchContracts, fetchPricingPlans]);
+  }, [fetchInvoices, fetchSubscriptions, fetchContracts, fetchPricingPlans]);
+
+  // Explicit refresh: refetch the product, the KPI-feeding lists and the
+  // active tab's list (if not already one of those) -- each exactly once.
+  const refreshAll = useCallback(() => {
+    setRefreshing(true);
+    fetchSummaryLists();
+    if (!SUMMARY_TABS.includes(activeTab)) fetchTabList(activeTab);
+    fetchProduct().finally(() => setRefreshing(false));
+  }, [fetchProduct, fetchSummaryLists, fetchTabList, activeTab]);
+
+  // The lists are fetched by route id, so they key on the id (plus "product
+  // has loaded"), not on the product object -- a refetched product (new
+  // object, same id) must not cascade into refetching every list.
+  const productLoaded = Boolean(product);
+
+  // KPI-feeding lists: once per product id.
+  useEffect(() => {
+    if (!productLoaded) return;
+    fetchSummaryLists();
+  }, [productLoaded, fetchSummaryLists]);
+
+  // Active tab's list: once per (product id, tab). When the id has just
+  // changed and the tab is one of the summary lists, the effect above is
+  // already fetching it -- don't fire the same endpoint twice.
+  const tabListIdRef = useRef(null);
+  useEffect(() => {
+    if (!activeTab || !productLoaded) return;
+    const idChanged = tabListIdRef.current !== id;
+    tabListIdRef.current = id;
+    if (idChanged && SUMMARY_TABS.includes(activeTab)) return;
+    fetchTabList(activeTab);
+  }, [activeTab, id, productLoaded, fetchTabList]);
 
   if (loading) {
     return (

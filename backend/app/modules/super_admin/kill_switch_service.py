@@ -258,10 +258,11 @@ class BillingKillSwitchService:
 
     def require_enabled(self, scope: str) -> None:
         if not self.is_enabled(scope):
+            # Tenant users see this text: no internal scope keys. Operators can
+            # see which breaker is engaged in the kill-switch console.
             raise BillingBlockedError(
-                f"Billing operation blocked: circuit breaker '{scope}' is currently engaged "
-                "(paused) by a platform operator. This action is preserved, not canceled — "
-                "retry once the breaker is released."
+                "This billing action is temporarily paused by Zoiko. Nothing was "
+                "changed or lost — please try again later."
             )
 
     def set_enabled(

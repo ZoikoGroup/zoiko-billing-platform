@@ -351,7 +351,11 @@ class StripeConnectService:
                 code=authorization_code,
             )
         except Exception as e:
-            raise BadRequestException(f"Stripe Connect OAuth token exchange failed: {e}")
+            # Provider error text (request ids, codes) is for logs, not users.
+            logger.warning("Stripe Connect OAuth token exchange failed for org %s: %s", organization_id, e)
+            raise BadRequestException(
+                "Stripe could not complete the connection. Please try connecting again."
+            )
 
         account_id = response.get("stripe_user_id")
         if not account_id:
@@ -362,7 +366,10 @@ class StripeConnectService:
             acct = stripe.Account.retrieve(account_id)
             acct = acct.to_dict() if hasattr(acct, "to_dict") else acct
         except Exception as e:
-            raise BadRequestException(f"Could not retrieve Stripe account {account_id}: {e}")
+            logger.warning("Could not retrieve Stripe account %s for org %s: %s", account_id, organization_id, e)
+            raise BadRequestException(
+                "Stripe account details could not be loaded. Please try again shortly."
+            )
 
         status = _derive_status(acct)
         now = datetime.utcnow()
@@ -430,8 +437,9 @@ class StripeConnectService:
             acct = stripe.Account.retrieve(row.connected_account_id)
             acct = acct.to_dict() if hasattr(acct, "to_dict") else acct
         except Exception as e:
+            logger.warning("Could not retrieve Stripe account %s for org %s: %s", row.connected_account_id, organization_id, e)
             raise BadRequestException(
-                f"Could not retrieve Stripe account {row.connected_account_id}: {e}"
+                "Stripe account details could not be loaded. Please try again shortly."
             )
         status = _derive_status(acct)
         self._sync_account_fields(row, acct, status, datetime.utcnow())

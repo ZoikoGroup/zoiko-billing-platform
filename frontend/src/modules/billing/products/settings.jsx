@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, Folder, DollarSign, BarChart3, Eye, Tag, Percent, Globe, SlidersHorizontal, Archive, ScrollText, Store, X } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { ErrorState } from "../../../components/billing-shared";
@@ -37,18 +37,30 @@ function ToggleSwitch({ checked, onChange, label, description }) {
 }
 
 function SettingsField({ label, icon: Icon, children, description }) {
+  // Programmatically associate the visible label with the card's control:
+  // give the first native input/select/textarea child an id and point a
+  // <label htmlFor> at it. Cards wrapping a composite control fall back to
+  // a labelled group so the controls still get the card title as context.
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  let controlId = null;
+  const content = Children.map(children, (child) => {
+    if (controlId || !isValidElement(child) || !["input", "select", "textarea"].includes(child.type)) return child;
+    controlId = child.props.id || `${uid}-control`;
+    return child.props.id ? child : cloneElement(child, { id: controlId });
+  });
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div role={controlId ? undefined : "group"} aria-labelledby={controlId ? undefined : labelId} className="bg-white border border-slate-200 rounded-2xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-slate-800">{label}</h3>
+          <h3 className="text-base font-semibold text-slate-800"><label id={labelId} htmlFor={controlId || undefined}>{label}</label></h3>
           {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
         </div>
       </div>
-      {children}
+      {content}
     </div>
   );
 }

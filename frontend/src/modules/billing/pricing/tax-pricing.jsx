@@ -6,6 +6,7 @@ import HRPage from "../../../components/HRPage";
 import { taxPricingApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const TAX_TYPE_OPTIONS = [
   { value: "vat", label: "VAT" },
@@ -350,7 +351,7 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Members: {viewMembers.name}</h2>
-              <button onClick={() => { setViewMembers(null); setMembers([]); }} className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+              <button onClick={() => { setViewMembers(null); setMembers([]); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
             </div>
             <div className="px-6 py-4 space-y-4">
               <div className="flex gap-2 items-end">
@@ -403,6 +404,12 @@ export default function TaxPricingPage() {
   const [error, setError] = useState(null);
   const [data, setData] = useState({ items: [], total: 0, page: 1, per_page: 20, pages: 0 });
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced so typing fires one request, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [taxTypeFilter, setTaxTypeFilter] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -411,18 +418,22 @@ export default function TaxPricingPage() {
   const [viewItem, setViewItem] = useState(null);
   const [showTaxGroups, setShowTaxGroups] = useState(false);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async (page = 1) => {
+    const isCurrent = beginRequest();
     setLoading(true); setError(null);
     try {
       const params = { page, per_page: 20 };
-      if (searchTerm) params.search_term = searchTerm;
+      if (debouncedSearch) params.search_term = debouncedSearch;
       if (taxTypeFilter) params.tax_type = taxTypeFilter;
       if (countryFilter) params.country = countryFilter;
       const res = await taxPricingApi.list(params);
+      if (!isCurrent()) return;
       setData(res);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [searchTerm, taxTypeFilter, countryFilter]);
+    } catch (e) { if (isCurrent()) setError(e.message); }
+    finally { if (isCurrent()) setLoading(false); }
+  }, [beginRequest, debouncedSearch, taxTypeFilter, countryFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -455,7 +466,7 @@ export default function TaxPricingPage() {
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <input className="border rounded-lg px-3 py-2 text-sm w-32" placeholder="Country" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} />
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowTaxGroups(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm hover:bg-slate-50"><Layers size={16} /> Tax Groups</button>

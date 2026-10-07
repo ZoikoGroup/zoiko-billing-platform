@@ -256,7 +256,7 @@ export default function RefundDetailPage() {
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
           </div>
         )}
 
@@ -508,10 +508,10 @@ export default function RefundDetailPage() {
       )}
 
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRejectModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Reject Refund</h2>
-            <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="Reason for rejection (required)"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowRejectModal(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="reject-refund-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h2 id="reject-refund-title" className="text-lg font-bold text-slate-900 mb-4">Reject Refund</h2>
+            <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="Reason for rejection (required)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowRejectModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>

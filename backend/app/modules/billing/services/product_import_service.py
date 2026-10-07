@@ -42,6 +42,8 @@ from app.modules.billing.services.product_service import (
 )
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES as VALID_CURRENCIES
 
+from app.modules.billing.services.import_row_errors import row_error_message
+
 logger = logging.getLogger("zoiko_billing")
 
 # ---------------------------------------------------------------------------
@@ -606,7 +608,7 @@ class ProductImportService:
                         )
                         imported.append(row_idx)
                     except Exception as exc:
-                        failed.append({"row": row_idx, "error": str(exc)})
+                        failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Product")})
                     continue
                 elif action == "create_copy":
                     mapped = self._make_unique_code_and_name(mapped, organization_id)
@@ -622,7 +624,7 @@ class ProductImportService:
                 )
                 imported.append(row_idx)
             except Exception as exc:
-                failed.append({"row": row_idx, "error": str(exc)})
+                failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Product")})
 
         # Only evict the cache once the final batch has been processed — an
         # in-progress multi-batch import still needs the remaining rows.

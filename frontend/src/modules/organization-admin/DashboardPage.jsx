@@ -5,6 +5,7 @@ import { getOrganizationDashboardStats, getOrganizationDetails } from "../../ser
 import { getCurrencySymbol, getCurrencyInfo } from "../../utils/currency";
 import { loadGlobalCurrency, getOrgBaseCurrency, isOrgCurrencyUnavailable } from "../billing/utils/CurrencyContext";
 import { getZoikoSubscriptionCached } from "../../service/platformSelfServiceApi";
+import useLatestRequest from "../billing/utils/useLatestRequest";
 import {
   Users,
   FileText,
@@ -145,36 +146,36 @@ export default function OrgAdminDashboardPage() {
   const [error, setError] = useState(null);
   const [orgCurrency, setOrgCurrency] = useState("");
 
+  // Only the latest fetch (mount or Retry) may update state; responses that
+  // land after unmount are dropped too.
+  const beginRequest = useLatestRequest();
+
   const fetchData = useCallback(() => {
+    const isCurrent = beginRequest();
     setLoading(true);
     setError(null);
     Promise.all([
       getOrganizationDashboardStats().catch(() => null),
       getOrganizationDetails().catch(() => null),
+      // Ensure the org base currency is loaded (same source as the main
+      // Billing Dashboard) so fmtCurrency renders in the correct symbol.
       loadGlobalCurrency().catch(() => null),
       getZoikoSubscriptionCached().catch(() => null),
     ])
       .then(([s, o, _cur, z]) => {
+        if (!isCurrent()) return;
         if (s) setStats(s);
         if (o) setOrg(o);
         setOrgCurrency(s?.currency || getOrgBaseCurrency() || "");
         if (z) setSubscription(z.subscription || null);
       })
-      .catch((err) => setError(err?.message))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((err) => { if (isCurrent()) setError(err?.message); })
+      .finally(() => { if (isCurrent()) setLoading(false); });
+  }, [beginRequest]);
 
   useEffect(() => {
-    let cancelled = false;
     fetchData();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Ensure the org base currency is loaded (same source as the main Billing
-  // Dashboard) so fmtCurrency renders in the correct symbol (e.g. ₹).
-  useEffect(() => {
-    loadGlobalCurrency().catch(() => {});
-  }, []);
+  }, [fetchData]);
 
   const trial = subscription ? trialRemaining(subscription.trial_ends_at, subscription.status) : null;
 
