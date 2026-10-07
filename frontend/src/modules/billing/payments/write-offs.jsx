@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { writeOffApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
   DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, ErrorState,
@@ -96,7 +97,10 @@ export default function WriteOffsPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchWriteOffs = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -107,16 +111,18 @@ export default function WriteOffsPage() {
         write_off_type: typeFilter || undefined,
         sort_by: sortField, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       setWriteOffs(extractArray(data));
       setTotal(data.total || 0);
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load write-offs");
       setWriteOffs([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
 
   useEffect(() => { fetchWriteOffs(); }, [fetchWriteOffs]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

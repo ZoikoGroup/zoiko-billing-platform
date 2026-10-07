@@ -14,6 +14,7 @@ import { invoiceApi } from "../../../service/billingService";
 import { extractArray, formatDisplayCurrency, formatDisplayDate, formatCompactCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   DashboardHeader, DashboardStatCard as EnterpriseStatCard, DashboardChartCard as ChartCard,
   DashboardEmptyPanel as EmptyStateWidget, DashboardStatCardSkeleton as SkeletonCard,
@@ -47,7 +48,10 @@ export default function InvoiceDashboard() {
     dateRange,
   } = useBillingDateRange();
   const { baseCurrency, currencySymbol } = useCurrency();
-  const mountedRef = useRef(true);
+  // One guard shared by the range fetch, the 60s poll and manual refresh:
+  // only the most recently started request may update state, so an older
+  // range's (or poll's) response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
   const loadingRef = useRef(true);
 
   const [dashboard, setDashboard] = useState({
@@ -63,6 +67,7 @@ export default function InvoiceDashboard() {
   });
 
   const fetchData = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!loadingRef.current) setRefreshing(true);
@@ -88,7 +93,7 @@ export default function InvoiceDashboard() {
       const [statsRes, trendRes, revRes, collRes, distRes, monthlyRes, activityRes, overdueRes, topCustomersRes] = results;
       const safeVal = (r, transform) => r.status === "fulfilled" ? (transform ? transform(r.value) : r.value) : null;
 
-      if (mountedRef.current) {
+      if (isCurrent()) {
         setDashboard({
           stats: safeVal(statsRes),
           invoiceTrend: safeVal(trendRes, extractArray) || [],
@@ -103,22 +108,21 @@ export default function InvoiceDashboard() {
         setLastUpdated(new Date());
       }
     } catch (err) {
-      if (mountedRef.current) setError("Failed to load invoice dashboard data.");
+      if (isCurrent()) setError("Failed to load invoice dashboard data.");
     } finally {
-      if (mountedRef.current) {
+      if (isCurrent()) {
         setLoading(false);
         setRefreshing(false);
         loadingRef.current = false;
       }
     }
-  }, [dateRange.date_from, dateRange.date_to]);
+  }, [beginRequest, dateRange.date_from, dateRange.date_to]);
 
   useEffect(() => {
-    mountedRef.current = true;
     loadingRef.current = true;
     fetchData();
     const interval = setInterval(fetchData, 60000);
-    return () => { mountedRef.current = false; clearInterval(interval); };
+    return () => { clearInterval(interval); };
   }, [fetchData]);
 
   const handleRefresh = useCallback(() => {

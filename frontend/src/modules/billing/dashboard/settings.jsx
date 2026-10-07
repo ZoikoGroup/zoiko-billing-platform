@@ -2878,7 +2878,7 @@ function AdministrationPanel() {
               <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-slate-800">Preview: {previewTemplate}</h4>
-                  <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }}
+                  <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }} aria-label="Close preview"
                     className="text-slate-500 hover:text-slate-600"><X size={16} /></button>
                 </div>
                 <div className="mb-3">

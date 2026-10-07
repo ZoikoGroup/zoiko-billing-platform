@@ -216,15 +216,19 @@ class BillingAdminService:
             )
 
         except smtplib.SMTPAuthenticationError as e:
-            auth_result.message = f"Authentication failed: {e}"
+            logger.warning("SMTP test: authentication failed: %s", e)
+            auth_result.message = "The mail server rejected the username or password."
             return SmtpTestResponse(success=False, message="SMTP authentication failed. Please check your username and password.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except smtplib.SMTPConnectError as e:
-            connection_result.message = f"Connection failed: {e}"
+            logger.warning("SMTP test: connection failed: %s", e)
+            connection_result.message = "Could not connect to the mail server."
             return SmtpTestResponse(success=False, message=f"Could not connect to SMTP server at {smtp_host}:{smtp_port}. Check the host and port.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except smtplib.SMTPException as e:
-            return SmtpTestResponse(success=False, message=f"SMTP error: {e}", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
+            logger.warning("SMTP test: SMTP error: %s", e)
+            return SmtpTestResponse(success=False, message="The mail server rejected the test email. Check the sender address and server settings.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except Exception as e:
-            return SmtpTestResponse(success=False, message=f"Unexpected error: {e}", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
+            logger.exception("SMTP test: unexpected error")
+            return SmtpTestResponse(success=False, message="The test email could not be sent. Please check the SMTP settings and try again.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         finally:
             if server:
                 try:
@@ -589,7 +593,7 @@ class BillingAdminService:
             logger.warning("Could not query TaxRate records: %s", e)
             items.append(TaxDiagnosticsItem(
                 field="tax_rates", value="Query failed",
-                valid=False, warnings=[f"Could not read tax rates: {e}"],
+                valid=False, warnings=["Could not read tax rates. Details are in the server logs."],
                 suggestion="Check database connectivity",
             ))
 
@@ -719,10 +723,11 @@ class BillingAdminService:
                 response_time_ms=round(db_elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: database connection failed: %s", e)
             db_elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="database", status="down",
-                message=f"Database connection failed: {e}",
+                message="Database connection failed. Details are in the server logs.",
                 response_time_ms=round(db_elapsed, 2),
             ))
 
@@ -841,10 +846,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: validation failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="configuration_readiness", status="down",
-                message=f"Validation failed: {e}",
+                message="Validation failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -881,10 +887,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: exchange rate check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="exchange_rates", status="down",
-                message=f"Exchange rate check failed: {e}",
+                message="Exchange rate check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -930,10 +937,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: tax check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="tax_configuration", status="down",
-                message=f"Tax check failed: {e}",
+                message="Tax check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -955,10 +963,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: numbering check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="document_numbering", status="down",
-                message=f"Numbering check failed: {e}",
+                message="Numbering check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -989,10 +998,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: currency check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="currency_configuration", status="down",
-                message=f"Currency check failed: {e}",
+                message="Currency check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 

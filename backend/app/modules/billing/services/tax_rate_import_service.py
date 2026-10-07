@@ -43,6 +43,8 @@ from app.modules.billing.services.product_service import _resolve_org_currency
 from app.modules.billing.services.tax_service import TaxService
 from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES
 
+from app.modules.billing.services.import_row_errors import row_error_message
+
 logger = logging.getLogger("zoiko_billing")
 
 # ---------------------------------------------------------------------------
@@ -475,7 +477,7 @@ class TaxRateImportService:
                         )
                         imported.append(row_idx)
                     except Exception as exc:
-                        failed.append({"row": row_idx, "error": str(exc)})
+                        failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Tax rate")})
                     continue
                 elif action == "create_copy":
                     mapped = self._make_unique_code(mapped, organization_id)
@@ -489,7 +491,7 @@ class TaxRateImportService:
                 )
                 imported.append(row_idx)
             except Exception as exc:
-                failed.append({"row": row_idx, "error": str(exc)})
+                failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Tax rate")})
 
         if is_complete:
             _PREVIEW_CACHE.pop(cache_key, None)

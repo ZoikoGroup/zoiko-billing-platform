@@ -4,6 +4,7 @@ import HRPage from "../../../components/HRPage";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 10;
@@ -91,7 +92,10 @@ export default function ProductPricingPlansPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchPlans = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -106,16 +110,18 @@ export default function ProductPricingPlansPage() {
         sort_order: sortDir,
       };
       const data = await pricingApi.list(params);
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setPlans(items);
       setTotal(data?.total || items.length || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load pricing plans");
       setPlans([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(true); }, [fetchPlans]);
 
@@ -358,7 +364,7 @@ export default function ProductPricingPlansPage() {
                   Clear filters
                 </button>
               )}
-              <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing}
+              <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing} aria-label="Refresh"
                 className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
@@ -478,11 +484,11 @@ export default function ProductPricingPlansPage() {
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</td>
                   <td className="px-4 py-4 text-right">
                     <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit">
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label="Edit">
                       <Pencil size={16} />
                     </button>
                     <button onClick={() => handleDeactivatePlan(plan)}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate">
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate" aria-label="Deactivate">
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -498,11 +504,11 @@ export default function ProductPricingPlansPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowForm(false); setFormError(null); }}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-plan-form-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">{editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}</h2>
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+              <h2 id="product-pricing-plan-form-title" className="text-xl font-bold text-slate-800">{editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}</h2>
+              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
             </div>
             {formError && (
               <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -595,11 +601,11 @@ export default function ProductPricingPlansPage() {
       )}
 
       {showTierModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTierModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-tiers-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">Pricing Tiers</h2>
-              <button onClick={() => setShowTierModal(false)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+              <h2 id="product-pricing-tiers-title" className="text-xl font-bold text-slate-800">Pricing Tiers</h2>
+              <button onClick={() => setShowTierModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
             </div>
             {tierError && (
               <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -635,7 +641,7 @@ export default function ProductPricingPlansPage() {
                       <span className="text-slate-500 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
                       {tier.flat_fee > 0 && <span className="text-slate-500 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
                     </div>
-                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600">
+                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label={`Delete tier ${tier.from_quantity}–${tier.to_quantity ?? "∞"}`}>
                       <Trash2 size={14} />
                     </button>
                   </div>

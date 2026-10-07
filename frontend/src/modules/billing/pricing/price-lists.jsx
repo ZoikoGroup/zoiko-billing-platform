@@ -6,6 +6,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
@@ -25,6 +26,12 @@ export default function PriceListsPage() {
   const [error, setError] = useState(null);
   const [data, setData] = useState({ items: [], total: 0, page: 1, per_page: 20, pages: 0 });
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced so typing fires one request, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [statusFilter, setStatusFilter] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -40,17 +47,21 @@ export default function PriceListsPage() {
     }).catch((err) => console.error("[PriceLists] Failed to load config:", err));
   }, []);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async (page = 1) => {
+    const isCurrent = beginRequest();
     setLoading(true); setError(null);
     try {
       const params = { page, per_page: 20, sort_by: "name", sort_order: "asc", active_only: !showInactive };
-      if (searchTerm) params.search_term = searchTerm;
+      if (debouncedSearch) params.search_term = debouncedSearch;
       if (statusFilter) params.status = statusFilter;
       const res = await priceListApi.list(params);
+      if (!isCurrent()) return;
       setData(res);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [searchTerm, statusFilter, showInactive]);
+    } catch (e) { if (isCurrent()) setError(e.message); }
+    finally { if (isCurrent()) setLoading(false); }
+  }, [beginRequest, debouncedSearch, statusFilter, showInactive]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -103,7 +114,7 @@ export default function PriceListsPage() {
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
               Show inactive
             </label>
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <button onClick={() => { setForm({ name: "", code: "", description: "", currency: orgCurrency, is_default: false, effective_from: "", effective_to: "", is_active: true }); setShowCreate(true); setShowEdit(null); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Price List</button>
         </div>

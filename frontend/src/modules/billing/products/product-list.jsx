@@ -8,6 +8,7 @@ import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useCurrency } from "../utils/CurrencyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import ImportWizardModal from "./import-wizard";
 import { useConfirmationDialog, PageSkeleton, SuccessMessage, ErrorState, Pagination, StatusBadge } from "../../../components/billing-shared";
 
@@ -155,7 +156,10 @@ export default function ProductListPage() {
   // set. A leftover filter (e.g. "Active" status, or a search term) then
   // hides the very rows the import just created, making a fully successful
   // import look like it silently did nothing.
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchProducts = useCallback(async (isInitial = false, pageOverride = null, clearFilters = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -172,20 +176,24 @@ export default function ProductListPage() {
         sort_order: sortDir,
       };
       const data = await productApi.list(params);
+      if (!isCurrent()) return;
       const items = data?.items || data?.data || data || [];
       setProducts(Array.isArray(items) ? items : []);
       setTotal(data?.total || items.length || 0);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load products");
       setProducts([]);
       setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, categoryFilter, currencyFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, categoryFilter, currencyFilter, sortField, sortDir]);
 
   useEffect(() => { fetchProducts(true); }, [fetchProducts]);
   useEffect(() => { fetchCategories(); }, []);
@@ -704,10 +712,10 @@ export default function ProductListPage() {
   );
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeCreateModal}>
-      <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div role="dialog" aria-modal="true" aria-labelledby="product-create-title" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800">New Product</h2>
+          <h2 id="product-create-title" className="text-xl font-bold text-slate-800">New Product</h2>
           <button onClick={closeCreateModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
         </div>
         {formError && (
@@ -730,10 +738,10 @@ export default function ProductListPage() {
   const renderEditModal = () => {
     if (!editProduct) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeEditModal}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div role="dialog" aria-modal="true" aria-labelledby="product-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-slate-800">Edit Product</h2>
+            <h2 id="product-edit-title" className="text-xl font-bold text-slate-800">Edit Product</h2>
             <button onClick={closeEditModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
           </div>
           {formError && (

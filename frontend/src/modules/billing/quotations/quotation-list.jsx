@@ -11,6 +11,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -132,7 +133,10 @@ export default function QuotationListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchQuotes = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -145,16 +149,18 @@ export default function QuotationListPage() {
         date_to: urlFilters.allDates ? undefined : (dateRange.date_to || undefined),
         sort_by: sortBy, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setQuotes(items);
       setTotal(data?.total || items.length || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load quotations");
       setQuotes([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, sortField, sortDir]);
 
   useEffect(() => { fetchQuotes(true); }, [fetchQuotes]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);

@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import {
   platformSelfServiceApi,
+  getZoikoSubscriptionCached,
   invalidateZoikoSubscriptionCache,
 } from "../../service/platformSelfServiceApi";
 import { formatOrgMoney } from "./workspace-format";
@@ -144,8 +145,12 @@ export default function WorkspaceZoikoSubscriptionPage() {
     setError(null);
 
     try {
+      // Shared cache with TrialBanner (rendered by BillingShell on this same
+      // screen), so the slow zoiko-subscription GET runs once on mount. An
+      // explicit refresh invalidates the cache above, forcing a fresh fetch
+      // that also refills it.
       const [subRes, usageRes] = await Promise.allSettled([
-        platformSelfServiceApi.getZoikoSubscription(),
+        getZoikoSubscriptionCached(),
         platformSelfServiceApi.getWorkspaceUsage(),
       ]);
 

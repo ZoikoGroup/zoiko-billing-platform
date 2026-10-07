@@ -40,12 +40,14 @@ export default function SubscriptionReportsPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await subscriptionApi.list({ per_page: 100 });
+      // Independent requests -- run in parallel. A reporting failure is
+      // non-fatal (falls back to null); a list failure surfaces the error.
+      const [data, rpt] = await Promise.all([
+        subscriptionApi.list({ per_page: 100 }),
+        subscriptionApi.getReporting().catch(() => null),
+      ]);
       setSubscriptions(extractArray(data));
-      try {
-        const rpt = await subscriptionApi.getReporting();
-        setReporting(rpt);
-      } catch { setReporting(null); }
+      setReporting(rpt);
     } catch (err) {
       setError(err.message || "Failed to load subscriptions");
     } finally {

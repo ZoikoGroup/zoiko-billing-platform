@@ -3,12 +3,14 @@ modules/billing/routers/product_router.py
 -----------------------------------------
 """
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.exceptions import ZoikoException
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import ProductService
 from app.modules.billing.schemas import (
@@ -21,6 +23,8 @@ from app.modules.billing.schemas import (
     ProductListResponse,
     SuccessResponse,
 )
+
+logger = logging.getLogger("zoiko_billing")
 
 router = APIRouter(prefix="/products", tags=["🧾 Products"])
 
@@ -209,8 +213,12 @@ async def import_preview(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Import preview failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Import preview failed")
+        raise HTTPException(status_code=500, detail="Import preview failed. Please check the file and try again, or contact support.")
 
     return result
 
@@ -254,8 +262,12 @@ def import_confirm(
         raise HTTPException(status_code=410, detail=str(exc))
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Import confirmation failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Import confirmation failed")
+        raise HTTPException(status_code=500, detail="Import confirmation failed. Please check the file and try again, or contact support.")
 
     return result
 
@@ -282,8 +294,12 @@ def import_template(
     try:
         svc = ProductImportService(db)
         content, mimetype = svc.generate_template(fmt=format)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Template generation failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Template generation failed")
+        raise HTTPException(status_code=500, detail="Template generation failed. Please try again, or contact support if it keeps happening.")
 
     ext = "xlsx" if format == "xlsx" else "csv"
     return HTTPResponse(
@@ -331,8 +347,12 @@ def export_catalog(
             filters=data.filters if data.scope == "filtered" else None,
             ids=data.ids if data.scope == "selected" else None,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+    except ZoikoException:
+        raise
+    except Exception:
+        # Raw exception text can hold SQL, paths or parser internals: log it, never return it.
+        logger.exception("Export failed")
+        raise HTTPException(status_code=500, detail="Export failed. Please try again, or contact support if it keeps happening.")
 
     from datetime import date as _date
     ext = "xlsx" if data.format == "xlsx" else "csv"

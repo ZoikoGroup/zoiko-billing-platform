@@ -717,11 +717,11 @@ export default function QuotationDetailPage() {
       </div>
 
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRejectModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Reject Quotation</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowRejectModal(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="reject-quotation-title" className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <h3 id="reject-quotation-title" className="text-lg font-semibold text-slate-900 mb-2">Reject Quotation</h3>
             <p className="text-sm text-slate-500 mb-4">Provide a reason for rejecting this quotation.</p>
-            <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+            <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
               rows={3} placeholder="Reason for rejection..."
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <div className="flex justify-end gap-3">

@@ -9,6 +9,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -127,7 +128,10 @@ export default function SubscriptionListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchSubscriptions = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -141,17 +145,19 @@ export default function SubscriptionListPage() {
         expiring_within_days: urlFilters.expiringDays || undefined,
         sort_by: sortBy, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setSubscriptions(items);
       setTotal(data?.total || items.length || 0);
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load subscriptions");
       setSubscriptions([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, urlFilters.expiringDays, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, urlFilters.expiringDays, sortField, sortDir]);
 
   useEffect(() => { fetchSubscriptions(true); }, [fetchSubscriptions]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
@@ -288,7 +294,7 @@ export default function SubscriptionListPage() {
                   <input type="text" placeholder="Search subscriptions..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
+                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters"
                   className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -407,7 +413,7 @@ export default function SubscriptionListPage() {
                     <td className="px-4 py-4 text-slate-500 text-xs capitalize">{s.plan_billing_period || s.billing_period || "—"}</td>
                     <td className="px-4 py-4 text-right">
                       <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View">
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View" aria-label="View">
                         <Eye size={16} />
                       </button>
                     </td>

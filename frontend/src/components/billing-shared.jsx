@@ -1384,14 +1384,41 @@ export function BulkProductPickerModal({
   title = "Add Products / Services",
 }) {
   const [selectedProducts, setSelectedProducts] = useState([]);
+  const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // Focus management mirroring billing-ui's Modal: move focus into the
+  // dialog (the catalog search box) on open, close on Escape, and restore
+  // focus to the trigger on close. The overlay deliberately does NOT close
+  // on click -- a stray click must not throw away an in-progress selection.
+  useEffect(() => {
+    if (!open) return undefined;
+    const trigger = document.activeElement;
+    const panel = dialogRef.current;
+    const initial = panel?.querySelector('input[type="search"]')
+      || panel?.querySelector('input:not([disabled]), select:not([disabled]), button:not([disabled])');
+    (initial || panel)?.focus();
+    const onKey = (e) => {
+      // Inner widgets (e.g. a result row closing its list) may consume Escape.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setSelectedProducts([]);
+      onCloseRef.current?.();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (trigger && typeof trigger.focus === "function") trigger.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
 
   const handleClose = () => { setSelectedProducts([]); onClose?.(); };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={handleClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="bulk-product-picker-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="bulk-product-picker-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col outline-none">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h2 id="bulk-product-picker-title" className="text-lg font-bold text-slate-900">{title}</h2>

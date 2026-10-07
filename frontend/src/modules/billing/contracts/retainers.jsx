@@ -8,6 +8,7 @@ import HRPage from "../../../components/HRPage";
 import { productApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Pagination } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 const RETAINER_TYPE = "retainer";
@@ -61,7 +62,10 @@ export default function RetainersPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchRetainers = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -71,15 +75,25 @@ export default function RetainersPage() {
         product_type: RETAINER_TYPE,
         status: statusFilter || undefined,
       });
+      if (!isCurrent()) return;
       setRetainers(extractArray(data));
       setTotal(data.total || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load retainers");
       setRetainers([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter]);
+
+  // Escape closes the form dialogs (backdrop clicks no longer do, so typed input isn't lost).
+  useEffect(() => {
+    if (!showCreateModal && !showEditModal) return undefined;
+    const onKeyDown = (e) => { if (e.key === "Escape") { setShowCreateModal(false); setShowEditModal(false); } };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showCreateModal, showEditModal]);
 
   const fetchOrgSettings = useCallback(async () => {
     try { const data = await settingsApi.get(); setOrgSettings(data || {}); }
@@ -222,16 +236,16 @@ export default function RetainersPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search retainers"
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
+              {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
             </div>
-          <button onClick={() => setShowFilters(!showFilters)}
+          <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
             className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
           <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON"><Download size={18} /></button>
+          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export JSON"><Download size={18} /></button>
           <button onClick={openCreateModal} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
             <Plus size={16} /> New Retainer
           </button>
@@ -313,11 +327,11 @@ export default function RetainersPage() {
       </div>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="retainer-create-title" className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-800">Create Retainer</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
+              <h3 id="retainer-create-title" className="text-lg font-semibold text-slate-800">Create Retainer</h3>
+              <button onClick={() => setShowCreateModal(false)} aria-label="Close" className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}
@@ -377,11 +391,11 @@ export default function RetainersPage() {
       )}
 
       {showEditModal && selectedRetainer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowEditModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="retainer-edit-title" className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-800">Edit {selectedRetainer.name}</h3>
-              <button onClick={() => setShowEditModal(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
+              <h3 id="retainer-edit-title" className="text-lg font-semibold text-slate-800">Edit {selectedRetainer.name}</h3>
+              <button onClick={() => setShowEditModal(false)} aria-label="Close" className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {formError && <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}</div>}

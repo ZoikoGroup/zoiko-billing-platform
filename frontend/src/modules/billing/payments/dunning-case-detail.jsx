@@ -140,7 +140,7 @@ export default function DunningCaseDetailPage() {
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
           </div>
         )}
 
@@ -265,13 +265,13 @@ export default function DunningCaseDetailPage() {
       )}
 
       {promiseModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Log a Promise to Pay</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setPromiseModal({ open: false, amount: "", date: "", notes: "" }); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="promise-to-pay-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h2 id="promise-to-pay-title" className="text-lg font-bold text-slate-900 mb-4">Log a Promise to Pay</h2>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
-                <input type="number" min="0" step="0.01" value={promiseModal.amount} onChange={(e) => setPromiseModal((p) => ({ ...p, amount: e.target.value }))}
+                <input autoFocus type="number" min="0" step="0.01" value={promiseModal.amount} onChange={(e) => setPromiseModal((p) => ({ ...p, amount: e.target.value }))}
                   className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>

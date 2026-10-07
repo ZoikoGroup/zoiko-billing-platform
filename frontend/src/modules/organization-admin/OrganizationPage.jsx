@@ -413,23 +413,32 @@ export default function OrgAdminOrganizationPage() {
     }
   };
 
-  // Handle the Stripe Connect OAuth callback (returns here with ?code=&state=)
+  // Initial Stripe status load. On return from the Stripe Connect OAuth
+  // callback (?code=&state=) the completeOAuth response IS the fresh status,
+  // so the plain GET is skipped -- running both in parallel let a slower
+  // GET (taken before the connection was saved) overwrite "connected" with
+  // a stale "not connected". If the OAuth exchange fails we fall back to
+  // the regular status GET so the card still renders.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const state = params.get("state");
-    if (!code || !state) return;
+    if (!code || !state) {
+      fetchStripeStatus();
+      return;
+    }
     setStripeBusy("callback");
     stripeConnectApi.completeOAuth(code, state)
       .then((status) => { setStripe(status); setToast({ msg: "Stripe connected successfully.", type: "success" }); })
-      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to complete Stripe connection.", type: "error" }))
+      .catch((err) => {
+        setToast({ msg: err?.detail || err?.message || "Failed to complete Stripe connection.", type: "error" });
+        fetchStripeStatus();
+      })
       .finally(() => {
         setStripeBusy(null);
         window.history.replaceState({}, document.title, window.location.pathname);
       });
   }, []);
-
-  useEffect(() => { fetchStripeStatus(); }, []);
 
   const fetchOrg = () => {
     setLoading(true);

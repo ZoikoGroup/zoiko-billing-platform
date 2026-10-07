@@ -118,9 +118,13 @@ export async function apiFetch(path, { method = "GET", body, params, timeout = 3
       // body carries neither (`{error}` only) — callers map by status instead.
       msg = data.message;
     }
+    // A plain (non-ZoikoException) 500 may carry raw exception text in
+    // `detail`; show a generic message instead.
+    const structured = typeof data.error === "string" && typeof data.message === "string";
+    if (res.status === 500) msg = structured ? data.message : "Something went wrong on the server. Please try again later.";
     const err = new Error(msg || `Request failed (${res.status})`);
     err.status = res.status;
-    err.serverDetail = typeof msg === "string" ? msg : undefined;
+    err.serverDetail = typeof detail === "string" ? detail : typeof msg === "string" ? msg : undefined;
     if (fields) err.serverFields = fields;
     throw err;
   }

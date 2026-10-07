@@ -8,6 +8,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const DISCOUNT_TYPE_OPTIONS = [
   { value: "coupon", label: "Coupon" },
@@ -292,6 +293,12 @@ export default function DiscountEnginePage() {
   const [error, setError] = useState(null);
   const [data, setData] = useState({ items: [], total: 0, page: 1, per_page: 20, pages: 0 });
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced so typing fires one request, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -299,18 +306,22 @@ export default function DiscountEnginePage() {
   const [saving, setSaving] = useState(false);
   const [viewItem, setViewItem] = useState(null);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async (page = 1) => {
+    const isCurrent = beginRequest();
     setLoading(true); setError(null);
     try {
       const params = { page, per_page: 20 };
-      if (searchTerm) params.search_term = searchTerm;
+      if (debouncedSearch) params.search_term = debouncedSearch;
       if (typeFilter) params.discount_type = typeFilter;
       if (statusFilter) params.status = statusFilter;
       const res = await discountApi.list(params);
+      if (!isCurrent()) return;
       setData(res);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [searchTerm, typeFilter, statusFilter]);
+    } catch (e) { if (isCurrent()) setError(e.message); }
+    finally { if (isCurrent()) setLoading(false); }
+  }, [beginRequest, debouncedSearch, typeFilter, statusFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -349,7 +360,7 @@ export default function DiscountEnginePage() {
               <option value="expired">Expired</option>
               <option value="exhausted">Exhausted</option>
             </select>
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <button onClick={() => { setEditItem(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Create Discount</button>
         </div>

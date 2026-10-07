@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { CreditCard, Search, Filter, X, ChevronDown, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, FileText, XCircle, ArrowUpDown, Ban, DollarSign, User, Wallet, TrendingUp, Calendar, Loader2, Eye, Receipt, Hash, Layers } from "lucide-react";
 import { paymentApi, invoiceApi, customerApi, creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
 import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
@@ -147,7 +148,10 @@ export default function PaymentListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchPayments = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -161,17 +165,19 @@ export default function PaymentListPage() {
         date_to: dateRange.date_to || undefined,
         sort_by: sortBy, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setPayments(items);
       setTotal(data?.total || items.length || 0);
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load payments");
       setPayments([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
 
   const fetchStats = useCallback(async () => {
     try {

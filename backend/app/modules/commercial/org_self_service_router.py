@@ -8,6 +8,7 @@ never a client-supplied account_id — via get_current_billing_admin's
 current_user.organization_id.
 """
 
+import logging
 from datetime import datetime
 from decimal import Decimal
 
@@ -25,6 +26,19 @@ from app.modules.commercial.models import (
     PlatformInvoice,
     PlatformPayment,
 )
+
+_logger = logging.getLogger("zoiko_billing.commercial")
+
+
+def _self_service_error(exc: ValueError, action: str) -> BadRequestException:
+    """The commercial service's ValueErrors are written for operators (class
+    names, plan codes, billing_classification values). Tenants get a plain
+    message; the detail goes to the logs."""
+    _logger.warning("Self-service %s rejected: %s", action, exc)
+    return BadRequestException(
+        f"This {action} can't be completed right now. Please contact Zoiko support if this continues."
+    )
+
 
 router = APIRouter(prefix="/billing/workspace", tags=["Plane 1 Self-Service"])
 
@@ -442,7 +456,7 @@ def commit_plan_change(
                 subscription, target_plan, actor_id=current_user.id, reason=data.reason or "",
             )
         except ValueError as exc:
-            raise BadRequestException(str(exc))
+            raise _self_service_error(exc, "plan change")
         change = SubscriptionChange(
             commercial_subscription_id=subscription.id,
             from_plan_id=from_plan_id,
@@ -498,7 +512,7 @@ def commit_plan_change(
                 subscription, target_plan, actor_id=current_user.id, reason=data.reason or "",
             )
         except ValueError as exc:
-            raise BadRequestException(str(exc))
+            raise _self_service_error(exc, "plan change")
         change = SubscriptionChange(
             commercial_subscription_id=subscription.id,
             from_plan_id=from_plan_id,
@@ -537,7 +551,7 @@ def commit_plan_change(
     try:
         sub_svc.transition(subscription, CommercialSubscriptionStatus.SCHEDULED_CHANGE)
     except ValueError as exc:
-        raise BadRequestException(str(exc))
+        raise _self_service_error(exc, "plan change")
     PlatformAuditService(db).log_no_commit(
         actor_id=current_user.id, actor_role="org_admin",
         action=PlatformAuditAction.SUBSCRIPTION_PLAN_CHANGE_SCHEDULED,
@@ -617,7 +631,7 @@ def convert_trial_to_paid(
             actor_id=current_user.id,
         )
     except ValueError as exc:
-        raise BadRequestException(str(exc))
+        raise _self_service_error(exc, "trial conversion")
     db.commit()
 
     return {

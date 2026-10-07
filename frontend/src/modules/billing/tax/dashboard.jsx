@@ -10,6 +10,7 @@ import { taxApi } from "../../../service/billingService";
 import { extractArray, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange, DEFAULT_RANGE } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import { countCoveredJurisdictions } from "./tax-helpers";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
@@ -56,6 +57,13 @@ export default function TaxDashboardPage() {
   const [errorMonthly, setErrorMonthly] = useState(null);
 
   const hasLoadedOnce = useRef(false);
+  // Tax rates and the 6-month trend are not date-filtered, so they are only
+  // (re)fetched on first load and on an explicit refresh -- not on every
+  // date-range change.
+  const staticLoadedRef = useRef(false);
+  // Only the most recently started fetch may update state, so a previous
+  // range's slower response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
 
   // "Tax Collected" / "GST Collected" / "VAT Collected" answer "how much tax
   // have we collected, ever" -- a lifetime inventory total, not a "this
@@ -75,7 +83,8 @@ export default function TaxDashboardPage() {
   const summaryDateFrom = isDefaultDateRange ? undefined : dateRange.date_from;
   const summaryDateTo = isDefaultDateRange ? undefined : dateRange.date_to;
 
-  const fetchDashboardData = useCallback(async (isRefresh = false) => {
+  const fetchDashboardData = useCallback(async (isRefresh = false, includeStatic = true) => {
+    const isCurrent = beginRequest();
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
 
@@ -87,34 +96,40 @@ export default function TaxDashboardPage() {
         // tax-rate catalog, not just its first 100 rows -- TaxRate is a
         // configuration table (see utils/tax_catalogue.py) that a KPI tile
         // should never silently truncate.
-        taxApi.list({ per_page: 1000 }),
-        taxApi.getMonthlyTrend(6),
+        includeStatic ? taxApi.list({ per_page: 1000 }) : null,
+        includeStatic ? taxApi.getMonthlyTrend(6) : null,
       ]);
+      if (!isCurrent()) return;
 
       if (summaryRes.status === "fulfilled") { setSummary(summaryRes.value); setErrorSummary(null); }
       else { setErrorSummary(summaryRes.reason?.message || "Failed to load tax summary"); }
 
-      if (ratesRes.status === "fulfilled") { setTaxRates(extractArray(ratesRes.value)); setErrorRates(null); }
-      else { setErrorRates(ratesRes.reason?.message || "Failed to load tax rates"); setTaxRates([]); }
+      if (includeStatic) {
+        if (ratesRes.status === "fulfilled") { setTaxRates(extractArray(ratesRes.value)); setErrorRates(null); }
+        else { setErrorRates(ratesRes.reason?.message || "Failed to load tax rates"); setTaxRates([]); }
 
-      if (monthlyRes.status === "fulfilled") {
-        setMonthlyTax(extractArray(monthlyRes.value).map((m) => ({ month: m.month, tax: Number(m.tax || 0) })));
-        setErrorMonthly(null);
-      } else {
-        setMonthlyTax([]);
-        setErrorMonthly(monthlyRes.reason?.message || "Failed to load monthly tax trend");
+        if (monthlyRes.status === "fulfilled") {
+          setMonthlyTax(extractArray(monthlyRes.value).map((m) => ({ month: m.month, tax: Number(m.tax || 0) })));
+          setErrorMonthly(null);
+        } else {
+          setMonthlyTax([]);
+          setErrorMonthly(monthlyRes.reason?.message || "Failed to load monthly tax trend");
+        }
+        staticLoadedRef.current = true;
       }
 
       setLastUpdated(new Date());
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
-  }, [summaryDateFrom, summaryDateTo]);
+  }, [beginRequest, summaryDateFrom, summaryDateTo]);
 
   useEffect(() => {
-    fetchDashboardData(hasLoadedOnce.current);
+    fetchDashboardData(hasLoadedOnce.current, !staticLoadedRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summaryDateFrom, summaryDateTo]);
 

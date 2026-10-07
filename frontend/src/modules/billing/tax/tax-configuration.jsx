@@ -233,7 +233,7 @@ export default function TaxConfigurationPage() {
                       j.tax_rule === "zero" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
                     }`}>{j.tax_rule}</span>
                   </div>
-                  <button onClick={() => removeJurisdiction(j.id)} className="p-1 text-slate-500 hover:text-red-600">
+                  <button type="button" onClick={() => removeJurisdiction(j.id)} aria-label={`Remove jurisdiction ${j.name || ""}`.trim()} className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -289,7 +289,7 @@ export default function TaxConfigurationPage() {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeExemption(e.id)} className="p-1 text-slate-500 hover:text-red-600">
+                  <button type="button" onClick={() => removeExemption(e.id)} aria-label="Remove exemption" className="p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>

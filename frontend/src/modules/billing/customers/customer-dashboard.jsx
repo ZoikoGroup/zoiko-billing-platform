@@ -8,6 +8,7 @@ import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange, DASHBOARD_DATE_RANGE_OPTIONS } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -51,30 +52,47 @@ export default function CustomerDashboard() {
   } = useBillingDateRange();
 
   const hasLoadedOnce = useRef(false);
+  // The customer sample (recent customers / growth / type charts) is not
+  // date-filtered, so it is only (re)fetched on first load and on an
+  // explicit refresh -- not on every date-range change.
+  const sampleLoadedRef = useRef(false);
+  // Only the most recently started fetch may update state, so a previous
+  // range's slower response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
 
-  const fetchData = async (isRefresh = false) => {
+  const fetchData = async (isRefresh = false, includeSample = true) => {
+    const isCurrent = beginRequest();
     try {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
       const [data, customersResp] = await Promise.all([
         customerApi.getKPI(undefined, dateRange),
-        customerApi.list({ per_page: 200, sort_by: "created_at", sort_order: "desc" }).catch(() => null),
+        includeSample
+          ? customerApi.list({ per_page: 200, sort_by: "created_at", sort_order: "desc" }).catch(() => null)
+          : Promise.resolve(null),
       ]);
+      if (!isCurrent()) return;
       setKpiData(data);
-      if (customersResp) setCustomerSample(extractArray(customersResp));
+      if (customersResp) {
+        setCustomerSample(extractArray(customersResp));
+        sampleLoadedRef.current = true;
+      }
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.message || "Failed to load customer dashboard data");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
   };
 
   useEffect(() => {
-    fetchData(hasLoadedOnce.current);
+    fetchData(hasLoadedOnce.current, !sampleLoadedRef.current);
   }, [dateRange.date_from, dateRange.date_to]);
 
   const d = kpiData || {};

@@ -277,14 +277,14 @@ export default function DunningLevelsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="dl-level-number" className="block text-xs font-medium text-slate-600 mb-1">Level Number *</label>
-                  <input id="dl-level-number" type="number" min="1" value={form.level_number} onChange={(e) => setForm((p) => ({ ...p, level_number: e.target.value }))}
+                  <input id="dl-level-number" autoFocus={!isEdit} type="number" min="1" value={form.level_number} onChange={(e) => setForm((p) => ({ ...p, level_number: e.target.value }))}
                     readOnly={isEdit} aria-readonly={isEdit || undefined} aria-describedby={isEdit ? "dl-level-number-hint" : undefined}
                     className={`${inputClass} ${isEdit ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""}`} />
                   {isEdit && <p id="dl-level-number-hint" className="mt-1 text-xs text-slate-500">A level's number can't be changed after it's created.</p>}
                 </div>
                 <div>
                   <label htmlFor="dl-name" className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
-                  <input id="dl-name" type="text" maxLength={100} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Friendly Reminder"
+                  <input id="dl-name" autoFocus={isEdit} type="text" maxLength={100} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Friendly Reminder"
                     className={inputClass} />
                 </div>
               </div>

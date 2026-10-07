@@ -1084,7 +1084,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-2">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{exchangeRateError}</span>
-              <button onClick={() => setExchangeRateError(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600">
+              <button type="button" onClick={() => setExchangeRateError(null)} aria-label="Dismiss exchange rate error" className="ml-auto shrink-0 text-red-400 hover:text-red-600">
                 <X size={14} />
               </button>
             </div>

@@ -118,7 +118,7 @@ export default function CollectionsCaseDetailPage() {
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
           </div>
         )}
 
@@ -233,11 +233,11 @@ export default function CollectionsCaseDetailPage() {
       )}
 
       {actionModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setActionModal({ open: false, description: "", outcome: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Log Collection Action</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setActionModal({ open: false, description: "", outcome: "" }); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="log-collection-action-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h2 id="log-collection-action-title" className="text-lg font-bold text-slate-900 mb-4">Log Collection Action</h2>
             <div className="space-y-3">
-              <textarea value={actionModal.description} onChange={(e) => setActionModal((p) => ({ ...p, description: e.target.value }))} rows={2} placeholder="What happened?"
+              <textarea autoFocus value={actionModal.description} onChange={(e) => setActionModal((p) => ({ ...p, description: e.target.value }))} rows={2} placeholder="What happened?"
                 className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               <input type="text" value={actionModal.outcome} onChange={(e) => setActionModal((p) => ({ ...p, outcome: e.target.value }))} placeholder="Outcome"
                 className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -259,10 +259,10 @@ export default function CollectionsCaseDetailPage() {
       )}
 
       {resolveModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Resolve Collections Case</h2>
-            <textarea value={resolveModal.resolution} onChange={(e) => setResolveModal((p) => ({ ...p, resolution: e.target.value }))} rows={3} placeholder="How was this resolved? (required)"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setResolveModal({ open: false, resolution: "", amountCollected: "" }); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="resolve-collections-case-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h2 id="resolve-collections-case-title" className="text-lg font-bold text-slate-900 mb-4">Resolve Collections Case</h2>
+            <textarea autoFocus value={resolveModal.resolution} onChange={(e) => setResolveModal((p) => ({ ...p, resolution: e.target.value }))} rows={3} placeholder="How was this resolved? (required)"
               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
             <label className="block text-xs font-medium text-slate-500 mb-1">Amount Collected (optional)</label>
             <input type="number" min="0" step="0.01" value={resolveModal.amountCollected}

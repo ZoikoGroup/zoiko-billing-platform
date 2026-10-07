@@ -5,6 +5,7 @@ import { Receipt, Search, Filter, X, RefreshCw,
 import HRPage from "../../../components/HRPage";
 import { creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
 import { ErrorState } from "../../../components/billing-shared";
@@ -80,7 +81,10 @@ export default function CreditsPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchCredits = useCallback(async (pageOverride) => {
+    const isCurrent = beginRequest();
     try {
       setLoading(true);
       setError(null);
@@ -90,15 +94,17 @@ export default function CreditsPage() {
       if (statusFilter) params.status = statusFilter;
       if (typeFilter) params.credit_note_type = typeFilter;
       const data = await creditNoteApi.list(params);
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setCredits(items);
       setTotal(data?.total || data?.total_count || items.length);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.detail || err?.message || "Failed to load credits");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [debouncedSearch, statusFilter, typeFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter]);
 
   const refreshAll = useCallback(async () => {
     setRefreshing(true);
@@ -242,7 +248,7 @@ export default function CreditsPage() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
           </div>
         ) : error ? (
-          <ErrorState message={error} onRetry={fetchCredits} />
+          <ErrorState message={error} onRetry={() => fetchCredits()} />
         ) : credits.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Receipt className="h-10 w-10 text-slate-300 mb-3" />

@@ -10,6 +10,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -111,7 +112,10 @@ export default function ContractListPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchContracts = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -126,17 +130,19 @@ export default function ContractListPage() {
         expiring_within_days: urlFilters.expiringDays || undefined,
         sort_by: sortBy, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setContracts(items);
       setTotal(data?.total || items.length || 0);
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load contracts");
       setContracts([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, billingFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, urlFilters.expiringDays, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, billingFilter, dateRange.date_from, dateRange.date_to, urlFilters.allDates, urlFilters.expiringDays, sortField, sortDir]);
 
   useEffect(() => { fetchContracts(true); }, [fetchContracts]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);

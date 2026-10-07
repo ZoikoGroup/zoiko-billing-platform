@@ -11,14 +11,20 @@ vi.mock("../../context/AuthContext", () => ({
   }),
 }));
 
-vi.mock("../../service/platformSelfServiceApi", () => ({
-  platformSelfServiceApi: {
+vi.mock("../../service/platformSelfServiceApi", () => {
+  const platformSelfServiceApi = {
     getZoikoSubscription: vi.fn(),
     getWorkspaceUsage: vi.fn(),
     convertTrialToPaid: vi.fn(),
-  },
-  invalidateZoikoSubscriptionCache: vi.fn(),
-}));
+  };
+  return {
+    platformSelfServiceApi,
+    // The page loads through the shared cache; route it to the raw mock so
+    // per-test mockResolvedValue setups keep working.
+    getZoikoSubscriptionCached: (...a) => platformSelfServiceApi.getZoikoSubscription(...a),
+    invalidateZoikoSubscriptionCache: vi.fn(),
+  };
+});
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {

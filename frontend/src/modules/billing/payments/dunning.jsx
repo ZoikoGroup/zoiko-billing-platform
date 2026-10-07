@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { dunningApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   ErrorState, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
   DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, Pagination,
@@ -86,7 +87,10 @@ export default function DunningPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (hasLoadedOnce.current) setRefreshing(true);
@@ -99,18 +103,22 @@ export default function DunningPage() {
         dunningApi.listCases(params),
         dunningApi.listLevels().catch(() => []),
       ]);
+      if (!isCurrent()) return;
       const items = extractArray(caseData);
       setCases(items);
       setTotal(caseData?.total || caseData?.total_count || items.length);
       setLevels(Array.isArray(levelData) ? levelData : []);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.detail || err?.message || "Failed to load dunning data");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, levelFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, levelFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
