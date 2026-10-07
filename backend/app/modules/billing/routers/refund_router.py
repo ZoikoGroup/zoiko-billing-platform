@@ -163,6 +163,16 @@ def list_customer_refunds(
     )
 
 
+@router.get("/customer/{customer_id}/refundable-sources", response_model=dict)
+def list_refundable_sources(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = RefundService(db)
+    return svc.list_refundable_sources(current_user.organization_id, customer_id)
+
+
 @router.get("/customer/{customer_id}/summary", response_model=RefundCustomerSummaryResponse)
 def get_customer_refund_summary(
     customer_id: int,

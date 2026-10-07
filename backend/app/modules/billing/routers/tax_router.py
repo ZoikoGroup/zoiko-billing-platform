@@ -60,11 +60,21 @@ def list_tax_rates(
     if tax_type and tax_type.lower() in ("both", "all"):
         tax_type = None
     if tax_type is not None:
-        try:
-            TaxType(tax_type)
-        except ValueError:
-            valid = ", ".join(t.value for t in TaxType)
-            raise BadRequestException(f"Invalid tax_type '{tax_type}'. Valid values: {valid}.")
+        # Accepts a single type or a comma-separated list ("vat,gst" -> IN
+        # clause in BaseRepository._apply_filter, the same convention the
+        # invoice/credit-note list filters use). Every part must be a valid
+        # TaxType -- an unknown value is still rejected, never ignored.
+        parts = [p.strip() for p in tax_type.split(",") if p.strip()]
+        if not parts:
+            tax_type = None
+        for part in parts:
+            try:
+                TaxType(part)
+            except ValueError:
+                valid = ", ".join(t.value for t in TaxType)
+                raise BadRequestException(f"Invalid tax_type '{part}'. Valid values: {valid}.")
+        if parts:
+            tax_type = ",".join(parts)
     return svc.list_tax_rates(
         organization_id=current_user.organization_id,
         page=page,

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Download, RefreshCw, DollarSign, TrendingUp, PieChart as PieChartIcon, BarChart3, Globe, Receipt } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import HRPage from "../../../components/HRPage";
@@ -8,6 +9,7 @@ import { useCurrency } from "../utils/CurrencyContext";
 import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
+import { TAX_REPORT_TABS } from "./tax-helpers";
 
 const COLORS = ["var(--color-accent-tax)", "var(--color-accent-tax-hover)", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
@@ -21,7 +23,14 @@ const TABS = [
 export default function TaxReportsPage() {
   const { baseCurrency } = useCurrency();
   const { range, setRange, customStart, setCustomStart, customEnd, setCustomEnd } = useDateRange();
-  const [activeTab, setActiveTab] = useState("overview");
+  // ?tab= lets Tax Dashboard / Tax page KPI cards land on the relevant tab
+  // (e.g. "Countries Covered" -> By Jurisdiction) instead of always Overview.
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(TAX_REPORT_TABS.includes(requestedTab) ? requestedTab : "overview");
+  useEffect(() => {
+    if (TAX_REPORT_TABS.includes(requestedTab)) setActiveTab(requestedTab);
+  }, [requestedTab]);
   const [refreshing, setRefreshing] = useState(false);
 
   const [taxRates, setTaxRates] = useState([]);
@@ -124,7 +133,7 @@ export default function TaxReportsPage() {
       {TABS.map((tab) => {
         const Icon = tab.icon;
         return (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} aria-current={activeTab === tab.key ? "page" : undefined}
             className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
               activeTab === tab.key ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}>

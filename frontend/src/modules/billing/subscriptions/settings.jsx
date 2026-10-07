@@ -4,6 +4,7 @@ import {
   Percent, DollarSign, FileText, Image, Clock, Ban, Repeat,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi } from "../../../service/billingService";
 import { useTerminology } from "../utils/TerminologyContext";
 
@@ -29,6 +30,7 @@ export default function SubscriptionSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [form, setForm] = useState({
@@ -93,8 +95,10 @@ export default function SubscriptionSettingsPage() {
       };
       setForm(values);
       setOriginal({ ...values });
+      setLoadFailed(false);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to load settings");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -127,6 +131,17 @@ export default function SubscriptionSettingsPage() {
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
+      </HRPage>
+    );
+  }
+
+  // A failed load must not render the hard-coded defaults as an editable
+  // form: `original` is still {} so Save is enabled immediately, and it would
+  // write those defaults over the saved subscription settings.
+  if (loadFailed) {
+    return (
+      <HRPage title="Subscription Settings" subtitle="Configure subscription module preferences">
+        <ErrorState title="Couldn't load subscription settings" message={error} onRetry={fetchSettings} />
       </HRPage>
     );
   }

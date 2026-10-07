@@ -19,6 +19,11 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled", color: "bg-slate-100 text-slate-700" },
 ];
 
+function statusFromSearchParams(searchParams) {
+  const s = (searchParams.get("status") || "").toLowerCase();
+  return STATUS_OPTIONS.some((o) => o.value === s) ? s : "";
+}
+
 // How the customer paid — shown in the "Record Payment" wizard. These map to
 // the backend's PaymentGatewayType (sent as `gateway`), not PaymentType.
 const PAYMENT_METHOD_OPTIONS = [
@@ -88,10 +93,14 @@ export default function PaymentListPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  // ?status= deep links (Payment Dashboard tiles/Action Center, Collections
+  // Dashboard) seed the status filter. This page used to ignore the param,
+  // so every one of those links landed on the unfiltered list.
+  const urlStatus = statusFromSearchParams(searchParams);
+  const [statusFilter, setStatusFilter] = useState(urlStatus);
   const [typeFilter, setTypeFilter] = useState("");
   const { range: dateRangeValue, setRange: setDateRangeValue, customStart, customEnd, applyCustomRange, reset: resetDateRange, dateRange } = useBillingDateRange();
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(Boolean(urlStatus));
   const [sortField, setSortField] = useState("payment_date");
   const [sortDir, setSortDir] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -258,6 +267,34 @@ export default function PaymentListPage() {
     setCustomerInvoiceSearch(""); setInvoiceResults([]); setPaymentMethods([]); setShowAdvanced(false);
     setAllocationMode("full");
   };
+
+  // Shared by every KPI card on this page: each card filters the table to the
+  // payments its value is computed from (PaymentRepository.get_dashboard_stats:
+  // "Outstanding" = pending payments, "Avg/Day" = cleared payments over the
+  // trailing 30 days) and opens the filter row so the active filter is visible.
+  // A user-driven status change supersedes the ?status= deep link; drop it so
+  // a refresh doesn't resurrect the stale filter.
+  const dropUrlStatus = () => {
+    if (!searchParams.has("status")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("status");
+    setSearchParams(next, { replace: true });
+  };
+
+  const applyCardFilter = (status, range) => {
+    dropUrlStatus();
+    setStatusFilter(status);
+    if (range) setDateRangeValue(range);
+    setCurrentPage(1);
+    if (status || range) setShowFilters(true);
+  };
+
+  useEffect(() => {
+    if (!urlStatus) return;
+    setStatusFilter(urlStatus);
+    setShowFilters(true);
+    setCurrentPage(1);
+  }, [urlStatus]);
 
   const closeWizard = () => {
     setShowWizard(false);
@@ -509,16 +546,16 @@ export default function PaymentListPage() {
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Payments" value={total} icon={CreditCard} color="from-brand to-brand-hover" onClick={() => { setStatusFilter(""); setCurrentPage(1); }} />
-          <DashboardStatCard title="Cleared" value={filteredByStatus("cleared").length} icon={CheckCircle} color="from-emerald-500 to-emerald-600" subtitle={formatDisplayCurrency(completedAmt, baseCurrency)} onClick={() => { setStatusFilter("cleared"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Pending" value={filteredByStatus("pending").length} icon={Clock} color="from-amber-500 to-orange-500" onClick={() => { setStatusFilter("pending"); setCurrentPage(1); }} />
-          <DashboardStatCard title="Failed" value={filteredByStatus("failed").length} icon={XCircle} color="from-red-500 to-rose-500" onClick={() => { setStatusFilter("failed"); setCurrentPage(1); }} />
+          <DashboardStatCard title="Payments" value={total} icon={CreditCard} color="from-brand to-brand-hover" onClick={() => applyCardFilter("")} />
+          <DashboardStatCard title="Cleared" value={filteredByStatus("cleared").length} icon={CheckCircle} color="from-emerald-500 to-emerald-600" subtitle={formatDisplayCurrency(completedAmt, baseCurrency)} onClick={() => applyCardFilter("cleared")} />
+          <DashboardStatCard title="Pending" value={filteredByStatus("pending").length} icon={Clock} color="from-amber-500 to-orange-500" onClick={() => applyCardFilter("pending")} />
+          <DashboardStatCard title="Failed" value={filteredByStatus("failed").length} icon={XCircle} color="from-red-500 to-rose-500" onClick={() => applyCardFilter("failed")} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Refunded" value={refundedCount} icon={RefreshCw} color="from-blue-500 to-blue-600" />
-          <DashboardStatCard title="Outstanding" value={Number(pendingAmt)} currency={baseCurrency} icon={Wallet} color="from-amber-500 to-orange-500" />
+          <DashboardStatCard title="Refunded" value={refundedCount} icon={RefreshCw} color="from-blue-500 to-blue-600" onClick={() => applyCardFilter("refunded")} />
+          <DashboardStatCard title="Outstanding" value={Number(pendingAmt)} currency={baseCurrency} icon={Wallet} color="from-amber-500 to-orange-500" subtitle="Pending payments" onClick={() => applyCardFilter("pending")} />
           <DashboardStatCard title="Revenue" value={Number(completedAmt)} currency={baseCurrency} icon={DollarSign} color="from-brand to-brand-hover" href="/billing/collections-receivables" />
-          <DashboardStatCard title="Avg/Day" value={avgPerDay} currency={baseCurrency} icon={TrendingUp} color="from-slate-500 to-slate-600" subtitle="Last 30 days" />
+          <DashboardStatCard title="Avg/Day" value={avgPerDay} currency={baseCurrency} icon={TrendingUp} color="from-slate-500 to-slate-600" subtitle="Cleared, last 30 days" onClick={() => applyCardFilter("cleared", "last_30_days")} />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
@@ -567,7 +604,7 @@ export default function PaymentListPage() {
             {showFilters && (
               <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
                 <div className="relative">
-                  <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                  <select value={statusFilter} onChange={(e) => { dropUrlStatus(); setStatusFilter(e.target.value); setCurrentPage(1); }}
                     className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                     <option value="">All Statuses</option>
                     {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -582,7 +619,7 @@ export default function PaymentListPage() {
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
                 {(statusFilter || typeFilter || dateRange.date_from || dateRange.date_to) && (
-                  <button onClick={() => { setStatusFilter(""); setTypeFilter(""); resetDateRange(); setCurrentPage(1); }}
+                  <button onClick={() => { dropUrlStatus(); setStatusFilter(""); setTypeFilter(""); resetDateRange(); setCurrentPage(1); }}
                     className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
                 )}
               </div>

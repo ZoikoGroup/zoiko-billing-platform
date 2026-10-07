@@ -2,6 +2,27 @@ import { useState, useEffect } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Percent, DollarSign, Globe, Receipt, Calendar, ToggleLeft, Hash } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { settingsApi, taxApi } from "../../../service/billingService";
+import { extractArray, formatTaxRatePercent } from "../../../utils/billing-helpers";
+import { ErrorState } from "../../../components/billing-shared";
+import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "./tax-helpers";
+
+// Must match the backend TaxRoundingMethod enum (models.py) exactly, and the
+// labels used for the same field on the main Billing Settings page
+// (dashboard/settings.jsx). This setting controls WHERE tax is rounded, not
+// the rounding mode -- an earlier version of this page offered "nearest" /
+// "up" / "down" / "half_up" / "half_down" here, none of which the API
+// accepts, so every save 422'd.
+const TAX_ROUNDING_METHOD_OPTIONS = [
+  { value: "per_line", label: "Per Line" },
+  { value: "per_invoice", label: "Per Invoice" },
+  { value: "per_line_item", label: "Per Line Item" },
+];
+const DEFAULT_TAX_ROUNDING_METHOD = "per_line";
+
+function normalizeTaxRoundingMethod(value) {
+  const v = String(value || "").toLowerCase();
+  return TAX_ROUNDING_METHOD_OPTIONS.some((o) => o.value === v) ? v : DEFAULT_TAX_ROUNDING_METHOD;
+}
 
 function SettingsField({ label, icon: Icon, children, description }) {
   return (
@@ -26,12 +47,13 @@ export default function TaxSettingsPage() {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const [taxRates, setTaxRates] = useState([]);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [form, setForm] = useState({
     default_tax_rate_id: "",
     default_tax_rate_value: "",
     auto_calculation: "enabled",
-    rounding_rule: "nearest",
+    rounding_rule: DEFAULT_TAX_ROUNDING_METHOD,
     default_jurisdiction: "",
     tax_number: "",
     fiscal_year_start: "",
@@ -57,11 +79,18 @@ export default function TaxSettingsPage() {
         settingsApi.get(),
         taxApi.list({ per_page: 100 }),
       ]);
-      let settings = {};
-      if (settingsRes.status === "fulfilled") settings = settingsRes.value || {};
+      // Never present an editable form built from hard-coded defaults: saving
+      // it would overwrite the organization's real tax configuration.
+      if (settingsRes.status !== "fulfilled") {
+        const reason = settingsRes.reason;
+        setLoadFailed(true);
+        setError(reason?.detail || reason?.message || "Failed to load settings");
+        return;
+      }
+      setLoadFailed(false);
+      const settings = settingsRes.value || {};
       if (taxRes.status === "fulfilled") {
-        const data = taxRes.value;
-        setTaxRates(Array.isArray(data) ? data : data?.items || data?.data || []);
+        setTaxRates(extractArray(taxRes.value));
       }
 
       // Extract unmapped preference fields from the tax_profiles JSON sentinel entry.
@@ -77,7 +106,7 @@ export default function TaxSettingsPage() {
         default_tax_rate_id: settings.default_tax_rate_id || "",
         default_tax_rate_value: "",
         auto_calculation: savedPrefs.auto_calculation || "enabled",
-        rounding_rule: settings.tax_rounding_method || savedPrefs.rounding_rule || "nearest",
+        rounding_rule: normalizeTaxRoundingMethod(settings.tax_rounding_method),
         default_jurisdiction: savedPrefs.default_jurisdiction || "",
         tax_number: settings.tax_number || "",
         fiscal_year_start: settings.fiscal_year_start || "",
@@ -148,6 +177,14 @@ export default function TaxSettingsPage() {
     );
   }
 
+  if (loadFailed) {
+    return (
+      <HRPage title="Tax Settings" subtitle="Configure tax module preferences">
+        <ErrorState title="Couldn't load tax settings" message={error} onRetry={fetchSettings} />
+      </HRPage>
+    );
+  }
+
   const selectedRate = taxRates.find((r) => String(r.id) === String(form.default_tax_rate_id));
   // Only offer active rates in the default-rate dropdown
   const activeRates = taxRates.filter((r) => r.is_active !== false);
@@ -190,17 +227,13 @@ export default function TaxSettingsPage() {
           }}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="">None</option>
-            {activeRates.map((r) => {
-              const rateVal = parseFloat(r.rate || 0);
-              const displayRate = rateVal > 0 && rateVal <= 1 ? rateVal * 100 : rateVal;
-              return <option key={r.id} value={r.id}>{r.name} ({displayRate.toFixed(2)}%)</option>;
-            })}
+            {activeRates.map((r) => (
+              <option key={r.id} value={r.id}>{r.name} ({formatTaxRatePercent(r.rate)})</option>
+            ))}
           </select>
-          {selectedRate && (() => {
-            const rateVal = parseFloat(selectedRate.rate || 0);
-            const displayRate = rateVal > 0 && rateVal <= 1 ? rateVal * 100 : rateVal;
-            return <p className="mt-1 text-xs text-slate-500">Rate: {displayRate.toFixed(2)}% — {selectedRate.jurisdiction || "No jurisdiction"}</p>;
-          })()}
+          {selectedRate && (
+            <p className="mt-1 text-xs text-slate-500">Rate: {formatTaxRatePercent(selectedRate.rate)} — {selectedRate.jurisdiction || "No jurisdiction"}</p>
+          )}
         </SettingsField>
 
         <SettingsField label="Default Jurisdiction" icon={Globe} description="Default jurisdiction/region for tax calculations">
@@ -221,15 +254,12 @@ export default function TaxSettingsPage() {
           </select>
         </SettingsField>
 
-        <SettingsField label="Rounding Rule" icon={DollarSign} description="How tax amounts are rounded during calculation">
-          <select value={form.rounding_rule} onChange={(e) => updateField("rounding_rule", e.target.value)}
+        <SettingsField label="Tax Rounding Method" icon={DollarSign} description="Your preferred point at which tax is rounded on invoices">
+          <select aria-label="Tax Rounding Method" value={form.rounding_rule} onChange={(e) => updateField("rounding_rule", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
-            <option value="nearest">Nearest Cent</option>
-            <option value="up">Round Up</option>
-            <option value="down">Round Down</option>
-            <option value="half_up">Half Round Up</option>
-            <option value="half_down">Half Round Down</option>
+            {TAX_ROUNDING_METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          <p role="note" className="mt-2 max-w-md text-xs text-amber-700">{TAX_ROUNDING_NOT_APPLIED_NOTICE}</p>
         </SettingsField>
 
         <SettingsField label="Tax Inclusive Pricing" icon={DollarSign} description="Whether prices shown include tax by default">

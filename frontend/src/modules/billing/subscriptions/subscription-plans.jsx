@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus,
   Pencil,
@@ -129,16 +129,27 @@ export default function SubscriptionPlansPage() {
   const [duplicateTarget, setDuplicateTarget] = useState(null);
   const [duplicating, setDuplicating] = useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setCurrentPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+  const handleSearchChange = useCallback((value) => {
+    setSearch(value);
+    setDebouncedSearch(value);
+    setCurrentPage(1);
+  }, []);
+
+  // `loading` (full-page skeleton) is for the FIRST load only. Every later
+  // fetch -- a search keystroke, a category change, paging -- used to set it
+  // too, and the page renders its toolbar + table only when !loading: so the
+  // search box unmounted mid-typing (losing focus -- "must click search every
+  // time") and, with plans already on screen, NEITHER the skeleton nor the
+  // table rendered (the "blank page" after search + category). Refetches now
+  // use `refreshing` and keep everything mounted. requestIdRef drops responses
+  // that arrive after a newer request, so fast filter changes can't display
+  // results for stale filters.
+  const hasLoadedRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   const fetchPlans = useCallback(async (page = 1, perPage = ITEMS_PER_PAGE) => {
-    setLoading(true);
+    const requestId = ++requestIdRef.current;
+    if (hasLoadedRef.current) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
       const data = await subscriptionApi.listPlans({
@@ -148,12 +159,18 @@ export default function SubscriptionPlansPage() {
         category: categoryFilter || undefined,
         active_only: false,
       });
+      if (requestId !== requestIdRef.current) return;
       setPlans(extractArray(data));
       setTotal(data?.total ?? 0);
+      hasLoadedRef.current = true;
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       setError((err && (err.detail || err.message)) || "Failed to load subscription plans.");
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [debouncedSearch, categoryFilter]);
 
@@ -180,14 +197,7 @@ export default function SubscriptionPlansPage() {
     setCurrentPage(1);
   };
 
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await fetchPlans(currentPage);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [fetchPlans, currentPage]);
+  const refresh = useCallback(() => fetchPlans(currentPage), [fetchPlans, currentPage]);
 
   const openCreate = () => {
     setEditingPlan(null);
@@ -508,7 +518,7 @@ export default function SubscriptionPlansPage() {
         <ErrorState
           title="Could not load plans"
           message={error}
-          onRetry={() => { setError(null); setLoading(true); fetchPlans(currentPage); }}
+          onRetry={() => { setError(null); fetchPlans(currentPage); }}
         />
       )}
 
@@ -518,7 +528,7 @@ export default function SubscriptionPlansPage() {
         <div>
           <ListToolbar
             search={search}
-            onSearchChange={setSearch}
+            onSearchChange={handleSearchChange}
             searchPlaceholder="Search plans…"
             filtersOpen={showFilters}
             onToggleFilters={() => setShowFilters((v) => !v)}
@@ -533,7 +543,7 @@ export default function SubscriptionPlansPage() {
                 <Field label="Category">
                   <Select
                     value={categoryFilter}
-                    onChange={setCategoryFilter}
+                    onChange={(v) => { setCategoryFilter(v); setCurrentPage(1); }}
                     options={CATEGORY_OPTIONS}
                     placeholder="All Categories"
                     className="w-44"
@@ -558,7 +568,7 @@ export default function SubscriptionPlansPage() {
             )}
           </ListToolbar>
 
-          {plans.length === 0 && search === "" ? (
+          {plans.length === 0 && !debouncedSearch && !categoryFilter && !statusFilter ? (
             <EmptyState
               icon={Package}
               title="No subscription plans yet"

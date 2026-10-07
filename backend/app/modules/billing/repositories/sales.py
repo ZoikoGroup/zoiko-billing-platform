@@ -189,21 +189,32 @@ class ContractRepository(BaseRepository[Contract]):
     def list_active(self, organization_id: int) -> List[Contract]:
         return self.list_all(organization_id, active_only=True, status="active")
 
+    @staticmethod
+    def expiring_conditions(within_days: int) -> List[Any]:
+        """"Expiring within N days": active, with an end date from today up
+        to today + N (inclusive). The single definition shared by
+        list_expiring (/contracts/expiring, the dashboard's Upcoming Expiry
+        count), the contract summary's expiring_count, and the contract
+        list's expiring_within_days filter that those KPI cards open."""
+        from datetime import timedelta
+        today = date.today()
+        cutoff = today + timedelta(days=within_days)
+        return [
+            Contract.status == "active",
+            Contract.end_date.isnot(None),
+            Contract.end_date >= today,
+            Contract.end_date <= cutoff,
+        ]
+
     def list_expiring(
         self,
         organization_id: int,
         within_days: int = 30,
     ) -> List[Contract]:
-        from datetime import timedelta
-        today = date.today()
-        cutoff = today + timedelta(days=within_days)
         return self.db.query(Contract).filter(
             Contract.organization_id == organization_id,
             Contract.is_active == True,
-            Contract.status == "active",
-            Contract.end_date.isnot(None),
-            Contract.end_date >= today,
-            Contract.end_date <= cutoff,
+            *self.expiring_conditions(within_days),
         ).all()
 
     def list_paginated(
@@ -220,6 +231,7 @@ class ContractRepository(BaseRepository[Contract]):
         search_fields: Optional[List[str]] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        expiring_within_days: Optional[int] = None,
         **filters: Any,
     ) -> Dict[str, Any]:
         if customer_id:
@@ -239,5 +251,6 @@ class ContractRepository(BaseRepository[Contract]):
             date_field="created_at",
             date_from=date_from,
             date_to=date_to,
+            extra_conditions=self.expiring_conditions(expiring_within_days) if expiring_within_days else None,
             **filters,
         )

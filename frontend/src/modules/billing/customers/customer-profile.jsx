@@ -695,7 +695,8 @@ export default function CustomerProfilePage() {
       setActionError(null);
       const actions = { activate: customerApi.activate, deactivate: customerApi.deactivate, suspend: customerApi.suspend };
       await actions[action](id);
-      showToast(`${singular} ${action}d successfully`);
+      const pastTense = { activate: 'activated', deactivate: 'deactivated', suspend: 'suspended' };
+      showToast(`${singular} ${pastTense[action] || action} successfully`);
       await fetchCustomer();
     } catch (err) {
       setActionError(err?.detail || err?.message || `Failed to ${action} ${singular.toLowerCase()}`);
@@ -738,13 +739,21 @@ export default function CustomerProfilePage() {
     }
   };
 
-  const handleSetPrimaryContact = async (contactId) => {
+  const handleTogglePrimaryContact = async (contact) => {
+    if (contactSaving) return;
     try {
       setContactSaving(true);
-      await customerApi.setPrimaryContact(id, contactId);
+      setContactsError(null);
+      if (contact.is_primary) {
+        await customerApi.updateContact(id, contact.id, { is_primary: false });
+        showToast(`${contact.first_name || 'Contact'} is no longer the primary contact`);
+      } else {
+        await customerApi.setPrimaryContact(id, contact.id);
+        showToast(`${contact.first_name || 'Contact'} is now the primary contact`);
+      }
       await fetchContacts();
     } catch (err) {
-      setContactsError(err?.detail || err?.message || 'Failed to set primary contact');
+      setContactsError(err?.detail || err?.message || 'Failed to update the primary contact');
     } finally {
       setContactSaving(false);
     }
@@ -878,7 +887,7 @@ export default function CustomerProfilePage() {
       </div>
 
       {actionError && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+        <div role="alert" className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 flex-shrink-0" /> {actionError}
         </div>
       )}
@@ -894,28 +903,28 @@ export default function CustomerProfilePage() {
                 <h2 className="text-xl font-bold text-slate-900">{customer?.display_name || customer?.company_name}</h2>
                 <StatusBadge status={customer?.status} />
               </div>
-              <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-slate-500">
                 {customer?.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {customer.email}</span>}
                 {customer?.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {customer.phone}</span>}
                 {customer?.company_name && <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {customer.company_name}</span>}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {customer?.status === 'active' && (
-              <button onClick={() => handleAction('deactivate')} disabled={actionLoading}
+              <button onClick={() => openConfirm(`Deactivate ${singular}`, `Deactivate this ${singular.toLowerCase()}? You can reactivate them later.`, () => handleAction('deactivate'), 'danger', 'Deactivate')} disabled={actionLoading}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors">
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Deactivate
               </button>
             )}
-            {customer?.status === 'inactive' && (
+            {(customer?.status === 'inactive' || customer?.status === 'suspended') && (
               <button onClick={() => handleAction('activate')} disabled={actionLoading}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors">
-                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Activate
+                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {customer?.status === 'suspended' ? 'Reactivate' : 'Activate'}
               </button>
             )}
             {customer?.status === 'active' && (
-              <button onClick={() => handleAction('suspend')} disabled={actionLoading}
+              <button onClick={() => openConfirm(`Suspend ${singular}`, `Suspend this ${singular.toLowerCase()}? You can reactivate them later.`, () => handleAction('suspend'), 'danger', 'Suspend')} disabled={actionLoading}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-100 rounded-lg hover:bg-amber-200 disabled:opacity-50 transition-colors">
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />} Suspend
               </button>
@@ -976,7 +985,7 @@ export default function CustomerProfilePage() {
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm transition-all hover:shadow-md">
             <CreditCard className="h-4 w-4" /> Record Payment
           </button>
-          <button onClick={() => navigate(`/billing/invoices/send?customer_id=${id}`)}
+          <button onClick={() => setActiveTab('billing-overview')} title="Choose one of this customer's invoices to send"
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-sm transition-all hover:shadow-md">
             <Mail className="h-4 w-4" /> Send Invoice
           </button>
@@ -993,12 +1002,14 @@ export default function CustomerProfilePage() {
       </div>
 
       <div className="border-b border-slate-200 mb-6">
-        <nav className="flex gap-0 -mb-px overflow-x-auto">
+        <nav role="tablist" aria-label={`${singular} sections`} className="flex gap-0 -mb-px overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.key}
+                role="tab"
+                aria-selected={activeTab === tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.key
@@ -1540,11 +1551,11 @@ export default function CustomerProfilePage() {
         <div className="bg-white rounded-3xl border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h3 className="text-lg font-semibold text-slate-900">Contacts ({contacts.length})</h3>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                <input value={contactSearch} onChange={(e) => setContactSearch(e.target.value)}
-                  placeholder="Search contacts..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-52" />
+                <input value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} aria-label="Search contacts"
+                  placeholder="Search contacts..." className="pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-lg transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 w-full sm:w-52" />
                 {contactSearch && <button onClick={() => setContactSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X className="h-4 w-4" /></button>}
               </div>
               <button onClick={() => { setShowContactForm(true); setEditingContactId(null); setContactForm({ first_name: '', last_name: '', email: '', phone: '', job_title: '', department: '', is_primary: false }); }}
@@ -1555,7 +1566,7 @@ export default function CustomerProfilePage() {
           </div>
 
           {contactsError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+            <div role="alert" className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
               <AlertCircle className="h-4 w-4 flex-shrink-0" /> {contactsError}
             </div>
           )}
@@ -1564,37 +1575,37 @@ export default function CustomerProfilePage() {
             <form onSubmit={handleSaveContact} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
               <h4 className="text-sm font-semibold text-slate-900 mb-3">{editingContactId ? 'Edit Contact' : 'Add Contact'}</h4>
               {contactFormError && (
-                <p className="mb-3 text-xs text-red-600">{contactFormError}</p>
+                <p role="alert" className="mb-3 text-xs text-red-600">{contactFormError}</p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">First Name *</label>
-                  <input required value={contactForm.first_name} onChange={(e) => setContactForm({ ...contactForm, first_name: e.target.value })}
+                  <label htmlFor="contact-first_name" className="block text-xs font-medium text-slate-700 mb-1">First Name *</label>
+                  <input id="contact-first_name" required value={contactForm.first_name} onChange={(e) => setContactForm({ ...contactForm, first_name: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Last Name *</label>
-                  <input required value={contactForm.last_name} onChange={(e) => setContactForm({ ...contactForm, last_name: e.target.value })}
+                  <label htmlFor="contact-last_name" className="block text-xs font-medium text-slate-700 mb-1">Last Name *</label>
+                  <input id="contact-last_name" required value={contactForm.last_name} onChange={(e) => setContactForm({ ...contactForm, last_name: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
-                  <input type="email" required value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                  <label htmlFor="contact-email" className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
+                  <input id="contact-email" type="email" required value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
-                  <input value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                  <label htmlFor="contact-phone" className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
+                  <input id="contact-phone" value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
-                  <input value={contactForm.job_title} onChange={(e) => setContactForm({ ...contactForm, job_title: e.target.value })}
+                  <label htmlFor="contact-job_title" className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
+                  <input id="contact-job_title" value={contactForm.job_title} onChange={(e) => setContactForm({ ...contactForm, job_title: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Department</label>
-                  <select value={contactForm.department} onChange={(e) => setContactForm({ ...contactForm, department: e.target.value })}
+                  <label htmlFor="contact-department" className="block text-xs font-medium text-slate-700 mb-1">Department</label>
+                  <select id="contact-department" value={contactForm.department} onChange={(e) => setContactForm({ ...contactForm, department: e.target.value })}
                     className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                     <option value="">Select department</option>
                     <option value="Billing">Billing</option>
@@ -1648,32 +1659,37 @@ export default function CustomerProfilePage() {
               )}
               <div className="space-y-3">
               {filteredContacts.map((contact) => (
-                <div key={contact.id || contact._id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-full bg-brand-100 flex items-center justify-center">
+                <div key={contact.id || contact._id} className="flex items-center justify-between gap-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="h-9 w-9 shrink-0 rounded-full bg-brand-100 flex items-center justify-center">
                       <User className="h-4 w-4 text-brand-600" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-slate-900">{contact.first_name} {contact.last_name}</p>
-                        {contact.is_primary && <Star className="h-3.5 w-3.5 text-amber-400" />}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-sm font-medium text-slate-900 truncate">{contact.first_name} {contact.last_name}</p>
+                        {contact.is_primary && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                            <Star className="h-3 w-3 fill-current" aria-hidden="true" /> Primary
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}{contact.job_title ? ` · ${contact.job_title}` : ''}{contact.department ? ` · ${contact.department}` : ''}</p>
+                      <p className="text-xs text-slate-500 truncate" title={[contact.email, contact.phone, contact.job_title, contact.department].filter(Boolean).join(' · ')}>{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}{contact.job_title ? ` · ${contact.job_title}` : ''}{contact.department ? ` · ${contact.department}` : ''}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {!contact.is_primary && (
-                      <button onClick={() => handleSetPrimaryContact(contact.id)} title="Set primary" aria-label="Set as primary contact"
-                        className="p-1.5 text-slate-500 hover:text-amber-500 rounded-lg hover:bg-amber-50 transition-colors">
-                        <Star className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button onClick={() => { setEditingContactId(contact.id); setContactForm({ first_name: contact.first_name || '', last_name: contact.last_name || '', email: contact.email, phone: contact.phone || '', job_title: contact.job_title || '', department: contact.department || '', is_primary: contact.is_primary || false }); setShowContactForm(true); }}
-                      className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" aria-label="Edit contact">
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button onClick={() => handleTogglePrimaryContact(contact)} disabled={contactSaving}
+                      aria-pressed={Boolean(contact.is_primary)}
+                      aria-label={contact.is_primary ? `Remove ${contact.first_name || 'contact'} as primary contact` : `Set ${contact.first_name || 'contact'} as primary contact`}
+                      title={contact.is_primary ? 'Primary contact — click to remove' : 'Set as primary contact'}
+                      className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${contact.is_primary ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-500 hover:text-amber-500 hover:bg-amber-50'}`}>
+                      <Star className={`h-4 w-4 ${contact.is_primary ? 'fill-current' : ''}`} />
+                    </button>
+                    <button disabled={contactSaving} onClick={() => { setEditingContactId(contact.id); setContactForm({ first_name: contact.first_name || '', last_name: contact.last_name || '', email: contact.email, phone: contact.phone || '', job_title: contact.job_title || '', department: contact.department || '', is_primary: contact.is_primary || false }); setShowContactForm(true); }}
+                      className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors disabled:opacity-40" aria-label={`Edit ${contact.first_name || 'contact'}`}>
                       <Pencil className="h-4 w-4" />
                     </button>
-                    <button onClick={() => openConfirm('Remove Contact', 'Are you sure you want to remove this contact? This action cannot be undone.', () => handleRemoveContact(contact.id))}
-                      className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" aria-label="Delete contact">
+                    <button disabled={contactSaving} onClick={() => openConfirm('Remove Contact', 'Are you sure you want to remove this contact? This action cannot be undone.', () => handleRemoveContact(contact.id))}
+                      className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40" aria-label={`Delete ${contact.first_name || 'contact'}`}>
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

@@ -143,7 +143,9 @@ export default function InvoiceDashboard() {
     draft: stats.status_counts?.draft || 0,
     sent: stats.status_counts?.sent || 0,
     paid: stats.status_counts?.paid || 0,
-    overdue: stats.status_counts?.overdue || 0,
+    // overdue_count uses the same rule as the Overdue list filter (flagged or
+    // open and past due); status_counts.overdue only counts the flag.
+    overdue: stats.overdue_count ?? stats.status_counts?.overdue ?? 0,
     cancelled: stats.status_counts?.cancelled || 0,
     partiallyPaid: stats.status_counts?.partially_paid || 0,
     refunded: stats.status_counts?.refunded || 0,
@@ -325,18 +327,18 @@ export default function InvoiceDashboard() {
         <EnterpriseStatCard title="Sent" value={kpis.sent.toLocaleString()} icon={Send} color={CARD_GRADIENTS[3]} href="/billing/invoices?status=sent" />
         <EnterpriseStatCard title="Paid Count" value={kpis.paid.toLocaleString()} icon={CheckCircle} color={CARD_GRADIENTS[1]} href="/billing/invoices?status=paid" />
         <EnterpriseStatCard title="Overdue Count" value={kpis.overdue.toLocaleString()} icon={AlertCircle} color={CARD_GRADIENTS[4]} href="/billing/invoices?status=overdue" />
-        <EnterpriseStatCard title="Cancelled" value={kpis.cancelled.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} />
-        <EnterpriseStatCard title="Partially Paid" value={kpis.partiallyPaid.toLocaleString()} icon={Activity} color={CARD_GRADIENTS[6]} />
-        <EnterpriseStatCard title="Refunded" value={kpis.refunded.toLocaleString()} icon={TrendingDown} color={CARD_GRADIENTS[2]} />
-        <EnterpriseStatCard title="Written Off" value={kpis.writtenOff.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} />
+        <EnterpriseStatCard title="Cancelled" value={kpis.cancelled.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} href="/billing/invoices?status=cancelled" />
+        <EnterpriseStatCard title="Partially Paid" value={kpis.partiallyPaid.toLocaleString()} icon={Activity} color={CARD_GRADIENTS[6]} href="/billing/invoices?status=partially_paid" />
+        <EnterpriseStatCard title="Refunded" value={kpis.refunded.toLocaleString()} icon={TrendingDown} color={CARD_GRADIENTS[2]} href="/billing/invoices?status=refunded" />
+        <EnterpriseStatCard title="Written Off" value={kpis.writtenOff.toLocaleString()} icon={Ban} color={CARD_GRADIENTS[5]} href="/billing/invoices?status=written_off" />
       </StatGroup>
 
       <StatGroup title="More Metrics">
-        <EnterpriseStatCard title="This Month Revenue" value={Number(kpis.thisMonthRevenue)} currency={baseCurrency} icon={TrendingUp} color={CARD_GRADIENTS[0]} />
+        <EnterpriseStatCard title="This Month Revenue" value={Number(kpis.thisMonthRevenue)} currency={baseCurrency} icon={TrendingUp} color={CARD_GRADIENTS[0]} href="/billing/invoicing/reports?tab=trends" />
         <EnterpriseStatCard title="Avg Payment Days" value={`${kpis.avgPaymentDays} days`} icon={Calendar} color={CARD_GRADIENTS[3]} />
         <EnterpriseStatCard title="Average Invoice" value={Number(kpis.avgInvoiceValue)} currency={baseCurrency} icon={Receipt} color={CARD_GRADIENTS[6]} href="/billing/invoices" />
-        <EnterpriseStatCard title="Collection Rate" value={`${kpis.collectionRate}%`} icon={Activity} color={CARD_GRADIENTS[1]} />
-        <EnterpriseStatCard title="Tax Collected" value={Number(kpis.totalTaxCollected)} currency={baseCurrency} icon={DollarSign} color={CARD_GRADIENTS[2]} />
+        <EnterpriseStatCard title="Collection Rate" value={`${kpis.collectionRate}%`} icon={Activity} color={CARD_GRADIENTS[1]} href="/billing/invoicing/reports?tab=status" />
+        <EnterpriseStatCard title="Tax Collected" value={Number(kpis.totalTaxCollected)} currency={baseCurrency} icon={DollarSign} color={CARD_GRADIENTS[2]} href="/billing/tax/reports?tab=collection" />
       </StatGroup>
 
       <QuickActions actions={invoiceQuickActions} />
