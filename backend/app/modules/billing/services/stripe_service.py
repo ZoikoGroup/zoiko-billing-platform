@@ -90,8 +90,10 @@ def _stripe_module():
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
     if not settings.STRIPE_SECRET_KEY:
+        # The missing setting name is for operators (logs), not for end users.
+        logger.warning("Stripe is not configured: STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
-            "Stripe is not configured. Set STRIPE_SECRET_KEY in the environment."
+            "Online card payments are not available yet. Please contact support."
         )
     stripe.api_key = settings.STRIPE_SECRET_KEY
     # Transport hardening: bounded retries (with SDK-managed idempotency keys

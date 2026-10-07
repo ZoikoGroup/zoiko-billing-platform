@@ -21,7 +21,7 @@ export function checkoutErrorView(err) {
       hint: "This payment link has expired or was replaced. Open Zoiko Subscription in your Billing workspace and use Pay Now there, or contact Zoiko Billing Accounts.",
     };
   }
-  if (status === 400 && /not configured|not installed/i.test(message)) {
+  if (status === 400 && /not configured|not installed|not available yet/i.test(message)) {
     return {
       title: "Checkout Unavailable",
       message,

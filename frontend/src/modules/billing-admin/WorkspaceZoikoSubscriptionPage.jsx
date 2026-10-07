@@ -217,13 +217,15 @@ export default function WorkspaceZoikoSubscriptionPage() {
                 )}
               </div>
 
-              {!isActive && unpaidInvoice ? (
+              {/* A payable invoice gets a Pay action whatever the subscription state:
+                  an active subscription can still have an unpaid renewal invoice. */}
+              {unpaidInvoice ? (
                 <div className={`border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isSuspended ? "bg-red-50/70 border-red-200/80" : "bg-amber-50/70 border-amber-200/80"}`}>
                   <div className="flex items-center gap-3">
                     <AlertCircle className={`w-5 h-5 shrink-0 ${isSuspended ? "text-red-600" : "text-amber-600"}`} />
                     <div>
                       <p className={`text-sm font-semibold ${isSuspended ? "text-red-900" : "text-amber-900"}`}>
-                        {isSuspended ? "Billing access suspended — pay to reinstate" : "Awaiting payment to activate subscription"}
+                        {isSuspended ? "Billing access suspended — pay to reinstate" : isActive ? "Payment due" : "Awaiting payment to activate subscription"}
                       </p>
                       <p className={`text-xs mt-0.5 ${isSuspended ? "text-red-700" : "text-amber-700"}`}>
                         Invoice {unpaidInvoice.invoice_number} is due for payment

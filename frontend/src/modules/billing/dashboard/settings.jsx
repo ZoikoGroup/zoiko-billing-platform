@@ -2532,7 +2532,10 @@ function HealthStatusBadge({ status }) {
     critical: <AlertCircle size={12} />,
     unknown: <AlertCircle size={12} />,
   };
-  const s = (status || "unknown").toLowerCase();
+  // Backend health checks also report "degraded" / "down".
+  const aliases = { degraded: "warning", down: "critical" };
+  const raw = (status || "unknown").toLowerCase();
+  const s = aliases[raw] || raw;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${classes[s] || classes.unknown}`}>
       {icons[s] || icons.unknown}
@@ -2801,30 +2804,30 @@ function AdministrationPanel() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Connection</span>
-                  <HealthStatusBadge status={smtpResult.connection?.success ? "healthy" : "critical"} />
-                  {smtpResult.connection?.details && <p className="text-slate-500 mt-1">{smtpResult.connection.details}</p>}
+                  <HealthStatusBadge status={smtpResult.connection?.ok ? "healthy" : "critical"} />
+                  {smtpResult.connection?.message && <p className="text-slate-500 mt-1">{smtpResult.connection.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">TLS</span>
-                  <HealthStatusBadge status={smtpResult.tls?.success ? "healthy" : "critical"} />
-                  {smtpResult.tls?.details && <p className="text-slate-500 mt-1">{smtpResult.tls.details}</p>}
+                  <HealthStatusBadge status={smtpResult.tls?.ok ? "healthy" : "critical"} />
+                  {smtpResult.tls?.message && <p className="text-slate-500 mt-1">{smtpResult.tls.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Authentication</span>
-                  <HealthStatusBadge status={smtpResult.authentication?.success ? "healthy" : "critical"} />
-                  {smtpResult.authentication?.details && <p className="text-slate-500 mt-1">{smtpResult.authentication.details}</p>}
+                  <HealthStatusBadge status={smtpResult.authentication?.ok ? "healthy" : "critical"} />
+                  {smtpResult.authentication?.message && <p className="text-slate-500 mt-1">{smtpResult.authentication.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Test Email</span>
-                  <HealthStatusBadge status={smtpResult.test_email_sent?.success ? "healthy" : "warning"} />
-                  {smtpResult.test_email_sent?.details && <p className="text-slate-500 mt-1">{smtpResult.test_email_sent.details}</p>}
+                  <HealthStatusBadge status={smtpResult.test_email_sent?.ok ? "healthy" : "warning"} />
+                  {smtpResult.test_email_sent?.message && <p className="text-slate-500 mt-1">{smtpResult.test_email_sent.message}</p>}
                 </div>
               </div>
               {smtpResult.sender_identity && (
                 <div className="p-2 bg-white rounded-lg border border-slate-100 text-xs">
                   <span className="text-slate-500 block">Sender Identity</span>
-                  <HealthStatusBadge status={smtpResult.sender_identity?.success ? "healthy" : "warning"} />
-                  {smtpResult.sender_identity?.details && <p className="text-slate-500 mt-1">{smtpResult.sender_identity.details}</p>}
+                  <HealthStatusBadge status={smtpResult.sender_identity?.ok ? "healthy" : "warning"} />
+                  {smtpResult.sender_identity?.message && <p className="text-slate-500 mt-1">{smtpResult.sender_identity.message}</p>}
                 </div>
               )}
             </div>
@@ -2918,10 +2921,14 @@ function AdministrationPanel() {
                           <FileText size={12} className="text-slate-500" />
                           <span className="text-xs text-slate-500">Rendered HTML Preview</span>
                         </div>
-                        <div className="p-3 bg-white max-h-64 overflow-auto text-xs"
-                          dangerouslySetInnerHTML={{ __html: previewData.rendered_html
-                            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                            .replace(/\son\w+\s*=/gi, ' data-blocked=') }} />
+                        {/* Sandboxed iframe: template <style> rules (body, table, a…) must not
+                            restyle the app, and template markup can never run scripts. */}
+                        <iframe
+                          title={`Preview of ${previewData.template_name}`}
+                          sandbox=""
+                          srcDoc={previewData.rendered_html}
+                          className="block w-full h-96 bg-white"
+                        />
                       </div>
                     )}
                     {previewData.html_content && !previewData.rendered_html && (
@@ -3076,16 +3083,16 @@ function AdministrationPanel() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Provider</span>
-                <span className="font-medium text-slate-800">{exchangeDiag.provider || "—"}</span>
+                <span className="font-medium text-slate-800">{exchangeDiag.provider?.value || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Base Currency</span>
-                <span className="font-medium text-slate-800">{exchangeDiag.base_currency || "—"}</span>
+                <span className="font-medium text-slate-800">{exchangeDiag.base_currency?.value || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Last Refreshed</span>
                 <span className="font-medium text-slate-800">
-                  {exchangeDiag.last_refreshed ? new Date(exchangeDiag.last_refreshed).toLocaleDateString() : "—"}
+                  {exchangeDiag.last_refreshed?.value ? new Date(exchangeDiag.last_refreshed.value).toLocaleDateString() : "—"}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">

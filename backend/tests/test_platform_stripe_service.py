@@ -69,6 +69,15 @@ class TestWebhookSignatureAndEnvironment:
         # verified — nothing here should be recorded as processed.
         assert db_session.query(PlatformStripeEvent).count() == 0
 
+    def test_missing_secret_key_message_is_user_safe(self):
+        # B4-09: the end-user message must not name environment settings.
+        from app.modules.commercial.platform_stripe_service import _stripe_module
+        with patch(SETTINGS_PATH) as s:
+            s.PLATFORM_STRIPE_SECRET_KEY = ""
+            with pytest.raises(BadRequestException, match="not available yet") as exc:
+                _stripe_module()
+        assert "PLATFORM_STRIPE_SECRET_KEY" not in str(exc.value.detail)
+
     def test_missing_webhook_secret_rejected(self, db_session):
         with patch(SETTINGS_PATH) as s:
             s.PLATFORM_STRIPE_WEBHOOK_SECRET = ""

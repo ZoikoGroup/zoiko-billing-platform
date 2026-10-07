@@ -153,6 +153,8 @@ export default function StripeConnectSettingsPage() {
   }
 
   const isActive = status?.status === "active";
+  // Platform-level setting: when Connect isn't enabled, onboarding can't start.
+  const connectUnavailable = status?.connect_configured === false;
   const isConnected = Boolean(status?.connected) || (status?.status && status.status !== "pending_onboarding" && status.status !== "disconnected");
   const requirements = Array.isArray(status?.requirements_currently_due) ? status.requirements_currently_due : [];
 
@@ -257,7 +259,7 @@ export default function StripeConnectSettingsPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             {!isActive && (
-              <button onClick={handleConnect} disabled={connecting}
+              <button onClick={handleConnect} disabled={connecting || connectUnavailable}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
                 {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                 {isConnected ? "Continue Connecting Stripe" : "Connect Stripe"}
@@ -280,6 +282,12 @@ export default function StripeConnectSettingsPage() {
               </button>
             )}
           </div>
+
+          {connectUnavailable && !isConnected && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4" role="note">
+              Stripe Connect isn't available on this platform yet. Please contact Zoiko support to enable online card payments.
+            </p>
+          )}
 
           <p className="text-xs text-slate-500 mt-4">
             Disconnecting stops Zoiko from routing new payments through this Stripe account. It does not remove

@@ -254,6 +254,18 @@ function isActive(href, pathname, search = "") {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
+// Among sibling links, only the most specific match is current: on
+// /billing/products/categories both "/billing/products" and
+// "/billing/products/categories" prefix-match, but only Categories is active.
+export function activeChildHref(children, pathname, search = "") {
+  let best = null;
+  for (const child of children || []) {
+    if (!isActive(child.href, pathname, search)) continue;
+    if (!best || child.href.length > best.length) best = child.href;
+  }
+  return best;
+}
+
 // Sidebar sections open independently (multi-open is intentional, see the
 // openSections comment below). The open/closed decision must be derived from
 // the Set handed to the state updater, not from the render-time closure:
@@ -279,12 +291,14 @@ export function toggleSectionIn(openSet, section, pathname, search) {
 
 const sectionPanelId = (label) => `nav-section-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
-function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false }) {
+function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false, current }) {
   const hasActiveChild = item.children
     ? item.children.some((child) => isActive(child.href, pathname, search))
     : false;
 
   const active = isActive(item.href, pathname, search) || hasActiveChild;
+  const currentChildHref = item.children ? activeChildHref(item.children, pathname, search) : null;
+  const selfActive = current ?? isActive(item.href, pathname, search);
 
   if (item.children) {
     return (
@@ -309,7 +323,8 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
         {expanded ? (
           <div id={sectionPanelId(item.label)} className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
             {item.children.map((child) => (
-              <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate} />
+              <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate}
+                current={child.href === currentChildHref} />
             ))}
           </div>
         ) : null}
@@ -325,7 +340,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
       className={`group flex items-center gap-3 text-sm transition duration-200 ${
         sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
       } ${
-        isActive(item.href, pathname, search)
+        selfActive
           ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
           : sectionStyle
             ? "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"

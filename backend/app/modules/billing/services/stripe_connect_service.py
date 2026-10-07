@@ -57,8 +57,9 @@ def _stripe_module():
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
     if not settings.STRIPE_SECRET_KEY:
+        logger.warning("Stripe is not configured: STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
-            "Stripe is not configured. Set STRIPE_SECRET_KEY in the environment."
+            "Online card payments are not available yet. Please contact support."
         )
     stripe.api_key = settings.STRIPE_SECRET_KEY
     configure_stripe_runtime(stripe)
@@ -298,8 +299,10 @@ class StripeConnectService:
         """
         client_id = getattr(settings, "STRIPE_CONNECT_CLIENT_ID", "") or ""
         if not client_id:
+            # The missing setting name is for operators (logs), not for end users.
+            logger.warning("Stripe Connect is not configured: STRIPE_CONNECT_CLIENT_ID is unset")
             raise BadRequestException(
-                "Stripe Connect is not configured (STRIPE_CONNECT_CLIENT_ID is missing)"
+                "Stripe Connect is not available yet. Please contact Zoiko support to enable it."
             )
         params: Dict[str, str] = {
             "client_id": client_id,
@@ -501,17 +504,21 @@ class StripeConnectService:
         refused with "Stripe is not connected for this organization".
         "connected" also requires charges_enabled, for the same reason."""
         env = _resolve_environment()
+        # Lets the UI disable "Connect Stripe" instead of failing on click.
+        connect_configured = bool(getattr(settings, "STRIPE_CONNECT_CLIENT_ID", "") or "")
         row = self._get_account(organization_id, env)
         if row is None:
             return {
                 "connected": False,
                 "status": IntegrationConnectionStatus.PENDING_ONBOARDING.value,
                 "environment": env.value,
+                "connect_configured": connect_configured,
             }
         return {
             "connected": row.status == IntegrationConnectionStatus.ACTIVE and bool(row.charges_enabled),
             "status": row.status.value,
             "environment": row.environment.value,
+            "connect_configured": connect_configured,
             "connected_account_id": row.connected_account_id,
             "country": row.country,
             "default_currency": row.default_currency,

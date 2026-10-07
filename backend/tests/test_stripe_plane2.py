@@ -79,8 +79,10 @@ class TestStripeFoundation:
         from app.modules.billing.services.stripe_service import _stripe_module
         with patch("app.modules.billing.services.stripe_service.settings") as s:
             s.STRIPE_SECRET_KEY = ""
-            with pytest.raises(BadRequestException, match="not configured"):
+            with pytest.raises(BadRequestException, match="not available yet") as exc:
                 _stripe_module()
+        # B4-07/09: user-facing text must not name environment settings.
+        assert "STRIPE_SECRET_KEY" not in str(exc.value.detail)
 
 class TestStripeConnect:
     def test_get_status_not_connected(self, db):
@@ -88,6 +90,14 @@ class TestStripeConnect:
         result = StripeConnectService(db).get_status_dict(1)
         assert result["connected"] is False
         assert result["status"] == "pending_onboarding"
+    def test_get_status_reports_connect_configured(self, db):
+        # B4-12: the UI needs to know Connect is unavailable before the click.
+        _org(db, org_id=1)
+        with patch("app.modules.billing.services.stripe_connect_service.settings") as s:
+            s.STRIPE_CONNECT_CLIENT_ID = ""; s.STRIPE_SECRET_KEY = "sk_test_x"
+            assert StripeConnectService(db).get_status_dict(1)["connect_configured"] is False
+            s.STRIPE_CONNECT_CLIENT_ID = "ca_test_x"
+            assert StripeConnectService(db).get_status_dict(1)["connect_configured"] is True
     def test_derive_status_active(self):
         assert _derive_status({"charges_enabled": True, "payouts_enabled": True, "details_submitted": True, "requirements": {}}) == IntegrationConnectionStatus.ACTIVE
     def test_derive_status_onboarding_incomplete(self):
@@ -119,8 +129,10 @@ class TestStripeConnect:
         _org(db, org_id=1)
         with patch("app.modules.billing.services.stripe_connect_service.settings") as s:
             s.STRIPE_CONNECT_CLIENT_ID = ""; s.STRIPE_SECRET_KEY = "sk_test_x"
-            with pytest.raises(BadRequestException, match="not configured"):
+            with pytest.raises(BadRequestException, match="not available yet") as exc:
                 StripeConnectService(db).get_onboarding_url(1, "https://example.com/cb")
+        # B4-12: user-facing text must not name environment settings.
+        assert "STRIPE_CONNECT_CLIENT_ID" not in str(exc.value.detail)
     def test_onboarding_url_contains_client_id(self, db):
         _org(db, org_id=1)
         with patch("app.modules.billing.services.stripe_connect_service.settings") as s:
