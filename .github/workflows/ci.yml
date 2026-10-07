@@ -128,24 +128,12 @@ jobs:
     # configured here -- this placeholder only needs to look like a
     # test-mode key, never a working one.
     #
-    # STRIPE_PUBLISHABLE_KEY must be set so that test_stripe_public_checkout_e2e
-    # ::test_public_invoice_view_configured_when_connect_active passes its
-    # `assert view["payment"]["stripe"]["publishable_key"] is not None` check.
-    # StripeService.publishable_key() returns None when the setting is absent,
-    # causing that assertion to fail. The value is never sent to Stripe.
-    #
-    # PLATFORM_STRIPE_SECRET_KEY must be set so that test_stripe_public_checkout_e2e
-    # ::test_plane1_checkout_and_webhook_settlement can construct PlatformStripeService
-    # without hitting its "Platform Stripe is not configured" guard. The test
-    # patches both stripe.Customer.create and stripe.checkout.Session.create so
-    # no real network call ever leaves the runner -- the placeholder only needs
-    # to be non-empty. Reuses the same sk_test_ sentinel as STRIPE_SECRET_KEY.
+    # STRIPE_PUBLISHABLE_KEY is configured as a test-mode key placeholder.
     env:
       BILLING_DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci?sslmode=disable"
       MFA_ENCRYPTION_KEY: "_Ihi7doCMnJ1O5YmFODJluXhQiSsHgcPhHpXSt8peoo="
       STRIPE_SECRET_KEY: "sk_test_ci_placeholder"
       STRIPE_PUBLISHABLE_KEY: "pk_test_ci_placeholder"
-      PLATFORM_STRIPE_SECRET_KEY: "sk_test_ci_placeholder"
     defaults:
       run:
         working-directory: backend

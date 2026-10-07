@@ -28,6 +28,14 @@ from app.modules.commercial.platform_invoice_service import PlatformInvoiceServi
 from app.modules.commercial.platform_stripe_service import PlatformStripeService
 
 
+@pytest.fixture(autouse=True)
+def configure_stripe_keys(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "STRIPE_PUBLISHABLE_KEY", "pk_test_sample_key")
+    monkeypatch.setattr(settings, "PLATFORM_STRIPE_SECRET_KEY", "sk_test_sample_key")
+    monkeypatch.setattr(settings, "PLATFORM_STRIPE_WEBHOOK_SECRET", "whsec_sample_key")
+
+
 @pytest.fixture(scope="function")
 def db():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
