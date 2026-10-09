@@ -38,6 +38,10 @@ afterEach(() => cleanup());
 const renderPage = () => render(<MemoryRouter><CategoriesPage /></MemoryRouter>);
 const treeitem = (name) => screen.getAllByRole("treeitem").find((el) => el.getAttribute("title") === name);
 
+// Full-page renders: give each test more than its inner waits (Vitest's default
+// per-test limit is 5 s, shorter than the 5 s findBy waits below on a slow CI runner).
+const PAGE_TEST_TIMEOUT = 20000;
+
 describe("B4 Categories tree", () => {
   it("rows are keyboard-operable tree items; toggles name their category", async () => {
     renderPage();
@@ -50,7 +54,7 @@ describe("B4 Categories tree", () => {
     expect(treeitem(LONG)).toHaveAttribute("title", LONG); // long names readable on hover
     fireEvent.keyDown(treeitem("Software"), { key: "Enter" });
     await waitFor(() => expect(treeitem("Software")).toHaveAttribute("aria-selected", "true"));
-  });
+  }, PAGE_TEST_TIMEOUT);
 
   it("a slow response for the previous category cannot overwrite the current one", async () => {
     let releaseHardware;
@@ -65,7 +69,7 @@ describe("B4 Categories tree", () => {
     releaseHardware?.();
     await new Promise((r) => setTimeout(r, 30));
     expect(screen.queryByText("Router")).toBeNull();
-  });
+  }, PAGE_TEST_TIMEOUT);
 
   it("a failed product load is an error with Retry, not an empty category", async () => {
     let softwareCalls = 0;
@@ -82,5 +86,5 @@ describe("B4 Categories tree", () => {
     expect(screen.queryByText(/No products (directly )?in this category/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /retry|try again/i }));
     expect(await screen.findByText("Licence", {}, { timeout: 5000 })).toBeInTheDocument();
-  });
+  }, PAGE_TEST_TIMEOUT);
 });
