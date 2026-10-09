@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import {
   Package, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Archive, Image, Eye, Copy, RotateCcw, CreditCard, Upload, Sparkles, Trash2, Loader2, Pencil,
 } from "lucide-react";
+
+const IS_APPLE_PLATFORM = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
+export const SEARCH_SHORTCUT_LABEL = IS_APPLE_PLATFORM ? "⌘K" : "Ctrl K";
 import HRPage from "../../../components/HRPage";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -804,6 +807,7 @@ export default function ProductListPage() {
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input ref={searchInputRef} type="text" placeholder="Search by name, code..." aria-label="Search by name, code" value={search}
+                  aria-keyshortcuts="Control+K Meta+K"
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-14 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {search ? (
@@ -812,7 +816,12 @@ export default function ProductListPage() {
                     <X size={16} />
                   </button>
                 ) : (
-                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-500 pointer-events-none">⌘K</kbd>
+                  // Keyboard-shortcut hint (Ctrl/⌘+K focuses this search). It used to
+                  // always read "⌘K" -- the Mac Command symbol, which on Windows looks
+                  // like an unexplained logo. Decorative: the input declares the
+                  // shortcut via aria-keyshortcuts.
+                  <kbd aria-hidden="true" title={`Press ${SEARCH_SHORTCUT_LABEL} to search`}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-500 pointer-events-none">{SEARCH_SHORTCUT_LABEL}</kbd>
                 )}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}

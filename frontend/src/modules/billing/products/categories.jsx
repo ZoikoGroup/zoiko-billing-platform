@@ -6,6 +6,7 @@ import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { Spinner, ErrorState, EmptyState, useConfirmationDialog } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 // ProductCategoryCreate.code is a required, org-unique identifier the
 // create/edit form never exposed a field for -- every "Add New Category"
@@ -49,14 +50,29 @@ function CategoryNode({ category, depth, selectedId, onSelect, onToggle, product
   return (
     <div>
       <div
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
+        aria-expanded={hasChildren ? expanded : undefined}
+        aria-level={depth + 1}
+        title={category.name}
         onClick={() => onSelect(category)}
-        className={`group flex w-full items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-brand-600 text-white" : "hover:bg-brand-50 text-slate-700"}`}
+        onKeyDown={(e) => {
+          // Rows were mouse-only: Enter/Space select, Right/Left expand/collapse.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(category); }
+          else if (e.key === "ArrowRight" && hasChildren && !expanded) { e.preventDefault(); onToggle(category.id); }
+          else if (e.key === "ArrowLeft" && hasChildren && expanded) { e.preventDefault(); onToggle(category.id); }
+        }}
+        className={`group flex w-full items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${isSelected ? "bg-brand-600 text-white" : "hover:bg-brand-50 text-slate-700"}`}
         style={{ paddingLeft: `${8 + depth * 20}px` }}
       >
         {hasChildren ? (
           <button
+            type="button"
+            tabIndex={-1}
             onClick={(e) => { e.stopPropagation(); onToggle(category.id); }}
-            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${category.name}`}
             className={`shrink-0 rounded p-0.5 ${isSelected ? "text-white/80 hover:text-white" : "text-slate-500 hover:text-slate-600"}`}
           >
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -75,7 +91,7 @@ function CategoryNode({ category, depth, selectedId, onSelect, onToggle, product
         )}
       </div>
       {hasChildren && expanded && (
-        <div className="mt-0.5">
+        <div className="mt-0.5" role="group">
           {(category.children || []).map((child) => (
             <CategoryNode key={child.id} category={child} depth={depth + 1} selectedId={selectedId}
               onSelect={onSelect} onToggle={onToggle} productCount={getCount(child)} expandedMap={expandedMap} getCount={getCount} />
@@ -127,18 +143,28 @@ export default function CategoriesPage() {
 
   useEffect(() => { fetchCategories(); }, [fetchCategories, refreshKey]);
 
+  // Only the latest selection's response may land (quickly picking A then B
+  // could show A's products under B), and a failure is an error with Retry --
+  // not a misleading "No products in this category".
+  const beginProductsRequest = useLatestRequest();
+  const [productsError, setProductsError] = useState(null);
   const fetchProducts = useCallback(async (category) => {
     if (!category) return;
+    const isCurrent = beginProductsRequest();
     setLoadingProducts(true);
+    setProductsError(null);
     try {
       const data = await productApi.list({ category_id: category.id, per_page: 200, page: 1 });
+      if (!isCurrent()) return;
       setSelectedProducts(extractArray(data));
-    } catch {
+    } catch (err) {
+      if (!isCurrent()) return;
       setSelectedProducts([]);
+      setProductsError(err?.message || "Failed to load products for this category.");
     } finally {
-      setLoadingProducts(false);
+      if (isCurrent()) setLoadingProducts(false);
     }
-  }, []);
+  }, [beginProductsRequest]);
 
   useEffect(() => {
     if (selected) fetchProducts(selected);
@@ -317,12 +343,12 @@ export default function CategoriesPage() {
           <div className="p-3 border-b border-slate-100">
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text" placeholder="Search categories..." aria-label="Search categories" value={search} onChange={(e) => setSearch(e.target.value)}
+              <input type="text" placeholder="Search categories..." value={search} onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search categories"
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5" role="tree" aria-label="Product categories">
             {treeList.length === 0 ? (
               <div className="px-4 py-10 text-center">
                 <Folder className="h-8 w-8 text-slate-300 mx-auto mb-2" />
@@ -357,8 +383,8 @@ export default function CategoriesPage() {
                       <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-brand to-brand-hover flex items-center justify-center shrink-0 shadow-sm">
                         <Package className="h-5 w-5 text-white" />
                       </div>
-                      <div>
-                        <h2 className="text-lg font-bold text-slate-800 truncate">{selected.name}</h2>
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-bold text-slate-800 truncate" title={selected.name}>{selected.name}</h2>
                         <span className={`inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${selected.status === "active" || selected.is_active !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${selected.status === "active" || selected.is_active !== false ? "bg-emerald-500" : "bg-slate-400"}`} />
                           {selected.status === "active" || selected.is_active !== false ? "Active" : "Inactive"}
@@ -405,6 +431,8 @@ export default function CategoriesPage() {
               <div className="flex-1 overflow-y-auto">
                 {loadingProducts ? (
                   <div className="flex items-center justify-center py-10"><Spinner /></div>
+                ) : productsError ? (
+                  <div className="px-6 py-8"><ErrorState message={productsError} onRetry={() => fetchProducts(selected)} /></div>
                 ) : selectedProducts.length === 0 ? (
                   <div className="px-6 py-12">
                     {/* Totals include nested categories; say so instead of implying the category is empty. */}

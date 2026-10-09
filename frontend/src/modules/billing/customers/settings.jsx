@@ -50,6 +50,24 @@ function toPayload(form) {
 // billing address nor a tax ID is required (both optional in CustomerCreate).
 export const CURRENT_BEHAVIOUR_NOTE = "Not configurable yet — shows how new customers are handled today";
 
+// These settings have no backend storage, so they are shown as plain read-only
+// values. Disabled dropdowns/inputs looked interactive but could not be opened
+// ("these settings don't show options to select").
+function CurrentBehaviour({ label, value, hint }) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <output aria-label={label}
+          className="inline-flex min-w-[8rem] items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+          {value}
+        </output>
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">Not configurable yet</span>
+      </div>
+      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    </div>
+  );
+}
+
 function toForm(settings) {
   return {
     default_customer_type: "business",
@@ -212,24 +230,16 @@ export default function CustomerSettingsPage() {
 
       <div className="space-y-6">
         <SettingsField label="Default Customer Type" icon={Users} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Default customer type" value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="individual">Individual</option>
-            <option value="business">Business</option>
-            <option value="non_profit">Non-Profit</option>
-            <option value="government">Government</option>
-          </select>
+          <CurrentBehaviour label="Default customer type" value="Business" />
         </SettingsField>
 
         <SettingsField label="Customer Numbering Prefix" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
-          <input type="text" aria-label="Customer numbering prefix" value={form.customer_numbering_prefix} onChange={(e) => updateField("customer_numbering_prefix", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
+          <CurrentBehaviour label="Customer numbering prefix" value="CUST-" />
         </SettingsField>
 
         <SettingsField label="Customer Numbering Format" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
-          <input type="text" aria-label="Customer numbering format" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
-          <p className="mt-1 text-xs text-slate-500">Codes left blank on the create form are generated as CUST- followed by a timestamp (e.g. CUST-1767225600000).</p>
+          <CurrentBehaviour label="Customer numbering format" value="CUST- + timestamp"
+            hint="Codes left blank on the create form are generated as CUST- followed by a timestamp (e.g. CUST-1767225600000)." />
         </SettingsField>
 
         <SettingsField label="Default Payment Terms" icon={CreditCard} description="Default payment terms assigned to new customers">
@@ -263,19 +273,11 @@ export default function CustomerSettingsPage() {
         </SettingsField>
 
         <SettingsField label="Require Billing Address" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="yes">Required</option>
-            <option value="no">Optional</option>
-          </select>
+          <CurrentBehaviour label="Require billing address" value="Optional" />
         </SettingsField>
 
         <SettingsField label="Require Tax ID" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="yes">Required</option>
-            <option value="no">Optional</option>
-          </select>
+          <CurrentBehaviour label="Require tax ID" value="Optional" />
         </SettingsField>
       </div>
     </HRPage>

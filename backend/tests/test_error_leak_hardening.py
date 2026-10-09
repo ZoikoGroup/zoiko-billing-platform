@@ -81,3 +81,22 @@ def test_stripe_connect_provider_errors_are_not_echoed():
             svc.complete_oauth(1, "code", state="s")
     stripe.OAuth.token.assert_called_once()  # reached the provider call, not the state check
     assert "req_123" not in exc.value.message and "invalid_grant" not in exc.value.message
+
+
+def test_platform_checkout_message_has_no_status_prefix():
+    """Production (Oct 9): Pay Now on PINV-000007 showed "400: Online payment
+    is not available yet..." -- str(BadRequestException) adds the status."""
+    from app.modules.commercial import platform_stripe_router as r
+
+    with (
+        patch.object(r, "PlatformInvoiceService") as inv_svc,
+        patch.object(r, "PlatformStripeService") as stripe_svc,
+    ):
+        inv_svc.return_value.get_public_invoice.return_value = object()
+        stripe_svc.return_value.create_checkout_session_for_invoice.side_effect = BadRequestException(
+            "Online payment is not available yet. Please contact Zoiko support to complete payment."
+        )
+        with pytest.raises(HTTPException) as exc:
+            r.create_checkout_session(token="tok", db=MagicMock())
+    assert exc.value.status_code == 400
+    assert exc.value.detail.startswith("Online payment is not available yet")

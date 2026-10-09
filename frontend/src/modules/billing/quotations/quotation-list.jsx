@@ -535,7 +535,7 @@ export default function QuotationListPage() {
               <div className="flex items-center gap-3 flex-1">
                 <div className="relative flex-1 max-w-md">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="text" placeholder="Search quotations..." aria-label="Search quotations" value={search}
+                  <input type="text" placeholder="Search quotations..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     aria-label="Search quotations"
                     className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />

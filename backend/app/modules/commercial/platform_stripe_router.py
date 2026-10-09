@@ -44,7 +44,10 @@ def create_checkout_session(token: str, db: Session = Depends(get_db)):
     try:
         return PlatformStripeService(db).create_checkout_session_for_invoice(invoice)
     except BadRequestException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # e.message, not str(e): Starlette's HTTPException.__str__ prefixes the
+        # status ("400: Online payment is not available yet...") and that text
+        # was shown verbatim on the public Pay Now page.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
         # A Stripe API failure (bad/missing key, network, rejected request)
         # used to surface as an unhandled HTTP 500 on a public page. Report it
