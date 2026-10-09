@@ -495,13 +495,14 @@ def get_exchange_rate_diagnostics(
     dependencies=[Depends(get_current_billing_admin)],
 )
 def billing_health_check(
+    fresh: bool = Query(False, description="Bypass caches and probe SMTP live (Settings > Refresh)"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     logger.info("GET /billing/settings/health for org=%s", current_user.organization_id)
     svc = BillingAdminService(db)
     try:
-        result = svc.run_billing_health_check(organization_id=current_user.organization_id)
+        result = svc.run_billing_health_check(organization_id=current_user.organization_id, fresh=fresh)
         logger.info("GET /billing/settings/health -> 200, status=%s, score=%d", result.overall_status, result.readiness_score)
         return result
     except Exception as e:

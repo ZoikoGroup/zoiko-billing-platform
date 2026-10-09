@@ -720,6 +720,7 @@ export function DashboardStatCard({
   currency,
   compact = true,
   sparkline,
+  tooltip,
 }) {
   const navigate = useNavigate();
   const handleClick = onClick || (href ? () => navigate(href) : undefined);
@@ -748,7 +749,8 @@ export function DashboardStatCard({
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } } : undefined}
-      aria-label={interactive ? `${title}: ${fullValue}` : undefined}
+      aria-label={interactive ? `${title}: ${fullValue}${tooltip ? `. ${tooltip}` : ""}` : undefined}
+      title={tooltip || undefined}
     >
       <div className="flex justify-between items-start gap-4">
         <div className="min-w-0 flex-1">
