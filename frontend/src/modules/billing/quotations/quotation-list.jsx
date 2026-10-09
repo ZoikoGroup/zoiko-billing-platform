@@ -25,7 +25,36 @@ const STATUS_OPTIONS = [
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-500" },
 ];
 
-const STATUS_FILTER_OPTIONS = [...STATUS_OPTIONS, { value: "cancelled,expired", label: "Cancelled / Expired" }];
+// Batch 7 BUG-06: the Pipeline Value card and the list it opens share this scope.
+export const PIPELINE_STATUS_FILTER = "draft,sent,accepted";
+
+const STATUS_FILTER_OPTIONS = [
+  ...STATUS_OPTIONS,
+  { value: "cancelled,expired", label: "Cancelled / Expired" },
+  { value: PIPELINE_STATUS_FILTER, label: "Open pipeline" },
+];
+
+const fmtBucket = ({ currency, total }) => (
+  /^[A-Z]{3}$/.test(currency)
+    ? `${currency} ${formatDisplayCurrency(total, currency)}`
+    : `${currency} ${Number(total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+);
+
+// Pipeline Value card content from the /quotations/summary totals_by_currency
+// (default currency first). Never adds different currencies together.
+export function pipelineCard(summary, fallbackCurrency) {
+  const buckets = Array.isArray(summary?.totals_by_currency) ? summary.totals_by_currency : null;
+  if (!buckets) return null;
+  const currency = summary.default_currency || fallbackCurrency;
+  const primary = buckets.find((b) => b.currency === currency);
+  const others = buckets.filter((b) => b !== primary);
+  return {
+    value: primary ? Number(primary.total) : 0,
+    currency,
+    subtitle: others.length ? `+${others.length} other ${others.length === 1 ? "currency" : "currencies"}` : "Draft, sent & accepted",
+    tooltip: others.length ? `Open pipeline by currency: ${buckets.map(fmtBucket).join("; ")}` : undefined,
+  };
+}
 
 const STATUS_ICONS = { accepted: CheckCircle, rejected: XCircle, converted: RefreshCw, draft: Clock, sent: Send, cancelled: Ban, expired: Clock };
 
@@ -501,9 +530,14 @@ export default function QuotationListPage() {
   const kpiConverted  = summary?.converted_count ?? filteredByStatus("converted").length;
   const kpiCancelled  = summary?.cancelled_count ?? filteredByStatus("cancelled").length;
   const kpiExpired    = summary?.expired_count   ?? filteredByStatus("expired").length;
-  const kpiTotalValue = summary?.total_value != null
-    ? Number(summary.total_value)
-    : quotes.reduce((s, q) => s + parseFloat(q.total_amount || 0), 0);
+  const kpiPipeline = pipelineCard(summary, defaultCurrency) || {
+    // summary unavailable: current page only, same statuses, one currency
+    value: quotes
+      .filter((q) => PIPELINE_STATUS_FILTER.split(",").includes(q.status) && (q.currency || defaultCurrency) === defaultCurrency)
+      .reduce((s, q) => s + parseFloat(q.total_amount || 0), 0),
+    currency: defaultCurrency,
+    subtitle: "Draft, sent & accepted",
+  };
 
   if (loading) {
     return <HRPage title="Quotations" subtitle="Manage quotations"><PageSkeleton rows={6} /></HRPage>;
@@ -526,7 +560,7 @@ export default function QuotationListPage() {
           <DashboardStatCard title="Rejected" value={kpiRejected} icon={XCircle} color="from-red-500 to-rose-500" loading={summaryLoading} onClick={() => applyCard({ status: "rejected" })} />
           <DashboardStatCard title="Converted" value={kpiConverted} icon={RefreshCw} color="from-brand to-brand-hover" loading={summaryLoading} onClick={() => applyCard({ status: "converted" })} />
           <DashboardStatCard title="Cancelled/Exp" value={kpiCancelled + kpiExpired} icon={Ban} color="from-amber-500 to-orange-500" loading={summaryLoading} onClick={() => applyCard({ status: "cancelled,expired" })} />
-          <DashboardStatCard title="Total Value" value={kpiTotalValue} currency={defaultCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} onClick={() => applyCard()} />
+          <DashboardStatCard title="Pipeline Value" value={kpiPipeline.value} currency={kpiPipeline.currency} subtitle={kpiPipeline.subtitle} tooltip={kpiPipeline.tooltip} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} onClick={() => applyCard({ status: PIPELINE_STATUS_FILTER })} />
         </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">

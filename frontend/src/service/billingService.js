@@ -137,7 +137,8 @@ export const settingsApi = {
   getNumberingDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_NUMBERING_DIAGNOSTICS),
   getTaxDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_TAX_DIAGNOSTICS),
   getExchangeRateDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_EXCHANGE_RATE_DIAGNOSTICS),
-  getHealth: () => api.get(ENDPOINTS.SETTINGS_ADMIN_HEALTH),
+  // fresh=true bypasses the server-side caches (explicit Refresh in Settings).
+  getHealth: (fresh = false) => api.get(fresh ? `${ENDPOINTS.SETTINGS_ADMIN_HEALTH}?fresh=true` : ENDPOINTS.SETTINGS_ADMIN_HEALTH),
   validateFull: () => api.post(ENDPOINTS.SETTINGS_ADMIN_VALIDATE),
 };
 

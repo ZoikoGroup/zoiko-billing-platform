@@ -689,7 +689,7 @@ class BillingAdminService:
 
     # ── STEP 8: Billing Health Check (enhanced) ───────────────────────────────
 
-    def run_billing_health_check(self, organization_id: int) -> BillingHealthCheckResponse:
+    def run_billing_health_check(self, organization_id: int, fresh: bool = False) -> BillingHealthCheckResponse:
         """Cached wrapper: the underlying check includes a live SMTP connectivity
         probe that can take multiple seconds even when fixed to use the right
         protocol (see the SMTP_SSL branch below) -- callers polling this
@@ -698,15 +698,52 @@ class BillingAdminService:
         """
         from app.core.cache_service import cache_get_or_set
 
+        if fresh:
+            # Explicit "Refresh" from Settings: bypass both caches (this
+            # report's 30 s cache and the SMTP reachability cache).
+            return self._run_billing_health_check_uncached(organization_id, force_smtp_probe=True)
+
+        built_now = []
+
         def _factory():
+            built_now.append(True)
             return self._run_billing_health_check_uncached(organization_id).model_dump(mode="json")
 
         cached = cache_get_or_set(
             f"billing_health_check:{organization_id}", _factory, ttl=30,
         )
-        return BillingHealthCheckResponse(**cached)
+        report = BillingHealthCheckResponse(**cached)
+        if not built_now:
+            # Served from this 30 s report cache: no probe ran for this
+            # request, whatever the stored SMTP details said when built.
+            for comp in report.components:
+                if comp.name == "smtp_configuration" and comp.details and "cached" in comp.details:
+                    comp.details = {**comp.details, "cached": True}
+        return report
 
-    def _run_billing_health_check_uncached(self, organization_id: int) -> BillingHealthCheckResponse:
+    def _probe_smtp(self, host: str, port) -> Dict[str, object]:
+        """One live connection attempt; never raises. Port 465 is implicit-TLS
+        (SMTPS): a plain smtplib.SMTP() handshake against it doesn't get a
+        clean protocol error, it stalls until the OS-level socket timeout well
+        past the 5s `timeout` kwarg (observed: ~10.5s per call in production)
+        -- branch exactly like the real send path (email_service.py) does."""
+        start = time.time()
+        try:
+            smtp_port = int(port)
+            if smtp_port == 465:
+                s = smtplib.SMTP_SSL(host, smtp_port, timeout=5, context=ssl.create_default_context())
+            else:
+                s = smtplib.SMTP(host, smtp_port, timeout=5)
+            elapsed = (time.time() - start) * 1000
+            try:
+                s.quit()
+            except Exception:
+                pass
+            return {"connectable": True, "response_time_ms": round(elapsed, 2)}
+        except Exception:
+            return {"connectable": False, "response_time_ms": round((time.time() - start) * 1000, 2)}
+
+    def _run_billing_health_check_uncached(self, organization_id: int, force_smtp_probe: bool = False) -> BillingHealthCheckResponse:
         components = []
         config = self.repo.get_by_organization(organization_id)
         checks_at = datetime.utcnow().isoformat() + "Z"
@@ -767,55 +804,43 @@ class BillingAdminService:
             response_time_ms=round(elapsed, 2),
         ))
 
-        # 4. SMTP check (config + lightweight connection attempt)
+        # 4. SMTP check (config + connection reachability). The live probe is
+        # served stale-while-revalidate (smtp_reachability_cache): dashboard
+        # loads never wait on the mail server once a result exists.
+        from app.modules.billing.services import smtp_reachability_cache
+
         start = time.time()
         smtp_cfg = self._get_smtp_config()
         smtp_configured = bool(smtp_cfg["host"] and smtp_cfg["port"] and smtp_cfg["from_email"])
-        smtp_connectable = False
-
         if smtp_configured:
-            try:
-                # Port 465 is implicit-TLS (SMTPS): a plain smtplib.SMTP()
-                # handshake against it doesn't get a clean protocol error, it
-                # just stalls until the OS-level socket timeout well past the
-                # 5s `timeout` kwarg (observed: ~10.5s per call in
-                # production) -- this single probe was the dominant cost of
-                # /billing/settings/health, which the main Billing Dashboard
-                # calls on every load. Branch exactly like the real send path
-                # (email_service.py) does.
-                smtp_port = int(smtp_cfg["port"])
-                if smtp_port == 465:
-                    s = smtplib.SMTP_SSL(smtp_cfg["host"], smtp_port, timeout=5,
-                                          context=ssl.create_default_context())
-                else:
-                    s = smtplib.SMTP(smtp_cfg["host"], smtp_port, timeout=5)
-                smtp_connectable = True
-                smtp_response_time_ms = (time.time() - start) * 1000
-                s.quit()
-            except Exception:
-                pass
-
-        elapsed = (time.time() - start) * 1000
-        if smtp_configured and smtp_connectable:
-            components.append(SystemDiagnosticComponent(
-                name="smtp_configuration", status="healthy",
-                message=f"SMTP reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
-                details={"host": smtp_cfg["host"], "port": smtp_cfg["port"],
-                         "from_email": smtp_cfg["from_email"]},
-                response_time_ms=round(smtp_response_time_ms or elapsed, 2),
-            ))
-        elif smtp_configured:
-            components.append(SystemDiagnosticComponent(
-                name="smtp_configuration", status="degraded",
-                message=f"SMTP configured but not reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
-                response_time_ms=round(elapsed, 2),
-            ))
+            probe_key = f"{smtp_cfg['host']}:{smtp_cfg['port']}"
+            probe, meta = smtp_reachability_cache.get_reachability(
+                probe_key,
+                lambda: self._probe_smtp(smtp_cfg["host"], smtp_cfg["port"]),
+                force=force_smtp_probe,
+            )
+            freshness = {"checked_at": meta["checked_at"], "stale": meta["stale"], "cached": meta["cached"]}
+            if probe["connectable"]:
+                components.append(SystemDiagnosticComponent(
+                    name="smtp_configuration", status="healthy",
+                    message=f"SMTP reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
+                    details={"host": smtp_cfg["host"], "port": smtp_cfg["port"],
+                             "from_email": smtp_cfg["from_email"], **freshness},
+                    response_time_ms=probe.get("response_time_ms"),
+                ))
+            else:
+                components.append(SystemDiagnosticComponent(
+                    name="smtp_configuration", status="degraded",
+                    message=f"SMTP configured but not reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
+                    details=freshness,
+                    response_time_ms=probe.get("response_time_ms"),
+                ))
         else:
             missing = [k for k in ("host", "port", "from_email") if not smtp_cfg[k]]
             components.append(SystemDiagnosticComponent(
                 name="smtp_configuration", status="degraded",
                 message=f"SMTP incomplete: {', '.join(missing)} not configured",
-                response_time_ms=round(elapsed, 2),
+                response_time_ms=round((time.time() - start) * 1000, 2),
             ))
 
         # 5. Email templates check
