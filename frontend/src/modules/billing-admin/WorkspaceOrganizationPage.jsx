@@ -145,6 +145,7 @@ export default function WorkspaceOrganizationPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title="Company Identity" icon={Building2}>
           <Field label="Company Name" value={normalizeOrgName(companyName)} />
+          <Field label="Legal Name" value={org?.legal_name || "—"} />
           <Field label="Website" value={config?.website || org?.website || "—"} />
           <Field label="Billing Email" value={config?.billing_email || org?.email || "—"} />
           <Field label="Billing Phone" value={config?.billing_phone || org?.phone || "—"} />
@@ -156,25 +157,26 @@ export default function WorkspaceOrganizationPage() {
 
         <Card title="Contact & Address" icon={Mail}>
           <div className="sm:col-span-2">
-            <Field label="Address" value={[config?.address_line1, config?.address_line2, config?.city, config?.state, config?.postal_code, config?.country].filter(Boolean).join(", ") || "—"} />
+            <Field label="Address" value={[config?.address_line1 || org?.address, config?.address_line2, config?.city || org?.city, config?.state || org?.state, config?.postal_code || org?.postal_code, config?.country || org?.country].filter(Boolean).join(", ") || "—"} />
           </div>
-          <Field label="City" value={config?.city} />
-          <Field label="State / Region" value={config?.state} />
-          <Field label="Postal Code" value={config?.postal_code} />
-          <Field label="Country" value={config?.country} />
+          <Field label="City" value={config?.city || org?.city} />
+          <Field label="State / Region" value={config?.state || org?.state} />
+          <Field label="Postal Code" value={config?.postal_code || org?.postal_code} />
+          <Field label="Country" value={config?.country || org?.country} />
         </Card>
 
         <Card title="Tax & Registration" icon={ShieldCheck}>
-          <Field label="Business Registration Number" value={config?.business_registration_number || "—"} />
+          <Field label="Business Registration Number" value={config?.business_registration_number || org?.registration_number || "—"} />
           <Field label="GST Number" value={config?.gst_number || "—"} />
           <Field label="VAT Number" value={config?.vat_number || "—"} />
           <Field label="PAN Number" value={config?.pan_number || "—"} />
           <Field label="TIN Number" value={config?.tin_number || "—"} />
+          <Field label="Organization Tax ID" value={org?.tax_no || "—"} />
           <Field label="Tax Calculation" value={config?.tax_calculation_method || "—"} />
         </Card>
 
         <Card title="Billing Defaults" icon={Coins}>
-          <Field label="Fiscal Year" value={formatFiscalYearRange(config?.fiscal_year_start, config?.fiscal_year_end)} />
+          <Field label="Fiscal Year" value={formatFiscalYearRange(config?.fiscal_year_start || org?.fiscal_year_start, config?.fiscal_year_end || org?.fiscal_year_end)} />
           <Field label="Default Currency" value={config?.default_currency || org?.currency} />
           <Field label="Supported Currencies" value={Array.isArray(config?.supported_currencies) && config.supported_currencies.length ? config.supported_currencies.join(", ") : "—"} />
           <Field label="Date Format" value={config?.date_format || "—"} />

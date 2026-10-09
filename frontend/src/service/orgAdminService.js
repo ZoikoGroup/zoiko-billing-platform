@@ -32,16 +32,16 @@ export function invalidateOrganizationDetailsCache() {
   inflightDetails = null;
 }
 
-export const updateOrganizationDetails = (data) =>
-  api.put("/api/organizations/me", {
-    organization_name: data.name,
-    display_name: data.display_name,
-    industry: data.industry,
-    address: data.address,
-    currency: data.currency,
-    timezone: data.timezone,
-  }).then((result) => {
+// Sends only the fields present in `changes` (form keys; `name` maps to the
+// API's organization_name). The backend applies exclude_unset, so anything
+// omitted is left untouched -- the form never blanks fields it didn't edit.
+export const updateOrganizationDetails = (changes) => {
+  const { name, ...rest } = changes || {};
+  const body = { ...rest };
+  if (name !== undefined) body.organization_name = name;
+  return api.put("/api/organizations/me", body).then((result) => {
     invalidateOrganizationDetailsCache();
     return result;
   });
+};
 export const getOrganizationDashboardStats = () => api.get("/api/organizations/me/dashboard-stats");

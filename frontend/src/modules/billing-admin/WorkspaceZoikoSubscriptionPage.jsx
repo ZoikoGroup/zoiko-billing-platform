@@ -240,8 +240,9 @@ export default function WorkspaceZoikoSubscriptionPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8 min-h-[calc(100vh-4rem)] bg-white flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-slate-200 border-t-[#1A56DB] rounded-full animate-spin" />
+      <div className="p-4 sm:p-6 lg:p-8 min-h-[calc(100vh-4rem)] bg-white flex items-center justify-center" role="status" aria-live="polite">
+        <div className="w-8 h-8 border-2 border-slate-200 border-t-[#1A56DB] rounded-full animate-spin" aria-hidden="true" />
+        <span className="sr-only">Loading your Zoiko subscription…</span>
       </div>
     );
   }

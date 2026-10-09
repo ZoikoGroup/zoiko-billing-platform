@@ -246,7 +246,7 @@ export default function QuotationSettingsPage() {
                   <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Not available</span>
                 </div>
                 <p className="mt-1">{item.desc}</p>
-                <p className="mt-1 text-xs text-slate-400">{item.status}</p>
+                <p className="mt-1 text-xs text-slate-500">{item.status}</p>
               </li>
             ))}
           </ul>

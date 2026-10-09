@@ -15,6 +15,7 @@ import { getLanguageSelectOptions } from "../../../utils/language";
 import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
 import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
 import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -2669,22 +2670,40 @@ function AdministrationPanel() {
     }
   }, [smtpForm]);
 
+  // B10: the preview panel renders below the whole template list, so a click
+  // near the top looked like it did nothing -- bring the panel into view.
+  // Only the latest click may fill it (clicking A then B could show A's
+  // preview under B's name), and invalid variables JSON is reported instead
+  // of being silently ignored.
+  const previewPanelRef = useRef(null);
+  const beginPreviewRequest = useLatestRequest();
   const handlePreviewTemplate = useCallback(async (name) => {
+    const isCurrent = beginPreviewRequest();
     setPreviewTemplate(name);
-    setPreviewLoading(true);
     setPreviewError(null);
     setPreviewData(null);
+    setTimeout(() => previewPanelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 0);
+    let vars = {};
+    const raw = (previewVariables || "").trim();
+    if (raw) {
+      try { vars = JSON.parse(raw); } catch { vars = null; }
+      if (vars === null || typeof vars !== "object" || Array.isArray(vars)) {
+        setPreviewError('Template variables must be a JSON object, e.g. {"customer_name": "Jane"}.');
+        return;
+      }
+    }
+    setPreviewLoading(true);
     try {
-      let vars = {};
-      try { vars = JSON.parse(previewVariables); } catch (err) { console.error("[Settings] Failed to parse preview vars:", err); }
       const data = await settingsApi.previewEmailTemplate(name, vars);
+      if (!isCurrent()) return;
       setPreviewData(data);
     } catch (err) {
+      if (!isCurrent()) return;
       setPreviewError(err.message || "Failed to load template preview");
     } finally {
-      setPreviewLoading(false);
+      if (isCurrent()) setPreviewLoading(false);
     }
-  }, [previewVariables]);
+  }, [previewVariables, beginPreviewRequest]);
 
   const handleEnhancedValidation = useCallback(async () => {
     setEnhancedValidationLoading(true);
@@ -2875,16 +2894,16 @@ function AdministrationPanel() {
 
             {/* Template Preview Modal */}
             {previewTemplate && (
-              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div ref={previewPanelRef} className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 scroll-mt-24" role="region" aria-label={`Preview of ${previewTemplate} template`}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-slate-800">Preview: {previewTemplate}</h4>
                   <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }} aria-label="Close preview"
                     className="text-slate-500 hover:text-slate-600"><X size={16} /></button>
                 </div>
                 <div className="mb-3">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Template Variables (JSON)</label>
+                  <label htmlFor="preview-variables" className="block text-xs font-medium text-slate-600 mb-1">Template Variables (JSON)</label>
                   <div className="flex gap-2">
-                    <input type="text" value={previewVariables} onChange={(e) => setPreviewVariables(e.target.value)}
+                    <input id="preview-variables" type="text" value={previewVariables} onChange={(e) => setPreviewVariables(e.target.value)}
                       placeholder='{"customer_name": "John", "invoice_number": "INV-001"}'
                       className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand/30/20" />
                     <button onClick={() => handlePreviewTemplate(previewTemplate)} disabled={previewLoading}
@@ -2894,7 +2913,7 @@ function AdministrationPanel() {
                   </div>
                 </div>
                 {previewLoading && <div className="animate-pulse h-32 bg-slate-200 rounded-lg" />}
-                {previewError && <p className="text-xs text-red-600">{previewError}</p>}
+                {previewError && <p role="alert" className="text-xs text-red-600">{previewError}</p>}
                 {previewData && !previewLoading && (
                   <div className="space-y-3">
                     <div className="flex gap-3 text-xs">

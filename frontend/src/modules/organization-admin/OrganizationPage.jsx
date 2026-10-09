@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getOrganizationDetails, updateOrganizationDetails } from "../../service/orgAdminService";
 import { stripeConnectApi } from "../../service/billingService";
 import { X, CheckCircle, AlertTriangle } from "lucide-react";
@@ -135,7 +135,7 @@ const styles = `
   .org-dash .stat-value{ font-family:'Inter', sans-serif; font-size:30px; font-weight:800; margin:0; line-height:1; color:var(--ink); letter-spacing:-0.01em; }
   .org-dash .stat-sub{ font-size:12px; color:var(--ink-faint); margin-top:8px; }
 
-  .org-dash .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+  .org-dash .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-bottom:16px; }
   @media (max-width:860px){ .org-dash .grid{ grid-template-columns:1fr; } }
 
   .org-dash .panel-head{
@@ -169,7 +169,7 @@ const styles = `
     background:rgba(15,23,42,0.45); padding:16px;
   }
   .org-dash .modal{
-    width:100%; max-width:560px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+    width:100%; max-width:760px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden;
   }
   .org-dash .modal-head{
     display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
@@ -186,6 +186,18 @@ const styles = `
   .org-dash .modal-body{ padding:20px 26px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
   .org-dash .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
   @media (max-width:520px){ .org-dash .form-grid{ grid-template-columns:1fr; } }
+  .org-dash .form-grid-3{ display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  @media (max-width:640px){ .org-dash .form-grid-3{ grid-template-columns:1fr; } }
+  .org-dash .form-section{ display:flex; flex-direction:column; gap:14px; }
+  .org-dash .form-section + .form-section{ padding-top:18px; border-top:1px solid var(--glass-border); }
+  .org-dash .form-section-title{ margin:0; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .org-dash .form-field label.req::after{ content:" *"; color:var(--danger); }
+  .org-dash .form-hint{ margin:6px 0 0; font-size:12px; color:var(--ink-faint); }
+  .org-dash .form-readonly{ display:flex; flex-wrap:wrap; gap:8px 18px; padding:10px 12px; border-radius:8px; background:#F9FAFB; border:1px dashed var(--glass-border); font-size:12.5px; color:var(--ink-soft); }
+  .org-dash .form-readonly b{ color:var(--ink); font-weight:600; }
+  .org-dash .form-alert{ padding:10px 12px; border-radius:8px; background:#FEF2F2; border:1px solid #FECACA; color:#B91C1C; font-size:13px; }
+  .org-dash .form-field select{ width:100%; font-family:'Inter', sans-serif; font-size:14px; color:#111827; background:#fff; border:1.5px solid var(--glass-border); border-radius:8px; padding:11px 14px; outline:none; }
+  .org-dash .form-field select:focus{ border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
   .org-dash .form-field .field-error{ margin:6px 0 0; font-size:12px; color:var(--danger); }
   .org-dash .form-field [aria-invalid="true"]{ border-color:var(--danger); }
   .org-dash .form-field label{ display:block; font-size:13px; font-weight:500; color:var(--ink-soft); margin-bottom:6px; }
@@ -305,35 +317,86 @@ const DetailRow = ({ label, value, mono, faint, pill }) => (
 
 // Must stay at module scope: a component declared inside the page body is a new
 // type on every render, so React remounts the input and focus is lost per keystroke.
-const EditField = ({ id, label, value, onChange, textarea, mono, error, maxLength }) => {
+const EditField = ({ id, label, value, onChange, textarea, mono, error, maxLength, type = "text", hint, placeholder, autoFocus, required, inputMode, autoComplete }) => {
   const Tag = textarea ? "textarea" : "input";
+  const describedBy = [error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined;
   return (
     <div className="form-field">
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id} className={required ? "req" : undefined}>{label}</label>
       <Tag
         id={id}
-        type={textarea ? undefined : "text"}
+        type={textarea ? undefined : type}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         rows={textarea ? 3 : undefined}
         maxLength={maxLength}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        required={required}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
         className={mono ? "mono" : undefined}
         aria-invalid={error ? "true" : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-describedby={describedBy}
       />
+      {hint && !error && <p id={`${id}-hint`} className="form-hint">{hint}</p>}
       {error && <p id={`${id}-error`} className="field-error">{error}</p>}
     </div>
   );
 };
 
+// Every field the API both returns (GET /organizations/me/detail) and accepts
+// (PUT /organizations/me, OrganizationUpdate). The form used to expose only 5
+// of them. Code, status, admin and registration date are system-controlled.
+export const ORG_EDIT_FIELDS = [
+  "name", "legal_name", "industry", "email", "phone", "website",
+  "address", "city", "state", "postal_code", "country",
+  "currency", "timezone", "fiscal_year_start", "fiscal_year_end",
+  "tax_no", "registration_number",
+];
+
+const TIMEZONES = (() => {
+  try { return typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : []; } catch { return []; }
+})();
+
+export function orgToForm(org = {}) {
+  const form = {};
+  for (const k of ORG_EDIT_FIELDS) form[k] = org[k] ?? "";
+  form.timezone = org.timezone || "UTC";
+  return form;
+}
+
+// Only fields the user actually changed are sent; a cleared optional field is
+// sent as null (an empty string would fail e.g. the email validator).
+export function orgFormChanges(form, original) {
+  const changes = {};
+  for (const k of ORG_EDIT_FIELDS) {
+    let v = typeof form[k] === "string" ? form[k].trim() : form[k];
+    if (k === "currency" && v) v = v.toUpperCase();
+    const before = original[k] ?? "";
+    if ((v ?? "") === (typeof before === "string" ? before.trim() : before)) continue;
+    changes[k] = v === "" && k !== "name" ? null : v;
+  }
+  return changes;
+}
+
 // Mirrors the backend OrganizationUpdate rules (organizations/schemas.py).
 export function validateOrgForm(form) {
   const errors = {};
-  const name = (form.name || "").trim();
+  const val = (k) => (form[k] || "").trim();
+  const name = val("name");
   if (!name) errors.name = "Organization name is required.";
   else if (name.length > 200) errors.name = "Organization name must be 200 characters or fewer.";
-  const currency = (form.currency || "").trim();
+  const max = { legal_name: 255, city: 100, state: 100, country: 100, postal_code: 20, website: 500 };
+  for (const [k, n] of Object.entries(max)) if (val(k).length > n) errors[k] = `Must be ${n} characters or fewer.`;
+  const currency = val("currency");
   if (currency && !/^[A-Za-z]{3}$/.test(currency)) errors.currency = "Use a 3-letter currency code, e.g. USD.";
+  const email = val("email");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email address.";
+  for (const k of ["fiscal_year_start", "fiscal_year_end"]) {
+    const v = val(k);
+    if (v && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)) errors[k] = "Use MM-DD, e.g. 04-01.";
+  }
   return errors;
 }
 
@@ -354,6 +417,8 @@ export default function OrgAdminOrganizationPage() {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [formErrors, setFormErrors] = useState({});
+  const [saveError, setSaveError] = useState(null);
+  const editButtonRef = useRef(null);
   const [toast, setToast] = useState({ msg: null, type: "success" });
   const { user } = useAuth();
   // PUT /organizations/me is org-admin only; billing admins get a read-only view.
@@ -440,12 +505,13 @@ export default function OrgAdminOrganizationPage() {
       });
   }, []);
 
-  const fetchOrg = () => {
-    setLoading(true);
-    getOrganizationDetails()
+  // `silent` refreshes after a save without swapping the page for the skeleton.
+  const fetchOrg = ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    return getOrganizationDetails()
       .then(setOrg)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!silent) setError(err.message); })
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
   useEffect(() => { fetchOrg(); }, []);
@@ -457,7 +523,12 @@ export default function OrgAdminOrganizationPage() {
     return () => clearTimeout(t);
   }, [toast.msg]);
 
-  const closeEdit = useCallback(() => { if (!saving) setShowEdit(false); }, [saving]);
+  // Cancel discards edits; focus returns to the button that opened the dialog.
+  const closeEdit = useCallback(() => {
+    if (saving) return;
+    setShowEdit(false);
+    setTimeout(() => editButtonRef.current?.focus(), 0);
+  }, [saving]);
 
   useEffect(() => {
     if (!showEdit) return undefined;
@@ -472,33 +543,32 @@ export default function OrgAdminOrganizationPage() {
   };
 
   const openEdit = () => {
-    setEditForm({
-      name: org.name || "",
-      industry: org.industry || "",
-      address: org.address || "",
-      timezone: org.timezone || "UTC",
-      currency: org.currency || "",
-    });
+    setEditForm(orgToForm(org));
     setFormErrors({});
+    setSaveError(null);
     setShowEdit(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (e) => {
+    e?.preventDefault?.();
+    if (saving) return; // no duplicate submissions
     const errors = validateOrgForm(editForm);
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
+    const changes = orgFormChanges(editForm, orgToForm(org));
+    if (!Object.keys(changes).length) { setShowEdit(false); return; }
     setSaving(true);
+    setSaveError(null);
     try {
-      await updateOrganizationDetails({
-        ...editForm,
-        name: editForm.name.trim(),
-        currency: (editForm.currency || "").trim().toUpperCase() || undefined,
-      });
+      await updateOrganizationDetails(changes);
+      // Show the server's saved values (not the local form) once it confirms.
+      await fetchOrg({ silent: true });
       setShowEdit(false);
       setToast({ msg: "Organization updated successfully.", type: "success" });
-      fetchOrg();
     } catch (err) {
-      setToast({ msg: err.message || "Failed to update.", type: "error" });
+      // Keep the dialog open with the user's input; the page still shows the
+      // last saved values.
+      setSaveError(err?.message || "The organization could not be updated. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -576,7 +646,7 @@ export default function OrgAdminOrganizationPage() {
           </div>
           {canEdit && (
             <div className="head-actions">
-              <button className="btn btn-primary" onClick={openEdit}>Edit organization</button>
+              <button ref={editButtonRef} className="btn btn-primary" onClick={openEdit}>Edit organization</button>
             </div>
           )}
         </div>
@@ -622,10 +692,35 @@ export default function OrgAdminOrganizationPage() {
             </div>
             <div className="rows">
               <DetailRow label="Organization Name" value={org.name} />
+              <DetailRow label="Legal Name" value={org.legal_name} />
               <DetailRow label="Organization Code" value={org.code} mono />
+              <DetailRow label="Industry" value={org.industry} />
               <DetailRow label="Organization Admin" value={org.admin_name} />
               <DetailRow label="Admin Email" value={org.admin_email} />
               <DetailRow label="Organization Status" value={org.status} pill />
+              <DetailRow label="Registration Date" value={regDate} mono />
+            </div>
+          </div>
+
+          <div className="glass">
+            <div className="panel-head">
+              <div className="panel-icon icon-violet">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11Z" stroke="currentColor" strokeWidth="1.8" /><circle cx="12" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" /></svg>
+              </div>
+              <div>
+                <p className="panel-title">Contact &amp; address</p>
+                <p className="panel-sub">How customers and Zoiko reach you</p>
+              </div>
+            </div>
+            <div className="rows">
+              <DetailRow label="Email" value={org.email} />
+              <DetailRow label="Phone" value={org.phone} />
+              <DetailRow label="Website" value={org.website} />
+              <DetailRow label="Address" value={org.address} />
+              <DetailRow label="City" value={org.city} />
+              <DetailRow label="State / Region" value={org.state} />
+              <DetailRow label="Postal Code" value={org.postal_code} mono />
+              <DetailRow label="Country" value={org.country} />
             </div>
           </div>
 
@@ -635,16 +730,16 @@ export default function OrgAdminOrganizationPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" /><path d="M3 10h18" stroke="currentColor" strokeWidth="1.8" /></svg>
               </div>
               <div>
-                <p className="panel-title">Billing settings</p>
+                <p className="panel-title">Billing &amp; compliance</p>
                 <p className="panel-sub">Defaults used across invoices and subscriptions</p>
               </div>
             </div>
             <div className="rows">
-              <DetailRow label="Industry" value={org.industry} />
-              <DetailRow label="Address" value={org.address} />
               <DetailRow label="Currency" value={currency} mono />
               <DetailRow label="Timezone" value={org.timezone || "UTC"} mono />
-              <DetailRow label="Registration Date" value={regDate} mono />
+              <DetailRow label="Fiscal Year" value={org.fiscal_year_start || org.fiscal_year_end ? `${org.fiscal_year_start || "—"} to ${org.fiscal_year_end || "—"}` : null} mono />
+              <DetailRow label="Tax ID" value={org.tax_no} mono />
+              <DetailRow label="Registration Number" value={org.registration_number} mono />
             </div>
           </div>
         </div>
@@ -740,30 +835,82 @@ export default function OrgAdminOrganizationPage() {
 
       {showEdit && (
         <div className="modal-overlay">
-          <div className="glass modal" role="dialog" aria-modal="true" aria-labelledby="org-edit-title">
+          <form className="glass modal" role="dialog" aria-modal="true" aria-labelledby="org-edit-title" aria-describedby="org-edit-sub" onSubmit={handleSave} noValidate>
             <div className="modal-head">
               <div>
                 <h2 className="modal-title" id="org-edit-title">Edit Organization</h2>
-                <p className="modal-sub">Update your organization details</p>
+                <p className="modal-sub" id="org-edit-sub">Fields marked * are required. Changes apply once you save.</p>
               </div>
-              <button className="modal-close" aria-label="Close" onClick={closeEdit}><X className="w-4 h-4" /></button>
+              <button type="button" className="modal-close" aria-label="Close" onClick={closeEdit} disabled={saving}><X className="w-4 h-4" /></button>
             </div>
             <div className="modal-body">
-              <EditField id="org-edit-name" label="Organization Name" value={editForm.name} onChange={setField("name")} error={formErrors.name} maxLength={200} />
-              <EditField id="org-edit-industry" label="Industry" value={editForm.industry} onChange={setField("industry")} />
-              <EditField id="org-edit-address" label="Address" value={editForm.address} onChange={setField("address")} textarea />
-              <div className="form-grid">
-                <EditField id="org-edit-currency" label="Currency" value={editForm.currency} onChange={setField("currency")} error={formErrors.currency} maxLength={3} mono />
-                <EditField id="org-edit-timezone" label="Timezone" value={editForm.timezone} onChange={setField("timezone")} mono />
+              {saveError && <div className="form-alert" role="alert">{saveError}</div>}
+              <div className="form-readonly" aria-label="Read-only organization details">
+                <span>Code <b>{org.code || "—"}</b></span>
+                <span>Status <b>{org.status || "—"}</b></span>
+                <span>Registered <b>{regDate}</b></span>
+                <span>Set by Zoiko — not editable</span>
               </div>
+
+              <section className="form-section" aria-labelledby="org-sec-identity">
+                <h3 className="form-section-title" id="org-sec-identity">Identity</h3>
+                <div className="form-grid">
+                  <EditField id="org-edit-name" label="Organization Name" value={editForm.name} onChange={setField("name")} error={formErrors.name} maxLength={200} required autoFocus autoComplete="organization" />
+                  <EditField id="org-edit-legal_name" label="Legal Name" value={editForm.legal_name} onChange={setField("legal_name")} error={formErrors.legal_name} maxLength={255} />
+                </div>
+                <EditField id="org-edit-industry" label="Industry" value={editForm.industry} onChange={setField("industry")} />
+              </section>
+
+              <section className="form-section" aria-labelledby="org-sec-contact">
+                <h3 className="form-section-title" id="org-sec-contact">Contact</h3>
+                <div className="form-grid-3">
+                  <EditField id="org-edit-email" label="Email" type="email" value={editForm.email} onChange={setField("email")} error={formErrors.email} autoComplete="email" />
+                  <EditField id="org-edit-phone" label="Phone" type="tel" value={editForm.phone} onChange={setField("phone")} autoComplete="tel" />
+                  <EditField id="org-edit-website" label="Website" type="url" value={editForm.website} onChange={setField("website")} error={formErrors.website} maxLength={500} placeholder="https://" />
+                </div>
+              </section>
+
+              <section className="form-section" aria-labelledby="org-sec-address">
+                <h3 className="form-section-title" id="org-sec-address">Address</h3>
+                <EditField id="org-edit-address" label="Street Address" value={editForm.address} onChange={setField("address")} textarea autoComplete="street-address" />
+                <div className="form-grid">
+                  <EditField id="org-edit-city" label="City" value={editForm.city} onChange={setField("city")} error={formErrors.city} maxLength={100} autoComplete="address-level2" />
+                  <EditField id="org-edit-state" label="State / Region" value={editForm.state} onChange={setField("state")} error={formErrors.state} maxLength={100} autoComplete="address-level1" />
+                  <EditField id="org-edit-postal_code" label="Postal Code" value={editForm.postal_code} onChange={setField("postal_code")} error={formErrors.postal_code} maxLength={20} mono autoComplete="postal-code" />
+                  <EditField id="org-edit-country" label="Country" value={editForm.country} onChange={setField("country")} error={formErrors.country} maxLength={100} autoComplete="country-name" />
+                </div>
+              </section>
+
+              <section className="form-section" aria-labelledby="org-sec-billing">
+                <h3 className="form-section-title" id="org-sec-billing">Billing &amp; compliance</h3>
+                <div className="form-grid">
+                  <EditField id="org-edit-currency" label="Currency" value={editForm.currency} onChange={setField("currency")} error={formErrors.currency} maxLength={3} mono
+                    hint="3-letter code. Also updates the billing configuration currency." />
+                  {TIMEZONES.length ? (
+                    <div className="form-field">
+                      <label htmlFor="org-edit-timezone">Timezone</label>
+                      <select id="org-edit-timezone" value={editForm.timezone || "UTC"} onChange={(e) => setField("timezone")(e.target.value)}>
+                        {(TIMEZONES.includes(editForm.timezone) || !editForm.timezone ? TIMEZONES : [editForm.timezone, ...TIMEZONES]).map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                        {!TIMEZONES.includes("UTC") && <option value="UTC">UTC</option>}
+                      </select>
+                    </div>
+                  ) : (
+                    <EditField id="org-edit-timezone" label="Timezone" value={editForm.timezone} onChange={setField("timezone")} mono />
+                  )}
+                  <EditField id="org-edit-fiscal_year_start" label="Fiscal Year Start" value={editForm.fiscal_year_start} onChange={setField("fiscal_year_start")} error={formErrors.fiscal_year_start} maxLength={5} mono placeholder="MM-DD" inputMode="numeric" />
+                  <EditField id="org-edit-fiscal_year_end" label="Fiscal Year End" value={editForm.fiscal_year_end} onChange={setField("fiscal_year_end")} error={formErrors.fiscal_year_end} maxLength={5} mono placeholder="MM-DD" inputMode="numeric" />
+                  <EditField id="org-edit-tax_no" label="Tax ID" value={editForm.tax_no} onChange={setField("tax_no")} maxLength={50} mono />
+                  <EditField id="org-edit-registration_number" label="Registration Number" value={editForm.registration_number} onChange={setField("registration_number")} maxLength={100} mono />
+                </div>
+              </section>
             </div>
             <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={closeEdit} disabled={saving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              <button type="button" className="btn btn-ghost" onClick={closeEdit} disabled={saving}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving} aria-busy={saving}>
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>
