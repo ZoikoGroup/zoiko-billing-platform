@@ -39,7 +39,7 @@ from app.modules.billing.services.price_resolver import PriceResolver
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.exchange_rate_service import ExchangeRateService
-from app.modules.billing.utils.currency_utils import round_money, convert_amount
+from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES, round_money, convert_amount
 from app.services.email_service import send_quote_email
 
 logger = logging.getLogger("zoiko_billing")
@@ -123,8 +123,69 @@ class QuoteService:
     def get_quotation_summary(self, organization_id: int) -> Dict[str, Any]:
         """KPI tiles for the quotations list page, computed over the full
         org dataset -- not just whatever page of results the list endpoint
-        happens to be returning."""
-        return self.repo.get_summary_stats(organization_id)
+        happens to be returning.
+
+        Batch 7 BUG-06: the "Pipeline Value" tile covers PIPELINE_STATUSES
+        only and never sums different currencies together:
+          * totals_by_currency -- [{currency, total, count}] for the pipeline,
+            the org's default currency first, then ISO codes A-Z, then
+            "Unknown" (missing / invalid codes) last. total is a 2-dp string.
+          * pipeline_value -- the pipeline total when it is in exactly one
+            valid currency (0 when empty), otherwise None -- including when
+            the only bucket is "Unknown" (an amount with no valid currency).
+          * total_value (kept for compatibility) -- the lifetime total over
+            every status, populated only when all quotations share one
+            currency, otherwise None.
+        """
+        summary = self.repo.get_summary_stats(organization_id)
+        try:
+            default_currency = self.config_service.get_default_currency(organization_id)
+        except Exception:
+            default_currency = None
+
+        pipeline = self._currency_buckets(
+            self.repo.get_totals_by_currency(organization_id, self.PIPELINE_STATUSES),
+            default_currency,
+        )
+        lifetime = self._currency_buckets(
+            self.repo.get_totals_by_currency(organization_id), default_currency,
+        )
+        summary["pipeline_statuses"] = list(self.PIPELINE_STATUSES)
+        summary["default_currency"] = default_currency
+        summary["totals_by_currency"] = pipeline
+        if not pipeline:
+            summary["pipeline_value"] = 0
+        elif len(pipeline) == 1 and pipeline[0]["currency"] != self.UNKNOWN_CURRENCY:
+            summary["pipeline_value"] = float(pipeline[0]["total"])
+        else:
+            summary["pipeline_value"] = None
+        if len(lifetime) > 1:
+            summary["total_value"] = None
+        return summary
+
+    PIPELINE_STATUSES = (QuoteStatus.DRAFT.value, QuoteStatus.SENT.value, QuoteStatus.ACCEPTED.value)
+    UNKNOWN_CURRENCY = "Unknown"
+
+    @classmethod
+    def _currency_buckets(cls, rows, default_currency: Optional[str]) -> List[Dict[str, Any]]:
+        totals: Dict[str, Decimal] = {}
+        counts: Dict[str, int] = {}
+        for currency, total, count in rows:
+            code = (currency or "").strip().upper()
+            if code not in VALID_CURRENCY_CODES:
+                code = cls.UNKNOWN_CURRENCY
+            totals[code] = totals.get(code, Decimal("0")) + Decimal(str(total or 0))
+            counts[code] = counts.get(code, 0) + int(count or 0)
+
+        def order(code):
+            if code == cls.UNKNOWN_CURRENCY:
+                return (2, code)
+            return (0, code) if code == default_currency else (1, code)
+
+        return [
+            {"currency": code, "total": str(round_money(totals[code])), "count": counts[code]}
+            for code in sorted(totals, key=order)
+        ]
 
     # ── Items ─────────────────────────────────────────────────────────────
 

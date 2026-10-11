@@ -92,12 +92,11 @@ describe("BUG-06 Quotations KPI cards", () => {
       await waitFor(() => { const p = last(m.quoteList); expect(p.status).toBe("cancelled,expired"); expect(p.date_from).toBeUndefined(); });
     });
 
-    it(`Total Value from ${start}: every quotation, all-time`, async () => {
+    it(`Pipeline Value from ${start}: draft, sent and accepted, all-time (same scope as the KPI)`, async () => {
       renderAt("/billing/quotations", start, QuotationListPage);
-      fireEvent.click(await card(/^Total Value:/));
-      await waitFor(() => expect(loc()).toMatch(/all_dates=1/));
-      expect(loc()).not.toMatch(/status=/);
-      await waitFor(() => { const p = last(m.quoteList); expect(p.status).toBeUndefined(); expect(p.date_from).toBeUndefined(); });
+      fireEvent.click(await card(/^Pipeline Value:/));
+      await waitFor(() => expect(decodeURIComponent(loc())).toMatch(/status=draft,sent,accepted/));
+      await waitFor(() => { const p = last(m.quoteList); expect(p.status).toBe("draft,sent,accepted"); expect(p.date_from).toBeUndefined(); });
     });
   }
 });

@@ -2520,6 +2520,15 @@ export default function BillingSettingsPage() {
 
 /* ── Administration Panel ──────────────────────────────────────────────── */
 
+// SMTP reachability is served from a short server-side cache: say when it
+// was last checked so a cached "healthy" is never mistaken for a live probe.
+export function freshnessNote(details, now = Date.now()) {
+  if (!details?.checked_at) return null;
+  const mins = Math.max(0, Math.round((now - new Date(details.checked_at).getTime()) / 60000));
+  const when = mins === 0 ? "checked just now" : `checked ${mins} min ago`;
+  return details.stale ? `${when} (refreshing)` : when;
+}
+
 function HealthStatusBadge({ status }) {
   const classes = {
     healthy: "bg-green-100 text-green-700 border-green-200",
@@ -2593,11 +2602,13 @@ function AdministrationPanel() {
   const [enhancedValidation, setEnhancedValidation] = useState(null);
   const [enhancedValidationLoading, setEnhancedValidationLoading] = useState(false);
 
-  const loadHealth = useCallback(async () => {
+  // Opening the panel uses the cached check; the Refresh button asks for a
+  // live one (fresh=true bypasses the server's SMTP reachability cache).
+  const loadHealth = useCallback(async (fresh = false) => {
     setHealthLoading(true);
     setHealthError(null);
     try {
-      const data = await settingsApi.getHealth();
+      const data = await settingsApi.getHealth(fresh);
       setHealth(data);
     } catch (err) {
       setHealthError(err.message || "Failed to load health status");
@@ -2737,7 +2748,7 @@ function AdministrationPanel() {
     <div className="space-y-6">
       {/* Health Dashboard */}
       <AdminCard title="System Health" icon={Thermometer} action={
-        <button onClick={loadHealth} disabled={healthLoading}
+        <button onClick={() => loadHealth(true)} disabled={healthLoading}
           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors">
           <RefreshCw size={12} className={healthLoading ? "animate-spin" : ""} />
           Refresh
@@ -2772,7 +2783,7 @@ function AdministrationPanel() {
                     <StatusLine key={i}
                       label={comp.name || comp.component || `Component #${i + 1}`}
                       status={comp.status}
-                      detail={comp.detail || comp.message} />
+                      detail={[comp.detail || comp.message, freshnessNote(comp.details)].filter(Boolean).join(" · ")} />
                   ))}
                 </div>
               </div>
