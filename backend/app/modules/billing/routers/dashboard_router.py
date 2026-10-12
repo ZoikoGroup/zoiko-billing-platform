@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import BillingDashboardService
@@ -70,12 +71,15 @@ def get_monthly_revenue(
     current_user=Depends(get_current_user),
 ):
     svc = BillingDashboardService(db)
-    return svc.get_monthly_revenue(
+    return cached_aggregate(
+        "dashboard.get_monthly_revenue", current_user.organization_id, {"months": months, "period": period, "date_from": date_from, "date_to": date_to},
+        lambda: svc.get_monthly_revenue(
         organization_id=current_user.organization_id,
         months=months,
         period=period,
         date_from=date_from,
         date_to=date_to,
+    ),
     )
 
 
@@ -92,9 +96,12 @@ def get_payment_trend(
     current_user=Depends(get_current_user),
 ):
     svc = BillingDashboardService(db)
-    return svc.get_payment_trend(
+    return cached_aggregate(
+        "dashboard.get_payment_trend", current_user.organization_id, {"period": period, "date_from": date_from, "date_to": date_to},
+        lambda: svc.get_payment_trend(
         organization_id=current_user.organization_id,
         period=period,
         date_from=date_from,
         date_to=date_to,
+    ),
     )

@@ -674,6 +674,16 @@ def allocate_payment(
         actor_id=current_user.id,
     )
     trial_converted_id = _maybe_complete_trial_conversion_on_allocation(db, data.invoice_id, current_user.id)
+    # A manually-allocated payment that settles a self-serve upgrade invoice
+    # applies the plan swap, same as the Stripe webhook does.
+    from app.modules.commercial.models import PlatformInvoice
+    from app.modules.commercial.plan_change_billing import complete_plan_change_for_invoice
+
+    complete_plan_change_for_invoice(
+        db,
+        db.query(PlatformInvoice).filter(PlatformInvoice.id == data.invoice_id).first(),
+        actor_id=current_user.id,
+    )
     db.commit()
     db.refresh(allocation)  # see create_quote's comment on why this is required
     if trial_converted_id is not None:

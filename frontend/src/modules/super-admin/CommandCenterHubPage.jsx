@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useCommandCenter } from "../../context/CommandCenterContext";
+import usePolling from "../../hooks/usePolling";
 import { getApiTelemetry, getEmailDeliveryOverview, getTriageSummary } from "../../service/commandCenterService";
 import LaunchReadinessPage from "./LaunchReadinessPage";
 
@@ -136,10 +137,9 @@ export default function CommandCenterHubPage() {
       if (firstTickRef.current) firstTickRef.current = false;
       load.current();
     }
-    if (!autoPoll) return undefined;
-    const interval = setInterval(() => requestRefresh(), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [requestRefresh, autoPoll]);
+
+  usePolling(() => requestRefresh({ auto: true }), POLL_INTERVAL_MS, { enabled: autoPoll });
 
   useEffect(() => {
     if (firstTickRef.current) return;

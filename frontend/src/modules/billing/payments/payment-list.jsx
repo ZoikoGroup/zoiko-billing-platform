@@ -164,7 +164,7 @@ export default function PaymentListPage() {
         date_from: dateRange.date_from || undefined,
         date_to: dateRange.date_to || undefined,
         sort_by: sortBy, sort_order: sortDir,
-      });
+      }, { signal: isCurrent.signal });
       if (!isCurrent()) return;
       const items = extractArray(data);
       setPayments(items);

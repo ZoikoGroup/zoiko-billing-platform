@@ -30,8 +30,10 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import cache_service
 from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
 from app.modules.auth.models import User
 from app.modules.super_admin.audit_service import PlatformAuditService
@@ -69,6 +71,24 @@ _FORWARD_TRANSITIONS = {
     AttentionStatus.MONITORING: {AttentionStatus.RESOLVED, AttentionStatus.MITIGATING},
     AttentionStatus.RESOLVED: {AttentionStatus.CLOSED},
 }
+
+
+# Short TTL caches in front of the polled super-admin reads (attention counts
+# and the triage summary). Neither payload varies per user (both are gated by
+# a capability only), so the keys are global. The TTL is the staleness bound;
+# AttentionService write paths and kill-switch changes also drop them eagerly.
+ATTENTION_COUNTS_CACHE_KEY = "sa:attention:counts"
+TRIAGE_SUMMARY_CACHE_KEY = "sa:triage:summary"
+POLLED_CACHE_TTL_SECONDS = 10
+_LIFT_GUARD_KEY = "sa:attention:lift_guard"
+
+
+def invalidate_polled_caches() -> None:
+    """Best-effort: a cache failure must never break a write path."""
+    try:
+        cache_service.cache_delete(ATTENTION_COUNTS_CACHE_KEY, TRIAGE_SUMMARY_CACHE_KEY)
+    except Exception:  # noqa: BLE001
+        logger.debug("Polled-cache invalidation failed", exc_info=True)
 
 
 class AttentionService:
@@ -146,6 +166,7 @@ class AttentionService:
                             )
                     # ── end ZB-OPS-007 ───────────────────────────────────────
             self.db.flush()
+            invalidate_polled_caches()
             return existing
 
         if existing and existing.status == AttentionStatus.RESOLVED:
@@ -164,6 +185,7 @@ class AttentionService:
                 correlation_id=existing.correlation_id,
             )
             self.db.flush()
+            invalidate_polled_caches()
             return existing
 
         item = AttentionItem(
@@ -192,6 +214,7 @@ class AttentionService:
         )
         self.db.flush()
         logger.warning("Attention item opened: source=%s key=%s severity=%s", source, source_key, base_severity.value)
+        invalidate_polled_caches()
         return item
 
     def auto_resolve(self, source: str, source_key: str, resolution_note: str = "Condition cleared automatically.") -> Optional[AttentionItem]:
@@ -223,6 +246,7 @@ class AttentionService:
             metadata={"resolution_code": "auto_cleared"},
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
     def _escalate(self, severity: AttentionSeverity) -> AttentionSeverity:
@@ -257,6 +281,7 @@ class AttentionService:
             organization_id=item.organization_id, correlation_id=item.correlation_id,
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
     def assign(self, actor: User, item_id: int, owner_user_id: int) -> AttentionItem:
@@ -279,6 +304,7 @@ class AttentionService:
             metadata={"owner_user_id": owner_user_id},
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
     def escalate(self, actor: User, item_id: int, reason: str) -> AttentionItem:
@@ -307,6 +333,7 @@ class AttentionService:
             metadata={"from": previous.value, "to": new_severity.value},
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
     def transition(self, actor: User, item_id: int, to_status: AttentionStatus, resolution_code: Optional[str] = None) -> AttentionItem:
@@ -339,6 +366,7 @@ class AttentionService:
             metadata={"to_status": to_status.value, "resolution_code": resolution_code},
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
     def suppress(self, actor: User, item_id: int, reason: str, minutes: int) -> AttentionItem:
@@ -361,9 +389,13 @@ class AttentionService:
             reason=reason, metadata={"minutes": minutes},
         )
         self.db.flush()
+        invalidate_polled_caches()
         return item
 
-    def _lift_expired_suppressions(self) -> None:
+    def lift_expired_suppressions(self) -> int:
+        """Re-open suppressed items whose suppressed_until passed. A WRITE: it
+        runs from the scheduled job (tasks/attention_maintenance.py, every
+        minute), never from the polled read endpoints."""
         now = datetime.utcnow()
         expired = (
             self.db.query(AttentionItem)
@@ -375,6 +407,25 @@ class AttentionService:
             item.suppressed_until = None
         if expired:
             self.db.flush()
+            invalidate_polled_caches()
+        return len(expired)
+
+    def _lift_expired_if_no_scheduler(self) -> None:
+        """Safety net for deployments where the scheduler is disabled (so the
+        attention_maintenance job never runs): lift expired suppressions from
+        the read path, but at most once per minute and only when the job
+        isn't running in this process. Best-effort; never breaks a read."""
+        try:
+            from app.core.scheduler import get_scheduler
+
+            if get_scheduler() is not None:
+                return
+            if cache_service.cache_get(_LIFT_GUARD_KEY) is not None:
+                return
+            cache_service.cache_set(_LIFT_GUARD_KEY, 1, ttl=60)
+            self.lift_expired_suppressions()
+        except Exception:  # noqa: BLE001
+            logger.debug("Fallback suppression lift failed", exc_info=True)
 
     # ── Queries ──────────────────────────────────────────────────────────
 
@@ -388,7 +439,7 @@ class AttentionService:
         explicit `severity` narrows the live queue; an explicit `status`
         switches to a history view of that exact status (e.g. RESOLVED,
         CLOSED) instead of the default open-like set."""
-        self._lift_expired_suppressions()
+        self._lift_expired_if_no_scheduler()
         query = self.db.query(AttentionItem)
         if status is not None:
             query = query.filter(AttentionItem.status == status)
@@ -405,17 +456,28 @@ class AttentionService:
         return items[:limit]
 
     def get_counts(self) -> dict:
-        self._lift_expired_suppressions()
-        open_items = (
-            self.db.query(AttentionItem)
+        """Pure read: one GROUP BY severity aggregate (open-like items) plus
+        one COUNT of un-acknowledged SLA breaches. Expired suppressions are
+        lifted by the scheduled job, not here."""
+        self._lift_expired_if_no_scheduler()
+        now = datetime.utcnow()
+        rows = (
+            self.db.query(AttentionItem.severity, func.count(AttentionItem.id))
             .filter(AttentionItem.status.in_(_OPEN_LIKE_STATUSES))
+            .group_by(AttentionItem.severity)
             .all()
         )
-        now = datetime.utcnow()
         counts = {"p0": 0, "p1": 0, "p2": 0, "p3": 0}
-        sla_breaches = 0
-        for item in open_items:
-            counts[item.severity.value] += 1
-            if item.sla_ack_deadline and item.acknowledged_at is None and now > item.sla_ack_deadline:
-                sla_breaches += 1
-        return {**counts, "total_open": len(open_items), "sla_breaches": sla_breaches}
+        for severity, n in rows:
+            counts[severity.value] += n
+        sla_breaches = (
+            self.db.query(func.count(AttentionItem.id))
+            .filter(
+                AttentionItem.status.in_(_OPEN_LIKE_STATUSES),
+                AttentionItem.sla_ack_deadline.isnot(None),
+                AttentionItem.sla_ack_deadline < now,
+                AttentionItem.acknowledged_at.is_(None),
+            )
+            .scalar()
+        ) or 0
+        return {**counts, "total_open": sum(counts.values()), "sla_breaches": sla_breaches}

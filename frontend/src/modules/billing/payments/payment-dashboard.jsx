@@ -21,6 +21,7 @@ import {
   BusinessInsights, QuickActions, ActionCenter,
 } from "../../../components/billing-shared";
 import { Button, DataTable, StatGroup } from "../../../components/billing-ui";
+import usePolling from "../../../hooks/usePolling";
 
 // A single, wide fetch of recent payments doubles as the source for the
 // status/method/monthly charts below (pie/bar/trend visuals are inherently
@@ -123,9 +124,10 @@ export default function PaymentDashboardPage() {
     mountedRef.current = true;
     loadingRef.current = true;
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => { mountedRef.current = false; clearInterval(interval); };
+    return () => { mountedRef.current = false; };
   }, [fetchData]);
+
+  usePolling(fetchData, 60000);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);

@@ -126,7 +126,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
           className="flex shrink-0 items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
         >
-          <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-11 w-auto" />
+          <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="123" height="44" className="h-11 w-auto" />
         </Link>
         <OrgContext role={role} />
       </div>

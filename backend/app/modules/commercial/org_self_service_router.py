@@ -55,11 +55,49 @@ def _serialize_subscription(subscription) -> dict | None:
         "currency": plan.currency if plan else None,
         "price_amount": str(plan.price_amount) if plan and plan.price_amount is not None else None,
         "billing_interval": plan.billing_interval.value if plan and plan.billing_interval else None,
+        "max_users": plan.max_users if plan else None,
         "current_period_start": subscription.current_period_start.isoformat() if subscription.current_period_start else None,
         "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
         "trial_ends_at": subscription.trial_ends_at.isoformat() if subscription.trial_ends_at else None,
         "recovery_ends_at": subscription.recovery_ends_at.isoformat() if subscription.recovery_ends_at else None,
         "converted_at": subscription.converted_at.isoformat() if subscription.converted_at else None,
+    }
+
+
+def _serialize_pending_change(db: Session, subscription) -> dict | None:
+    """The one in-flight plan change for a subscription, if any: a downgrade
+    SCHEDULED for renewal, or an upgrade PENDING payment of its invoice."""
+    if subscription is None:
+        return None
+    from app.modules.commercial.enums import SubscriptionChangeStatus
+    from app.modules.commercial.models import SubscriptionChange
+    from app.modules.commercial.plan_change_billing import invoice_for_change
+
+    change = (
+        db.query(SubscriptionChange)
+        .filter(
+            SubscriptionChange.commercial_subscription_id == subscription.id,
+            SubscriptionChange.status.in_([SubscriptionChangeStatus.SCHEDULED, SubscriptionChangeStatus.PENDING]),
+        )
+        .order_by(SubscriptionChange.id.desc())
+        .first()
+    )
+    if change is None:
+        return None
+    to_plan = change.to_plan
+    invoice = invoice_for_change(db, change) if change.status == SubscriptionChangeStatus.PENDING else None
+    return {
+        "id": change.id,
+        "direction": change.direction.value,
+        "status": change.status.value,
+        "to_plan_id": change.to_plan_id,
+        "to_plan_code": to_plan.plan_code if to_plan else None,
+        "to_plan_name": to_plan.plan_name if to_plan else None,
+        "effective_at": change.effective_at.isoformat() if change.effective_at else None,
+        "invoice_number": invoice.invoice_number if invoice else None,
+        "invoice_public_token": invoice.public_token if invoice else None,
+        "amount_due": str(invoice.balance_due) if invoice else None,
+        "currency": invoice.currency if invoice else None,
     }
 
 
@@ -171,6 +209,7 @@ def get_zoiko_subscription(
     result = {
         "account": {"id": account.id, "status": account.status.value, "intended_plan_code": account.intended_plan_code},
         "subscription": _serialize_subscription(subscription),
+        "pending_change": _serialize_pending_change(db, subscription),
         "invoices": [_serialize_invoice(i) for i in invoices],
         "payments": [_serialize_payment(p) for p in payments],
         "quotes": [_serialize_quote(q) for q in quotes],
@@ -257,6 +296,139 @@ def get_org_usage(
         "plan_name": plan.plan_name if plan is not None else None,
         "counters": counters,
     }
+
+
+@router.get("/plan-limits", summary="Every entitlement limit/feature resolved for the caller's organization")
+def get_org_plan_limits(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    """The full resolved entitlement set (all catalog keys) for the caller's
+    own organization, so the subscription page can show plan limits even for
+    keys that have no UsageCounter row yet. A null value means the entitlement
+    is contract-governed (Enterprise). Per-key resolution fails OPEN to an
+    omitted row, never a 500 (§14)."""
+    from app.modules.commercial.entitlement_catalog_spec import ENTITLEMENT_CATALOG_SPEC
+    from app.modules.commercial.entitlement_resolver import resolve_entitlement
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This view requires an organization context.",
+        )
+
+    entitlements = []
+    for spec in ENTITLEMENT_CATALOG_SPEC:
+        try:
+            resolved = resolve_entitlement(db, current_user.organization_id, spec["key"])
+        except Exception:  # noqa: BLE001 - fail-open read (§14)
+            continue
+        entitlements.append(
+            {
+                "key": spec["key"],
+                "value": resolved.value,
+                "value_type": spec["value_type"].value,
+                "enforcement_type": spec["enforcement_type"].value,
+                "description": spec["description"],
+            }
+        )
+    return {"entitlements": entitlements}
+
+
+@router.post("/start-trial", summary="Start the free Essentials trial for an org that has no subscription yet")
+def start_trial(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    """Self-heal for an org whose signup couldn't provision a subscription
+    (e.g. the plan was unavailable at that moment). Only valid when the account
+    has no open subscription and hasn't already used its one standard trial."""
+    from app.core import cache_service
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This action requires an organization context.",
+        )
+    account = (
+        db.query(CommercialAccount)
+        .filter(CommercialAccount.organization_id == current_user.organization_id)
+        .first()
+    )
+    if account is None:
+        raise NotFoundException("Commercial Account", "organization_id")
+
+    svc = CommercialSubscriptionService(db)
+    if svc.get_active_subscription(account.id) is not None:
+        raise BadRequestException("Your organization already has a subscription.")
+    if not svc.is_trial_eligible(account.id):
+        raise BadRequestException(
+            "Your organization has already used its free trial. Please contact Zoiko to choose a plan."
+        )
+
+    subscription = svc.provision_default_subscription(account.id, intended_plan_code="essentials")
+    if subscription is None:
+        _logger.error("start-trial: Essentials is not available for account %s", account.id)
+        raise BadRequestException(
+            "The free trial can't be started right now. Please contact Zoiko support."
+        )
+    db.commit()
+    cache_service.invalidate_subscription_caches(current_user.organization_id)
+    return {"status": subscription.status.value, "trial_ends_at": subscription.trial_ends_at.isoformat() if subscription.trial_ends_at else None}
+
+
+@router.get("/available-plans", summary="Plans the caller's organization can switch to, with prices")
+def get_available_plans(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    """Self-serve plans only: ACTIVE and not quote-only (Enterprise is arranged
+    with Zoiko, never switched to from here). Prices use the same
+    version->plan fallback as a real subscription."""
+    from app.modules.commercial.enums import CommercialPlanStatus
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This view requires an organization context.",
+        )
+    account = (
+        db.query(CommercialAccount)
+        .filter(CommercialAccount.organization_id == current_user.organization_id)
+        .first()
+    )
+    current_plan_id = None
+    if account is not None:
+        sub = CommercialSubscriptionService(db).get_active_subscription(account.id)
+        current_plan_id = sub.commercial_plan_id if sub is not None else None
+
+    plans = (
+        db.query(CommercialPlan)
+        .filter(CommercialPlan.status == CommercialPlanStatus.ACTIVE, CommercialPlan.is_quote_only.is_(False))
+        .all()
+    )
+    out = []
+    for plan in plans:
+        price, currency, interval, _ = _resolve_target_plan_price(db, plan)
+        if price is None:
+            continue
+        out.append(
+            {
+                "id": plan.id,
+                "plan_code": plan.plan_code,
+                "plan_name": plan.plan_name,
+                "description": plan.description,
+                "price_amount": str(price),
+                "currency": currency,
+                "billing_interval": interval.value if interval else None,
+                "max_users": plan.max_users,
+                "is_current": plan.id == current_plan_id,
+            }
+        )
+    out.sort(key=lambda p: Decimal(p["price_amount"]))
+    return {"plans": out}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -382,6 +554,7 @@ def _run_preview(db: Session, current_user, target_plan_id: int):
         raise NotFoundException("Commercial Plan", "id")
     if target_plan.id == subscription.commercial_plan_id:
         raise BadRequestException(f"Already on plan {target_plan.plan_code}.")
+    _assert_self_serve_target(target_plan)
 
     resolved_current = CommercialSubscriptionService(db).resolve_price(subscription)
     current_price_info = (
@@ -414,6 +587,194 @@ def _run_preview(db: Session, current_user, target_plan_id: int):
     }
 
 
+def _assert_self_serve_target(target_plan: CommercialPlan) -> None:
+    if target_plan.is_quote_only:
+        raise BadRequestException(
+            "This plan is arranged directly with Zoiko. Please contact your Zoiko representative."
+        )
+
+
+def _commit_upgrade(db: Session, current_user, account, subscription, target_plan, preview, reason):
+    """Upgrade = pay first. Raises a prorated PLAN_CHANGE invoice and (when
+    platform Stripe is configured) a Checkout session for it; the plan only
+    swaps once that invoice is paid (see plan_change_billing). A change with no
+    positive prorated amount (e.g. renewal today) applies immediately."""
+    from app.core import cache_service
+    from app.modules.commercial.enums import SubscriptionChangeDirection, SubscriptionChangeStatus
+    from app.modules.commercial.models import SubscriptionChange
+    from app.modules.commercial.plan_change_billing import (
+        _PAYABLE_STATUSES,
+        abandon_pending_upgrade,
+        correlation_for_invoice,
+        create_upgrade_invoice,
+        get_pending_upgrade,
+        invoice_for_change,
+    )
+    from app.modules.commercial.platform_stripe_service import PlatformStripeService
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    impact = preview["price_impact"]
+    raw_delta = impact.get("estimated_period_delta")
+    delta = Decimal(raw_delta) if raw_delta is not None else Decimal("0")
+    days_remaining = impact.get("days_remaining_in_period") or 0
+    currency = impact.get("currency") or "USD"
+    sub_svc = CommercialSubscriptionService(db)
+
+    if delta <= Decimal("0.004"):
+        from_plan_id = subscription.commercial_plan_id  # captured BEFORE apply_plan_change mutates it in place
+        try:
+            sub_svc.apply_plan_change(subscription, target_plan, actor_id=current_user.id, reason=reason or "")
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan change")
+        db.add(SubscriptionChange(
+            commercial_subscription_id=subscription.id,
+            from_plan_id=from_plan_id,
+            to_plan_id=target_plan.id,
+            direction=SubscriptionChangeDirection.UPGRADE,
+            status=SubscriptionChangeStatus.APPLIED,
+            applied_at=datetime.utcnow(),
+            requested_by_user_id=current_user.id,
+            reason=reason,
+            blockers=preview["blockers"],
+            price_impact=impact,
+        ))
+        db.commit()
+        db.refresh(subscription)
+        cache_service.invalidate_subscription_caches(current_user.organization_id)
+        return {"status": "applied", "direction": "upgrade", "subscription_status": subscription.status.value}
+
+    # Reuse an unpaid invoice for the same target; otherwise drop the stale one.
+    invoice = None
+    change = get_pending_upgrade(db, subscription.id)
+    if change is not None:
+        existing = invoice_for_change(db, change)
+        if (
+            change.to_plan_id == target_plan.id
+            and existing is not None
+            and existing.status in _PAYABLE_STATUSES
+            and existing.public_token
+        ):
+            invoice = existing
+        else:
+            try:
+                abandon_pending_upgrade(db, change, actor_id=current_user.id, reason="Superseded by a new upgrade request")
+            except ValueError as exc:
+                raise _self_service_error(exc, "plan change")
+            change = None
+
+    if invoice is None:
+        try:
+            invoice = create_upgrade_invoice(
+                db,
+                account=account,
+                subscription=subscription,
+                target_plan=target_plan,
+                amount=delta,
+                currency=currency,
+                days_remaining=days_remaining,
+                actor_id=current_user.id,
+            )
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan change")
+        change = SubscriptionChange(
+            commercial_subscription_id=subscription.id,
+            from_plan_id=subscription.commercial_plan_id,
+            to_plan_id=target_plan.id,
+            to_catalog_version_id=_resolve_target_plan_price(db, target_plan)[3],
+            direction=SubscriptionChangeDirection.UPGRADE,
+            status=SubscriptionChangeStatus.PENDING,
+            requested_by_user_id=current_user.id,
+            reason=reason,
+            blockers=preview["blockers"],
+            price_impact=impact,
+            correlation_id=correlation_for_invoice(invoice.id),
+        )
+        db.add(change)
+    return _checkout_for_change(db, current_user, invoice, change)
+
+
+def _checkout_for_change(db: Session, current_user, invoice, change):
+    """Commit, then start Stripe Checkout for the change's invoice. Falls back
+    to the invoice page ("invoice_due") when Stripe isn't configured/available."""
+    from app.core import cache_service
+    from app.modules.commercial.platform_stripe_service import PlatformStripeService
+
+    db.commit()
+    db.refresh(invoice)
+    db.refresh(change)
+    cache_service.invalidate_subscription_caches(current_user.organization_id)
+
+    base = {
+        "status": "payment_required",
+        "direction": "upgrade",
+        "subscription_change_id": change.id,
+        "invoice_number": invoice.invoice_number,
+        "public_token": invoice.public_token,
+        "amount": str(invoice.balance_due),
+        "currency": invoice.currency,
+    }
+    try:
+        checkout = PlatformStripeService(db).create_checkout_session_for_invoice(invoice)
+    except BadRequestException:
+        # Platform Stripe not configured / invoice not payable online: the
+        # invoice stays open for the public pay link or a manual payment.
+        return {**base, "mode": "invoice_due"}
+    except Exception as exc:  # noqa: BLE001
+        if type(exc).__module__.split(".")[0] != "stripe":
+            raise
+        _logger.warning("Stripe checkout failed for upgrade invoice %s: %s", invoice.id, exc)
+        return {
+            **base,
+            "mode": "invoice_due",
+            "checkout_error": "The payment provider could not start checkout. You can retry from the invoice link.",
+        }
+    return {**base, "mode": "checkout", "checkout_url": checkout.get("checkout_url")}
+
+
+@router.post("/plan-change/{change_id}/cancel", summary="Cancel a scheduled downgrade or an unpaid upgrade")
+def cancel_plan_change(
+    change_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_billing_admin),
+):
+    from app.core import cache_service
+    from app.modules.commercial.enums import SubscriptionChangeStatus
+    from app.modules.commercial.models import CommercialSubscription, SubscriptionChange
+    from app.modules.commercial.plan_change_billing import abandon_pending_upgrade
+    from app.modules.commercial.service import CommercialSubscriptionService
+
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This action requires an organization context.",
+        )
+    # Org scoping: the change must belong to a subscription of the caller's own account.
+    change = (
+        db.query(SubscriptionChange)
+        .join(CommercialSubscription, CommercialSubscription.id == SubscriptionChange.commercial_subscription_id)
+        .join(CommercialAccount, CommercialAccount.id == CommercialSubscription.commercial_account_id)
+        .filter(SubscriptionChange.id == change_id, CommercialAccount.organization_id == current_user.organization_id)
+        .first()
+    )
+    if change is None:
+        raise NotFoundException("Plan change", "id")
+
+    try:
+        if change.status == SubscriptionChangeStatus.SCHEDULED:
+            CommercialSubscriptionService(db).reverse_scheduled_change(
+                change, actor_id=current_user.id, reason="Cancelled by organization",
+            )
+        elif change.status == SubscriptionChangeStatus.PENDING:
+            abandon_pending_upgrade(db, change, actor_id=current_user.id, reason="Cancelled by organization")
+        else:
+            raise BadRequestException("Only a scheduled downgrade or an unpaid upgrade can be cancelled.")
+    except ValueError as exc:
+        raise _self_service_error(exc, "plan change cancellation")
+    db.commit()
+    cache_service.invalidate_subscription_caches(current_user.organization_id)
+    return {"status": "cancelled", "subscription_change_id": change.id}
+
+
 @router.post("/plan-change/preview", summary="Preview an upgrade/downgrade before committing")
 def preview_plan_change(
     data: PlanChangePreviewRequest,
@@ -442,6 +803,7 @@ def commit_plan_change(
     target_plan = db.query(CommercialPlan).filter(CommercialPlan.id == data.target_plan_id).first()
     if target_plan is None:
         raise NotFoundException("Commercial Plan", "id")
+    _assert_self_serve_target(target_plan)
 
     # Never trust a client-cached preview for the actual gating decision —
     # re-run it fresh, server-side, at commit time.
@@ -450,31 +812,21 @@ def commit_plan_change(
     sub_svc = CommercialSubscriptionService(db)
 
     if direction == SubscriptionChangeDirection.UPGRADE:
-        from_plan_id = subscription.commercial_plan_id  # captured BEFORE apply_plan_change mutates it in place
-        try:
-            sub_svc.apply_plan_change(
-                subscription, target_plan, actor_id=current_user.id, reason=data.reason or "",
-            )
-        except ValueError as exc:
-            raise _self_service_error(exc, "plan change")
-        change = SubscriptionChange(
-            commercial_subscription_id=subscription.id,
-            from_plan_id=from_plan_id,
-            to_plan_id=target_plan.id,
-            direction=direction,
-            status=SubscriptionChangeStatus.APPLIED,
-            applied_at=datetime.utcnow(),
-            requested_by_user_id=current_user.id,
-            reason=data.reason,
-            blockers=preview["blockers"],
-            price_impact=preview["price_impact"],
-        )
-        db.add(change)
-        db.commit()
-        db.refresh(subscription)
-        return {"status": "applied", "direction": "upgrade", "subscription_status": subscription.status.value}
+        return _commit_upgrade(db, current_user, account, subscription, target_plan, preview, data.reason)
 
     # DOWNGRADE
+    # An unpaid upgrade and a downgrade can't both be in flight: if the upgrade
+    # invoice were paid after the subscription moved to SCHEDULED_CHANGE it
+    # could no longer be applied. The newer request wins.
+    from app.modules.commercial.plan_change_billing import abandon_pending_upgrade, get_pending_upgrade
+
+    stale_upgrade = get_pending_upgrade(db, subscription.id)
+    if stale_upgrade is not None:
+        try:
+            abandon_pending_upgrade(db, stale_upgrade, actor_id=current_user.id, reason="Superseded by a downgrade request")
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan change")
+
     if data.confirm_immediate:
         if preview["blockers"]:
             change = SubscriptionChange(
@@ -528,6 +880,8 @@ def commit_plan_change(
         db.add(change)
         db.commit()
         db.refresh(subscription)
+        from app.core import cache_service
+        cache_service.invalidate_subscription_caches(current_user.organization_id)
         return {"status": "applied", "direction": "downgrade", "subscription_status": subscription.status.value}
 
     # Default downgrade path: schedule for the subscription's next renewal.
@@ -562,6 +916,8 @@ def commit_plan_change(
     )
     db.commit()
     db.refresh(change)
+    from app.core import cache_service
+    cache_service.invalidate_subscription_caches(current_user.organization_id)
     return {
         "status": "scheduled",
         "direction": "downgrade",
@@ -584,6 +940,85 @@ def commit_plan_change(
 
 class TrialConvertRequest(BaseModel):
     payment_method: str | None = "card"
+    # Buy a specific self-serve plan outright (e.g. Professional/Business) instead
+    # of the plan the trial is on. Omitted / same plan = the standard conversion.
+    plan_id: int | None = None
+
+
+def _commit_trial_purchase(db: Session, current_user, account, subscription, target_plan):
+    """Pay-first purchase of `target_plan` from a free trial. The trial keeps its
+    current entitlements until the payment clears; the webhook (or a manual
+    allocation) then converts the trial and moves it to the purchased plan."""
+    from app.modules.commercial.enums import (
+        CommercialPlanStatus,
+        PlatformInvoiceStatus,
+        SubscriptionChangeDirection,
+        SubscriptionChangeStatus,
+    )
+    from app.modules.commercial.models import PlatformInvoice, SubscriptionChange
+    from app.modules.commercial.plan_change_billing import (
+        abandon_pending_upgrade,
+        correlation_for_invoice,
+        create_upgrade_invoice,
+        get_pending_upgrade,
+    )
+    from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
+
+    _assert_self_serve_target(target_plan)
+    if target_plan.status != CommercialPlanStatus.ACTIVE:
+        raise BadRequestException("This plan isn't available right now.")
+    price, currency, interval, version_id = _resolve_target_plan_price(db, target_plan)
+    if price is None:
+        raise BadRequestException(
+            "This plan is arranged directly with Zoiko. Please contact your Zoiko representative."
+        )
+
+    # Drop anything stale so the org is never asked to pay two different first bills.
+    pending = get_pending_upgrade(db, subscription.id)
+    if pending is not None:
+        try:
+            abandon_pending_upgrade(db, pending, actor_id=current_user.id, reason="Superseded by a new plan purchase")
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan purchase")
+    open_invoices = (
+        db.query(PlatformInvoice)
+        .filter(
+            PlatformInvoice.commercial_subscription_id == subscription.id,
+            PlatformInvoice.status.in_([PlatformInvoiceStatus.ISSUED, PlatformInvoiceStatus.DELIVERED]),
+            PlatformInvoice.paid_amount <= 0,
+        )
+        .all()
+    )
+    invoice_svc = PlatformInvoiceService(db)
+    for stale in open_invoices:
+        invoice_svc.void(invoice_id=stale.id, actor_id=current_user.id, reason="Superseded by a new plan purchase")
+
+    interval_label = getattr(interval, "value", None) or "monthly"
+    invoice = create_upgrade_invoice(
+        db,
+        account=account,
+        subscription=subscription,
+        target_plan=target_plan,
+        amount=price,
+        currency=currency or "USD",
+        days_remaining=None,
+        actor_id=current_user.id,
+        description=f"{target_plan.plan_name} ({interval_label}) — first period",
+    )
+    change = SubscriptionChange(
+        commercial_subscription_id=subscription.id,
+        from_plan_id=subscription.commercial_plan_id,
+        to_plan_id=target_plan.id,
+        to_catalog_version_id=version_id,
+        direction=SubscriptionChangeDirection.UPGRADE,
+        status=SubscriptionChangeStatus.PENDING,
+        requested_by_user_id=current_user.id,
+        reason="Plan purchased from free trial",
+        price_impact={"target_price": str(price), "currency": currency, "billing_interval": interval_label},
+        correlation_id=correlation_for_invoice(invoice.id),
+    )
+    db.add(change)
+    return _checkout_for_change(db, current_user, invoice, change)
 
 
 @router.post(
@@ -614,6 +1049,15 @@ def convert_trial_to_paid(
         raise BadRequestException(
             "Only a TRIALING or TRIAL_RECOVERY subscription can be converted to a paid plan."
         )
+
+    if data.plan_id is not None and data.plan_id != subscription.commercial_plan_id:
+        target_plan = db.query(CommercialPlan).filter(CommercialPlan.id == data.plan_id).first()
+        if target_plan is None:
+            raise NotFoundException("Commercial Plan", "id")
+        try:
+            return _commit_trial_purchase(db, current_user, account, subscription, target_plan)
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan purchase")
 
     # Steps 1-2 — compatibility checklist runs in full and is surfaced to the
     # caller (informational; a self-serve conversion does not force a downgrade

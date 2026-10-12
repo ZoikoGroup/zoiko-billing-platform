@@ -141,4 +141,16 @@ describe("TrialBanner CTA", () => {
     await waitFor(() => expect(screen.getByText(/stripe is not configured/i)).toBeInTheDocument());
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
+
+  it("cannot be dismissed on a dashboard route", async () => {
+    Object.defineProperty(window, "location", {
+      value: { href: "http://localhost/", pathname: "/organization-admin/dashboard" },
+      writable: true,
+      configurable: true,
+    });
+    setup();
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /dismiss trial banner/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/carry a .Free trial. banner/)).toBeInTheDocument();
+  });
 });

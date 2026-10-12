@@ -12,6 +12,18 @@ import { api } from "./api";
 export const platformSelfServiceApi = {
   getZoikoSubscription: () => api.get("/billing/workspace/zoiko-subscription"),
   getWorkspaceUsage: () => api.get("/billing/workspace/usage"),
+  getPlanLimits: () => api.get("/billing/workspace/plan-limits"),
+  startTrial: () => api.post("/billing/workspace/start-trial", {}),
+  getAvailablePlans: () => api.get("/billing/workspace/available-plans", { cacheTtl: 30_000 }),
+  previewPlanChange: (targetPlanId) =>
+    api.post("/billing/workspace/plan-change/preview", { target_plan_id: targetPlanId }),
+  commitPlanChange: ({ targetPlanId, confirmImmediate = false, reason = null }) =>
+    api.post("/billing/workspace/plan-change", {
+      target_plan_id: targetPlanId,
+      confirm_immediate: confirmImmediate,
+      reason,
+    }),
+  cancelPlanChange: (changeId) => api.post(`/billing/workspace/plan-change/${changeId}/cancel`, {}),
   convertTrialToPaid: (payload = {}) => api.post("/billing/workspace/trial/convert", payload),
 };
 

@@ -308,12 +308,18 @@ class TrialConversionService:
         subscription.trial_ends_at = None
         subscription.recovery_ends_at = None
         subscription.current_period_start = now
-        plan = subscription.plan
-        if plan is not None and plan.billing_interval is not None:
-            subscription.current_period_end = svc._add_months(
-                now,
-                12 if plan.billing_interval.value == "annual" else 1,
-            )
+        # Interval comes from the resolved price (published version first, then
+        # the plan row); a plan that states none renews monthly.
+        interval = None
+        resolved = svc.resolve_price(subscription)
+        if resolved is not None:
+            interval = resolved[2]
+        if interval is None and subscription.plan is not None:
+            interval = subscription.plan.billing_interval
+        subscription.current_period_end = svc._add_months(
+            now,
+            12 if interval is not None and interval.value == "annual" else 1,
+        )
         self.db.flush()
 
         organization_id = subscription.account.organization_id if subscription.account else None

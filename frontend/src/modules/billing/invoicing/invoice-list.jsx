@@ -100,8 +100,14 @@ export default function InvoicingPage() {
 
   // Only the latest request may update the list (stale responses are dropped).
   const fetchSeqRef = useRef(0);
+  const fetchAbortRef = useRef(null);
+  useEffect(() => () => { fetchSeqRef.current += 1; fetchAbortRef.current?.abort(); }, []);
   const fetchInvoices = useCallback(async () => {
     const seq = ++fetchSeqRef.current;
+    // Cancel the superseded request on the wire (response is ignored anyway).
+    fetchAbortRef.current?.abort();
+    const abortController = new AbortController();
+    fetchAbortRef.current = abortController;
     try {
       setError(null);
       setRefreshing(true);
@@ -117,7 +123,7 @@ export default function InvoicingPage() {
         max_amount: maxAmount || undefined,
         sort_by: sortField,
         sort_order: sortDir,
-      });
+      }, { signal: abortController.signal });
       if (seq !== fetchSeqRef.current) return;
       const items = data.items || data.data || data || [];
       setInvoices(Array.isArray(items) ? items : []);

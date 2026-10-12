@@ -277,7 +277,7 @@ export default function OrgAdminDashboardPage() {
 
       <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 bg-white shadow-sm border" style={{ borderColor: LINE }}>
-          <img src="/zoiko-icon.png" alt="Zoiko Billing" className="w-full h-full object-cover" />
+          <img src="/zoiko-icon-sm.png" alt="Zoiko Billing" className="w-full h-full object-cover" />
         </div>
         <div>
           <p className="text-lg font-extrabold" style={{ color: INK, letterSpacing: "-0.01em" }}>{orgName}</p>

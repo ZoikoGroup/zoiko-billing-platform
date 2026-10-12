@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services.promise_to_pay_service import PromiseToPayService
@@ -78,7 +79,10 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = PromiseToPayService(db)
-    return svc.get_dashboard_stats(current_user.organization_id)
+    return cached_aggregate(
+        "promise_to_pay.get_dashboard_stats", current_user.organization_id, {},
+        lambda: svc.get_dashboard_stats(current_user.organization_id),
+    )
 
 
 @router.get("/customer/{customer_id}", response_model=list[PromiseToPayResponse])

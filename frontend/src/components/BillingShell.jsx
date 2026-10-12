@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
+import { prefetchHandlers } from "../routePrefetch";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   X,
@@ -353,6 +354,7 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
       to={item.href ?? "/billing"}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(item.href)}
       className={`group flex items-center gap-3 text-sm transition duration-200 ${
         sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
       } ${
@@ -388,6 +390,7 @@ function FlatNavItem({ href, icon: Icon, label, pathname, search, onNavigate, co
       to={href}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(href)}
       title={collapsed ? label : undefined}
       className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
         collapsed ? "justify-center px-2" : "px-3"
@@ -432,6 +435,7 @@ function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, sea
       to={to}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(to)}
       title={collapsed ? label : undefined}
       className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
         collapsed ? "justify-center px-2" : "justify-between px-3"
@@ -495,7 +499,7 @@ export function SidebarContent({ onNavigate, role }) {
             onClick={onNavigate}
             className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
           >
-            <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
+            <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
           </Link>
           {ROLE_LABELS[role] ? (
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#94A3B8]">
@@ -621,7 +625,7 @@ function SuperAdminSidebarContent({ onNavigate, cockpit, collapsed, onToggleColl
               onClick={onNavigate}
               className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
             >
-              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
+              <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
             </Link>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#94A3B8]">
               {ROLE_LABELS.super_admin || "Super Admin"}
@@ -762,6 +766,22 @@ function readStoredCollapsed() {
   }
 }
 
+// Content-area-only fallback: the sidebar/header stay painted while a lazy
+// page chunk loads (the Suspense boundary sits below the shell frame).
+export function ContentSkeleton() {
+  return (
+    <div role="status" aria-busy="true" aria-label="Loading page" className="animate-pulse space-y-5">
+      <div className="h-8 w-64 rounded-lg bg-slate-200/70" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-2xl bg-slate-200/60" />
+        ))}
+      </div>
+      <div className="h-72 rounded-2xl bg-slate-200/50" />
+    </div>
+  );
+}
+
 export default function BillingShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -835,7 +855,9 @@ export default function BillingShell({ children }) {
               on top of a page's bottom-right control when scrolled to the end
               -- e.g. the invoice wizard's Next button. */}
           <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
-            {children}
+            <Suspense fallback={<ContentSkeleton />}>
+              {children}
+            </Suspense>
           </div>
         </main>
 

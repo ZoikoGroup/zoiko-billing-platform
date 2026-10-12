@@ -5,6 +5,7 @@ import { invalidateOrganizationDetailsCache } from "../service/orgAdminService";
 import { invalidateZoikoSubscriptionCache } from "../service/platformSelfServiceApi";
 import { invalidateConfigCache } from "../service/billingService";
 import { invalidateGlobalBillingConfig } from "../service/billingConfigCache";
+import { clearApiCache } from "../service/api";
 
 export const AuthContext = createContext(null);
 
@@ -20,6 +21,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (loggedInUser) => {
+    clearApiCache(); // a new identity must never see another user's cached reads
     setStoredUser(loggedInUser);
     setUser(loggedInUser);
     return loggedInUser;
@@ -35,6 +37,7 @@ export function AuthProvider({ children }) {
     // billingService.js's own getConfig cache.
     invalidateConfigCache();
     invalidateGlobalBillingConfig();
+    clearApiCache();
     setUser(null);
   }, []);
 
