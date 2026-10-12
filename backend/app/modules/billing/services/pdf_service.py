@@ -409,6 +409,68 @@ def _draw_page_background(canvas, doc, page_color="#F4F4F4", card_border="#E5E7E
     canvas.restoreState()
 
 
+def _org_on_trial(db, organization_id) -> bool:
+    """True while the org's own Zoiko subscription is in its free trial (or the
+    post-trial recovery window). PDFs generated then carry a trial banner so a
+    trial document can't be mistaken for one issued by a paying account.
+    Never raises: a lookup failure just means "no banner", never a failed PDF."""
+    if db is None or not organization_id:
+        return False
+    try:
+        from app.modules.commercial.enums import CommercialSubscriptionStatus
+        from app.modules.commercial.models import CommercialAccount, CommercialSubscription
+
+        return (
+            db.query(CommercialSubscription.id)
+            .join(CommercialAccount, CommercialAccount.id == CommercialSubscription.commercial_account_id)
+            .filter(
+                CommercialAccount.organization_id == organization_id,
+                CommercialSubscription.status.in_([
+                    CommercialSubscriptionStatus.TRIALING,
+                    CommercialSubscriptionStatus.TRIAL_RECOVERY,
+                ]),
+            )
+            .first()
+            is not None
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _draw_trial_banner(canvas, doc):
+    """Amber strip across the top of the page plus a faint diagonal TRIAL
+    watermark. Drawn on the canvas after the page background so it repeats on
+    every page and sits above the card without moving any content."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+
+    width, height = A4
+    strip_h = 8 * mm
+    canvas.saveState()
+    canvas.setFillColor(colors.HexColor("#F59E0B"))
+    canvas.rect(0, height - strip_h, width, strip_h, stroke=0, fill=1)
+    canvas.setFillColor(colors.HexColor("#1F2937"))
+    canvas.setFont("Helvetica-Bold", 8.5)
+    canvas.drawCentredString(
+        width / 2, height - strip_h + 2.6 * mm,
+        "FREE TRIAL ACCOUNT  -  This document was generated during a Zoiko Billing free trial",
+    )
+    canvas.translate(width / 2, height / 2)
+    canvas.rotate(45)
+    canvas.setFillColor(colors.HexColor("#F59E0B"))
+    canvas.setFillAlpha(0.10)
+    canvas.setFont("Helvetica-Bold", 88)
+    canvas.drawCentredString(0, -30, "TRIAL")
+    canvas.restoreState()
+
+
+def _draw_page(canvas, doc, trial: bool = False):
+    _draw_page_background(canvas, doc)
+    if trial:
+        _draw_trial_banner(canvas, doc)
+
+
 def _build_invoice_document(
     org_name: str,
     org_lines: List[str],
@@ -433,6 +495,7 @@ def _build_invoice_document(
     notes: str,
     org_logo_url: Optional[str] = None,
     org_footer_lines: Optional[List[str]] = None,
+    trial: bool = False,
 ) -> bytes:
     """Render an invoice PDF matching the on-screen React preview design:
     purple accent, status pill, Code/HSN item table, Indian amount-in-words,
@@ -778,8 +841,8 @@ def _build_invoice_document(
     # the constructor (as this previously did) is silently a no-op.
     doc.build(
         elements,
-        onFirstPage=lambda c, d: _draw_page_background(c, d),
-        onLaterPages=lambda c, d: _draw_page_background(c, d),
+        onFirstPage=lambda c, d: _draw_page(c, d, trial),
+        onLaterPages=lambda c, d: _draw_page(c, d, trial),
     )
     return buffer.getvalue()
 
@@ -804,6 +867,7 @@ def _build_quote_document(
     notes: str,
     org_logo_url: Optional[str] = None,
     org_footer_lines: Optional[List[str]] = None,
+    trial: bool = False,
 ) -> bytes:
     """Render an estimate/quote PDF using the same blue design language as
     the invoice PDF (`_build_invoice_document`): gradient banner, highlight
@@ -1118,8 +1182,8 @@ def _build_quote_document(
 
     doc.build(
         elements,
-        onFirstPage=lambda c, d: _draw_page_background(c, d),
-        onLaterPages=lambda c, d: _draw_page_background(c, d),
+        onFirstPage=lambda c, d: _draw_page(c, d, trial),
+        onLaterPages=lambda c, d: _draw_page(c, d, trial),
     )
     return buffer.getvalue()
 
@@ -1285,6 +1349,7 @@ def generate_invoice_pdf(invoice, customer, items, org_config=None, db=None) -> 
         notes=notes,
         org_logo_url=org_logo_url,
         org_footer_lines=org_footer_lines,
+        trial=_org_on_trial(db, getattr(invoice, "organization_id", None)),
     )
 
 
@@ -1591,4 +1656,5 @@ def generate_quote_pdf(quote, customer, items, org_config=None, db=None) -> byte
         notes=notes,
         org_logo_url=org_logo_url,
         org_footer_lines=org_footer_lines,
+        trial=_org_on_trial(db, getattr(quote, "organization_id", None)),
     )

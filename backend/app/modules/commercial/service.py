@@ -1217,6 +1217,7 @@ class CommercialSubscriptionService:
 
     def provision_default_subscription(
         self, account_id: int, intended_plan_code: str | None = None,
+        *, start_trial: bool = True,
     ) -> CommercialSubscription | None:
         """Provisioning path used by registration.
 
@@ -1279,7 +1280,10 @@ class CommercialSubscriptionService:
             return None
 
         subscription = self.create_subscription(account_id, plan)
-        self.start_trial_if_eligible(subscription, plan)
+        # start_trial=False is the "buy now" signup: the subscription stays
+        # PENDING until its first payment clears (no free period is granted).
+        if start_trial:
+            self.start_trial_if_eligible(subscription, plan)
 
         # Recompute once, after any TRIALING branch above has set its final
         # state — create_subscription() already recomputed against the

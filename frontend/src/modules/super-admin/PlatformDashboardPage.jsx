@@ -22,10 +22,23 @@ import {
   listOrganizations,
 } from "../../service/commercialService";
 import { getTriageSummary, getFinancialOperationsSummary } from "../../service/commandCenterService";
-import { Spinner, DashboardChartErrorBoundary } from "../../components/billing-shared";
+import { DashboardChartErrorBoundary } from "../../components/billing-shared";
 import CommandCenterContextBar from "../../components/CommandCenterContextBar";
+import usePolling from "../../hooks/usePolling";
+import useDeferredLoad from "../../hooks/useDeferredLoad";
+import { createRequestQueue } from "../../utils/requestQueue";
 
 const POLL_INTERVAL_MS = 60000;
+
+// Headline KPI sources run first; below-the-fold sources are deferred and
+// queued behind them. At most 6 requests are ever in flight.
+const MAX_CONCURRENT_REQUESTS = 6;
+const PRIORITY_HEADLINE = 100;
+const PRIORITY_DEFERRED = 10;
+
+function PulseBlock({ className = "", innerRef }) {
+  return <div ref={innerRef} className={`animate-pulse rounded-xl border border-slate-200 bg-slate-100/70 ${className}`} aria-hidden="true" />;
+}
 
 export default function PlatformDashboardPage() {
   const navigate = useNavigate();
@@ -45,60 +58,77 @@ export default function PlatformDashboardPage() {
   const [trialOrgs, setTrialOrgs] = useState([]);
 
   const [sourceErrors, setSourceErrors] = useState({});
-  const [loading, setLoading] = useState(true);
+  // Each source applies its own result as soon as it arrives; `ready[key]`
+  // flips once that source has settled (success or failure).
+  const [ready, setReady] = useState({});
+  const queueRef = useRef(null);
+  if (queueRef.current === null) queueRef.current = createRequestQueue(MAX_CONCURRENT_REQUESTS);
+  const seqRef = useRef({});
+  const mountedRef = useRef(true);
 
-  const loadedOnceRef = useRef(false);
-  const loadAllRef = useRef(() => {});
+  const readinessDeferred = useDeferredLoad({ strategy: "visible" });
+  const activityDeferred = useDeferredLoad({ strategy: "visible" });
+  const orgsDeferred = useDeferredLoad({ strategy: "idle" });
+  const deferredRef = useRef({});
+  deferredRef.current = {
+    readiness: readinessDeferred.triggered,
+    activity: activityDeferred.triggered,
+    trialOrgs: orgsDeferred.triggered,
+  };
+
   const firstTickRef = useRef(true);
+  const loadAllRef = useRef(() => {});
+
+  const startSource = useCallback((key) => {
+    const defs = {
+      triage: [PRIORITY_HEADLINE, () => getTriageSummary(), "Triage unavailable", (v) => setTriageData(v)],
+      finops: [PRIORITY_HEADLINE, () => getFinancialOperationsSummary(), "Financial operations unavailable", (v) => setFinops(v)],
+      mrr: [PRIORITY_HEADLINE, () => getSaasCommercialReporting(), "Commercial reporting unavailable", (v) => setMrr(v?.mrr ?? null)],
+      readiness: [PRIORITY_DEFERRED, () => getProductionAcceptanceReport(), "Readiness unavailable", (v) => setReadiness(v)],
+      activity: [PRIORITY_DEFERRED, () => listPlatformAuditLogs({ limit: 8, date_from: periodDateFrom }), "Activity unavailable", (v) => setActivity(v ? v.logs || [] : null)],
+      trialOrgs: [PRIORITY_DEFERRED, () => listOrganizations({ skip: 0, limit: 200 }), "Organizations unavailable", (v) => setTrialOrgs(v ? v.organizations || [] : [])],
+    };
+    const [priority, call, fallbackMessage, apply] = defs[key];
+    const id = (seqRef.current[key] = (seqRef.current[key] || 0) + 1);
+    return queueRef.current.run(call, { priority }).then(
+      (v) => ({ v, message: null }),
+      (e) => ({ v: null, message: e?.message || fallbackMessage }),
+    ).then(({ v, message }) => {
+      if (!mountedRef.current || id !== seqRef.current[key]) return;
+      apply(v);
+      setSourceErrors((prev) => {
+        if (message) return { ...prev, [key]: message };
+        if (!(key in prev)) return prev;
+        const { [key]: _cleared, ...rest } = prev;
+        return rest;
+      });
+      setReady((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+    });
+  }, [periodDateFrom]);
 
   const loadAll = useCallback(() => {
-    if (!loadedOnceRef.current) setLoading(true);
-    const nextErrors = {};
+    const keys = ["triage", "finops", "mrr"];
+    const deferred = deferredRef.current;
+    if (deferred.readiness) keys.push("readiness");
+    if (deferred.activity) keys.push("activity");
+    if (deferred.trialOrgs) keys.push("trialOrgs");
+    keys.forEach((k) => startSource(k));
+  }, [startSource]);
 
-    const triagePromise = getTriageSummary().catch((e) => {
-      nextErrors.triage = e?.message || "Triage unavailable";
-      return null;
-    });
+  useEffect(() => {
+    mountedRef.current = true;
+    const queue = queueRef.current;
+    return () => {
+      mountedRef.current = false;
+      queue.clear();
+    };
+  }, []);
 
-    const finopsPromise = getFinancialOperationsSummary().catch((e) => {
-      nextErrors.finops = e?.message || "Financial operations unavailable";
-      return null;
-    });
-
-    const mrrPromise = getSaasCommercialReporting().catch((e) => {
-      nextErrors.mrr = e?.message || "Commercial reporting unavailable";
-      return null;
-    });
-
-    const readinessPromise = getProductionAcceptanceReport().catch((e) => {
-      nextErrors.readiness = e?.message || "Readiness unavailable";
-      return null;
-    });
-
-    const activityPromise = listPlatformAuditLogs({ limit: 8, date_from: periodDateFrom }).catch((e) => {
-      nextErrors.activity = e?.message || "Activity unavailable";
-      return null;
-    });
-
-    const orgsPromise = listOrganizations({ skip: 0, limit: 200 }).catch((e) => {
-      nextErrors.trialOrgs = e?.message || "Organizations unavailable";
-      return null;
-    });
-
-    Promise.all([triagePromise, finopsPromise, mrrPromise, readinessPromise, activityPromise, orgsPromise]).then(
-      ([triage, finopsReport, mrrReport, readinessReport, logs, orgsReport]) => {
-        setTriageData(triage);
-        setFinops(finopsReport);
-        setMrr(mrrReport?.mrr ?? null);
-        setReadiness(readinessReport);
-        setActivity(logs ? logs.logs || [] : null);
-        setTrialOrgs(orgsReport ? orgsReport.organizations || [] : []);
-        setSourceErrors(nextErrors);
-        loadedOnceRef.current = true;
-        setLoading(false);
-      }
-    );
-  }, [periodDateFrom]);
+  // First-trigger fetch for deferred widgets (later refreshes include them
+  // through deferredRef).
+  useEffect(() => { if (readinessDeferred.triggered) startSource("readiness"); }, [readinessDeferred.triggered]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activityDeferred.triggered) startSource("activity"); }, [activityDeferred.triggered]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (orgsDeferred.triggered) startSource("trialOrgs"); }, [orgsDeferred.triggered]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadAll();
@@ -108,10 +138,7 @@ export default function PlatformDashboardPage() {
     loadAllRef.current = loadAll;
   }, [loadAll]);
 
-  useEffect(() => {
-    const id = setInterval(requestRefresh, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [requestRefresh]);
+  usePolling(() => requestRefresh({ auto: true }), POLL_INTERVAL_MS);
 
   useEffect(() => {
     if (firstTickRef.current) {
@@ -180,13 +207,8 @@ export default function PlatformDashboardPage() {
     });
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-64 items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
+  const r = ready;
+  const safetyPanel = r.triage ? <SafetyControlsPanel controls={controls} navigate={navigate} /> : <PulseBlock className="h-40 lg:col-span-2" />;
 
   return (
     <div className="w-full max-w-full space-y-5 overflow-x-hidden pb-24">
@@ -208,7 +230,7 @@ export default function PlatformDashboardPage() {
       </div>
 
       {/* Action Center */}
-      {(criticalCount === 0 && overdueCount === 0 && failedPayments === 0) ? (
+      {!(r.finops && r.triage) ? <PulseBlock className="h-24" /> : (criticalCount === 0 && overdueCount === 0 && failedPayments === 0) ? (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs font-semibold text-emerald-800">
           <span><CheckCircle2 className="mr-1 inline-block" size={14} />0 Incidents Open</span>
           <span><CheckCircle2 className="mr-1 inline-block" size={14} />0 Overdue Invoices</span>
@@ -286,7 +308,7 @@ export default function PlatformDashboardPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <MetricCard
+        {!r.mrr ? <PulseBlock className="h-24" /> : <MetricCard
           icon={<TrendingUp className="w-4 h-4 text-brand-600" />}
           iconBg="bg-brand-50"
           title="Commercial Run Rate"
@@ -296,23 +318,23 @@ export default function PlatformDashboardPage() {
               ? "Monthly-normalized published prices"
               : "Priced catalog versions only"
           }
-        />
-        <MetricCard
+        />}
+        {!r.finops ? <PulseBlock className="h-24" /> : <MetricCard
           icon={<FileText className="w-4 h-4 text-blue-600" />}
           iconBg="bg-blue-50"
           title="Invoices Issued"
           value={totalInvoices.toLocaleString()}
           subtitle="Platform-wide via billing read models"
-        />
-        <MetricCard
+        />}
+        {!r.finops ? <PulseBlock className="h-24" /> : <MetricCard
           icon={<Clock className="w-4 h-4 text-amber-600" />}
           iconBg="bg-amber-50"
           title="Overdue Invoices"
           value={overdueCount.toLocaleString()}
           subtitle={overdueCount > 0 ? "Requires collections follow-up" : "All issued invoices current"}
           valueClass={overdueCount > 0 ? "text-red-600" : "text-slate-900"}
-        />
-        <MetricCard
+        />}
+        {!r.finops ? <PulseBlock className="h-24" /> : <MetricCard
           icon={
             integrityState === "VERIFIED" ? (
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -333,11 +355,17 @@ export default function PlatformDashboardPage() {
               ? "text-red-600"
               : "text-amber-600"
           }
-        />
+        />}
       </div>
 
       {/* Trial Period Overview + Safety Controls */}
-      {trialChartData.length > 0 && (
+      {!r.trialOrgs && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <PulseBlock className="h-64 lg:col-span-3" />
+          {safetyPanel}
+        </div>
+      )}
+      {r.trialOrgs && trialChartData.length > 0 && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
           <div className="flex items-center justify-between mb-3">
@@ -362,14 +390,14 @@ export default function PlatformDashboardPage() {
             </DashboardChartErrorBoundary>
           </div>
         </div>
-        <SafetyControlsPanel controls={controls} navigate={navigate} />
+        {safetyPanel}
         </div>
       )}
-      {trialChartData.length === 0 && <SafetyControlsPanel controls={controls} navigate={navigate} />}
+      {r.trialOrgs && trialChartData.length === 0 && safetyPanel}
 
       {/* Pipeline telemetry */}
       <div className="grid grid-cols-1 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {!r.triage ? <PulseBlock className="h-40" /> : <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Processing Pipeline</div>
             <span className="text-[11px] font-medium text-slate-500">
@@ -411,13 +439,13 @@ export default function PlatformDashboardPage() {
               })}
             </div>
           )}
-        </div>
+        </div>}
 
       </div>
 
       {/* Attention queue */}
       <div className="grid grid-cols-1 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {!r.triage ? <PulseBlock className="h-32" /> : <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="font-semibold text-slate-800 text-xs mb-3">Attention Queue</div>
           {incidents.length === 0 ? (
             <div className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 px-4 py-5 text-xs font-semibold text-emerald-800">
@@ -473,12 +501,12 @@ export default function PlatformDashboardPage() {
               View full triage board <ArrowRight size={12} />
             </button>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Production gate & Recent activity */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {!r.readiness ? <PulseBlock innerRef={readinessDeferred.ref} className="h-40" /> : <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Production Gate</div>
             <button
@@ -518,9 +546,9 @@ export default function PlatformDashboardPage() {
               <ShieldAlert size={12} /> Release gate BLOCKED — review failing criteria before proceeding.
             </p>
           )}
-        </div>
+        </div>}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
+        {!r.activity ? <PulseBlock innerRef={activityDeferred.ref} className="h-40 lg:col-span-2" /> : <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-slate-800 text-xs">Recent Activity</div>
             <span className="text-[10px] text-slate-400">{periodDateFrom} → today</span>
@@ -557,13 +585,15 @@ export default function PlatformDashboardPage() {
               View all activity <ArrowRight size={12} />
             </button>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* System status strip */}
       <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="font-semibold text-slate-800">System Status</span>
-        {sourceErrorCount > 0 ? (
+        {!(r.triage && r.finops && r.mrr) ? (
+          <span className="text-[11px] text-slate-400">Checking monitored sources...</span>
+        ) : sourceErrorCount > 0 ? (
           <span className="inline-flex items-center gap-1.5 font-bold text-amber-700" title={`${sourceErrorCount} dashboard source(s) returned errors on the last load.`}>
             <AlertTriangle size={13} /> Partial visibility — {sourceErrorCount} source{sourceErrorCount > 1 ? "s" : ""} unreachable
           </span>

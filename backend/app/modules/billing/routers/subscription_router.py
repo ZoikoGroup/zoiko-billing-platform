@@ -9,6 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.exceptions import BadRequestException
 from app.core.dependencies import (
@@ -54,7 +55,7 @@ def create_plan(
 @router.get("/plans")
 def list_plans(
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
     search_term: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     active_only: Optional[bool] = Query(True, description="Filter to active plans only. The Plan Management view passes False to include inactive plans."),
@@ -171,7 +172,7 @@ def create_subscription(
 @router.get("", response_model=SubscriptionListResponse)
 def list_subscriptions(
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
     search_term: Optional[str] = Query(None),
     customer_id: Optional[int] = Query(None),
     plan_id: Optional[int] = Query(None),
@@ -248,8 +249,11 @@ def get_invoice_schedule_summary(
     current_user=Depends(get_current_user),
 ):
     svc = SubscriptionService(db)
-    return svc.get_invoice_schedule_summary(
+    return cached_aggregate(
+        "subscription.get_invoice_schedule_summary", current_user.organization_id, {},
+        lambda: svc.get_invoice_schedule_summary(
         organization_id=current_user.organization_id,
+    ),
     )
 
 
@@ -267,7 +271,10 @@ def get_subscription_reporting(
     aggregates but listed separately for transparency.
     """
     svc = SubscriptionService(db)
-    return svc.get_subscription_reporting(organization_id=current_user.organization_id)
+    return cached_aggregate(
+        "subscription.get_subscription_reporting", current_user.organization_id, {},
+        lambda: svc.get_subscription_reporting(organization_id=current_user.organization_id),
+    )
 
 
 @router.post("/process-billing", response_model=dict)

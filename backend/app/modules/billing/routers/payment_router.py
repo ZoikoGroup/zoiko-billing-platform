@@ -9,6 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.core.rate_limiter import limit_route
@@ -186,13 +187,16 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = PaymentService(db)
-    return svc.get_dashboard_stats(current_user.organization_id)
+    return cached_aggregate(
+        "payment.get_dashboard_stats", current_user.organization_id, {},
+        lambda: svc.get_dashboard_stats(current_user.organization_id),
+    )
 
 
 @router.get("/unallocated", response_model=UnallocatedPaymentListResponse)
 def list_unallocated_payments(
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):

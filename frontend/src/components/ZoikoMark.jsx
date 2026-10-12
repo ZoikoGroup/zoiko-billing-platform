@@ -10,7 +10,7 @@
  * Colors: #08233f (navy) + #079add blue gradient — identical to original.
  */
 
-const ICON_SRC = "/zoiko-icon.png";
+const ICON_SRC = "/zoiko-icon-sm.png";
 
 export default function ZoikoMark({
   size = 32,

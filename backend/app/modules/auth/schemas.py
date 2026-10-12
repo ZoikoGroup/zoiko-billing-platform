@@ -59,6 +59,13 @@ class RegisterRequest(BaseModel):
         "provision_default_subscription).",
     )
 
+    # How the registrant wants to start. "trial" (default) = the standard 14-day
+    # Essentials trial, no payment up front (intended_plan is ignored and
+    # Essentials is provisioned). "paid" = skip the trial: provision
+    # intended_plan as PENDING and return a pay link; the plan activates when
+    # the first payment clears.
+    start_mode: Literal["trial", "paid"] = "trial"
+
     @field_validator("currency")
     @classmethod
     def _validate_currency(cls, v: Optional[str]) -> Optional[str]:
@@ -146,6 +153,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
+    # Registration only: set for start_mode="paid" so the client can send the
+    # new org straight to checkout (/platform-invoice/<token>/checkout).
+    payment_token: Optional[str] = None
+    start_mode: Optional[str] = None
 
 
 class SuccessResponse(BaseModel):

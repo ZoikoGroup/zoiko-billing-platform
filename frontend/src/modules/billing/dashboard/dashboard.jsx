@@ -24,6 +24,18 @@ import {
 import {
   Button, PageHeader, StatGroup, DataTable,
 } from "../../../components/billing-ui";
+import usePolling from "../../../hooks/usePolling";
+import useDeferredLoad from "../../../hooks/useDeferredLoad";
+import { createRequestQueue } from "../../../utils/requestQueue";
+
+// At most this many dashboard requests are in flight at once; the rest queue.
+const MAX_CONCURRENT_REQUESTS = 6;
+// Queue priorities (higher runs first): headline KPIs, then the other
+// above-the-fold widgets, then deferred widgets, then the slow health probe.
+const PRIORITY_HEADLINE = 100;
+const PRIORITY_CORE = 50;
+const PRIORITY_DEFERRED = 10;
+const PRIORITY_BACKGROUND = 0;
 
 class WidgetErrorBoundary extends React.Component {
   constructor(props) {
@@ -103,6 +115,14 @@ function SkeletonTable({ className }) {
   );
 }
 
+function SkeletonBlock({ className = "" }) {
+  return <div className={`bg-white border border-slate-200 rounded-2xl animate-pulse ${className}`} aria-hidden="true" />;
+}
+
+function SecondarySkeleton() {
+  return <div className="h-14 rounded-xl bg-slate-200/70 animate-pulse" aria-hidden="true" />;
+}
+
 function ChartTooltip({ active, payload, label, format }) {
   if (!active || !payload?.length) return null;
   const fmt = format || ((v) => (typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 0 }) : v));
@@ -147,7 +167,6 @@ const SecondaryStatCard = React.memo(function SecondaryStatCard({ title, value, 
 export default function ZoikoBillingModule() {
   const navigate = useNavigate();
   const { baseCurrency, currencySymbol, formatCurrency: ctxFormatCurrency } = useCurrency();
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -162,6 +181,13 @@ export default function ZoikoBillingModule() {
   const dateRangeRef = useRef(dateRange);
   const dateRangeValueRef = useRef(dateRangeValue);
   const requestIdRef = useRef(0);
+  // Per-widget request bookkeeping: each data source applies its own result as
+  // soon as it arrives (no single page-wide loading flag). `ready[key]` flips
+  // true once that source has settled (success OR failure) at least once.
+  const [ready, setReady] = useState({});
+  const taskSeqRef = useRef({});
+  const queueRef = useRef(null);
+  if (queueRef.current === null) queueRef.current = createRequestQueue(MAX_CONCURRENT_REQUESTS);
 
   const isCustomRangeReady = dateRangeValue !== "custom" || (!!dateRange.date_from && !!dateRange.date_to);
 
@@ -187,6 +213,71 @@ export default function ZoikoBillingModule() {
     paymentTrend: [],
   });
 
+  // Below-the-fold / secondary widgets are only fetched once triggered:
+  // audit + aging when they scroll near the viewport, expiring contracts and
+  // the product count after first paint (idle). Polling refreshes include a
+  // deferred source only if it has already been triggered.
+  const auditDeferred = useDeferredLoad({ strategy: "visible" });
+  const agingDeferred = useDeferredLoad({ strategy: "visible" });
+  const expiringDeferred = useDeferredLoad({ strategy: "idle" });
+  const productsDeferred = useDeferredLoad({ strategy: "idle" });
+  const deferredRef = useRef({});
+  deferredRef.current = {
+    aging: agingDeferred.triggered,
+    expiring: expiringDeferred.triggered,
+    audit: auditDeferred.triggered,
+    products: productsDeferred.triggered,
+  };
+
+  const markReady = useCallback((keys) => {
+    setReady((prev) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      if (list.every((k) => prev[k])) return prev;
+      const next = { ...prev };
+      list.forEach((k) => { next[k] = true; });
+      return next;
+    });
+  }, []);
+
+  // Fetch one data source through the shared concurrency-capped queue and apply
+  // its result independently. A failed request degrades exactly like the old
+  // Promise.allSettled path: the slice is set to its empty value.
+  const startTask = useCallback((key, range) => {
+    const setList = (field) => (v) => {
+      setDashboardData((p) => ({ ...p, [field]: (v ? extractArray(v) : null) || [] }));
+    };
+    const defs = {
+      full: [PRIORITY_HEADLINE, () => dashboardApi.getFull(undefined, range), (v) => {
+        setDashboardData((p) => ({ ...p, full: v, kpis: v?.kpis ?? null, revenue: extractArray(v?.monthly_revenue) || [] }));
+      }],
+      paymentTrend: [PRIORITY_CORE, () => dashboardApi.getPaymentTrend(undefined, range), (v) => {
+        setDashboardData((p) => ({ ...p, paymentTrend: v?.payment_trend || [] }));
+      }],
+      invoices: [PRIORITY_CORE, () => invoiceApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }), setList("invoices")],
+      payments: [PRIORITY_CORE, () => paymentApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }), setList("payments")],
+      customers: [PRIORITY_CORE, () => customerApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }), setList("customers")],
+      activeSubscriptions: [PRIORITY_CORE, () => subscriptionApi.listActive(), setList("activeSubscriptions")],
+      activeContracts: [PRIORITY_CORE, () => contractApi.listActive(), setList("activeContracts")],
+      reporting: [PRIORITY_CORE, () => subscriptionApi.getReporting(), (v) => setSubscriptionReporting(v)],
+      agingBuckets: [PRIORITY_DEFERRED, () => collectionApi.getAgingBuckets(), setList("agingBuckets")],
+      expiringContracts: [PRIORITY_DEFERRED, () => contractApi.listExpiring(30), setList("expiringContracts")],
+      auditLogs: [PRIORITY_DEFERRED, () => auditApi.list({ per_page: 10 }), setList("auditLogs")],
+      products: [PRIORITY_DEFERRED, () => productApi.list({ per_page: 1 }), (v) => {
+        if (v) setProductCount(v.total ?? v.items?.length ?? 0);
+      }],
+    };
+    const [priority, call, apply] = defs[key];
+    const id = (taskSeqRef.current[key] = (taskSeqRef.current[key] || 0) + 1);
+    return queueRef.current.run(call, { priority }).then(
+      (v) => ({ v }),
+      () => ({ v: null }),
+    ).then(({ v }) => {
+      if (!mountedRef.current || id !== taskSeqRef.current[key]) return;
+      apply(v);
+      markReady(key);
+    });
+  }, [markReady]);
+
   const fetchDashboardData = useCallback(async () => {
     const currentRequestId = ++requestIdRef.current;
     try {
@@ -194,12 +285,13 @@ export default function ZoikoBillingModule() {
       if (!loadingRef.current) setRefreshing(true);
 
       const range = dateRangeRef.current;
+      const coreKeys = ["full", "paymentTrend", "invoices", "payments", "customers", "activeSubscriptions", "activeContracts", "reporting"];
       if (dateRangeValueRef.current === "custom" && (!range.date_from || !range.date_to)) {
         // Custom Date Range selected but not fully chosen yet — hold the
         // previous data on screen instead of silently falling back to all-time.
-        setLoading(false);
         setRefreshing(false);
         loadingRef.current = false;
+        markReady(coreKeys);
         return;
       }
 
@@ -214,94 +306,57 @@ export default function ZoikoBillingModule() {
       // when the user actually clicks "Export CSV" (see handleExport) --
       // it was previously paid on every load/poll for a feature most page
       // views never use.
-      const results = await Promise.allSettled([
-        dashboardApi.getFull(undefined, range),
-        dashboardApi.getPaymentTrend(undefined, range),
-        invoiceApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
-        paymentApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
-        customerApi.list({ per_page: 5, date_from: range.date_from, date_to: range.date_to }),
-        subscriptionApi.listActive(),
-        contractApi.listActive(),
-        collectionApi.getAgingBuckets(),
-        contractApi.listExpiring(30),
-        auditApi.list({ per_page: 10 }),
-        productApi.list({ per_page: 1 }),
-        subscriptionApi.getReporting(),
-      ]);
+      const keys = [...coreKeys];
+      const deferred = deferredRef.current;
+      if (deferred.aging) keys.push("agingBuckets");
+      if (deferred.expiring) keys.push("expiringContracts");
+      if (deferred.audit) keys.push("auditLogs");
+      if (deferred.products) keys.push("products");
+      await Promise.all(keys.map((k) => startTask(k, range)));
 
       if (currentRequestId !== requestIdRef.current) return;
-
-      const [fullResult, paymentTrendResult, invoicesResult, paymentsResult, customersResult,
-        subscriptionsResult, contractsResult,
-        agingResult, expiringResult, auditResult, productResult, reportingResult] = results;
-
-      const safeValue = (result, transform = (v) => v) =>
-        result.status === "fulfilled" ? transform(result.value) : null;
-
-      const prodData = safeValue(productResult);
-      if (prodData) {
-        const count = prodData.total ?? prodData.items?.length ?? 0;
-        setProductCount(count);
-      }
-
-      setSubscriptionReporting(safeValue(reportingResult));
-
-      const fullData = safeValue(fullResult);
-      const kpisData = fullData?.kpis ?? null;
-      const revData = extractArray(fullData?.monthly_revenue) || [];
-      const ptData = safeValue(paymentTrendResult, v => v?.payment_trend) || [];
-      if (mountedRef.current) {
-        setDashboardData({
-          full: safeValue(fullResult),
-          kpis: kpisData,
-          revenue: revData,
-          paymentTrend: ptData,
-          invoices: safeValue(invoicesResult, extractArray) || [],
-          payments: safeValue(paymentsResult, extractArray) || [],
-          customers: safeValue(customersResult, extractArray) || [],
-          activeSubscriptions: safeValue(subscriptionsResult, extractArray) || [],
-          activeContracts: safeValue(contractsResult, extractArray) || [],
-          agingBuckets: safeValue(agingResult, extractArray) || [],
-          expiringContracts: safeValue(expiringResult, extractArray) || [],
-          auditLogs: safeValue(auditResult, extractArray) || [],
-        });
-        setLastUpdated(new Date());
-      }
+      if (mountedRef.current) setLastUpdated(new Date());
     } catch (err) {
       if (mountedRef.current) setError("Failed to load dashboard data. Please try again.");
     } finally {
-      if (mountedRef.current) {
-        setLoading(false);
+      if (mountedRef.current && currentRequestId === requestIdRef.current) {
         setRefreshing(false);
         loadingRef.current = false;
       }
     }
-  }, []);
+  }, [startTask, markReady]);
 
   useEffect(() => {
     mountedRef.current = true;
     loadingRef.current = true;
+    const queue = queueRef.current;
     fetchDashboardData();
-    const interval = setInterval(() => { fetchDashboardData(); }, 60000);
     return () => {
       mountedRef.current = false;
-      clearInterval(interval);
+      queue.clear();
     };
   }, [fetchDashboardData]);
+
+  usePolling(fetchDashboardData, 60000);
+
+  // First-trigger fetch for each deferred widget (later polls include it via
+  // deferredRef). These sources do not depend on the date range.
+  useEffect(() => { if (agingDeferred.triggered) startTask("agingBuckets", dateRangeRef.current); }, [agingDeferred.triggered, startTask]);
+  useEffect(() => { if (expiringDeferred.triggered) startTask("expiringContracts", dateRangeRef.current); }, [expiringDeferred.triggered, startTask]);
+  useEffect(() => { if (auditDeferred.triggered) startTask("auditLogs", dateRangeRef.current); }, [auditDeferred.triggered, startTask]);
+  useEffect(() => { if (productsDeferred.triggered) startTask("products", dateRangeRef.current); }, [productsDeferred.triggered, startTask]);
 
   // System Health badge (readiness score / "N of M components healthy") is a
   // secondary diagnostic widget, not a revenue KPI -- it must never gate the
   // dashboard's critical rendering path. settingsApi.getHealth() runs a live
   // SMTP connectivity probe server-side (admin_service.py::run_billing_
-  // health_check) that alone can take 10+ seconds; it used to be inside the
-  // same Promise.allSettled batch that also gates `loading`/`setRefreshing`,
-  // so every dashboard load and every 60s poll waited on it. Fetched here
-  // instead, independently, on mount only (not on every poll) -- a failed or
-  // slow health check silently leaves the badge absent, exactly like the
-  // other `.catch(() => null)` best-effort widgets on this page.
+  // health_check) that alone can take 10+ seconds. Fetched here
+  // independently, on mount only (not on every poll), at the lowest queue
+  // priority -- a failed or slow health check silently leaves the badge
+  // absent, exactly like the other best-effort widgets on this page.
   useEffect(() => {
     let cancelled = false;
-    settingsApi.getHealth()
+    queueRef.current.run(() => settingsApi.getHealth(), { priority: PRIORITY_BACKGROUND })
       .then((data) => { if (!cancelled && mountedRef.current) setHealthSummary(data); })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -706,7 +761,14 @@ export default function ZoikoBillingModule() {
   ], [baseCurrency]);
 
 
-  if (loading) {
+  const hasData = d.full || d.kpis || d.invoices.length > 0 || d.payments.length > 0;
+  // Headline sources (full + the two recent lists) decide between the page and
+  // the "no billing data yet" empty state; until they settle -- and unless the
+  // headline KPIs already arrived -- show the full-page skeleton.
+  const coreSettled = !!(ready.full && ready.invoices && ready.payments);
+  const initialPending = !hasData && !coreSettled;
+
+  if (initialPending) {
     return (
       <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen">
         <div className="mb-6">
@@ -738,7 +800,8 @@ export default function ZoikoBillingModule() {
     );
   }
 
-  const hasData = d.full || d.kpis || d.invoices.length > 0 || d.payments.length > 0;
+  const r = ready;
+  const insightsReady = !!(r.full && r.invoices && r.payments && r.activeSubscriptions);
 
   return (
     <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen">
@@ -812,15 +875,15 @@ export default function ZoikoBillingModule() {
 
       {!hasData ? renderEmptyState() : (
         <div className="space-y-8">
-          <BusinessInsights items={insightItems} />
+          {insightsReady ? <BusinessInsights items={insightItems} /> : <SkeletonBlock className="h-28" />}
 
-          <ActionCenter items={actionItems} />
+          {insightsReady ? <ActionCenter items={actionItems} /> : <SkeletonBlock className="h-28" />}
 
           <StatGroup title="Revenue & Collections" icon={DollarSign}>
-            <StatCard title="Total Revenue" value={kpis.totalRevenue} currency={baseCurrency} icon={DollarSign} trend={kpis.monthlyGrowth >= 0 ? "up" : "down"} trendValue={formatGrowth(kpis.monthlyGrowth)} href="/billing/reports" sparkline={revenueChartData.map((r) => r.revenue)} />
-            <StatCard title="Outstanding" value={kpis.outstandingAmount} currency={baseCurrency} icon={Wallet} href="/billing/invoices" />
-            <StatCard title="Paid Amount" value={kpis.paidAmount} currency={baseCurrency} icon={CheckCircle} href="/billing/payments" />
-            <StatCard title="Collection Rate" value={formatPercent(kpis.collectionRate)} icon={Activity} subtitle="Share of billed revenue collected" href="/billing/payments" />
+            {r.full ? <StatCard title="Total Revenue" value={kpis.totalRevenue} currency={baseCurrency} icon={DollarSign} trend={kpis.monthlyGrowth >= 0 ? "up" : "down"} trendValue={formatGrowth(kpis.monthlyGrowth)} href="/billing/reports" sparkline={revenueChartData.map((r) => r.revenue)} /> : <SkeletonCard />}
+            {r.full ? <StatCard title="Outstanding" value={kpis.outstandingAmount} currency={baseCurrency} icon={Wallet} href="/billing/invoices" /> : <SkeletonCard />}
+            {r.full ? <StatCard title="Paid Amount" value={kpis.paidAmount} currency={baseCurrency} icon={CheckCircle} href="/billing/payments" /> : <SkeletonCard />}
+            {r.full ? <StatCard title="Collection Rate" value={formatPercent(kpis.collectionRate)} icon={Activity} subtitle="Share of billed revenue collected" href="/billing/payments" /> : <SkeletonCard />}
           </StatGroup>
 
           <section aria-label="Secondary metrics" className="space-y-3">
@@ -830,26 +893,26 @@ export default function ZoikoBillingModule() {
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-4 xl:grid-cols-8">
-              <SecondaryStatCard
+              {!(r.reporting && r.full) ? <SecondarySkeleton /> : <SecondaryStatCard
                 title="MRR" value={formatCompactMoney(subscriptionReporting?.mrr, reportingCurrency)}
                 fullValue={subscriptionReporting?.mrr != null ? formatDisplayCurrency(subscriptionReporting.mrr, reportingCurrency) : undefined}
                 icon={RefreshCw} href="/billing/subscriptions/reports"
                 trend={subscriptionReporting?.mrr_trend != null ? (subscriptionReporting.mrr_trend >= 0 ? "up" : "down") : kpis.monthlyGrowth >= 0 ? "up" : "down"}
                 trendValue={subscriptionReporting?.mrr_trend != null ? formatGrowth(subscriptionReporting.mrr_trend) : formatGrowth(kpis.monthlyGrowth)}
-              />
-              <SecondaryStatCard
+              />}
+              {!(r.reporting && r.full) ? <SecondarySkeleton /> : <SecondaryStatCard
                 title="ARR" value={formatCompactMoney(subscriptionReporting?.arr, reportingCurrency)}
                 fullValue={subscriptionReporting?.arr != null ? formatDisplayCurrency(subscriptionReporting.arr, reportingCurrency) : undefined}
                 icon={TrendingUp} href="/billing/subscriptions/reports"
                 trend={subscriptionReporting?.arr_trend != null ? (subscriptionReporting.arr_trend >= 0 ? "up" : "down") : kpis.monthlyGrowth >= 0 ? "up" : "down"}
                 trendValue={subscriptionReporting?.arr_trend != null ? formatGrowth(subscriptionReporting.arr_trend) : formatGrowth(kpis.monthlyGrowth * 12)}
-              />
-              <SecondaryStatCard title="Active Customers" value={formatNumber(kpis.activeCustomers)} icon={Users} href="/billing/customers" />
-              <SecondaryStatCard title="Active Contracts" value={formatNumber(kpis.activeContracts)} icon={FileSignature} href="/billing/contracts" />
-              <SecondaryStatCard title="Subscriptions" value={formatNumber(kpis.activeSubscriptions)} icon={UserCheck} href="/billing/subscriptions" />
-              <SecondaryStatCard title="Pending Payments" value={formatNumber(kpis.pendingPayments)} icon={Clock} href="/billing/payments" />
-              <SecondaryStatCard title="Avg Invoice" value={kpis.avgInvoiceValue} currency={baseCurrency} fullValue={formatDisplayCurrency(kpis.avgInvoiceValue, baseCurrency)} icon={FileText} href="/billing/invoices" />
-              <SecondaryStatCard title="Monthly Growth" value={formatGrowth(kpis.monthlyGrowth)} icon={TrendingUp} href="/billing/reports" />
+              />}
+              {r.full && r.customers ? <SecondaryStatCard title="Active Customers" value={formatNumber(kpis.activeCustomers)} icon={Users} href="/billing/customers" /> : <SecondarySkeleton />}
+              {r.activeContracts ? <SecondaryStatCard title="Active Contracts" value={formatNumber(kpis.activeContracts)} icon={FileSignature} href="/billing/contracts" /> : <SecondarySkeleton />}
+              {r.full && r.activeSubscriptions ? <SecondaryStatCard title="Subscriptions" value={formatNumber(kpis.activeSubscriptions)} icon={UserCheck} href="/billing/subscriptions" /> : <SecondarySkeleton />}
+              {r.full ? <SecondaryStatCard title="Pending Payments" value={formatNumber(kpis.pendingPayments)} icon={Clock} href="/billing/payments" /> : <SecondarySkeleton />}
+              {r.full && r.invoices ? <SecondaryStatCard title="Avg Invoice" value={kpis.avgInvoiceValue} currency={baseCurrency} fullValue={formatDisplayCurrency(kpis.avgInvoiceValue, baseCurrency)} icon={FileText} href="/billing/invoices" /> : <SecondarySkeleton />}
+              {r.full ? <SecondaryStatCard title="Monthly Growth" value={formatGrowth(kpis.monthlyGrowth)} icon={TrendingUp} href="/billing/reports" /> : <SecondarySkeleton />}
             </div>
           </section>
 
@@ -903,7 +966,8 @@ export default function ZoikoBillingModule() {
           )}
 
           <div className={DASHBOARD_CHART_GRID}>
-            <WidgetErrorBoundary title="Revenue Trend">
+            {r.full ? (
+<WidgetErrorBoundary title="Revenue Trend">
               <ChartCard title="Revenue Trend">
                 <ChartErrorBoundary aria-live="polite">
                   {revenueChartData.length > 0 ? (
@@ -928,8 +992,10 @@ export default function ZoikoBillingModule() {
                 </ChartErrorBoundary>
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonChart />}
 
-            <WidgetErrorBoundary title="Payment Trend">
+            {r.paymentTrend && r.payments ? (
+<WidgetErrorBoundary title="Payment Trend">
               <ChartCard title="Payment Trend">
                 <ChartErrorBoundary aria-live="polite">
                   {d.paymentTrend.length > 0 ? (
@@ -958,10 +1024,12 @@ export default function ZoikoBillingModule() {
                 </ChartErrorBoundary>
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonChart />}
           </div>
 
           <div className={DASHBOARD_CHART_GRID_3}>
-            <WidgetErrorBoundary title="Invoice Status">
+            {r.full ? (
+<WidgetErrorBoundary title="Invoice Status">
               <ChartCard title="Invoice Status">
                 <ChartErrorBoundary aria-live="polite">
                   {invoiceStatusData.length > 0 ? (
@@ -997,8 +1065,10 @@ export default function ZoikoBillingModule() {
                 </ChartErrorBoundary>
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonChart />}
 
-            <WidgetErrorBoundary title="Subscription Distribution">
+            {r.activeSubscriptions ? (
+<WidgetErrorBoundary title="Subscription Distribution">
               <ChartCard title="Subscription Distribution">
                 <ChartErrorBoundary aria-live="polite">
                   {subscriptionChartData.length > 0 ? (
@@ -1021,8 +1091,10 @@ export default function ZoikoBillingModule() {
                 </ChartErrorBoundary>
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonChart />}
 
-            <WidgetErrorBoundary title="Outstanding Aging">
+            {(r.agingBuckets || d.full?.aging_summary) ? (
+<WidgetErrorBoundary title="Outstanding Aging">
               <ChartCard title="Outstanding Aging">
                 <ChartErrorBoundary aria-live="polite">
                   {agingData.length > 0 ? (
@@ -1045,41 +1117,52 @@ export default function ZoikoBillingModule() {
                 </ChartErrorBoundary>
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <div ref={agingDeferred.ref}><SkeletonChart /></div>}
           </div>
 
           <div className={DASHBOARD_CHART_GRID}>
-            <WidgetErrorBoundary title="Recent Invoices">
+            {r.invoices && r.customers ? (
+<WidgetErrorBoundary title="Recent Invoices">
               <ChartCard title="Recent Invoices" action={<button onClick={() => navigate("/billing/invoices")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={invoiceColumns} data={d.invoices.slice(0, 5)} emptyTitle="No invoices yet" emptyMessage={null} emptyIcon={FileText} />
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonTable />}
 
-            <WidgetErrorBoundary title="Recent Payments">
+            {r.payments && r.customers ? (
+<WidgetErrorBoundary title="Recent Payments">
               <ChartCard title="Recent Payments" action={<button onClick={() => navigate("/billing/payments")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={paymentColumns} data={d.payments.slice(0, 5)} emptyTitle="No payments yet" emptyMessage={null} emptyIcon={Receipt} />
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonTable />}
           </div>
 
           <div className={DASHBOARD_CHART_GRID}>
-            <WidgetErrorBoundary title="Recent Customers">
+            {r.customers ? (
+<WidgetErrorBoundary title="Recent Customers">
               <ChartCard title="Recent Customers" action={<button onClick={() => navigate("/billing/customers")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={customerColumns} data={d.customers.slice(0, 5)} emptyTitle="No customers yet" emptyMessage={null} emptyIcon={Users} />
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonTable />}
 
-            <WidgetErrorBoundary title="Upcoming Renewals">
+            {r.expiringContracts && r.customers ? (
+<WidgetErrorBoundary title="Upcoming Renewals">
               <ChartCard title="Upcoming Renewals" action={<button onClick={() => navigate("/billing/contracts")} className="text-sm font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-700)] flex items-center gap-1">View All <ChevronRight size={14} /></button>}>
                 <DataTable columns={renewalColumns} data={d.expiringContracts.slice(0, 5)} emptyTitle="No upcoming renewals" emptyMessage={null} emptyIcon={Clock} />
               </ChartCard>
             </WidgetErrorBoundary>
+            ) : <SkeletonTable />}
           </div>
 
-          <WidgetErrorBoundary title="Recent Activities">
+          {r.auditLogs ? (
+<WidgetErrorBoundary title="Recent Activities">
             <ChartCard title="Recent Activities">
               <DataTable columns={activityColumns} data={d.auditLogs.slice(0, 10)} emptyTitle="No recent activity" emptyMessage={null} emptyIcon={FileText} />
             </ChartCard>
           </WidgetErrorBoundary>
+            ) : <div ref={auditDeferred.ref}><SkeletonTable /></div>}
         </div>
       )}
     </div>

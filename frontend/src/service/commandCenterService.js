@@ -94,8 +94,27 @@ export const proposeCircuitBreakerChange = (scope, { enabled, reason, incidentRe
 
 // §11 — Triage lens: one pane composing incidents, pipeline stages, safety
 // controls and critical events from their real upstream sources.
-export const getTriageSummary = () =>
-  api.get("/api/super-admin/triage/summary");
+// Concurrent callers (shell context, Hub, Platform dashboard) share one request;
+// a result is also reused for 2 s so a poll cycle never fetches it twice.
+let triageInflight = null;
+let triageCache = { at: 0, value: null };
+export const getTriageSummary = () => {
+  if (triageInflight) return triageInflight;
+  if (triageCache.value && Date.now() - triageCache.at < 2000) {
+    return Promise.resolve(triageCache.value);
+  }
+  const p = api
+    .get("/api/super-admin/triage/summary")
+    .then((res) => {
+      triageCache = { at: Date.now(), value: res };
+      return res;
+    })
+    .finally(() => {
+      if (triageInflight === p) triageInflight = null;
+    });
+  triageInflight = p;
+  return p;
+};
 
 export const getFinancialConsistency = () =>
   api.get("/api/super-admin/financial-consistency");

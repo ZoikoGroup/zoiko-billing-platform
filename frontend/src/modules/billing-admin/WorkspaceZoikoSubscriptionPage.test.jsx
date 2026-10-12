@@ -15,6 +15,8 @@ vi.mock("../../service/platformSelfServiceApi", () => {
   const platformSelfServiceApi = {
     getZoikoSubscription: vi.fn(),
     getWorkspaceUsage: vi.fn(),
+    getPlanLimits: vi.fn(),
+    startTrial: vi.fn(),
     convertTrialToPaid: vi.fn(),
   };
   return {
@@ -152,6 +154,74 @@ describe("WorkspaceZoikoSubscriptionPage", () => {
     });
   });
 
+  it("shows the plan's limits clearly, preferring live resolved limits", async () => {
+    platformSelfServiceApi.getZoikoSubscription.mockResolvedValue({
+      account: { id: 4, status: "active" },
+      subscription: {
+        id: 40,
+        status: "active",
+        plan_code: "professional",
+        plan_name: "Professional",
+        currency: "USD",
+        price_amount: "149.00",
+        billing_interval: "monthly",
+        max_users: 25,
+      },
+      invoices: [],
+      payments: [],
+      quotes: [],
+    });
+    platformSelfServiceApi.getWorkspaceUsage.mockResolvedValue({
+      counters: [{ id: 9, entitlement_key: "billing.invoice.monthly_limit", count: 400, limit: 1000, enforcement_type: "hard" }],
+    });
+    platformSelfServiceApi.getPlanLimits.mockResolvedValue({
+      entitlements: [
+        { key: "billing.invoice.monthly_limit", value: 1000, value_type: "integer", enforcement_type: "hard" },
+        { key: "api.requests_per_day", value: 50000, value_type: "integer", enforcement_type: "throttle" },
+        { key: "security.sso", value: true, value_type: "boolean", enforcement_type: "hard" },
+        { key: "billing.pricing_model_set", value: ["flat", "tiered", "volume"], value_type: "set", enforcement_type: "hard" },
+      ],
+    });
+
+    render(
+      <MemoryRouter>
+        <WorkspaceZoikoSubscriptionPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Plan Limits")).toBeInTheDocument();
+    expect(screen.getByText("Live limits for your organization")).toBeInTheDocument();
+    // used / limit for a metered key, plain limit for an unmetered one
+    expect(screen.getByText("400")).toBeInTheDocument();
+    expect(screen.getByText("/ 1,000")).toBeInTheDocument();
+    expect(screen.getAllByText("50,000").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Single sign-on (SSO)")).toBeInTheDocument();
+    expect(screen.getByText("Pricing models you can use")).toBeInTheDocument();
+    expect(screen.getByText("Compare Plans")).toBeInTheDocument();
+  });
+
+  it("falls back to the standard plan limits when live limits are unavailable", async () => {
+    platformSelfServiceApi.getZoikoSubscription.mockResolvedValue({
+      account: { id: 5, status: "active" },
+      subscription: { id: 50, status: "active", plan_code: "essentials", plan_name: "Essentials", currency: "USD", price_amount: "49.00", billing_interval: "monthly" },
+      invoices: [],
+      payments: [],
+      quotes: [],
+    });
+    platformSelfServiceApi.getWorkspaceUsage.mockResolvedValue({ counters: [] });
+    platformSelfServiceApi.getPlanLimits.mockRejectedValue(new Error("boom"));
+
+    render(
+      <MemoryRouter>
+        <WorkspaceZoikoSubscriptionPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Standard limits for your plan")).toBeInTheDocument();
+    expect(screen.getAllByText("Invoices per month").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("100").length).toBeGreaterThanOrEqual(1);
+  });
+
   it("renders payable invoice with direct Pay Now button", async () => {
     platformSelfServiceApi.getZoikoSubscription.mockResolvedValue({
       account: { id: 3, status: "active" },
@@ -195,5 +265,23 @@ describe("WorkspaceZoikoSubscriptionPage", () => {
     fireEvent.click(payButton);
 
     expect(mockNavigate).toHaveBeenCalledWith("/platform-invoice/tok_pinv_300/checkout");
+  });
+
+  it("lets an org with no subscription start its free trial itself", async () => {
+    platformSelfServiceApi.getZoikoSubscription
+      .mockResolvedValueOnce({ account: { id: 6, status: "active", intended_plan_code: "essentials" }, subscription: null, invoices: [], payments: [], quotes: [] })
+      .mockResolvedValueOnce({
+        account: { id: 6, status: "active" },
+        subscription: { id: 60, status: "trialing", plan_code: "essentials", plan_name: "Essentials", currency: "USD", price_amount: "49.00", billing_interval: "monthly", trial_ends_at: "2026-10-26T00:00:00Z" },
+        invoices: [], payments: [], quotes: [],
+      });
+    platformSelfServiceApi.getWorkspaceUsage.mockResolvedValue({ counters: [] });
+    platformSelfServiceApi.startTrial.mockResolvedValue({ status: "trialing" });
+
+    render(<MemoryRouter><WorkspaceZoikoSubscriptionPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /Start free 14-day trial/ }));
+
+    await waitFor(() => expect(platformSelfServiceApi.startTrial).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Free Trial")).toBeInTheDocument();
   });
 });

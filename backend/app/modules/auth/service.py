@@ -482,7 +482,11 @@ def register_enterprise(
     # Captured before provisioning so provision_default_subscription() can
     # resolve it to the matching CommercialPlan (§B3). Recorded regardless of
     # whether it resolves, for Sales/onboarding visibility.
-    account.intended_plan_code = data.intended_plan
+    # The free trial is always the Essentials trial; a "buy now" signup gets the
+    # plan it picked, with no trial.
+    pay_now = data.start_mode == "paid"
+    plan_code = data.intended_plan if pay_now else "essentials"
+    account.intended_plan_code = plan_code
     db.add(account)
 
     # CommercialSubscription (PHASE 7): provisioned against the registrant's
@@ -493,7 +497,7 @@ def register_enterprise(
     # resulting subscription starts PENDING — checkout/payment (not
     # registration) is what activates it. Same transaction, flush-only.
     subscription = CommercialSubscriptionService(db).provision_default_subscription(
-        account.id, intended_plan_code=data.intended_plan,
+        account.id, intended_plan_code=plan_code, start_trial=not pay_now,
     )
 
     # First quote (§B4/§F1): any open subscription needs something the org can
@@ -512,6 +516,7 @@ def register_enterprise(
     # SUSPENDED are all still-billable states that must show the first-period
     # price.
     initial_quote_id: Optional[int] = None
+    payment_token: Optional[str] = None
     if subscription is not None and subscription.status in (
         CommercialSubscriptionStatus.PENDING,
         CommercialSubscriptionStatus.TRIALING,
@@ -544,6 +549,24 @@ def register_enterprise(
             )
             initial_quote_id = quote.id
 
+            # "Buy now": the registrant is paying for the first period up
+            # front, so the quote is converted to a finalized invoice right
+            # here (their act of registering with start_mode="paid" is the
+            # acceptance) and its public pay link goes back to the client.
+            if pay_now and subscription.status == CommercialSubscriptionStatus.PENDING:
+                import secrets
+
+                from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
+
+                invoice = quote_svc.convert_to_invoice(quote_id=quote.id, actor_id=admin.id, allow_draft=True)
+                invoice = PlatformInvoiceService(db).finalize(invoice_id=invoice.id, actor_id=admin.id)
+                if invoice.public_token is None:
+                    invoice.public_token = secrets.token_urlsafe(32)
+                    db.flush()
+                payment_token = invoice.public_token
+                # The quote is superseded by the invoice; no separate quote email.
+                initial_quote_id = None
+
     # BillingConfiguration is initialized inside the same transaction (PHASE 4):
     # organization + user + config commit together, so a failure rolls back the
     # whole registration instead of leaving a partially initialized tenant.
@@ -569,6 +592,32 @@ def register_enterprise(
     db.refresh(org)
 
     logger.info("New organization %s registered by %s", org.organization_code, data.email)
+
+    if subscription is None:
+        # No plan could be provisioned (e.g. the chosen plan is archived). The
+        # org still registers, but would otherwise sit with no subscription and
+        # nobody would know — raise it for an admin (the org can also start its
+        # trial itself from Zoiko Subscription).
+        logger.error("Registration for %s provisioned no subscription (plan %r).", org.organization_code, plan_code)
+        try:
+            from app.modules.super_admin.attention_service import AttentionService
+            from app.modules.super_admin.models import AttentionSeverity
+
+            AttentionService(db).report_or_update(
+                source="registration",
+                source_key=f"registration:no_subscription:{org.id}",
+                title="New organization registered without a subscription",
+                description=(
+                    f"{org.organization_name} registered for plan '{plan_code}' but no subscription "
+                    "could be provisioned. Check that the plan is ACTIVE with a published version."
+                ),
+                base_severity=AttentionSeverity.P1,
+                organization_id=org.id,
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001 - alerting must never fail a registration
+            db.rollback()
+            logger.warning("Could not raise attention item for org %s", org.id, exc_info=True)
 
     # ── ZB-ORG-001 + ZB-ONB-001 email dispatch ────────────────────────────
     # Run OUTSIDE the request/response cycle: three real outbound SMTP sends
@@ -609,6 +658,8 @@ def register_enterprise(
         "refresh_token": create_refresh_token(data=token_payload),
         "token_type": "bearer",
         "user": admin,
+        "payment_token": payment_token,
+        "start_mode": "paid" if pay_now else "trial",
     }
 
 

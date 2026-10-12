@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services import CreditNoteService
@@ -58,7 +59,7 @@ def create_credit_note(
 @router.get("", response_model=CreditNoteListResponse)
 def list_credit_notes(
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
     search_term: Optional[str] = Query(None),
     customer_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
@@ -96,7 +97,10 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = CreditNoteService(db)
-    return svc.get_dashboard_stats(organization_id=current_user.organization_id)
+    return cached_aggregate(
+        "credit_note.get_dashboard_stats", current_user.organization_id, {},
+        lambda: svc.get_dashboard_stats(organization_id=current_user.organization_id),
+    )
 
 
 @router.get("/status-distribution", response_model=list)
@@ -105,7 +109,10 @@ def get_status_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = CreditNoteService(db)
-    return svc.get_status_distribution(organization_id=current_user.organization_id)
+    return cached_aggregate(
+        "credit_note.get_status_distribution", current_user.organization_id, {},
+        lambda: svc.get_status_distribution(organization_id=current_user.organization_id),
+    )
 
 
 @router.get("/type-distribution", response_model=list)
@@ -114,7 +121,10 @@ def get_type_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = CreditNoteService(db)
-    return svc.get_type_distribution(organization_id=current_user.organization_id)
+    return cached_aggregate(
+        "credit_note.get_type_distribution", current_user.organization_id, {},
+        lambda: svc.get_type_distribution(organization_id=current_user.organization_id),
+    )
 
 
 @router.get("/monthly-trend", response_model=list)
@@ -124,7 +134,10 @@ def get_monthly_trend(
     current_user=Depends(get_current_user),
 ):
     svc = CreditNoteService(db)
-    return svc.get_monthly_trend(organization_id=current_user.organization_id, months=months)
+    return cached_aggregate(
+        "credit_note.get_monthly_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_monthly_trend(organization_id=current_user.organization_id, months=months),
+    )
 
 
 @router.get("/customer-balance/{customer_id}", response_model=CreditNoteCustomerBalanceResponse)

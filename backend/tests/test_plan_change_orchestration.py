@@ -479,9 +479,23 @@ def test_router_preview_upgrade_skips_checklist(db_session):
     assert result["immediate_eligible"] is True
 
 
-def test_router_commit_upgrade_applies_immediately(db_session):
+def _stub_checkout(monkeypatch):
+    """Never reach real Stripe from a test — the dev .env carries test keys."""
+    from app.modules.commercial.platform_stripe_service import PlatformStripeService
+
+    monkeypatch.setattr(
+        PlatformStripeService,
+        "create_checkout_session_for_invoice",
+        lambda self, invoice: {"checkout_url": f"https://stripe.test/pay/{invoice.id}", "session_id": f"cs_{invoice.id}"},
+    )
+
+
+def test_router_commit_upgrade_requires_payment_before_swapping(db_session, monkeypatch):
+    from app.modules.commercial.enums import PlatformInvoiceType
+    from app.modules.commercial.models import PlatformInvoice
     from app.modules.commercial.org_self_service_router import PlanChangeCommitRequest, commit_plan_change
 
+    _stub_checkout(monkeypatch)
     from_plan, _ = _plan_with_published_version(db_session, "RCUFROM", price_amount=50)
     to_plan, _ = _plan_with_published_version(db_session, "RCUTO", price_amount=100)
     org, account, sub = _org_active_subscription(db_session, "RCUORG", from_plan)
@@ -490,13 +504,115 @@ def test_router_commit_upgrade_applies_immediately(db_session):
     result = commit_plan_change(
         PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=_fake_billing_admin(org.id),
     )
-    assert result["status"] == "applied"
-    assert result["subscription_status"] == "active"
+    assert result["status"] == "payment_required"
+    assert result["mode"] == "checkout"
+    assert result["checkout_url"].startswith("https://stripe.test/pay/")
+
+    # Plan has NOT swapped yet — entitlements must not race ahead of payment.
     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
-    assert fresh_sub.commercial_plan_id == to_plan.id
-    changes = db_session.query(SubscriptionChange).filter(SubscriptionChange.commercial_subscription_id == sub.id).all()
-    assert len(changes) == 1
-    assert changes[0].status == SubscriptionChangeStatus.APPLIED
+    assert fresh_sub.commercial_plan_id == from_plan.id
+
+    invoice = db_session.query(PlatformInvoice).filter(PlatformInvoice.commercial_subscription_id == sub.id).one()
+    assert invoice.invoice_type == PlatformInvoiceType.PLAN_CHANGE
+    assert invoice.balance_due > 0
+    change = db_session.query(SubscriptionChange).filter(SubscriptionChange.commercial_subscription_id == sub.id).one()
+    assert change.status == SubscriptionChangeStatus.PENDING
+    assert change.correlation_id == f"inv:{invoice.id}"
+
+
+def test_paid_upgrade_invoice_applies_plan_once(db_session, monkeypatch):
+    from decimal import Decimal
+
+    from app.modules.commercial.models import PlatformInvoice
+    from app.modules.commercial.org_self_service_router import PlanChangeCommitRequest, commit_plan_change
+    from app.modules.commercial.plan_change_billing import complete_plan_change_for_invoice
+
+    _stub_checkout(monkeypatch)
+    from_plan, _ = _plan_with_published_version(db_session, "RPUFROM", price_amount=50)
+    to_plan, _ = _plan_with_published_version(db_session, "RPUTO", price_amount=100)
+    org, account, sub = _org_active_subscription(db_session, "RPUORG", from_plan)
+    db_session.commit()
+    commit_plan_change(
+        PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=_fake_billing_admin(org.id),
+    )
+    invoice = db_session.query(PlatformInvoice).filter(PlatformInvoice.commercial_subscription_id == sub.id).one()
+
+    # Still owing: nothing happens.
+    assert complete_plan_change_for_invoice(db_session, invoice) is None
+    assert db_session.query(CommercialSubscription).get(sub.id).commercial_plan_id == from_plan.id
+
+    invoice.paid_amount = invoice.total_amount
+    invoice.balance_due = Decimal("0")
+    db_session.flush()
+    applied = complete_plan_change_for_invoice(db_session, invoice)
+    db_session.commit()
+    assert applied is not None
+    assert db_session.query(CommercialSubscription).get(sub.id).commercial_plan_id == to_plan.id
+    change = db_session.query(SubscriptionChange).get(applied.change_id)
+    assert change.status == SubscriptionChangeStatus.APPLIED
+
+    # A replayed webhook / second allocation must not re-apply.
+    assert complete_plan_change_for_invoice(db_session, invoice) is None
+
+
+def test_pending_upgrade_can_be_cancelled_and_voids_its_invoice(db_session, monkeypatch):
+    from app.modules.commercial.enums import PlatformInvoiceStatus
+    from app.modules.commercial.models import PlatformInvoice
+    from app.modules.commercial.org_self_service_router import (
+        PlanChangeCommitRequest,
+        cancel_plan_change,
+        commit_plan_change,
+    )
+
+    _stub_checkout(monkeypatch)
+    from_plan, _ = _plan_with_published_version(db_session, "RPCFROM", price_amount=50)
+    to_plan, _ = _plan_with_published_version(db_session, "RPCTO", price_amount=100)
+    org, account, sub = _org_active_subscription(db_session, "RPCORG", from_plan)
+    db_session.commit()
+    user = _fake_billing_admin(org.id)
+    result = commit_plan_change(PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=user)
+
+    out = cancel_plan_change(result["subscription_change_id"], db=db_session, current_user=user)
+    assert out["status"] == "cancelled"
+    change = db_session.query(SubscriptionChange).get(result["subscription_change_id"])
+    assert change.status == SubscriptionChangeStatus.REVERSED
+    invoice = db_session.query(PlatformInvoice).filter(PlatformInvoice.commercial_subscription_id == sub.id).one()
+    assert invoice.status == PlatformInvoiceStatus.VOIDED
+
+
+def test_cancel_plan_change_is_scoped_to_callers_organization(db_session, monkeypatch):
+    from app.core.exceptions import NotFoundException
+    from app.modules.commercial.org_self_service_router import (
+        PlanChangeCommitRequest,
+        cancel_plan_change,
+        commit_plan_change,
+    )
+
+    _stub_checkout(monkeypatch)
+    from_plan, _ = _plan_with_published_version(db_session, "RPSFROM", price_amount=50)
+    to_plan, _ = _plan_with_published_version(db_session, "RPSTO", price_amount=100)
+    org, account, sub = _org_active_subscription(db_session, "RPSORG", from_plan)
+    db_session.commit()
+    result = commit_plan_change(
+        PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=_fake_billing_admin(org.id),
+    )
+    with pytest.raises(NotFoundException):
+        cancel_plan_change(result["subscription_change_id"], db=db_session, current_user=_fake_billing_admin(org.id + 999))
+
+
+def test_quote_only_plan_is_not_a_self_serve_target(db_session):
+    from app.core.exceptions import BadRequestException
+    from app.modules.commercial.org_self_service_router import PlanChangeCommitRequest, commit_plan_change
+
+    from_plan, _ = _plan_with_published_version(db_session, "RQOFROM", price_amount=50)
+    to_plan, _ = _plan_with_published_version(db_session, "RQOTO", price_amount=100)
+    to_plan.is_quote_only = True
+    org, account, sub = _org_active_subscription(db_session, "RQOORG", from_plan)
+    db_session.commit()
+    with pytest.raises(BadRequestException):
+        commit_plan_change(
+            PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=_fake_billing_admin(org.id),
+        )
 
 
 def test_router_commit_downgrade_schedules_by_default(db_session):

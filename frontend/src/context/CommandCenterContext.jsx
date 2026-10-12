@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "./AuthContext";
 import { canReadReliabilityTelemetry } from "../config/roles";
 import { getActivePrivilegedAccess, getJobTelemetry } from "../service/privilegedAccessService";
-import { getAttentionCounts, getConfigurationInventory } from "../service/commandCenterService";
+import { getAttentionCounts, getConfigurationInventory, getTriageSummary } from "../service/commandCenterService";
+import usePolling from "../hooks/usePolling";
 import { setExportSuppressed } from "../utils/export-helpers";
 
 /**
@@ -18,7 +19,13 @@ import { setExportSuppressed } from "../utils/export-helpers";
 
 const CommandCenterContext = createContext(null);
 
-const POLL_INTERVAL_MS = 20000;
+// Shell strip / context poll. Raised from 20 s to 60 s: nothing in the product
+// needs sub-minute freshness here (the strip is an ambient indicator and every
+// heavy surface already polls at 60 s). usePolling pauses while the tab is hidden.
+const POLL_INTERVAL_MS = 60000;
+// An automatic (poll-driven) refresh is skipped if the shell refreshed this
+// recently, so the shell poller and per-page pollers never double-fetch.
+const AUTO_REFRESH_DEDUPE_MS = 5000;
 
 export function CommandCenterProvider({ children }) {
   const { role, user, isAuthenticated } = useAuth();
@@ -45,14 +52,18 @@ export function CommandCenterProvider({ children }) {
   // Bumped by every explicit refresh so mounted surfaces (dashboard lenses,
   // footer strips) reload their own queries in lockstep with the shell strip.
   const [refreshTick, setRefreshTick] = useState(0);
-  const pollRef = useRef(null);
+  const [triageSummary, setTriageSummary] = useState(null);
+  const lastRefreshRef = useRef(0);
 
   const updateContextScope = useCallback((field, value) => {
     setContextScope((prev) => ({ ...prev, [field]: value }));
   }, []);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback((opts) => {
     if (!isSuperAdmin) return;
+    const now = Date.now();
+    if (opts && opts.auto === true && now - lastRefreshRef.current < AUTO_REFRESH_DEDUPE_MS) return;
+    lastRefreshRef.current = now;
     setLastRefreshedAt(new Date());
     getActivePrivilegedAccess()
       .then((grant) => setActiveGrant(grant && grant.status === "active" ? grant : null))
@@ -60,6 +71,12 @@ export function CommandCenterProvider({ children }) {
     getAttentionCounts()
       .then(setAttentionCounts)
       .catch(() => setAttentionCounts(null));
+    // Single shared triage fetch per cycle: the cockpit strip reads this
+    // instead of polling the endpoint itself (getTriageSummary de-dupes
+    // concurrent callers such as the Hub / Platform dashboard pages).
+    getTriageSummary()
+      .then(setTriageSummary)
+      .catch(() => {});
     if (canReadJobs) {
       getJobTelemetry()
         .then(setJobFreshness)
@@ -69,8 +86,8 @@ export function CommandCenterProvider({ children }) {
 
   // Explicit operator action (Refresh button, poll-driven dashboard reload):
   // refreshes the shell strip AND signals heavy surfaces to reload.
-  const requestRefresh = useCallback(() => {
-    refresh();
+  const requestRefresh = useCallback((opts) => {
+    refresh(opts);
     setRefreshTick((t) => t + 1);
   }, [refresh]);
 
@@ -79,15 +96,13 @@ export function CommandCenterProvider({ children }) {
       setActiveGrant(null);
       setAttentionCounts(null);
       setJobFreshness(null);
-      if (pollRef.current) clearInterval(pollRef.current);
+      setTriageSummary(null);
       return;
     }
     refresh();
-    pollRef.current = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
   }, [isSuperAdmin, refresh]);
+
+  usePolling(() => refresh({ auto: true }), POLL_INTERVAL_MS, { enabled: isSuperAdmin });
 
   const clearActiveGrant = useCallback(() => setActiveGrant(null), []);
 
@@ -164,6 +179,7 @@ export function CommandCenterProvider({ children }) {
     lastRefreshedAt,
     activeGrant,
     attentionCounts,
+    triageSummary,
     worstFreshness,
     environmentVerified,
     refresh,

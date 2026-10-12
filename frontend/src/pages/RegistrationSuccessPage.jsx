@@ -16,6 +16,8 @@ export default function RegistrationSuccessPage() {
   const location = useLocation();
   const orgName = location.state?.organizationName ?? "Your Organization";
   const email = location.state?.email ?? "";
+  const isTrial = location.state?.startMode === "trial";
+  const trialDays = location.state?.trialDays ?? 14;
 
   useEffect(() => {
     if (!location.state?.organizationName) {
@@ -130,6 +132,12 @@ export default function RegistrationSuccessPage() {
               </span>
             </div>
           </div>
+
+          {isTrial && (
+            <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center text-sm text-emerald-800">
+              Your {trialDays}-day Essentials trial has started. Upgrade or pay any time from Zoiko Subscription.
+            </p>
+          )}
 
           <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
             Sign in as organization admin to invite your team and start your first pay run.

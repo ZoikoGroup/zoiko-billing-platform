@@ -197,6 +197,22 @@ class Settings(BaseSettings):
     REDIS_ENTITLEMENT_TTL: int = 60
     REDIS_DASHBOARD_TTL: int = 30
 
+    # -- Server concurrency / DB pool (docs/PERFORMANCE_DEPLOYMENT.md) ---
+    # Budget: WEB_CONCURRENCY x (DB_POOL_SIZE + DB_MAX_OVERFLOW) (+1 per
+    # scheduler leader) must stay below the database connection limit.
+    WEB_CONCURRENCY: int = 1
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_TIMEOUT: float = 10.0
+    DB_POOL_RECYCLE: int = 1800
+    DB_POOL_PRE_PING: bool = True
+    DB_POOL_WAIT_WARN_SECONDS: float = 1.0
+    # Multi-worker safety: only one worker process may run the APScheduler.
+    # True = elect a leader with a Postgres advisory lock (no-op on SQLite).
+    # Set False behind pgbouncer transaction pooling (session locks don't
+    # work there) and enable the scheduler on exactly one instance instead.
+    SCHEDULER_LEADER_LOCK: bool = True
+
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
     # is explicitly enabled — see app/core/scheduler.py.

@@ -26,8 +26,11 @@ import {
 
 import CommandCenterContextBar from "../../components/CommandCenterContextBar";
 import { Button, PageHeader, SectionCard } from "../../components/billing-ui";
-import { ErrorState, Spinner } from "../../components/billing-shared";
+import { ErrorState } from "../../components/billing-shared";
 import { useCommandCenter } from "../../context/CommandCenterContext";
+import usePolling from "../../hooks/usePolling";
+import useDeferredLoad from "../../hooks/useDeferredLoad";
+import { createRequestQueue } from "../../utils/requestQueue";
 import {
   getFinancialOperationsSummary,
   getBillingCommandOverview,
@@ -39,6 +42,18 @@ import {
 import { FinancialSummaryStrip } from "./FinancialSummaryCards";
 
 const POLL_INTERVAL_MS = 60000;
+
+// Headline sources (overview, F1-F4 summary, trend) run first; the three
+// below-the-fold tables are deferred until they near the viewport. At most 6
+// requests are ever in flight.
+const MAX_CONCURRENT_REQUESTS = 6;
+const PRIORITY_HEADLINE = 100;
+const PRIORITY_CORE = 50;
+const PRIORITY_DEFERRED = 10;
+
+function PulseBlock({ className = "", innerRef }) {
+  return <div ref={innerRef} className={`animate-pulse rounded-lg border border-slate-200 bg-slate-100/70 ${className}`} aria-hidden="true" />;
+}
 
 // Action links open the matching hub tab rather than the standalone
 // /super-admin/financial/* routes, so the operator stays inside the hub.
@@ -184,68 +199,84 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
 
   const [granularity, setGranularity] = useState("daily");
   const [sourceErrors, setSourceErrors] = useState({});
-  const [loading, setLoading] = useState(true);
+  // Each source applies its own result as soon as it arrives; `ready[key]`
+  // flips once that source has settled (success or failure).
+  const [ready, setReady] = useState({});
+  const queueRef = useRef(null);
+  if (queueRef.current === null) queueRef.current = createRequestQueue(MAX_CONCURRENT_REQUESTS);
+  const seqRef = useRef({});
+  const mountedRef = useRef(true);
 
-  const loadedOnceRef = useRef(false);
-  const loadAllRef = useRef(() => {});
+  const overdueDeferred = useDeferredLoad({ strategy: "visible" });
+  const riskDeferred = useDeferredLoad({ strategy: "visible" });
+  const activityDeferred = useDeferredLoad({ strategy: "visible" });
+  const deferredRef = useRef({});
+  deferredRef.current = {
+    overdue: overdueDeferred.triggered,
+    risk: riskDeferred.triggered,
+    activity: activityDeferred.triggered,
+  };
+
   const firstTickRef = useRef(true);
+  const loadAllRef = useRef(() => {});
   const granularityRef = useRef(granularity);
 
   const loadSummary = useCallback(() => {
     setSummaryError(null);
-    getFinancialOperationsSummary()
-      .then(setSummary)
-      .catch((e) => setSummaryError(e?.message || "Summary unavailable"));
+    queueRef.current
+      .run(() => getFinancialOperationsSummary(), { priority: PRIORITY_HEADLINE })
+      .then((res) => { if (mountedRef.current) setSummary(res); })
+      .catch((e) => { if (mountedRef.current) setSummaryError(e?.message || "Summary unavailable"); });
+  }, []);
+
+  const startSource = useCallback((key) => {
+    const defs = {
+      overview: [PRIORITY_HEADLINE, () => getBillingCommandOverview(), "Overview unavailable", (v) => setOverview(v)],
+      trend: [PRIORITY_CORE, () => getBillingCommandTrend(granularityRef.current), "Trend unavailable", (v) => setTrend(v)],
+      overdue: [PRIORITY_DEFERRED, () => listBillingOverdueInvoices(8), "Overdue invoices unavailable", (v) => setOverdue(v)],
+      risk: [PRIORITY_DEFERRED, () => listBillingCollectionsRisk(8), "Collections risk unavailable", (v) => setRisk(v)],
+      activity: [PRIORITY_DEFERRED, () => listBillingRecentActivity(6), "Activity unavailable", (v) => setActivity(v)],
+    };
+    const [priority, call, fallbackMessage, apply] = defs[key];
+    const id = (seqRef.current[key] = (seqRef.current[key] || 0) + 1);
+    return queueRef.current.run(call, { priority }).then(
+      (v) => ({ v, message: null }),
+      (e) => ({ v: null, message: e?.message || fallbackMessage }),
+    ).then(({ v, message }) => {
+      if (!mountedRef.current || id !== seqRef.current[key]) return;
+      apply(v);
+      setSourceErrors((prev) => {
+        if (message) return { ...prev, [key]: message };
+        if (!(key in prev)) return prev;
+        const { [key]: _cleared, ...rest } = prev;
+        return rest;
+      });
+      setReady((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+    });
   }, []);
 
   const loadAll = useCallback(() => {
-    if (!loadedOnceRef.current) setLoading(true);
-    const nextErrors = {};
-
-    const overviewPromise = getBillingCommandOverview().catch((e) => {
-      nextErrors.overview = e?.message || "Overview unavailable";
-      return null;
-    });
-
-    const trendPromise = getBillingCommandTrend(granularityRef.current).catch((e) => {
-      nextErrors.trend = e?.message || "Trend unavailable";
-      return null;
-    });
-
-    const overduePromise = listBillingOverdueInvoices(8).catch((e) => {
-      nextErrors.overdue = e?.message || "Overdue invoices unavailable";
-      return null;
-    });
-
-    const riskPromise = listBillingCollectionsRisk(8).catch((e) => {
-      nextErrors.risk = e?.message || "Collections risk unavailable";
-      return null;
-    });
-
-    const activityPromise = listBillingRecentActivity(6).catch((e) => {
-      nextErrors.activity = e?.message || "Activity unavailable";
-      return null;
-    });
-
+    const keys = ["overview", "trend"];
+    const deferred = deferredRef.current;
+    if (deferred.overdue) keys.push("overdue");
+    if (deferred.risk) keys.push("risk");
+    if (deferred.activity) keys.push("activity");
     loadSummary();
-
-    Promise.all([overviewPromise, trendPromise, overduePromise, riskPromise, activityPromise]).then(
-      ([overviewRes, trendRes, overdueRes, riskRes, activityRes]) => {
-        setOverview(overviewRes);
-        setTrend(trendRes);
-        setOverdue(overdueRes);
-        setRisk(riskRes);
-        setActivity(activityRes);
-        setSourceErrors(nextErrors);
-        loadedOnceRef.current = true;
-        setLoading(false);
-      }
-    );
-  }, [loadSummary]);
+    keys.forEach((k) => startSource(k));
+  }, [loadSummary, startSource]);
 
   useEffect(() => {
     granularityRef.current = granularity;
   }, [granularity]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const queue = queueRef.current;
+    return () => {
+      mountedRef.current = false;
+      queue.clear();
+    };
+  }, []);
 
   useEffect(() => {
     loadAll();
@@ -255,10 +286,13 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
     loadAllRef.current = loadAll;
   }, [loadAll]);
 
-  useEffect(() => {
-    const id = setInterval(requestRefresh, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [requestRefresh]);
+  // First-trigger fetch for deferred widgets (later refreshes include them
+  // through deferredRef).
+  useEffect(() => { if (overdueDeferred.triggered) startSource("overdue"); }, [overdueDeferred.triggered, startSource]);
+  useEffect(() => { if (riskDeferred.triggered) startSource("risk"); }, [riskDeferred.triggered, startSource]);
+  useEffect(() => { if (activityDeferred.triggered) startSource("activity"); }, [activityDeferred.triggered, startSource]);
+
+  usePolling(() => requestRefresh({ auto: true }), POLL_INTERVAL_MS);
 
   useEffect(() => {
     if (firstTickRef.current) {
@@ -284,23 +318,17 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
     []
   );
 
-  if (loading) {
-    return (
-      <div className="flex min-h-64 items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
+  const r = ready;
+  const ovReady = !!r.overview;
 
-  if (!overview) {
+  if (ovReady && !overview) {
     return (
       <div className="p-4 sm:p-6">
         <ErrorState
           message={sourceErrors.overview || "Failed to load billing command center."}
           title="Unable to load billing command center"
           onRetry={() => {
-            setLoading(true);
-            loadedOnceRef.current = false;
+            setReady({});
             loadAll();
           }}
         />
@@ -308,11 +336,14 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
     );
   }
 
-  const kpis = overview.kpis || {};
-  const sparks = overview.sparklines || {};
-  const action = overview.action_center || {};
-  const aging = overview.aging || [];
-  const next7 = overview.next_seven_days || {};
+  // While the overview is still in flight, the header and the independent
+  // panels render immediately and overview-driven panels show skeletons.
+  const ov = overview || {};
+  const kpis = ov.kpis || {};
+  const sparks = ov.sparklines || {};
+  const action = ov.action_center || {};
+  const aging = ov.aging || [];
+  const next7 = ov.next_seven_days || {};
   const multiCurrency = kpis.currency_state === "multi_currency";
   const unknownCurrency = kpis.currency_state === "unknown";
   const currencyLabel = kpis.primary_currency || "";
@@ -390,7 +421,7 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
         }`}
         actions={
           <span className="whitespace-nowrap text-[11px] text-slate-400">
-            Refreshed {overview.generated_at ? new Date(overview.generated_at).toLocaleTimeString() : "—"}
+            Refreshed {ov.generated_at ? new Date(ov.generated_at).toLocaleTimeString() : "—"}
             {" · auto-refreshes every minute"}
           </span>
         }
@@ -428,7 +459,7 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
       />
 
       {/* Action Center */}
-      <SectionCard variant="standard" accent="brand">
+      {!ovReady ? <PulseBlock className="h-32" /> : <SectionCard variant="standard" accent="brand">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             {actionCards.some((c) => c.severity !== "CLEAR") ? (
@@ -457,11 +488,11 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
             </div>
           ))}
         </div>
-      </SectionCard>
+      </SectionCard>}
 
       {/* KPI stat cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
+        {!ovReady ? <PulseBlock className="h-36" /> : <StatCard
           icon={FileText}
           iconBg="bg-brand-50"
           iconColor="text-brand-600"
@@ -470,8 +501,8 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           sub={`${(kpis.total_invoices ?? 0).toLocaleString()} invoices issued platform-wide`}
           sparkData={sparks.billed}
           sparkColor={CHART_BLUE}
-        />
-        <StatCard
+        />}
+        {!ovReady ? <PulseBlock className="h-36" /> : <StatCard
           icon={CheckCircle2}
           iconBg="bg-emerald-50"
           iconColor="text-emerald-600"
@@ -480,8 +511,8 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           sub="Paid invoices · allocated to customers"
           sparkData={sparks.collected}
           sparkColor={CHART_GREEN}
-        />
-        <StatCard
+        />}
+        {!ovReady ? <PulseBlock className="h-36" /> : <StatCard
           icon={Clock}
           iconBg="bg-orange-50"
           iconColor="text-orange-500"
@@ -496,8 +527,8 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           }
           sparkData={sparks.newly_overdue}
           sparkColor={CHART_ORANGE}
-        />
-        <StatCard
+        />}
+        {!ovReady ? <PulseBlock className="h-36" /> : <StatCard
           icon={BarChart3}
           iconBg="bg-violet-50"
           iconColor="text-violet-600"
@@ -512,7 +543,7 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           sub="Collected ÷ invoiced, per currency"
           sparkData={sparks.rate}
           sparkColor={CHART_VIOLET}
-        />
+        />}
       </div>
 
       {/* Billings & Collections + Collections Health */}
@@ -545,7 +576,9 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
               ))}
             </div>
           </div>
-          {sourceErrors.trend ? (
+          {!r.trend ? (
+            <PulseBlock className="h-64" />
+          ) : sourceErrors.trend ? (
             <div className="flex h-64 items-center justify-center">
               <PanelError message={sourceErrors.trend} onRetry={() => loadTrend(granularity)} />
             </div>
@@ -598,7 +631,7 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           )}
         </SectionCard>
 
-        <SectionCard variant="standard" accent="brand">
+        {!ovReady ? <PulseBlock className="h-64" /> : <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Health</h3>
           {aging.length === 0 ? (
             <p className="py-6 text-center text-xs text-slate-400">
@@ -626,8 +659,8 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
               })}
             </div>
           )}
-          {overview.aging_basis?.note && (
-            <p className="mb-3 text-[10px] leading-snug text-slate-400">{overview.aging_basis.note}</p>
+          {ov.aging_basis?.note && (
+            <p className="mb-3 text-[10px] leading-snug text-slate-400">{ov.aging_basis.note}</p>
           )}
           <div className="space-y-2.5 border-t border-slate-100 pt-3">
             <div className="flex items-center justify-between text-xs">
@@ -646,18 +679,18 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
               <span className="flex items-center gap-2 text-slate-600">
                 <Users size={13} className="text-slate-400" /> Customers at risk
               </span>
-              <span className="font-semibold text-slate-800">{overview.customers_at_risk}</span>
+              <span className="font-semibold text-slate-800">{ov.customers_at_risk}</span>
             </div>
           </div>
           <div className="mt-3 border-t border-slate-100 pt-2 text-right">
             <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>Recovery &amp; collections</PanelLink>
           </div>
-        </SectionCard>
+        </SectionCard>}
       </div>
 
       {/* Overdue Invoices + Next 7 Days */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
+        {!r.overdue ? <PulseBlock innerRef={overdueDeferred.ref} className="h-64 lg:col-span-2" /> : <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-800">Overdue Invoices</h3>
             {overdue?.total > 0 && <span className="text-[10px] text-slate-400">{overdue.total} total</span>}
@@ -725,9 +758,9 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           <div className="mt-3">
             <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>View all overdue invoices</PanelLink>
           </div>
-        </SectionCard>
+        </SectionCard>}
 
-        <SectionCard variant="standard" accent="brand">
+        {!r.overview ? <PulseBlock className="h-64" /> : <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Next 7 Days</h3>
           <div className="space-y-3.5">
             <div className="flex items-center justify-between text-xs">
@@ -769,12 +802,12 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           <div className="mt-4 border-t border-slate-100 pt-2 text-right">
             <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>Open invoice engine</PanelLink>
           </div>
-        </SectionCard>
+        </SectionCard>}
       </div>
 
       {/* Collections Risk + Recent Activity */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
+        {!r.risk ? <PulseBlock innerRef={riskDeferred.ref} className="h-64 lg:col-span-2" /> : <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Risk</h3>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-xs">
@@ -829,9 +862,9 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           <div className="mt-3">
             <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>View all customers at risk</PanelLink>
           </div>
-        </SectionCard>
+        </SectionCard>}
 
-        <SectionCard variant="standard" accent="brand">
+        {!r.activity ? <PulseBlock innerRef={activityDeferred.ref} className="h-64" /> : <SectionCard variant="standard" accent="brand">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Recent Activity</h3>
           <div className="space-y-3.5">
             {sourceErrors.activity ? (
@@ -863,7 +896,7 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
           <div className="mt-4 border-t border-slate-100 pt-2 text-right">
             <PanelLink to="/super-admin/audit-logs">View all activity</PanelLink>
           </div>
-        </SectionCard>
+        </SectionCard>}
       </div>
     </div>
   );

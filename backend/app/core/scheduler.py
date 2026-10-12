@@ -100,6 +100,14 @@ def start_scheduler() -> None:
         logger.warning("Scheduler already started — skipping")
         return
 
+    from app.config import settings
+    from app.core.worker_safety import try_acquire_scheduler_leadership
+    from app.database import engine
+
+    if not try_acquire_scheduler_leadership(engine, settings.SCHEDULER_LEADER_LOCK):
+        logger.info("Scheduler not started: another worker holds the scheduler leader lock.")
+        return
+
     jobstores = {"default": MemoryJobStore()}
     executors = {"default": ThreadPoolExecutor(max_workers=2)}
     job_defaults = {
@@ -123,6 +131,9 @@ def start_scheduler() -> None:
 def shutdown_scheduler() -> None:
     """Gracefully shut down the scheduler. Called at application shutdown."""
     global _scheduler
+    from app.core.worker_safety import release_scheduler_leadership
+
+    release_scheduler_leadership()
     if _scheduler is None:
         return
     try:
@@ -249,6 +260,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             settings.EMAIL_SMTP_HEALTH_INTERVAL_MINUTES,
             "email_smtp_health_job",
             "Email SMTP Delivery Health Check (A3)",
+        ),
+        (
+            "app.modules.super_admin.tasks.attention_maintenance:run_attention_maintenance_job",
+            1,
+            "attention_maintenance_job",
+            "Attention Suppression Expiry Sweep",
         ),
     ]
 

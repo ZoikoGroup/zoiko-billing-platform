@@ -38,7 +38,7 @@ services:
     # Postgres schema lifecycle is Alembic-managed, not create_all (see
     # docs/DATABASE_MIGRATION_GUIDE.md). Idempotent: a no-op once already
     # at head.
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"
+    command: sh -c "alembic upgrade head && exec sh scripts/start_server.sh"
     ports:
       - "8001:8001"
     environment:
@@ -51,6 +51,9 @@ services:
       # DEBUG=false and inject real secrets through the deployment platform.
       DEBUG: "true"
       APP_PORT: 8001
+      # Dev stack: single process. Raise (and keep REDIS_URL set) to test multi-worker;
+      # see docs/PERFORMANCE_DEPLOYMENT.md.
+      WEB_CONCURRENCY: "1"
     depends_on:
       db:
         condition: service_healthy

@@ -468,30 +468,30 @@ def test_production_startup_rejects_missing_or_invalid_mfa_key(monkeypatch, mfa_
 
 
 def test_security_headers_are_added_to_api_responses():
-    from app import main
-    from starlette.requests import Request
     from starlette.responses import Response
 
-    request = Request(
-        {
-            "type": "http",
-            "method": "GET",
-            "path": "/health",
-            "raw_path": b"/health",
-            "query_string": b"",
-            "headers": [],
-            "scheme": "http",
-            "server": ("testserver", 80),
-            "client": ("testclient", 50000),
-        }
-    )
+    from app.core.request_middleware import RequestContextMiddleware
 
-    async def call_next(_request):
-        return Response("ok")
+    async def inner(scope, receive, send):
+        await Response("ok")(scope, receive, send)
 
-    response = asyncio.run(main.security_headers_middleware(request, call_next))
+    sent = []
 
-    assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
-    assert response.headers["X-Frame-Options"] == "DENY"
-    assert response.headers["X-XSS-Protection"] == "0"
+    async def send(message):
+        sent.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http", "method": "GET", "path": "/health", "raw_path": b"/health",
+        "query_string": b"", "headers": [], "scheme": "http",
+        "server": ("testserver", 80), "client": ("testclient", 50000),
+    }
+    asyncio.run(RequestContextMiddleware(inner)(scope, receive, send))
+    headers = {k.decode().lower(): v.decode() for k, v in sent[0]["headers"]}
+
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert headers["x-frame-options"] == "DENY"
+    assert headers["x-xss-protection"] == "0"

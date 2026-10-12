@@ -19,28 +19,22 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes("node_modules/xlsx") || id.includes("node_modules/xlsx-js-style")) {
-            return "vendor-xlsx";
-          }
-          if (id.includes("node_modules/pdfmake/build/vfs_fonts")) {
-            return "vendor-pdf-fonts";
-          }
-          if (id.includes("node_modules/pdfmake") || id.includes("node_modules/@foliojs-fork") || id.includes("node_modules/awesome-phonenumber")) {
-            return "vendor-docgen";
-          }
-          if (id.includes("node_modules/recharts")) {
-            return "vendor-charts";
-          }
-          if (id.includes("node_modules/lucide-react")) {
-            return "vendor-icons";
-          }
-          if (id.includes("node_modules/react-router") || id.includes("node_modules/react-router-dom")) {
-            return "vendor-router";
-          }
-          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-markdown") || id.includes("node_modules/scheduler")) {
-            return "vendor-react";
-          }
+        // Rolldown's manualChunks shim pulls each chunk's dependencies in
+        // recursively, which dragged React core into vendor-charts (so the
+        // entry modulepreloaded recharts on every page). codeSplitting groups
+        // with includeDependenciesRecursively:false keep each lib in its own
+        // chunk; higher priority wins when a module matches several groups.
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: "vendor-xlsx", test: /node_modules[\/](xlsx|xlsx-js-style)[\/]/, priority: 60 },
+            { name: "vendor-pdf-fonts", test: /node_modules[\/]pdfmake[\/]build[\/]vfs_fonts/, priority: 70 },
+            { name: "vendor-docgen", test: /node_modules[\/](pdfmake|@foliojs-fork|awesome-phonenumber)[\/]/, priority: 50 },
+            { name: "vendor-charts", test: /node_modules[\/]recharts[\/]/, priority: 40 },
+            { name: "vendor-icons", test: /node_modules[\/]lucide-react[\/]/, priority: 40 },
+            { name: "vendor-router", test: /node_modules[\/](react-router|react-router-dom)[\/]/, priority: 40 },
+            { name: "vendor-react", test: /node_modules[\/](react|react-dom|scheduler)[\/]/, priority: 30 },
+          ],
         },
       },
     },
