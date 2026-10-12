@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { pricingApi, productApi } from "../../../service/billingService";
@@ -58,6 +59,21 @@ export default function ProductPricingPlansPage() {
   const [sortDir, setSortDir] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Product Profile links here with ?product_id=<id>. That is route context,
+  // not a filter this page owns: Clear filters leaves it (and any other query
+  // params) alone; only the chip's own remove action drops it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawProductId = searchParams.get("product_id");
+  const productContextId = /^[1-9]\d*$/.test(rawProductId || "") ? Number(rawProductId) : null;
+  const clearProductContext = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("product_id");
+      return next;
+    });
+  };
+  useEffect(() => { setCurrentPage(1); }, [productContextId]);
+
   const hasActiveFilters = Boolean(search || typeFilter || statusFilter);
   const clearFilters = () => {
     setSearch(""); setDebouncedSearch(""); setTypeFilter(""); setStatusFilter(""); setCurrentPage(1);
@@ -103,6 +119,7 @@ export default function ProductPricingPlansPage() {
       const params = {
         page: safePage,
         per_page: ITEMS_PER_PAGE,
+        product_id: productContextId || undefined,
         search_term: debouncedSearch || undefined,
         pricing_model: typeFilter || undefined,
         status: statusFilter || undefined,
@@ -121,7 +138,7 @@ export default function ProductPricingPlansPage() {
     } finally {
       if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [beginRequest, safePage, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, productContextId, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(true); }, [fetchPlans]);
 
@@ -399,6 +416,18 @@ export default function ProductPricingPlansPage() {
               </button>
             </div>
           </div>
+
+          {productContextId && (
+            <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-brand-200 bg-brand-50 py-1 pl-3 pr-1 text-xs font-medium text-brand-700">
+              <span className="truncate">
+                Product: {products.find((p) => String(p.id) === String(productContextId))?.name || `#${productContextId}`}
+              </span>
+              <button onClick={clearProductContext} aria-label="Show plans for all products"
+                className="rounded-full p-1 text-brand-600 hover:bg-brand-100 hover:text-brand-800">
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {showFilters && (
             <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">

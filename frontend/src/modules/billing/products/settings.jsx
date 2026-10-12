@@ -90,6 +90,8 @@ export default function ProductSettingsPage() {
   const [categories, setCategories] = useState([]);
   const [usageProducts, setUsageProducts] = useState([]);
   const [activeTab, setActiveTab] = useState("general");
+  const saveBarRef = useRef(null);
+  const [saveBarRight, setSaveBarRight] = useState(null);
 
   const [form, setForm] = useState({
     product_numbering_prefix: "PROD-",
@@ -110,6 +112,34 @@ export default function ProductSettingsPage() {
   const hasChanges = useMemo(() => Object.keys(form).some((key) => form[key] != original[key]), [form, original]);
 
   useEffect(() => { fetchSettings(); }, []);
+
+  // The save bar is position:fixed, so `right-0` pins it to the viewport edge
+  // even when the AI assistant panel (a flex sibling of the shell's <main>)
+  // is open and narrows the workspace -- the bar then covered the panel's
+  // composer. Track the right edge of the outermost <main> (the shell's
+  // scrolling workspace) and end the bar there instead. Without a measurable
+  // layout (tests, no shell) the class-based right-0 stays in effect.
+  useEffect(() => {
+    const bar = saveBarRef.current;
+    if (!bar) return undefined;
+    let workspace = null;
+    for (let el = bar.parentElement; el; el = el.parentElement) {
+      if (el.tagName === "MAIN") workspace = el;
+    }
+    if (!workspace) return undefined;
+    const update = () => {
+      const rect = workspace.getBoundingClientRect();
+      setSaveBarRight(rect.width > 0 ? Math.max(0, Math.round(window.innerWidth - rect.right)) : null);
+    };
+    update();
+    window.addEventListener("resize", update);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    observer?.observe(workspace);
+    return () => {
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [loading, loadFailed]);
 
   async function fetchSettings() {
     try {
@@ -417,8 +447,15 @@ export default function ProductSettingsPage() {
         )}
       </div>
 
-      {/* ── Sticky Save Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 lg:left-72 z-40 bg-white/90 backdrop-blur border-t border-slate-200 px-4 sm:px-6 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]">
+      {/* ── Sticky Save Bar ──
+          pr-24 keeps the actions clear of the shell's fixed AI-assistant
+          launcher (bottom-6 right-6, 56px wide => occupies 24-80px from the
+          right edge), which is later in the DOM at the same z-40 and used to
+          sit on top of Save Changes. The content above reserves pb-28 so its
+          last field is never hidden behind this bar. */}
+      <div ref={saveBarRef} data-testid="product-settings-save-bar"
+        style={saveBarRight != null ? { right: saveBarRight } : undefined}
+        className="fixed bottom-0 left-0 right-0 lg:left-72 z-40 bg-white/90 backdrop-blur border-t border-slate-200 pl-4 sm:pl-6 pr-24 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3 max-w-6xl mx-auto">
           <div className="flex items-center gap-2 min-w-0">
             {hasChanges ? (
@@ -434,7 +471,7 @@ export default function ProductSettingsPage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button onClick={fetchSettings}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
               <RefreshCw className="h-4 w-4" /> Refresh

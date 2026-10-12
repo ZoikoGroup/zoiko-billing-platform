@@ -594,20 +594,45 @@ export function DataTable({
  * ------------------------------------------------------------------ */
 
 export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
+  const listRef = useRef(null);
+  const activeRef = useRef(null);
+
+  // Keep the active step visible when the step row is wider than its card
+  // (7 labelled steps overflow below ~1,400px). Scrolls the list
+  // horizontally only — never the page — so pressing Next from the footer
+  // doesn't jump the viewport.
+  useEffect(() => {
+    const list = listRef.current;
+    const el = activeRef.current;
+    if (!list || !el || list.scrollWidth <= list.clientWidth) return;
+    const listRect = list.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    if (elRect.left < listRect.left) list.scrollLeft -= listRect.left - elRect.left;
+    else if (elRect.right > listRect.right) list.scrollLeft += elRect.right - listRect.right;
+  }, [current, steps.length]);
+
   if (!steps.length) return null;
+  // overflow-x-auto + min-w-0: step labels never wrap, so on narrower
+  // viewports the row scrolls instead of being clipped by the shell's
+  // overflow-x-hidden (which hid the right-hand steps). -m-1/p-1 leaves room
+  // for the focus ring inside the scroll container without shifting layout.
   return (
-    <ol className={`flex items-center ${className}`} aria-label="Wizard progress">
+    <ol ref={listRef} className={`-m-1 flex min-w-0 items-center overflow-x-auto p-1 ${className}`} aria-label="Wizard progress">
       {steps.map((step, idx) => {
         const isDone = idx < current;
         const isActive = idx === current;
         const clickable = isDone && onSelect;
         return (
-          <li key={step.key || step.label} className="flex flex-1 items-center last:flex-none">
+          <li
+            key={step.key || step.label}
+            ref={isActive ? activeRef : undefined}
+            className="flex flex-[1_0_0%] items-center last:flex-none"
+          >
             <button
               type="button"
               disabled={!clickable}
               onClick={clickable ? () => onSelect(idx) : undefined}
-              className={`flex items-center gap-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 rounded-xl ${
+              className={`flex shrink-0 items-center gap-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 rounded-xl ${
                 clickable ? "cursor-pointer hover:opacity-80" : "cursor-default"
               }`}
               aria-current={isActive ? "step" : undefined}
@@ -628,7 +653,7 @@ export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
               </span>
             </button>
             {idx < steps.length - 1 && (
-              <span className={`mx-3 h-px flex-1 ${idx < current ? "bg-brand-300" : "bg-slate-200"}`} aria-hidden="true" />
+              <span className={`mx-3 h-px min-w-6 flex-1 ${idx < current ? "bg-brand-300" : "bg-slate-200"}`} aria-hidden="true" />
             )}
           </li>
         );

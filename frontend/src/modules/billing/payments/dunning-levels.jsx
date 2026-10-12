@@ -183,9 +183,18 @@ export default function DunningLevelsPage() {
       title="Dunning Levels"
       subtitle="Configure escalating reminder rules by days overdue"
       actions={
-        <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate("/billing/dunning")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+          {/* Hidden while the list failed to load: creating a level blind could
+              duplicate a level number that already exists. */}
+          {!loadFailed && (
+            <button onClick={openCreate} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-brand-600 border border-brand-600 rounded-lg hover:bg-brand-700">
+              <Plus size={16} /> New Level
+            </button>
+          )}
+        </div>
       }
     >
       {error && !loadFailed && (
@@ -198,12 +207,6 @@ export default function DunningLevelsPage() {
           <CheckCircle className="h-4 w-4 shrink-0" /> {successMessage}
         </div>
       )}
-
-      <div className="flex justify-end mb-4">
-        <button onClick={openCreate} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700">
-          <Plus size={16} /> New Level
-        </button>
-      </div>
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -274,7 +277,7 @@ export default function DunningLevelsPage() {
             </div>
             <div className="p-6 space-y-4">
               {formError && <div role="alert" className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" /> {formError}</div>}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="dl-level-number" className="block text-xs font-medium text-slate-600 mb-1">Level Number *</label>
                   <input id="dl-level-number" autoFocus={!isEdit} type="number" min="1" value={form.level_number} onChange={(e) => setForm((p) => ({ ...p, level_number: e.target.value }))}
@@ -288,7 +291,7 @@ export default function DunningLevelsPage() {
                     className={inputClass} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="dl-min" className="block text-xs font-medium text-slate-600 mb-1">Min Days Overdue *</label>
                   <input id="dl-min" type="number" min="0" value={form.min_days_overdue} onChange={(e) => setForm((p) => ({ ...p, min_days_overdue: e.target.value }))}
@@ -307,7 +310,7 @@ export default function DunningLevelsPage() {
                   {ACTION_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="dl-fee" className="block text-xs font-medium text-slate-600 mb-1">Flat Fee</label>
                   <input id="dl-fee" type="number" min="0" step="0.01" value={form.fee_amount} onChange={(e) => setForm((p) => ({ ...p, fee_amount: e.target.value }))}

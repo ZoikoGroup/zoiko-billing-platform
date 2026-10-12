@@ -1293,7 +1293,10 @@ export function ProductSelector({
         {activeTab === "recent" && recent.map((p, i) => renderRow(p, i))}
       </div>
 
-      {paginated && activeTab === "search" && results.length > 0 && (
+      {/* Keep Prev/Next mounted while a page is loading and when a later page
+          comes back empty, so the user is never stranded without a way back.
+          Only a genuinely empty first-page search hides the bar. */}
+      {paginated && activeTab === "search" && (results.length > 0 || page > 1 || (searching && totalPages > 1)) && (
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-100 text-xs text-slate-500">
           <span>{totalCount} product{totalCount === 1 ? "" : "s"} · page {page} of {totalPages}</span>
           <div className="flex items-center gap-1">
@@ -1317,8 +1320,10 @@ export function ProductSelector({
               className="px-2 py-1 rounded-lg border border-brand-200 bg-white text-xs text-brand-700 hover:bg-brand-50 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
               Select All ({visibleList.length})
             </button>
+            {/* Disabled state uses a muted fill + readable slate text rather
+                than opacity-40, which made the button read as missing. */}
             <button type="button" onClick={handleClearSelection} disabled={selectedProducts.length === 0}
-              className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs text-slate-700 hover:bg-slate-50 font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs text-slate-700 hover:bg-slate-50 font-medium disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-600 disabled:hover:bg-slate-100 disabled:cursor-not-allowed">
               Clear Selection
             </button>
           </div>
