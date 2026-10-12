@@ -67,6 +67,7 @@ from app.modules.organizations.models import Organization, TenantLifecycleState
 from app.modules.super_admin.attention_service import AttentionService
 from app.modules.super_admin.lifecycle_service import TenantLifecycleService
 from app.modules.super_admin.organization_service import OrganizationDirectoryService
+from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
 from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
 from app.modules.super_admin.saas_reporting_service import SaasReportingService
 from app.modules.super_admin.schemas import SaasReportingResponse
@@ -136,6 +137,7 @@ from app.modules.super_admin.schemas import (
     LifecycleTransitionResponse,
     OrganizationDirectoryResponse,
     OrganizationOverviewResponse,
+    OrganizationPurgeRequest,
     PlatformLifecycleResponse,
     SearchResponse,
     SubscriptionAuditLogListResponse,
@@ -4611,6 +4613,55 @@ def _latest_lifecycle_correlation_id(db: Session, organization_id: int) -> str:
         .first()
     )
     return row[0] if row else ""
+
+
+@router.post("/organizations/{organization_id}/purge", response_model=SuccessResponse)
+def purge_super_admin_organization(
+    organization_id: int,
+    data: OrganizationPurgeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """PERMANENTLY delete an organization and every row that belongs to it.
+
+    This is the irreversible counterpart to the governed lifecycle
+    offboarding. It requires an exact ``organization_code`` confirmation and a
+    human reason, writes one ``DELETE`` entry to the platform audit trail, then
+    removes the tenant graph (users, billing records, subscriptions, AI data,
+    email rows, …). There is no undo.
+    """
+    from app.core.cache_service import (
+        invalidate_billing_config,
+        invalidate_entitlement_caches,
+        invalidate_subscription_caches,
+    )
+    from app.core.exceptions import BadRequestException, NotFoundException
+
+    org = db.query(Organization).filter(Organization.id == organization_id).first()
+    if org is None:
+        raise NotFoundException("Organization", "id")
+
+    if data.confirmation.strip() != org.organization_code:
+        raise BadRequestException(
+            "Confirmation does not match this organization's code. Type "
+            f"'{org.organization_code}' exactly to confirm permanent deletion."
+        )
+
+    result = OrganizationPurgeService(db).purge(org, actor=current_user, reason=data.reason)
+    db.commit()
+
+    # The tenant's derived caches (access gate, entitlements, billing config,
+    # trial banner) must not survive the row they were derived from.
+    invalidate_subscription_caches(organization_id)
+    invalidate_entitlement_caches(organization_id)
+    invalidate_billing_config(organization_id)
+
+    return SuccessResponse(
+        message=(
+            f'Organization "{result.organization_name}" ({result.organization_code}) and all '
+            f"of its data were permanently deleted."
+        )
+    )
 
 
 @router.get("/platform/lifecycle", response_model=PlatformLifecycleResponse)
