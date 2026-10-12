@@ -17,6 +17,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import useLatestRequest from "../utils/useLatestRequest";
 import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
 import { useDropUrlParam } from "../utils/useListUrlFilters";
+import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
 const ITEMS_PER_PAGE = 15;
 
@@ -38,6 +39,9 @@ const PAYMENT_TERMS_OPTIONS = [
   { value: "net_60", label: "Net 60" },
   { value: "net_90", label: "Net 90" },
 ];
+
+// Tax identifiers a customer can carry; "Require Tax ID" is met by any one.
+const TAX_ID_FIELDS = ["gst_number", "vat_number", "pan", "tin", "tax_id"];
 
 const PAYMENT_TERMS_CREDIT_DAYS = {
   due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60, net_90: 90,
@@ -67,7 +71,7 @@ const ALL_COLUMNS = [
 
 export default function CustomerListPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
   const { baseCurrency } = useCurrency();
   const { singular, plural, getLabel } = useTerminology();
@@ -86,6 +90,10 @@ export default function CustomerListPage() {
   const dropUrlParam = useDropUrlParam();
   // User-driven status changes supersede a ?status= deep link.
   const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
+  // ?over_credit_limit=1 (Customer Dashboard "Over Credit Limit" card): the
+  // server applies the same rule as the KPI (incl. deactivated customers).
+  const overCreditLimit = searchParams.get("over_credit_limit") === "1";
+  const clearOverCreditLimit = () => { dropUrlParam("over_credit_limit"); setCurrentPage(1); };
   const [typeFilter, setTypeFilter] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [paymentTermsFilter, setPaymentTermsFilter] = useState("");
@@ -118,10 +126,15 @@ export default function CustomerListPage() {
 
   const [kpiData, setKpiData] = useState(null);
   const [orgConfig, setOrgConfig] = useState(null);
+  // Customer Settings (BUG-13): default type for new customers and the
+  // creation-time requirements, read from the organization's configuration.
+  const defaultCustomerType = orgConfig?.default_customer_type || "business";
+  const requireBillingAddress = Boolean(orgConfig?.require_billing_address);
+  const requireTaxId = Boolean(orgConfig?.require_tax_id);
 
   const [newCustomer, setNewCustomer] = useState({
     company_name: "", display_name: "", legal_name: "", email: "", phone: "", website: "",
-    customer_type: "business", status: "active",
+    customer_type: null, status: "active",
     gst_number: "", vat_number: "", pan: "", tin: "", tax_id: "",
     billing_address: "", shipping_address: "", billing_country: "", shipping_country: "",
     shipping_same_as_billing: false,
@@ -161,10 +174,15 @@ export default function CustomerListPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const hasActiveFilters = statusFilter || typeFilter || currencyFilter || paymentTermsFilter || industryFilter || creditLimitMin || creditLimitMax || dateFrom || dateTo;
+  const hasActiveFilters = statusFilter || typeFilter || currencyFilter || paymentTermsFilter || industryFilter || creditLimitMin || creditLimitMax || dateFrom || dateTo || overCreditLimit;
 
   const clearFilters = () => {
-    chooseStatus(""); setTypeFilter(""); setCurrencyFilter(""); setPaymentTermsFilter("");
+    // One URL update for both deep-link params (two setSearchParams calls in
+    // the same tick would overwrite each other).
+    if (searchParams.has("status") || searchParams.has("over_credit_limit")) {
+      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("status"); next.delete("over_credit_limit"); return next; }, { replace: true });
+    }
+    setStatusFilter(""); setTypeFilter(""); setCurrencyFilter(""); setPaymentTermsFilter("");
     setIndustryFilter(""); setCreditLimitMin(""); setCreditLimitMax("");
     setDateFrom(""); setDateTo(""); setCurrentPage(1);
   };
@@ -193,6 +211,7 @@ export default function CustomerListPage() {
         credit_limit_max: creditLimitMax || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        over_credit_limit: overCreditLimit || undefined,
         sort_by: sortField,
         sort_order: sortDir,
       };
@@ -215,7 +234,7 @@ export default function CustomerListPage() {
         setRefreshing(false);
       }
     }
-  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, currencyFilter, paymentTermsFilter, industryFilter, creditLimitMin, creditLimitMax, dateFrom, dateTo, overCreditLimit, sortField, sortDir]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -333,21 +352,36 @@ export default function CustomerListPage() {
     if (!newCustomer.email?.trim()) { setFormError("Email is required"); setFormLoading(false); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(newCustomer.email.trim())) { setFormError("Please enter a valid email address"); setFormLoading(false); return; }
+    // Customer Settings requirements (also enforced by the server on create).
+    if (requireBillingAddress && !newCustomer.billing_address?.trim()) {
+      setFormError("Billing address is required for new customers (Customer Settings)."); setFormLoading(false); return;
+    }
+    if (requireTaxId && !TAX_ID_FIELDS.some((f) => String(newCustomer[f] || "").trim())) {
+      setFormError(newCustomer.billing_country
+        ? "A tax ID is required for new customers (Customer Settings)."
+        : "A tax ID is required for new customers (Customer Settings). Choose a billing country to show its tax ID fields.");
+      setFormLoading(false); return;
+    }
     try {
       const payload = {
         ...newCustomer,
-        customer_code: newCustomer.customer_code || `CUST-${Date.now()}`,
+        // Left out, the server assigns the next number from Customer Settings
+        // (prefix + format); a hardcoded type is not sent either, so the
+        // organization's Default Customer Type applies.
+        customer_code: newCustomer.customer_code?.trim() || undefined,
+        customer_type: newCustomer.customer_type || defaultCustomerType,
         display_name: newCustomer.display_name?.trim() || newCustomer.company_name.trim(),
         credit_days: newCustomer.credit_days === "" || newCustomer.credit_days == null ? PAYMENT_TERMS_CREDIT_DAYS[newCustomer.payment_terms] ?? 30 : Math.max(0, parseInt(newCustomer.credit_days, 10) || 0),
         credit_limit: newCustomer.credit_limit === "" || newCustomer.credit_limit == null ? undefined : Math.max(0, parseFloat(newCustomer.credit_limit) || 0),
       };
       if (payload.credit_limit === undefined) delete payload.credit_limit;
+      if (payload.customer_code === undefined) delete payload.customer_code;
       delete payload.shipping_same_as_billing;
       await customerApi.create(payload);
       setShowCreateModal(false);
       setNewCustomer({
         company_name: "", display_name: "", legal_name: "", email: "", phone: "", website: "",
-        customer_type: "business", status: "active",
+        customer_type: null, status: "active",
         gst_number: "", vat_number: "", pan: "", tin: "", tax_id: "",
         billing_address: "", shipping_address: "", billing_country: "", shipping_country: "",
         shipping_same_as_billing: false,
@@ -408,7 +442,7 @@ export default function CustomerListPage() {
 
   const clearForm = () => setNewCustomer({
     company_name: "", display_name: "", legal_name: "", email: "", phone: "", website: "",
-    customer_type: "business", status: "active",
+    customer_type: null, status: "active",
     gst_number: "", vat_number: "", pan: "", tin: "", tax_id: "",
     billing_address: "", shipping_address: "", billing_country: "", shipping_country: "",
     shipping_same_as_billing: false,
@@ -434,7 +468,7 @@ export default function CustomerListPage() {
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Email <span className="text-red-500">*</span></label><input type="email" value={newCustomer.email} onChange={(e) => setNewCustomer((p) => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={newCustomer.phone} onChange={(e) => setNewCustomer((p) => ({ ...p, phone: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Website</label><input value={newCustomer.website} onChange={(e) => setNewCustomer((p) => ({ ...p, website: e.target.value }))} placeholder="https://example.com" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Customer Type</label><select value={newCustomer.customer_type} onChange={(e) => setNewCustomer((p) => ({ ...p, customer_type: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="business">Business</option><option value="individual">Individual</option><option value="non_profit">Non-Profit</option><option value="government">Government</option></select></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Customer Type</label><select value={newCustomer.customer_type || defaultCustomerType} onChange={(e) => setNewCustomer((p) => ({ ...p, customer_type: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="business">Business</option><option value="individual">Individual</option><option value="non_profit">Non-Profit</option><option value="government">Government</option></select></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Currency</label><select value={newCustomer.currency} onChange={(e) => setNewCustomer((p) => ({ ...p, currency: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select</option>{getCurrencySelectOptions().map((c) => (<option key={c.value} value={c.value}>{c.value} - {c.label}</option>))}</select></div>
@@ -443,7 +477,7 @@ export default function CustomerListPage() {
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Days</label><input type="number" min="0" step="1" value={newCustomer.credit_days} onChange={(e) => setNewCustomer((p) => ({ ...p, credit_days: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }))} placeholder="0" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address</label><textarea rows={2} value={newCustomer.billing_address} onChange={(e) => setNewCustomer((p) => ({ ...p, billing_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
+          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address{requireBillingAddress ? " *" : ""}</label><textarea rows={2} aria-required={requireBillingAddress || undefined} value={newCustomer.billing_address} onChange={(e) => setNewCustomer((p) => ({ ...p, billing_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => {
             const country = e.target.value;
             const curInfo = getCurrencyForCountry(country);
@@ -479,7 +513,8 @@ export default function CustomerListPage() {
               <input value={newCustomer[f.key] || ""} onChange={(e) => setNewCustomer((p) => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           ))}
-          {!newCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).</p>}
+          {!newCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).{requireTaxId ? " A tax ID is required for new customers." : ""}</p>}
+          {newCustomer.billing_country && requireTaxId && <p className="md:col-span-2 text-xs text-slate-500">A tax ID is required for new customers: fill in at least one of the fields above.</p>}
         </div>
         <div className="mb-4"><label className="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea rows={2} value={newCustomer.notes} onChange={(e) => setNewCustomer((p) => ({ ...p, notes: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
@@ -679,6 +714,12 @@ export default function CustomerListPage() {
                   <X size={14} /> Clear
                 </button>
               )}
+            </div>
+          )}
+          {overCreditLimit && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <ActiveUrlFilterChips overCreditLimit onClearOverCreditLimit={clearOverCreditLimit} />
+              <button onClick={clearFilters} className="text-xs font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
             </div>
           )}
         </div>

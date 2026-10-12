@@ -11,6 +11,10 @@ let globalCurrency = null;
 let globalCurrencyUnavailable = false;
 let globalPromise = null;
 const listeners = new Set();
+// Bumped on every config invalidation. A load started before it (e.g. the
+// previous account's, still in flight at logout/account switch) receives the
+// previous organization's config and must not write that currency back.
+let currencyGeneration = 0;
 
 function notifyListeners() {
   listeners.forEach((fn) => fn(globalCurrency, globalCurrencyUnavailable));
@@ -19,9 +23,11 @@ function notifyListeners() {
 export function loadGlobalCurrency() {
   if (globalCurrency) return Promise.resolve(globalCurrency);
   if (globalPromise) return globalPromise;
+  const generation = currencyGeneration;
   globalPromise = (async () => {
     try {
       const data = await loadGlobalBillingConfig();
+      if (generation !== currencyGeneration) return globalCurrency;
       const resolved = data?.base_currency || data?.default_currency || data?.home_currency || null;
       if (resolved) {
         globalCurrency = resolved;
@@ -34,6 +40,7 @@ export function loadGlobalCurrency() {
         globalCurrencyUnavailable = true;
       }
     } catch {
+      if (generation !== currencyGeneration) return globalCurrency;
       // Previously this cached DEFAULT_CURRENCY here and `if (globalCurrency)`
       // above meant that fake "USD" was treated as a real resolved value
       // for the rest of the session -- a transient network/auth error on
@@ -57,6 +64,7 @@ export function loadGlobalCurrency() {
 // authenticated: on logout the shared cache is invalidated AFTER the session
 // is cleared, so re-fetching then only issues an unauthenticated 401.
 subscribeBillingConfigInvalidation(() => {
+  currencyGeneration += 1;
   globalCurrency = null;
   globalCurrencyUnavailable = false;
   globalPromise = null;

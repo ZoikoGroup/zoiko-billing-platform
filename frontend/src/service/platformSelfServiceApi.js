@@ -41,23 +41,29 @@ export const platformSelfServiceApi = {
 // (billing config) -- not a new pattern.
 let cachedSubscription = null;
 let inflightSubscription = null;
+// See orgAdminService.js: a request from before an invalidation (previous
+// account) must not repopulate the cache or clear the next request's slot.
+let cacheGeneration = 0;
 
 export function getZoikoSubscriptionCached() {
   if (cachedSubscription) return Promise.resolve(cachedSubscription);
   if (inflightSubscription) return inflightSubscription;
-  inflightSubscription = platformSelfServiceApi
+  const generation = cacheGeneration;
+  const request = platformSelfServiceApi
     .getZoikoSubscription()
     .then((data) => {
-      cachedSubscription = data;
+      if (generation === cacheGeneration) cachedSubscription = data;
       return data;
     })
     .finally(() => {
-      inflightSubscription = null;
+      if (inflightSubscription === request) inflightSubscription = null;
     });
-  return inflightSubscription;
+  inflightSubscription = request;
+  return request;
 }
 
 export function invalidateZoikoSubscriptionCache() {
+  cacheGeneration += 1;
   cachedSubscription = null;
   inflightSubscription = null;
 }
