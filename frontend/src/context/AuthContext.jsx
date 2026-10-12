@@ -5,6 +5,17 @@ import { invalidateOrganizationDetailsCache } from "../service/orgAdminService";
 import { invalidateZoikoSubscriptionCache } from "../service/platformSelfServiceApi";
 import { invalidateConfigCache } from "../service/billingService";
 import { invalidateGlobalBillingConfig } from "../service/billingConfigCache";
+import { AUTH_INVALID_EVENT } from "../service/api";
+
+// Tenant isolation: per-organization data cached in module scope (org detail,
+// Zoiko subscription, billing config -- none keyed by user) must never
+// survive into another session in the same tab.
+function clearTenantCaches() {
+  invalidateOrganizationDetailsCache();
+  invalidateZoikoSubscriptionCache();
+  invalidateConfigCache();
+  invalidateGlobalBillingConfig();
+}
 
 export const AuthContext = createContext(null);
 
@@ -19,7 +30,19 @@ export function AuthProvider({ children }) {
     setUser(getStoredUser());
   }, []);
 
+  // An expired/revoked session (api.js notifySessionInvalid) sends the user to
+  // /login without a page reload or logout(); clear the tenant caches then too,
+  // otherwise the next account signed in on this tab could briefly see the
+  // previous organization's name, subscription or currency.
+  useEffect(() => {
+    const onSessionInvalid = () => { clearTenantCaches(); setUser(null); };
+    window.addEventListener(AUTH_INVALID_EVENT, onSessionInvalid);
+    return () => window.removeEventListener(AUTH_INVALID_EVENT, onSessionInvalid);
+  }, []);
+
   const login = useCallback(async (loggedInUser) => {
+    // A fresh sign-in starts from a clean slate whatever happened before.
+    clearTenantCaches();
     setStoredUser(loggedInUser);
     setUser(loggedInUser);
     return loggedInUser;
@@ -27,14 +50,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     clearSession();
-    invalidateOrganizationDetailsCache();
-    invalidateZoikoSubscriptionCache();
-    // Tenant isolation: the billing config (currency, terminology, and every
-    // other cached settingsApi.getConfig() consumer) must never survive a
-    // same-tab account switch — see billingConfigCache.js and
-    // billingService.js's own getConfig cache.
-    invalidateConfigCache();
-    invalidateGlobalBillingConfig();
+    clearTenantCaches();
     setUser(null);
   }, []);
 

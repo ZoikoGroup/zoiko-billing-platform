@@ -18,6 +18,9 @@ const TerminologyContext = createContext(null);
 let globalTerminology = null;
 let globalPromise = null;
 const listeners = new Set();
+// See CurrencyContext.jsx: a load started before a config invalidation must
+// not write the previous organization's terminology back.
+let terminologyGeneration = 0;
 
 function notifyListeners() {
   listeners.forEach((fn) => fn(globalTerminology));
@@ -26,13 +29,17 @@ function notifyListeners() {
 export function loadGlobalTerminology() {
   if (globalTerminology) return Promise.resolve(globalTerminology);
   if (globalPromise) return globalPromise;
+  const generation = terminologyGeneration;
   globalPromise = (async () => {
+    let terminology;
     try {
       const data = await loadGlobalBillingConfig();
-      globalTerminology = data?.relationship_terminology || DEFAULT_TERMINOLOGY;
+      terminology = data?.relationship_terminology || DEFAULT_TERMINOLOGY;
     } catch {
-      globalTerminology = DEFAULT_TERMINOLOGY;
+      terminology = DEFAULT_TERMINOLOGY;
     }
+    if (generation !== terminologyGeneration) return globalTerminology || DEFAULT_TERMINOLOGY;
+    globalTerminology = terminology;
     notifyListeners();
     return globalTerminology;
   })();
@@ -46,6 +53,7 @@ export function loadGlobalTerminology() {
 // cache is invalidated AFTER the session is cleared, so re-fetching then
 // only issues an unauthenticated 401.
 subscribeBillingConfigInvalidation(() => {
+  terminologyGeneration += 1;
   globalTerminology = null;
   globalPromise = null;
   if (getAccessToken()) loadGlobalTerminology();

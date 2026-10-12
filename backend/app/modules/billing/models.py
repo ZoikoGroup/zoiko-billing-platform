@@ -24,7 +24,7 @@ import enum
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, Date, DateTime,
     Text, ForeignKey, JSON, Time, UniqueConstraint,
-    Index, CheckConstraint,
+    Index, CheckConstraint, false,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -3181,6 +3181,18 @@ class BillingConfiguration(Base):
     auto_archive_days               = Column(Integer, nullable=True)
     product_visibility              = Column(String(20), default="visible")
     require_sku                     = Column(String(10), default="no")
+
+    # ── Customer Settings ──
+    # Server-side customer numbering reuses the document-numbering grammar
+    # (NumberFormat + render_document_number + DocumentSequence, doc_type
+    # "customer"). The two "require" flags are enforced on customer creation
+    # only (CustomerService.create_customer); existing customers and edits are
+    # never blocked. server_default keeps existing rows and SQLite dev DBs valid.
+    default_customer_type           = Column(CaseInsensitiveEnum(CustomerType), default=CustomerType.BUSINESS, server_default="BUSINESS", nullable=False)
+    customer_numbering_prefix       = Column(String(10), default="CUST-", server_default="CUST-", nullable=False)
+    customer_numbering_format       = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_SEQ, server_default="PREFIX_SEQ", nullable=False)
+    require_billing_address         = Column(Boolean, default=False, server_default=false(), nullable=False)
+    require_tax_id                  = Column(Boolean, default=False, server_default=false(), nullable=False)
 
     # ── Contract Settings ──
     default_contract_prefix         = Column(String(20), default="CTR-")

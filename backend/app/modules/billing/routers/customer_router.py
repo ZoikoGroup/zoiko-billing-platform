@@ -117,6 +117,7 @@ def list_customers(
     payment_terms: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    over_credit_limit: bool = Query(False, description="Only customers whose outstanding balance exceeds a positive credit limit (same rule as the dashboard KPI)"),
     sort_by: str = Query("company_name"),
     sort_order: str = Query("asc"),
 ):
@@ -136,6 +137,7 @@ def list_customers(
         payment_terms=payment_terms,
         date_from=date_from,
         date_to=date_to,
+        over_credit_limit=over_credit_limit,
         sort_by=sort_by,
         sort_order=sort_order,
     )
