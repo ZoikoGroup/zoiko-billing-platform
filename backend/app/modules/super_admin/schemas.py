@@ -1358,6 +1358,19 @@ class LifecycleTransitionResponse(BaseModel):
     plane: str = "TENANT"
 
 
+class OrganizationPurgeRequest(BaseModel):
+    """Body for the irreversible tenant hard-delete.
+
+    ``confirmation`` must equal the organization's exact ``organization_code``
+    — a deliberate speed bump that makes an accidental purge impossible from a
+    stale UI (codes are generated and not guessable). ``reason`` is stored on
+    the platform audit trail.
+    """
+
+    reason: str = Field(..., min_length=3, description="Mandatory human-readable justification")
+    confirmation: str = Field(..., min_length=1, description="Exact organization_code to confirm")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ZB-SA-P3 — Phase 3C Platform Lifecycle & Onboarding (fleet-wide read model)
 # ═══════════════════════════════════════════════════════════════════════════════
