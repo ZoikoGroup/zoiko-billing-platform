@@ -307,13 +307,15 @@ export default function ProductListPage() {
   };
 
   const hasActiveFilters = Boolean(search || statusFilter || typeFilter || categoryFilter || currencyFilter);
-  // Same full reset the import/duplicate flows already use (fetch with the
-  // clearFilters flag so no stale filter state is sent), now user-facing.
+  // Resetting the applied filters/page re-creates fetchProducts, and the
+  // fetch effect above then loads the unfiltered list from fresh state -- an
+  // explicit fetch here as well sent the same request twice (BUG-12.2). If
+  // nothing applied changed (only an un-debounced search was typed), the list
+  // already shows the unfiltered result and no request is needed.
   const clearAllFilters = () => {
     setSearch(""); setDebouncedSearch("");
     setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
     setCurrentPage(1);
-    fetchProducts(false, 1, true);
   };
 
   const handleDuplicateProduct = async (id) => {

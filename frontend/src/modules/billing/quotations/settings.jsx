@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { ErrorState } from "../../../components/billing-shared";
+import ConfirmDialog from "../../../components/ConfirmDialog";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -44,6 +45,7 @@ export default function QuotationSettingsPage() {
   const [error, setError] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [confirmRefresh, setConfirmRefresh] = useState(false);
 
   const [form, setForm] = useState({
     quote_prefix: "QOT-",
@@ -111,6 +113,13 @@ export default function QuotationSettingsPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // Refresh replaces the form with the saved values, so unsaved edits must
+  // be confirmed before they are thrown away.
+  function handleRefresh() {
+    if (hasChanges) setConfirmRefresh(true);
+    else fetchSettings();
+  }
+
   if (loading) {
     return (
       <HRPage title="Quotation Settings" subtitle="Loading settings...">
@@ -134,25 +143,32 @@ export default function QuotationSettingsPage() {
   return (
     <HRPage title="Quotation Settings" subtitle="Configure quotation defaults and behavior">
 
-      <div className="flex items-center justify-between mb-6">
-        <div />
-        <div className="flex items-center gap-2">
-          {saved && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={saveSettings} disabled={!hasChanges || saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
+        {saved && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
+            <CheckCircle className="h-4 w-4" /> Saved
+          </span>
+        )}
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={saveSettings} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
       </div>
+
+      {confirmRefresh && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="Refreshing reloads the saved quotation settings and discards your unsaved edits."
+          confirmLabel="Discard & refresh"
+          onConfirm={() => { setConfirmRefresh(false); fetchSettings(); }}
+          onClose={() => setConfirmRefresh(false)}
+        />
+      )}
 
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2" role="alert">

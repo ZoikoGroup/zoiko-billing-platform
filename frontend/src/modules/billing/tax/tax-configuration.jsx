@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Globe, Shield, Plus, X, Trash2 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { taxApi, settingsApi } from "../../../service/billingService";
@@ -20,6 +20,8 @@ const JURISDICTION_TYPES = [
   { value: "region", label: "Region" },
 ];
 
+const serializeConfig = (jurisdictions, exemptions) => JSON.stringify({ jurisdictions, exemptions });
+
 export default function TaxConfigurationPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,6 +35,14 @@ export default function TaxConfigurationPage() {
 
   const [newExemption, setNewExemption] = useState({ name: "", description: "", tax_rate_id: "", jurisdiction: "" });
   const [newJurisdiction, setNewJurisdiction] = useState({ name: "", type: "country", tax_rule: "standard" });
+
+  // Dirty tracking: `snapshot` is the serialized jurisdictions/exemptions as
+  // last loaded or saved; Save is only enabled when the current lists differ.
+  // `latest` lets the (stable) fetchData keep a list it doesn't overwrite.
+  const [snapshot, setSnapshot] = useState(null);
+  const latest = useRef({ jurisdictions, exemptions });
+  latest.current = { jurisdictions, exemptions };
+  const hasChanges = snapshot !== null && serializeConfig(jurisdictions, exemptions) !== snapshot;
 
   const fetchData = useCallback(async () => {
     try {
@@ -51,6 +61,8 @@ export default function TaxConfigurationPage() {
         return;
       }
       setLoadFailed(false);
+      let nextJurisdictions = latest.current.jurisdictions;
+      let nextExemptions = latest.current.exemptions;
 
       if (ratesRes.status === "fulfilled") {
         const items = extractArray(ratesRes.value);
@@ -63,18 +75,22 @@ export default function TaxConfigurationPage() {
             type: "country",
             tax_rule: "standard",
           }));
-          setJurisdictions(juris);
+          nextJurisdictions = juris;
         }
       }
 
       // Load saved jurisdictions/exemptions from tax_profiles JSON
-      if (settingsRes.status === "fulfilled") {
-        const profiles = settingsRes.value?.tax_profiles || [];
-        const savedJuris = profiles.find((p) => p?.type === "jurisdictions");
-        const savedExemptions = profiles.find((p) => p?.type === "exemptions");
-        if (savedJuris?.data?.length) setJurisdictions(savedJuris.data);
-        if (savedExemptions?.data?.length) setExemptions(savedExemptions.data);
-      }
+      const profiles = settingsRes.value?.tax_profiles || [];
+      const savedJuris = profiles.find((p) => p?.type === "jurisdictions")?.data || [];
+      const savedExemptions = profiles.find((p) => p?.type === "exemptions")?.data || [];
+      if (savedJuris.length) nextJurisdictions = savedJuris;
+      if (savedExemptions.length) nextExemptions = savedExemptions;
+      setJurisdictions(nextJurisdictions);
+      setExemptions(nextExemptions);
+      // The baseline is what is actually stored, not what is displayed:
+      // jurisdictions derived from tax rates (nothing saved yet) are unsaved
+      // defaults, so Save stays available to persist them.
+      setSnapshot(serializeConfig(savedJuris, savedExemptions));
     } catch (err) {
       setError(err.message || "Failed to load tax configuration");
     } finally {
@@ -120,6 +136,7 @@ export default function TaxConfigurationPage() {
           { type: "exemptions", data: exemptions },
         ],
       });
+      setSnapshot(serializeConfig(jurisdictions, exemptions));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -148,8 +165,8 @@ export default function TaxConfigurationPage() {
   return (
     <HRPage title="Tax Configuration" subtitle="Configure tax settings">
 
-      <div className="flex items-center justify-between mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-w-0">
           <div className="bg-white rounded-3xl border border-slate-200 p-4">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Jurisdictions</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{jurisdictions.length}</p>
@@ -163,7 +180,7 @@ export default function TaxConfigurationPage() {
             <p className="text-2xl font-bold text-slate-900 mt-1">{exemptions.length}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 ml-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {saved && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
               <CheckCircle className="h-4 w-4" /> Saved
@@ -173,7 +190,7 @@ export default function TaxConfigurationPage() {
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || loadFailed || !hasChanges}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
             {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
             Save Changes
@@ -222,18 +239,18 @@ export default function TaxConfigurationPage() {
           ) : (
             <div className="space-y-2">
               {jurisdictions.map((j, i) => (
-                <div key={j.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Globe size={16} className="text-brand-500" />
-                    <span className="text-sm font-medium text-slate-800">{j.name}</span>
-                    <span className="text-xs text-slate-500 capitalize">({j.type})</span>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                <div key={j.id || i} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Globe size={16} className="text-brand-500 shrink-0" />
+                    <span className="min-w-0 truncate text-sm font-medium text-slate-800" title={j.name}>{j.name}</span>
+                    <span className="shrink-0 text-xs text-slate-500 capitalize">({j.type})</span>
+                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       j.tax_rule === "standard" ? "bg-blue-100 text-blue-700" :
                       j.tax_rule === "reduced" ? "bg-amber-100 text-amber-700" :
                       j.tax_rule === "zero" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
                     }`}>{j.tax_rule}</span>
                   </div>
-                  <button type="button" onClick={() => removeJurisdiction(j.id)} aria-label={`Remove jurisdiction ${j.name || ""}`.trim()} className="p-1 text-slate-500 hover:text-red-600">
+                  <button type="button" onClick={() => removeJurisdiction(j.id)} aria-label={`Remove jurisdiction ${j.name || ""}`.trim()} className="shrink-0 p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -278,18 +295,18 @@ export default function TaxConfigurationPage() {
           ) : (
             <div className="space-y-2">
               {exemptions.map((e, i) => (
-                <div key={e.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <X size={16} className="text-amber-500" />
-                    <span className="text-sm font-medium text-slate-800">{e.name}</span>
-                    {e.description && <span className="text-xs text-slate-500">{e.description}</span>}
+                <div key={e.id || i} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <X size={16} className="text-amber-500 shrink-0" />
+                    <span className="min-w-0 truncate text-sm font-medium text-slate-800" title={e.name}>{e.name}</span>
+                    {e.description && <span className="min-w-0 truncate text-xs text-slate-500" title={e.description}>{e.description}</span>}
                     {e.tax_rate_id && (
-                      <span className="text-xs text-brand-600 font-medium">
+                      <span className="shrink-0 text-xs text-brand-600 font-medium">
                         Rate: {taxRates.find((r) => String(r.id) === String(e.tax_rate_id))?.name || `#${e.tax_rate_id}`}
                       </span>
                     )}
                   </div>
-                  <button type="button" onClick={() => removeExemption(e.id)} aria-label="Remove exemption" className="p-1 text-slate-500 hover:text-red-600">
+                  <button type="button" onClick={() => removeExemption(e.id)} aria-label="Remove exemption" className="shrink-0 p-1 text-slate-500 hover:text-red-600">
                     <Trash2 size={14} />
                   </button>
                 </div>

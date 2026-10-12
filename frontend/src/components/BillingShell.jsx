@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   X,
@@ -266,27 +266,42 @@ export function activeChildHref(children, pathname, search = "") {
   return best;
 }
 
-// Sidebar sections open independently (multi-open is intentional, see the
-// openSections comment below). The open/closed decision must be derived from
-// the Set handed to the state updater, not from the render-time closure:
-// two toggles queued in one render (fast double-click) both read the same
-// stale snapshot, so the second click never reverted the first.
-export function sectionExpandedIn(openSet, section, pathname, search) {
-  if (openSet.has(section.label)) return true;
-  if (openSet.has(`!${section.label}`)) return false;
-  return section.children?.some((c) => isActive(c.href, pathname, search)) ?? false;
+// Sidebar sections are single-expand (BUG-11.1, approved product decision):
+// at most one section is open. `choice` is the user's last explicit toggle,
+// { label: string | null, route }, and only applies on the route where it was
+// made -- after any navigation (link, back/forward, drawer reopen) the open
+// section is again the one containing the current route, so open sections
+// never pile up. The open/closed decision must be derived from the `choice`
+// handed to the state updater, not from the render-time closure: two toggles
+// queued in one render (fast double-click) must cancel out.
+// Keyed on the path only: list pages rewrite their query string as filters
+// change (useListUrlFilters), and that must not snap a section the user just
+// opened shut. Which section owns the route still considers the query.
+const routeKey = (pathname) => pathname;
+
+// If links in two sections both prefix-match the route, the section holding
+// the most specific link wins (same rule as activeChildHref within a section).
+function routeSectionLabel(sections, pathname, search) {
+  let best = null;
+  for (const section of sections || []) {
+    const href = activeChildHref(section.children, pathname, search);
+    if (href && (!best || href.length > best.href.length)) best = { label: section.label, href };
+  }
+  return best ? best.label : null;
 }
 
-export function toggleSectionIn(openSet, section, pathname, search) {
-  const next = new Set(openSet);
-  if (sectionExpandedIn(openSet, section, pathname, search)) {
-    next.delete(section.label);
-    next.add(`!${section.label}`);
-  } else {
-    next.delete(`!${section.label}`);
-    next.add(section.label);
-  }
-  return next;
+export function expandedSectionLabel(choice, sections, pathname, search) {
+  if (choice && choice.route === routeKey(pathname, search)) return choice.label;
+  return routeSectionLabel(sections, pathname, search);
+}
+
+export function sectionExpandedIn(choice, section, pathname, search, sections) {
+  return expandedSectionLabel(choice, sections, pathname, search) === section.label;
+}
+
+export function toggleSectionIn(choice, section, pathname, search, sections) {
+  const open = sectionExpandedIn(choice, section, pathname, search, sections);
+  return { label: open ? null : section.label, route: routeKey(pathname, search) };
 }
 
 const sectionPanelId = (label) => `nav-section-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -307,7 +322,8 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={sectionPanelId(item.label)}
+          /* The panel is unmounted while collapsed; only reference it when it exists. */
+          aria-controls={expanded ? sectionPanelId(item.label) : undefined}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
               ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
@@ -437,7 +453,7 @@ function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, sea
 // Accordion sidebar for org_admin / billing_admin — unchanged by the
 // super_admin flat-sidebar redesign (see SuperAdminSidebarContent below,
 // which super_admin renders instead of this component entirely).
-function SidebarContent({ onNavigate, role }) {
+export function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
   // NAV_SECTIONS no longer carries any superAdminOnly entries — those moved
@@ -452,19 +468,22 @@ function SidebarContent({ onNavigate, role }) {
 
   const visibleFooter = role === "org_admin" ? FOOTER_NAV_ITEMS : [];
 
-  // Each section tracks its own open/closed state independently (a Set of
-  // labels the user has explicitly opened), rather than one shared value —
-  // expanding "Governance & Security" must not silently collapse whatever
-  // else was already open. A section not yet touched by the user still
-  // defaults open if the current route matches one of its children.
-  const [openSections, setOpenSections] = useState(() => new Set());
+  // Single-expand: opening a section closes the previously open one. With no
+  // explicit toggle on the current route, the section containing the route
+  // is the open one (see expandedSectionLabel).
+  const [sectionChoice, setSectionChoice] = useState(null);
+  // Any navigation (link, back/forward) hands the decision back to the route.
+  // expandedSectionLabel already ignores a choice made on another route, so
+  // this only stops an old choice resurfacing when the user returns to it.
+  const currentRoute = routeKey(pathname, search);
+  useEffect(() => { setSectionChoice(null); }, [currentRoute]);
 
   function isSectionExpanded(section) {
-    return sectionExpandedIn(openSections, section, pathname, search);
+    return sectionExpandedIn(sectionChoice, section, pathname, search, visibleSections);
   }
 
   function toggleSection(section) {
-    setOpenSections((prev) => toggleSectionIn(prev, section, pathname, search));
+    setSectionChoice((prev) => toggleSectionIn(prev, section, pathname, search, visibleSections));
   }
 
   return (

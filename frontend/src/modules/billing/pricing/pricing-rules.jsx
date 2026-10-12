@@ -67,7 +67,24 @@ export function validateRuleContract(form) {
   if (form.rule_type === "percentage_discount" && Number(form.value) > 100) return "A percentage discount cannot exceed 100";
   if (form.scope === "product" && !String(form.product_id ?? "").trim()) return "Product ID is required for a product-scoped rule";
   if (form.scope === "region" && !String(form.region ?? "").trim()) return "Region is required for a region-scoped rule";
+  // Same minimums as the backend schema (priority >= 0, usage_limit >= 1, both
+  // integers) so the user gets a clear message instead of a raw 422.
+  if (!isBlank(form.priority) && !isWholeNumberAtLeast(form.priority, 0)) return "Priority must be a whole number of 0 or more";
+  if (!isBlank(form.usage_limit) && !isWholeNumberAtLeast(form.usage_limit, 1)) return "Usage limit must be a whole number of 1 or more (leave empty for unlimited)";
+  // Date-only YYYY-MM-DD strings compare correctly as strings.
+  if (form.effective_from && form.effective_to && form.effective_to < form.effective_from) {
+    return "Effective To must be on or after Effective From";
+  }
   return null;
+}
+
+function isBlank(v) {
+  return v === "" || v == null;
+}
+
+function isWholeNumberAtLeast(v, min) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= min;
 }
 
 function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
@@ -110,7 +127,7 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
     const payload = {
       name: form.name.trim(),
       code: form.code.trim().toUpperCase(),
-      description: form.description || null,
+      description: form.description.trim() || null,
       rule_type: form.rule_type,
       scope: form.scope,
       priority: Number(form.priority) || 0,
@@ -173,11 +190,11 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
               </select>
             </div>
             <div><label htmlFor="rule-value" className="block text-xs font-medium text-slate-500 mb-1">Value{VALUE_REQUIRED_TYPES.has(form.rule_type) ? " *" : ""}</label><input id="rule-value" type="number" step="0.01" min="0" max={form.rule_type === "percentage_discount" ? 100 : undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
-            <div><label htmlFor="rule-priority" className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input id="rule-priority" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
+            <div><label htmlFor="rule-priority" className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input id="rule-priority" type="number" min="0" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label htmlFor="rule-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="rule-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-            <div><label htmlFor="rule-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="rule-to" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+            <div><label htmlFor="rule-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="rule-to" type="date" min={form.effective_from || undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label htmlFor="rule-status-field" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
@@ -185,7 +202,7 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
                 <option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="scheduled">Scheduled</option>
               </select>
             </div>
-            <div><label htmlFor="rule-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="rule-usage-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
+            <div><label htmlFor="rule-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="rule-usage-limit" type="number" min="1" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label htmlFor="rule-product" className="block text-xs font-medium text-slate-500 mb-1">Product ID{form.scope === "product" ? " *" : ""}</label><input id="rule-product" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder={form.scope === "product" ? "Required for Product scope" : "Optional — all products"} /></div>
@@ -300,7 +317,7 @@ export default function PricingRulesPage() {
     <HRPage title="Pricing Rules" icon={ListFilter}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />

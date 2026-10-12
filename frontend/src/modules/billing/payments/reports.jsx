@@ -32,6 +32,17 @@ const TABS = [
 export const monthlyTrendTooltip = (formatMoney) => (value, name) =>
   [name === "Count" ? value : formatMoney(value), name];
 
+// KPI money value. Large amounts used to overflow the 4-up cards; the value
+// now scales down below xl and truncates, with the full formatted amount kept
+// in `title` so nothing is lost.
+function KpiAmount({ value, className = "" }) {
+  return (
+    <p className={`mt-1 truncate text-xl font-bold xl:text-2xl ${className}`} title={value}>
+      {value}
+    </p>
+  );
+}
+
 export default function PaymentReportsPage() {
   const { baseCurrency } = useCurrency();
   const { range, setRange, customStart, setCustomStart, customEnd, setCustomEnd } = useDateRange();
@@ -280,24 +291,24 @@ export default function PaymentReportsPage() {
       {activeTab === "overview" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
+              <KpiAmount className="text-emerald-700" value={formatCurrency(totalCollected, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">{completed.length} completed payments</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
-              <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
+              <KpiAmount className="text-red-600" value={formatCurrency(totalRefunded, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">{fRefunds.length} refunds</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
+              <KpiAmount className="text-slate-900" value={formatCurrency(netCashflow, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">Collected minus refunds</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
+              <KpiAmount className="text-amber-600" value={formatCurrency(totalOutstanding, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">{fInvoices.length} invoices</p>
             </div>
           </div>
@@ -453,19 +464,19 @@ export default function PaymentReportsPage() {
       {activeTab === "outstanding" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Outstanding</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
+              <KpiAmount className="text-amber-600" value={formatCurrency(totalOutstanding, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">{fInvoices.length} invoices</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Available Credits</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatCurrency(totalCredits, baseCurrency)}</p>
+              <KpiAmount className="text-blue-600" value={formatCurrency(totalCredits, baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">{fCredits.filter((c) => c.status === "issued").length} issued</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Receivable</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(Math.max(0, totalOutstanding - totalCredits), baseCurrency)}</p>
+              <KpiAmount className="text-slate-900" value={formatCurrency(Math.max(0, totalOutstanding - totalCredits), baseCurrency)} />
               <p className="text-xs text-slate-500 mt-1">Outstanding minus credits</p>
             </div>
           </div>
@@ -496,17 +507,17 @@ export default function PaymentReportsPage() {
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Credits</p>
               <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{fCredits.length}</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Value</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1 whitespace-nowrap">{formatCurrency(sumInBaseCurrency(fCredits, baseCurrency).total, baseCurrency)}</p>
+              <KpiAmount className="text-blue-600" value={formatCurrency(sumInBaseCurrency(fCredits, baseCurrency).total, baseCurrency)} />
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunds</p>
               <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{fRefunds.length}</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Refund Value</p>
-              <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
+              <KpiAmount className="text-red-600" value={formatCurrency(totalRefunded, baseCurrency)} />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -514,9 +525,9 @@ export default function PaymentReportsPage() {
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Write-offs</p>
               <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{fWriteOffs.length}</p>
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Written-off Value</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalWrittenOff, baseCurrency)}</p>
+              <KpiAmount className="text-amber-600" value={formatCurrency(totalWrittenOff, baseCurrency)} />
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Approval</p>
@@ -664,17 +675,17 @@ export default function PaymentReportsPage() {
       {activeTab === "cashflow" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Collected</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1 whitespace-nowrap">{formatCurrency(totalCollected, baseCurrency)}</p>
+              <KpiAmount className="text-emerald-700" value={formatCurrency(totalCollected, baseCurrency)} />
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Refunded</p>
-              <p className="text-2xl font-bold text-red-600 mt-1 whitespace-nowrap">{formatCurrency(totalRefunded, baseCurrency)}</p>
+              <KpiAmount className="text-red-600" value={formatCurrency(totalRefunded, baseCurrency)} />
             </div>
-            <div className="bg-white rounded-3xl border border-slate-200 p-5">
+            <div className="min-w-0 bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</p>
-              <p className="text-2xl font-bold text-brand-600 mt-1 whitespace-nowrap">{formatCurrency(netCashflow, baseCurrency)}</p>
+              <KpiAmount className="text-brand-600" value={formatCurrency(netCashflow, baseCurrency)} />
             </div>
             <div className="bg-white rounded-3xl border border-slate-200 p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Count</p>

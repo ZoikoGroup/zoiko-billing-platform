@@ -4,6 +4,7 @@ import HRPage from "../../../components/HRPage";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, ErrorState } from "../../../components/billing-shared";
+import ConfirmDialog from "../../../components/ConfirmDialog";
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
@@ -81,6 +82,7 @@ export default function PricingSettingsPage() {
   const [error, setError] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [confirmRefresh, setConfirmRefresh] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -147,6 +149,13 @@ export default function PricingSettingsPage() {
     setSuccess(false);
   };
 
+  // Refresh replaces the form with the saved values, so unsaved edits must
+  // be confirmed before they are thrown away.
+  const handleRefresh = () => {
+    if (hasChanges) setConfirmRefresh(true);
+    else fetchSettings();
+  };
+
   if (loading) {
     return (
       <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
@@ -168,25 +177,32 @@ export default function PricingSettingsPage() {
   return (
     <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
 
-      <div className="flex items-center justify-between mb-6">
-        <div />
-        <div className="flex items-center gap-2">
-          {success && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
+        {success && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
+            <CheckCircle className="h-4 w-4" /> Saved
+          </span>
+        )}
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
       </div>
+
+      {confirmRefresh && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="Refreshing reloads the saved pricing settings and discards your unsaved edits."
+          confirmLabel="Discard & refresh"
+          onConfirm={() => { setConfirmRefresh(false); fetchSettings(); }}
+          onClose={() => setConfirmRefresh(false)}
+        />
+      )}
 
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
