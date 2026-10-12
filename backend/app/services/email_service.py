@@ -224,7 +224,7 @@ TEMPLATE_NAME_TO_ID = {
     "org_admin_invite.html": "ZB-ORG-002",
     "org_admin_password_reset.html": "ZB-SEC-003",
     "registration_received.html": "ZB-ORG-002",
-    "platform_quote_sent.html": "ZB-CHG-008",
+    "platform_quote_sent.html": "ZB-CHG-006",
     "contract_activated.html": "ZB-CON-001",
     "contract_renewed.html": "ZB-CON-002",
 }

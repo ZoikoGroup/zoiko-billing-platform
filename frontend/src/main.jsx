@@ -5,6 +5,7 @@ import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 import { DarkModeProvider } from "./context/DarkModeContext";
 import { CommandCenterProvider } from "./context/CommandCenterContext";
+import "./fonts.css";
 import "./index.css";
 
 createRoot(document.getElementById("root")).render(

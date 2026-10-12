@@ -223,6 +223,9 @@ def test_intended_plan_stored_without_provisioning_subscription(db_session):
         # ZB-SA-CMD-003 v3.0: no country → an explicit currency is mandatory.
         currency="USD",
         intended_plan="professional",
+        # A "buy now" signup keeps the plan it chose; the default trial start
+        # always records Essentials (see test_registration_start_mode.py).
+        start_mode="paid",
     )
     register_enterprise(db_session, data)
 

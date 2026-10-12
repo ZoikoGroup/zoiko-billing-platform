@@ -129,7 +129,7 @@ export default function ContractListPage() {
         date_to: urlFilters.allDates ? undefined : (dateRange.date_to || undefined),
         expiring_within_days: urlFilters.expiringDays || undefined,
         sort_by: sortBy, sort_order: sortDir,
-      });
+      }, { signal: isCurrent.signal });
       if (!isCurrent()) return;
       const items = extractArray(data);
       setContracts(items);

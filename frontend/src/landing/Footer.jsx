@@ -74,7 +74,7 @@ export default function Footer() {
         <div style={styles.brand}>
           <div style={styles.logoWrap}>
             <div style={styles.logoBadge}>
-              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" style={{ height: "28px", width: "auto", display: "block" }} />
+              <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="79" height="28" style={{ height: "28px", width: "auto", display: "block" }} />
             </div>
           </div>
           <p style={styles.brandDesc}>

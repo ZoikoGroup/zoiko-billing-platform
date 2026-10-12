@@ -20,6 +20,7 @@ import {
   BusinessInsights, QuickActions, ActionCenter,
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
+import usePolling from "../../../hooks/usePolling";
 
 const CREDIT_NOTE_CRUMBS = [
   { label: "Billing", href: "/billing" },
@@ -101,9 +102,10 @@ export default function CreditNoteDashboard() {
     mountedRef.current = true;
     loadingRef.current = true;
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => { mountedRef.current = false; clearInterval(interval); };
+    return () => { mountedRef.current = false; };
   }, [fetchData]);
+
+  usePolling(fetchData, 60000);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);

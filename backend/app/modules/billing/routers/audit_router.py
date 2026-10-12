@@ -24,7 +24,7 @@ def list_logs(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
     entity_type: Optional[str] = Query(None),
     entity_id: Optional[int] = Query(None),
     action: Optional[str] = Query(None),

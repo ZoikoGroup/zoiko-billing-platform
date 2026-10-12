@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.core import auth_cache  # noqa: F401  (registers the invalidation listeners)
 from app.core.cache_service import ORG_GATE_KEY, cache_delete, cache_get, cache_set
 from app.core.security import decode_access_token
 from app.core.exceptions import ForbiddenException, UnauthorizedException
@@ -76,15 +77,21 @@ def get_current_user(
         raise UnauthorizedException("Token is missing user information.")
 
     from app.modules.auth.models import User
-
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-    except sa_exc.OperationalError:
-        raise UnauthorizedException("The database is temporarily unavailable. Please try again in a moment.")
+    # Hot path: auth fields come from a short-TTL cache (core/auth_cache.py,
+    # explicitly invalidated on every user/org/MFA write) -> no users query.
+    user = None
+    if isinstance(user_id, int) and auth_cache.user_cache_ttl() > 0:
+        user = auth_cache.get_cached_user(db, user_id)
     if user is None:
-        raise UnauthorizedException("User account not found. Please log in again.")
-    if not user.is_active:
-        raise UnauthorizedException("Your account is disabled. Contact your administrator.")
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+        except sa_exc.OperationalError:
+            raise UnauthorizedException("The database is temporarily unavailable. Please try again in a moment.")
+        if user is None:
+            raise UnauthorizedException("User account not found. Please log in again.")
+        if not user.is_active:
+            raise UnauthorizedException("Your account is disabled. Contact your administrator.")
+        auth_cache.store_user(user)
 
     # Reject tokens issued for a different role/org than the DB currently
     # holds — a role demotion or org transfer must invalidate stale sessions.

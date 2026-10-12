@@ -319,6 +319,23 @@ class PlatformStripeService:
                     actor_id=None,
                 )
 
+            # A paid PLAN_CHANGE invoice is the payment half of a self-serve
+            # upgrade: only now does the plan swap actually happen.
+            if invoice is not None and not invoice.balance_due:
+                from app.modules.commercial.plan_change_billing import complete_plan_change_for_invoice
+
+                applied = complete_plan_change_for_invoice(self.db, invoice)
+                if applied is not None:
+                    out = {
+                        "action": "payment_recorded",
+                        "payment_id": payment.id,
+                        "plan_change_applied": applied.change_id,
+                    }
+                    if applied.trial_converted_subscription_id:
+                        # Post-commit confirmation email, same as a plain conversion.
+                        out["trial_converted"] = applied.trial_converted_subscription_id
+                    return out
+
             # §5.2 invoice-linkage trigger (mirrors
             # _maybe_complete_trial_conversion_on_allocation): this payment
             # settled an invoice tied to a trial-conversion subscription. The
@@ -365,6 +382,12 @@ class PlatformStripeService:
                     CommercialSubscriptionService(self.db).transition(
                         invoice_subscription, CommercialSubscriptionStatus.ACTIVE,
                     )
+                    # Without this a subscription activated through its linked
+                    # invoice has no billing period at all (the first-payment
+                    # block below only sees PENDING/TRIALING rows, and this one
+                    # is already ACTIVE by then), so no renewal date or
+                    # renewal invoice would ever be derived for it.
+                    self._stamp_first_period(invoice_subscription)
 
         if cleared_count == 1:
             # PENDING: never-activated self-serve subscription paying for
@@ -421,19 +444,30 @@ class PlatformStripeService:
                 # None for PENDING (never trialing), but cleared defensively for
                 # SUSPENDED (trial had expired and they are now paying).
                 now = datetime.utcnow()
-                subscription.trial_ends_at = None
-                subscription.recovery_ends_at = None
-                subscription.current_period_start = now
-                plan = subscription.plan
-                if plan is not None and plan.billing_interval is not None:
-                    from app.modules.commercial.service import CommercialSubscriptionService as _CSS
-                    subscription.current_period_end = _CSS._add_months(
-                        now,
-                        12 if plan.billing_interval.value == "annual" else 1,
-                    )
-                self.db.flush()
+                self._stamp_first_period(subscription, now=now)
 
         return {"action": "payment_recorded", "payment_id": payment.id}
+
+    def _stamp_first_period(self, subscription, now: Optional[datetime] = None) -> None:
+        """Anchor the billing period on the first payment date (the canonical
+        plan-start moment) and clear any trial/recovery markers."""
+        now = now or datetime.utcnow()
+        subscription.trial_ends_at = None
+        subscription.recovery_ends_at = None
+        subscription.current_period_start = now
+        from app.modules.commercial.service import CommercialSubscriptionService as _CSS
+
+        # Interval comes from the resolved price (published version first, then
+        # the plan row); a plan that states none renews monthly.
+        interval = None
+        resolved = _CSS(self.db).resolve_price(subscription)
+        if resolved is not None:
+            interval = resolved[2]
+        if interval is None and subscription.plan is not None:
+            interval = subscription.plan.billing_interval
+        months = 12 if interval is not None and interval.value == "annual" else 1
+        subscription.current_period_end = _CSS._add_months(now, months)
+        self.db.flush()
 
     def _dispatch_trial_converted_email(self, subscription_id: int) -> None:
         from app.modules.commercial.models import CommercialSubscription

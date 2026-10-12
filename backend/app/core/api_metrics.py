@@ -98,3 +98,60 @@ def snapshot(window_seconds: int = WINDOW_SECONDS) -> dict:
             (datetime.utcnow() - timedelta(seconds=window_seconds)).isoformat() + "Z"
         ),
     }
+
+
+
+# ── Per-route telemetry (all routes) ─────────────────────────────────────────
+# Performance work needs p50/p95 AND statements-per-request for EVERY route,
+# keyed by the route TEMPLATE (e.g. "/api/billing/invoices/{invoice_id}"), not
+# the raw URL, so path ids don't explode the key space. Bounded per route.
+_ROUTE_LOCK = threading.Lock()
+_ROUTE_WINDOWS: dict = {}
+_ROUTE_SAMPLES = 500
+_MAX_ROUTES = 600
+
+
+def record_route(method: str, route: str, duration_ms: float, status_code: int, queries: int) -> None:
+    key = (method, route)
+    with _ROUTE_LOCK:
+        window = _ROUTE_WINDOWS.get(key)
+        if window is None:
+            if len(_ROUTE_WINDOWS) >= _MAX_ROUTES:
+                return
+            window = _ROUTE_WINDOWS[key] = deque(maxlen=_ROUTE_SAMPLES)
+        window.append((duration_ms, status_code, queries))
+
+
+def route_snapshot(min_samples: int = 1) -> list:
+    """One row per route template: count, p50/p95/max ms, avg and max SQL
+    statements per request, 5xx count. Sorted by p95 descending."""
+    with _ROUTE_LOCK:
+        copy = {k: list(v) for k, v in _ROUTE_WINDOWS.items()}
+    rows = []
+    for (method, route), samples in copy.items():
+        if len(samples) < min_samples:
+            continue
+        durations = sorted(d for d, _, _ in samples)
+        queries = [q for _, _, q in samples]
+
+        def pct(p):
+            return round(durations[min(len(durations) - 1, max(0, round(p / 100 * (len(durations) - 1))))], 1)
+
+        rows.append({
+            "method": method,
+            "route": route,
+            "count": len(samples),
+            "p50_ms": pct(50),
+            "p95_ms": pct(95),
+            "max_ms": round(durations[-1], 1),
+            "avg_queries": round(sum(queries) / len(queries), 1),
+            "max_queries": max(queries),
+            "server_errors": sum(1 for _, st, _ in samples if st >= 500),
+        })
+    rows.sort(key=lambda r: r["p95_ms"], reverse=True)
+    return rows
+
+
+def reset_routes() -> None:
+    with _ROUTE_LOCK:
+        _ROUTE_WINDOWS.clear()

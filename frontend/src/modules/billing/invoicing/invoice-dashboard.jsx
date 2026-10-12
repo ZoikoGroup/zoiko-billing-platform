@@ -23,6 +23,7 @@ import {
   BusinessInsights, QuickActions, ActionCenter,
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
+import usePolling from "../../../hooks/usePolling";
 
 const CHART_COLORS = ["var(--color-accent-invoicing)", "#FB923C", "#FDBA74", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
 const CARD_GRADIENTS = [
@@ -121,9 +122,9 @@ export default function InvoiceDashboard() {
   useEffect(() => {
     loadingRef.current = true;
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => { clearInterval(interval); };
   }, [fetchData]);
+
+  usePolling(fetchData, 60000);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);

@@ -19,4 +19,4 @@ EXPOSE 8001
 # when BILLING_DATABASE_URL is unset — SQLite isn't Alembic-managed, see
 # docs/DATABASE_MIGRATION_GUIDE.md). docker-compose.yml overrides `command:`
 # to run `alembic upgrade head` first when pointed at its Postgres service.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["sh", "scripts/start_server.sh"]

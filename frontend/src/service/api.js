@@ -18,14 +18,17 @@ export { getAccessToken, getRefreshToken, getStoredUser };
 
 export function setSession({ accessToken, refreshToken, user } = {}) {
   setStoredSession({ accessToken, refreshToken, user });
+  clearApiCache();
   if (accessToken || refreshToken || user) sessionInvalidNotified = false;
 }
 
 export function clearSession() {
   clearStoredSession();
+  clearApiCache();
 }
 
 function notifySessionInvalid(reason) {
+  clearApiCache();
   if (sessionInvalidNotified) return;
   sessionInvalidNotified = true;
   if (typeof window !== "undefined") {
@@ -134,19 +137,14 @@ async function ensureFreshAccessToken() {
  * attempts a single silent refresh on a 401 response, and enforces a
  * per-request timeout so a hung backend never freezes the UI.
  */
-export async function apiRequest(path, { method = "GET", body, headers = {}, auth = true, retry = true, params, timeout = 30000 } = {}) {
+async function executeRequest(path, { method = "GET", body, headers = {}, auth = true, retry = true, params, timeout = 30000, signal } = {}) {
+  if (signal?.aborted) throw createAbortError();
   if (auth) {
     await ensureFreshAccessToken();
   }
+  if (signal?.aborted) throw createAbortError();
 
-  let url = path.startsWith("http") ? path : apiUrl(path);
-  if (params) {
-    const query = Object.entries(params)
-      .filter(([, v]) => v !== undefined && v !== null && v !== "")
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join("&");
-    if (query) url += `${url.includes("?") ? "&" : "?"}${query}`;
-  }
+  const url = buildUrl(path, params);
 
   const finalHeaders = { ...headers };
   if (body !== undefined && !(body instanceof FormData)) {
@@ -159,6 +157,13 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
+  // Compose the caller's signal with the timeout controller.
+  const onCallerAbort = () => controller.abort();
+  if (signal) signal.addEventListener("abort", onCallerAbort, { once: true });
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onCallerAbort);
+  };
 
   let res;
   try {
@@ -169,18 +174,22 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
       signal: controller.signal,
     });
   } catch (err) {
-    clearTimeout(timer);
+    cleanup();
+    // Caller-initiated cancellation: never a timeout/network failure and
+    // never refreshed or retried; callers recognise it via name/aborted.
+    if (signal?.aborted) throw createAbortError();
     if (err.name === "AbortError") {
       throw createApiError(`Request timed out after ${timeout / 1000}s. The server may be unreachable.`, 408);
     }
     throw createApiError(NETWORK_ERROR, 0, { serverDetail: err?.message });
   }
-  clearTimeout(timer);
+  cleanup();
 
   if (res.status === 401 && auth && retry) {
     const refreshResult = await tryRefreshToken();
+    if (signal?.aborted) throw createAbortError();
     if (refreshResult.ok) {
-      return apiRequest(path, { method, body, headers, auth, retry: false, timeout });
+      return executeRequest(path, { method, body, headers, auth, retry: false, timeout, signal });
     }
     if (refreshResult.invalidSession) {
       clearSession();
@@ -225,6 +234,163 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, aut
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) return res.json();
   return res.text();
+}
+
+// ── Cancellation ──────────────────────────────────────────────────────────
+function createAbortError() {
+  const error = new Error("Request aborted");
+  error.name = "AbortError";
+  error.aborted = true;
+  return error;
+}
+
+/** True for an error produced by a caller-initiated abort (not a timeout). */
+export function isAbortError(error) {
+  return Boolean(error) && (error.aborted === true || error.name === "AbortError");
+}
+
+// ── In-flight de-duplication + opt-in TTL cache (GET only) ────────────────
+// - Identical concurrent GETs (method + URL + auth identity) share one fetch.
+// - `cacheTtl` (ms) opts a call into a short-lived cache; default is off.
+// - `staleWhileRevalidate` serves an expired entry immediately (up to
+//   SWR_MAX_STALE_MS old) and refreshes it in the background.
+// - Any non-GET clears cached/in-flight GETs of the same resource family.
+// - clearApiCache() wipes everything (logout / login / auth-invalid).
+const SWR_MAX_STALE_MS = 10 * 60_000;
+const responseCache = new Map(); // key -> { value, fetchedAt, family }
+const inflight = new Map(); // key -> { promise, family, shared }
+
+function cloneData(data) {
+  if (data === null || typeof data !== "object") return data;
+  try {
+    return structuredClone(data);
+  } catch {
+    return data;
+  }
+}
+
+export function clearApiCache() {
+  responseCache.clear();
+  inflight.clear();
+}
+
+// "/api/billing/invoices/12?x=1" -> "billing/invoices"; "/api/customers/3" -> "customers".
+export function resourceFamily(url) {
+  const p = String(url).replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0];
+  const segs = p.split("/").filter(Boolean);
+  if (segs[0] === "api") segs.shift();
+  if (segs[0] === "billing") return segs.slice(0, 2).join("/");
+  return segs[0] || "";
+}
+
+function invalidateFamily(family) {
+  for (const [k, v] of responseCache) if (v.family === family) responseCache.delete(k);
+  for (const [k, v] of inflight) if (v.family === family) inflight.delete(k);
+}
+
+function authIdentity(auth) {
+  if (!auth) return "anon";
+  const u = getStoredUser();
+  if (!u) return "noauth";
+  return [u.id ?? u.user_id ?? "", u.organization_id ?? u.org_id ?? u.tenant_id ?? "", u.role ?? ""].join(":");
+}
+
+function buildUrl(path, params) {
+  let url = path.startsWith("http") ? path : apiUrl(path);
+  if (params) {
+    const query = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+    if (query) url += `${url.includes("?") ? "&" : "?"}${query}`;
+  }
+  return url;
+}
+
+function storeIfCurrent(key, entry, data, family) {
+  if (entry && inflight.get(key) !== entry) return; // invalidated mid-flight
+  responseCache.set(key, { value: cloneData(data), fetchedAt: Date.now(), family });
+}
+
+function startGet(key, family, path, core, ttl) {
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const entry = { family, shared: false, promise: null };
+  entry.promise = executeRequest(path, core).then(
+    (data) => {
+      if (ttl) storeIfCurrent(key, entry, data, family);
+      if (inflight.get(key) === entry) inflight.delete(key);
+      return data;
+    },
+    (err) => {
+      if (inflight.get(key) === entry) inflight.delete(key);
+      throw err;
+    },
+  );
+  inflight.set(key, entry);
+  return entry;
+}
+
+/**
+ * Extra options on top of the original ones (all optional, default = old behavior):
+ *   cacheTtl             ms to serve this GET from cache (opt-in).
+ *   staleWhileRevalidate with cacheTtl: serve an expired entry immediately and refresh in background.
+ *   signal               AbortSignal; abort rejects with an error where isAbortError(err) is true.
+ */
+export async function apiRequest(path, options = {}) {
+  const { method = "GET", auth = true, params, headers, cacheTtl, staleWhileRevalidate, signal, ...rest } = options;
+  const core = { ...rest, method, auth, params, headers, signal };
+
+  if (String(method).toUpperCase() !== "GET") {
+    const family = resourceFamily(buildUrl(path, params));
+    invalidateFamily(family);
+    try {
+      return await executeRequest(path, core);
+    } finally {
+      // Again: a GET started mid-mutation may hold pre-mutation data.
+      invalidateFamily(family);
+    }
+  }
+
+  if (signal?.aborted) throw createAbortError();
+  const url = buildUrl(path, params);
+  const family = resourceFamily(url);
+  const hdrKey = headers && Object.keys(headers).length
+    ? JSON.stringify(Object.entries(headers).sort(([a], [b]) => (a < b ? -1 : 1)))
+    : "";
+  const key = `GET ${url}|${authIdentity(auth)}|${hdrKey}`;
+  const ttl = Number(cacheTtl) > 0 ? Number(cacheTtl) : 0;
+
+  if (ttl) {
+    const hit = responseCache.get(key);
+    if (hit) {
+      const age = Date.now() - hit.fetchedAt;
+      if (age < ttl) return cloneData(hit.value);
+      if (staleWhileRevalidate && age < SWR_MAX_STALE_MS) {
+        // Background refresh; failure is swallowed (stale value already served).
+        startGet(key, family, path, { ...core, signal: undefined }, ttl).promise.catch(() => {});
+        return cloneData(hit.value);
+      }
+      responseCache.delete(key);
+    }
+  }
+
+  // A request with its own signal never shares a fetch: aborting one caller
+  // must not cancel the others.
+  if (signal) {
+    const data = await executeRequest(path, core);
+    if (ttl) storeIfCurrent(key, null, data, family);
+    return data;
+  }
+
+  const existing = inflight.get(key);
+  if (existing) {
+    existing.shared = true;
+    return existing.promise.then(cloneData);
+  }
+  const entry = startGet(key, family, path, core, ttl);
+  // Only clone when more than one caller consumes the same result.
+  return entry.promise.then((data) => (entry.shared ? cloneData(data) : data));
 }
 
 async function tryRefreshToken() {

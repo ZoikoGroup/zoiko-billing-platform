@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 
+// Beyond ignoring stale responses, the function returned by beginRequest()
+// carries `.signal` (AbortSignal): pass it to api.get(..., { signal }) and the
+// previous in-flight request is cancelled when a newer one starts or on unmount.
+// Aborted requests reject with an AbortError (see isAbortError in service/api.js)
+// which is harmless here because the response is no longer current.
+
 // Only the most recent request may update state.
 //
 // When filters, search, page or date range change quickly, several requests
@@ -25,9 +31,18 @@ import { useCallback, useEffect, useRef } from "react";
 // Responses that arrive after unmount are also ignored.
 export default function useLatestRequest() {
   const seqRef = useRef(0);
-  useEffect(() => () => { seqRef.current += 1; }, []);
+  const controllerRef = useRef(null);
+  useEffect(() => () => {
+    seqRef.current += 1;
+    controllerRef.current?.abort();
+  }, []);
   return useCallback(() => {
     const seq = ++seqRef.current;
-    return () => seq === seqRef.current;
+    controllerRef.current?.abort();
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    controllerRef.current = controller;
+    const isCurrent = () => seq === seqRef.current;
+    isCurrent.signal = controller?.signal;
+    return isCurrent;
   }, []);
 }

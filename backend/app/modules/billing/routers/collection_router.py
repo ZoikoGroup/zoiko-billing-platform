@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import CollectionService
@@ -229,8 +230,11 @@ def get_aging_buckets(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_aging_buckets(
+    return cached_aggregate(
+        "collection.get_aging_buckets", current_user.organization_id, {},
+        lambda: svc.get_aging_buckets(
         organization_id=current_user.organization_id,
+    ),
     )
 
 
@@ -244,8 +248,11 @@ def get_collections_queue(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_collections_queue(
+    return cached_aggregate(
+        "collection.get_collections_queue", current_user.organization_id, {},
+        lambda: svc.get_collections_queue(
         organization_id=current_user.organization_id,
+    ),
     )
 
 
@@ -255,7 +262,10 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_dashboard_stats(current_user.organization_id)
+    return cached_aggregate(
+        "collection.get_dashboard_stats", current_user.organization_id, {},
+        lambda: svc.get_dashboard_stats(current_user.organization_id),
+    )
 
 
 @router.get("/priority-distribution", response_model=list, summary="Get collections case distribution by priority")
@@ -264,7 +274,10 @@ def get_priority_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_priority_distribution(current_user.organization_id)
+    return cached_aggregate(
+        "collection.get_priority_distribution", current_user.organization_id, {},
+        lambda: svc.get_priority_distribution(current_user.organization_id),
+    )
 
 
 @router.get("/customers/{customer_id}/summary", response_model=CollectionsCustomerSummaryResponse, summary="Get a customer's collection summary")
@@ -284,7 +297,10 @@ def get_overdue_by_customer(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_overdue_by_customer(current_user.organization_id, limit=limit)
+    return cached_aggregate(
+        "collection.get_overdue_by_customer", current_user.organization_id, {"limit": limit},
+        lambda: svc.get_overdue_by_customer(current_user.organization_id, limit=limit),
+    )
 
 
 @router.get("/reports/dunning-performance", response_model=dict, summary="Dunning resolution/escalation performance")
@@ -293,7 +309,10 @@ def get_dunning_performance(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_dunning_performance(current_user.organization_id)
+    return cached_aggregate(
+        "collection.get_dunning_performance", current_user.organization_id, {},
+        lambda: svc.get_dunning_performance(current_user.organization_id),
+    )
 
 
 @router.get("/reports/collection-effectiveness", response_model=dict, summary="Collection effectiveness ratio")
@@ -302,7 +321,10 @@ def get_collection_effectiveness(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_collection_effectiveness(current_user.organization_id)
+    return cached_aggregate(
+        "collection.get_collection_effectiveness", current_user.organization_id, {},
+        lambda: svc.get_collection_effectiveness(current_user.organization_id),
+    )
 
 
 @router.get("/reports/recovery-trend", response_model=list, summary="Monthly amount-collected trend")
@@ -312,7 +334,10 @@ def get_recovery_trend(
     current_user=Depends(get_current_user),
 ):
     svc = CollectionService(db)
-    return svc.get_recovery_trend(current_user.organization_id, months)
+    return cached_aggregate(
+        "collection.get_recovery_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_recovery_trend(current_user.organization_id, months),
+    )
 
 
 @router.post(
