@@ -5,7 +5,18 @@ import { invalidateOrganizationDetailsCache } from "../service/orgAdminService";
 import { invalidateZoikoSubscriptionCache } from "../service/platformSelfServiceApi";
 import { invalidateConfigCache } from "../service/billingService";
 import { invalidateGlobalBillingConfig } from "../service/billingConfigCache";
-import { clearApiCache } from "../service/api";
+import { AUTH_INVALID_EVENT, clearApiCache } from "../service/api";
+
+// Tenant isolation: per-organization data cached in module scope (org detail,
+// Zoiko subscription, billing config, api.js response cache -- none keyed by
+// tenant on its own) must never survive into another session in the same tab.
+function clearTenantCaches() {
+  invalidateOrganizationDetailsCache();
+  invalidateZoikoSubscriptionCache();
+  invalidateConfigCache();
+  invalidateGlobalBillingConfig();
+  clearApiCache();
+}
 
 export const AuthContext = createContext(null);
 
@@ -31,7 +42,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (loggedInUser) => {
-    clearApiCache(); // a new identity must never see another user's cached reads
+    // A fresh sign-in starts from a clean slate whatever happened before: a new
+    // identity must never see another user's or organization's cached reads.
+    clearTenantCaches();
     setStoredUser(loggedInUser);
     setUser(loggedInUser);
     return loggedInUser;
@@ -39,15 +52,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     clearSession();
-    invalidateOrganizationDetailsCache();
-    invalidateZoikoSubscriptionCache();
-    // Tenant isolation: the billing config (currency, terminology, and every
-    // other cached settingsApi.getConfig() consumer) must never survive a
-    // same-tab account switch — see billingConfigCache.js and
-    // billingService.js's own getConfig cache.
-    invalidateConfigCache();
-    invalidateGlobalBillingConfig();
-    clearApiCache();
+    clearTenantCaches();
     setUser(null);
   }, []);
 
