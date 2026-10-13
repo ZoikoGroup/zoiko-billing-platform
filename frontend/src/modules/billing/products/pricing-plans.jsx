@@ -40,6 +40,8 @@ function StatusBadge({ status }) {
   );
 }
 
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 export default function ProductPricingPlansPage() {
   const { formatCurrency, baseCurrency } = useCurrency();
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
@@ -89,7 +91,7 @@ export default function ProductPricingPlansPage() {
   const getDefaultFormData = () => ({
     name: "", plan_type: "flat", price: "",
     billing_interval: "monthly", status: "active", trial_days: "", setup_fee: "", product_id: "",
-    effective_from: new Date().toISOString().slice(0, 10), effective_to: "",
+    effective_from: localToday(), effective_to: "",
   });
   const [formData, setFormData] = useState(getDefaultFormData());
 
@@ -216,12 +218,22 @@ export default function ProductPricingPlansPage() {
         setFormError("Select a product before saving a pricing plan.");
         return;
       }
+      const today = localToday();
+      const originalFrom = editPlan?.effective_from || null;
+      if (formData.effective_from && formData.effective_from < today && formData.effective_from !== originalFrom) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (formData.effective_to && formData.effective_from && formData.effective_to < formData.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const payload = {
         ...formData,
         price: parseFloat(formData.price) || 0,
         trial_days: formData.trial_days ? parseInt(formData.trial_days) : undefined,
         setup_fee: formData.setup_fee ? parseFloat(formData.setup_fee) : undefined,
-        effective_from: formData.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: formData.effective_from || localToday(),
         effective_to: formData.effective_to || null,
       };
       if (editPlan) await pricingApi.update(editPlan.id, payload);
@@ -349,7 +361,7 @@ export default function ProductPricingPlansPage() {
                       ))}
                     </ul>
                     <button
-                      onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                      onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
                       className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${isFeatured ? "bg-white text-brand-700 hover:bg-brand-50" : "bg-brand-50 text-brand-700 hover:bg-brand-100"}`}>
                       Edit Plan
                     </button>
@@ -376,11 +388,12 @@ export default function ProductPricingPlansPage() {
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
-                  Clear filters
-                </button>
-              )}
+              <button onClick={clearFilters} disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search, type and status filters" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent">
+                <X size={14} />
+                Clear filters
+              </button>
               <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing} aria-label="Refresh"
                 className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
@@ -512,7 +525,7 @@ export default function ProductPricingPlansPage() {
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</td>
                   <td className="px-4 py-4 text-right">
-                    <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                    <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
                       className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label="Edit">
                       <Pencil size={16} />
                     </button>
@@ -608,13 +621,13 @@ export default function ProductPricingPlansPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
+                  <input type="date" min={editPlan?.effective_from && editPlan.effective_from < localToday() ? editPlan.effective_from : localToday()} value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                <input type="date" value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
+                <input type="date" min={formData.effective_from || undefined} value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>

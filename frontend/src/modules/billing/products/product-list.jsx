@@ -4,8 +4,6 @@ import {
   Package, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Archive, Image, Eye, Copy, RotateCcw, CreditCard, Upload, Sparkles, Trash2, Loader2, Pencil,
 } from "lucide-react";
 
-const IS_APPLE_PLATFORM = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
-export const SEARCH_SHORTCUT_LABEL = IS_APPLE_PLATFORM ? "⌘K" : "Ctrl K";
 import HRPage from "../../../components/HRPage";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -817,14 +815,7 @@ export default function ProductListPage() {
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
                     <X size={16} />
                   </button>
-                ) : (
-                  // Keyboard-shortcut hint (Ctrl/⌘+K focuses this search). It used to
-                  // always read "⌘K" -- the Mac Command symbol, which on Windows looks
-                  // like an unexplained logo. Decorative: the input declares the
-                  // shortcut via aria-keyshortcuts.
-                  <kbd aria-hidden="true" title={`Press ${SEARCH_SHORTCUT_LABEL} to search`}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-500 pointer-events-none">{SEARCH_SHORTCUT_LABEL}</kbd>
-                )}
+                ) : null}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>

@@ -19,15 +19,13 @@ const READ_ONLY = {
   "Default customer type": "Business",
   "Customer numbering prefix": "CUST-",
   "Customer numbering format": "CUST- + timestamp",
-  "Require billing address": "Optional",
-  "Require tax ID": "Optional",
 };
 
 beforeEach(() => { vi.clearAllMocks(); m.update.mockResolvedValue({}); m.get.mockResolvedValue({ default_payment_terms: "net_15" }); });
 afterEach(() => cleanup());
 
 describe("B6 Customer Settings", () => {
-  it("the five unconfigurable settings are read-only values, not dead dropdowns", async () => {
+  it("the three still-unconfigurable settings are read-only values, not dead dropdowns", async () => {
     render(<CustomerSettingsPage />);
     await screen.findByLabelText("Default customer type");
     for (const [label, value] of Object.entries(READ_ONLY)) {
@@ -36,8 +34,22 @@ describe("B6 Customer Settings", () => {
       expect(el).toHaveTextContent(value);
     }
     expect(screen.queryAllByRole("combobox").map((c) => c.getAttribute("aria-label")))
-      .not.toEqual(expect.arrayContaining(["Default customer type", "Require billing address", "Require tax ID"]));
-    expect(screen.getAllByText("Not configurable yet")).toHaveLength(5);
+      .not.toEqual(expect.arrayContaining(["Default customer type"]));
+    expect(screen.getAllByText("Not configurable yet")).toHaveLength(3);
+  });
+
+  it("Require Billing Address / Tax ID are real selects that load, save and round-trip", async () => {
+    m.get.mockResolvedValue({ default_payment_terms: "net_15", customer_extra_settings: { require_billing_address: true } });
+    render(<CustomerSettingsPage />);
+    const addr = await screen.findByLabelText("Require billing address");
+    const tax = screen.getByLabelText("Require tax ID");
+    expect(addr.tagName).toBe("SELECT");
+    expect(addr).toHaveValue("yes");
+    expect(tax).toHaveValue("no");
+    fireEvent.change(tax, { target: { value: "yes" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(m.update).toHaveBeenCalledTimes(1));
+    expect(m.update.mock.calls[0][0].customer_extra_settings).toEqual({ require_billing_address: true, require_tax_id: true });
   });
 
   it("configurable settings still load and save; read-only ones are never sent", async () => {
@@ -49,7 +61,7 @@ describe("B6 Customer Settings", () => {
     await waitFor(() => expect(m.update).toHaveBeenCalledTimes(1));
     const payload = m.update.mock.calls[0][0];
     expect(payload.default_payment_terms).toBe("net_60");
-    for (const k of ["default_customer_type", "customer_numbering_prefix", "customer_numbering_format", "require_billing_address", "require_tax_id"]) {
+    for (const k of ["default_customer_type", "customer_numbering_prefix", "customer_numbering_format"]) {
       expect(payload).not.toHaveProperty(k);
     }
   });

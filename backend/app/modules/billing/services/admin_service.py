@@ -35,7 +35,7 @@ from app.modules.billing.schemas import (
     BillingHealthCheckResponse,
     BillingConfigurationValidationDiagnostics,
 )
-from app.modules.billing.services.exchange_rate_service import ExchangeRateService
+from app.modules.billing.services.exchange_rate_service import ExchangeRateService, coerce_rates_dict
 from app.modules.billing.services.validation_service import BillingValidationService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 # Single source of truth for the templates directory: app/email_templates/.
@@ -48,6 +48,28 @@ logger = logging.getLogger("zoiko_billing")
 
 _IF_BLOCK_RE = re.compile(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL)
 EMAIL_TEMPLATE_VARIABLE_RE = re.compile(r"\{\{(\w+)\}\}")
+
+# Preview-only placeholder markup for layout-composing HTML slots. Real sends
+# fill these with rendered line-item/totals tables (see email_service.py's
+# _render_invoice_totals_html etc.); without them the preview showed the raw
+# "{{line_items_html}}" token in the middle of the email and looked nothing
+# like what gets sent.
+_PREVIEW_HTML_SLOTS = {
+    "line_items_html": (
+        '<tr style="border-bottom:1px solid #EEF2F7;">'
+        '<td style="padding:10px 0; font-size:13px;">Consulting services (preview sample)</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:center;">1</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:right;">1,000.00</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:right;">1,000.00</td>'
+        "</tr>"
+    ),
+    "totals_html": (
+        '<tr><td style="padding:6px 0; font-size:13px; color:#475569; text-align:right;">Subtotal</td>'
+        '<td style="padding:6px 0; font-size:13px; text-align:right;">1,000.00</td></tr>'
+        '<tr><td style="padding:6px 0; font-size:13px; color:#475569; text-align:right;"><strong>Total</strong></td>'
+        '<td style="padding:6px 0; font-size:13px; text-align:right;"><strong>1,000.00</strong></td></tr>'
+    ),
+}
 
 
 def _render_local_template(template: str, context: dict) -> str:
@@ -200,11 +222,23 @@ class BillingAdminService:
             msg["To"] = request.recipient_email
 
             email_start = time.time()
-            server.sendmail(smtp_from, [request.recipient_email], msg.as_string())
+            # sendmail() returns a {recipient: (code, resp)} dict of addresses
+            # the server REFUSED to accept — non-empty means the message was
+            # not accepted for delivery, and pretending otherwise ("sent") is
+            # exactly the "test says OK but the mail never arrives" trap.
+            refused = server.sendmail(smtp_from, [request.recipient_email], msg.as_string())
             email_elapsed = (time.time() - email_start) * 1000
+            email_result.response_time_ms = round(email_elapsed, 2)
+            if refused:
+                code, resp = refused.get(request.recipient_email, (0, str(refused)))
+                email_result.ok = False
+                email_result.message = (
+                    f"Recipient refused by the mail server (550 {code}): {resp}"
+                    if code else f"Recipient refused by the mail server: {refused}"
+                )
+                raise smtplib.SMTPRecipientsRefused(refused)
             email_result.ok = True
             email_result.message = f"Test email sent to {request.recipient_email}"
-            email_result.response_time_ms = round(email_elapsed, 2)
 
             return SmtpTestResponse(
                 success=True,
@@ -315,6 +349,13 @@ class BillingAdminService:
         variables_provided = list(variables.keys()) if variables else []
         variables_missing = sorted(set(variables_found) - set(variables_provided))
         context = dict(variables) if variables else {}
+        # Layout-composing HTML slots (line items / totals) are filled by the
+        # real send path but were left as literal "{{line_items_html}}" tokens
+        # in previews. Give them representative placeholder markup so the
+        # preview looks like the email that would actually be sent.
+        for slot, markup in _PREVIEW_HTML_SLOTS.items():
+            if slot in variables_found and not context.get(slot):
+                context[slot] = markup
         rendered_html = _render_local_template(html_content, context)
         subject = f"Template: {template_name}"
         # Subject from the rendered title, so provided variables show up in it.
@@ -511,7 +552,13 @@ class BillingAdminService:
                     warnings.append(f"Default tax rate ID '{val}' is not a valid integer")
 
             items.append(TaxDiagnosticsItem(
-                field=field, value=str(val) if val is not None else None,
+                field=field,
+                # str(SomeEnum) yields "TaxCalculationMethod.EXCLUSIVE"; show the
+                # human value ("exclusive") the way the config UI spells it.
+                value=(
+                    val.value if hasattr(val, "value") and not isinstance(val, bool)
+                    else str(val)
+                ) if val is not None else None,
                 valid=len(warnings) == 0, warnings=warnings, suggestion=suggestion,
             ))
 
@@ -651,7 +698,7 @@ class BillingAdminService:
         )
 
         # Enhanced: validate individual cached rate values
-        cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
+        cached_rates = coerce_rates_dict(config.exchange_rates)
         cached_rates_clean = {}
         rate_warnings = []
         for k, v in cached_rates.items():

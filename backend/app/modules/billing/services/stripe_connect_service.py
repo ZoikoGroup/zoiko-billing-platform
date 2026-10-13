@@ -34,7 +34,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.billing.models import (
     IntegrationConnectionStatus,
@@ -46,6 +46,63 @@ from app.modules.billing.models import BillingAuditAction
 
 logger = logging.getLogger("zoiko_billing")
 
+# ── Resilient tenant Stripe credential resolution ────────────────────────────
+#
+# Settings are cached at process start (app.config.settings = Settings() runs on
+# import). A key added to .env after the server booted — or a server launched
+# with a stale/incomplete environment — therefore read as "not configured"
+# until a manual restart, which surfaced to merchants and their customers as
+# "Online card payments are not enabled yet. Please contact the sender to
+# complete payment." on the invoice payment page even though the key was
+# present in .env. Re-read .env once, lazily, the first time a tenant Stripe
+# credential is requested and adopt whatever is found, so the running process
+# self-heals without a restart. Mirrors the Plane 1
+# platform_stripe_service._platform_secret_key() fix.
+_PLANE2_STRIPE_SETTING_NAMES = (
+    "STRIPE_SECRET_KEY",
+    "STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_CONNECT_CLIENT_ID",
+)
+
+
+def _adopt_plane2_stripe_settings(target) -> None:
+    """Re-read .env and fill in any tenant Stripe credential that `target`
+    still has blank. `target` is the module-global settings object (or a
+    stand-in supplied by a test). Never raises — a config re-read must not
+    break the payment path."""
+    try:
+        fresh = Settings()
+    except Exception:  # noqa: BLE001 - never let a config re-read break checkout
+        logger.warning("[stripe] Could not re-read .env for Stripe credentials")
+        return
+    adopted = []
+    for name in _PLANE2_STRIPE_SETTING_NAMES:
+        if not getattr(target, name, "") and getattr(fresh, name, ""):
+            setattr(target, name, getattr(fresh, name))
+            adopted.append(name)
+    if adopted:
+        logger.info("[stripe] Adopted %s from .env after startup", ", ".join(adopted))
+
+
+def resolve_stripe_setting(name: str, target=None) -> str:
+    """Return a tenant Stripe credential, self-healing from .env on first use.
+
+    `target` defaults to this module's cached settings object; callers pass
+    their own module-level `settings` so per-module test patches keep working.
+    """
+    current = settings if target is None else target
+    value = getattr(current, name, "") or ""
+    if value:
+        return value
+    _adopt_plane2_stripe_settings(current)
+    return getattr(current, name, "") or ""
+
+
+def resolve_stripe_secret_key(target=None) -> str:
+    """The tenant Stripe secret key (STRIPE_SECRET_KEY), self-healed from .env."""
+    return resolve_stripe_setting("STRIPE_SECRET_KEY", target)
+
 
 def _stripe_module():
     """Lazy Stripe import — same pattern as StripeService so the app can boot
@@ -56,12 +113,13 @@ def _stripe_module():
         raise BadRequestException(
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
-    if not settings.STRIPE_SECRET_KEY:
+    key = resolve_stripe_secret_key()
+    if not key:
         logger.warning("Stripe is not configured: STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
             "Online card payments are not available yet. Please contact support."
         )
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.api_key = key
     configure_stripe_runtime(stripe)
     return stripe
 
@@ -115,8 +173,10 @@ def configure_stripe_runtime(stripe) -> None:
 def _resolve_environment() -> IntegrationEnvironment:
     """Derive test/live from the secret key prefix — sk_test_ means test.
     An UNCONFIGURED platform (empty key) resolves to TEST: no outbound call
-    can happen anyway, and this keeps dev/test data out of the LIVE bucket."""
-    key = settings.STRIPE_SECRET_KEY or ""
+    can happen anyway, and this keeps dev/test data out of the LIVE bucket.
+    Uses the self-healing resolver so a key added to .env after boot is
+    honoured (otherwise a live key would be misread as test)."""
+    key = resolve_stripe_secret_key()
     return (
         IntegrationEnvironment.LIVE
         if key.startswith("sk_live_")
@@ -297,7 +357,7 @@ class StripeConnectService:
 
         STRIPE_CONNECT_CLIENT_ID must be set to Zoiko's Connect Platform client_id.
         """
-        client_id = getattr(settings, "STRIPE_CONNECT_CLIENT_ID", "") or ""
+        client_id = resolve_stripe_setting("STRIPE_CONNECT_CLIENT_ID")
         if not client_id:
             # The missing setting name is for operators (logs), not for end users.
             logger.warning("Stripe Connect is not configured: STRIPE_CONNECT_CLIENT_ID is unset")
@@ -513,7 +573,7 @@ class StripeConnectService:
         "connected" also requires charges_enabled, for the same reason."""
         env = _resolve_environment()
         # Lets the UI disable "Connect Stripe" instead of failing on click.
-        connect_configured = bool(getattr(settings, "STRIPE_CONNECT_CLIENT_ID", "") or "")
+        connect_configured = bool(resolve_stripe_setting("STRIPE_CONNECT_CLIENT_ID"))
         row = self._get_account(organization_id, env)
         if row is None:
             return {

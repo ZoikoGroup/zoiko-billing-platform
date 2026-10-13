@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Children, cloneElement, isValidElement, us
 import { Save, RefreshCw, AlertCircle, CheckCircle, Users, Hash, Bell, FileText, CreditCard } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { settingsApi } from "../../../service/billingService";
+import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { ErrorState } from "../../../components/billing-shared";
 
 const FRONTEND_TO_BACKEND = {
@@ -12,6 +13,7 @@ const FRONTEND_TO_BACKEND = {
   credit_limit: "credit_limit",
   customer_notification: "notify_customer_created",
   auto_suspend_days: "grace_period_days",
+  // Stored together in the backend's customer_extra_settings blob (see toPayload).
   require_billing_address: null,
   require_tax_id: null,
 };
@@ -40,6 +42,10 @@ function toPayload(form) {
     }
     payload[backKey] = val;
   }
+  payload.customer_extra_settings = {
+    require_billing_address: form.require_billing_address === "yes",
+    require_tax_id: form.require_tax_id === "yes",
+  };
   return payload;
 }
 
@@ -47,7 +53,7 @@ function toPayload(form) {
 // the system actually does today instead of invented values: new customers
 // default to "business" (BillingCustomer.customer_type default and the create
 // form), codes left blank are generated as CUST-<timestamp>, and neither a
-// billing address nor a tax ID is required (both optional in CustomerCreate).
+// billing address nor a tax ID is required by default (both are now configurable below).
 export const CURRENT_BEHAVIOUR_NOTE = "Not configurable yet — shows how new customers are handled today";
 
 // These settings have no backend storage, so they are shown as plain read-only
@@ -77,8 +83,8 @@ function toForm(settings) {
     credit_limit: settings.credit_limit != null ? String(settings.credit_limit) : "",
     customer_notification: settings.notify_customer_created ? "yes" : "no",
     auto_suspend_days: settings.grace_period_days != null ? String(settings.grace_period_days) : "",
-    require_billing_address: "no",
-    require_tax_id: "no",
+    require_billing_address: settings.customer_extra_settings?.require_billing_address ? "yes" : "no",
+    require_tax_id: settings.customer_extra_settings?.require_tax_id ? "yes" : "no",
   };
 }
 
@@ -164,6 +170,9 @@ export default function CustomerSettingsPage() {
       setError(null);
       setSaved(false);
       await settingsApi.update(toPayload(form));
+      // Customer forms read the shared config cache: drop it so the new
+      // Require Billing Address / Require Tax ID rules apply immediately.
+      invalidateGlobalBillingConfig();
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -272,12 +281,20 @@ export default function CustomerSettingsPage() {
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Billing Address" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <CurrentBehaviour label="Require billing address" value="Optional" />
+        <SettingsField label="Require Billing Address" icon={FileText} description="When Required, a customer cannot be created or saved without a billing address">
+          <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="no">Optional</option>
+            <option value="yes">Required</option>
+          </select>
         </SettingsField>
 
-        <SettingsField label="Require Tax ID" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <CurrentBehaviour label="Require tax ID" value="Optional" />
+        <SettingsField label="Require Tax ID" icon={FileText} description="When Required, a customer needs at least one tax identifier (Tax ID, GST, VAT, PAN or TIN)">
+          <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="no">Optional</option>
+            <option value="yes">Required</option>
+          </select>
         </SettingsField>
       </div>
     </HRPage>

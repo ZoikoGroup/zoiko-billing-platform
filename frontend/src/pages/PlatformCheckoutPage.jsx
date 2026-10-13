@@ -38,15 +38,27 @@ export default function PlatformCheckoutPage() {
   const { token } = useParams();
   const [state, setState] = useState("starting"); // starting | redirecting | error
   const [error, setError] = useState(null); // checkoutErrorView() result
+  const [attempt_, setAttempt] = useState(0); // bumped by "Try again"
 
   useEffect(() => {
     let cancelled = false;
+    setState("starting");
+    setError(null);
     if (!token) {
       setError(checkoutErrorView({ status: 404, message: "Invalid invoice link." }));
       setState("error");
       return;
     }
-    publicPlatformInvoiceApi.checkout(token)
+    // Transient failures (network drop, 502 from the payment provider, 5xx)
+    // are retried automatically before an error page is ever shown. 4xx
+    // responses are definitive (bad link, unpayable invoice, not configured).
+    const isTransient = (err) => !err?.status || err.status === 0 || err.status >= 500;
+    const attempt = (n) =>
+      publicPlatformInvoiceApi.checkout(token).catch((err) => {
+        if (cancelled || n >= 2 || !isTransient(err)) throw err;
+        return new Promise((r) => setTimeout(r, 1200 * (n + 1))).then(() => attempt(n + 1));
+      });
+    attempt(0)
       .then((result) => {
         if (cancelled) return;
         if (result?.checkout_url) {
@@ -63,7 +75,7 @@ export default function PlatformCheckoutPage() {
         setState("error");
       });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, attempt_]);
 
   return (
     <div className="pcp-root">
@@ -82,6 +94,12 @@ export default function PlatformCheckoutPage() {
             <h1 className="pcp-title">{error?.title}</h1>
             <p className="pcp-msg pcp-msg--error" role="alert">{error?.message}</p>
             <p className="pcp-hint">{error?.hint}</p>
+            {!error?.linkInvalid && (
+              <button type="button" className="pcp-link" onClick={() => setAttempt((n) => n + 1)}
+                style={{ background: "none", border: "none", cursor: "pointer", marginRight: "1rem" }}>
+                Try again
+              </button>
+            )}
           </>
         )}
 

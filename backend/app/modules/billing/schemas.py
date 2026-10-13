@@ -1829,7 +1829,9 @@ class ConvertQuotationRequest(BaseModel):
 
 class QuotationCreate(BaseModel):
     customer_id: int
-    quote_number: str = Field(..., min_length=1, max_length=50)
+    # Optional: when omitted/blank the server generates the number from the
+    # org's Quotation Settings (prefix + number format + sequence reset).
+    quote_number: Optional[str] = Field(None, max_length=50)
     quote_version: int = 1
     subject: Optional[str] = None
     discount_percentage: Decimal = Decimal("0")
@@ -3907,6 +3909,8 @@ class BillingConfigurationUpdate(BaseModel):
     subscription_extra_settings: Optional[Dict[str, Any]] = None
     payment_extra_settings: Optional[Dict[str, Any]] = None
     pricing_extra_settings: Optional[Dict[str, Any]] = None
+    customer_extra_settings: Optional[Dict[str, Any]] = None
+    quotation_extra_settings: Optional[Dict[str, Any]] = None
 
     product_numbering_prefix: Optional[str] = None
     product_numbering_format: Optional[str] = None
@@ -4129,6 +4133,8 @@ class BillingConfigurationResponse(BaseModel):
     subscription_extra_settings: Dict[str, Any] = {}
     payment_extra_settings: Dict[str, Any] = {}
     pricing_extra_settings: Dict[str, Any] = {}
+    customer_extra_settings: Dict[str, Any] = {}
+    quotation_extra_settings: Dict[str, Any] = {}
 
     product_numbering_prefix: Optional[str]
     product_numbering_format: Optional[str]

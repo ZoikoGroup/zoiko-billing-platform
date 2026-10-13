@@ -1351,6 +1351,8 @@ class Quotation(Base):
     currency                  = Column(String(3), default="USD")
     valid_until               = Column(Date, nullable=True)
     accepted_at               = Column(DateTime, nullable=True)
+    # Set when the Expiry Reminder Days email has been sent (one reminder per quote).
+    expiry_reminder_sent_at   = Column(DateTime, nullable=True)
     rejected_reason           = Column(Text, nullable=True)
     converted_to_invoice_id   = Column(Integer, ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
     converted_to_subscription_id = Column(Integer, ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
@@ -3165,6 +3167,11 @@ class BillingConfiguration(Base):
     # setting). Storing it here rather than forcing it into that column
     # avoids either an invalid-enum error or a user-facing copy change.
     pricing_extra_settings          = Column(JSON, default=lambda: {})
+    # Customer Settings: {"require_billing_address": bool, "require_tax_id": bool}
+    customer_extra_settings         = Column(JSON, default=lambda: {})
+    # Quotation Settings: {"require_customer_acceptance": bool (default True),
+    #   "discount_approval_threshold": number|None, "expiry_reminder_days": int|None}
+    quotation_extra_settings        = Column(JSON, default=lambda: {})
 
     # ── Relationship Terminology ──
     relationship_terminology        = Column(String(20), default="customer")

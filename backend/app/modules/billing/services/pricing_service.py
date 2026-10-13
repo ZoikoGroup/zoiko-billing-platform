@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -60,8 +60,20 @@ class PricingService:
         self.product_repo = ProductRepository(db)
         self.audit = BillingAuditService(db)
 
+    @staticmethod
+    def _reject_past_effective_from(effective_from) -> None:
+        """A pricing plan cannot start in the past. One day of grace covers the
+        gap between the user's local "today" and the server's UTC date."""
+        if effective_from is None:
+            return
+        if isinstance(effective_from, datetime):
+            effective_from = effective_from.date()
+        if effective_from < date.today() - timedelta(days=1):
+            raise BadRequestException("Effective From cannot be in the past. Choose today or a future date.")
+
     def create_plan(self, organization_id: int, created_by: int, **data: Any) -> PricingPlan:
         data = filter_allowed(data, PLAN_ALLOWED_FIELDS)
+        self._reject_past_effective_from(data.get("effective_from"))
         product_id = data.get("product_id")
         if product_id:
             self.product_repo.get_by_id(product_id, organization_id)
@@ -84,6 +96,10 @@ class PricingService:
             raise BadRequestException("max_quantity must be greater than or equal to min_quantity")
         effective_from = data.get("effective_from", current.effective_from)
         effective_to = data.get("effective_to", current.effective_to)
+        # Only a *changed* start date is checked: editing other fields of an
+        # already-running plan must keep working.
+        if "effective_from" in data and data["effective_from"] != current.effective_from:
+            self._reject_past_effective_from(data["effective_from"])
         if effective_to is not None and effective_from is not None and effective_to < effective_from:
             raise BadRequestException("effective_to must be greater than or equal to effective_from")
         updated = self.repo.update(plan_id, organization_id, **data)

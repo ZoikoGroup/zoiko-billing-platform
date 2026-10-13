@@ -191,6 +191,13 @@ def get_zoiko_subscription(
         .limit(50)
         .all()
     )
+    # Every payable invoice must be payable: mint public tokens for any that
+    # lost theirs (pre-fix send() rolled the token back together with a failed
+    # email attempt). Commits before the payload below is cached, so payment
+    # buttons and public links are present immediately on this first read.
+    from app.modules.commercial.platform_invoice_service import PlatformInvoiceService
+
+    PlatformInvoiceService(db).ensure_account_payment_links(account.id)
     payments = (
         db.query(PlatformPayment)
         .filter(PlatformPayment.commercial_account_id == account.id)

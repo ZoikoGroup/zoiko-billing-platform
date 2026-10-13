@@ -263,6 +263,7 @@ export default function UsersPage() {
     try {
       const res = await apiFetch(`/api/super-admin/organizations/${u.organization_id}/purge`, {
         method: "POST",
+        timeout: 120000,
         body: { reason, confirmation },
       });
       setNotice(res?.message || `Organization "${u.organization_name}" permanently deleted.`);

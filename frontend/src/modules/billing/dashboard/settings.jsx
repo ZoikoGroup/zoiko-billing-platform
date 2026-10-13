@@ -2529,6 +2529,15 @@ export function freshnessNote(details, now = Date.now()) {
   return details.stale ? `${when} (refreshing)` : when;
 }
 
+// Diagnostics payloads may carry a malformed/empty timestamp (or a stale
+// pre-fix JSON-string cache); render "—" instead of the browser's
+// "Invalid Date" so Appearance never shows junk values.
+export function formatDiagDate(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
+}
+
 function HealthStatusBadge({ status }) {
   const classes = {
     healthy: "bg-green-100 text-green-700 border-green-200",
@@ -3122,7 +3131,7 @@ function AdministrationPanel() {
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Last Refreshed</span>
                 <span className="font-medium text-slate-800">
-                  {exchangeDiag.last_refreshed?.value ? new Date(exchangeDiag.last_refreshed.value).toLocaleDateString() : "—"}
+                  {formatDiagDate(exchangeDiag.last_refreshed?.value)}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">

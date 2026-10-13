@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // B13 (/billing/workspace/zoiko-subscription): "no button to pay the
 // subscription amount" + UI. A Pay action exists only when Zoiko has issued a
 // payable invoice (payment itself is the platform-Stripe flow, ON HOLD). With
 // no invoice there is nothing to pay, so no misleading Pay button is shown.
+// A payable invoice that (still) lacks a public_token — e.g. data minted
+// before the finalize-token fix, or a cache that predates it — never dead-ends
+// the customer: the alert offers an enabled "Get Payment Link" action that
+// re-fetches (the backend self-heals a token) and then surfaces Pay Now.
 
 const m = vi.hoisted(() => ({ sub: vi.fn(), usage: vi.fn(), role: "billing_admin" }));
 vi.mock("../../context/AuthContext", () => ({ useAuth: () => ({ user: { id: 1, role: m.role }, role: m.role }) }));
@@ -49,6 +53,24 @@ describe("B13 Zoiko Subscription", () => {
       m.sub.mockResolvedValue({ ...ACTIVE, invoices: [{ id: 7, invoice_number: "PINV-000007", status: "issued", balance_due: "4999.00", currency: "INR", public_token: "tok" }] });
       renderPage();
       expect(await screen.findByRole("button", { name: /^pay .* now$/i })).toBeEnabled();
+    });
+
+    it(`${role}: a payable invoice without a payment link offers Get Payment Link, then Pay Now after the backend mints the token`, async () => {
+      m.role = role;
+      const tokenless = { id: 8, invoice_number: "PINV-000008", status: "issued", balance_due: "4999.00", currency: "INR", public_token: null };
+      m.sub
+        .mockResolvedValueOnce({ ...ACTIVE, invoices: [tokenless] })
+        .mockResolvedValueOnce({ ...ACTIVE, invoices: [{ ...tokenless, public_token: "tok_8" }] });
+      renderPage();
+
+      const getLink = await screen.findByRole("button", { name: /get payment link/i });
+      expect(getLink).toBeEnabled();
+      expect(screen.queryByRole("button", { name: /^pay .* now$/i })).toBeNull();
+
+      fireEvent.click(getLink);
+
+      const payNow = await screen.findByRole("button", { name: /^pay .* now$/i });
+      expect(payNow).toBeEnabled();
     });
   }
 });

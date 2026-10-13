@@ -71,12 +71,62 @@ class QuoteService:
         self.config_service = BillingConfigurationService(db)
         self.exchange_rate_service = ExchangeRateService(db)
 
+    # ── Quotation Settings (quotation_extra_settings blob) ────────────────
+
+    def get_quotation_prefs(self, organization_id: int) -> Dict[str, Any]:
+        """Effective Quotation Settings with defaults applied. Customer
+        acceptance is required unless the org explicitly turns it off, which
+        is the behaviour quotes always had."""
+        try:
+            config = self.config_service.repo.get_by_organization(organization_id)
+        except Exception:
+            config = None
+        raw = dict(getattr(config, "quotation_extra_settings", None) or {}) if config else {}
+        return {
+            "require_customer_acceptance": raw.get("require_customer_acceptance", True) is not False,
+            "discount_approval_threshold": raw.get("discount_approval_threshold"),
+            "expiry_reminder_days": raw.get("expiry_reminder_days"),
+        }
+
+    def _generate_quote_number(self, organization_id: int) -> str:
+        """Next quote number from the org's prefix + Quote Number Format +
+        sequence reset, via the concurrency-safe per-org sequence table. Skips
+        any number already taken by a manually typed quote."""
+        from app.modules.billing.models import NumberFormat, SequenceReset
+        from app.modules.billing.services.document_sequence import DocumentSequenceService
+
+        config = self.config_service.get_configuration(organization_id)
+        prefix = config.quote_prefix or "QTE-"
+        fmt = config.quote_number_format or NumberFormat.PREFIX_YYYY_SEQ
+        reset = config.quote_sequence_reset or SequenceReset.ANNUALLY
+        seq = DocumentSequenceService(self.db)
+        for _ in range(25):
+            number = seq.next_number(organization_id, "quote", prefix, fmt, reset)
+            if not self.repo.exists(organization_id, quote_number=number):
+                return number
+        raise BadRequestException("Could not generate a unique quotation number. Please try again.")
+
+    @staticmethod
+    def max_discount_percentage(quote: Quotation) -> Decimal:
+        """Highest discount on the quote, as a percentage: the header discount
+        and every line's discount (percentage or amount-based)."""
+        highest = Decimal(str(quote.discount_percentage or 0))
+        for item in quote.items or []:
+            pct = Decimal(str(getattr(item, "discount_percentage", None) or 0))
+            gross = Decimal(str(item.quantity or 0)) * Decimal(str(item.unit_price or 0))
+            amount = Decimal(str(getattr(item, "discount_amount", None) or 0))
+            if gross > 0 and amount > 0:
+                pct = max(pct, amount / gross * Decimal("100"))
+            highest = max(highest, pct)
+        return highest
+
     def create_quote(
         self, organization_id: int, created_by: int, customer_id: int,
-        quote_number: str, **data: Any,
+        quote_number: Optional[str] = None, **data: Any,
     ) -> Quotation:
         data = filter_allowed(data, QUOTE_ALLOWED_FIELDS)
         customer = self.customer_service.get_customer(customer_id, organization_id)
+        quote_number = (quote_number or "").strip() or self._generate_quote_number(organization_id)
         if self.repo.exists(organization_id, quote_number=quote_number):
             raise AlreadyExistsException("Quotation", "quote_number")
         # Currency: explicit > customer's own currency > org default -- same
@@ -450,7 +500,9 @@ class QuoteService:
 
     # ── Status Transitions ─────────────────────────────────────────────────
 
-    def send_quote(self, quote_id: int, organization_id: int, updated_by: int) -> Quotation:
+    def send_quote(
+        self, quote_id: int, organization_id: int, updated_by: int, actor_role: Optional[str] = None,
+    ) -> Quotation:
         """Validate customer email, generate the PDF, deliver the email, and
         ONLY THEN update status to SENT.
 
@@ -464,6 +516,20 @@ class QuoteService:
         quote = self.repo.get_by_id(quote_id, organization_id)
         if quote.status != QuoteStatus.DRAFT:
             raise BadRequestException("Only draft quotes can be sent")
+
+        # Discount Approval Threshold: a discount above the org's threshold
+        # needs an Organization Admin (or Super Admin) to send it; billing
+        # admins cannot approve their own deep discounts. actor_role=None
+        # (internal callers) is not gated.
+        threshold = self.get_quotation_prefs(organization_id)["discount_approval_threshold"]
+        if threshold is not None and actor_role is not None:
+            highest = self.max_discount_percentage(quote)
+            if highest > Decimal(str(threshold)) and actor_role not in ("org_admin", "super_admin"):
+                raise BadRequestException(
+                    f"This quotation has a {highest.quantize(Decimal('0.01'))}% discount, above the "
+                    f"{Decimal(str(threshold)).normalize()}% approval threshold. "
+                    "An Organization Admin must approve and send it."
+                )
 
         customer = self.customer_service.get_customer(quote.customer_id, organization_id)
         email = (customer.email or "").strip() if customer else ""
@@ -777,8 +843,18 @@ class QuoteService:
         invoice_number: str, issue_date: date, due_date: date,
     ) -> Invoice:
         quote = self.repo.get_by_id(quote_id, organization_id)
-        if quote.status != QuoteStatus.ACCEPTED:
-            raise BadRequestException("Only accepted quotes can be converted to invoices")
+        # Customer Acceptance Required (default on): only ACCEPTED quotes
+        # convert. When the org has turned it off, a SENT quote may be
+        # converted directly (e.g. approved offline / by phone).
+        allowed = {QuoteStatus.ACCEPTED}
+        if not self.get_quotation_prefs(organization_id)["require_customer_acceptance"]:
+            allowed.add(QuoteStatus.SENT)
+        if quote.status not in allowed:
+            raise BadRequestException(
+                "Only accepted quotes can be converted to invoices"
+                if QuoteStatus.SENT not in allowed
+                else "Only sent or accepted quotes can be converted to invoices"
+            )
         from app.modules.billing.services.invoice_service import InvoiceService
         inv_service = InvoiceService(self.db)
         inv = inv_service.create_invoice(
@@ -811,6 +887,8 @@ class QuoteService:
                 exchange_rate=getattr(item, "exchange_rate", None),
             )
         inv_service.recalculate_invoice(inv.id, organization_id)
+        if quote.status == QuoteStatus.SENT:
+            quote.accepted_at = datetime.utcnow()  # acceptance waived by org settings
         quote.status = QuoteStatus.CONVERTED
         quote.converted_to_invoice_id = inv.id
         safe_commit_and_refresh(self.db, quote)

@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.modules.auth.country_currency import is_valid_currency_code
 from app.modules.auth.models import UserRole
@@ -32,7 +32,11 @@ class RegisterRequest(BaseModel):
     legal_name: Optional[str] = Field(None, min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=200)
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+    # Optional only when google_ticket is supplied (Google-verified signup).
+    password: Optional[str] = Field(None, min_length=8, max_length=128)
+    # Signed ticket from /auth/google/callback proving the email is Google-
+    # verified. When present the server uses the ticket's email, not `email`.
+    google_ticket: Optional[str] = Field(None, max_length=4096)
     industry: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = Field(None, max_length=100)
@@ -65,6 +69,12 @@ class RegisterRequest(BaseModel):
     # intended_plan as PENDING and return a pay link; the plan activates when
     # the first payment clears.
     start_mode: Literal["trial", "paid"] = "trial"
+
+    @model_validator(mode="after")
+    def _password_or_google_ticket(self):
+        if not self.password and not self.google_ticket:
+            raise ValueError("password is required")
+        return self
 
     @field_validator("currency")
     @classmethod

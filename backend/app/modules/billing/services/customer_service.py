@@ -99,10 +99,43 @@ class CustomerService:
             logger.debug("Could not resolve org currency for org %s, falling back to USD", organization_id)
             return "USD"
 
+    def _enforce_required_fields(
+        self, organization_id: int, data: Dict[str, Any], current: Optional[BillingCustomer] = None,
+    ) -> None:
+        """Enforce Customer Settings' Require Billing Address / Require Tax ID.
+
+        On create every required field must be present. On update only a field
+        the caller is actually sending is checked (the UI resends the whole
+        form), so a customer that predates the rule can still be edited as long
+        as the save does not blank the field."""
+        try:
+            config = BillingConfigurationService(self.db).repo.get_by_organization(organization_id)
+        except Exception:
+            logger.debug("Could not read customer requirements for org %s", organization_id)
+            return
+        prefs = dict(getattr(config, "customer_extra_settings", None) or {}) if config else {}
+
+        def value(field: str):
+            if field in data:
+                return data[field]
+            return getattr(current, field, None) if current is not None else None
+
+        def blank(v) -> bool:
+            return v is None or not str(v).strip()
+
+        if prefs.get("require_billing_address") and (current is None or "billing_address" in data):
+            if blank(value("billing_address")):
+                raise BadRequestException("Billing address is required by your Customer Settings.")
+        tax_fields = ("tax_id", "gst_number", "vat_number", "pan", "tin")
+        if prefs.get("require_tax_id") and (current is None or any(f in data for f in tax_fields)):
+            if all(blank(value(f)) for f in tax_fields):
+                raise BadRequestException("Tax ID is required by your Customer Settings.")
+
     def create_customer(
         self, organization_id: int, created_by: int, **data: Any,
     ) -> BillingCustomer:
         data = filter_allowed(data, CUSTOMER_ALLOWED_FIELDS)
+        self._enforce_required_fields(organization_id, data)
         # Resolve empty/missing currency to organization base currency
         raw_currency = (data.get("currency") or "").strip()
         if not raw_currency:
@@ -134,6 +167,7 @@ class CustomerService:
     ) -> BillingCustomer:
         data = filter_allowed(data, CUSTOMER_ALLOWED_FIELDS)
         customer = self.repo.get_by_id(customer_id, organization_id)
+        self._enforce_required_fields(organization_id, data, current=customer)
         old_values = {
             "company_name": customer.company_name,
             "email": customer.email,

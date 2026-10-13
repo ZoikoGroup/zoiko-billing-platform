@@ -76,6 +76,8 @@ function ModelBadge({ model }) {
   );
 }
 
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 export default function PricingPlansPage() {
   const navigate = useNavigate();
 
@@ -123,7 +125,7 @@ export default function PricingPlansPage() {
     name: "", description: "", price: "", currency: orgCurrency,
     billing_period: "monthly", pricing_model: "flat",
     trial_days: "", setup_fee: "", product_id: "",
-    effective_from: new Date().toISOString().slice(0, 10),
+    effective_from: localToday(),
     effective_to: "", min_quantity: 1, max_quantity: "",
     status: "active", flat_fee: "", notes: "", priority: "",
   });
@@ -307,6 +309,14 @@ export default function PricingPlansPage() {
         setFormError("Select a product before creating a pricing plan.");
         return;
       }
+      if (newPlan.effective_from && newPlan.effective_from < localToday()) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (newPlan.effective_to && newPlan.effective_from && newPlan.effective_to < newPlan.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const enriched = applyProductDefaults(newPlan, selectedProduct);
       const payload = {
         ...enriched,
@@ -316,7 +326,7 @@ export default function PricingPlansPage() {
         setup_fee: parseFloat(enriched.setup_fee) || 0,
         min_quantity: parseInt(enriched.min_quantity) || 1,
         max_quantity: enriched.max_quantity ? parseInt(enriched.max_quantity) : null,
-        effective_from: enriched.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: enriched.effective_from || localToday(),
         effective_to: enriched.effective_to || null,
         product_id: Number(enriched.product_id),
         billing_period: enriched.billing_period,
@@ -360,6 +370,15 @@ export default function PricingPlansPage() {
     if (!editPlan) return;
     setFormLoading(true); setFormError(null);
     try {
+      const originalFrom = plans.find((p) => p.id === editPlan.id)?.effective_from;
+      if (editPlan.effective_from && editPlan.effective_from < localToday() && editPlan.effective_from !== originalFrom) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (editPlan.effective_to && editPlan.effective_from && editPlan.effective_to < editPlan.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const enriched = applyProductDefaults(editPlan, selectedProduct);
       const payload = {
         ...enriched,
@@ -369,7 +388,7 @@ export default function PricingPlansPage() {
         setup_fee: parseFloat(enriched.setup_fee) || 0,
         min_quantity: parseInt(enriched.min_quantity) || 1,
         max_quantity: enriched.max_quantity ? parseInt(enriched.max_quantity) : null,
-        effective_from: enriched.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: enriched.effective_from || localToday(),
         effective_to: enriched.effective_to || null,
       };
       if (enriched.status) payload.status = enriched.status;
@@ -406,7 +425,7 @@ export default function PricingPlansPage() {
       trial_days: plan.trial_days || "",
       setup_fee: plan.setup_fee || "",
       product_id: plan.product_id || "",
-      effective_from: new Date().toISOString().slice(0, 10),
+      effective_from: localToday(),
       effective_to: "",
       min_quantity: plan.min_quantity || 1,
       max_quantity: plan.max_quantity || "",
@@ -637,12 +656,12 @@ export default function PricingPlansPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
+                  <input type="date" min={isEdit ? undefined : localToday()} value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                  <input type="date" value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
+                  <input type="date" min={data.effective_from || undefined} value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>

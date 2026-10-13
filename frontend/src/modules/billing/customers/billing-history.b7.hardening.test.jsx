@@ -22,16 +22,16 @@ beforeEach(() => { vi.clearAllMocks(); m.invList.mockResolvedValue({ items: [], 
 afterEach(() => cleanup());
 
 describe("B7 Customer Billing History", () => {
-  it("no filter: no Clear; search + status + dates: Clear resets all and refetches unfiltered", async () => {
+  it("Clear is always visible (disabled with no filter); search + status + dates enable it and it resets all and refetches unfiltered", async () => {
     render(<MemoryRouter><BillingHistoryPage /></MemoryRouter>);
     await waitFor(() => expect(m.invList).toHaveBeenCalled());
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Search billing history"), { target: { value: "INV-9" } });
     fireEvent.click(screen.getByRole("button", { name: "Toggle filters" }));
     fireEvent.change(screen.getByLabelText("Filter by status"), { target: { value: "paid" } });
     fireEvent.change(screen.getByLabelText("Filter from date"), { target: { value: "2026-01-01" } });
     fireEvent.change(screen.getByLabelText("Filter to date"), { target: { value: "2026-12-31" } });
-    await waitFor(() => expect(clearBtn()).toBeDefined());
+    await waitFor(() => expect(clearBtn()).toBeEnabled());
     fireEvent.click(clearBtn());
     expect(screen.getByLabelText("Search billing history")).toHaveValue("");
     expect(screen.getByLabelText("Filter by status")).toHaveValue("");
@@ -42,6 +42,6 @@ describe("B7 Customer Billing History", () => {
       expect(p.status).toBeUndefined();
       expect(p.search_term ?? p.search).toBeFalsy();
     });
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
   });
 });

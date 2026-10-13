@@ -82,7 +82,7 @@ describe("BUG-12.3 Usage Billing date range", () => {
     expect(screen.getByLabelText("Created to date")).toHaveValue("");
     expect(screen.queryByText(/^Created from /)).not.toBeInTheDocument();
     expect(await screen.findByText("Storage GB")).toBeInTheDocument();
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
   });
 
   it("Clear also resets the inverted-range warning", async () => {

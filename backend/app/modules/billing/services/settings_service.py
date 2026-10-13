@@ -442,6 +442,38 @@ class BillingConfigurationService:
 
         return errors
 
+    @staticmethod
+    def _clean_quotation_prefs(prefs: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate/normalise Quotation Settings. null clears a numeric setting."""
+        out: Dict[str, Any] = {}
+        if "require_customer_acceptance" in prefs:
+            out["require_customer_acceptance"] = bool(prefs["require_customer_acceptance"])
+        if "discount_approval_threshold" in prefs:
+            v = prefs["discount_approval_threshold"]
+            if v in (None, ""):
+                out["discount_approval_threshold"] = None
+            else:
+                try:
+                    num = float(v)
+                except (TypeError, ValueError):
+                    raise BadRequestException("Discount approval threshold must be a number between 0 and 100.")
+                if not 0 <= num <= 100:
+                    raise BadRequestException("Discount approval threshold must be between 0 and 100.")
+                out["discount_approval_threshold"] = num
+        if "expiry_reminder_days" in prefs:
+            v = prefs["expiry_reminder_days"]
+            if v in (None, ""):
+                out["expiry_reminder_days"] = None
+            else:
+                try:
+                    days = int(v)
+                except (TypeError, ValueError):
+                    raise BadRequestException("Expiry reminder days must be a whole number between 1 and 90.")
+                if not 1 <= days <= 90:
+                    raise BadRequestException("Expiry reminder days must be between 1 and 90.")
+                out["expiry_reminder_days"] = days
+        return out
+
     def update_configuration(
         self, organization_id: int, updated_by: int, **data: Any,
     ) -> BillingConfiguration:
@@ -450,6 +482,10 @@ class BillingConfigurationService:
         if errors:
             logger.warning("Validation failed for organization_id=%s: %s", organization_id, errors)
             raise BadRequestException("Validation failed: " + "; ".join(errors))
+
+        quotation_prefs = data.get("quotation_extra_settings")
+        if isinstance(quotation_prefs, dict):
+            data["quotation_extra_settings"] = self._clean_quotation_prefs(quotation_prefs)
 
         # ── Merge tax_preferences into tax_profiles JSON (Q1 resolution) ──────
         # tax_preferences carries frontend-only toggles (auto_calculation, filing_frequency,
@@ -493,7 +529,7 @@ class BillingConfigurationService:
         # Settings are almost entirely composed of these). Merging instead
         # of a full-replace protects against wiping previously-saved keys
         # if a caller ever sends a partial update.
-        for blob_field in ("subscription_extra_settings", "payment_extra_settings", "pricing_extra_settings"):
+        for blob_field in ("subscription_extra_settings", "payment_extra_settings", "pricing_extra_settings", "customer_extra_settings", "quotation_extra_settings"):
             incoming_blob = data.get(blob_field)
             if isinstance(incoming_blob, dict):
                 try:

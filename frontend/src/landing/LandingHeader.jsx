@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { label: "Company", hasMenu: true },
 ];
 
-export default function LandingHeader() {
+export default function LandingHeader({ showNav = true }) {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <div className="flex items-center justify-between px-6 lg:px-10 h-16 gap-6">
@@ -19,6 +19,7 @@ export default function LandingHeader() {
           <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
         </Link>
 
+        {showNav ? (
         <nav className="hidden lg:flex flex-1 items-center justify-center gap-6 text-sm font-medium text-[#374151]">
           {NAV_ITEMS.map(({ label, hasMenu }) => (
             <button
@@ -31,6 +32,9 @@ export default function LandingHeader() {
             </button>
           ))}
         </nav>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         <div className="flex items-center gap-3 text-sm font-semibold shrink-0">
           <Link to="/login" className="text-[#0F172A] no-underline">

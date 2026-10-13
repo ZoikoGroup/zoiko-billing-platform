@@ -5,6 +5,7 @@ import RegisterPage from "./RegisterPage";
 import { apiFetch } from "../api/client";
 
 vi.mock("../api/client", () => ({ apiFetch: vi.fn() }));
+vi.mock("../context/AuthContext", () => ({ useAuth: () => ({ login: vi.fn() }) }));
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => ({
   ...(await vi.importActual("react-router-dom")),

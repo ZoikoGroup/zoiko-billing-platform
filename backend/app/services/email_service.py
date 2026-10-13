@@ -89,8 +89,13 @@ def _get_smtp_settings(db=None) -> dict:
             db = SessionLocal()
             own_session = True
         try:
-            rows = db.query(PlatformSetting).filter(PlatformSetting.category == "email").all()
-            mapping = {s.key: s.value for s in rows if s.value}
+            # Savepoint-guarded for the same reason as _get_org_branding: a
+            # broken query (unapplied migration, deadlock, transient blip)
+            # must not abort the caller's wider transaction and make the
+            # audit-log insert fail with "current transaction is aborted".
+            with db.begin_nested():
+                rows = db.query(PlatformSetting).filter(PlatformSetting.category == "email").all()
+                mapping = {s.key: s.value for s in rows if s.value}
             return {
                 "host": mapping.get("smtp_host", defaults["host"]),
                 "port": mapping.get("smtp_port", defaults["port"]),
@@ -160,45 +165,54 @@ def _get_org_branding(organization_id=None, db=None) -> dict:
             db = SessionLocal()
             own_session = True
         try:
-            config = BillingConfigurationService(db).get_configuration(organization_id)
-            company_name = (config.company_name or "").strip()
-            if not company_name:
-                from app.modules.organizations.models import Organization
-                org = db.query(Organization).filter(Organization.id == organization_id).first()
-                company_name = (org.organization_name or org.display_name or "") if org else ""
-            if not company_name:
-                company_name = _BRANDING_DEFAULTS["company_name"]
+            # Savepoint-guarded: a single broken or temporarily-failing query
+            # here (schema drift from an unapplied migration, a deadlock, a
+            # transient connection blip) must not poison the caller's wider
+            # transaction. Without the savepoint, Postgres aborts the whole
+            # transaction on the first bad statement, so every later query in
+            # the send path — the SMTP-settings read AND the audit-log insert —
+            # fails with "current transaction is aborted" and the email is
+            # reported as "could not be delivered" even though SMTP is fine.
+            with db.begin_nested():
+                config = BillingConfigurationService(db).get_configuration(organization_id)
+                company_name = (config.company_name or "").strip()
+                if not company_name:
+                    from app.modules.organizations.models import Organization
+                    org = db.query(Organization).filter(Organization.id == organization_id).first()
+                    company_name = (org.organization_name or org.display_name or "") if org else ""
+                if not company_name:
+                    company_name = _BRANDING_DEFAULTS["company_name"]
 
-            reg_parts = []
-            for label, value in (
-                ("business registration", config.business_registration_number),
-                ("GST", config.gst_number),
-                ("VAT", config.vat_number),
-                ("PAN", config.pan_number),
-                ("TIN", config.tin_number),
-            ):
-                if value:
-                    reg_parts.append(f"{label} no. {value}")
-            legal_entity = company_name
-            if reg_parts:
-                legal_entity = f"{company_name} — {', '.join(reg_parts)}"
+                reg_parts = []
+                for label, value in (
+                    ("business registration", config.business_registration_number),
+                    ("GST", config.gst_number),
+                    ("VAT", config.vat_number),
+                    ("PAN", config.pan_number),
+                    ("TIN", config.tin_number),
+                ):
+                    if value:
+                        reg_parts.append(f"{label} no. {value}")
+                legal_entity = company_name
+                if reg_parts:
+                    legal_entity = f"{company_name} — {', '.join(reg_parts)}"
 
-            addr_parts = [
-                config.address_line1, config.address_line2,
-                config.city, config.state, config.postal_code, config.country,
-            ]
-            billing_address = ", ".join(p for p in addr_parts if p)
+                addr_parts = [
+                    config.address_line1, config.address_line2,
+                    config.city, config.state, config.postal_code, config.country,
+                ]
+                billing_address = ", ".join(p for p in addr_parts if p)
 
-            return {
-                "company_name": company_name,
-                "support_email": config.billing_email or "",
-                "website": config.website or "",
-                "logo_url": config.logo_url or _default_logo_url(),
-                "invoice_footer": config.invoice_footer or "",
-                "legal_entity": legal_entity,
-                "billing_address": billing_address,
-                "billing_phone": config.billing_phone or "",
-            }
+                return {
+                    "company_name": company_name,
+                    "support_email": config.billing_email or "",
+                    "website": config.website or "",
+                    "logo_url": config.logo_url or _default_logo_url(),
+                    "invoice_footer": config.invoice_footer or "",
+                    "legal_entity": legal_entity,
+                    "billing_address": billing_address,
+                    "billing_phone": config.billing_phone or "",
+                }
         finally:
             if own_session:
                 db.close()
@@ -1388,12 +1402,13 @@ def send_quote_email(
     db=None,
     pdf_bytes: bytes = None,
     pdf_filename: str = None,
+    subject_prefix: str = "",
 ) -> bool:
     from app.config import settings as _settings
     attachments = [(pdf_filename or f"{quote_number}.pdf", pdf_bytes)] if pdf_bytes else None
     cta_url = review_url or f"{_settings.FRONTEND_URL.rstrip('/')}/login"
     return send_approval_email(email, "quote_sent.html", {
-        "subject": f"Estimate {quote_number} from {{{{company_name}}}} — {currency} {total_amount}",
+        "subject": f"{subject_prefix}Estimate {quote_number} from {{{{company_name}}}} — {currency} {total_amount}",
         "customer_name": customer_name,
         "recipient_first_name": recipient_first_name or customer_name,
         "quote_number": quote_number,
@@ -1411,7 +1426,7 @@ def send_quote_email(
         "cta_url": cta_url,
         "line_items_html": _render_quote_items_html(line_items, currency),
         "totals_html": _render_quote_totals_html(subtotal, discount_amount, tax_amount, total_amount, currency),
-    }, db=db, organization_id=organization_id, attachments=attachments, event_name="quote.sent", event_id=str(quote_number), target_record_id=str(quote_number))
+    }, db=db, organization_id=organization_id, attachments=attachments, event_name="quote.expiry_reminder" if subject_prefix else "quote.sent", event_id=str(quote_number), target_record_id=str(quote_number))
 
 
 def send_quote_response_notification_email(
