@@ -681,21 +681,30 @@ export default function WorkspaceZoikoSubscriptionPage() {
                     </div>
                   </div>
 
-                  {payLinkMissing && (
-                    <p role="status" className="text-xs text-amber-800 sm:max-w-xs">
-                      The payment link for this invoice is being processed.
-                    </p>
+                  {payLinkMissing ? (
+                    <>
+                      <p role="status" className="text-xs text-amber-800 sm:max-w-xs">
+                        A payment link hasn't been issued for this invoice yet. Press “Get Payment Link” to prepare it for online payment.
+                      </p>
+                      <button
+                        onClick={() => load(true)}
+                        disabled={refreshing}
+                        className="disabled:opacity-50 disabled:cursor-not-allowed group inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] hover:from-[#1546B0] hover:to-[#0B419A] rounded-xl shadow-xs transition cursor-pointer shrink-0"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin text-blue-200" : "text-blue-200"}`} />
+                        <span>{refreshing ? "Preparing…" : "Get Payment Link"}</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handlePayInvoice(unpaidInvoice)}
+                      className="group inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] hover:from-[#1546B0] hover:to-[#0B419A] rounded-xl shadow-xs transition cursor-pointer shrink-0"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-blue-200" />
+                      <span>Pay {formatOrgMoney(unpaidInvoice.balance_due, { default_currency: unpaidInvoice.currency || currency })} Now</span>
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
                   )}
-
-                  <button
-                    onClick={() => handlePayInvoice(unpaidInvoice)}
-                    disabled={payLinkMissing}
-                    className="disabled:opacity-50 disabled:cursor-not-allowed group inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] hover:from-[#1546B0] hover:to-[#0B419A] rounded-xl shadow-xs transition cursor-pointer shrink-0"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-blue-200" />
-                    <span>Pay {formatOrgMoney(unpaidInvoice.balance_due, { default_currency: unpaidInvoice.currency || currency })} Now</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
                 </div>
               )}
 
@@ -967,13 +976,21 @@ export default function WorkspaceZoikoSubscriptionPage() {
                                 </td>
                                 <td className="py-3.5 px-5 text-right">
                                   {isPayable && inv.public_token ? (
-                                    <button
-                                      onClick={() => handlePayInvoice(inv)}
-                                      className="px-2.5 py-1 text-xs font-semibold text-white bg-[#1A56DB] hover:bg-[#1546B0] rounded-lg cursor-pointer"
-                                    >
-                                      Pay
-                                    </button>
-                                  ) : inv.public_token ? (
+                                  <button
+                                    onClick={() => handlePayInvoice(inv)}
+                                    className="px-2.5 py-1 text-xs font-semibold text-white bg-[#1A56DB] hover:bg-[#1546B0] rounded-lg cursor-pointer"
+                                  >
+                                    Pay
+                                  </button>
+                                ) : isPayable ? (
+                                  <button
+                                    onClick={() => load(true)}
+                                    disabled={refreshing}
+                                    className="disabled:opacity-50 px-2.5 py-1 text-xs font-semibold text-[#1A56DB] hover:bg-blue-50 rounded-lg cursor-pointer"
+                                  >
+                                    {refreshing ? "…" : "Get link"}
+                                  </button>
+                                ) : inv.public_token ? (
                                     <a
                                       href={`/platform-invoice/${inv.public_token}`}
                                       target="_blank"

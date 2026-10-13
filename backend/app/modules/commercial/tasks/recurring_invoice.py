@@ -96,6 +96,13 @@ def run_commercial_recurring_invoice_job() -> Dict[str, Any]:
                     unit_price=price_amount,
                 )
                 inv_svc.finalize(invoice_id=invoice.id, actor_id=None)
+                # The financial record is committed BEFORE the email attempt.
+                # send() rolls its own delivery bookkeeping back on failure;
+                # without this commit that rollback would discard the draft,
+                # items, ISSUED transition AND the payment token together —
+                # leaving a renewal period with no invoice at all (and, before
+                # the finalize-token fix, invoices that were unpayable).
+                db.commit()
 
                 try:
                     inv_svc.send(invoice_id=invoice.id, actor_id=None)

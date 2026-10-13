@@ -172,6 +172,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Overdue Invoice Detection",
         ),
         (
+            "app.modules.billing.tasks.quote_expiry_reminder:run_quote_expiry_reminder_job",
+            settings.QUOTE_EXPIRY_REMINDER_INTERVAL_MINUTES,
+            "quote_expiry_reminder_job",
+            "Quotation Expiry Reminders",
+        ),
+        (
             "app.modules.billing.tasks.dunning_process:run_dunning_process_job",
             settings.DUNNING_PROCESS_INTERVAL_MINUTES,
             "dunning_process_job",

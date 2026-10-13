@@ -282,6 +282,42 @@ def login_user(
     }
 
 
+def login_user_via_google(db: Session, email: str) -> dict:
+    """Issue a session for a Google-verified email. Never creates accounts:
+    the email must already belong to an active user (and active org)."""
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    except sa_exc.OperationalError:
+        logger.error("Database connection failed during Google login")
+        raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
+
+    if user is None:
+        raise UnauthorizedException("No Zoiko account exists for this Google email.")
+    if user.organization_id:
+        org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+        if org is not None and not org.is_active:
+            raise UnauthorizedException("Your organization has been suspended. Please contact support.")
+    if not user.is_active:
+        raise UnauthorizedException("Your account has been deactivated.")
+
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+
+    token_payload = {
+        "sub": user.email,
+        "role": user.role.value,
+        "user_id": user.id,
+        "organization_id": user.organization_id,
+    }
+    logger.info("User %s (%s) logged in via Google", user.email, user.role.value)
+    return {
+        "access_token": create_access_token(data=token_payload),
+        "refresh_token": create_refresh_token(data=token_payload),
+        "token_type": "bearer",
+        "user": user,
+    }
+
+
 def refresh_user_token(db: Session, refresh_token: str) -> dict:
     from app.core.security import decode_refresh_token
 
@@ -392,6 +428,17 @@ def _send_registration_emails(org_id: int, admin_id: int) -> None:
 def register_enterprise(
     db: Session, data: RegisterRequest, background_tasks: Optional["BackgroundTasks"] = None,
 ) -> dict:
+    if data.google_ticket:
+        from app.modules.auth.google_oauth import read_signup_ticket
+
+        ticket = read_signup_ticket(data.google_ticket)
+        if ticket is None:
+            raise BadRequestException("Your Google sign-in has expired. Please sign in with Google again.")
+        # The Google-verified email always wins over whatever the client sent.
+        data.email = ticket["email"]
+        if not data.password:
+            data.password = secrets.token_urlsafe(32)  # unusable; user can reset later
+
     existing = db.query(User).filter(func.lower(User.email) == data.email.lower()).first()
     if existing:
         raise AlreadyExistsException("User", "email")

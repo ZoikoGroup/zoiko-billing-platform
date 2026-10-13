@@ -291,11 +291,12 @@ export default function BillingHistoryPage() {
               <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
-                  Clear filters
-                </button>
-              )}
+              <button onClick={clearFilters} disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search, status and date filters" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent">
+                <X size={14} />
+                Clear filters
+              </button>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">

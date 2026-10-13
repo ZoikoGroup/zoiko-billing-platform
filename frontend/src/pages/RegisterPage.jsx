@@ -13,7 +13,9 @@ import {
   Minus,
   ShieldCheck,
 } from "lucide-react";
-import { apiFetch } from "../api/client";
+import { apiFetch, setSession } from "../api/client";
+import { ROLE_DEFAULT_REDIRECT } from "../config/roles";
+import { useAuth } from "../context/AuthContext";
 import { getCurrencyInfo } from "../utils/currency";
 import {
   REGISTRATION_COUNTRIES,
@@ -93,13 +95,28 @@ function Field({ id, label, required, hint, children }) {
   );
 }
 
+// Google sign-in sends an unknown (but Google-verified) identity here in the
+// URL fragment. Nothing is created until this form is submitted.
+function readGoogleSignup() {
+  const frag = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const ticket = frag.get("google_ticket");
+  if (!ticket) return null;
+  return { ticket, email: frag.get("email") || "", name: frag.get("name") || "" };
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
+  const [google] = useState(readGoogleSignup);
+
+  useEffect(() => {
+    if (google) window.history.replaceState(null, "", window.location.pathname);
+  }, [google]);
 
   const [form, setForm] = useState({
     orgName: "",
-    adminName: "",
-    adminEmail: "",
+    adminName: google?.name || "",
+    adminEmail: google?.email || "",
     password: "",
     phone: "",
     address: "",
@@ -197,7 +214,8 @@ export default function RegisterPage() {
           organization: form.orgName,
           name: form.adminName,
           email: form.adminEmail,
-          password: form.password,
+          ...(google ? { google_ticket: google.ticket } : {}),
+          ...(form.password ? { password: form.password } : {}),
           phone: form.phone,
           address: form.address,
           city: form.city,
@@ -211,9 +229,19 @@ export default function RegisterPage() {
         },
       });
 
+      // Google signups are logged in as the Google email straight away.
+      if (google && res?.access_token && res?.user) {
+        setSession(res);
+        await login(res.user);
+      }
+
       // Buy-now signups go straight to secure checkout for their first invoice.
       if (startMode === "paid" && res?.payment_token) {
         navigate(`/platform-invoice/${res.payment_token}/checkout`);
+        return;
+      }
+      if (google && res?.access_token) {
+        navigate(ROLE_DEFAULT_REDIRECT[res.user.role] || "/login", { replace: true });
         return;
       }
       navigate("/register/success", {
@@ -492,11 +520,13 @@ export default function RegisterPage() {
                   </Field>
                   <Field id="adminEmail" label="Admin email" required>
                     <input id="adminEmail" type="email" required autoComplete="email" value={form.adminEmail}
+                      readOnly={!!google} title={google ? "Verified by Google" : undefined}
                       onChange={(e) => update("adminEmail", e.target.value)} placeholder="admin@company.com" className={inputCls} />
                   </Field>
-                  <Field id="password" label="Password" required hint="At least 8 characters.">
+                  <Field id="password" label={google ? "Password (optional)" : "Password"} required={!google}
+                    hint={google ? "Optional. Leave blank to sign in with Google only." : "At least 8 characters."}>
                     <div className="relative">
-                      <input id="password" type={showPassword ? "text" : "password"} required minLength={8}
+                      <input id="password" type={showPassword ? "text" : "password"} required={!google} minLength={8}
                         autoComplete="new-password" value={form.password}
                         onChange={(e) => update("password", e.target.value)} placeholder="Create a password"
                         className={`${inputCls} pr-11`} />

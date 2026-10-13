@@ -75,14 +75,45 @@ class TestStripeFoundation:
     def test_stripe_service_boots_without_key(self, db):
         assert StripeService(db) is not None
     def test_stripe_module_raises_without_secret(self, db):
+        from types import SimpleNamespace
         from app.core.exceptions import BadRequestException
         from app.modules.billing.services.stripe_service import _stripe_module
-        with patch("app.modules.billing.services.stripe_service.settings") as s:
+        with patch("app.modules.billing.services.stripe_service.settings") as s, patch(
+            # The resolver self-heals from a fresh Settings() — neutralize that
+            # source too, or a real .env key would (correctly) be adopted.
+            "app.modules.billing.services.stripe_connect_service.Settings",
+            return_value=SimpleNamespace(
+                STRIPE_SECRET_KEY="", STRIPE_PUBLISHABLE_KEY="",
+                STRIPE_WEBHOOK_SECRET="", STRIPE_CONNECT_CLIENT_ID="",
+            ),
+        ):
             s.STRIPE_SECRET_KEY = ""
             with pytest.raises(BadRequestException, match="not available yet") as exc:
                 _stripe_module()
         # B4-07/09: user-facing text must not name environment settings.
         assert "STRIPE_SECRET_KEY" not in str(exc.value.detail)
+
+    def test_secret_key_self_heals_from_env_after_boot(self, db, monkeypatch):
+        """Regression (invoice #46): a Stripe key added to .env after the
+        process booted used to keep reading as "not configured", so the invoice
+        Pay button reported "Online card payments are not enabled yet." even
+        though the key was present. The resolver must adopt it lazily."""
+        from types import SimpleNamespace
+        from app.config import settings
+        from app.modules.billing.services.stripe_connect_service import resolve_stripe_secret_key
+
+        monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "")
+        fresh = SimpleNamespace(
+            STRIPE_SECRET_KEY="sk_test_recovered",
+            STRIPE_PUBLISHABLE_KEY="pk_test_recovered",
+            STRIPE_WEBHOOK_SECRET="whsec_recovered",
+            STRIPE_CONNECT_CLIENT_ID="ca_recovered",
+        )
+        with patch("app.modules.billing.services.stripe_connect_service.Settings", return_value=fresh):
+            assert StripeService.is_configured() is True
+            assert resolve_stripe_secret_key() == "sk_test_recovered"
+        # Adopted onto the live settings object, so every later read agrees.
+        assert settings.STRIPE_SECRET_KEY == "sk_test_recovered"
 
 class TestStripeConnect:
     def test_get_status_not_connected(self, db):
@@ -239,8 +270,15 @@ class TestWebhookSecurity:
                 with pytest.raises(BadRequestException, match="Invalid Stripe webhook signature"):
                     StripeService(db).handle_webhook(b'{}', "t=1,v1=badsig")
     def test_missing_webhook_secret_raises(self, db):
+        from types import SimpleNamespace
         from app.core.exceptions import BadRequestException
-        with patch("app.modules.billing.services.stripe_service.settings") as s:
+        with patch("app.modules.billing.services.stripe_service.settings") as s, patch(
+            "app.modules.billing.services.stripe_connect_service.Settings",
+            return_value=SimpleNamespace(
+                STRIPE_SECRET_KEY="sk_test_x", STRIPE_PUBLISHABLE_KEY="",
+                STRIPE_WEBHOOK_SECRET="", STRIPE_CONNECT_CLIENT_ID="",
+            ),
+        ):
             s.STRIPE_WEBHOOK_SECRET = ""
             with pytest.raises(BadRequestException, match="not configured"):
                 StripeService(db).handle_webhook(b'{}', "t=1,v1=sig")

@@ -13,7 +13,6 @@ vi.mock("../../../components/HRPage", () => ({ default: ({ title, children }) =>
 
 import CustomerSettingsPage from "./settings";
 
-
 beforeEach(() => { vi.clearAllMocks(); m.update.mockResolvedValue({}); m.get.mockResolvedValue({ default_payment_terms: "net_15" }); });
 afterEach(() => cleanup());
 
@@ -29,6 +28,23 @@ describe("B6 Customer Settings", () => {
     expect(screen.queryByText("Not configurable yet")).toBeNull();
   });
 
+  it("Require Billing Address / Tax ID are real selects that load, save and round-trip", async () => {
+    m.get.mockResolvedValue({ default_payment_terms: "net_15", customer_extra_settings: { require_billing_address: true } });
+    render(<CustomerSettingsPage />);
+    const addr = await screen.findByLabelText("Require billing address");
+    const tax = screen.getByLabelText("Require tax ID");
+    expect(addr.tagName).toBe("SELECT");
+    expect(addr).toHaveValue("yes");
+    expect(tax).toHaveValue("no");
+    fireEvent.change(tax, { target: { value: "yes" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(m.update).toHaveBeenCalledTimes(1));
+    const payload = m.update.mock.calls[0][0];
+    expect(payload.customer_extra_settings).toEqual({ require_billing_address: true, require_tax_id: true });
+    expect(payload.require_billing_address).toBe(true);
+    expect(payload.require_tax_id).toBe(true);
+  });
+
   it("configurable settings still load and save", async () => {
     render(<CustomerSettingsPage />);
     const terms = await screen.findByLabelText("Default payment terms");
@@ -38,6 +54,9 @@ describe("B6 Customer Settings", () => {
     await waitFor(() => expect(m.update).toHaveBeenCalledTimes(1));
     const payload = m.update.mock.calls[0][0];
     expect(payload.default_payment_terms).toBe("net_60");
+    expect(payload.default_customer_type).toBe("business");
+    expect(payload.customer_numbering_prefix).toBe("CUST-");
+    expect(payload.customer_numbering_format).toBe("PREFIX-{SEQ}");
   });
 
   it("a failed load shows an error with Retry and no editable form", async () => {

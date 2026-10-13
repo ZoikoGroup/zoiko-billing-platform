@@ -72,8 +72,11 @@ class TestWebhookSignatureAndEnvironment:
     def test_missing_secret_key_message_is_user_safe(self):
         # B4-09: the end-user message must not name environment settings.
         from app.modules.commercial.platform_stripe_service import _stripe_module
-        with patch(SETTINGS_PATH) as s:
+        with patch(SETTINGS_PATH) as s, patch(
+            "app.modules.commercial.platform_stripe_service.Settings"
+        ) as fresh_cls:
             s.PLATFORM_STRIPE_SECRET_KEY = ""
+            fresh_cls.return_value.PLATFORM_STRIPE_SECRET_KEY = ""  # .env re-read also empty
             with pytest.raises(BadRequestException, match="not available yet") as exc:
                 _stripe_module()
         assert "PLATFORM_STRIPE_SECRET_KEY" not in str(exc.value.detail)

@@ -49,9 +49,16 @@ export default function QuotationSettingsPage() {
 
   const [form, setForm] = useState({
     quote_prefix: "QOT-",
+    quote_number_format: "PREFIX-{YYYY}-{SEQ}",
+    quote_sequence_reset: "annually",
     default_currency: "USD",
     default_terms_and_conditions: "",
     quote_logo_url: "",
+    quotation_extra_settings: {
+      require_customer_acceptance: true,
+      discount_approval_threshold: "",
+      expiry_reminder_days: "",
+    },
   });
 
   const [original, setOriginal] = useState({});
@@ -73,9 +80,16 @@ export default function QuotationSettingsPage() {
         // `default_quote_prefix`/`terms_and_conditions`, neither of which
         // exists on the schema, so both silently never persisted.
         quote_prefix: settings.quote_prefix || "QOT-",
+        quote_number_format: settings.quote_number_format || "PREFIX-{YYYY}-{SEQ}",
+        quote_sequence_reset: settings.quote_sequence_reset || "annually",
         default_currency: settings.default_currency,
         default_terms_and_conditions: settings.quote_terms_and_conditions || "",
         quote_logo_url: settings.logo_url || "",
+        quotation_extra_settings: {
+          require_customer_acceptance: settings.quotation_extra_settings?.require_customer_acceptance ?? true,
+          discount_approval_threshold: settings.quotation_extra_settings?.discount_approval_threshold ?? "",
+          expiry_reminder_days: settings.quotation_extra_settings?.expiry_reminder_days ?? "",
+        },
       };
       setForm(values);
       setOriginal({ ...values });
@@ -93,12 +107,23 @@ export default function QuotationSettingsPage() {
       setError(null);
       const payload = {
         quote_prefix: form.quote_prefix,
+        quote_number_format: form.quote_number_format,
+        quote_sequence_reset: form.quote_sequence_reset,
         default_currency: form.default_currency,
         // Cleared fields are sent as null (the API applies explicit nulls).
         // `|| undefined` dropped them from the JSON, so clearing the terms or
         // logo showed "Saved" while the old value stayed on the server.
         quote_terms_and_conditions: form.default_terms_and_conditions?.trim() ? form.default_terms_and_conditions : null,
         logo_url: form.quote_logo_url?.trim() ? form.quote_logo_url.trim() : null,
+        quotation_extra_settings: {
+          require_customer_acceptance: form.quotation_extra_settings.require_customer_acceptance,
+          discount_approval_threshold: form.quotation_extra_settings.discount_approval_threshold === ""
+            ? null
+            : Number(form.quotation_extra_settings.discount_approval_threshold),
+          expiry_reminder_days: form.quotation_extra_settings.expiry_reminder_days === ""
+            ? null
+            : Number(form.quotation_extra_settings.expiry_reminder_days),
+        },
       };
       await settingsApi.update(payload);
       setOriginal({ ...form });
@@ -111,6 +136,13 @@ export default function QuotationSettingsPage() {
 
   function updateField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function updateQuotationPreference(key, value) {
+    setForm((f) => ({
+      ...f,
+      quotation_extra_settings: { ...f.quotation_extra_settings, [key]: value },
+    }));
   }
 
   // Refresh replaces the form with the saved values, so unsaved edits must
@@ -192,6 +224,74 @@ export default function QuotationSettingsPage() {
         </SettingsField>
 
         <SettingsField
+          label="Quote Number Format"
+          icon={Hash}
+          description="Number pattern used for automatically generated quotations"
+        >
+          <select aria-label="Quote number format" value={form.quote_number_format} onChange={(e) => updateField("quote_number_format", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="PREFIX-{SEQ}">Simple sequential</option>
+            <option value="PREFIX-{YYYY}-{SEQ}">Year and sequence</option>
+            <option value="PREFIX-{YYYYMM}-{SEQ}">Year-month and sequence</option>
+            <option value="PREFIX-{YYYY}-{MM}-{SEQ}">Year-month sequence</option>
+            <option value="PREFIX-{MM}-{YYYY}-{SEQ}">Month-year sequence</option>
+          </select>
+        </SettingsField>
+
+        <SettingsField
+          label="Quote Sequence Reset"
+          icon={Hash}
+          description="When the quotation number sequence resets"
+        >
+          <select aria-label="Quote sequence reset" value={form.quote_sequence_reset} onChange={(e) => updateField("quote_sequence_reset", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="never">Never</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="annually">Annually</option>
+          </select>
+        </SettingsField>
+
+        <SettingsField
+          label="Customer Acceptance Required"
+          icon={CheckCircle}
+          description={`Require ${singular.toLowerCase()} acceptance before converting a quotation to an invoice`}
+        >
+          <select aria-label="Customer acceptance required"
+            value={String(form.quotation_extra_settings.require_customer_acceptance)}
+            onChange={(e) => updateQuotationPreference("require_customer_acceptance", e.target.value === "true")}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            <option value="true">Required</option>
+            <option value="false">Not required</option>
+          </select>
+        </SettingsField>
+
+        <SettingsField
+          label="Discount Approval Threshold"
+          icon={DollarSign}
+          description="Require an organization admin to send quotations with larger discounts; leave empty to disable"
+        >
+          <div className="flex max-w-xs items-center gap-2">
+            <input type="number" min="0" max="100" step="0.01" aria-label="Discount approval threshold"
+              value={form.quotation_extra_settings.discount_approval_threshold}
+              onChange={(e) => updateQuotationPreference("discount_approval_threshold", e.target.value)}
+              className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <span className="text-sm text-slate-500">%</span>
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Expiry Reminder Days"
+          icon={AlertCircle}
+          description="Send a reminder this many days before the quotation expires; leave empty to disable"
+        >
+          <input type="number" min="1" max="90" step="1" aria-label="Expiry reminder days"
+            value={form.quotation_extra_settings.expiry_reminder_days}
+            onChange={(e) => updateQuotationPreference("expiry_reminder_days", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </SettingsField>
+
+        <SettingsField
           label="Default Currency"
           icon={DollarSign}
           description="Default currency for new quotations"
@@ -239,30 +339,17 @@ export default function QuotationSettingsPage() {
             </div>
             <div>
               <h3 className="text-base font-semibold text-slate-800">Planned Quotation Controls</h3>
-              <p className="text-xs text-slate-500 mt-0.5">These are not available for quotations yet and have no effect today. They are listed so you know what is planned.</p>
+              <p className="text-xs text-slate-500 mt-0.5">These controls are planned and are not available yet.</p>
             </div>
           </div>
-          {/* Each item states its real status (see the Batch 2 audit): four have
-              no backend support at all; two have a setting elsewhere that is
-              saved but NOT applied to quotations. Not interactive by design. */}
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-500" aria-label="Planned quotation controls">
             {[
-              { name: "Auto-Approval Workflow", desc: "Require approval before sending quotations",
-                status: "A related \"approval workflow\" switch exists in Billing Settings, but quotations don't use it yet." },
-              { name: "Discount Approval Threshold", desc: "Require approval for discounts above X%", status: "Not available yet." },
-              { name: `${singular} Approval Required`, desc: `Require ${singular.toLowerCase()} acceptance before conversion`, status: "Not available yet." },
-              { name: "Version History", desc: "Track quotation revisions automatically", status: "Not available yet." },
-              { name: "Expiry Reminder Days", desc: "Days before expiry to send reminders", status: "Not available yet." },
-              { name: "Quote Number Format", desc: "Custom numbering such as QT-{YEAR}-{NUMBER}",
-                status: "Can be saved in Billing Settings, but quotation numbers don't use it yet (only the prefix above applies)." },
+              { name: "Auto-Approval Workflow", desc: "Require approval before sending quotations" },
+              { name: "Version History", desc: "Track quotation revisions automatically" },
             ].map((item) => (
               <li key={item.name} className="bg-white p-3 rounded-lg border border-slate-200">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium text-slate-600">{item.name}</p>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Not available</span>
-                </div>
+                <p className="font-medium text-slate-600">{item.name}</p>
                 <p className="mt-1">{item.desc}</p>
-                <p className="mt-1 text-xs text-slate-500">{item.status}</p>
               </li>
             ))}
           </ul>

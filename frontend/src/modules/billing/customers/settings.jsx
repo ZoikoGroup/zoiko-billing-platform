@@ -66,11 +66,16 @@ function toPayload(form) {
     }
     payload[backKey] = val;
   }
+  payload.customer_extra_settings = {
+    require_billing_address: form.require_billing_address === "yes",
+    require_tax_id: form.require_tax_id === "yes",
+  };
   return payload;
 }
 
 // BUG-13: these five settings are stored server-side (BillingConfiguration
-// columns). Fallbacks apply only when a key is absent from the response.
+// columns). Fallbacks apply only when a key is absent from the response,
+// including the legacy customer_extra_settings blob written by older builds.
 function toForm(settings) {
   return {
     default_customer_type: settings.default_customer_type || "business",
@@ -80,8 +85,8 @@ function toForm(settings) {
     credit_limit: settings.credit_limit != null ? String(settings.credit_limit) : "",
     customer_notification: settings.notify_customer_created ? "yes" : "no",
     auto_suspend_days: settings.grace_period_days != null ? String(settings.grace_period_days) : "",
-    require_billing_address: settings.require_billing_address ? "yes" : "no",
-    require_tax_id: settings.require_tax_id ? "yes" : "no",
+    require_billing_address: settings.require_billing_address ?? settings.customer_extra_settings?.require_billing_address ? "yes" : "no",
+    require_tax_id: settings.require_tax_id ?? settings.customer_extra_settings?.require_tax_id ? "yes" : "no",
   };
 }
 
@@ -316,19 +321,19 @@ export default function CustomerSettingsPage() {
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Billing Address" icon={FileText} description="When required, new customers can't be created without a billing address. Existing customers are not affected.">
+        <SettingsField label="Require Billing Address" icon={FileText} description="When Required, a customer cannot be created without a billing address, and a save that would blank it is rejected">
           <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Optional</option>
-            <option value="yes">Required for new customers</option>
+            <option value="yes">Required</option>
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Tax ID" icon={FileText} description="When required, new customers need at least one tax identifier (GST, VAT, PAN, TIN or other tax ID). Existing customers are not affected.">
+        <SettingsField label="Require Tax ID" icon={FileText} description="When Required, a customer needs at least one tax identifier (Tax ID, GST, VAT, PAN or TIN), and a save that would leave all of them blank is rejected">
           <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)}
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Optional</option>
-            <option value="yes">Required for new customers</option>
+            <option value="yes">Required</option>
           </select>
         </SettingsField>
       </div>

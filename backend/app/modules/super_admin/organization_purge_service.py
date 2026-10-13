@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Set, Tuple
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select, tuple_
+from sqlalchemy import literal, select, tuple_, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,9 @@ _NON_BLOCKING_FK_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
 # The canonical tenant key. ``tenant_id`` (used by the AI context tables) is
 # reached through its FK edge, so it does not need seeding here.
 _ORG_COLUMN = "organization_id"
+
+# Max SELECTs combined into one UNION ALL round trip.
+_UNION_CHUNK = 80
 
 _Pk = Tuple[int, ...]
 
@@ -169,47 +172,68 @@ class OrganizationPurgeService:
                 )
 
         pending: Dict[str, Set[_Pk]] = {}
-        queue = []
 
-        def add(table_name: str, pks: Set[_Pk]) -> None:
-            if not pks:
-                return
-            bucket = pending.setdefault(table_name, set())
-            fresh = pks - bucket
-            if fresh:
-                bucket.update(fresh)
-                queue.append((table_name, fresh))
+        def run_batched(selects) -> Dict[str, Set[_Pk]]:
+            """Run many ``SELECT '<table>', <pk>`` as a few UNION ALL queries.
 
-        # Seed 1: the organization row itself.
-        add("organizations", {(org_id,)})
+            Round trips dominate on a remote database (hundreds of per-edge
+            queries took >1 min), so edges are combined into chunks.
+            """
+            found: Dict[str, Set[_Pk]] = {}
+            for i in range(0, len(selects), _UNION_CHUNK):
+                chunk = selects[i : i + _UNION_CHUNK]
+                stmt = chunk[0] if len(chunk) == 1 else union_all(*chunk)
+                for table_name, pk in self.db.execute(stmt).all():
+                    found.setdefault(table_name, set()).add((pk,))
+            return found
 
-        # Seed 2: every table that keys directly on the org.
+        def absorb(found: Dict[str, Set[_Pk]]) -> Dict[str, Set[_Pk]]:
+            fresh_by_table: Dict[str, Set[_Pk]] = {}
+            for table_name, pks in found.items():
+                bucket = pending.setdefault(table_name, set())
+                fresh = pks - bucket
+                if fresh:
+                    bucket.update(fresh)
+                    fresh_by_table[table_name] = fresh
+            return fresh_by_table
+
+        # Seed 1: the organization row itself. Seed 2: every table that keys
+        # directly on the org — all in one batched round trip.
+        frontier = absorb({"organizations": {(org_id,)}})
+        seeds = []
         for table_name, table in tables.items():
             if _ORG_COLUMN not in table.columns:
                 continue
             cols = _pk_columns(table)
-            if not cols:
+            if len(cols) != 1:
                 continue
-            rows = self.db.execute(
-                select(*cols).where(table.columns[_ORG_COLUMN] == org_id)
-            ).all()
-            add(table_name, {tuple(r) for r in rows})
+            seeds.append(
+                select(literal(table_name).label("t"), cols[0].label("pk")).where(
+                    table.columns[_ORG_COLUMN] == org_id
+                )
+            )
+        for table_name, pks in absorb(run_batched(seeds)).items():
+            frontier.setdefault(table_name, set()).update(pks)
 
-        # BFS across FK edges to pick up transitive (non-org-column) children.
-        while queue:
-            parent_name, parent_pks = queue.pop(0)
-            parent = tables[parent_name]
-            parent_predicate = _pk_predicate(parent, parent_pks)
-            for child_name, child_col, parent_col, _ondelete in children.get(parent_name, []):
-                child = tables[child_name]
-                cols = _pk_columns(child)
-                if not cols:
-                    continue
-                referenced = select(parent.columns[parent_col]).where(parent_predicate)
-                rows = self.db.execute(
-                    select(*cols).where(child.columns[child_col].in_(referenced))
-                ).all()
-                add(child_name, {tuple(r) for r in rows})
+        # BFS across FK edges, one batched round per level, to pick up
+        # transitive (non-org-column) children.
+        while frontier:
+            selects = []
+            for parent_name, parent_pks in frontier.items():
+                parent = tables[parent_name]
+                parent_predicate = _pk_predicate(parent, parent_pks)
+                for child_name, child_col, parent_col, _ondelete in children.get(parent_name, []):
+                    child = tables[child_name]
+                    cols = _pk_columns(child)
+                    if len(cols) != 1:
+                        continue
+                    referenced = select(parent.columns[parent_col]).where(parent_predicate)
+                    selects.append(
+                        select(literal(child_name).label("t"), cols[0].label("pk")).where(
+                            child.columns[child_col].in_(referenced)
+                        )
+                    )
+            frontier = absorb(run_batched(selects))
 
         return pending
 
@@ -233,6 +257,16 @@ class OrganizationPurgeService:
         return blocking
 
     def _delete_all(self, pending: Dict[str, Set[_Pk]]) -> Dict[str, int]:
+        # Fast path: no per-table SAVEPOINT (each one costs 2 extra round
+        # trips). If anything trips an FK, roll back the single outer
+        # savepoint and redo it with the retrying slow path.
+        try:
+            with self.db.begin_nested():
+                return self._delete_pass(pending, savepoints=False)
+        except IntegrityError:
+            return self._delete_pass(pending, savepoints=True)
+
+    def _delete_pass(self, pending: Dict[str, Set[_Pk]], *, savepoints: bool) -> Dict[str, int]:
         metadata = Base.metadata
         remaining: Dict[str, Set[_Pk]] = {k: set(v) for k, v in pending.items() if v}
         blocking = self._blocking_parents(remaining)
@@ -247,14 +281,21 @@ class OrganizationPurgeService:
                 table = metadata.tables[table_name]
                 rows = remaining.pop(table_name)
                 try:
-                    # SAVEPOINT per table: on Postgres a failed statement
-                    # poisons the whole transaction, so a retry on the next
-                    # pass is only possible after rolling back to here.
-                    with self.db.begin_nested():
+                    if savepoints:
+                        # SAVEPOINT per table: on Postgres a failed statement
+                        # poisons the whole transaction, so a retry on the next
+                        # pass is only possible after rolling back to here.
+                        with self.db.begin_nested():
+                            self.db.execute(
+                                sa_delete(table).where(_pk_predicate(table, rows))
+                            )
+                    else:
                         self.db.execute(
                             sa_delete(table).where(_pk_predicate(table, rows))
                         )
                 except IntegrityError:
+                    if not savepoints:
+                        raise
                     # Either an unexpected non-collected referencing row, or a
                     # self-referential RESTRICT edge — put it back and retry on
                     # the next pass once other tables have been cleared.

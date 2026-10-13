@@ -81,15 +81,11 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
   const [showBulkPicker, setShowBulkPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [orgSettings, setOrgSettings] = useState({ quote_prefix: "QT-" });
+  const [orgSettings, setOrgSettings] = useState({});
   const exchangeRateCache = useRef(new Map());
 
   useEffect(() => {
     loadOrgSettings();
-    if (!form.quote_number) {
-      const ts = Date.now().toString(36).toUpperCase();
-      setForm((p) => ({ ...p, quote_number: `${orgSettings.quote_prefix || "QT-"}${ts}` }));
-    }
     if (!form.valid_until) {
       const d = new Date();
       d.setDate(d.getDate() + 30);
@@ -104,10 +100,6 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       const orgCurrency = data?.base_currency || data?.default_currency;
       if (orgCurrency) {
         setForm((p) => ({ ...p, currency: p.currency || orgCurrency }));
-      }
-      if (!form.quote_number) {
-        const ts = Date.now().toString(36).toUpperCase();
-        setForm((p) => ({ ...p, quote_number: `${data.quote_prefix || "QT-"}${ts}` }));
       }
     } catch (err) { console.error("[QuoteCreate] Failed to init form:", err); }
   };
@@ -472,7 +464,6 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
 
   const validateStep = (s) => {
     if (s === 1 && !form.customer_id) { setError("Please select a customer"); return false; }
-    if (s === 2 && !form.quote_number) { setError("Quote number is required"); return false; }
     if (s === 3 && items.length === 0) { setError("Add at least one line item"); return false; }
     if (s === 3 && items.some((i) => !i.description || !i.quantity || !i.unit_price)) {
       setError("All items need description, quantity, and unit price");
@@ -599,9 +590,10 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><FileText size={20} className="text-brand-500" /> Quotation Details</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number *</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number</label>
           <input type="text" value={form.quote_number}
             onChange={(e) => setForm((p) => ({ ...p, quote_number: e.target.value }))}
+            placeholder="Auto-generated on save"
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </div>
         <div>

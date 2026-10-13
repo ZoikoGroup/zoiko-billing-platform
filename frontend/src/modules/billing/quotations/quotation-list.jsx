@@ -260,11 +260,9 @@ export default function QuotationListPage() {
   };
 
   const openWizard = () => {
-    const prefix = "QTN-";
-    const ts = Date.now().toString(36).toUpperCase();
     setWizardData({
       customer_id: "", customer_name: "", customer_email: "", customer_phone: "",
-      quote_number: `${prefix}${ts}`,
+      quote_number: "",
       subject: "", valid_until: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
       currency: orgDefaultCurrency, notes: "", terms: "",
       discount_percentage: 0, items: [],
@@ -476,7 +474,7 @@ export default function QuotationListPage() {
   };
 
   const handleCreateQuotation = async () => {
-    if (!wizardData.customer_id || !wizardData.quote_number) return;
+    if (!wizardData.customer_id) return;
     setWizardLoading(true); setWizardError(null);
     try {
       const quoteResp = await quoteApi.create({
@@ -774,9 +772,10 @@ export default function QuotationListPage() {
 
                 <div className="grid grid-cols-2 gap-4 mt-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number</label>
                     <input type="text" value={wizardData.quote_number}
                       onChange={(e) => setWizardData((p) => ({ ...p, quote_number: e.target.value }))}
+                      placeholder="Auto-generated on save"
                       className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                   <div>
@@ -976,7 +975,9 @@ export default function QuotationListPage() {
                   <div className="flex justify-between items-start mb-6">
                     <div>
                       <h2 className="text-2xl font-bold text-slate-800">QUOTATION</h2>
-                      <p className="text-sm text-slate-500 mt-1">#{wizardData.quote_number}</p>
+                      <p className="text-sm text-slate-500 mt-1">
+                        {wizardData.quote_number ? `#${wizardData.quote_number}` : "Auto-generated on save"}
+                      </p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-slate-500">Valid Until: {formatDisplayDate(wizardData.valid_until)}</p>

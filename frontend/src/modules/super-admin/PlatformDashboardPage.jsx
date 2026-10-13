@@ -23,7 +23,6 @@ import {
 } from "../../service/commercialService";
 import { getTriageSummary, getFinancialOperationsSummary } from "../../service/commandCenterService";
 import { DashboardChartErrorBoundary } from "../../components/billing-shared";
-import CommandCenterContextBar from "../../components/CommandCenterContextBar";
 import usePolling from "../../hooks/usePolling";
 import useDeferredLoad from "../../hooks/useDeferredLoad";
 import { createRequestQueue } from "../../utils/requestQueue";
@@ -222,9 +221,6 @@ export default function PlatformDashboardPage() {
             <span className={`h-2 w-2 rounded-full ${criticalCount > 0 ? "bg-rose-500" : "bg-emerald-500"}`} />
             <span>{criticalCount > 0 ? `${criticalCount} active P0/P1 incident${criticalCount === 1 ? "" : "s"}` : "All Systems Operational"}</span>
             <span className={telemetryStale ? "text-amber-700" : "text-emerald-700"}>• Telemetry {telemetryStale ? "Stale" : "Fresh"}</span>
-          </div>
-          <div className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
-            <CommandCenterContextBar compact navigateOnDomainChange={false} allowEnvironmentSelection />
           </div>
         </div>
       </div>

@@ -25,7 +25,7 @@ vi.mock("../../../service/billingService", () => {
 });
 vi.mock("../../../components/HRPage", () => ({ default: ({ title, children, actions }) => <div><h1>{title}</h1>{actions}{children}</div> }));
 
-import ProductListPage, { SEARCH_SHORTCUT_LABEL } from "./product-list";
+import ProductListPage from "./product-list";
 import PricingPlansPage from "./pricing-plans";
 import UsageBillingPage from "./usage-billing";
 
@@ -41,46 +41,47 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("B2 Pricing Plans", () => {
-  it("no filters: no Clear; status filter: Clear appears, resets and refetches unfiltered", async () => {
+  it("Clear is always visible (disabled with no filters); status filter enables it, resets and refetches unfiltered", async () => {
     renderPage(PricingPlansPage);
     await waitFor(() => expect(m.planList).toHaveBeenCalled());
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDefined();
+    expect(clearBtn()).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Toggle filters" }));
     fireEvent.change(screen.getByLabelText("Plan status"), { target: { value: "inactive" } });
     await waitFor(() => expect(m.planList.mock.calls.at(-1)[0].status).toBe("inactive"));
     fireEvent.click(clearBtn());
     expect(screen.getByLabelText("Plan status")).toHaveValue("");
     await waitFor(() => expect(m.planList.mock.calls.at(-1)[0].status).toBeUndefined());
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
   });
 
-  it("search alone also shows Clear", async () => {
+  it("search alone also enables Clear", async () => {
     renderPage(PricingPlansPage);
     fireEvent.change(await screen.findByLabelText("Search pricing plans"), { target: { value: "gold" } });
-    await waitFor(() => expect(clearBtn()).toBeDefined());
+    await waitFor(() => expect(clearBtn()).toBeEnabled());
     fireEvent.click(clearBtn());
     expect(screen.getByLabelText("Search pricing plans")).toHaveValue("");
   });
 });
 
 describe("B3 Usage Billing dates", () => {
-  it("setting a date shows Clear; Clear empties both dates", async () => {
+  it("Clear is always visible (disabled until a date is set); Clear empties both dates", async () => {
     renderPage(UsageBillingPage);
     const from = await screen.findByLabelText("Created from date");
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
     fireEvent.change(from, { target: { value: "2026-01-01" } });
     fireEvent.change(screen.getByLabelText("Created to date"), { target: { value: "2026-12-31" } });
-    await waitFor(() => expect(clearBtn()).toBeDefined());
+    await waitFor(() => expect(clearBtn()).toBeEnabled());
     fireEvent.click(clearBtn());
     expect(screen.getByLabelText("Created from date")).toHaveValue("");
     expect(screen.getByLabelText("Created to date")).toHaveValue("");
-    expect(clearBtn()).toBeUndefined();
+    expect(clearBtn()).toBeDisabled();
   });
 
-  it("an end date alone also shows Clear", async () => {
+  it("an end date alone also enables Clear", async () => {
     renderPage(UsageBillingPage);
     fireEvent.change(await screen.findByLabelText("Created to date"), { target: { value: "2026-12-31" } });
-    await waitFor(() => expect(clearBtn()).toBeDefined());
+    await waitFor(() => expect(clearBtn()).toBeEnabled());
   });
 });
 
@@ -94,14 +95,12 @@ describe("B5 Products", () => {
     expect(screen.getByLabelText("Search by name, code")).toHaveValue("");
   });
 
-  it("the search-box symbol is a platform-correct shortcut hint, and Ctrl+K focuses search", async () => {
+  it("the search box shows no shortcut symbol, and Ctrl+K still focuses search", async () => {
     renderPage(ProductListPage);
     const search = await screen.findByLabelText("Search by name, code");
     expect(search).toHaveAttribute("aria-keyshortcuts", "Control+K Meta+K");
-    const hint = screen.getByText(SEARCH_SHORTCUT_LABEL);
-    expect(hint.tagName).toBe("KBD");
-    expect(hint).toHaveAttribute("aria-hidden", "true");
-    expect(SEARCH_SHORTCUT_LABEL).toBe(/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? "⌘K" : "Ctrl K");
+    expect(screen.queryByText("⌘K")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ctrl K")).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(document.activeElement).toBe(search);
   });

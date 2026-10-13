@@ -231,6 +231,8 @@ from app.modules.commercial.org_self_service_router import router as commercial_
 from app.modules.commercial.entitlement_router import router as commercial_entitlement_router
 
 app.include_router(auth_router, prefix="/api")
+from app.modules.auth.google_oauth import router as google_oauth_router
+app.include_router(google_oauth_router, prefix="/api")
 app.include_router(auth_user_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(super_admin_router, prefix="/api")

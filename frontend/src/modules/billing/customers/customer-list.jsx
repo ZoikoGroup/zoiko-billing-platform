@@ -129,8 +129,8 @@ export default function CustomerListPage() {
   // Customer Settings (BUG-13): default type for new customers and the
   // creation-time requirements, read from the organization's configuration.
   const defaultCustomerType = orgConfig?.default_customer_type || "business";
-  const requireBillingAddress = Boolean(orgConfig?.require_billing_address);
-  const requireTaxId = Boolean(orgConfig?.require_tax_id);
+  const requireBillingAddress = Boolean(orgConfig?.require_billing_address ?? orgConfig?.customer_extra_settings?.require_billing_address);
+  const requireTaxId = Boolean(orgConfig?.require_tax_id ?? orgConfig?.customer_extra_settings?.require_tax_id);
 
   const [newCustomer, setNewCustomer] = useState({
     company_name: "", display_name: "", legal_name: "", email: "", phone: "", website: "",
@@ -344,6 +344,24 @@ export default function CustomerListPage() {
     }
   };
 
+  // Customer Settings -> Require Billing Address / Require Tax ID. Returns an
+  // error message, or null when the form satisfies the org's rules. Read from
+  // the dedicated BillingConfiguration columns first, falling back to the
+  // legacy customer_extra_settings blob (mirrors the server's enforcement).
+  const requiredFieldError = (c, { isEdit = false } = {}) => {
+    const prefs = {
+      ...(orgConfig?.customer_extra_settings || {}),
+      require_billing_address: orgConfig?.require_billing_address ?? orgConfig?.customer_extra_settings?.require_billing_address,
+      require_tax_id: orgConfig?.require_tax_id ?? orgConfig?.customer_extra_settings?.require_tax_id,
+    };
+    const blank = (v) => !String(v ?? "").trim();
+    if (prefs.require_billing_address && blank(c.billing_address)) return "Billing address is required by your Customer Settings.";
+    if (prefs.require_tax_id && ["tax_id", "gst_number", "vat_number", "pan", "tin"].every((f) => blank(c[f]))) {
+      return "Tax ID is required by your Customer Settings. Enter a Tax ID, GST, VAT, PAN or TIN.";
+    }
+    return null;
+  };
+
   const handleCreate = async () => {
     setFormLoading(true);
     setFormError(null);
@@ -409,6 +427,8 @@ export default function CustomerListPage() {
     setFormLoading(true);
     setFormError(null);
     if (!editCustomer.company_name?.trim()) { setFormError("Company name is required"); setFormLoading(false); return; }
+    const missingRequired = requiredFieldError(editCustomer, { isEdit: true });
+    if (missingRequired) { setFormError(missingRequired); setFormLoading(false); return; }
     try {
       const payload = { ...editCustomer };
       payload.display_name = editCustomer.display_name?.trim() || editCustomer.company_name.trim();
@@ -545,7 +565,10 @@ export default function CustomerListPage() {
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Days</label><input type="number" min="0" step="1" value={editCustomer.credit_days ?? ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_days: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }))} placeholder="0" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address</label><textarea rows={2} value={editCustomer.billing_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, billing_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax ID{requireTaxId ? " *" : ""}</label><input type="text" aria-label="Tax ID" value={editCustomer.tax_id || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, tax_id: e.target.value }))} placeholder="GST / VAT / Tax registration number" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address{requireBillingAddress ? " *" : ""}</label><textarea rows={2} value={editCustomer.billing_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, billing_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={editCustomer.shipping_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

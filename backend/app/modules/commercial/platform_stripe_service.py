@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core.exceptions import BadRequestException
 from app.modules.commercial.enums import (
     CommercialSubscriptionStatus,
@@ -67,6 +67,28 @@ def _expected_livemode() -> bool:
     return settings.PLATFORM_STRIPE_SECRET_KEY.startswith("sk_live_")
 
 
+def _platform_secret_key() -> str:
+    """The platform Stripe secret key. Settings are cached at process start, so
+    a key added to .env after the server booted (or a server launched with a
+    stale environment) used to read as "not configured" until a manual
+    restart. If the cached value is empty, re-read .env once before giving up,
+    and adopt the key if found."""
+    if settings.PLATFORM_STRIPE_SECRET_KEY:
+        return settings.PLATFORM_STRIPE_SECRET_KEY
+    try:
+        fresh = Settings()
+    except Exception:  # noqa: BLE001 - never let a config re-read break checkout
+        return ""
+    if fresh.PLATFORM_STRIPE_SECRET_KEY:
+        settings.PLATFORM_STRIPE_SECRET_KEY = fresh.PLATFORM_STRIPE_SECRET_KEY
+        if not settings.PLATFORM_STRIPE_WEBHOOK_SECRET:
+            settings.PLATFORM_STRIPE_WEBHOOK_SECRET = fresh.PLATFORM_STRIPE_WEBHOOK_SECRET
+        if not settings.PLATFORM_STRIPE_PUBLISHABLE_KEY:
+            settings.PLATFORM_STRIPE_PUBLISHABLE_KEY = fresh.PLATFORM_STRIPE_PUBLISHABLE_KEY
+        logger.info("Adopted PLATFORM_STRIPE_SECRET_KEY from .env after startup")
+    return settings.PLATFORM_STRIPE_SECRET_KEY
+
+
 def _stripe_module():
     try:
         import stripe
@@ -74,13 +96,17 @@ def _stripe_module():
         raise BadRequestException(
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
-    if not settings.PLATFORM_STRIPE_SECRET_KEY:
+    key = _platform_secret_key()
+    if not key:
         # The missing setting name is for operators (logs), not for end users.
         logger.warning("Platform Stripe is not configured: PLATFORM_STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
             "Online payment is not available yet. Please contact Zoiko support to complete payment."
         )
-    stripe.api_key = settings.PLATFORM_STRIPE_SECRET_KEY
+    stripe.api_key = key
+    # Bounded retries on connection errors / 409 / 5xx so a transient Stripe or
+    # network blip does not surface as a failed checkout.
+    stripe.max_network_retries = 2
     return stripe
 
 

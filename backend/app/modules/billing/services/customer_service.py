@@ -104,6 +104,55 @@ class CustomerService:
             logger.debug("Could not resolve org currency for org %s, falling back to USD", organization_id)
             return "USD"
 
+    def _enforce_required_fields(
+        self, organization_id: int, data: Dict[str, Any], current: Optional[BillingCustomer] = None,
+    ) -> None:
+        """Enforce Customer Settings' Require Billing Address / Require Tax ID.
+
+        The requirement may be stored either as dedicated BillingConfiguration
+        columns (require_billing_address / require_tax_id) or inside the
+        customer_extra_settings JSON blob (legacy representation); the column
+        is read first and the blob is consulted as a fallback so either writer
+        is honoured.
+
+        On create every required field must be present. On update only a field
+        the caller is actually sending is checked (the UI resends the whole
+        form), so a customer that predates the rule can still be edited as long
+        as the save does not blank the field."""
+        try:
+            config = BillingConfigurationService(self.db).repo.get_by_organization(organization_id)
+        except Exception:
+            logger.debug("Could not read customer requirements for org %s", organization_id)
+            return
+        require_billing_address = bool(getattr(config, "require_billing_address", False))
+        require_tax_id = bool(getattr(config, "require_tax_id", False))
+        prefs = dict(getattr(config, "customer_extra_settings", None) or {}) if config else {}
+        if not require_billing_address:
+            require_billing_address = bool(prefs.get("require_billing_address"))
+        if not require_tax_id:
+            require_tax_id = bool(prefs.get("require_tax_id"))
+
+        def value(field: str):
+            if field in data:
+                return data[field]
+            return getattr(current, field, None) if current is not None else None
+
+        def blank(v) -> bool:
+            return v is None or not str(v).strip()
+
+        if require_billing_address and (current is None or "billing_address" in data):
+            if blank(value("billing_address")):
+                raise BadRequestException(
+                    "billing_address: A Billing address is required for new customers "
+                    "(set in Customer Settings)."
+                )
+        tax_fields = ("tax_id", "gst_number", "vat_number", "pan", "tin")
+        if require_tax_id and (current is None or any(f in data for f in tax_fields)):
+            if all(blank(value(f)) for f in tax_fields):
+                raise BadRequestException(
+                    "tax_id: A Tax ID is required for new customers (set in Customer Settings)."
+                )
+
     # Tax identifiers a customer can carry. "Require Tax ID" is satisfied by
     # any one of them: which identifier applies depends on the customer's
     # jurisdiction, and no backend rule maps country -> required identifier,
@@ -114,9 +163,12 @@ class CustomerService:
 
     @classmethod
     def _enforce_creation_requirements(cls, config, data: Dict[str, Any]) -> None:
-        """Customer Settings "Require Billing Address" / "Require Tax ID".
-        Applied on CREATION ONLY: existing customers and edits are never
-        blocked by a requirement switched on later."""
+        """Customer Settings "Require Billing Address" / "Require Tax ID" from
+        the dedicated column representation. CustomerService.create_customer
+        enforces through _enforce_required_fields (which reads both
+        representations); this stays for direct callers constructing a config
+        object, and as defense-in-depth against any future writer skipping the
+        shared path."""
         if getattr(config, "require_billing_address", False) and not str(data.get("billing_address") or "").strip():
             raise BadRequestException("billing_address: A billing address is required for new customers.")
         if getattr(config, "require_tax_id", False) and not any(str(data.get(f) or "").strip() for f in cls._TAX_ID_FIELDS):
@@ -151,6 +203,7 @@ class CustomerService:
     ) -> BillingCustomer:
         data = filter_allowed(data, CUSTOMER_ALLOWED_FIELDS)
         config = BillingConfigurationService(self.db).get_configuration(organization_id)
+        self._enforce_required_fields(organization_id, data)
         # Resolve empty/missing currency to organization base currency
         raw_currency = (data.get("currency") or "").strip()
         if not raw_currency:
@@ -194,6 +247,7 @@ class CustomerService:
     ) -> BillingCustomer:
         data = filter_allowed(data, CUSTOMER_ALLOWED_FIELDS)
         customer = self.repo.get_by_id(customer_id, organization_id)
+        self._enforce_required_fields(organization_id, data, current=customer)
         old_values = {
             "company_name": customer.company_name,
             "email": customer.email,
