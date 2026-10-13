@@ -9,6 +9,17 @@ from app.modules.billing.models import BillingCustomer, CustomerContact
 from app.modules.billing.repositories.base import BaseRepository
 
 
+def over_credit_limit_conditions() -> List[Any]:
+    """The single definition of "over credit limit", shared by the Customer
+    Dashboard KPI (customers_over_credit_limit) and the customer-list filter
+    the KPI card opens, so the two can never disagree: a positive credit limit
+    and a stored outstanding balance above it."""
+    return [
+        BillingCustomer.credit_limit > 0,
+        BillingCustomer.outstanding_balance > BillingCustomer.credit_limit,
+    ]
+
+
 class CustomerRepository(BaseRepository[BillingCustomer]):
     def __init__(self, db):
         super().__init__(db, BillingCustomer)
@@ -170,6 +181,7 @@ class CustomerRepository(BaseRepository[BillingCustomer]):
         credit_limit_max: Optional[float] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        over_credit_limit: bool = False,
         **filters: Any,
     ) -> Dict[str, Any]:
         if customer_type:
@@ -194,6 +206,8 @@ class CustomerRepository(BaseRepository[BillingCustomer]):
             extra_conditions.append(BillingCustomer.credit_limit >= Decimal(str(credit_limit_min)))
         if credit_limit_max is not None:
             extra_conditions.append(BillingCustomer.credit_limit <= Decimal(str(credit_limit_max)))
+        if over_credit_limit:
+            extra_conditions.extend(over_credit_limit_conditions())
 
         return super().list_paginated(
             organization_id=organization_id,

@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import case, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -16,12 +17,16 @@ from app.modules.billing.models import (
     BillingCustomer,
     CustomerContact,
     CustomerStatus,
+    CustomerType,
+    SequenceReset,
 )
 from app.modules.billing.repositories.customer import (
     CustomerContactRepository,
     CustomerRepository,
+    over_credit_limit_conditions,
 )
 from app.modules.billing.services.audit_service import BillingAuditService
+from app.modules.billing.services.document_sequence import DocumentSequenceService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.base import safe_commit_and_refresh, filter_allowed
 from app.modules.billing.utils.validators import validate_gst_format, validate_pan_format
@@ -104,6 +109,12 @@ class CustomerService:
     ) -> None:
         """Enforce Customer Settings' Require Billing Address / Require Tax ID.
 
+        The requirement may be stored either as dedicated BillingConfiguration
+        columns (require_billing_address / require_tax_id) or inside the
+        customer_extra_settings JSON blob (legacy representation); the column
+        is read first and the blob is consulted as a fallback so either writer
+        is honoured.
+
         On create every required field must be present. On update only a field
         the caller is actually sending is checked (the UI resends the whole
         form), so a customer that predates the rule can still be edited as long
@@ -113,7 +124,13 @@ class CustomerService:
         except Exception:
             logger.debug("Could not read customer requirements for org %s", organization_id)
             return
+        require_billing_address = bool(getattr(config, "require_billing_address", False))
+        require_tax_id = bool(getattr(config, "require_tax_id", False))
         prefs = dict(getattr(config, "customer_extra_settings", None) or {}) if config else {}
+        if not require_billing_address:
+            require_billing_address = bool(prefs.get("require_billing_address"))
+        if not require_tax_id:
+            require_tax_id = bool(prefs.get("require_tax_id"))
 
         def value(field: str):
             if field in data:
@@ -123,18 +140,69 @@ class CustomerService:
         def blank(v) -> bool:
             return v is None or not str(v).strip()
 
-        if prefs.get("require_billing_address") and (current is None or "billing_address" in data):
+        if require_billing_address and (current is None or "billing_address" in data):
             if blank(value("billing_address")):
-                raise BadRequestException("Billing address is required by your Customer Settings.")
+                raise BadRequestException(
+                    "billing_address: A Billing address is required for new customers "
+                    "(set in Customer Settings)."
+                )
         tax_fields = ("tax_id", "gst_number", "vat_number", "pan", "tin")
-        if prefs.get("require_tax_id") and (current is None or any(f in data for f in tax_fields)):
+        if require_tax_id and (current is None or any(f in data for f in tax_fields)):
             if all(blank(value(f)) for f in tax_fields):
-                raise BadRequestException("Tax ID is required by your Customer Settings.")
+                raise BadRequestException(
+                    "tax_id: A Tax ID is required for new customers (set in Customer Settings)."
+                )
+
+    # Tax identifiers a customer can carry. "Require Tax ID" is satisfied by
+    # any one of them: which identifier applies depends on the customer's
+    # jurisdiction, and no backend rule maps country -> required identifier,
+    # so none is singled out here.
+    _TAX_ID_FIELDS = ("gst_number", "vat_number", "pan", "tin", "tax_id")
+    # Bound on skipping numbers already taken by manually entered / legacy codes.
+    _MAX_CODE_ATTEMPTS = 1000
+
+    @classmethod
+    def _enforce_creation_requirements(cls, config, data: Dict[str, Any]) -> None:
+        """Customer Settings "Require Billing Address" / "Require Tax ID" from
+        the dedicated column representation. CustomerService.create_customer
+        enforces through _enforce_required_fields (which reads both
+        representations); this stays for direct callers constructing a config
+        object, and as defense-in-depth against any future writer skipping the
+        shared path."""
+        if getattr(config, "require_billing_address", False) and not str(data.get("billing_address") or "").strip():
+            raise BadRequestException("billing_address: A billing address is required for new customers.")
+        if getattr(config, "require_tax_id", False) and not any(str(data.get(f) or "").strip() for f in cls._TAX_ID_FIELDS):
+            raise BadRequestException("tax_id: A tax ID (GST, VAT, PAN, TIN or other tax ID) is required for new customers.")
+
+    def _code_taken(self, organization_id: int, code: str) -> bool:
+        # The unique constraint (organization_id, customer_code) also covers
+        # soft-deleted rows, so they must be checked too.
+        return self.db.query(BillingCustomer.id).filter(
+            BillingCustomer.organization_id == organization_id,
+            BillingCustomer.customer_code == code,
+        ).first() is not None
+
+    def _next_customer_code(self, organization_id: int, config) -> str:
+        """Server-side customer number from Customer Settings, using the same
+        grammar and locked counter as invoices (DocumentSequence, doc_type
+        "customer", never reset). Numbers already used by manually entered or
+        legacy codes are skipped, never reassigned."""
+        seq = DocumentSequenceService(self.db)
+        prefix = config.customer_numbering_prefix if config.customer_numbering_prefix is not None else "CUST-"
+        for _ in range(self._MAX_CODE_ATTEMPTS):
+            code = seq.next_number(
+                organization_id, "customer", prefix,
+                config.customer_numbering_format, SequenceReset.NEVER,
+            )
+            if not self._code_taken(organization_id, code):
+                return code
+        raise BadRequestException("Could not allocate a free customer number; enter a customer code manually.")
 
     def create_customer(
         self, organization_id: int, created_by: int, **data: Any,
     ) -> BillingCustomer:
         data = filter_allowed(data, CUSTOMER_ALLOWED_FIELDS)
+        config = BillingConfigurationService(self.db).get_configuration(organization_id)
         self._enforce_required_fields(organization_id, data)
         # Resolve empty/missing currency to organization base currency
         raw_currency = (data.get("currency") or "").strip()
@@ -142,11 +210,18 @@ class CustomerService:
             data["currency"] = self._resolve_org_currency(organization_id)
         if not data.get("display_name"):
             data["display_name"] = data.get("company_name") or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or "Unnamed Customer"
+        if not data.get("customer_type"):
+            data["customer_type"] = config.default_customer_type or CustomerType.BUSINESS
+        manual_code = str(data.get("customer_code") or "").strip()
         self._validate_duplicate(
             organization_id,
             email=data.get("email"),
-            code=data.get("customer_code"),
+            code=manual_code or None,
         )
+        self._enforce_creation_requirements(config, data)
+        # A number is drawn only after every check passed, so a rejected
+        # request never consumes one.
+        data["customer_code"] = manual_code or self._next_customer_code(organization_id, config)
         # create_no_commit + log_no_commit + a single commit below makes the
         # customer row and its audit entry atomic: previously each was its
         # own commit, so a failure writing the audit row (e.g. a transient DB
@@ -158,7 +233,12 @@ class CustomerService:
             "BillingCustomer", customer.id,
             new_values=_sanitize_audit_data(data),
         )
-        safe_commit_and_refresh(self.db, customer)
+        try:
+            safe_commit_and_refresh(self.db, customer)
+        except IntegrityError:
+            # Backstop for a concurrent create that took the same code between
+            # the pre-check and the commit (uq_billing_customers_org_code).
+            raise AlreadyExistsException("Customer", "customer_code")
         logger.info(f"[BILLING] Customer created: org={organization_id} id={customer.id}")
         return customer
 
@@ -239,8 +319,13 @@ class CustomerService:
         credit_limit_max: Optional[float] = None,
         payment_terms: Optional[str] = None,
         date_from: Optional[str] = None, date_to: Optional[str] = None,
+        over_credit_limit: bool = False,
     ) -> Dict[str, Any]:
         filters = {}
+        if over_credit_limit:
+            # Same population as the dashboard KPI, which counts every
+            # non-deleted customer -- including deactivated/suspended ones.
+            active_only = False
         if customer_type:
             filters["customer_type"] = customer_type
         if status:
@@ -262,6 +347,7 @@ class CustomerService:
             credit_limit_max=credit_limit_max,
             date_from=date_from,
             date_to=date_to,
+            over_credit_limit=over_credit_limit,
             **filters,
         )
 
@@ -587,8 +673,7 @@ class CustomerService:
         customers_over_credit_limit = self.db.query(func.count(self.repo.model.id)).filter(
             self.repo.model.organization_id == organization_id,
             self.repo.model.deleted_at.is_(None),
-            self.repo.model.credit_limit > 0,
-            self.repo.model.outstanding_balance > self.repo.model.credit_limit,
+            *over_credit_limit_conditions(),
         ).scalar() or 0
         
         payment_rate = _rate_case(Payment.currency)

@@ -8,6 +8,7 @@ import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
 import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
 import { useBillingDateRange } from "../utils/DateRangeContext";
+import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -98,10 +99,14 @@ export default function PaymentListPage() {
   // Dashboard) seed the status filter. This page used to ignore the param,
   // so every one of those links landed on the unfiltered list.
   const urlStatus = statusFromSearchParams(searchParams);
+  // ?all_dates=1 (same convention as useListUrlFilters): ignore the shared
+  // dashboard date range, e.g. the Customer Dashboard's all-time Total Revenue
+  // card. Shown as a removable chip; never changes the user's global range.
+  const allDates = searchParams.get("all_dates") === "1";
   const [statusFilter, setStatusFilter] = useState(urlStatus);
   const [typeFilter, setTypeFilter] = useState("");
   const { range: dateRangeValue, setRange: setDateRangeValue, customStart, customEnd, applyCustomRange, reset: resetDateRange, dateRange } = useBillingDateRange();
-  const [showFilters, setShowFilters] = useState(Boolean(urlStatus));
+  const [showFilters, setShowFilters] = useState(Boolean(urlStatus) || allDates);
   const [sortField, setSortField] = useState("payment_date");
   const [sortDir, setSortDir] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -161,8 +166,8 @@ export default function PaymentListPage() {
         search_term: debouncedSearch || undefined,
         status: statusFilter || undefined,
         payment_type: typeFilter || undefined,
-        date_from: dateRange.date_from || undefined,
-        date_to: dateRange.date_to || undefined,
+        date_from: allDates ? undefined : (dateRange.date_from || undefined),
+        date_to: allDates ? undefined : (dateRange.date_to || undefined),
         sort_by: sortBy, sort_order: sortDir,
       }, { signal: isCurrent.signal });
       if (!isCurrent()) return;
@@ -177,7 +182,7 @@ export default function PaymentListPage() {
     } finally {
       if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, dateRange.date_from, dateRange.date_to, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, dateRange.date_from, dateRange.date_to, allDates, sortField, sortDir]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -280,15 +285,18 @@ export default function PaymentListPage() {
   // trailing 30 days) and opens the filter row so the active filter is visible.
   // A user-driven status change supersedes the ?status= deep link; drop it so
   // a refresh doesn't resurrect the stale filter.
-  const dropUrlStatus = () => {
-    if (!searchParams.has("status")) return;
+  const dropUrlParams = (...keys) => {
+    if (!keys.some((k) => searchParams.has(k))) return;
     const next = new URLSearchParams(searchParams);
-    next.delete("status");
+    keys.forEach((k) => next.delete(k));
     setSearchParams(next, { replace: true });
   };
+  const dropUrlStatus = () => dropUrlParams("status");
+  // Picking a date range means the user wants that range again.
+  const dropAllDates = () => dropUrlParams("all_dates");
 
   const applyCardFilter = (status, range) => {
-    dropUrlStatus();
+    dropUrlParams("status", ...(range ? ["all_dates"] : []));
     setStatusFilter(status);
     if (range) setDateRangeValue(range);
     setCurrentPage(1);
@@ -537,10 +545,10 @@ export default function PaymentListPage() {
     onExportCSV: handleExportCSV,
     onExportJSON: handleExportJSON,
     dateRange: dateRangeValue,
-    onDateRangeChange: setDateRangeValue,
+    onDateRangeChange: (v) => { dropAllDates(); setDateRangeValue(v); },
     customStart,
     customEnd,
-    onApplyCustomRange: applyCustomRange,
+    onApplyCustomRange: (a, b) => { dropAllDates(); applyCustomRange(a, b); },
     onResetDateRange: resetDateRange,
   };
 
@@ -607,6 +615,11 @@ export default function PaymentListPage() {
               </div>
             </div>
 
+            {allDates && (
+              <div className="mt-4">
+                <ActiveUrlFilterChips allDates onClearAllDates={dropAllDates} />
+              </div>
+            )}
             {showFilters && (
               <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
                 <div className="relative">
@@ -624,8 +637,8 @@ export default function PaymentListPage() {
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
-                {(statusFilter || typeFilter || dateRange.date_from || dateRange.date_to) && (
-                  <button onClick={() => { dropUrlStatus(); setStatusFilter(""); setTypeFilter(""); resetDateRange(); setCurrentPage(1); }}
+                {(statusFilter || typeFilter || allDates || dateRange.date_from || dateRange.date_to) && (
+                  <button onClick={() => { dropUrlParams("status", "all_dates"); setStatusFilter(""); setTypeFilter(""); resetDateRange(); setCurrentPage(1); }}
                     className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
                 )}
               </div>

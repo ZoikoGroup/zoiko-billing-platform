@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.billing.models import (
     BillingAuditAction, BillingConfiguration, CurrencyCode,
-    CurrencySymbolPosition, DateFormat, DraftBehaviour,
+    CurrencySymbolPosition, CustomerType, DateFormat, DraftBehaviour,
     ExchangeRateProvider, InvoiceTemplate, NumberFormat, PaymentTerm,
     RecognizedRevenueMethod, RevenueRecognitionMethod, RoundingMethod,
     SequenceReset, TaxCalculationMethod, TaxRoundingMethod,
@@ -82,6 +82,16 @@ def validate_invoice_prefix(prefix: Optional[str]) -> Optional[str]:
     if not re.match(r"^[A-Za-z0-9\-_]+$", prefix):
         return "Invoice prefix must contain only letters, numbers, hyphens, and underscores"
     return None
+
+
+def validate_customer_prefix(prefix: Optional[str]) -> Optional[str]:
+    """Same rules as the document prefixes (validate_invoice_prefix), worded
+    for the Customer Settings field."""
+    if validate_invoice_prefix(prefix) is None:
+        return None
+    if len(prefix) > 10:
+        return "Customer number prefix must be 10 characters or less"
+    return "Customer number prefix must contain only letters, numbers, hyphens, and underscores"
 
 
 CONFIGURATION_DEFAULTS = {
@@ -232,6 +242,11 @@ CONFIGURATION_DEFAULTS = {
     "auto_archive_days": None,
     "product_visibility": "visible",
     "require_sku": "no",
+    "default_customer_type": CustomerType.BUSINESS,
+    "customer_numbering_prefix": "CUST-",
+    "customer_numbering_format": NumberFormat.PREFIX_SEQ,
+    "require_billing_address": False,
+    "require_tax_id": False,
 }
 
 
@@ -406,6 +421,7 @@ class BillingConfigurationService:
             "credit_note_prefix": validate_invoice_prefix,
             "refund_prefix": validate_invoice_prefix,
             "write_off_prefix": validate_invoice_prefix,
+            "customer_numbering_prefix": validate_customer_prefix,
         }
         for field, validator in validators.items():
             if field in data:
