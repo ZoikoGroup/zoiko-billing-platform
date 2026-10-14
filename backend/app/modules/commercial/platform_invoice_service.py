@@ -24,6 +24,7 @@ DOCTRINE:
 """
 
 import logging
+import secrets
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
@@ -47,6 +48,17 @@ from app.modules.super_admin.audit_service import PlatformAuditService
 from app.modules.super_admin.models import PlatformAuditAction
 
 logger = logging.getLogger("zoiko_billing.commercial.platform_invoice")
+
+# Payable-forever statuses never receive a public payment token: nothing to
+# pay (DRAFT/PAID/CREDITED) or explicitly cancelled (VOIDED). Mirrors the
+# frontend's NON_PAYABLE set and platform_stripe_service's
+# _NON_PAYABLE_INVOICE_STATUSES.
+_PAYABLE_EXEMPT_STATUSES = {
+    PlatformInvoiceStatus.DRAFT,
+    PlatformInvoiceStatus.PAID,
+    PlatformInvoiceStatus.VOIDED,
+    PlatformInvoiceStatus.CREDITED,
+}
 
 # ── Valid state transitions ─────────────────────────────────────────────────
 _TRANSITIONS = {
@@ -245,6 +257,13 @@ class PlatformInvoiceService:
         invoice.invoice_number = invoice_number
         invoice.status = PlatformInvoiceStatus.ISSUED
         invoice.issue_date = invoice.issue_date or date.today()
+        # A public payment token is minted here — the moment the invoice
+        # becomes payable — NOT in send(): it must survive a later email-send
+        # failure. Previously the token was generated inside send() and
+        # discarded by the rollback that ran when the email failed, leaving
+        # payable invoices permanently without a Pay button on the Zoiko
+        # Subscription page ("payment link being processed").
+        self.ensure_public_token(invoice)
         self.db.flush()
 
         self._audit.log_no_commit(
@@ -271,11 +290,13 @@ class PlatformInvoiceService:
             PlatformInvoiceStatus.ISSUED,
         )
 
+        # Legacy safety-net: finalize() now always mints the token, but rows
+        # finalized before that fix (or imported data) may still be missing
+        # one. Mint and commit it on its own so a failed email send below can
+        # never roll the payment link back with it.
         if not invoice.public_token:
-            import secrets
-
-            invoice.public_token = secrets.token_urlsafe(32)
-            self.db.flush()
+            self.ensure_public_token(invoice)
+            self.db.commit()
 
         recipient = self._resolve_recipient(invoice)
         if recipient is None:
@@ -507,6 +528,50 @@ class PlatformInvoiceService:
         return invoice
 
     # ── Helpers ─────────────────────────────────────────────────────────────
+
+    def ensure_public_token(self, invoice: PlatformInvoice) -> str:
+        """Guarantee a durable public payment token on an invoice. Called at
+        finalize() and by self-heal paths; never rolls back with an email
+        failure."""
+        if not invoice.public_token:
+            invoice.public_token = secrets.token_urlsafe(32)
+            self.db.flush()
+        return invoice.public_token
+
+    @staticmethod
+    def is_payable(invoice: PlatformInvoice) -> bool:
+        """Whether an invoice can still be paid: has a positive balance and is
+        not in a terminal/non-due status. Matches the frontend/checkout
+        payable rules."""
+        return (
+            invoice.balance_due is not None
+            and Decimal(str(invoice.balance_due)) > 0
+            and invoice.status not in _PAYABLE_EXEMPT_STATUSES
+        )
+
+    def ensure_account_payment_links(self, account_id: int) -> int:
+        """Self-heal: mint public tokens for every payable invoice of this
+        account that never received one (pre-fix rows whose token was rolled
+        back with a failed email send, or imported data). Commits immediately
+        so the payment link works from every surface — the org's own Zoiko
+        Subscription page, emailed links, PlanChangePanel, TrialBanner.
+        Returns the number of tokens minted."""
+        rows = (
+            self.db.query(PlatformInvoice)
+            .filter(
+                PlatformInvoice.commercial_account_id == account_id,
+                PlatformInvoice.public_token.is_(None),
+            )
+            .all()
+        )
+        minted = 0
+        for invoice in rows:
+            if self.is_payable(invoice):
+                self.ensure_public_token(invoice)
+                minted += 1
+        if minted:
+            self.db.commit()
+        return minted
 
     def get_public_invoice(self, token: str) -> PlatformInvoice:
         """Publicly view an invoice via its token. No auth required."""

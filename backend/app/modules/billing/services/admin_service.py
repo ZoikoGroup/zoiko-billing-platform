@@ -35,7 +35,7 @@ from app.modules.billing.schemas import (
     BillingHealthCheckResponse,
     BillingConfigurationValidationDiagnostics,
 )
-from app.modules.billing.services.exchange_rate_service import ExchangeRateService
+from app.modules.billing.services.exchange_rate_service import ExchangeRateService, coerce_rates_dict
 from app.modules.billing.services.validation_service import BillingValidationService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 # Single source of truth for the templates directory: app/email_templates/.
@@ -48,6 +48,28 @@ logger = logging.getLogger("zoiko_billing")
 
 _IF_BLOCK_RE = re.compile(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL)
 EMAIL_TEMPLATE_VARIABLE_RE = re.compile(r"\{\{(\w+)\}\}")
+
+# Preview-only placeholder markup for layout-composing HTML slots. Real sends
+# fill these with rendered line-item/totals tables (see email_service.py's
+# _render_invoice_totals_html etc.); without them the preview showed the raw
+# "{{line_items_html}}" token in the middle of the email and looked nothing
+# like what gets sent.
+_PREVIEW_HTML_SLOTS = {
+    "line_items_html": (
+        '<tr style="border-bottom:1px solid #EEF2F7;">'
+        '<td style="padding:10px 0; font-size:13px;">Consulting services (preview sample)</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:center;">1</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:right;">1,000.00</td>'
+        '<td style="padding:10px 0; font-size:13px; text-align:right;">1,000.00</td>'
+        "</tr>"
+    ),
+    "totals_html": (
+        '<tr><td style="padding:6px 0; font-size:13px; color:#475569; text-align:right;">Subtotal</td>'
+        '<td style="padding:6px 0; font-size:13px; text-align:right;">1,000.00</td></tr>'
+        '<tr><td style="padding:6px 0; font-size:13px; color:#475569; text-align:right;"><strong>Total</strong></td>'
+        '<td style="padding:6px 0; font-size:13px; text-align:right;"><strong>1,000.00</strong></td></tr>'
+    ),
+}
 
 
 def _render_local_template(template: str, context: dict) -> str:
@@ -200,11 +222,23 @@ class BillingAdminService:
             msg["To"] = request.recipient_email
 
             email_start = time.time()
-            server.sendmail(smtp_from, [request.recipient_email], msg.as_string())
+            # sendmail() returns a {recipient: (code, resp)} dict of addresses
+            # the server REFUSED to accept — non-empty means the message was
+            # not accepted for delivery, and pretending otherwise ("sent") is
+            # exactly the "test says OK but the mail never arrives" trap.
+            refused = server.sendmail(smtp_from, [request.recipient_email], msg.as_string())
             email_elapsed = (time.time() - email_start) * 1000
+            email_result.response_time_ms = round(email_elapsed, 2)
+            if refused:
+                code, resp = refused.get(request.recipient_email, (0, str(refused)))
+                email_result.ok = False
+                email_result.message = (
+                    f"Recipient refused by the mail server (550 {code}): {resp}"
+                    if code else f"Recipient refused by the mail server: {refused}"
+                )
+                raise smtplib.SMTPRecipientsRefused(refused)
             email_result.ok = True
             email_result.message = f"Test email sent to {request.recipient_email}"
-            email_result.response_time_ms = round(email_elapsed, 2)
 
             return SmtpTestResponse(
                 success=True,
@@ -216,15 +250,19 @@ class BillingAdminService:
             )
 
         except smtplib.SMTPAuthenticationError as e:
-            auth_result.message = f"Authentication failed: {e}"
+            logger.warning("SMTP test: authentication failed: %s", e)
+            auth_result.message = "The mail server rejected the username or password."
             return SmtpTestResponse(success=False, message="SMTP authentication failed. Please check your username and password.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except smtplib.SMTPConnectError as e:
-            connection_result.message = f"Connection failed: {e}"
+            logger.warning("SMTP test: connection failed: %s", e)
+            connection_result.message = "Could not connect to the mail server."
             return SmtpTestResponse(success=False, message=f"Could not connect to SMTP server at {smtp_host}:{smtp_port}. Check the host and port.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except smtplib.SMTPException as e:
-            return SmtpTestResponse(success=False, message=f"SMTP error: {e}", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
+            logger.warning("SMTP test: SMTP error: %s", e)
+            return SmtpTestResponse(success=False, message="The mail server rejected the test email. Check the sender address and server settings.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         except Exception as e:
-            return SmtpTestResponse(success=False, message=f"Unexpected error: {e}", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
+            logger.exception("SMTP test: unexpected error")
+            return SmtpTestResponse(success=False, message="The test email could not be sent. Please check the SMTP settings and try again.", connection=connection_result, tls=tls_result, authentication=auth_result, sender_identity=sender_result, test_email_sent=email_result, smtp_host=smtp_host, smtp_port=smtp_port, from_email=smtp_from)
         finally:
             if server:
                 try:
@@ -268,7 +306,9 @@ class BillingAdminService:
             return []
         items = []
         for fname in sorted(os.listdir(TEMPLATE_DIR)):
-            if not fname.endswith(".html"):
+            # "_"-prefixed files (e.g. _base_dark.html) are shared layout
+            # partials, not sendable templates.
+            if not fname.endswith(".html") or fname.startswith("_"):
                 continue
             fpath = os.path.join(TEMPLATE_DIR, fname)
             try:
@@ -309,9 +349,17 @@ class BillingAdminService:
         variables_provided = list(variables.keys()) if variables else []
         variables_missing = sorted(set(variables_found) - set(variables_provided))
         context = dict(variables) if variables else {}
+        # Layout-composing HTML slots (line items / totals) are filled by the
+        # real send path but were left as literal "{{line_items_html}}" tokens
+        # in previews. Give them representative placeholder markup so the
+        # preview looks like the email that would actually be sent.
+        for slot, markup in _PREVIEW_HTML_SLOTS.items():
+            if slot in variables_found and not context.get(slot):
+                context[slot] = markup
         rendered_html = _render_local_template(html_content, context)
         subject = f"Template: {template_name}"
-        title_match = re.search(r"<title[^>]*>(.*?)</title>", html_content, re.IGNORECASE)
+        # Subject from the rendered title, so provided variables show up in it.
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", rendered_html, re.IGNORECASE | re.DOTALL)
         if title_match:
             subject = title_match.group(1).strip()
         return EmailTemplatePreviewResponse(
@@ -504,7 +552,13 @@ class BillingAdminService:
                     warnings.append(f"Default tax rate ID '{val}' is not a valid integer")
 
             items.append(TaxDiagnosticsItem(
-                field=field, value=str(val) if val is not None else None,
+                field=field,
+                # str(SomeEnum) yields "TaxCalculationMethod.EXCLUSIVE"; show the
+                # human value ("exclusive") the way the config UI spells it.
+                value=(
+                    val.value if hasattr(val, "value") and not isinstance(val, bool)
+                    else str(val)
+                ) if val is not None else None,
                 valid=len(warnings) == 0, warnings=warnings, suggestion=suggestion,
             ))
 
@@ -586,7 +640,7 @@ class BillingAdminService:
             logger.warning("Could not query TaxRate records: %s", e)
             items.append(TaxDiagnosticsItem(
                 field="tax_rates", value="Query failed",
-                valid=False, warnings=[f"Could not read tax rates: {e}"],
+                valid=False, warnings=["Could not read tax rates. Details are in the server logs."],
                 suggestion="Check database connectivity",
             ))
 
@@ -644,7 +698,7 @@ class BillingAdminService:
         )
 
         # Enhanced: validate individual cached rate values
-        cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
+        cached_rates = coerce_rates_dict(config.exchange_rates)
         cached_rates_clean = {}
         rate_warnings = []
         for k, v in cached_rates.items():
@@ -682,7 +736,7 @@ class BillingAdminService:
 
     # ── STEP 8: Billing Health Check (enhanced) ───────────────────────────────
 
-    def run_billing_health_check(self, organization_id: int) -> BillingHealthCheckResponse:
+    def run_billing_health_check(self, organization_id: int, fresh: bool = False) -> BillingHealthCheckResponse:
         """Cached wrapper: the underlying check includes a live SMTP connectivity
         probe that can take multiple seconds even when fixed to use the right
         protocol (see the SMTP_SSL branch below) -- callers polling this
@@ -691,15 +745,52 @@ class BillingAdminService:
         """
         from app.core.cache_service import cache_get_or_set
 
+        if fresh:
+            # Explicit "Refresh" from Settings: bypass both caches (this
+            # report's 30 s cache and the SMTP reachability cache).
+            return self._run_billing_health_check_uncached(organization_id, force_smtp_probe=True)
+
+        built_now = []
+
         def _factory():
+            built_now.append(True)
             return self._run_billing_health_check_uncached(organization_id).model_dump(mode="json")
 
         cached = cache_get_or_set(
             f"billing_health_check:{organization_id}", _factory, ttl=30,
         )
-        return BillingHealthCheckResponse(**cached)
+        report = BillingHealthCheckResponse(**cached)
+        if not built_now:
+            # Served from this 30 s report cache: no probe ran for this
+            # request, whatever the stored SMTP details said when built.
+            for comp in report.components:
+                if comp.name == "smtp_configuration" and comp.details and "cached" in comp.details:
+                    comp.details = {**comp.details, "cached": True}
+        return report
 
-    def _run_billing_health_check_uncached(self, organization_id: int) -> BillingHealthCheckResponse:
+    def _probe_smtp(self, host: str, port) -> Dict[str, object]:
+        """One live connection attempt; never raises. Port 465 is implicit-TLS
+        (SMTPS): a plain smtplib.SMTP() handshake against it doesn't get a
+        clean protocol error, it stalls until the OS-level socket timeout well
+        past the 5s `timeout` kwarg (observed: ~10.5s per call in production)
+        -- branch exactly like the real send path (email_service.py) does."""
+        start = time.time()
+        try:
+            smtp_port = int(port)
+            if smtp_port == 465:
+                s = smtplib.SMTP_SSL(host, smtp_port, timeout=5, context=ssl.create_default_context())
+            else:
+                s = smtplib.SMTP(host, smtp_port, timeout=5)
+            elapsed = (time.time() - start) * 1000
+            try:
+                s.quit()
+            except Exception:
+                pass
+            return {"connectable": True, "response_time_ms": round(elapsed, 2)}
+        except Exception:
+            return {"connectable": False, "response_time_ms": round((time.time() - start) * 1000, 2)}
+
+    def _run_billing_health_check_uncached(self, organization_id: int, force_smtp_probe: bool = False) -> BillingHealthCheckResponse:
         components = []
         config = self.repo.get_by_organization(organization_id)
         checks_at = datetime.utcnow().isoformat() + "Z"
@@ -716,10 +807,11 @@ class BillingAdminService:
                 response_time_ms=round(db_elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: database connection failed: %s", e)
             db_elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="database", status="down",
-                message=f"Database connection failed: {e}",
+                message="Database connection failed. Details are in the server logs.",
                 response_time_ms=round(db_elapsed, 2),
             ))
 
@@ -759,55 +851,43 @@ class BillingAdminService:
             response_time_ms=round(elapsed, 2),
         ))
 
-        # 4. SMTP check (config + lightweight connection attempt)
+        # 4. SMTP check (config + connection reachability). The live probe is
+        # served stale-while-revalidate (smtp_reachability_cache): dashboard
+        # loads never wait on the mail server once a result exists.
+        from app.modules.billing.services import smtp_reachability_cache
+
         start = time.time()
         smtp_cfg = self._get_smtp_config()
         smtp_configured = bool(smtp_cfg["host"] and smtp_cfg["port"] and smtp_cfg["from_email"])
-        smtp_connectable = False
-
         if smtp_configured:
-            try:
-                # Port 465 is implicit-TLS (SMTPS): a plain smtplib.SMTP()
-                # handshake against it doesn't get a clean protocol error, it
-                # just stalls until the OS-level socket timeout well past the
-                # 5s `timeout` kwarg (observed: ~10.5s per call in
-                # production) -- this single probe was the dominant cost of
-                # /billing/settings/health, which the main Billing Dashboard
-                # calls on every load. Branch exactly like the real send path
-                # (email_service.py) does.
-                smtp_port = int(smtp_cfg["port"])
-                if smtp_port == 465:
-                    s = smtplib.SMTP_SSL(smtp_cfg["host"], smtp_port, timeout=5,
-                                          context=ssl.create_default_context())
-                else:
-                    s = smtplib.SMTP(smtp_cfg["host"], smtp_port, timeout=5)
-                smtp_connectable = True
-                smtp_response_time_ms = (time.time() - start) * 1000
-                s.quit()
-            except Exception:
-                pass
-
-        elapsed = (time.time() - start) * 1000
-        if smtp_configured and smtp_connectable:
-            components.append(SystemDiagnosticComponent(
-                name="smtp_configuration", status="healthy",
-                message=f"SMTP reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
-                details={"host": smtp_cfg["host"], "port": smtp_cfg["port"],
-                         "from_email": smtp_cfg["from_email"]},
-                response_time_ms=round(smtp_response_time_ms or elapsed, 2),
-            ))
-        elif smtp_configured:
-            components.append(SystemDiagnosticComponent(
-                name="smtp_configuration", status="degraded",
-                message=f"SMTP configured but not reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
-                response_time_ms=round(elapsed, 2),
-            ))
+            probe_key = f"{smtp_cfg['host']}:{smtp_cfg['port']}"
+            probe, meta = smtp_reachability_cache.get_reachability(
+                probe_key,
+                lambda: self._probe_smtp(smtp_cfg["host"], smtp_cfg["port"]),
+                force=force_smtp_probe,
+            )
+            freshness = {"checked_at": meta["checked_at"], "stale": meta["stale"], "cached": meta["cached"]}
+            if probe["connectable"]:
+                components.append(SystemDiagnosticComponent(
+                    name="smtp_configuration", status="healthy",
+                    message=f"SMTP reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
+                    details={"host": smtp_cfg["host"], "port": smtp_cfg["port"],
+                             "from_email": smtp_cfg["from_email"], **freshness},
+                    response_time_ms=probe.get("response_time_ms"),
+                ))
+            else:
+                components.append(SystemDiagnosticComponent(
+                    name="smtp_configuration", status="degraded",
+                    message=f"SMTP configured but not reachable ({smtp_cfg['host']}:{smtp_cfg['port']})",
+                    details=freshness,
+                    response_time_ms=probe.get("response_time_ms"),
+                ))
         else:
             missing = [k for k in ("host", "port", "from_email") if not smtp_cfg[k]]
             components.append(SystemDiagnosticComponent(
                 name="smtp_configuration", status="degraded",
                 message=f"SMTP incomplete: {', '.join(missing)} not configured",
-                response_time_ms=round(elapsed, 2),
+                response_time_ms=round((time.time() - start) * 1000, 2),
             ))
 
         # 5. Email templates check
@@ -838,10 +918,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: validation failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="configuration_readiness", status="down",
-                message=f"Validation failed: {e}",
+                message="Validation failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -878,10 +959,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: exchange rate check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="exchange_rates", status="down",
-                message=f"Exchange rate check failed: {e}",
+                message="Exchange rate check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -927,10 +1009,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: tax check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="tax_configuration", status="down",
-                message=f"Tax check failed: {e}",
+                message="Tax check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -952,10 +1035,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: numbering check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="document_numbering", status="down",
-                message=f"Numbering check failed: {e}",
+                message="Numbering check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 
@@ -986,10 +1070,11 @@ class BillingAdminService:
                 response_time_ms=round(elapsed, 2),
             ))
         except Exception as e:
+            logger.warning("Billing health check: currency check failed: %s", e)
             elapsed = (time.time() - start) * 1000
             components.append(SystemDiagnosticComponent(
                 name="currency_configuration", status="down",
-                message=f"Currency check failed: {e}",
+                message="Currency check failed. Details are in the server logs.",
                 response_time_ms=round(elapsed, 2),
             ))
 

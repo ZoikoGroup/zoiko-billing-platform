@@ -7,6 +7,7 @@ Provider-agnostic architecture with fallback chain:
 """
 
 import logging
+import json
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,6 +23,35 @@ logger = logging.getLogger("zoiko_billing")
 
 OPEN_ER_API_BASE = "https://open.er-api.com/v6/latest"
 REQUEST_TIMEOUT = 10
+
+
+def coerce_rates_dict(raw):
+    """Normalize the exchange_rates column to a {code: value} dict no matter
+    how it was persisted (dict, JSON string, or sequence of pairs). A stray
+    JSON-string value used to crash every caller with a raw
+    `dict(<string>)` ValueError — including the Settings › Administration
+    "Exchange Rate Diagnostics › Load" button 500ing (shown as a settings
+    error) and live refreshes aborting."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        # Copy: refresh_rates() mutates the returned dict in place, and
+        # returning the live column object would silently drop those changes
+        # (plain JSON columns have no in-place mutation tracking).
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            logger.warning("[exchange-rates] cache is a JSON string that could not be parsed")
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    if isinstance(raw, (list, tuple)):
+        try:
+            return dict(raw)
+        except (TypeError, ValueError):
+            return {}
+    return {}
 
 # Exchange rate freshness: rates older than this trigger a live refresh attempt
 EXCHANGE_RATE_MAX_AGE_HOURS = 24  # 24 hours
@@ -131,7 +161,7 @@ class ExchangeRateService:
         # refresh never commits (nor can it roll back) the caller's shared
         # session transaction; the caller's eventual top-level commit persists
         # the cache. On failure only the savepoint is rolled back.
-        cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
+        cached_rates = coerce_rates_dict(config.exchange_rates)
         cached_rates.update(rates)
         with self.db.begin_nested():
             config.exchange_rates = cached_rates
@@ -279,7 +309,7 @@ class ExchangeRateService:
 
             # Cache all rates for future lookups (store as float for JSON serialization).
             # Savepoint-scoped: never commits the caller's shared session.
-            cached_rates = dict(config.exchange_rates) if config.exchange_rates else {}
+            cached_rates = coerce_rates_dict(config.exchange_rates)
             for code, val in api_rates.items():
                 try:
                     cached_rates[code] = float(Decimal(str(val)))

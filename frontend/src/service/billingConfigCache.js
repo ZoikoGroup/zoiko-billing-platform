@@ -26,25 +26,34 @@ import { settingsApi } from "./billingService";
 let cachedConfig = null;
 let inflight = null;
 const listeners = new Set();
+// See orgAdminService.js: a request from before an invalidation (previous
+// account, or a pre-save snapshot) must not repopulate the cache or clear
+// the next request's in-flight slot.
+let cacheGeneration = 0;
 
 export function loadGlobalBillingConfig() {
   if (cachedConfig) return Promise.resolve(cachedConfig);
   if (inflight) return inflight;
-  inflight = settingsApi
+  const generation = cacheGeneration;
+  const request = settingsApi
     .getConfig()
     .then((data) => {
-      cachedConfig = data;
-      inflight = null;
+      if (generation === cacheGeneration) {
+        cachedConfig = data;
+        if (inflight === request) inflight = null;
+      }
       return data;
     })
     .catch((err) => {
-      inflight = null;
+      if (inflight === request) inflight = null;
       throw err;
     });
-  return inflight;
+  inflight = request;
+  return request;
 }
 
 export function invalidateGlobalBillingConfig() {
+  cacheGeneration += 1;
   cachedConfig = null;
   inflight = null;
   listeners.forEach((fn) => {

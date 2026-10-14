@@ -8,6 +8,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
@@ -123,6 +124,12 @@ export default function CurrencyPricingPage() {
   const [error, setError] = useState(null);
   const [data, setData] = useState({ items: [], total: 0, page: 1, per_page: 20, pages: 0 });
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced so typing fires one request, not one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -138,17 +145,21 @@ export default function CurrencyPricingPage() {
     }).catch((err) => console.error("[CurrencyPricing] Failed to load product map:", err));
   }, []);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async (page = 1) => {
+    const isCurrent = beginRequest();
     setLoading(true); setError(null);
     try {
       const params = { page, per_page: 20 };
-      if (searchTerm) params.search_term = searchTerm;
+      if (debouncedSearch) params.search_term = debouncedSearch;
       if (currencyFilter) params.currency = currencyFilter;
       const res = await currencyPricingApi.list(params);
+      if (!isCurrent()) return;
       setData(res);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [searchTerm, currencyFilter]);
+    } catch (e) { if (isCurrent()) setError(e.message); }
+    finally { if (isCurrent()) setLoading(false); }
+  }, [beginRequest, debouncedSearch, currencyFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -181,13 +192,13 @@ export default function CurrencyPricingPage() {
           <div className="flex gap-2 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
-            <select className="border rounded-lg px-3 py-2 text-sm" value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}>
+            <select aria-label="Filter by currency" className="border rounded-lg px-3 py-2 text-sm" value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}>
               <option value="">All Currencies</option>
               {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
-            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50"><RefreshCw size={16} /></button>
+            <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <button onClick={() => { setEditItem(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700"><Plus size={16} /> Add Currency Price</button>
         </div>

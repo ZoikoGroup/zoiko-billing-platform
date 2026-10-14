@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
+import { lazyRoute, registerRoutePreloads } from "./routePrefetch";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 
 import { useAuth } from "./context/AuthContext";
@@ -20,145 +21,146 @@ import OrgAdminDashboardPage from "./modules/organization-admin/DashboardPage";
 import OrgAdminOrganizationPage from "./modules/organization-admin/OrganizationPage";
 import OrgAdminUserManagementPage from "./modules/organization-admin/UserManagementPage";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "./config/roles";
+import BillingSettingsErrorBoundary from "./modules/billing/dashboard/BillingSettingsErrorBoundary";
 
-const BillingAdminWorkspaceDashboard = lazy(() => import("./modules/billing-admin/WorkspaceDashboardPage"));
-const BillingAdminWorkspaceOrganization = lazy(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
-const BillingAdminWorkspaceSubscription = lazy(() => import("./modules/billing-admin/WorkspaceSubscriptionPage"));
-const BillingAdminWorkspaceZoikoSubscription = lazy(() => import("./modules/billing-admin/WorkspaceZoikoSubscriptionPage"));
-const BillingAdminWorkspaceUsage = lazy(() => import("./modules/billing-admin/WorkspaceUsagePage"));
-const BillingAdminWorkspaceActivity = lazy(() => import("./modules/billing-admin/WorkspaceActivityPage"));
-const BillingAdminWorkspaceNotifications = lazy(() => import("./modules/billing-admin/WorkspaceNotificationsPage"));
-const BillingAdminWorkspaceHelp = lazy(() => import("./modules/billing-admin/WorkspaceHelpPage"));
+const BillingAdminWorkspaceDashboard = lazyRoute(() => import("./modules/billing-admin/WorkspaceDashboardPage"));
+const BillingAdminWorkspaceOrganization = lazyRoute(() => import("./modules/billing-admin/WorkspaceOrganizationPage"));
+const BillingAdminWorkspaceSubscription = lazyRoute(() => import("./modules/billing-admin/WorkspaceSubscriptionPage"));
+const BillingAdminWorkspaceZoikoSubscription = lazyRoute(() => import("./modules/billing-admin/WorkspaceZoikoSubscriptionPage"));
+const BillingAdminWorkspaceUsage = lazyRoute(() => import("./modules/billing-admin/WorkspaceUsagePage"));
+const BillingAdminWorkspaceActivity = lazyRoute(() => import("./modules/billing-admin/WorkspaceActivityPage"));
+const BillingAdminWorkspaceNotifications = lazyRoute(() => import("./modules/billing-admin/WorkspaceNotificationsPage"));
+const BillingAdminWorkspaceHelp = lazyRoute(() => import("./modules/billing-admin/WorkspaceHelpPage"));
 
 // Platform pages pull in billing-shared.jsx's shared component kit; lazy
 // loading keeps that out of the eagerly-loaded main bundle (matches every
 // other route below).
-const UsersPage = lazy(() => import("./pages/UsersPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const UsersPage = lazyRoute(() => import("./pages/UsersPage"));
+const SettingsPage = lazyRoute(() => import("./pages/SettingsPage"));
 
-const BillingDashboard = lazy(() => import("./modules/billing/dashboard/dashboard"));
-const ReportsPage = lazy(() => import("./modules/billing/dashboard/reports"));
-const ForecastReport = lazy(() => import("./modules/billing/dashboard/forecast-report"));
-const BillingSettingsPage = lazy(() => import("./modules/billing/dashboard/settings"));
-const CustomerDashboardPage = lazy(() => import("./modules/billing/customers/customer-dashboard"));
-const CustomerListPage = lazy(() => import("./modules/billing/customers/customer-list"));
-const CustomerProfilePage = lazy(() => import("./modules/billing/customers/customer-profile"));
-const CustomerBillingHistoryPage = lazy(() => import("./modules/billing/customers/billing-history"));
-const CustomerReportsPage = lazy(() => import("./modules/billing/customers/reports"));
-const CustomerProfitabilityReport = lazy(() => import("./modules/billing/customers/profitability-report"));
-const CustomerSettingsPage = lazy(() => import("./modules/billing/customers/settings"));
-const ProductDashboardPage = lazy(() => import("./modules/billing/products/dashboard"));
-const ProductListPage = lazy(() => import("./modules/billing/products/product-list"));
-const ProductProfilePage = lazy(() => import("./modules/billing/products/product-profile"));
-const ProductCategoriesPage = lazy(() => import("./modules/billing/products/categories"));
-const UsageBillingPage = lazy(() => import("./modules/billing/products/usage-billing"));
-const ProductPricingPlansPage = lazy(() => import("./modules/billing/products/pricing-plans"));
-const ProductReportsPage = lazy(() => import("./modules/billing/products/reports"));
-const ProductSettingsPage = lazy(() => import("./modules/billing/products/settings"));
-const PricingDashboardPage = lazy(() => import("./modules/billing/pricing/dashboard"));
-const PricingPlansPage = lazy(() => import("./modules/billing/pricing/pricing-plans"));
-const TierManagementPage = lazy(() => import("./modules/billing/pricing/tier-management"));
-const PricingReportsPage = lazy(() => import("./modules/billing/pricing/reports"));
-const PricingSettingsPage = lazy(() => import("./modules/billing/pricing/settings"));
-const PriceListsPage = lazy(() => import("./modules/billing/pricing/price-lists"));
-const PricingRulesPage = lazy(() => import("./modules/billing/pricing/pricing-rules"));
-const DiscountEnginePage = lazy(() => import("./modules/billing/pricing/discount-engine"));
-const CurrencyPricingPage = lazy(() => import("./modules/billing/pricing/currency-pricing"));
-const TaxPricingPage = lazy(() => import("./modules/billing/pricing/tax-pricing"));
-const QuotationListPage = lazy(() => import("./modules/billing/quotations/quotation-list"));
-const QuotationDashboardPage = lazy(() => import("./modules/billing/quotations/dashboard"));
-const QuotationDetailPage = lazy(() => import("./modules/billing/quotations/quotation-detail"));
-const QuotationWizardPage = lazy(() => import("./modules/billing/quotations/quotation-create"));
-const QuotationReportsPage = lazy(() => import("./modules/billing/quotations/reports"));
-const QuotationSettingsPage = lazy(() => import("./modules/billing/quotations/settings"));
-const ContractListPage = lazy(() => import("./modules/billing/contracts/contract-list"));
-const ContractDashboardPage = lazy(() => import("./modules/billing/contracts/dashboard"));
-const ContractDetailPage = lazy(() => import("./modules/billing/contracts/contract-detail"));
-const ContractCreateWizardPage = lazy(() => import("./modules/billing/contracts/contract-create"));
-const ContractEditPage = lazy(() => import("./modules/billing/contracts/contract-edit"));
-const ContractReportsPage = lazy(() => import("./modules/billing/contracts/reports"));
-const ContractSettingsPage = lazy(() => import("./modules/billing/contracts/settings"));
-const RetainersPage = lazy(() => import("./modules/billing/contracts/retainers"));
-const SubscriptionsPage = lazy(() => import("./modules/billing/subscriptions/subscription-list"));
-const SubscriptionDashboardPage = lazy(() => import("./modules/billing/subscriptions/dashboard"));
-const SubscriptionDetailPage = lazy(() => import("./modules/billing/subscriptions/subscription-detail"));
-const CreateSubscriptionWizardPage = lazy(() => import("./modules/billing/subscriptions/subscription-create"));
-const SubscriptionPlansPage = lazy(() => import("./modules/billing/subscriptions/subscription-plans"));
-const SubscriptionReportsPage = lazy(() => import("./modules/billing/subscriptions/reports"));
-const SubscriptionSettingsPage = lazy(() => import("./modules/billing/subscriptions/settings"));
-const InvoiceSchedulesPage = lazy(() => import("./modules/billing/subscriptions/invoice-schedules"));
-const InvoicingPage = lazy(() => import("./modules/billing/invoicing/invoice-list"));
-const InvoiceDashboardPage = lazy(() => import("./modules/billing/invoicing/invoice-dashboard"));
-const CreateInvoiceWizardPage = lazy(() => import("./modules/billing/invoicing/create-invoice-wizard"));
-const InvoiceDetailPage = lazy(() => import("./modules/billing/invoicing/invoice-detail"));
-const CreditNotesPage = lazy(() => import("./modules/billing/invoicing/credit-notes"));
-const CreditNoteDashboardPage = lazy(() => import("./modules/billing/invoicing/credit-note-dashboard"));
-const CreditNoteDetailPage = lazy(() => import("./modules/billing/invoicing/credit-note-detail"));
-const InvoiceReportsPage = lazy(() => import("./modules/billing/invoicing/reports"));
-const InvoiceSettingsPage = lazy(() => import("./modules/billing/invoicing/settings"));
-const MoneyInPage = lazy(() => import("./modules/billing/payments/payment-list"));
-const PaymentDashboardPage = lazy(() => import("./modules/billing/payments/payment-dashboard"));
-const PaymentDetailPage = lazy(() => import("./modules/billing/payments/payment-detail"));
-const PaymentReportsPage = lazy(() => import("./modules/billing/payments/reports"));
-const PaymentSettingsPage = lazy(() => import("./modules/billing/payments/settings"));
-const StripeConnectSettingsPage = lazy(() => import("./modules/billing/payments/stripe-connect"));
-const StripeConnectCallbackPage = lazy(() => import("./modules/billing/payments/stripe-connect-callback"));
-const CollectionsReceivablesPage = lazy(() => import("./modules/billing/payments/collections-receivables"));
-const CollectionsDashboardPage = lazy(() => import("./modules/billing/payments/collections-dashboard"));
-const CollectionsCaseDetailPage = lazy(() => import("./modules/billing/payments/collections-case-detail"));
-const DunningPage = lazy(() => import("./modules/billing/payments/dunning"));
-const DunningCaseDetailPage = lazy(() => import("./modules/billing/payments/dunning-case-detail"));
-const DunningLevelsPage = lazy(() => import("./modules/billing/payments/dunning-levels"));
-const PromiseToPayPage = lazy(() => import("./modules/billing/payments/promise-to-pay"));
-const CreditsPage = lazy(() => import("./modules/billing/payments/credits"));
-const RefundsPage = lazy(() => import("./modules/billing/payments/refunds"));
-const RefundDashboardPage = lazy(() => import("./modules/billing/payments/refund-dashboard"));
-const RefundDetailPage = lazy(() => import("./modules/billing/payments/refund-detail"));
-const WriteOffsPage = lazy(() => import("./modules/billing/payments/write-offs"));
-const WriteOffDashboardPage = lazy(() => import("./modules/billing/payments/write-off-dashboard"));
-const WriteOffDetailPage = lazy(() => import("./modules/billing/payments/write-off-detail"));
-const TaxPage = lazy(() => import("./modules/billing/tax/tax-rates"));
-const TaxDashboardPage = lazy(() => import("./modules/billing/tax/dashboard"));
-const TaxConfigurationPage = lazy(() => import("./modules/billing/tax/tax-configuration"));
-const TaxReportsPage = lazy(() => import("./modules/billing/tax/reports"));
-const TaxSettingsPage = lazy(() => import("./modules/billing/tax/settings"));
+const BillingDashboard = lazyRoute(() => import("./modules/billing/dashboard/dashboard"));
+const ReportsPage = lazyRoute(() => import("./modules/billing/dashboard/reports"));
+const ForecastReport = lazyRoute(() => import("./modules/billing/dashboard/forecast-report"));
+const BillingSettingsPage = lazyRoute(() => import("./modules/billing/dashboard/settings"));
+const CustomerDashboardPage = lazyRoute(() => import("./modules/billing/customers/customer-dashboard"));
+const CustomerListPage = lazyRoute(() => import("./modules/billing/customers/customer-list"));
+const CustomerProfilePage = lazyRoute(() => import("./modules/billing/customers/customer-profile"));
+const CustomerBillingHistoryPage = lazyRoute(() => import("./modules/billing/customers/billing-history"));
+const CustomerReportsPage = lazyRoute(() => import("./modules/billing/customers/reports"));
+const CustomerProfitabilityReport = lazyRoute(() => import("./modules/billing/customers/profitability-report"));
+const CustomerSettingsPage = lazyRoute(() => import("./modules/billing/customers/settings"));
+const ProductDashboardPage = lazyRoute(() => import("./modules/billing/products/dashboard"));
+const ProductListPage = lazyRoute(() => import("./modules/billing/products/product-list"));
+const ProductProfilePage = lazyRoute(() => import("./modules/billing/products/product-profile"));
+const ProductCategoriesPage = lazyRoute(() => import("./modules/billing/products/categories"));
+const UsageBillingPage = lazyRoute(() => import("./modules/billing/products/usage-billing"));
+const ProductPricingPlansPage = lazyRoute(() => import("./modules/billing/products/pricing-plans"));
+const ProductReportsPage = lazyRoute(() => import("./modules/billing/products/reports"));
+const ProductSettingsPage = lazyRoute(() => import("./modules/billing/products/settings"));
+const PricingDashboardPage = lazyRoute(() => import("./modules/billing/pricing/dashboard"));
+const PricingPlansPage = lazyRoute(() => import("./modules/billing/pricing/pricing-plans"));
+const TierManagementPage = lazyRoute(() => import("./modules/billing/pricing/tier-management"));
+const PricingReportsPage = lazyRoute(() => import("./modules/billing/pricing/reports"));
+const PricingSettingsPage = lazyRoute(() => import("./modules/billing/pricing/settings"));
+const PriceListsPage = lazyRoute(() => import("./modules/billing/pricing/price-lists"));
+const PricingRulesPage = lazyRoute(() => import("./modules/billing/pricing/pricing-rules"));
+const DiscountEnginePage = lazyRoute(() => import("./modules/billing/pricing/discount-engine"));
+const CurrencyPricingPage = lazyRoute(() => import("./modules/billing/pricing/currency-pricing"));
+const TaxPricingPage = lazyRoute(() => import("./modules/billing/pricing/tax-pricing"));
+const QuotationListPage = lazyRoute(() => import("./modules/billing/quotations/quotation-list"));
+const QuotationDashboardPage = lazyRoute(() => import("./modules/billing/quotations/dashboard"));
+const QuotationDetailPage = lazyRoute(() => import("./modules/billing/quotations/quotation-detail"));
+const QuotationWizardPage = lazyRoute(() => import("./modules/billing/quotations/quotation-create"));
+const QuotationReportsPage = lazyRoute(() => import("./modules/billing/quotations/reports"));
+const QuotationSettingsPage = lazyRoute(() => import("./modules/billing/quotations/settings"));
+const ContractListPage = lazyRoute(() => import("./modules/billing/contracts/contract-list"));
+const ContractDashboardPage = lazyRoute(() => import("./modules/billing/contracts/dashboard"));
+const ContractDetailPage = lazyRoute(() => import("./modules/billing/contracts/contract-detail"));
+const ContractCreateWizardPage = lazyRoute(() => import("./modules/billing/contracts/contract-create"));
+const ContractEditPage = lazyRoute(() => import("./modules/billing/contracts/contract-edit"));
+const ContractReportsPage = lazyRoute(() => import("./modules/billing/contracts/reports"));
+const ContractSettingsPage = lazyRoute(() => import("./modules/billing/contracts/settings"));
+const RetainersPage = lazyRoute(() => import("./modules/billing/contracts/retainers"));
+const SubscriptionsPage = lazyRoute(() => import("./modules/billing/subscriptions/subscription-list"));
+const SubscriptionDashboardPage = lazyRoute(() => import("./modules/billing/subscriptions/dashboard"));
+const SubscriptionDetailPage = lazyRoute(() => import("./modules/billing/subscriptions/subscription-detail"));
+const CreateSubscriptionWizardPage = lazyRoute(() => import("./modules/billing/subscriptions/subscription-create"));
+const SubscriptionPlansPage = lazyRoute(() => import("./modules/billing/subscriptions/subscription-plans"));
+const SubscriptionReportsPage = lazyRoute(() => import("./modules/billing/subscriptions/reports"));
+const SubscriptionSettingsPage = lazyRoute(() => import("./modules/billing/subscriptions/settings"));
+const InvoiceSchedulesPage = lazyRoute(() => import("./modules/billing/subscriptions/invoice-schedules"));
+const InvoicingPage = lazyRoute(() => import("./modules/billing/invoicing/invoice-list"));
+const InvoiceDashboardPage = lazyRoute(() => import("./modules/billing/invoicing/invoice-dashboard"));
+const CreateInvoiceWizardPage = lazyRoute(() => import("./modules/billing/invoicing/create-invoice-wizard"));
+const InvoiceDetailPage = lazyRoute(() => import("./modules/billing/invoicing/invoice-detail"));
+const CreditNotesPage = lazyRoute(() => import("./modules/billing/invoicing/credit-notes"));
+const CreditNoteDashboardPage = lazyRoute(() => import("./modules/billing/invoicing/credit-note-dashboard"));
+const CreditNoteDetailPage = lazyRoute(() => import("./modules/billing/invoicing/credit-note-detail"));
+const InvoiceReportsPage = lazyRoute(() => import("./modules/billing/invoicing/reports"));
+const InvoiceSettingsPage = lazyRoute(() => import("./modules/billing/invoicing/settings"));
+const MoneyInPage = lazyRoute(() => import("./modules/billing/payments/payment-list"));
+const PaymentDashboardPage = lazyRoute(() => import("./modules/billing/payments/payment-dashboard"));
+const PaymentDetailPage = lazyRoute(() => import("./modules/billing/payments/payment-detail"));
+const PaymentReportsPage = lazyRoute(() => import("./modules/billing/payments/reports"));
+const PaymentSettingsPage = lazyRoute(() => import("./modules/billing/payments/settings"));
+const StripeConnectSettingsPage = lazyRoute(() => import("./modules/billing/payments/stripe-connect"));
+const StripeConnectCallbackPage = lazyRoute(() => import("./modules/billing/payments/stripe-connect-callback"));
+const CollectionsReceivablesPage = lazyRoute(() => import("./modules/billing/payments/collections-receivables"));
+const CollectionsDashboardPage = lazyRoute(() => import("./modules/billing/payments/collections-dashboard"));
+const CollectionsCaseDetailPage = lazyRoute(() => import("./modules/billing/payments/collections-case-detail"));
+const DunningPage = lazyRoute(() => import("./modules/billing/payments/dunning"));
+const DunningCaseDetailPage = lazyRoute(() => import("./modules/billing/payments/dunning-case-detail"));
+const DunningLevelsPage = lazyRoute(() => import("./modules/billing/payments/dunning-levels"));
+const PromiseToPayPage = lazyRoute(() => import("./modules/billing/payments/promise-to-pay"));
+const CreditsPage = lazyRoute(() => import("./modules/billing/payments/credits"));
+const RefundsPage = lazyRoute(() => import("./modules/billing/payments/refunds"));
+const RefundDashboardPage = lazyRoute(() => import("./modules/billing/payments/refund-dashboard"));
+const RefundDetailPage = lazyRoute(() => import("./modules/billing/payments/refund-detail"));
+const WriteOffsPage = lazyRoute(() => import("./modules/billing/payments/write-offs"));
+const WriteOffDashboardPage = lazyRoute(() => import("./modules/billing/payments/write-off-dashboard"));
+const WriteOffDetailPage = lazyRoute(() => import("./modules/billing/payments/write-off-detail"));
+const TaxPage = lazyRoute(() => import("./modules/billing/tax/tax-rates"));
+const TaxDashboardPage = lazyRoute(() => import("./modules/billing/tax/dashboard"));
+const TaxConfigurationPage = lazyRoute(() => import("./modules/billing/tax/tax-configuration"));
+const TaxReportsPage = lazyRoute(() => import("./modules/billing/tax/reports"));
+const TaxSettingsPage = lazyRoute(() => import("./modules/billing/tax/settings"));
 
-const CommercialOrganizationsPage = lazy(() => import("./modules/super-admin/OrganizationsPage"));
-const CommercialOrganizationDetailPage = lazy(() => import("./modules/super-admin/OrganizationDetailPage"));
-const CommercialPlansPage = lazy(() => import("./modules/super-admin/PlansPage"));
-const CommercialSubscriptionsPage = lazy(() => import("./modules/super-admin/SubscriptionsPage"));
-const CommercialEntitlementsPage = lazy(() => import("./modules/super-admin/EntitlementsPage"));
-const CommercialPlanEntitlementsPage = lazy(() => import("./modules/super-admin/PlanEntitlementsPage"));
-const CommercialOverridesPage = lazy(() => import("./modules/super-admin/OverridesPage"));
-const CommercialUsageDiagnosticsPage = lazy(() => import("./modules/super-admin/UsageDiagnosticsPage"));
-const CommercialPlanChangesPage = lazy(() => import("./modules/super-admin/PlanChangesPage"));
-const CommercialEvaluationProgramsPage = lazy(() => import("./modules/super-admin/EvaluationProgramsPage"));
-const Plane1BillingPage = lazy(() => import("./modules/super-admin/Plane1BillingPage"));
-const CommercialAuditLogsPage = lazy(() => import("./modules/super-admin/AuditLogsPage"));
-const CommercialPlanVersionsPage = lazy(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
-const KillSwitchPage = lazy(() => import("./modules/super-admin/KillSwitchPage"));
-const ProductionAcceptancePage = lazy(() => import("./modules/super-admin/ProductionAcceptancePage"));
-const PlatformDashboardPage = lazy(() => import("./modules/super-admin/PlatformDashboardPage"));
-const SupportAccessPage = lazy(() => import("./modules/super-admin/SupportAccessPage"));
-const TenantHealthPage = lazy(() => import("./modules/super-admin/TenantHealthPage"));
-const SuperAdminNotificationsPage = lazy(() => import("./modules/super-admin/NotificationsPage"));
-const LifecycleOnboardingPage = lazy(() => import("./modules/super-admin/LifecycleOnboardingPage"));
-const GovernancePage = lazy(() => import("./modules/super-admin/GovernancePage"));
-const ConfigurationGovernancePage = lazy(() => import("./modules/super-admin/ConfigurationGovernancePage"));
-const ReliabilityPage = lazy(() => import("./modules/super-admin/ReliabilityPage"));
-const LaunchReadinessPage = lazy(() => import("./modules/super-admin/LaunchReadinessPage"));
-const EmailDeliveryPage = lazy(() => import("./modules/super-admin/EmailDeliveryPage"));
-const TriagePage = lazy(() => import("./modules/super-admin/TriagePage"));
-const CommandCenterHubPage = lazy(() => import("./modules/super-admin/CommandCenterHubPage"));
-const FinancialOperationsPage = lazy(() => import("./modules/super-admin/FinancialOperationsPage"));
-const OrgAdminPrivilegedAccessLogPage = lazy(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
-const OrgAdminNotificationsPage = lazy(() => import("./modules/organization-admin/NotificationsPage"));
+const CommercialOrganizationsPage = lazyRoute(() => import("./modules/super-admin/OrganizationsPage"));
+const CommercialOrganizationDetailPage = lazyRoute(() => import("./modules/super-admin/OrganizationDetailPage"));
+const CommercialPlansPage = lazyRoute(() => import("./modules/super-admin/PlansPage"));
+const CommercialSubscriptionsPage = lazyRoute(() => import("./modules/super-admin/SubscriptionsPage"));
+const CommercialEntitlementsPage = lazyRoute(() => import("./modules/super-admin/EntitlementsPage"));
+const CommercialPlanEntitlementsPage = lazyRoute(() => import("./modules/super-admin/PlanEntitlementsPage"));
+const CommercialOverridesPage = lazyRoute(() => import("./modules/super-admin/OverridesPage"));
+const CommercialUsageDiagnosticsPage = lazyRoute(() => import("./modules/super-admin/UsageDiagnosticsPage"));
+const CommercialPlanChangesPage = lazyRoute(() => import("./modules/super-admin/PlanChangesPage"));
+const CommercialEvaluationProgramsPage = lazyRoute(() => import("./modules/super-admin/EvaluationProgramsPage"));
+const Plane1BillingPage = lazyRoute(() => import("./modules/super-admin/Plane1BillingPage"));
+const CommercialAuditLogsPage = lazyRoute(() => import("./modules/super-admin/AuditLogsPage"));
+const CommercialPlanVersionsPage = lazyRoute(() => import("./modules/super-admin/CommercialPlanVersionsPage"));
+const KillSwitchPage = lazyRoute(() => import("./modules/super-admin/KillSwitchPage"));
+const ProductionAcceptancePage = lazyRoute(() => import("./modules/super-admin/ProductionAcceptancePage"));
+const PlatformDashboardPage = lazyRoute(() => import("./modules/super-admin/PlatformDashboardPage"));
+const SupportAccessPage = lazyRoute(() => import("./modules/super-admin/SupportAccessPage"));
+const TenantHealthPage = lazyRoute(() => import("./modules/super-admin/TenantHealthPage"));
+const SuperAdminNotificationsPage = lazyRoute(() => import("./modules/super-admin/NotificationsPage"));
+const LifecycleOnboardingPage = lazyRoute(() => import("./modules/super-admin/LifecycleOnboardingPage"));
+const GovernancePage = lazyRoute(() => import("./modules/super-admin/GovernancePage"));
+const ConfigurationGovernancePage = lazyRoute(() => import("./modules/super-admin/ConfigurationGovernancePage"));
+const ReliabilityPage = lazyRoute(() => import("./modules/super-admin/ReliabilityPage"));
+const LaunchReadinessPage = lazyRoute(() => import("./modules/super-admin/LaunchReadinessPage"));
+const EmailDeliveryPage = lazyRoute(() => import("./modules/super-admin/EmailDeliveryPage"));
+const TriagePage = lazyRoute(() => import("./modules/super-admin/TriagePage"));
+const CommandCenterHubPage = lazyRoute(() => import("./modules/super-admin/CommandCenterHubPage"));
+const FinancialOperationsPage = lazyRoute(() => import("./modules/super-admin/FinancialOperationsPage"));
+const OrgAdminPrivilegedAccessLogPage = lazyRoute(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
+const OrgAdminNotificationsPage = lazyRoute(() => import("./modules/organization-admin/NotificationsPage"));
 
 const BILLING_ROUTES = [
   { path: "/billing", element: <BillingDashboard /> },
   { path: "/billing/reports", element: <ReportsPage /> },
   { path: "/billing/reports/forecast", element: <ForecastReport /> },
-  { path: "/billing/settings", element: <BillingSettingsPage /> },
+  { path: "/billing/settings", element: <BillingSettingsErrorBoundary><BillingSettingsPage /></BillingSettingsErrorBoundary> },
   { path: "/billing/customers", element: <CustomerListPage /> },
   { path: "/billing/customers/dashboard", element: <CustomerDashboardPage /> },
   { path: "/billing/customers/:id", element: <CustomerProfilePage /> },
@@ -343,6 +345,21 @@ const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/super-admin/governance/security-events", to: "/super-admin/audit-logs" },
   { from: "/super-admin/reliability/data-quality", to: "/super-admin/reliability" },
 ];
+
+registerRoutePreloads([
+  ...BILLING_ROUTES,
+  ...SUPER_ADMIN_ROUTES,
+  { path: "/organization-admin/privileged-access-log", element: <OrgAdminPrivilegedAccessLogPage /> },
+  { path: "/organization-admin/notifications", element: <OrgAdminNotificationsPage /> },
+  { path: "/billing/workspace/dashboard", element: <BillingAdminWorkspaceDashboard /> },
+  { path: "/billing/workspace/organization", element: <BillingAdminWorkspaceOrganization /> },
+  { path: "/billing/workspace/subscription", element: <BillingAdminWorkspaceSubscription /> },
+  { path: "/billing/workspace/zoiko-subscription", element: <BillingAdminWorkspaceZoikoSubscription /> },
+  { path: "/billing/workspace/usage", element: <BillingAdminWorkspaceUsage /> },
+  { path: "/billing/workspace/activity", element: <BillingAdminWorkspaceActivity /> },
+  { path: "/billing/workspace/notifications", element: <BillingAdminWorkspaceNotifications /> },
+  { path: "/billing/workspace/help", element: <BillingAdminWorkspaceHelp /> },
+]);
 
 function ModuleSpinner() {
   return (

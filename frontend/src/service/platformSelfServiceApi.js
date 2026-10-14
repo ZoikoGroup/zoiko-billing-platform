@@ -12,6 +12,18 @@ import { api } from "./api";
 export const platformSelfServiceApi = {
   getZoikoSubscription: () => api.get("/billing/workspace/zoiko-subscription"),
   getWorkspaceUsage: () => api.get("/billing/workspace/usage"),
+  getPlanLimits: () => api.get("/billing/workspace/plan-limits"),
+  startTrial: () => api.post("/billing/workspace/start-trial", {}),
+  getAvailablePlans: () => api.get("/billing/workspace/available-plans", { cacheTtl: 30_000 }),
+  previewPlanChange: (targetPlanId) =>
+    api.post("/billing/workspace/plan-change/preview", { target_plan_id: targetPlanId }),
+  commitPlanChange: ({ targetPlanId, confirmImmediate = false, reason = null }) =>
+    api.post("/billing/workspace/plan-change", {
+      target_plan_id: targetPlanId,
+      confirm_immediate: confirmImmediate,
+      reason,
+    }),
+  cancelPlanChange: (changeId) => api.post(`/billing/workspace/plan-change/${changeId}/cancel`, {}),
   convertTrialToPaid: (payload = {}) => api.post("/billing/workspace/trial/convert", payload),
 };
 
@@ -29,23 +41,29 @@ export const platformSelfServiceApi = {
 // (billing config) -- not a new pattern.
 let cachedSubscription = null;
 let inflightSubscription = null;
+// See orgAdminService.js: a request from before an invalidation (previous
+// account) must not repopulate the cache or clear the next request's slot.
+let cacheGeneration = 0;
 
 export function getZoikoSubscriptionCached() {
   if (cachedSubscription) return Promise.resolve(cachedSubscription);
   if (inflightSubscription) return inflightSubscription;
-  inflightSubscription = platformSelfServiceApi
+  const generation = cacheGeneration;
+  const request = platformSelfServiceApi
     .getZoikoSubscription()
     .then((data) => {
-      cachedSubscription = data;
+      if (generation === cacheGeneration) cachedSubscription = data;
       return data;
     })
     .finally(() => {
-      inflightSubscription = null;
+      if (inflightSubscription === request) inflightSubscription = null;
     });
-  return inflightSubscription;
+  inflightSubscription = request;
+  return request;
 }
 
 export function invalidateZoikoSubscriptionCache() {
+  cacheGeneration += 1;
   cachedSubscription = null;
   inflightSubscription = null;
 }

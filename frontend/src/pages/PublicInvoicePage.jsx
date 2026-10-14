@@ -214,6 +214,9 @@ export default function PublicInvoicePage() {
   const isPaid       = status === "paid" || (paidParam && !confirmingPayment && balanceDue <= 0.005);
   const stillConfirmingNote = paidParam && !confirmingPayment && !isPaid;
   const canPay       = !isPaid && !isCancelled && balanceDue > 0.005;
+  // The public view reports whether card payments are set up; don't offer a
+  // Pay button that can only fail.
+  const onlinePayAvailable = payment?.stripe?.configured !== false;
 
   /* ── loading ── */
   if (loading) return (
@@ -542,6 +545,7 @@ export default function PublicInvoicePage() {
                 </div>
               </div>
 
+              {onlinePayAvailable ? (<>
               <p className="pub-stripe-hosted-note">
                 You'll be taken to Stripe's secure hosted checkout page to complete your
                 payment. Your card details are entered directly on Stripe and are never
@@ -580,6 +584,12 @@ export default function PublicInvoicePage() {
                   <span className="pub-pay-badge">✅ Stripe Powered</span>
                 </div>
               </div>
+              </>) : (
+                <p className="pub-stripe-hosted-note" role="note">
+                  Online card payment isn't available for this invoice yet. Please contact
+                  the sender to arrange payment.
+                </p>
+              )}
             </div>
           </SectionCard>
         )}

@@ -10,6 +10,7 @@ import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../..
 import { PageSkeleton, ErrorState, StatusBadge as SharedStatusBadge, Pagination } from "../../../components/billing-shared";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import { PageHeader, Button, DataTable, SearchInput, Select, Modal } from "../../../components/billing-ui";
 
 const ITEMS_PER_PAGE = 10;
@@ -99,7 +100,10 @@ export default function CreditNotesPage() {
   const safePage = Math.min(currentPage, totalPages);
   const sortParam = sortDir === "desc" ? `-${sortField}` : sortField;
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchCreditNotes = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -109,15 +113,17 @@ export default function CreditNotesPage() {
         status: statusFilter || undefined,
         credit_note_type: typeFilter || undefined,
       });
+      if (!isCurrent()) return;
       setCreditNotes(extractArray(data));
       setTotal(data.total || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load credit notes");
       setCreditNotes([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter]);
 
   useEffect(() => { fetchCreditNotes(); }, [fetchCreditNotes]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);

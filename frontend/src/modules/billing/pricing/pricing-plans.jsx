@@ -7,6 +7,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, Pagination, ProductSelector } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -75,6 +76,8 @@ function ModelBadge({ model }) {
   );
 }
 
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 export default function PricingPlansPage() {
   const navigate = useNavigate();
 
@@ -122,7 +125,7 @@ export default function PricingPlansPage() {
     name: "", description: "", price: "", currency: orgCurrency,
     billing_period: "monthly", pricing_model: "flat",
     trial_days: "", setup_fee: "", product_id: "",
-    effective_from: new Date().toISOString().slice(0, 10),
+    effective_from: localToday(),
     effective_to: "", min_quantity: 1, max_quantity: "",
     status: "active", flat_fee: "", notes: "", priority: "",
   });
@@ -147,7 +150,10 @@ export default function PricingPlansPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchPlans = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -161,19 +167,23 @@ export default function PricingPlansPage() {
         sort_order: sortDir,
       };
       const data = await pricingApi.list(params);
+      if (!isCurrent()) return;
       const items = data.items || data.data || data || [];
       setPlans(Array.isArray(items) ? items : []);
       setTotal(data.total || items.length || 0);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load pricing plans");
       setPlans([]); setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, modelFilter, periodFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
   useEffect(() => {
@@ -299,6 +309,14 @@ export default function PricingPlansPage() {
         setFormError("Select a product before creating a pricing plan.");
         return;
       }
+      if (newPlan.effective_from && newPlan.effective_from < localToday()) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (newPlan.effective_to && newPlan.effective_from && newPlan.effective_to < newPlan.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const enriched = applyProductDefaults(newPlan, selectedProduct);
       const payload = {
         ...enriched,
@@ -308,7 +326,7 @@ export default function PricingPlansPage() {
         setup_fee: parseFloat(enriched.setup_fee) || 0,
         min_quantity: parseInt(enriched.min_quantity) || 1,
         max_quantity: enriched.max_quantity ? parseInt(enriched.max_quantity) : null,
-        effective_from: enriched.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: enriched.effective_from || localToday(),
         effective_to: enriched.effective_to || null,
         product_id: Number(enriched.product_id),
         billing_period: enriched.billing_period,
@@ -352,6 +370,15 @@ export default function PricingPlansPage() {
     if (!editPlan) return;
     setFormLoading(true); setFormError(null);
     try {
+      const originalFrom = plans.find((p) => p.id === editPlan.id)?.effective_from;
+      if (editPlan.effective_from && editPlan.effective_from < localToday() && editPlan.effective_from !== originalFrom) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (editPlan.effective_to && editPlan.effective_from && editPlan.effective_to < editPlan.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const enriched = applyProductDefaults(editPlan, selectedProduct);
       const payload = {
         ...enriched,
@@ -361,7 +388,7 @@ export default function PricingPlansPage() {
         setup_fee: parseFloat(enriched.setup_fee) || 0,
         min_quantity: parseInt(enriched.min_quantity) || 1,
         max_quantity: enriched.max_quantity ? parseInt(enriched.max_quantity) : null,
-        effective_from: enriched.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: enriched.effective_from || localToday(),
         effective_to: enriched.effective_to || null,
       };
       if (enriched.status) payload.status = enriched.status;
@@ -398,7 +425,7 @@ export default function PricingPlansPage() {
       trial_days: plan.trial_days || "",
       setup_fee: plan.setup_fee || "",
       product_id: plan.product_id || "",
-      effective_from: new Date().toISOString().slice(0, 10),
+      effective_from: localToday(),
       effective_to: "",
       min_quantity: plan.min_quantity || 1,
       max_quantity: plan.max_quantity || "",
@@ -629,12 +656,12 @@ export default function PricingPlansPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
+                  <input type="date" min={isEdit ? undefined : localToday()} value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                  <input type="date" value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
+                  <input type="date" min={data.effective_from || undefined} value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
@@ -698,15 +725,16 @@ export default function PricingPlansPage() {
     const setData = isEdit ? setEditPlan : setNewPlan;
     const onSubmit = isEdit ? handleUpdate : handleCreate;
     const title = isEdit ? "Edit Pricing Plan" : "New Pricing Plan";
+    const titleId = isEdit ? "pricing-plan-edit-title" : "pricing-plan-create-title";
     const btnLabel = isEdit ? (formLoading ? "Saving..." : "Save Changes") : (formLoading ? "Creating..." : "Create Plan");
     if (!show) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+              <h2 id={titleId} className="text-xl font-bold text-slate-800">{title}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{isEdit ? "Update pricing plan parameters" : "Define how this product is priced and billed"}</p>
             </div>
             <button onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }} className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Close dialog"><X size={20} /></button>
@@ -845,7 +873,7 @@ export default function PricingPlansPage() {
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="text" placeholder="Search plans by name..." value={search}
+                <input type="text" placeholder="Search plans by name..." aria-label="Search plans by name" value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {search && (

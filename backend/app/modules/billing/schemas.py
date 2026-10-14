@@ -119,7 +119,9 @@ class BillingSettingResponse(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class CustomerCreate(BaseModel):
-    customer_code: str = Field(..., min_length=1, max_length=50)
+    # Optional: left blank, the server assigns the next number from Customer
+    # Settings (prefix + format, DocumentSequence "customer").
+    customer_code: Optional[str] = Field(None, max_length=50)
     company_name: str = Field(..., min_length=1, max_length=255)
     display_name: str = Field(..., min_length=1, max_length=255)
     legal_name: Optional[str] = None
@@ -150,7 +152,8 @@ class CustomerCreate(BaseModel):
     billing_country: Optional[str] = None
     shipping_country: Optional[str] = None
     status: Optional[CustomerStatus] = CustomerStatus.ACTIVE
-    customer_type: Optional[CustomerType] = CustomerType.BUSINESS
+    # None -> the organization's Default Customer Type (Customer Settings).
+    customer_type: Optional[CustomerType] = None
     notes: Optional[str] = None
     tags: Optional[Dict[str, Any]] = None
     custom_fields: Optional[Dict[str, Any]] = None
@@ -243,7 +246,7 @@ class CustomerCreate(BaseModel):
     @classmethod
     def validate_customer_type(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v.strip() == "":
-            return "business"
+            return None
         valid_types = {"business", "individual", "non_profit", "government"}
         if v.strip() not in valid_types:
             raise ValueError(f"Invalid customer type. Must be one of: {', '.join(valid_types)}")
@@ -1829,7 +1832,9 @@ class ConvertQuotationRequest(BaseModel):
 
 class QuotationCreate(BaseModel):
     customer_id: int
-    quote_number: str = Field(..., min_length=1, max_length=50)
+    # Optional: when omitted/blank the server generates the number from the
+    # org's Quotation Settings (prefix + number format + sequence reset).
+    quote_number: Optional[str] = Field(None, max_length=50)
     quote_version: int = 1
     subject: Optional[str] = None
     discount_percentage: Decimal = Decimal("0")
@@ -3907,6 +3912,8 @@ class BillingConfigurationUpdate(BaseModel):
     subscription_extra_settings: Optional[Dict[str, Any]] = None
     payment_extra_settings: Optional[Dict[str, Any]] = None
     pricing_extra_settings: Optional[Dict[str, Any]] = None
+    customer_extra_settings: Optional[Dict[str, Any]] = None
+    quotation_extra_settings: Optional[Dict[str, Any]] = None
 
     product_numbering_prefix: Optional[str] = None
     product_numbering_format: Optional[str] = None
@@ -3919,6 +3926,13 @@ class BillingConfigurationUpdate(BaseModel):
     auto_archive_days: Optional[int] = None
     product_visibility: Optional[str] = None
     require_sku: Optional[str] = None
+
+    # ── Customer Settings ── (validated enums; prefix checked in settings_service)
+    default_customer_type: Optional[CustomerType] = None
+    customer_numbering_prefix: Optional[str] = Field(None, max_length=10)
+    customer_numbering_format: Optional[NumberFormat] = None
+    require_billing_address: Optional[bool] = None
+    require_tax_id: Optional[bool] = None
 
     # ── Contract Settings ──
     default_contract_prefix: Optional[str] = None
@@ -4129,6 +4143,8 @@ class BillingConfigurationResponse(BaseModel):
     subscription_extra_settings: Dict[str, Any] = {}
     payment_extra_settings: Dict[str, Any] = {}
     pricing_extra_settings: Dict[str, Any] = {}
+    customer_extra_settings: Dict[str, Any] = {}
+    quotation_extra_settings: Dict[str, Any] = {}
 
     product_numbering_prefix: Optional[str]
     product_numbering_format: Optional[str]
@@ -4141,6 +4157,13 @@ class BillingConfigurationResponse(BaseModel):
     auto_archive_days: Optional[int]
     product_visibility: Optional[str]
     require_sku: Optional[str]
+
+    # ── Customer Settings ──
+    default_customer_type: CustomerType = CustomerType.BUSINESS
+    customer_numbering_prefix: str = "CUST-"
+    customer_numbering_format: NumberFormat = NumberFormat.PREFIX_SEQ
+    require_billing_address: bool = False
+    require_tax_id: bool = False
 
     # ── Contract Settings ──
     default_contract_prefix: Optional[str]

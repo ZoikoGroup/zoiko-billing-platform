@@ -125,9 +125,15 @@ export function formatTaxRatePercent(rate) {
   return `${n.toFixed(2)}%`;
 }
 
+// A bare "YYYY-MM-DD" is a calendar date, not an instant. `new Date("2026-01-01")`
+// parses it as UTC midnight, which displays as Dec 31 west of UTC; build it
+// in local time instead so the same calendar day shows in every timezone.
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 export function formatDisplayDate(d) {
   if (d == null || d === "") return "\u2014";
-  const date = new Date(d);
+  const dateOnly = typeof d === "string" ? DATE_ONLY_RE.exec(d) : null;
+  const date = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(d);
   if (Number.isNaN(date.getTime())) return "\u2014";
   return date.toLocaleDateString();
 }

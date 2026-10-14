@@ -18,11 +18,14 @@ Schema lifecycle differs by dialect:
 
 import logging
 import os
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import create_engine, exc, inspect, text  # type: ignore[import]
 from sqlalchemy.dialects import postgresql  # type: ignore[import]
+from sqlalchemy import exc as sa_exc  # type: ignore[import]
+from sqlalchemy.pool import QueuePool  # type: ignore[import]
 from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore[import]
 
 from app.config import settings
@@ -70,6 +73,53 @@ def resolve_database_url(raw_url: str | None = None) -> str:
     )
 
 
+class TimedQueuePool(QueuePool):
+    """QueuePool that logs a rate-limited WARNING when a checkout waited
+    longer than DB_POOL_WAIT_WARN_SECONDS (pool saturation signal), and when
+    the pool times out entirely."""
+
+    _last_warn = 0.0
+
+    def connect(self):
+        start = time.monotonic()
+        try:
+            return super().connect()
+        except sa_exc.TimeoutError:
+            self._warn(time.monotonic() - start, exhausted=True)
+            raise
+        finally:
+            waited = time.monotonic() - start
+            if waited > settings.DB_POOL_WAIT_WARN_SECONDS:
+                self._warn(waited)
+
+    def _warn(self, waited: float, exhausted: bool = False) -> None:
+        now = time.monotonic()
+        if now - TimedQueuePool._last_warn < 30 and not exhausted:
+            return
+        TimedQueuePool._last_warn = now
+        logger.warning(
+            "DB pool %s: checkout waited %.2fs (%s). Consider raising DB_POOL_SIZE/"
+            "DB_MAX_OVERFLOW within the connection budget, or reducing per-request queries.",
+            "EXHAUSTED" if exhausted else "saturated", waited, self.status(),
+        )
+
+
+def build_pool_kwargs(dialect_name: str, cfg=None) -> dict:
+    """Pool kwargs for create_engine. Only applied to PostgreSQL; SQLite
+    (tests/dev fallback) gets none, keeping its default pool."""
+    if dialect_name != "postgresql":
+        return {}
+    cfg = cfg or settings
+    return {
+        "poolclass": TimedQueuePool,
+        "pool_size": max(1, int(cfg.DB_POOL_SIZE)),
+        "max_overflow": max(0, int(cfg.DB_MAX_OVERFLOW)),
+        "pool_timeout": float(cfg.DB_POOL_TIMEOUT),
+        "pool_recycle": int(cfg.DB_POOL_RECYCLE),
+        "pool_pre_ping": bool(cfg.DB_POOL_PRE_PING),
+    }
+
+
 resolved_database_url = resolve_database_url()
 
 if resolved_database_url.startswith("sqlite"):
@@ -90,10 +140,7 @@ else:
     engine = create_engine(
         resolved_database_url,
         connect_args={"sslmode": _pg_sslmode},
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=1800,
+        **build_pool_kwargs("postgresql"),
     )
 
 

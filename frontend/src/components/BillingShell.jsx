@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+import { prefetchHandlers } from "../routePrefetch";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   X,
@@ -254,37 +255,66 @@ function isActive(href, pathname, search = "") {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
-// Sidebar sections open independently (multi-open is intentional, see the
-// openSections comment below). The open/closed decision must be derived from
-// the Set handed to the state updater, not from the render-time closure:
-// two toggles queued in one render (fast double-click) both read the same
-// stale snapshot, so the second click never reverted the first.
-export function sectionExpandedIn(openSet, section, pathname, search) {
-  if (openSet.has(section.label)) return true;
-  if (openSet.has(`!${section.label}`)) return false;
-  return section.children?.some((c) => isActive(c.href, pathname, search)) ?? false;
+// Among sibling links, only the most specific match is current: on
+// /billing/products/categories both "/billing/products" and
+// "/billing/products/categories" prefix-match, but only Categories is active.
+export function activeChildHref(children, pathname, search = "") {
+  let best = null;
+  for (const child of children || []) {
+    if (!isActive(child.href, pathname, search)) continue;
+    if (!best || child.href.length > best.length) best = child.href;
+  }
+  return best;
 }
 
-export function toggleSectionIn(openSet, section, pathname, search) {
-  const next = new Set(openSet);
-  if (sectionExpandedIn(openSet, section, pathname, search)) {
-    next.delete(section.label);
-    next.add(`!${section.label}`);
-  } else {
-    next.delete(`!${section.label}`);
-    next.add(section.label);
+// Sidebar sections are single-expand (BUG-11.1, approved product decision):
+// at most one section is open. `choice` is the user's last explicit toggle,
+// { label: string | null, route }, and only applies on the route where it was
+// made -- after any navigation (link, back/forward, drawer reopen) the open
+// section is again the one containing the current route, so open sections
+// never pile up. The open/closed decision must be derived from the `choice`
+// handed to the state updater, not from the render-time closure: two toggles
+// queued in one render (fast double-click) must cancel out.
+// Keyed on the path only: list pages rewrite their query string as filters
+// change (useListUrlFilters), and that must not snap a section the user just
+// opened shut. Which section owns the route still considers the query.
+const routeKey = (pathname) => pathname;
+
+// If links in two sections both prefix-match the route, the section holding
+// the most specific link wins (same rule as activeChildHref within a section).
+function routeSectionLabel(sections, pathname, search) {
+  let best = null;
+  for (const section of sections || []) {
+    const href = activeChildHref(section.children, pathname, search);
+    if (href && (!best || href.length > best.href.length)) best = { label: section.label, href };
   }
-  return next;
+  return best ? best.label : null;
+}
+
+export function expandedSectionLabel(choice, sections, pathname, search) {
+  if (choice && choice.route === routeKey(pathname, search)) return choice.label;
+  return routeSectionLabel(sections, pathname, search);
+}
+
+export function sectionExpandedIn(choice, section, pathname, search, sections) {
+  return expandedSectionLabel(choice, sections, pathname, search) === section.label;
+}
+
+export function toggleSectionIn(choice, section, pathname, search, sections) {
+  const open = sectionExpandedIn(choice, section, pathname, search, sections);
+  return { label: open ? null : section.label, route: routeKey(pathname, search) };
 }
 
 const sectionPanelId = (label) => `nav-section-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
-function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false }) {
+function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sectionStyle = false, current }) {
   const hasActiveChild = item.children
     ? item.children.some((child) => isActive(child.href, pathname, search))
     : false;
 
   const active = isActive(item.href, pathname, search) || hasActiveChild;
+  const currentChildHref = item.children ? activeChildHref(item.children, pathname, search) : null;
+  const selfActive = current ?? isActive(item.href, pathname, search);
 
   if (item.children) {
     return (
@@ -293,7 +323,8 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={sectionPanelId(item.label)}
+          /* The panel is unmounted while collapsed; only reference it when it exists. */
+          aria-controls={expanded ? sectionPanelId(item.label) : undefined}
           className={`group flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left text-sm transition duration-200 ${
             active
               ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
@@ -309,7 +340,8 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
         {expanded ? (
           <div id={sectionPanelId(item.label)} className="mt-1.5 space-y-1 border-l border-white/10 pl-3 ml-[22px]">
             {item.children.map((child) => (
-              <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate} />
+              <MenuItem key={child.label} item={child} pathname={pathname} search={search} onNavigate={onNavigate}
+                current={child.href === currentChildHref} />
             ))}
           </div>
         ) : null}
@@ -322,10 +354,11 @@ function MenuItem({ item, pathname, search, onNavigate, expanded, onToggle, sect
       to={item.href ?? "/billing"}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(item.href)}
       className={`group flex items-center gap-3 text-sm transition duration-200 ${
         sectionStyle ? "rounded-[14px] border px-4 py-3" : "rounded-[12px] border px-4 py-2"
       } ${
-        isActive(item.href, pathname, search)
+        selfActive
           ? "border-brand/40 bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)]"
           : sectionStyle
             ? "border-white/10 bg-white/5 text-[#CBD5E1] hover:border-white/20 hover:bg-white/10"
@@ -357,6 +390,7 @@ function FlatNavItem({ href, icon: Icon, label, pathname, search, onNavigate, co
       to={href}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(href)}
       title={collapsed ? label : undefined}
       className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
         collapsed ? "justify-center px-2" : "px-3"
@@ -401,6 +435,7 @@ function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, sea
       to={to}
       end
       onClick={onNavigate}
+      {...prefetchHandlers(to)}
       title={collapsed ? label : undefined}
       className={`group flex items-center gap-3 rounded-xl border-l-2 py-2.5 text-sm transition-colors duration-150 ${
         collapsed ? "justify-center px-2" : "justify-between px-3"
@@ -422,7 +457,7 @@ function CockpitLink({ to, icon: Icon, label, badge, badgeVariant, pathname, sea
 // Accordion sidebar for org_admin / billing_admin — unchanged by the
 // super_admin flat-sidebar redesign (see SuperAdminSidebarContent below,
 // which super_admin renders instead of this component entirely).
-function SidebarContent({ onNavigate, role }) {
+export function SidebarContent({ onNavigate, role }) {
   const { pathname, search } = useLocation();
 
   // NAV_SECTIONS no longer carries any superAdminOnly entries — those moved
@@ -437,19 +472,22 @@ function SidebarContent({ onNavigate, role }) {
 
   const visibleFooter = role === "org_admin" ? FOOTER_NAV_ITEMS : [];
 
-  // Each section tracks its own open/closed state independently (a Set of
-  // labels the user has explicitly opened), rather than one shared value —
-  // expanding "Governance & Security" must not silently collapse whatever
-  // else was already open. A section not yet touched by the user still
-  // defaults open if the current route matches one of its children.
-  const [openSections, setOpenSections] = useState(() => new Set());
+  // Single-expand: opening a section closes the previously open one. With no
+  // explicit toggle on the current route, the section containing the route
+  // is the open one (see expandedSectionLabel).
+  const [sectionChoice, setSectionChoice] = useState(null);
+  // Any navigation (link, back/forward) hands the decision back to the route.
+  // expandedSectionLabel already ignores a choice made on another route, so
+  // this only stops an old choice resurfacing when the user returns to it.
+  const currentRoute = routeKey(pathname, search);
+  useEffect(() => { setSectionChoice(null); }, [currentRoute]);
 
   function isSectionExpanded(section) {
-    return sectionExpandedIn(openSections, section, pathname, search);
+    return sectionExpandedIn(sectionChoice, section, pathname, search, visibleSections);
   }
 
   function toggleSection(section) {
-    setOpenSections((prev) => toggleSectionIn(prev, section, pathname, search));
+    setSectionChoice((prev) => toggleSectionIn(prev, section, pathname, search, visibleSections));
   }
 
   return (
@@ -461,7 +499,7 @@ function SidebarContent({ onNavigate, role }) {
             onClick={onNavigate}
             className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
           >
-            <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
+            <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
           </Link>
           {ROLE_LABELS[role] ? (
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#94A3B8]">
@@ -587,7 +625,7 @@ function SuperAdminSidebarContent({ onNavigate, cockpit, collapsed, onToggleColl
               onClick={onNavigate}
               className="inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 shadow-sm"
             >
-              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="h-10 w-auto" />
+              <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
             </Link>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#94A3B8]">
               {ROLE_LABELS.super_admin || "Super Admin"}
@@ -728,6 +766,22 @@ function readStoredCollapsed() {
   }
 }
 
+// Content-area-only fallback: the sidebar/header stay painted while a lazy
+// page chunk loads (the Suspense boundary sits below the shell frame).
+export function ContentSkeleton() {
+  return (
+    <div role="status" aria-busy="true" aria-label="Loading page" className="animate-pulse space-y-5">
+      <div className="h-8 w-64 rounded-lg bg-slate-200/70" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-2xl bg-slate-200/60" />
+        ))}
+      </div>
+      <div className="h-72 rounded-2xl bg-slate-200/50" />
+    </div>
+  );
+}
+
 export default function BillingShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -801,7 +855,9 @@ export default function BillingShell({ children }) {
               on top of a page's bottom-right control when scrolled to the end
               -- e.g. the invoice wizard's Next button. */}
           <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
-            {children}
+            <Suspense fallback={<ContentSkeleton />}>
+              {children}
+            </Suspense>
           </div>
         </main>
 

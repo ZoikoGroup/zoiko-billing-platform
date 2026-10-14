@@ -303,11 +303,12 @@ export default function UsageBillingPage() {
                 <input type="date" value={dateRange.to} min={dateRange.from || undefined} onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
                   aria-label="Created to date"
                   className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {hasActiveFilters && (
-                  <button onClick={clearFilters} className="whitespace-nowrap px-2 text-xs font-medium text-brand-600 hover:text-brand-700">
-                    Clear filters
-                  </button>
-                )}
+                <button onClick={clearFilters} disabled={!hasActiveFilters}
+                  title={hasActiveFilters ? "Reset search and date filters" : "No filters applied"}
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent">
+                  <X size={14} />
+                  Clear filters
+                </button>
               </div>
               <button onClick={handleDownloadLog}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">

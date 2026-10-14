@@ -8,6 +8,7 @@ import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange, DASHBOARD_DATE_RANGE_OPTIONS } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -51,30 +52,47 @@ export default function CustomerDashboard() {
   } = useBillingDateRange();
 
   const hasLoadedOnce = useRef(false);
+  // The customer sample (recent customers / growth / type charts) is not
+  // date-filtered, so it is only (re)fetched on first load and on an
+  // explicit refresh -- not on every date-range change.
+  const sampleLoadedRef = useRef(false);
+  // Only the most recently started fetch may update state, so a previous
+  // range's slower response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
 
-  const fetchData = async (isRefresh = false) => {
+  const fetchData = async (isRefresh = false, includeSample = true) => {
+    const isCurrent = beginRequest();
     try {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
       const [data, customersResp] = await Promise.all([
         customerApi.getKPI(undefined, dateRange),
-        customerApi.list({ per_page: 200, sort_by: "created_at", sort_order: "desc" }).catch(() => null),
+        includeSample
+          ? customerApi.list({ per_page: 200, sort_by: "created_at", sort_order: "desc" }).catch(() => null)
+          : Promise.resolve(null),
       ]);
+      if (!isCurrent()) return;
       setKpiData(data);
-      if (customersResp) setCustomerSample(extractArray(customersResp));
+      if (customersResp) {
+        setCustomerSample(extractArray(customersResp));
+        sampleLoadedRef.current = true;
+      }
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.message || "Failed to load customer dashboard data");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
   };
 
   useEffect(() => {
-    fetchData(hasLoadedOnce.current);
+    fetchData(hasLoadedOnce.current, !sampleLoadedRef.current);
   }, [dateRange.date_from, dateRange.date_to]);
 
   const d = kpiData || {};
@@ -309,7 +327,7 @@ export default function CustomerDashboard() {
       <ActionCenter items={actionItems} />
 
       <div className={DASHBOARD_KPI_GRID}>
-        <DashboardStatCard title={`${periodLabel} Revenue`} value={Number(d.period_revenue || 0)} currency={baseCurrency} subtitle="Revenue in period" icon={DollarSign} color="from-emerald-500 to-emerald-600" />
+        <DashboardStatCard title={`${periodLabel} Revenue`} value={Number(d.period_revenue || 0)} currency={baseCurrency} subtitle="Revenue in period" icon={DollarSign} color="from-emerald-500 to-emerald-600" href="/billing/payments?status=cleared" />
         <DashboardStatCard title={`${periodLabel} Invoices`} value={d.period_total_invoices || 0} subtitle={`${d.period_paid_invoices || 0} paid`} icon={FileText} color="from-blue-500 to-blue-600" href="/billing/invoices" />
         <DashboardStatCard title={`${periodLabel} Avg Invoice`} value={Number(d.period_avg_invoice_value || 0)} currency={baseCurrency} subtitle="Average invoice value" icon={TrendingUp} color="from-brand to-brand-hover" />
         <DashboardStatCard title={`New ${plural} (${periodLabel})`} value={d.period_new_customers || 0} subtitle="Joined in period" icon={UserPlus} color="from-cyan-500 to-cyan-600" href="/billing/customers" />
@@ -324,11 +342,11 @@ export default function CustomerDashboard() {
       </StatGroup>
 
       <StatGroup title="Revenue & Collections">
-        <DashboardStatCard title="Total Revenue" value={Number(d.total_revenue || 0)} currency={baseCurrency} subtitle="All time" icon={TrendingUp} color="from-blue-500 to-blue-600" />
+        <DashboardStatCard title="Total Revenue" value={Number(d.total_revenue || 0)} currency={baseCurrency} subtitle="All time" icon={TrendingUp} color="from-blue-500 to-blue-600" href="/billing/payments?status=cleared&all_dates=1" />
         <DashboardStatCard title="Outstanding Balance" value={Number(d.outstanding_balance || 0)} currency={baseCurrency} subtitle="Unpaid invoices" icon={CreditCard} color="from-orange-500 to-orange-600" href="/billing/invoices" />
         <DashboardStatCard title="Avg Collection Period" value={`${d.avg_collection_time_days || 0} days`} subtitle="Days to collect" icon={Clock} color="from-cyan-500 to-cyan-600" />
         <DashboardStatCard title="w/ Outstanding" value={d.customers_with_outstanding_balance || 0} subtitle="Have unpaid balance" icon={AlertCircle} color="from-amber-500 to-orange-500" href="/billing/invoices" />
-        <DashboardStatCard title="Over Credit Limit" value={d.customers_over_credit_limit || 0} subtitle="Exceeded limit" icon={Target} color="from-red-500 to-rose-500" />
+        <DashboardStatCard title="Over Credit Limit" value={d.customers_over_credit_limit || 0} subtitle="Exceeded limit" icon={Target} color="from-red-500 to-rose-500" href="/billing/customers?over_credit_limit=1" />
       </StatGroup>
 
       <QuickActions actions={customerQuickActions} />

@@ -880,9 +880,9 @@ export default function SubscriptionDetailPage() {
       </div>
 
       {showChangePlan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowChangePlan(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">Change Plan</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowChangePlan(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="change-plan-title" className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6">
+            <h3 id="change-plan-title" className="text-lg font-semibold text-slate-800 mb-1">Change Plan</h3>
             <p className="text-sm text-slate-500 mb-4">Current plan: <span className="font-medium text-slate-700">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></p>
             {changePlanLoading ? (
               <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" /></div>
@@ -906,7 +906,7 @@ export default function SubscriptionDetailPage() {
             )}
             <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">Plan changes take effect immediately. Proration is not currently applied.</p>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button onClick={() => setShowChangePlan(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+              <button autoFocus onClick={() => setShowChangePlan(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
               <button disabled={!selectedNewPlanId || changePlanLoading} onClick={async () => {
                   setChangePlanLoading(true);
                   try {

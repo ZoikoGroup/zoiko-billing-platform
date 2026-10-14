@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import (
     get_current_user,
@@ -190,7 +191,10 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_dashboard_stats(organization_id=current_user.organization_id, period=period)
+    return cached_aggregate(
+        "invoice.get_dashboard_stats", current_user.organization_id, {"period": period},
+        lambda: svc.get_dashboard_stats(organization_id=current_user.organization_id, period=period),
+    )
 
 
 @router.get("/enterprise-dashboard", response_model=dict)
@@ -201,8 +205,11 @@ def get_enterprise_dashboard(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_enterprise_dashboard_stats(
+    return cached_aggregate(
+        "invoice.get_enterprise_dashboard", current_user.organization_id, {"date_from": date_from, "date_to": date_to},
+        lambda: svc.get_enterprise_dashboard_stats(
         organization_id=current_user.organization_id, date_from=date_from, date_to=date_to,
+    ),
     )
 
 
@@ -213,7 +220,10 @@ def get_invoice_trend(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_invoice_trend(organization_id=current_user.organization_id, months=months)
+    return cached_aggregate(
+        "invoice.get_invoice_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_invoice_trend(organization_id=current_user.organization_id, months=months),
+    )
 
 
 @router.get("/revenue-trend", response_model=list)
@@ -223,7 +233,10 @@ def get_revenue_trend(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_revenue_trend(organization_id=current_user.organization_id, months=months)
+    return cached_aggregate(
+        "invoice.get_revenue_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_revenue_trend(organization_id=current_user.organization_id, months=months),
+    )
 
 
 @router.get("/payment-collection-trend", response_model=list)
@@ -233,7 +246,10 @@ def get_payment_collection_trend(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_payment_collection_trend(organization_id=current_user.organization_id, months=months)
+    return cached_aggregate(
+        "invoice.get_payment_collection_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_payment_collection_trend(organization_id=current_user.organization_id, months=months),
+    )
 
 
 @router.get("/status-distribution", response_model=list)
@@ -242,7 +258,10 @@ def get_status_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_status_distribution(organization_id=current_user.organization_id)
+    return cached_aggregate(
+        "invoice.get_status_distribution", current_user.organization_id, {},
+        lambda: svc.get_status_distribution(organization_id=current_user.organization_id),
+    )
 
 
 @router.get("/monthly-revenue", response_model=list)
@@ -252,7 +271,10 @@ def get_monthly_revenue(
     current_user=Depends(get_current_user),
 ):
     svc = InvoiceService(db)
-    return svc.get_monthly_revenue_stats(organization_id=current_user.organization_id, months=months)
+    return cached_aggregate(
+        "invoice.get_monthly_revenue", current_user.organization_id, {"months": months},
+        lambda: svc.get_monthly_revenue_stats(organization_id=current_user.organization_id, months=months),
+    )
 
 
 @router.get("/recent-activity", response_model=list)

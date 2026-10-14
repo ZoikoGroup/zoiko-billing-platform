@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { dunningApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   ErrorState, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
   DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, Pagination,
@@ -12,6 +13,7 @@ import {
 } from "../../../components/billing-shared";
 import { Button, ListToolbar, FormModal, DataTable, Field } from "../../../components/billing-ui";
 import { useCurrency } from "../utils/CurrencyContext";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -67,6 +69,9 @@ export default function DunningPage() {
   const [searchParams] = useSearchParams();
   const urlStatus = STATUS_OPTIONS.some((o) => o.value && o.value === searchParams.get("status")) ? searchParams.get("status") : "";
   const [statusFilter, setStatusFilter] = useState(urlStatus);
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [levelFilter, setLevelFilter] = useState("");
   const [showFilters, setShowFilters] = useState(Boolean(urlStatus));
 
@@ -86,7 +91,10 @@ export default function DunningPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (hasLoadedOnce.current) setRefreshing(true);
@@ -99,18 +107,22 @@ export default function DunningPage() {
         dunningApi.listCases(params),
         dunningApi.listLevels().catch(() => []),
       ]);
+      if (!isCurrent()) return;
       const items = extractArray(caseData);
       setCases(items);
       setTotal(caseData?.total || caseData?.total_count || items.length);
       setLevels(Array.isArray(levelData) ? levelData : []);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err?.detail || err?.message || "Failed to load dunning data");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedOnce.current = true;
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+        hasLoadedOnce.current = true;
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, levelFilter]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, levelFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -161,7 +173,7 @@ export default function DunningPage() {
 
   function clearFilters() {
     setSearch("");
-    setStatusFilter("");
+    chooseStatus("");
     setLevelFilter("");
     setCurrentPage(1);
   }
@@ -300,7 +312,7 @@ export default function DunningPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Status" htmlFor="dunning-status">
               <select id="dunning-status" value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => { chooseStatus(e.target.value); setCurrentPage(1); }}
                 className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
                 {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>

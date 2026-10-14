@@ -13,6 +13,7 @@ import { PageSkeleton, ErrorState, StatusBadge as SharedStatusBadge, Pagination 
 import { toIso } from "../utils/DateRangeContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { PageHeader, Button, DataTable, SearchInput, Select } from "../../../components/billing-ui";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 
 const ITEMS_PER_PAGE = 15;
@@ -63,6 +64,9 @@ export default function InvoicingPage() {
   // response arrived last won, so a KPI link like ?status=overdue could show
   // every invoice under an active "Overdue" filter.
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") || "");
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -96,8 +100,14 @@ export default function InvoicingPage() {
 
   // Only the latest request may update the list (stale responses are dropped).
   const fetchSeqRef = useRef(0);
+  const fetchAbortRef = useRef(null);
+  useEffect(() => () => { fetchSeqRef.current += 1; fetchAbortRef.current?.abort(); }, []);
   const fetchInvoices = useCallback(async () => {
     const seq = ++fetchSeqRef.current;
+    // Cancel the superseded request on the wire (response is ignored anyway).
+    fetchAbortRef.current?.abort();
+    const abortController = new AbortController();
+    fetchAbortRef.current = abortController;
     try {
       setError(null);
       setRefreshing(true);
@@ -113,7 +123,7 @@ export default function InvoicingPage() {
         max_amount: maxAmount || undefined,
         sort_by: sortField,
         sort_order: sortDir,
-      });
+      }, { signal: abortController.signal });
       if (seq !== fetchSeqRef.current) return;
       const items = data.items || data.data || data || [];
       setInvoices(Array.isArray(items) ? items : []);
@@ -163,7 +173,7 @@ export default function InvoicingPage() {
   const handleViewAllRecent = () => {
     setSearch("");
     setDebouncedSearch("");
-    setStatusFilter("");
+    chooseStatus("");
     setCurrencyFilter("");
     setDateFrom("");
     setDateTo("");
@@ -343,7 +353,7 @@ export default function InvoicingPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <Select
                   value={statusFilter}
-                  onChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}
+                  onChange={(v) => { chooseStatus(v); setCurrentPage(1); }}
                   options={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
                   placeholder="All Statuses"
                   className="w-44"
@@ -372,7 +382,7 @@ export default function InvoicingPage() {
                     placeholder="Max" className="w-24 sm:w-20 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300" aria-label="Maximum amount" />
                 </div>
                 {(statusFilter || currencyFilter || dateFrom || dateTo || minAmount || maxAmount) && (
-                  <button onClick={() => { setStatusFilter(""); setCurrencyFilter(""); setDateFrom(""); setDateTo(""); setMinAmount(""); setMaxAmount(""); setCurrentPage(1); }}
+                  <button onClick={() => { chooseStatus(""); setCurrencyFilter(""); setDateFrom(""); setDateTo(""); setMinAmount(""); setMaxAmount(""); setCurrentPage(1); }}
                     className="text-xs font-medium text-red-600 hover:text-red-700 flex items-center gap-1">
                     <X size={12} /> Clear all
                   </button>
@@ -384,7 +394,7 @@ export default function InvoicingPage() {
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Quick filters</span>
             {[{ value: "", label: "All" }, ...STATUS_OPTIONS].map((o) => (
-              <button key={o.value || "all"} onClick={() => { setStatusFilter(o.value); setCurrentPage(1); }}
+              <button key={o.value || "all"} onClick={() => { chooseStatus(o.value); setCurrentPage(1); }}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${statusFilter === o.value ? "bg-brand text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
                 {o.label}
               </button>

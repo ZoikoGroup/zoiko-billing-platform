@@ -12,36 +12,44 @@ import { api } from "./api";
 // details).
 let cachedDetails = null;
 let inflightDetails = null;
+// Bumped on every invalidation. A request started before an invalidation
+// (e.g. the previous account's, still in flight at logout/session expiry)
+// must neither write its organization's data back into the cache nor clear
+// the next session's own in-flight request when it finally settles.
+let cacheGeneration = 0;
 
 export function getOrganizationDetails() {
   if (cachedDetails) return Promise.resolve(cachedDetails);
   if (inflightDetails) return inflightDetails;
-  inflightDetails = api.get("/api/organizations/me/detail")
+  const generation = cacheGeneration;
+  const request = api.get("/api/organizations/me/detail")
     .then((data) => {
-      cachedDetails = data;
+      if (generation === cacheGeneration) cachedDetails = data;
       return data;
     })
     .finally(() => {
-      inflightDetails = null;
+      if (inflightDetails === request) inflightDetails = null;
     });
-  return inflightDetails;
+  inflightDetails = request;
+  return request;
 }
 
 export function invalidateOrganizationDetailsCache() {
+  cacheGeneration += 1;
   cachedDetails = null;
   inflightDetails = null;
 }
 
-export const updateOrganizationDetails = (data) =>
-  api.put("/api/organizations/me", {
-    organization_name: data.name,
-    display_name: data.display_name,
-    industry: data.industry,
-    address: data.address,
-    currency: data.currency,
-    timezone: data.timezone,
-  }).then((result) => {
+// Sends only the fields present in `changes` (form keys; `name` maps to the
+// API's organization_name). The backend applies exclude_unset, so anything
+// omitted is left untouched -- the form never blanks fields it didn't edit.
+export const updateOrganizationDetails = (changes) => {
+  const { name, ...rest } = changes || {};
+  const body = { ...rest };
+  if (name !== undefined) body.organization_name = name;
+  return api.put("/api/organizations/me", body).then((result) => {
     invalidateOrganizationDetailsCache();
     return result;
   });
+};
 export const getOrganizationDashboardStats = () => api.get("/api/organizations/me/dashboard-stats");

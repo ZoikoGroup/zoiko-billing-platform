@@ -24,7 +24,7 @@ import enum
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, Date, DateTime,
     Text, ForeignKey, JSON, Time, UniqueConstraint,
-    Index, CheckConstraint,
+    Index, CheckConstraint, false,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -1351,6 +1351,8 @@ class Quotation(Base):
     currency                  = Column(String(3), default="USD")
     valid_until               = Column(Date, nullable=True)
     accepted_at               = Column(DateTime, nullable=True)
+    # Set when the Expiry Reminder Days email has been sent (one reminder per quote).
+    expiry_reminder_sent_at   = Column(DateTime, nullable=True)
     rejected_reason           = Column(Text, nullable=True)
     converted_to_invoice_id   = Column(Integer, ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
     converted_to_subscription_id = Column(Integer, ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
@@ -3165,6 +3167,11 @@ class BillingConfiguration(Base):
     # setting). Storing it here rather than forcing it into that column
     # avoids either an invalid-enum error or a user-facing copy change.
     pricing_extra_settings          = Column(JSON, default=lambda: {})
+    # Customer Settings: {"require_billing_address": bool, "require_tax_id": bool}
+    customer_extra_settings         = Column(JSON, default=lambda: {})
+    # Quotation Settings: {"require_customer_acceptance": bool (default True),
+    #   "discount_approval_threshold": number|None, "expiry_reminder_days": int|None}
+    quotation_extra_settings        = Column(JSON, default=lambda: {})
 
     # ── Relationship Terminology ──
     relationship_terminology        = Column(String(20), default="customer")
@@ -3181,6 +3188,18 @@ class BillingConfiguration(Base):
     auto_archive_days               = Column(Integer, nullable=True)
     product_visibility              = Column(String(20), default="visible")
     require_sku                     = Column(String(10), default="no")
+
+    # ── Customer Settings ──
+    # Server-side customer numbering reuses the document-numbering grammar
+    # (NumberFormat + render_document_number + DocumentSequence, doc_type
+    # "customer"). The two "require" flags are enforced on customer creation
+    # only (CustomerService.create_customer); existing customers and edits are
+    # never blocked. server_default keeps existing rows and SQLite dev DBs valid.
+    default_customer_type           = Column(CaseInsensitiveEnum(CustomerType), default=CustomerType.BUSINESS, server_default="BUSINESS", nullable=False)
+    customer_numbering_prefix       = Column(String(10), default="CUST-", server_default="CUST-", nullable=False)
+    customer_numbering_format       = Column(CaseInsensitiveEnum(NumberFormat), default=NumberFormat.PREFIX_SEQ, server_default="PREFIX_SEQ", nullable=False)
+    require_billing_address         = Column(Boolean, default=False, server_default=false(), nullable=False)
+    require_tax_id                  = Column(Boolean, default=False, server_default=false(), nullable=False)
 
     # ── Contract Settings ──
     default_contract_prefix         = Column(String(20), default="CTR-")

@@ -7,6 +7,7 @@ import { taxApi } from "../../../service/billingService";
 import TaxRateImportWizard from "./tax-rate-import-wizard";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   PageSkeleton, ErrorState, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID,
   StatusBadge, Pagination, useConfirmationDialog, exportDashboardToCsv, exportDashboardToJson,
@@ -121,7 +122,10 @@ export default function TaxRatesPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchTaxRates = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -132,16 +136,18 @@ export default function TaxRatesPage() {
         is_active: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
       };
       const data = await taxApi.list(params);
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setTaxRates(items);
       setTotal(data.total || items.length || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load tax rates");
       setTaxRates([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, typeFilter, statusFilter]);
+  }, [beginRequest, safePage, debouncedSearch, typeFilter, statusFilter]);
 
   // Fetches the entire tax-rate catalog once (independent of page/search/
   // status/type filters and of the dashboard date range) for the "VAT / GST"

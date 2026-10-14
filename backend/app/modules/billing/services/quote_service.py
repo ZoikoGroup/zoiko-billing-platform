@@ -39,7 +39,7 @@ from app.modules.billing.services.price_resolver import PriceResolver
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.exchange_rate_service import ExchangeRateService
-from app.modules.billing.utils.currency_utils import round_money, convert_amount
+from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES, round_money, convert_amount
 from app.services.email_service import send_quote_email
 
 logger = logging.getLogger("zoiko_billing")
@@ -71,12 +71,62 @@ class QuoteService:
         self.config_service = BillingConfigurationService(db)
         self.exchange_rate_service = ExchangeRateService(db)
 
+    # ── Quotation Settings (quotation_extra_settings blob) ────────────────
+
+    def get_quotation_prefs(self, organization_id: int) -> Dict[str, Any]:
+        """Effective Quotation Settings with defaults applied. Customer
+        acceptance is required unless the org explicitly turns it off, which
+        is the behaviour quotes always had."""
+        try:
+            config = self.config_service.repo.get_by_organization(organization_id)
+        except Exception:
+            config = None
+        raw = dict(getattr(config, "quotation_extra_settings", None) or {}) if config else {}
+        return {
+            "require_customer_acceptance": raw.get("require_customer_acceptance", True) is not False,
+            "discount_approval_threshold": raw.get("discount_approval_threshold"),
+            "expiry_reminder_days": raw.get("expiry_reminder_days"),
+        }
+
+    def _generate_quote_number(self, organization_id: int) -> str:
+        """Next quote number from the org's prefix + Quote Number Format +
+        sequence reset, via the concurrency-safe per-org sequence table. Skips
+        any number already taken by a manually typed quote."""
+        from app.modules.billing.models import NumberFormat, SequenceReset
+        from app.modules.billing.services.document_sequence import DocumentSequenceService
+
+        config = self.config_service.get_configuration(organization_id)
+        prefix = config.quote_prefix or "QTE-"
+        fmt = config.quote_number_format or NumberFormat.PREFIX_YYYY_SEQ
+        reset = config.quote_sequence_reset or SequenceReset.ANNUALLY
+        seq = DocumentSequenceService(self.db)
+        for _ in range(25):
+            number = seq.next_number(organization_id, "quote", prefix, fmt, reset)
+            if not self.repo.exists(organization_id, quote_number=number):
+                return number
+        raise BadRequestException("Could not generate a unique quotation number. Please try again.")
+
+    @staticmethod
+    def max_discount_percentage(quote: Quotation) -> Decimal:
+        """Highest discount on the quote, as a percentage: the header discount
+        and every line's discount (percentage or amount-based)."""
+        highest = Decimal(str(quote.discount_percentage or 0))
+        for item in quote.items or []:
+            pct = Decimal(str(getattr(item, "discount_percentage", None) or 0))
+            gross = Decimal(str(item.quantity or 0)) * Decimal(str(item.unit_price or 0))
+            amount = Decimal(str(getattr(item, "discount_amount", None) or 0))
+            if gross > 0 and amount > 0:
+                pct = max(pct, amount / gross * Decimal("100"))
+            highest = max(highest, pct)
+        return highest
+
     def create_quote(
         self, organization_id: int, created_by: int, customer_id: int,
-        quote_number: str, **data: Any,
+        quote_number: Optional[str] = None, **data: Any,
     ) -> Quotation:
         data = filter_allowed(data, QUOTE_ALLOWED_FIELDS)
         customer = self.customer_service.get_customer(customer_id, organization_id)
+        quote_number = (quote_number or "").strip() or self._generate_quote_number(organization_id)
         if self.repo.exists(organization_id, quote_number=quote_number):
             raise AlreadyExistsException("Quotation", "quote_number")
         # Currency: explicit > customer's own currency > org default -- same
@@ -123,8 +173,69 @@ class QuoteService:
     def get_quotation_summary(self, organization_id: int) -> Dict[str, Any]:
         """KPI tiles for the quotations list page, computed over the full
         org dataset -- not just whatever page of results the list endpoint
-        happens to be returning."""
-        return self.repo.get_summary_stats(organization_id)
+        happens to be returning.
+
+        Batch 7 BUG-06: the "Pipeline Value" tile covers PIPELINE_STATUSES
+        only and never sums different currencies together:
+          * totals_by_currency -- [{currency, total, count}] for the pipeline,
+            the org's default currency first, then ISO codes A-Z, then
+            "Unknown" (missing / invalid codes) last. total is a 2-dp string.
+          * pipeline_value -- the pipeline total when it is in exactly one
+            valid currency (0 when empty), otherwise None -- including when
+            the only bucket is "Unknown" (an amount with no valid currency).
+          * total_value (kept for compatibility) -- the lifetime total over
+            every status, populated only when all quotations share one
+            currency, otherwise None.
+        """
+        summary = self.repo.get_summary_stats(organization_id)
+        try:
+            default_currency = self.config_service.get_default_currency(organization_id)
+        except Exception:
+            default_currency = None
+
+        pipeline = self._currency_buckets(
+            self.repo.get_totals_by_currency(organization_id, self.PIPELINE_STATUSES),
+            default_currency,
+        )
+        lifetime = self._currency_buckets(
+            self.repo.get_totals_by_currency(organization_id), default_currency,
+        )
+        summary["pipeline_statuses"] = list(self.PIPELINE_STATUSES)
+        summary["default_currency"] = default_currency
+        summary["totals_by_currency"] = pipeline
+        if not pipeline:
+            summary["pipeline_value"] = 0
+        elif len(pipeline) == 1 and pipeline[0]["currency"] != self.UNKNOWN_CURRENCY:
+            summary["pipeline_value"] = float(pipeline[0]["total"])
+        else:
+            summary["pipeline_value"] = None
+        if len(lifetime) > 1:
+            summary["total_value"] = None
+        return summary
+
+    PIPELINE_STATUSES = (QuoteStatus.DRAFT.value, QuoteStatus.SENT.value, QuoteStatus.ACCEPTED.value)
+    UNKNOWN_CURRENCY = "Unknown"
+
+    @classmethod
+    def _currency_buckets(cls, rows, default_currency: Optional[str]) -> List[Dict[str, Any]]:
+        totals: Dict[str, Decimal] = {}
+        counts: Dict[str, int] = {}
+        for currency, total, count in rows:
+            code = (currency or "").strip().upper()
+            if code not in VALID_CURRENCY_CODES:
+                code = cls.UNKNOWN_CURRENCY
+            totals[code] = totals.get(code, Decimal("0")) + Decimal(str(total or 0))
+            counts[code] = counts.get(code, 0) + int(count or 0)
+
+        def order(code):
+            if code == cls.UNKNOWN_CURRENCY:
+                return (2, code)
+            return (0, code) if code == default_currency else (1, code)
+
+        return [
+            {"currency": code, "total": str(round_money(totals[code])), "count": counts[code]}
+            for code in sorted(totals, key=order)
+        ]
 
     # ── Items ─────────────────────────────────────────────────────────────
 
@@ -389,7 +500,9 @@ class QuoteService:
 
     # ── Status Transitions ─────────────────────────────────────────────────
 
-    def send_quote(self, quote_id: int, organization_id: int, updated_by: int) -> Quotation:
+    def send_quote(
+        self, quote_id: int, organization_id: int, updated_by: int, actor_role: Optional[str] = None,
+    ) -> Quotation:
         """Validate customer email, generate the PDF, deliver the email, and
         ONLY THEN update status to SENT.
 
@@ -403,6 +516,20 @@ class QuoteService:
         quote = self.repo.get_by_id(quote_id, organization_id)
         if quote.status != QuoteStatus.DRAFT:
             raise BadRequestException("Only draft quotes can be sent")
+
+        # Discount Approval Threshold: a discount above the org's threshold
+        # needs an Organization Admin (or Super Admin) to send it; billing
+        # admins cannot approve their own deep discounts. actor_role=None
+        # (internal callers) is not gated.
+        threshold = self.get_quotation_prefs(organization_id)["discount_approval_threshold"]
+        if threshold is not None and actor_role is not None:
+            highest = self.max_discount_percentage(quote)
+            if highest > Decimal(str(threshold)) and actor_role not in ("org_admin", "super_admin"):
+                raise BadRequestException(
+                    f"This quotation has a {highest.quantize(Decimal('0.01'))}% discount, above the "
+                    f"{Decimal(str(threshold)).normalize()}% approval threshold. "
+                    "An Organization Admin must approve and send it."
+                )
 
         customer = self.customer_service.get_customer(quote.customer_id, organization_id)
         email = (customer.email or "").strip() if customer else ""
@@ -716,8 +843,18 @@ class QuoteService:
         invoice_number: str, issue_date: date, due_date: date,
     ) -> Invoice:
         quote = self.repo.get_by_id(quote_id, organization_id)
-        if quote.status != QuoteStatus.ACCEPTED:
-            raise BadRequestException("Only accepted quotes can be converted to invoices")
+        # Customer Acceptance Required (default on): only ACCEPTED quotes
+        # convert. When the org has turned it off, a SENT quote may be
+        # converted directly (e.g. approved offline / by phone).
+        allowed = {QuoteStatus.ACCEPTED}
+        if not self.get_quotation_prefs(organization_id)["require_customer_acceptance"]:
+            allowed.add(QuoteStatus.SENT)
+        if quote.status not in allowed:
+            raise BadRequestException(
+                "Only accepted quotes can be converted to invoices"
+                if QuoteStatus.SENT not in allowed
+                else "Only sent or accepted quotes can be converted to invoices"
+            )
         from app.modules.billing.services.invoice_service import InvoiceService
         inv_service = InvoiceService(self.db)
         inv = inv_service.create_invoice(
@@ -750,6 +887,8 @@ class QuoteService:
                 exchange_rate=getattr(item, "exchange_rate", None),
             )
         inv_service.recalculate_invoice(inv.id, organization_id)
+        if quote.status == QuoteStatus.SENT:
+            quote.accepted_at = datetime.utcnow()  # acceptance waived by org settings
         quote.status = QuoteStatus.CONVERTED
         quote.converted_to_invoice_id = inv.id
         safe_commit_and_refresh(self.db, quote)

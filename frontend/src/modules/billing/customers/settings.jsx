@@ -1,20 +1,46 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Users, Hash, Bell, FileText, CreditCard } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { settingsApi } from "../../../service/billingService";
+import { settingsApi, invalidateConfigCache } from "../../../service/billingService";
+import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { ErrorState } from "../../../components/billing-shared";
+import ConfirmDialog from "../../../components/ConfirmDialog";
 
 const FRONTEND_TO_BACKEND = {
-  default_customer_type: null,
-  customer_numbering_prefix: null,
-  customer_numbering_format: null,
+  default_customer_type: "default_customer_type",
+  customer_numbering_prefix: "customer_numbering_prefix",
+  customer_numbering_format: "customer_numbering_format",
   default_payment_terms: "default_payment_terms",
   credit_limit: "credit_limit",
   customer_notification: "notify_customer_created",
   auto_suspend_days: "grace_period_days",
-  require_billing_address: null,
-  require_tax_id: null,
+  require_billing_address: "require_billing_address",
+  require_tax_id: "require_tax_id",
 };
+
+// Canonical values from the backend enums (CustomerType, NumberFormat).
+export const CUSTOMER_TYPE_OPTIONS = [
+  { value: "business", label: "Business" },
+  { value: "individual", label: "Individual" },
+  { value: "non_profit", label: "Non-Profit" },
+  { value: "government", label: "Government" },
+];
+// The document-numbering grammar the server renders (render_document_number):
+// the prefix carries its own separator, {SEQ} is a 5-digit counter.
+export const NUMBER_FORMAT_OPTIONS = [
+  { value: "PREFIX-{SEQ}", label: "Prefix + number", example: (p) => `${p}00001` },
+  { value: "PREFIX-{YYYY}-{SEQ}", label: "Prefix + year + number", example: (p, d) => `${p}${d.y}-00001` },
+  { value: "PREFIX-{YYYYMM}-{SEQ}", label: "Prefix + year-month + number", example: (p, d) => `${p}${d.y}${d.m}-00001` },
+  { value: "PREFIX-{YYYY}-{MM}-{SEQ}", label: "Prefix + year + month + number", example: (p, d) => `${p}${d.y}-${d.m}-00001` },
+  { value: "PREFIX-{MM}-{YYYY}-{SEQ}", label: "Prefix + month + year + number", example: (p, d) => `${p}${d.m}-${d.y}-00001` },
+];
+// Same rule as the server (validate_customer_prefix): optional, <= 10 chars.
+export function prefixError(prefix) {
+  if (!prefix) return null;
+  if (prefix.length > 10) return "Use 10 characters or fewer.";
+  if (!/^[A-Za-z0-9\-_]+$/.test(prefix)) return "Use only letters, numbers, hyphens and underscores.";
+  return null;
+}
 
 const BACKEND_TO_FRONTEND = Object.fromEntries(
   Object.entries(FRONTEND_TO_BACKEND)
@@ -35,48 +61,60 @@ function toPayload(form) {
       val = val === "" || val === undefined || val === null ? null : Number(val);
       if (isNaN(val)) val = null;
     }
-    if (frontKey === "customer_notification") {
+    if (frontKey === "customer_notification" || frontKey === "require_billing_address" || frontKey === "require_tax_id") {
       val = val === "yes";
     }
     payload[backKey] = val;
   }
+  payload.customer_extra_settings = {
+    require_billing_address: form.require_billing_address === "yes",
+    require_tax_id: form.require_tax_id === "yes",
+  };
   return payload;
 }
 
-// The read-only fields below have no backend setting. They now display what
-// the system actually does today instead of invented values: new customers
-// default to "business" (BillingCustomer.customer_type default and the create
-// form), codes left blank are generated as CUST-<timestamp>, and neither a
-// billing address nor a tax ID is required (both optional in CustomerCreate).
-export const CURRENT_BEHAVIOUR_NOTE = "Not configurable yet — shows how new customers are handled today";
-
+// BUG-13: these five settings are stored server-side (BillingConfiguration
+// columns). Fallbacks apply only when a key is absent from the response,
+// including the legacy customer_extra_settings blob written by older builds.
 function toForm(settings) {
   return {
-    default_customer_type: "business",
-    customer_numbering_prefix: "CUST-",
-    customer_numbering_format: "{PREFIX}{TIMESTAMP}",
+    default_customer_type: settings.default_customer_type || "business",
+    customer_numbering_prefix: settings.customer_numbering_prefix ?? "CUST-",
+    customer_numbering_format: settings.customer_numbering_format || "PREFIX-{SEQ}",
     default_payment_terms: settings.default_payment_terms || "net_30",
     credit_limit: settings.credit_limit != null ? String(settings.credit_limit) : "",
     customer_notification: settings.notify_customer_created ? "yes" : "no",
     auto_suspend_days: settings.grace_period_days != null ? String(settings.grace_period_days) : "",
-    require_billing_address: "no",
-    require_tax_id: "no",
+    require_billing_address: settings.require_billing_address ?? settings.customer_extra_settings?.require_billing_address ? "yes" : "no",
+    require_tax_id: settings.require_tax_id ?? settings.customer_extra_settings?.require_tax_id ? "yes" : "no",
   };
 }
 
 function SettingsField({ label, icon: Icon, children, description }) {
+  // Programmatically associate the visible label with the card's control:
+  // give the first native input/select/textarea child an id and point a
+  // <label htmlFor> at it. Cards wrapping a composite control fall back to
+  // a labelled group so the controls still get the card title as context.
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  let controlId = null;
+  const content = Children.map(children, (child) => {
+    if (controlId || !isValidElement(child) || !["input", "select", "textarea"].includes(child.type)) return child;
+    controlId = child.props.id || `${uid}-control`;
+    return child.props.id ? child : cloneElement(child, { id: controlId });
+  });
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+    <div role={controlId ? undefined : "group"} aria-labelledby={controlId ? undefined : labelId} className="bg-white border border-slate-200 rounded-2xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-slate-800">{label}</h3>
+          <h3 className="text-base font-semibold text-slate-800"><label id={labelId} htmlFor={controlId || undefined}>{label}</label></h3>
           {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
         </div>
       </div>
-      {children}
+      {content}
     </div>
   );
 }
@@ -84,7 +122,7 @@ function SettingsField({ label, icon: Icon, children, description }) {
 const DEFAULTS = {
   default_customer_type: "business",
   customer_numbering_prefix: "CUST-",
-  customer_numbering_format: "{PREFIX}{TIMESTAMP}",
+  customer_numbering_format: "PREFIX-{SEQ}",
   default_payment_terms: "net_30",
   credit_limit: "",
   customer_notification: "yes",
@@ -105,6 +143,14 @@ export default function CustomerSettingsPage() {
   const [original, setOriginal] = useState(DEFAULTS);
 
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  const [confirmRefresh, setConfirmRefresh] = useState(false);
+
+  // Refresh replaces the form with the saved values, so unsaved edits must
+  // be confirmed before they are thrown away (same as pricing/quotation settings).
+  const handleRefresh = () => {
+    if (hasChanges) setConfirmRefresh(true);
+    else fetchSettings();
+  };
 
   useEffect(() => {
     fetchSettings();
@@ -134,6 +180,11 @@ export default function CustomerSettingsPage() {
       setError(null);
       setSaved(false);
       await settingsApi.update(toPayload(form));
+      // The customer create form (and other config readers) must see the new
+      // default type / numbering / requirements on their next read, not a
+      // cached snapshot (same as Product Settings).
+      invalidateConfigCache();
+      invalidateGlobalBillingConfig();
       setOriginal({ ...form });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -143,6 +194,12 @@ export default function CustomerSettingsPage() {
       setSaving(false);
     }
   }
+
+  const prefixProblem = prefixError(form.customer_numbering_prefix);
+  const now = new Date();
+  const dateParts = { y: String(now.getFullYear()), m: String(now.getMonth() + 1).padStart(2, "0") };
+  const formatOption = NUMBER_FORMAT_OPTIONS.find((o) => o.value === form.customer_numbering_format) || NUMBER_FORMAT_OPTIONS[0];
+  const exampleCode = formatOption.example(form.customer_numbering_prefix || "", dateParts);
 
   function updateField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -172,25 +229,32 @@ export default function CustomerSettingsPage() {
   return (
     <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
 
-      <div className="flex items-center justify-between mb-6">
-        <div />
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
           {saved && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
               <CheckCircle className="h-4 w-4" /> Saved
             </span>
           )}
-          <button onClick={fetchSettings}
+          <button onClick={handleRefresh}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving}
+          <button onClick={handleSave} disabled={!hasChanges || saving || Boolean(prefixProblem)}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
             {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
             Save Changes
           </button>
-        </div>
       </div>
+
+      {confirmRefresh && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="Refreshing reloads the saved customer settings and discards your unsaved edits."
+          confirmLabel="Discard & refresh"
+          onConfirm={() => { setConfirmRefresh(false); fetchSettings(); }}
+          onClose={() => setConfirmRefresh(false)}
+        />
+      )}
 
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
@@ -199,25 +263,32 @@ export default function CustomerSettingsPage() {
       )}
 
       <div className="space-y-6">
-        <SettingsField label="Default Customer Type" icon={Users} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Default customer type" value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="individual">Individual</option>
-            <option value="business">Business</option>
-            <option value="non_profit">Non-Profit</option>
-            <option value="government">Government</option>
+        <SettingsField label="Default Customer Type" icon={Users} description="Type pre-selected for new customers (used when none is chosen)">
+          <select aria-label="Default customer type" value={form.default_customer_type} onChange={(e) => updateField("default_customer_type", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            {CUSTOMER_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </SettingsField>
 
-        <SettingsField label="Customer Numbering Prefix" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
-          <input type="text" aria-label="Customer numbering prefix" value={form.customer_numbering_prefix} onChange={(e) => updateField("customer_numbering_prefix", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
+        <SettingsField label="Customer Numbering Prefix" icon={Hash} description="Start of customer codes the server assigns when a code is left blank">
+          <input type="text" aria-label="Customer numbering prefix" maxLength={10} value={form.customer_numbering_prefix}
+            onChange={(e) => updateField("customer_numbering_prefix", e.target.value)}
+            aria-invalid={prefixProblem ? "true" : undefined} aria-describedby="customer-prefix-hint"
+            className={`block w-full max-w-xs rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 ${prefixProblem ? "border-red-400 focus:ring-red-200" : "border-slate-300 focus:border-brand-300 focus:ring-brand/30"}`} />
+          <p id="customer-prefix-hint" role={prefixProblem ? "alert" : undefined} className={`mt-1 text-xs ${prefixProblem ? "text-red-600" : "text-slate-500"}`}>
+            {prefixProblem || "Up to 10 letters, numbers, hyphens or underscores. Include your own separator, e.g. CUST-."}
+          </p>
         </SettingsField>
 
-        <SettingsField label="Customer Numbering Format" icon={Hash} description={CURRENT_BEHAVIOUR_NOTE}>
-          <input type="text" aria-label="Customer numbering format" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
-          <p className="mt-1 text-xs text-slate-500">Codes left blank on the create form are generated as CUST- followed by a timestamp (e.g. CUST-1767225600000).</p>
+        <SettingsField label="Customer Numbering Format" icon={Hash} description="How server-assigned customer codes are built">
+          <select aria-label="Customer numbering format" value={form.customer_numbering_format} onChange={(e) => updateField("customer_numbering_format", e.target.value)}
+            aria-describedby="customer-format-example"
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
+            {NUMBER_FORMAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <p id="customer-format-example" className="mt-1 text-xs text-slate-500">
+            Example: <span className="font-mono text-slate-700">{exampleCode}</span>. Existing customer codes never change; a code typed on the create form is kept as entered.
+          </p>
         </SettingsField>
 
         <SettingsField label="Default Payment Terms" icon={CreditCard} description="Default payment terms assigned to new customers">
@@ -250,19 +321,19 @@ export default function CustomerSettingsPage() {
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Billing Address" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="yes">Required</option>
+        <SettingsField label="Require Billing Address" icon={FileText} description="When Required, a customer cannot be created without a billing address, and a save that would blank it is rejected">
+          <select aria-label="Require billing address" value={form.require_billing_address} onChange={(e) => updateField("require_billing_address", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Optional</option>
+            <option value="yes">Required</option>
           </select>
         </SettingsField>
 
-        <SettingsField label="Require Tax ID" icon={FileText} description={CURRENT_BEHAVIOUR_NOTE}>
-          <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)} disabled
-            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed">
-            <option value="yes">Required</option>
+        <SettingsField label="Require Tax ID" icon={FileText} description="When Required, a customer needs at least one tax identifier (Tax ID, GST, VAT, PAN or TIN), and a save that would leave all of them blank is rejected">
+          <select aria-label="Require tax ID" value={form.require_tax_id} onChange={(e) => updateField("require_tax_id", e.target.value)}
+            className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30">
             <option value="no">Optional</option>
+            <option value="yes">Required</option>
           </select>
         </SettingsField>
       </div>

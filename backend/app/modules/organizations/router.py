@@ -379,6 +379,8 @@ def get_my_organization_detail(
         timezone=org.timezone,
         fiscal_year_start=org.fiscal_year_start,
         fiscal_year_end=org.fiscal_year_end,
+        tax_no=org.tax_no,
+        registration_number=org.registration_number,
         billing_classification=org.billing_classification,
         billing_source=org.billing_source,
         total_customers=total_customers,

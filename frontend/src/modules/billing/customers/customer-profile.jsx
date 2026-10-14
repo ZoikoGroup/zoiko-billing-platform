@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 import { useParams, useNavigate } from 'react-router-dom';
 import HRPage from '../../../components/HRPage';
 import { customerApi, invoiceApi, paymentApi, contractApi, subscriptionApi, creditNoteApi, quoteApi } from '../../../service/billingService';
@@ -18,21 +18,43 @@ import { Spinner, ErrorState, EmptyState } from '../../../components/billing-sha
 
 
 function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, confirmLabel, variant }) {
+  const titleId = useId();
+  const cancelRef = useRef(null);
+  const confirmRef = useRef(null);
+
+  // Move focus into the dialog on open: the safe choice (Cancel) for
+  // destructive confirmations, the primary action otherwise.
+  useEffect(() => {
+    if (!open) return;
+    (variant === 'danger' ? cancelRef.current : confirmRef.current)?.focus();
+  }, [open, variant]);
+
+  // Escape closes the dialog (unless an action is in flight).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && !loading) onCancel?.();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open, loading, onCancel]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId}
+        className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
         <div className={`h-12 w-12 rounded-full flex items-center justify-center mx-auto mb-4 ${variant === 'danger' ? 'bg-red-100' : 'bg-brand-100'}`}>
           {variant === 'danger' ? <AlertCircle className="h-6 w-6 text-red-600" /> : <CheckCircle className="h-6 w-6 text-brand-600" />}
         </div>
-        <h3 className="text-lg font-semibold text-slate-900 text-center mb-2">{title}</h3>
+        <h3 id={titleId} className="text-lg font-semibold text-slate-900 text-center mb-2">{title}</h3>
         <p className="text-sm text-slate-500 text-center mb-6">{message}</p>
         <div className="flex gap-3 justify-center">
-          <button onClick={onCancel} disabled={loading}
+          <button ref={cancelRef} onClick={onCancel} disabled={loading}
             className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
             Cancel
           </button>
-          <button onClick={onConfirm} disabled={loading}
+          <button ref={confirmRef} onClick={onConfirm} disabled={loading}
             className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition-colors ${
               variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'
             }`}>
@@ -276,11 +298,19 @@ export default function CustomerProfilePage() {
   const CUSTOMER_TYPES = ['business', 'individual', 'government', 'non_profit'];
   const TERMS_MAP = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60, net_90: 90 };
 
+  // Every fetcher below captures the id it was started for; a response that
+  // lands after the route id has changed (customer A -> B while A is still
+  // loading) is dropped instead of rendering A's data under B.
+  const idRef = useRef(id);
+  idRef.current = id;
+
   const fetchCustomer = useCallback(async () => {
+    const reqId = id;
     try {
       setLoading(true);
       setError(null);
       const data = await customerApi.get(id);
+      if (idRef.current !== reqId) return;
       setCustomer(data);
       setEditForm({
         display_name: data.display_name || data.company_name || '',
@@ -319,154 +349,185 @@ export default function CustomerProfilePage() {
       });
       loadGlobalBillingConfig().then(setOrgConfig).catch((err) => console.error("[CustomerProfile] Failed to load config:", err));
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setError(err?.detail || err?.message || `Failed to load ${singular.toLowerCase()}`);
     } finally {
-      setLoading(false);
+      if (idRef.current === reqId) setLoading(false);
     }
   }, [id]);
 
   const fetchContacts = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setContactsLoading(true);
       setContactsError(null);
       const data = await customerApi.listContacts(id);
+      if (idRef.current !== reqId) return;
       setContacts(Array.isArray(data) ? data : data?.items || data?.contacts || []);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setContactsError(err?.detail || err?.message || 'Failed to load contacts');
     } finally {
-      setContactsLoading(false);
+      if (idRef.current === reqId) setContactsLoading(false);
     }
   }, [id]);
 
   const fetchPaymentMethods = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setPaymentMethodsLoading(true);
       setPaymentMethodsError(null);
       const data = await paymentApi.listMethods(id);
+      if (idRef.current !== reqId) return;
       setPaymentMethods(Array.isArray(data) ? data : data?.items || data?.payment_methods || []);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setPaymentMethodsError(err?.detail || err?.message || 'Failed to load payment methods');
     } finally {
-      setPaymentMethodsLoading(false);
+      if (idRef.current === reqId) setPaymentMethodsLoading(false);
     }
   }, [id]);
 
   const fetchInvoices = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setInvoicesLoading(true);
       setInvoicesError(null);
       const data = await invoiceApi.list({ customer_id: id, per_page: 20 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.invoices || data?.data || [];
       setInvoices(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setInvoicesError(err?.detail || err?.message || 'Failed to load invoices');
     } finally {
-      setInvoicesLoading(false);
+      if (idRef.current === reqId) setInvoicesLoading(false);
     }
   }, [id]);
 
   const fetchPayments = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setPaymentsLoading(true);
       setPaymentsError(null);
       const data = await paymentApi.list({ customer_id: id, per_page: 20 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.payments || data?.data || [];
       setPayments(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setPaymentsError(err?.detail || err?.message || 'Failed to load payments');
     } finally {
-      setPaymentsLoading(false);
+      if (idRef.current === reqId) setPaymentsLoading(false);
     }
   }, [id]);
 
   const fetchContracts = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setContractsLoading(true);
       setContractsError(null);
       const data = await contractApi.list({ customer_id: id, per_page: 50 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.contracts || data?.data || [];
       setContracts(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setContractsError(err?.detail || err?.message || 'Failed to load contracts');
     } finally {
-      setContractsLoading(false);
+      if (idRef.current === reqId) setContractsLoading(false);
     }
   }, [id]);
 
   const fetchSubscriptions = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setSubscriptionsLoading(true);
       setSubscriptionsError(null);
       const data = await subscriptionApi.list({ customer_id: id, per_page: 50 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.subscriptions || data?.data || [];
       setSubscriptions(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setSubscriptionsError(err?.detail || err?.message || 'Failed to load subscriptions');
     } finally {
-      setSubscriptionsLoading(false);
+      if (idRef.current === reqId) setSubscriptionsLoading(false);
     }
   }, [id]);
 
   const fetchCreditNotes = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setCreditNotesLoading(true);
       setCreditNotesError(null);
       const data = await creditNoteApi.list({ customer_id: id, per_page: 50 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.credit_notes || data?.data || [];
       setCreditNotes(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setCreditNotesError(err?.detail || err?.message || 'Failed to load credit notes');
     } finally {
-      setCreditNotesLoading(false);
+      if (idRef.current === reqId) setCreditNotesLoading(false);
     }
   }, [id]);
 
   const fetchActivity = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setActivityLoading(true);
       setActivityError(null);
       const data = await customerApi.getActivity(id);
+      if (idRef.current !== reqId) return;
       setActivity(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setActivityError(err?.detail || err?.message || 'Failed to load activity');
     } finally {
-      setActivityLoading(false);
+      if (idRef.current === reqId) setActivityLoading(false);
     }
   }, [id]);
 
   const fetchAnalytics = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setAnalyticsLoading(true);
       const data = await customerApi.getAnalytics(id);
+      if (idRef.current !== reqId) return;
       setAnalytics(data);
     } catch {
+      if (idRef.current !== reqId) return;
       // Silently fail — analytics is supplementary
     } finally {
-      setAnalyticsLoading(false);
+      if (idRef.current === reqId) setAnalyticsLoading(false);
     }
   }, [id]);
 
   const fetchQuotations = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setQuotationsLoading(true);
       setQuotationsError(null);
       const data = await quoteApi.list({ customer_id: id, per_page: 50 });
+      if (idRef.current !== reqId) return;
       const items = Array.isArray(data) ? data : data?.items || data?.quotations || data?.data || [];
       setQuotations(items);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setQuotationsError(err?.detail || err?.message || 'Failed to load quotations');
     } finally {
-      setQuotationsLoading(false);
+      if (idRef.current === reqId) setQuotationsLoading(false);
     }
   }, [id]);
 
@@ -531,29 +592,35 @@ export default function CustomerProfilePage() {
 
   const fetchDocuments = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setDocumentsLoading(true);
       setDocumentsError(null);
       const data = await customerApi.listDocuments(id);
+      if (idRef.current !== reqId) return;
       setDocuments(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setDocumentsError(err?.detail || err?.message || 'Failed to load documents');
     } finally {
-      setDocumentsLoading(false);
+      if (idRef.current === reqId) setDocumentsLoading(false);
     }
   }, [id]);
 
   const fetchNotes = useCallback(async () => {
     if (!id) return;
+    const reqId = id;
     try {
       setNotesLoading(true);
       setNotesError(null);
       const data = await customerApi.listNotes(id);
+      if (idRef.current !== reqId) return;
       setNotes(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (idRef.current !== reqId) return;
       setNotesError(err?.detail || err?.message || 'Failed to load notes');
     } finally {
-      setNotesLoading(false);
+      if (idRef.current === reqId) setNotesLoading(false);
     }
   }, [id]);
 
@@ -2317,12 +2384,13 @@ export default function CustomerProfilePage() {
                   </div>
                   <div className="flex items-center gap-1">
                     {doc.file_path && (
-                      <a href={doc.file_path} target="_blank" rel="noopener noreferrer"
+                      <a href={doc.file_path} target="_blank" rel="noopener noreferrer" aria-label="Download document"
                         className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Download className="h-4 w-4" />
                       </a>
                     )}
                     <button onClick={() => openConfirm('Delete Document', 'Are you sure you want to delete this document? This cannot be undone.', () => handleDeleteDoc(doc.id))}
+                      aria-label="Delete document"
                       className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -2421,10 +2489,12 @@ export default function CustomerProfilePage() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => { setEditingNoteId(note.id); setNoteForm({ content: note.content, is_pinned: note.is_pinned || false, is_internal: note.is_internal || false }); setShowNoteForm(true); }}
+                        aria-label="Edit note"
                         className="p-1.5 text-slate-500 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors">
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button onClick={() => openConfirm('Delete Note', 'Are you sure you want to delete this note?', () => handleDeleteNote(note.id))}
+                        aria-label="Delete note"
                         className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
                         <Trash2 className="h-4 w-4" />
                       </button>

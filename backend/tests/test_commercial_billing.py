@@ -540,6 +540,92 @@ class TestPlatformInvoiceService:
             svc.send(invoice_id=invoice.id, actor_id=3)
         db.commit()
 
+    def test_finalize_mints_public_token(self, db_session):
+        """Every finalized (ISSUED) invoice carries a public payment token, so
+        the Pay button on the Zoiko Subscription page is never gated on the
+        email send succeeding."""
+        db = db_session
+        account = _make_account(db)
+        svc = PlatformInvoiceService(db)
+
+        invoice = svc.create_draft(account_id=account.id, actor_id=1)
+        svc.add_item(
+            invoice_id=invoice.id, actor_id=1,
+            line_number=1, description="Item", quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+        finalized = svc.finalize(invoice_id=invoice.id, actor_id=2)
+
+        assert finalized.public_token is not None
+        assert len(finalized.public_token) >= 32
+        db.commit()
+
+    def test_send_email_failure_keeps_public_token(self, db_session, monkeypatch):
+        """REGRESSION: a failed email send used to roll back the token with the
+        delivery bookkeeping, leaving a payable invoice unpayable (no Pay
+        button, 'payment link being processed'). The token is minted at
+        finalize and survives regardless of email outcome."""
+        db = db_session
+        org, admin = _make_org_with_admin(db)
+        account = _make_account(db, org_id=org.id)
+        svc = PlatformInvoiceService(db)
+
+        invoice = svc.create_draft(account_id=account.id, actor_id=1)
+        svc.add_item(
+            invoice_id=invoice.id, actor_id=1,
+            line_number=1, description="Item", quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+        finalized = svc.finalize(invoice_id=invoice.id, actor_id=2)
+        token = finalized.public_token
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.services.email_service.send_platform_invoice_email",
+            lambda *a, **k: False,
+        )
+        with pytest.raises(ValueError, match="Failed to email"):
+            svc.send(invoice_id=invoice.id, actor_id=3)
+
+        db.refresh(invoice)
+        assert invoice.public_token == token
+        db.commit()
+
+    def test_ensure_account_payment_links_mints_legacy_tokens(self, db_session):
+        """Self-heal for pre-fix rows whose token was rolled back: payable
+        invoices without a token get one immediately; terminal/zero-balance
+        invoices are left untouched."""
+        db = db_session
+        account = _make_account(db)
+        svc = PlatformInvoiceService(db)
+
+        def _make_payable_invoice(due=True):
+            inv = svc.create_draft(account_id=account.id, actor_id=1)
+            svc.add_item(
+                invoice_id=inv.id, actor_id=1,
+                line_number=1, description="Item", quantity=Decimal("1"),
+                unit_price=Decimal("100.00"),
+            )
+            finalized = svc.finalize(invoice_id=inv.id, actor_id=2)
+            # Simulate a legacy pre-fix row (and hide the finalize token).
+            finalized.public_token = None
+            if not due:
+                finalized.status = PlatformInvoiceStatus.PAID
+            return inv
+
+        payable = _make_payable_invoice(due=True)
+        paid_legacy = _make_payable_invoice(due=False)
+        db.commit()
+
+        minted = svc.ensure_account_payment_links(account.id)
+
+        assert minted == 1
+        db.refresh(payable)
+        db.refresh(paid_legacy)
+        assert payable.public_token is not None
+        assert paid_legacy.public_token is None
+        db.commit()
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Platform Payment Tests

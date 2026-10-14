@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     LOGIN_MAX_FAILED_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
 
+    # ── Google Sign-In (OAuth 2.0 authorization-code flow) ─────────────
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:5173/api/auth/google/callback"
+
     # ── App Info ──────────────────────────────────────────────────────
     APP_NAME: str = "Zoiko Billing Platform Backend"
     APP_VERSION: str = "1.0.0"
@@ -197,6 +202,22 @@ class Settings(BaseSettings):
     REDIS_ENTITLEMENT_TTL: int = 60
     REDIS_DASHBOARD_TTL: int = 30
 
+    # -- Server concurrency / DB pool (docs/PERFORMANCE_DEPLOYMENT.md) ---
+    # Budget: WEB_CONCURRENCY x (DB_POOL_SIZE + DB_MAX_OVERFLOW) (+1 per
+    # scheduler leader) must stay below the database connection limit.
+    WEB_CONCURRENCY: int = 1
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_TIMEOUT: float = 10.0
+    DB_POOL_RECYCLE: int = 1800
+    DB_POOL_PRE_PING: bool = True
+    DB_POOL_WAIT_WARN_SECONDS: float = 1.0
+    # Multi-worker safety: only one worker process may run the APScheduler.
+    # True = elect a leader with a Postgres advisory lock (no-op on SQLite).
+    # Set False behind pgbouncer transaction pooling (session locks don't
+    # work there) and enable the scheduler on exactly one instance instead.
+    SCHEDULER_LEADER_LOCK: bool = True
+
     # ── Recurring-billing scheduler (ported, OFF by default) ────────────
     # Dunning / recurring-billing / overdue-invoice jobs only start if this
     # is explicitly enabled — see app/core/scheduler.py.
@@ -204,6 +225,7 @@ class Settings(BaseSettings):
     BILLING_AUTO_EXPIRY_ENABLED: bool = False
     RECURRING_BILLING_INTERVAL_MINUTES: int = 60
     OVERDUE_INVOICE_CHECK_INTERVAL_MINUTES: int = 60
+    QUOTE_EXPIRY_REMINDER_INTERVAL_MINUTES: int = 1440
     DUNNING_PROCESS_INTERVAL_MINUTES: int = 1440
     ESCALATION_TO_COLLECTIONS_INTERVAL_MINUTES: int = 1440
     PROMISE_TO_PAY_CHECK_INTERVAL_MINUTES: int = 1440

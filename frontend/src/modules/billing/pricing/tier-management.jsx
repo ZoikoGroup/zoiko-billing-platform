@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tag, Layers, Plus, X, AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
@@ -31,16 +31,58 @@ export function validateTier(t) {
   return null;
 }
 
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+// Dialog keyboard behaviour: Escape closes from anywhere (it used to work only
+// while focus was inside the backdrop), Tab/Shift+Tab stay inside the dialog,
+// and on close focus goes back to the control that opened it.
+function useDialogFocus(open, dialogRef, onCancel, returnFocusRef) {
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); onCancelRef.current(); return; }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const items = [...dialogRef.current.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!dialogRef.current.contains(active)) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      const opener = returnFocusRef?.current;
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, [open, dialogRef, returnFocusRef]);
+}
+
+// Tiers are shown in quantity order: the "Tier N" label is positional, so it
+// must not depend on the order the API happens to return them in.
+const byFromQuantity = (a, b) => {
+  const fa = Number(a.from_quantity);
+  const fb = Number(b.from_quantity);
+  if (!Number.isFinite(fa)) return Number.isFinite(fb) ? 1 : 0;
+  if (!Number.isFinite(fb)) return -1;
+  return fa - fb;
+};
+
 // Module-level components: declaring these INSIDE the page (as before) gave
 // them a new identity on every render, so each keystroke unmounted and
 // remounted the modal and the input lost focus after every letter.
-function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, error }) {
+function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, error, returnFocusRef }) {
+  const dialogRef = useRef(null);
+  useDialogFocus(open, dialogRef, onCancel, returnFocusRef);
   if (!open) return null;
   const set = (key) => (e) => onChange({ ...values, [key]: e.target.value });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}
-      onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="add-tier-title"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-tier-title"
         className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h2 id="add-tier-title" className="text-xl font-bold text-slate-800">Add Tier</h2>
@@ -55,7 +97,7 @@ function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, err
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="tier-from" className="block text-sm font-medium text-slate-700 mb-1">Min Units *</label>
-              <input id="tier-from" type="number" min="1" step="1" value={values.from_quantity} onChange={set("from_quantity")} className={inputCls} />
+              <input id="tier-from" autoFocus type="number" min="1" step="1" value={values.from_quantity} onChange={set("from_quantity")} className={inputCls} />
             </div>
             <div>
               <label htmlFor="tier-to" className="block text-sm font-medium text-slate-700 mb-1">Max Units</label>
@@ -88,12 +130,13 @@ function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, err
   );
 }
 
-function ConfirmRemoveModal({ tier, label, onCancel, onConfirm, loading, error }) {
+function ConfirmRemoveModal({ tier, label, onCancel, onConfirm, loading, error, returnFocusRef }) {
+  const dialogRef = useRef(null);
+  useDialogFocus(Boolean(tier), dialogRef, onCancel, returnFocusRef);
   if (!tier) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}
-      onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby="remove-tier-title"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="remove-tier-title"
         className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <div className="h-10 w-10 shrink-0 rounded-full bg-red-100 flex items-center justify-center"><AlertCircle size={20} className="text-red-600" /></div>
@@ -104,7 +147,7 @@ function ConfirmRemoveModal({ tier, label, onCancel, onConfirm, loading, error }
         </div>
         {error && <p role="alert" className="mb-2 text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
+          <button autoFocus onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
             className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
             {loading ? "Removing..." : "Remove"}
@@ -123,6 +166,9 @@ export default function TierManagementPage() {
 
   const [plans, setPlans] = useState([]);
   const [plansError, setPlansError] = useState(null);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [extraPlan, setExtraPlan] = useState(null);
+  const dialogTriggerRef = useRef(null);
   const [selectedPlanId, setSelectedPlanId] = useState(planIdFromUrl);
   const [selectedPlanName, setSelectedPlanName] = useState("");
   const [tiers, setTiers] = useState([]);
@@ -151,7 +197,8 @@ export default function TierManagementPage() {
     pricingApi.list({ per_page: 100 }).then((data) => {
       setPlans(extractArray(data));
       setPlansError(null);
-    }).catch((err) => setPlansError(err?.message || "Failed to load pricing plans"));
+    }).catch((err) => setPlansError(err?.message || "Failed to load pricing plans"))
+      .finally(() => setPlansLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -162,12 +209,31 @@ export default function TierManagementPage() {
       // link silently never resolved a plan name even though fetchTiers
       // (which passes selectedPlanId straight to the API, no comparison)
       // worked fine.
-      const found = plans.find((p) => String(p.id) === String(selectedPlanId));
+      const found = plans.find((p) => String(p.id) === String(selectedPlanId)) || (
+        extraPlan && String(extraPlan.id) === String(selectedPlanId) ? extraPlan : null
+      );
       setSelectedPlanName(found ? found.name : "");
     } else {
       setSelectedPlanName("");
     }
-  }, [selectedPlanId, plans]);
+  }, [selectedPlanId, plans, extraPlan]);
+
+  // The dropdown only lists the first 100 plans; a ?plan_id beyond them left
+  // both the dropdown and the plan name blank. Resolve that one plan by id.
+  useEffect(() => {
+    if (!selectedPlanId || !plansLoaded) return undefined;
+    if (plans.some((p) => String(p.id) === String(selectedPlanId))) return undefined;
+    if (extraPlan && String(extraPlan.id) === String(selectedPlanId)) return undefined;
+    let cancelled = false;
+    pricingApi.get(selectedPlanId)
+      .then((plan) => { if (!cancelled && plan?.id != null) setExtraPlan(plan); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedPlanId, plans, plansLoaded, extraPlan]);
+
+  const planOptions = extraPlan && !plans.some((p) => String(p.id) === String(extraPlan.id))
+    ? [...plans, extraPlan]
+    : plans;
 
   const fetchTiers = useCallback(async () => {
     if (!selectedPlanId) {
@@ -180,7 +246,7 @@ export default function TierManagementPage() {
       setRefreshing(true);
       const data = await pricingApi.listTiers(selectedPlanId);
       const items = data.items || data.data || data || [];
-      setTiers(Array.isArray(items) ? items : []);
+      setTiers(Array.isArray(items) ? [...items].sort(byFromQuantity) : []);
     } catch (err) {
       setError(err.message || "Failed to load tiers");
       setTiers([]);
@@ -200,7 +266,10 @@ export default function TierManagementPage() {
 
   // Every open and every cancel starts from an empty form: Cancel used to
   // only hide the modal, so the abandoned input (and any old error) came back.
-  const openAddModal = () => { setNewTier(BLANK_TIER); setFormError(null); setShowAddModal(true); };
+  const openAddModal = () => {
+    dialogTriggerRef.current = document.activeElement;
+    setNewTier(BLANK_TIER); setFormError(null); setShowAddModal(true);
+  };
   const closeAddModal = () => {
     if (formLoading) return;
     setShowAddModal(false); setNewTier(BLANK_TIER); setFormError(null);
@@ -228,7 +297,10 @@ export default function TierManagementPage() {
     }
   };
 
-  const openRemove = (tier, idx) => { setRemoveError(null); setConfirmRemove({ tier, label: tierLabel(tier, idx) }); };
+  const openRemove = (tier, idx) => {
+    dialogTriggerRef.current = document.activeElement;
+    setRemoveError(null); setConfirmRemove({ tier, label: tierLabel(tier, idx) });
+  };
   const closeRemove = () => { if (!removeLoading) { setConfirmRemove(null); setRemoveError(null); } };
 
   const handleRemoveTier = async () => {
@@ -258,7 +330,7 @@ export default function TierManagementPage() {
                 <select value={selectedPlanId} onChange={(e) => handlePlanChange(e.target.value)} aria-label="Pricing plan"
                   className="appearance-none w-full px-4 py-2.5 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">Select a pricing plan...</option>
-                  {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {planOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
@@ -343,9 +415,9 @@ export default function TierManagementPage() {
       </div>
 
       <AddTierModal open={showAddModal} values={newTier} onChange={setNewTier} onCancel={closeAddModal}
-        onSubmit={handleAddTier} loading={formLoading} error={formError} />
+        onSubmit={handleAddTier} loading={formLoading} error={formError} returnFocusRef={dialogTriggerRef} />
       <ConfirmRemoveModal tier={confirmRemove?.tier} label={confirmRemove?.label} onCancel={closeRemove}
-        onConfirm={handleRemoveTier} loading={removeLoading} error={removeError} />
+        onConfirm={handleRemoveTier} loading={removeLoading} error={removeError} returnFocusRef={dialogTriggerRef} />
     </HRPage>
   );
 }

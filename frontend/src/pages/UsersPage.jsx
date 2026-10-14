@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIcon } from "lucide-react";
+import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIcon, Trash2 } from "lucide-react";
 
 import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, ListToolbar, Select, Modal, Field, Button } from "../components/billing-ui";
@@ -93,7 +93,7 @@ function ReasonModal({ open, onClose, title, icon, description, busy, error, sub
 }
 
 /** Compact icon-only secondary action, grouped inside a bordered pill row. */
-function IconAction({ icon: Icon, title, disabled, onClick }) {
+function IconAction({ icon: Icon, title, disabled, onClick, danger = false }) {
   return (
     <button
       type="button"
@@ -101,7 +101,11 @@ function IconAction({ icon: Icon, title, disabled, onClick }) {
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        danger
+          ? "text-red-500 hover:bg-red-50 hover:text-red-700"
+          : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+      }`}
     >
       <Icon size={14} />
     </button>
@@ -146,6 +150,7 @@ export default function UsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState(null);
   const [membershipTarget, setMembershipTarget] = useState(null);
+  const [purgeTarget, setPurgeTarget] = useState(null);
   const [modalError, setModalError] = useState("");
 
   const load = useCallback(() => {
@@ -200,6 +205,11 @@ export default function UsersPage() {
     setMembershipTarget(u);
   }
 
+  function openPurge(u) {
+    setModalError("");
+    setPurgeTarget(u);
+  }
+
   function openInvite() {
     setModalError("");
     ensureOrganizations();
@@ -236,6 +246,28 @@ export default function UsersPage() {
       });
       setNotice(`Membership for ${u.email} updated.`);
       setMembershipTarget(null);
+      load();
+    } catch (err) {
+      setModalError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handlePurgeSubmit(reason, confirmation) {
+    // Permanent, irreversible deletion of the whole tenant identified by this
+    // admin row's organization. The backend re-verifies the confirmation code.
+    const u = purgeTarget;
+    if (!u || !u.organization_id) return;
+    setBusyId(u.id);
+    try {
+      const res = await apiFetch(`/api/super-admin/organizations/${u.organization_id}/purge`, {
+        method: "POST",
+        timeout: 120000,
+        body: { reason, confirmation },
+      });
+      setNotice(res?.message || `Organization "${u.organization_name}" permanently deleted.`);
+      setPurgeTarget(null);
       load();
     } catch (err) {
       setModalError(err.message);
@@ -368,6 +400,15 @@ export default function UsersPage() {
             )}
             <IconAction title="Move to another organization" icon={GitBranch} disabled={busyId === u.id} onClick={() => openMembership(u)} />
             <IconAction title="Send password reset link" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)} />
+            {u.organization_id && (
+              <IconAction
+                title={`Delete organization "${u.organization_name || u.organization_id}" (permanent)`}
+                icon={Trash2}
+                danger
+                disabled={busyId === u.id}
+                onClick={() => openPurge(u)}
+              />
+            )}
           </div>
         ),
       },
@@ -511,6 +552,16 @@ export default function UsersPage() {
         />
       )}
 
+      {purgeTarget && (
+        <PurgeOrganizationModal
+          target={purgeTarget}
+          busy={busyId === purgeTarget.id}
+          error={modalError}
+          onClose={() => setPurgeTarget(null)}
+          onSubmit={handlePurgeSubmit}
+        />
+      )}
+
       {inviteOpen && (
         <InviteUserModal
           organizations={organizations}
@@ -523,6 +574,72 @@ export default function UsersPage() {
         />
       )}
     </div>
+  );
+}
+
+/** Permanent, irreversible tenant hard-delete. Confirmed by typing the
+ * exact organization code; the backend re-validates it before deleting. */
+function PurgeOrganizationModal({ target, busy, error, onClose, onSubmit }) {
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const code = target.organization_code || "";
+  const confirmed = code !== "" && confirmation.trim() === code;
+
+  return (
+    <Modal open onClose={onClose} title="Delete organization permanently" icon={Trash2} size="md">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (confirmed) onSubmit(reason, confirmation);
+        }}
+        className="space-y-4"
+      >
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          This permanently deletes{" "}
+          <strong>{target.organization_name || `organization #${target.organization_id}`}</strong>
+          {code ? ` (${code})` : ""} and <strong>every record that belongs to it</strong> — all users,
+          invoices, payments, subscriptions, billing history and AI data. This cannot be undone.
+        </p>
+        <Field label="Reason" htmlFor="purge-reason" required hint="Stored verbatim in the platform audit trail.">
+          <textarea
+            id="purge-reason"
+            required
+            minLength={3}
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          />
+        </Field>
+        <Field
+          label={`Type ${code || "the organization code"} to confirm`}
+          htmlFor="purge-confirm"
+          required
+          hint="Must match the organization code exactly."
+        >
+          <input
+            id="purge-confirm"
+            required
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-100"
+          />
+        </Field>
+        {error && (
+          <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" variant="danger" loading={busy} disabled={!confirmed || reason.trim().length < 3}>
+            Delete organization
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

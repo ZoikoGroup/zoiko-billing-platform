@@ -20,6 +20,7 @@ import {
   BusinessInsights, QuickActions, ActionCenter,
 } from "../../../components/billing-shared";
 import { Button, StatGroup } from "../../../components/billing-ui";
+import usePolling from "../../../hooks/usePolling";
 
 const CHART_COLORS = ["var(--color-accent-collections)", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899", "#06b6d4"];
 const CARD_GRADIENTS = [
@@ -106,9 +107,10 @@ export default function CollectionsDashboard() {
     mountedRef.current = true;
     loadingRef.current = true;
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => { mountedRef.current = false; clearInterval(interval); };
+    return () => { mountedRef.current = false; };
   }, [fetchData]);
+
+  usePolling(fetchData, 60000);
 
   const handleRefresh = useCallback(() => { setRefreshing(true); fetchData(); }, [fetchData]);
 

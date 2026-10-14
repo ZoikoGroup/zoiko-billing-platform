@@ -66,6 +66,25 @@ class QuotationRepository(BaseRepository[Quotation]):
             "expired_count": expired_count,
         }
 
+    def get_totals_by_currency(
+        self, organization_id: int, statuses: Optional[tuple] = None,
+    ) -> List[tuple]:
+        """(currency, SUM(total_amount), COUNT) per raw currency value, for
+        the given statuses or every status when None (Batch 7 BUG-06). Same
+        org / is_active scope as get_summary_stats and the list endpoint;
+        currencies are never summed together."""
+        query = self.db.query(
+            Quotation.currency,
+            func.coalesce(func.sum(Quotation.total_amount), 0),
+            func.count(Quotation.id),
+        ).filter(
+            Quotation.organization_id == organization_id,
+            Quotation.is_active == True,
+        )
+        if statuses is not None:
+            query = query.filter(Quotation.status.in_(statuses))
+        return query.group_by(Quotation.currency).all()
+
     def list_by_customer(
         self,
         organization_id: int,

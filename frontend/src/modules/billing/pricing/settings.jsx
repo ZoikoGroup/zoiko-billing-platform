@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, AlertCircle, CheckCircle, RefreshCw, DollarSign, Calendar, Hash, Percent, BarChart3 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, ErrorState } from "../../../components/billing-shared";
+import ConfirmDialog from "../../../components/ConfirmDialog";
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
@@ -45,18 +46,30 @@ const DEFAULT_SETTINGS = {
 // actual <input>/<select> DOM nodes), which is the classic cause of a
 // field losing focus or appearing to "snap back" after one interaction.
 function SettingsField({ label, icon: Icon, children, description }) {
+  // Programmatically associate the visible label with the card's control:
+  // give the first native input/select/textarea child an id and point a
+  // <label htmlFor> at it. Cards wrapping a composite control fall back to
+  // a labelled group so the controls still get the card title as context.
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  let controlId = null;
+  const content = Children.map(children, (child) => {
+    if (controlId || !isValidElement(child) || !["input", "select", "textarea"].includes(child.type)) return child;
+    controlId = child.props.id || `${uid}-control`;
+    return child.props.id ? child : cloneElement(child, { id: controlId });
+  });
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6">
+    <div role={controlId ? undefined : "group"} aria-labelledby={controlId ? undefined : labelId} className="bg-white border border-slate-200 rounded-3xl p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-center">
           <Icon size={20} />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-slate-800">{label}</h3>
+          <h3 className="text-base font-semibold text-slate-800"><label id={labelId} htmlFor={controlId || undefined}>{label}</label></h3>
           {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
         </div>
       </div>
-      {children}
+      {content}
     </div>
   );
 }
@@ -69,6 +82,7 @@ export default function PricingSettingsPage() {
   const [error, setError] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [confirmRefresh, setConfirmRefresh] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -135,6 +149,13 @@ export default function PricingSettingsPage() {
     setSuccess(false);
   };
 
+  // Refresh replaces the form with the saved values, so unsaved edits must
+  // be confirmed before they are thrown away.
+  const handleRefresh = () => {
+    if (hasChanges) setConfirmRefresh(true);
+    else fetchSettings();
+  };
+
   if (loading) {
     return (
       <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
@@ -156,25 +177,32 @@ export default function PricingSettingsPage() {
   return (
     <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
 
-      <div className="flex items-center justify-between mb-6">
-        <div />
-        <div className="flex items-center gap-2">
-          {success && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
+        {success && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
+            <CheckCircle className="h-4 w-4" /> Saved
+          </span>
+        )}
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
       </div>
+
+      {confirmRefresh && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="Refreshing reloads the saved pricing settings and discards your unsaved edits."
+          confirmLabel="Discard & refresh"
+          onConfirm={() => { setConfirmRefresh(false); fetchSettings(); }}
+          onClose={() => setConfirmRefresh(false)}
+        />
+      )}
 
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">

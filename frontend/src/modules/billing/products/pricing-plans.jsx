@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 10;
@@ -38,6 +40,8 @@ function StatusBadge({ status }) {
   );
 }
 
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 export default function ProductPricingPlansPage() {
   const { formatCurrency, baseCurrency } = useCurrency();
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
@@ -57,6 +61,21 @@ export default function ProductPricingPlansPage() {
   const [sortDir, setSortDir] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Product Profile links here with ?product_id=<id>. That is route context,
+  // not a filter this page owns: Clear filters leaves it (and any other query
+  // params) alone; only the chip's own remove action drops it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawProductId = searchParams.get("product_id");
+  const productContextId = /^[1-9]\d*$/.test(rawProductId || "") ? Number(rawProductId) : null;
+  const clearProductContext = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("product_id");
+      return next;
+    });
+  };
+  useEffect(() => { setCurrentPage(1); }, [productContextId]);
+
   const hasActiveFilters = Boolean(search || typeFilter || statusFilter);
   const clearFilters = () => {
     setSearch(""); setDebouncedSearch(""); setTypeFilter(""); setStatusFilter(""); setCurrentPage(1);
@@ -72,7 +91,7 @@ export default function ProductPricingPlansPage() {
   const getDefaultFormData = () => ({
     name: "", plan_type: "flat", price: "",
     billing_interval: "monthly", status: "active", trial_days: "", setup_fee: "", product_id: "",
-    effective_from: new Date().toISOString().slice(0, 10), effective_to: "",
+    effective_from: localToday(), effective_to: "",
   });
   const [formData, setFormData] = useState(getDefaultFormData());
 
@@ -91,7 +110,10 @@ export default function ProductPricingPlansPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchPlans = useCallback(async (isInitial = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -99,6 +121,7 @@ export default function ProductPricingPlansPage() {
       const params = {
         page: safePage,
         per_page: ITEMS_PER_PAGE,
+        product_id: productContextId || undefined,
         search_term: debouncedSearch || undefined,
         pricing_model: typeFilter || undefined,
         status: statusFilter || undefined,
@@ -106,16 +129,18 @@ export default function ProductPricingPlansPage() {
         sort_order: sortDir,
       };
       const data = await pricingApi.list(params);
+      if (!isCurrent()) return;
       const items = extractArray(data);
       setPlans(items);
       setTotal(data?.total || items.length || 0);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load pricing plans");
       setPlans([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, productContextId, debouncedSearch, typeFilter, statusFilter, sortField, sortDir]);
 
   useEffect(() => { fetchPlans(true); }, [fetchPlans]);
 
@@ -193,12 +218,22 @@ export default function ProductPricingPlansPage() {
         setFormError("Select a product before saving a pricing plan.");
         return;
       }
+      const today = localToday();
+      const originalFrom = editPlan?.effective_from || null;
+      if (formData.effective_from && formData.effective_from < today && formData.effective_from !== originalFrom) {
+        setFormError("Effective From cannot be in the past. Choose today or a future date.");
+        return;
+      }
+      if (formData.effective_to && formData.effective_from && formData.effective_to < formData.effective_from) {
+        setFormError("Effective To must be on or after Effective From.");
+        return;
+      }
       const payload = {
         ...formData,
         price: parseFloat(formData.price) || 0,
         trial_days: formData.trial_days ? parseInt(formData.trial_days) : undefined,
         setup_fee: formData.setup_fee ? parseFloat(formData.setup_fee) : undefined,
-        effective_from: formData.effective_from || new Date().toISOString().slice(0, 10),
+        effective_from: formData.effective_from || localToday(),
         effective_to: formData.effective_to || null,
       };
       if (editPlan) await pricingApi.update(editPlan.id, payload);
@@ -326,7 +361,7 @@ export default function ProductPricingPlansPage() {
                       ))}
                     </ul>
                     <button
-                      onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                      onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
                       className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${isFeatured ? "bg-white text-brand-700 hover:bg-brand-50" : "bg-brand-50 text-brand-700 hover:bg-brand-100"}`}>
                       Edit Plan
                     </button>
@@ -353,12 +388,13 @@ export default function ProductPricingPlansPage() {
                 className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
-                  Clear filters
-                </button>
-              )}
-              <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing}
+              <button onClick={clearFilters} disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search, type and status filters" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent">
+                <X size={14} />
+                Clear filters
+              </button>
+              <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing} aria-label="Refresh"
                 className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
@@ -393,6 +429,18 @@ export default function ProductPricingPlansPage() {
               </button>
             </div>
           </div>
+
+          {productContextId && (
+            <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-brand-200 bg-brand-50 py-1 pl-3 pr-1 text-xs font-medium text-brand-700">
+              <span className="truncate">
+                Product: {products.find((p) => String(p.id) === String(productContextId))?.name || `#${productContextId}`}
+              </span>
+              <button onClick={clearProductContext} aria-label="Show plans for all products"
+                className="rounded-full p-1 text-brand-600 hover:bg-brand-100 hover:text-brand-800">
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {showFilters && (
             <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
@@ -477,12 +525,12 @@ export default function ProductPricingPlansPage() {
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</td>
                   <td className="px-4 py-4 text-right">
-                    <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || new Date().toISOString().slice(0, 10), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit">
+                    <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label="Edit">
                       <Pencil size={16} />
                     </button>
                     <button onClick={() => handleDeactivatePlan(plan)}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate">
+                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate" aria-label="Deactivate">
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -498,11 +546,11 @@ export default function ProductPricingPlansPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowForm(false); setFormError(null); }}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-plan-form-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">{editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}</h2>
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+              <h2 id="product-pricing-plan-form-title" className="text-xl font-bold text-slate-800">{editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}</h2>
+              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
             </div>
             {formError && (
               <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -573,13 +621,13 @@ export default function ProductPricingPlansPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
+                  <input type="date" min={editPlan?.effective_from && editPlan.effective_from < localToday() ? editPlan.effective_from : localToday()} value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                <input type="date" value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
+                <input type="date" min={formData.effective_from || undefined} value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
@@ -595,11 +643,11 @@ export default function ProductPricingPlansPage() {
       )}
 
       {showTierModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTierModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-tiers-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">Pricing Tiers</h2>
-              <button onClick={() => setShowTierModal(false)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+              <h2 id="product-pricing-tiers-title" className="text-xl font-bold text-slate-800">Pricing Tiers</h2>
+              <button onClick={() => setShowTierModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
             </div>
             {tierError && (
               <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -635,7 +683,7 @@ export default function ProductPricingPlansPage() {
                       <span className="text-slate-500 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
                       {tier.flat_fee > 0 && <span className="text-slate-500 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
                     </div>
-                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600">
+                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label={`Delete tier ${tier.from_quantity}–${tier.to_quantity ?? "∞"}`}>
                       <Trash2 size={14} />
                     </button>
                   </div>

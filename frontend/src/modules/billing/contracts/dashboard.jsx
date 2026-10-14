@@ -14,6 +14,7 @@ import { extractArray, formatDisplayCurrency, formatCompactCurrency } from "../.
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -61,7 +62,9 @@ export default function ContractDashboardPage() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const mountedRef = useRef(true);
+  // Only the most recently started fetch may update state, so a previous
+  // range's slower response can never overwrite the current range.
+  const beginRequest = useLatestRequest();
   const loadingRef = useRef(true);
 
   // KPI value tiles (Total Contract Value, Active Value, Monthly Recurring,
@@ -77,6 +80,7 @@ export default function ContractDashboardPage() {
   const [summary, setSummary] = useState(null);
 
   const fetchDashboardData = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!loadingRef.current) setRefreshing(true);
@@ -92,7 +96,7 @@ export default function ContractDashboardPage() {
       ]);
       const [listResult, activeResult, expiringResult, summaryResult] = results;
 
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
 
       if (listResult.status === "fulfilled") {
         const items = extractArray(listResult.value);
@@ -110,21 +114,19 @@ export default function ContractDashboardPage() {
       }
       setLastUpdated(new Date());
     } catch (err) {
-      if (mountedRef.current) setError(err?.message || "Failed to load contract dashboard data.");
+      if (isCurrent()) setError(err?.message || "Failed to load contract dashboard data.");
     } finally {
-      if (mountedRef.current) {
+      if (isCurrent()) {
         setLoading(false);
         setRefreshing(false);
         loadingRef.current = false;
       }
     }
-  }, [dateRange.date_from, dateRange.date_to]);
+  }, [beginRequest, dateRange.date_from, dateRange.date_to]);
 
   useEffect(() => {
-    mountedRef.current = true;
     loadingRef.current = true;
     fetchDashboardData();
-    return () => { mountedRef.current = false; };
   }, [fetchDashboardData]);
 
   const handleRefresh = useCallback(() => {

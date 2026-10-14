@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core.exceptions import BadRequestException
 from app.modules.commercial.enums import (
     CommercialSubscriptionStatus,
@@ -67,6 +67,28 @@ def _expected_livemode() -> bool:
     return settings.PLATFORM_STRIPE_SECRET_KEY.startswith("sk_live_")
 
 
+def _platform_secret_key() -> str:
+    """The platform Stripe secret key. Settings are cached at process start, so
+    a key added to .env after the server booted (or a server launched with a
+    stale environment) used to read as "not configured" until a manual
+    restart. If the cached value is empty, re-read .env once before giving up,
+    and adopt the key if found."""
+    if settings.PLATFORM_STRIPE_SECRET_KEY:
+        return settings.PLATFORM_STRIPE_SECRET_KEY
+    try:
+        fresh = Settings()
+    except Exception:  # noqa: BLE001 - never let a config re-read break checkout
+        return ""
+    if fresh.PLATFORM_STRIPE_SECRET_KEY:
+        settings.PLATFORM_STRIPE_SECRET_KEY = fresh.PLATFORM_STRIPE_SECRET_KEY
+        if not settings.PLATFORM_STRIPE_WEBHOOK_SECRET:
+            settings.PLATFORM_STRIPE_WEBHOOK_SECRET = fresh.PLATFORM_STRIPE_WEBHOOK_SECRET
+        if not settings.PLATFORM_STRIPE_PUBLISHABLE_KEY:
+            settings.PLATFORM_STRIPE_PUBLISHABLE_KEY = fresh.PLATFORM_STRIPE_PUBLISHABLE_KEY
+        logger.info("Adopted PLATFORM_STRIPE_SECRET_KEY from .env after startup")
+    return settings.PLATFORM_STRIPE_SECRET_KEY
+
+
 def _stripe_module():
     try:
         import stripe
@@ -74,11 +96,17 @@ def _stripe_module():
         raise BadRequestException(
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
-    if not settings.PLATFORM_STRIPE_SECRET_KEY:
+    key = _platform_secret_key()
+    if not key:
+        # The missing setting name is for operators (logs), not for end users.
+        logger.warning("Platform Stripe is not configured: PLATFORM_STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
-            "Platform Stripe is not configured. Set PLATFORM_STRIPE_SECRET_KEY in the environment."
+            "Online payment is not available yet. Please contact Zoiko support to complete payment."
         )
-    stripe.api_key = settings.PLATFORM_STRIPE_SECRET_KEY
+    stripe.api_key = key
+    # Bounded retries on connection errors / 409 / 5xx so a transient Stripe or
+    # network blip does not surface as a failed checkout.
+    stripe.max_network_retries = 2
     return stripe
 
 
@@ -317,6 +345,23 @@ class PlatformStripeService:
                     actor_id=None,
                 )
 
+            # A paid PLAN_CHANGE invoice is the payment half of a self-serve
+            # upgrade: only now does the plan swap actually happen.
+            if invoice is not None and not invoice.balance_due:
+                from app.modules.commercial.plan_change_billing import complete_plan_change_for_invoice
+
+                applied = complete_plan_change_for_invoice(self.db, invoice)
+                if applied is not None:
+                    out = {
+                        "action": "payment_recorded",
+                        "payment_id": payment.id,
+                        "plan_change_applied": applied.change_id,
+                    }
+                    if applied.trial_converted_subscription_id:
+                        # Post-commit confirmation email, same as a plain conversion.
+                        out["trial_converted"] = applied.trial_converted_subscription_id
+                    return out
+
             # §5.2 invoice-linkage trigger (mirrors
             # _maybe_complete_trial_conversion_on_allocation): this payment
             # settled an invoice tied to a trial-conversion subscription. The
@@ -363,6 +408,12 @@ class PlatformStripeService:
                     CommercialSubscriptionService(self.db).transition(
                         invoice_subscription, CommercialSubscriptionStatus.ACTIVE,
                     )
+                    # Without this a subscription activated through its linked
+                    # invoice has no billing period at all (the first-payment
+                    # block below only sees PENDING/TRIALING rows, and this one
+                    # is already ACTIVE by then), so no renewal date or
+                    # renewal invoice would ever be derived for it.
+                    self._stamp_first_period(invoice_subscription)
 
         if cleared_count == 1:
             # PENDING: never-activated self-serve subscription paying for
@@ -419,19 +470,30 @@ class PlatformStripeService:
                 # None for PENDING (never trialing), but cleared defensively for
                 # SUSPENDED (trial had expired and they are now paying).
                 now = datetime.utcnow()
-                subscription.trial_ends_at = None
-                subscription.recovery_ends_at = None
-                subscription.current_period_start = now
-                plan = subscription.plan
-                if plan is not None and plan.billing_interval is not None:
-                    from app.modules.commercial.service import CommercialSubscriptionService as _CSS
-                    subscription.current_period_end = _CSS._add_months(
-                        now,
-                        12 if plan.billing_interval.value == "annual" else 1,
-                    )
-                self.db.flush()
+                self._stamp_first_period(subscription, now=now)
 
         return {"action": "payment_recorded", "payment_id": payment.id}
+
+    def _stamp_first_period(self, subscription, now: Optional[datetime] = None) -> None:
+        """Anchor the billing period on the first payment date (the canonical
+        plan-start moment) and clear any trial/recovery markers."""
+        now = now or datetime.utcnow()
+        subscription.trial_ends_at = None
+        subscription.recovery_ends_at = None
+        subscription.current_period_start = now
+        from app.modules.commercial.service import CommercialSubscriptionService as _CSS
+
+        # Interval comes from the resolved price (published version first, then
+        # the plan row); a plan that states none renews monthly.
+        interval = None
+        resolved = _CSS(self.db).resolve_price(subscription)
+        if resolved is not None:
+            interval = resolved[2]
+        if interval is None and subscription.plan is not None:
+            interval = subscription.plan.billing_interval
+        months = 12 if interval is not None and interval.value == "annual" else 1
+        subscription.current_period_end = _CSS._add_months(now, months)
+        self.db.flush()
 
     def _dispatch_trial_converted_email(self, subscription_id: int) -> None:
         from app.modules.commercial.models import CommercialSubscription

@@ -303,6 +303,7 @@ def send_quote(
         quote_id=quote_id,
         organization_id=current_user.organization_id,
         updated_by=current_user.id,
+        actor_role=getattr(getattr(current_user, "role", None), "value", None),
     )
 
 

@@ -403,13 +403,17 @@ def preview_email_template(
         parsed_vars: Optional[Dict[str, str]] = None
         if variables:
             parsed_vars = json.loads(variables)
+            if not isinstance(parsed_vars, dict):
+                raise HTTPException(status_code=400, detail="Variables must be a JSON object, e.g. {\"customer_name\": \"Jane\"}")
         result = svc.preview_email_template(template_name=template_name, variables=parsed_vars)
         logger.info("GET /billing/settings/email-templates/%s/preview -> 200, vars_found=%d", template_name, len(result.variables_found))
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON in variables parameter: {e}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Variables must be valid JSON, e.g. {\"customer_name\": \"Jane\"}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("GET /billing/settings/email-templates/%s/preview failed: %s", template_name, str(e), exc_info=True)
         raise
@@ -491,13 +495,14 @@ def get_exchange_rate_diagnostics(
     dependencies=[Depends(get_current_billing_admin)],
 )
 def billing_health_check(
+    fresh: bool = Query(False, description="Bypass caches and probe SMTP live (Settings > Refresh)"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     logger.info("GET /billing/settings/health for org=%s", current_user.organization_id)
     svc = BillingAdminService(db)
     try:
-        result = svc.run_billing_health_check(organization_id=current_user.organization_id)
+        result = svc.run_billing_health_check(organization_id=current_user.organization_id, fresh=fresh)
         logger.info("GET /billing/settings/health -> 200, status=%s, score=%d", result.overall_status, result.readiness_score)
         return result
     except Exception as e:

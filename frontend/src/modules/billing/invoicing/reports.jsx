@@ -26,6 +26,17 @@ const TABS = [
   { key: "trends", label: "Trends", icon: BarChart3 },
 ];
 
+// KPI money value. Large amounts used to overflow the 4-up cards; the value
+// now scales down below xl and truncates, with the full formatted amount kept
+// in `title` so nothing is lost.
+function KpiAmount({ value, className = "", style }) {
+  return (
+    <p className={`mt-1 truncate text-xl font-bold xl:text-2xl ${className}`} style={style} title={value}>
+      {value}
+    </p>
+  );
+}
+
 export default function InvoiceReportsPage() {
   const { singular } = useTerminology();
   const navigate = useNavigate();
@@ -231,15 +242,15 @@ export default function InvoiceReportsPage() {
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Invoices</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{fInvoices.length}</p>
                 </div>
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
+                <div className="min-w-0 bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Amount</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalAmount, baseCurrency)}</p>
+                  <KpiAmount className="text-slate-900" value={formatCurrency(totalAmount, baseCurrency)} />
                 </div>
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
+                <div className="min-w-0 bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding</p>
-                  <p className="text-2xl font-bold text-amber-600 mt-1 whitespace-nowrap">{formatCurrency(totalOutstanding, baseCurrency)}</p>
+                  <KpiAmount className="text-amber-600" value={formatCurrency(totalOutstanding, baseCurrency)} />
                 </div>
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
+                <div className="min-w-0 bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Credit Notes</p>
                   {cnError ? (
                     <div role="alert" className="mt-1">
@@ -248,7 +259,7 @@ export default function InvoiceReportsPage() {
                     </div>
                   ) : (
                     <>
-                      <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalCN, baseCurrency)}</p>
+                      <KpiAmount className="text-slate-900" value={formatCurrency(totalCN, baseCurrency)} />
                       <p className="text-xs text-slate-500 mt-1">{fCreditNotes.length} notes</p>
                     </>
                   )}
@@ -432,9 +443,9 @@ export default function InvoiceReportsPage() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {agingBuckets.map((b) => (
-                  <div key={b.name} className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
+                  <div key={b.name} className="min-w-0 bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{b.name}</p>
-                    <p className="text-2xl font-bold mt-1" style={{ color: b.color }}>{formatCurrency(b.value, baseCurrency)}</p>
+                    <KpiAmount style={{ color: b.color }} value={formatCurrency(b.value, baseCurrency)} />
                     <p className="text-xs text-slate-500 mt-1">{overdueInvoices.filter((i) => { const d = (new Date() - new Date(i.due_date)) / (1000 * 60 * 60 * 24); return d >= agingBuckets.indexOf(b) * 30 + 1 && d <= (agingBuckets.indexOf(b) + 1) * 30; }).length} invoices</p>
                   </div>
                 ))}
@@ -503,9 +514,9 @@ export default function InvoiceReportsPage() {
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Months Tracked</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{monthlyChartData.length}</p>
                 </div>
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
+                <div className="min-w-0 bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Monthly</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1 whitespace-nowrap">{formatCurrency(totalAmount / Math.max(monthlyChartData.length, 1), baseCurrency)}</p>
+                  <KpiAmount className="text-slate-900" value={formatCurrency(totalAmount / Math.max(monthlyChartData.length, 1), baseCurrency)} />
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-5">
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Collection Rate</p>

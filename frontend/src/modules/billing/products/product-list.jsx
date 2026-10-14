@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import {
   Package, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Archive, Image, Eye, Copy, RotateCcw, CreditCard, Upload, Sparkles, Trash2, Loader2, Pencil,
 } from "lucide-react";
+
 import HRPage from "../../../components/HRPage";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useCurrency } from "../utils/CurrencyContext";
+import useLatestRequest from "../utils/useLatestRequest";
 import ImportWizardModal from "./import-wizard";
 import { useConfirmationDialog, PageSkeleton, SuccessMessage, ErrorState, Pagination, StatusBadge } from "../../../components/billing-shared";
 
@@ -155,7 +157,10 @@ export default function ProductListPage() {
   // set. A leftover filter (e.g. "Active" status, or a search term) then
   // hides the very rows the import just created, making a fully successful
   // import look like it silently did nothing.
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchProducts = useCallback(async (isInitial = false, pageOverride = null, clearFilters = false) => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       if (!isInitial) setRefreshing(true);
@@ -172,20 +177,24 @@ export default function ProductListPage() {
         sort_order: sortDir,
       };
       const data = await productApi.list(params);
+      if (!isCurrent()) return;
       const items = data?.items || data?.data || data || [];
       setProducts(Array.isArray(items) ? items : []);
       setTotal(data?.total || items.length || 0);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load products");
       setProducts([]);
       setTotal(0);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, categoryFilter, currencyFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, categoryFilter, currencyFilter, sortField, sortDir]);
 
   useEffect(() => { fetchProducts(true); }, [fetchProducts]);
   useEffect(() => { fetchCategories(); }, []);
@@ -296,13 +305,15 @@ export default function ProductListPage() {
   };
 
   const hasActiveFilters = Boolean(search || statusFilter || typeFilter || categoryFilter || currencyFilter);
-  // Same full reset the import/duplicate flows already use (fetch with the
-  // clearFilters flag so no stale filter state is sent), now user-facing.
+  // Resetting the applied filters/page re-creates fetchProducts, and the
+  // fetch effect above then loads the unfiltered list from fresh state -- an
+  // explicit fetch here as well sent the same request twice (BUG-12.2). If
+  // nothing applied changed (only an un-debounced search was typed), the list
+  // already shows the unfiltered result and no request is needed.
   const clearAllFilters = () => {
     setSearch(""); setDebouncedSearch("");
     setStatusFilter(""); setTypeFilter(""); setCategoryFilter(""); setCurrencyFilter("");
     setCurrentPage(1);
-    fetchProducts(false, 1, true);
   };
 
   const handleDuplicateProduct = async (id) => {
@@ -704,10 +715,10 @@ export default function ProductListPage() {
   );
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeCreateModal}>
-      <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div role="dialog" aria-modal="true" aria-labelledby="product-create-title" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800">New Product</h2>
+          <h2 id="product-create-title" className="text-xl font-bold text-slate-800">New Product</h2>
           <button onClick={closeCreateModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
         </div>
         {formError && (
@@ -730,10 +741,10 @@ export default function ProductListPage() {
   const renderEditModal = () => {
     if (!editProduct) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeEditModal}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div role="dialog" aria-modal="true" aria-labelledby="product-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-slate-800">Edit Product</h2>
+            <h2 id="product-edit-title" className="text-xl font-bold text-slate-800">Edit Product</h2>
             <button onClick={closeEditModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
           </div>
           {formError && (
@@ -795,7 +806,8 @@ export default function ProductListPage() {
             <div className="flex items-center gap-3 flex-1">
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input ref={searchInputRef} type="text" placeholder="Search by name, code..." value={search}
+                <input ref={searchInputRef} type="text" placeholder="Search by name, code..." aria-label="Search by name, code" value={search}
+                  aria-keyshortcuts="Control+K Meta+K"
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-9 pr-14 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 {search ? (
@@ -803,9 +815,7 @@ export default function ProductListPage() {
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded-lg">
                     <X size={16} />
                   </button>
-                ) : (
-                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-500 pointer-events-none">⌘K</kbd>
-                )}
+                ) : null}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>

@@ -632,7 +632,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <input
           type="text"
-          placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`}
+          placeholder={`Search ${singular.toLowerCase()} by name, email, or company...`} aria-label={`Search ${singular.toLowerCase()} by name, email, or company`}
           value={customerSearch}
           onChange={(e) => setCustomerSearch(e.target.value)}
           className="w-full pl-9 pr-4 py-3 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand/30"
@@ -671,7 +671,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
           <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Search accepted quotations..."
+            placeholder="Search accepted quotations..." aria-label="Search accepted quotations"
             value={quotationSearch}
             onChange={(e) => setQuotationSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
@@ -828,7 +828,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <span className="flex-1">{productAddWarning}</span>
-          <button onClick={() => setProductAddWarning(null)} className="text-amber-600 hover:text-amber-800 shrink-0">
+          <button type="button" onClick={() => setProductAddWarning(null)} aria-label="Dismiss warning" className="text-amber-600 hover:text-amber-800 shrink-0">
             <X size={14} />
           </button>
         </div>

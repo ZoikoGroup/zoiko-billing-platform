@@ -112,7 +112,7 @@ function getConfigCached() {
 }
 
 export const settingsApi = {
-  get: () => api.get(ENDPOINTS.SETTINGS),
+  get: () => api.get(ENDPOINTS.SETTINGS, { cacheTtl: 30_000 }), // PUT to /billing/settings/* invalidates
   update: (data) => api.put(ENDPOINTS.SETTINGS, data),
   getConfig: () => getConfigCached(),
   updateConfig: (data) => api.put(ENDPOINTS.SETTINGS_CONFIG, data).then((res) => { invalidateConfigCache(); return res; }),
@@ -125,7 +125,7 @@ export const settingsApi = {
   },
   getExchangeRatePair: (from, to) =>
     api.get(`${ENDPOINTS.SETTINGS_EXCHANGE_RATES_PAIR}?from_currency=${encodeURIComponent(from)}&to_currency=${encodeURIComponent(to)}`),
-  getSupportedCurrencies: () => api.get(ENDPOINTS.SETTINGS_EXCHANGE_RATES_SUPPORTED),
+  getSupportedCurrencies: () => api.get(ENDPOINTS.SETTINGS_EXCHANGE_RATES_SUPPORTED, { cacheTtl: 5 * 60_000 }),
 
   // ── Phase 5C.4: Admin / Diagnostics ────────────────────────────────────
   testSmtp: (data) => api.post(ENDPOINTS.SETTINGS_ADMIN_SMTP_TEST, data),
@@ -137,7 +137,8 @@ export const settingsApi = {
   getNumberingDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_NUMBERING_DIAGNOSTICS),
   getTaxDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_TAX_DIAGNOSTICS),
   getExchangeRateDiagnostics: () => api.get(ENDPOINTS.SETTINGS_ADMIN_EXCHANGE_RATE_DIAGNOSTICS),
-  getHealth: () => api.get(ENDPOINTS.SETTINGS_ADMIN_HEALTH),
+  // fresh=true bypasses the server-side caches (explicit Refresh in Settings).
+  getHealth: (fresh = false) => api.get(fresh ? `${ENDPOINTS.SETTINGS_ADMIN_HEALTH}?fresh=true` : ENDPOINTS.SETTINGS_ADMIN_HEALTH, fresh ? undefined : { cacheTtl: 15_000 }),
   validateFull: () => api.post(ENDPOINTS.SETTINGS_ADMIN_VALIDATE),
 };
 
@@ -366,7 +367,7 @@ export const taxPricingApi = {
 };
 
 export const contractApi = {
-  list: (params) => api.get(buildUrl(ENDPOINTS.CONTRACTS, params)),
+  list: (params, opts) => api.get(buildUrl(ENDPOINTS.CONTRACTS, params), opts),
   listActive: () => api.get(ENDPOINTS.CONTRACTS_ACTIVE),
   listExpiring: (withinDays = 30) =>
     api.get(buildUrl(ENDPOINTS.CONTRACTS_EXPIRING, { within_days: withinDays })),
@@ -454,7 +455,7 @@ export const subscriptionApi = {
 };
 
 export const invoiceApi = {
-  list: (params) => api.get(buildUrl(ENDPOINTS.INVOICES, params)),
+  list: (params, opts) => api.get(buildUrl(ENDPOINTS.INVOICES, params), opts),
   get: (id) => api.get(ENDPOINTS.INVOICE(id)),
   create: (data) => api.post(ENDPOINTS.INVOICES, data),
   update: (id, data) => api.put(ENDPOINTS.INVOICE(id), data),
@@ -529,7 +530,7 @@ export const paymentApi = {
   updateMethod: (id, data) => api.put(ENDPOINTS.PAYMENT_METHOD(id), data),
   removeMethod: (id) => api.delete(ENDPOINTS.PAYMENT_METHOD(id)),
   setDefaultMethod: (id) => api.put(ENDPOINTS.PAYMENT_METHOD_DEFAULT(id)),
-  list: (params) => api.get(buildUrl(ENDPOINTS.PAYMENTS, params)),
+  list: (params, opts) => api.get(buildUrl(ENDPOINTS.PAYMENTS, params), opts),
   get: (id) => api.get(ENDPOINTS.PAYMENT(id)),
   create: (data) => api.post(ENDPOINTS.PAYMENTS, data),
   updateStatus: (id, status) =>

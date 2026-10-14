@@ -9,6 +9,7 @@ import {
   resendInvite,
 } from "../../service/userManagementService";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import useLatestRequest from "../billing/utils/useLatestRequest";
 import { ROLE_LABELS, ROLES } from "../../config/roles";
 import {
   X,
@@ -164,17 +165,29 @@ export default function OrgAdminUserManagementPage() {
       .finally(() => setSummaryLoading(false));
   }, []);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchUsers = useCallback((searchTerm, skip) => {
+    const isCurrent = beginRequest();
     setLoading(true);
     listUsers({ search: searchTerm, skip, limit: PAGE_SIZE })
       .then((res) => {
+        if (!isCurrent()) return;
         setUsers(res.users || []);
         setTotal(res.total || 0);
         setError(null);
       })
-      .catch((err) => setError(err.message || "Failed to load users."))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((err) => { if (isCurrent()) setError(err.message || "Failed to load users."); })
+      .finally(() => { if (isCurrent()) setLoading(false); });
+  }, [beginRequest]);
+
+  // Escape closes the Invite/Edit dialogs (backdrop clicks no longer do, so typed input isn't lost).
+  useEffect(() => {
+    if (!showInvite && !editUser) return undefined;
+    const onKeyDown = (e) => { if (e.key === "Escape") { setShowInvite(false); setEditUser(null); } };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showInvite, editUser]);
 
   useEffect(() => {
     fetchSummary();
@@ -379,7 +392,7 @@ export default function OrgAdminUserManagementPage() {
               style={{ color: INK }}
             />
             {search && (
-              <button onClick={() => setSearch("")} className="p-0.5 rounded hover:bg-slate-100 transition-colors">
+              <button onClick={() => setSearch("")} aria-label="Clear search" className="p-0.5 rounded hover:bg-slate-100 transition-colors">
                 <X className="w-3.5 h-3.5" style={{ color: INK_FAINT }} />
               </button>
             )}
@@ -501,6 +514,7 @@ export default function OrgAdminUserManagementPage() {
                             className="p-1.5 rounded-lg border transition-colors hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ borderColor: LINE, color: WARNING }}
                             title="Resend invitation"
+                            aria-label="Resend invitation"
                             disabled={resendingId === u.id}
                             aria-busy={resendingId === u.id}
                             onClick={() => doResendInvite(u)}
@@ -512,6 +526,7 @@ export default function OrgAdminUserManagementPage() {
                           className="p-1.5 rounded-lg border transition-colors hover:bg-slate-50"
                           style={{ borderColor: LINE, color: INK_SOFT }}
                           title="Edit user"
+                          aria-label="Edit user"
                           onClick={() => openEdit(u)}
                         >
                           <Pencil className="w-3.5 h-3.5" />
@@ -521,6 +536,7 @@ export default function OrgAdminUserManagementPage() {
                             className="p-1.5 rounded-lg border transition-colors hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ borderColor: LINE, color: DANGER }}
                             title="Deactivate"
+                            aria-label="Deactivate"
                             disabled={u.id === currentUser?.id}
                             onClick={() => setConfirmAction({ ...u, action: "deactivate" })}
                           >
@@ -532,6 +548,7 @@ export default function OrgAdminUserManagementPage() {
                             className="p-1.5 rounded-lg border transition-colors hover:bg-emerald-50"
                             style={{ borderColor: LINE, color: SUCCESS }}
                             title="Reactivate"
+                            aria-label="Reactivate"
                             onClick={() => setConfirmAction({ ...u, action: "reactivate" })}
                           >
                             <Play className="w-3.5 h-3.5" />
@@ -555,6 +572,7 @@ export default function OrgAdminUserManagementPage() {
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={!canPrev}
+                aria-label="Previous page"
                 className="p-1.5 rounded-lg border transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}
               >
@@ -566,6 +584,7 @@ export default function OrgAdminUserManagementPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={!canNext}
+                aria-label="Next page"
                 className="p-1.5 rounded-lg border transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}
               >
@@ -583,21 +602,21 @@ export default function OrgAdminUserManagementPage() {
         >
           {toast.type === "success" ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
           {toast.msg}
-          <button onClick={() => setToast({ msg: null })} className="ml-1 p-0.5 hover:opacity-70 transition-opacity">
+          <button onClick={() => setToast({ msg: null })} aria-label="Dismiss notification" className="ml-1 p-0.5 hover:opacity-70 transition-opacity">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {showInvite && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowInvite(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="invite-user-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b" style={{ borderColor: LINE }}>
               <div>
-                <h2 className="text-lg font-bold" style={{ color: INK }}>Invite User</h2>
+                <h2 id="invite-user-title" className="text-lg font-bold" style={{ color: INK }}>Invite User</h2>
                 <p className="text-xs mt-0.5" style={{ color: INK_FAINT }}>They'll receive an email to set up their password.</p>
               </div>
-              <button onClick={() => setShowInvite(false)} className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
+              <button onClick={() => setShowInvite(false)} aria-label="Close" className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
                 <X className="w-4 h-4" style={{ color: INK_SOFT }} />
               </button>
             </div>
@@ -691,14 +710,14 @@ export default function OrgAdminUserManagementPage() {
       )}
 
       {editUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setEditUser(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="edit-user-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b" style={{ borderColor: LINE }}>
               <div>
-                <h2 className="text-lg font-bold" style={{ color: INK }}>Edit User</h2>
+                <h2 id="edit-user-title" className="text-lg font-bold" style={{ color: INK }}>Edit User</h2>
                 <p className="text-xs mt-0.5" style={{ color: INK_FAINT }}>{editUser.email}</p>
               </div>
-              <button onClick={() => setEditUser(null)} className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
+              <button onClick={() => setEditUser(null)} aria-label="Close" className="p-1.5 rounded-lg border hover:bg-slate-50 transition-colors" style={{ borderColor: LINE }}>
                 <X className="w-4 h-4" style={{ color: INK_SOFT }} />
               </button>
             </div>

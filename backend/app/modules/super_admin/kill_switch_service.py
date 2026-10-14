@@ -253,15 +253,38 @@ class BillingKillSwitchService:
         self._lift_expired_pause(switch)
         return switch
 
+    def effective_states(self, scopes) -> dict[str, BillingKillSwitch]:
+        """Bulk, read-path variant of effective_state(): ONE query for all
+        scopes. A scope with no row yet is reported as the default state
+        (enabled=True) via a transient, NOT-persisted object — the read path
+        never INSERTs (rows are created lazily by ensure_switch on the first
+        write/enforcement path, which behaves identically). Expired pauses are
+        still lifted lazily (§9.1), exactly as effective_state() does."""
+        scopes = list(dict.fromkeys(scopes))
+        rows = {
+            r.scope: r
+            for r in self.db.query(BillingKillSwitch).filter(BillingKillSwitch.scope.in_(scopes)).all()
+        }
+        result: dict[str, BillingKillSwitch] = {}
+        for scope in scopes:
+            switch = rows.get(scope)
+            if switch is None:
+                switch = BillingKillSwitch(scope=scope, enabled=True)
+            else:
+                self._lift_expired_pause(switch)
+            result[scope] = switch
+        return result
+
     def is_enabled(self, scope: str) -> bool:
         return self.effective_state(scope).enabled
 
     def require_enabled(self, scope: str) -> None:
         if not self.is_enabled(scope):
+            # Tenant users see this text: no internal scope keys. Operators can
+            # see which breaker is engaged in the kill-switch console.
             raise BillingBlockedError(
-                f"Billing operation blocked: circuit breaker '{scope}' is currently engaged "
-                "(paused) by a platform operator. This action is preserved, not canceled — "
-                "retry once the breaker is released."
+                "This billing action is temporarily paused by Zoiko. Nothing was "
+                "changed or lost — please try again later."
             )
 
     def set_enabled(
@@ -297,6 +320,12 @@ class BillingKillSwitchService:
             datetime.utcnow() + timedelta(minutes=auto_expire_minutes) if not enabled else None
         )
         self.db.flush()
+        try:
+            from app.modules.super_admin.attention_service import invalidate_polled_caches
+
+            invalidate_polled_caches()
+        except Exception:  # noqa: BLE001
+            pass
         logger.warning(
             "Circuit breaker '%s' set to enabled=%s by user %s (reason: %s, expires_at: %s)",
             scope, enabled, actor_id, reason, switch.expires_at,

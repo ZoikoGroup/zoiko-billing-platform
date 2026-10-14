@@ -326,11 +326,11 @@ export default function PricingDashboardPage() {
 
       <StatGroup title="More Metrics">
         <DashboardStatCard title="Revenue" value={Number(revenue)} currency={baseCurrency} icon={DollarSign} color="from-emerald-500 to-green-600" subtitle="From active subscriptions on these plans" href="/billing/subscriptions" />
-        <DashboardStatCard title="Avg Plan Price" value={Number(avgPrice)} currency={baseCurrency} icon={TrendingUp} color="from-teal-500 to-cyan-600" subtitle={avgMixesCurrencies ? "Active plans only · mixed currencies, not converted" : "Active plans only"} />
+        <DashboardStatCard title="Avg Plan Price" value={Number(avgPrice)} currency={baseCurrency} icon={TrendingUp} color="from-teal-500 to-cyan-600" subtitle={avgMixesCurrencies ? "Active plans only · mixed currencies, not converted" : "Active plans only"} href="/billing/products/pricing-plans" />
         {/* Was titled "Revenue Coverage" but it measures catalog coverage
             (products that have at least one pricing plan), not revenue. */}
         <DashboardStatCard title="Pricing Coverage" value={`${revenueCoveragePct}%`} icon={BarChart3} color="from-amber-500 to-orange-500"
-          subtitle={`${coverage.covered.length} of ${products.length} products have pricing`} />
+          subtitle={`${coverage.covered.length} of ${products.length} products have pricing`} href="/billing/products" />
         <DashboardStatCard title="Total Tiers" value={tierCount} icon={Layers} color="from-indigo-500 to-blue-600" subtitle="Across all tiered plans" href="/billing/pricing/tier-management" />
         <DashboardStatCard title="Active Plans" value={activePlans.length} icon={Layers} color="from-emerald-500 to-emerald-600"
           subtitle={`${filteredPlans.length ? ((activePlans.length / filteredPlans.length) * 100).toFixed(1) : 0}% of ${filteredPlans.length} total`} href="/billing/pricing" />

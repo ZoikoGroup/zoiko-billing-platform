@@ -15,12 +15,13 @@ function Chip({ label, onRemove }) {
   );
 }
 
-export default function ActiveUrlFilterChips({ expiringDays, onClearExpiring, allDates, onClearAllDates }) {
-  if (!expiringDays && !allDates) return null;
+export default function ActiveUrlFilterChips({ expiringDays, onClearExpiring, allDates, onClearAllDates, overCreditLimit, onClearOverCreditLimit }) {
+  if (!expiringDays && !allDates && !overCreditLimit) return null;
   return (
     <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
       {expiringDays && <Chip label={`Expiring within ${expiringDays} days`} onRemove={onClearExpiring} />}
       {allDates && <Chip label="All dates (date range not applied)" onRemove={onClearAllDates} />}
+      {overCreditLimit && <Chip label="Over credit limit" onRemove={onClearOverCreditLimit} />}
     </div>
   );
 }

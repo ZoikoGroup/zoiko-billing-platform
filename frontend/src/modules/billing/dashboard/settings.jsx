@@ -15,6 +15,7 @@ import { getLanguageSelectOptions } from "../../../utils/language";
 import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
 import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
 import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -2519,6 +2520,24 @@ export default function BillingSettingsPage() {
 
 /* ── Administration Panel ──────────────────────────────────────────────── */
 
+// SMTP reachability is served from a short server-side cache: say when it
+// was last checked so a cached "healthy" is never mistaken for a live probe.
+export function freshnessNote(details, now = Date.now()) {
+  if (!details?.checked_at) return null;
+  const mins = Math.max(0, Math.round((now - new Date(details.checked_at).getTime()) / 60000));
+  const when = mins === 0 ? "checked just now" : `checked ${mins} min ago`;
+  return details.stale ? `${when} (refreshing)` : when;
+}
+
+// Diagnostics payloads may carry a malformed/empty timestamp (or a stale
+// pre-fix JSON-string cache); render "—" instead of the browser's
+// "Invalid Date" so Appearance never shows junk values.
+export function formatDiagDate(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
+}
+
 function HealthStatusBadge({ status }) {
   const classes = {
     healthy: "bg-green-100 text-green-700 border-green-200",
@@ -2532,7 +2551,10 @@ function HealthStatusBadge({ status }) {
     critical: <AlertCircle size={12} />,
     unknown: <AlertCircle size={12} />,
   };
-  const s = (status || "unknown").toLowerCase();
+  // Backend health checks also report "degraded" / "down".
+  const aliases = { degraded: "warning", down: "critical" };
+  const raw = (status || "unknown").toLowerCase();
+  const s = aliases[raw] || raw;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${classes[s] || classes.unknown}`}>
       {icons[s] || icons.unknown}
@@ -2589,11 +2611,13 @@ function AdministrationPanel() {
   const [enhancedValidation, setEnhancedValidation] = useState(null);
   const [enhancedValidationLoading, setEnhancedValidationLoading] = useState(false);
 
-  const loadHealth = useCallback(async () => {
+  // Opening the panel uses the cached check; the Refresh button asks for a
+  // live one (fresh=true bypasses the server's SMTP reachability cache).
+  const loadHealth = useCallback(async (fresh = false) => {
     setHealthLoading(true);
     setHealthError(null);
     try {
-      const data = await settingsApi.getHealth();
+      const data = await settingsApi.getHealth(fresh);
       setHealth(data);
     } catch (err) {
       setHealthError(err.message || "Failed to load health status");
@@ -2666,22 +2690,40 @@ function AdministrationPanel() {
     }
   }, [smtpForm]);
 
+  // B10: the preview panel renders below the whole template list, so a click
+  // near the top looked like it did nothing -- bring the panel into view.
+  // Only the latest click may fill it (clicking A then B could show A's
+  // preview under B's name), and invalid variables JSON is reported instead
+  // of being silently ignored.
+  const previewPanelRef = useRef(null);
+  const beginPreviewRequest = useLatestRequest();
   const handlePreviewTemplate = useCallback(async (name) => {
+    const isCurrent = beginPreviewRequest();
     setPreviewTemplate(name);
-    setPreviewLoading(true);
     setPreviewError(null);
     setPreviewData(null);
+    setTimeout(() => previewPanelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 0);
+    let vars = {};
+    const raw = (previewVariables || "").trim();
+    if (raw) {
+      try { vars = JSON.parse(raw); } catch { vars = null; }
+      if (vars === null || typeof vars !== "object" || Array.isArray(vars)) {
+        setPreviewError('Template variables must be a JSON object, e.g. {"customer_name": "Jane"}.');
+        return;
+      }
+    }
+    setPreviewLoading(true);
     try {
-      let vars = {};
-      try { vars = JSON.parse(previewVariables); } catch (err) { console.error("[Settings] Failed to parse preview vars:", err); }
       const data = await settingsApi.previewEmailTemplate(name, vars);
+      if (!isCurrent()) return;
       setPreviewData(data);
     } catch (err) {
+      if (!isCurrent()) return;
       setPreviewError(err.message || "Failed to load template preview");
     } finally {
-      setPreviewLoading(false);
+      if (isCurrent()) setPreviewLoading(false);
     }
-  }, [previewVariables]);
+  }, [previewVariables, beginPreviewRequest]);
 
   const handleEnhancedValidation = useCallback(async () => {
     setEnhancedValidationLoading(true);
@@ -2715,7 +2757,7 @@ function AdministrationPanel() {
     <div className="space-y-6">
       {/* Health Dashboard */}
       <AdminCard title="System Health" icon={Thermometer} action={
-        <button onClick={loadHealth} disabled={healthLoading}
+        <button onClick={() => loadHealth(true)} disabled={healthLoading}
           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors">
           <RefreshCw size={12} className={healthLoading ? "animate-spin" : ""} />
           Refresh
@@ -2750,7 +2792,7 @@ function AdministrationPanel() {
                     <StatusLine key={i}
                       label={comp.name || comp.component || `Component #${i + 1}`}
                       status={comp.status}
-                      detail={comp.detail || comp.message} />
+                      detail={[comp.detail || comp.message, freshnessNote(comp.details)].filter(Boolean).join(" · ")} />
                   ))}
                 </div>
               </div>
@@ -2801,30 +2843,30 @@ function AdministrationPanel() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Connection</span>
-                  <HealthStatusBadge status={smtpResult.connection?.success ? "healthy" : "critical"} />
-                  {smtpResult.connection?.details && <p className="text-slate-500 mt-1">{smtpResult.connection.details}</p>}
+                  <HealthStatusBadge status={smtpResult.connection?.ok ? "healthy" : "critical"} />
+                  {smtpResult.connection?.message && <p className="text-slate-500 mt-1">{smtpResult.connection.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">TLS</span>
-                  <HealthStatusBadge status={smtpResult.tls?.success ? "healthy" : "critical"} />
-                  {smtpResult.tls?.details && <p className="text-slate-500 mt-1">{smtpResult.tls.details}</p>}
+                  <HealthStatusBadge status={smtpResult.tls?.ok ? "healthy" : "critical"} />
+                  {smtpResult.tls?.message && <p className="text-slate-500 mt-1">{smtpResult.tls.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Authentication</span>
-                  <HealthStatusBadge status={smtpResult.authentication?.success ? "healthy" : "critical"} />
-                  {smtpResult.authentication?.details && <p className="text-slate-500 mt-1">{smtpResult.authentication.details}</p>}
+                  <HealthStatusBadge status={smtpResult.authentication?.ok ? "healthy" : "critical"} />
+                  {smtpResult.authentication?.message && <p className="text-slate-500 mt-1">{smtpResult.authentication.message}</p>}
                 </div>
                 <div className="p-2 bg-white rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Test Email</span>
-                  <HealthStatusBadge status={smtpResult.test_email_sent?.success ? "healthy" : "warning"} />
-                  {smtpResult.test_email_sent?.details && <p className="text-slate-500 mt-1">{smtpResult.test_email_sent.details}</p>}
+                  <HealthStatusBadge status={smtpResult.test_email_sent?.ok ? "healthy" : "warning"} />
+                  {smtpResult.test_email_sent?.message && <p className="text-slate-500 mt-1">{smtpResult.test_email_sent.message}</p>}
                 </div>
               </div>
               {smtpResult.sender_identity && (
                 <div className="p-2 bg-white rounded-lg border border-slate-100 text-xs">
                   <span className="text-slate-500 block">Sender Identity</span>
-                  <HealthStatusBadge status={smtpResult.sender_identity?.success ? "healthy" : "warning"} />
-                  {smtpResult.sender_identity?.details && <p className="text-slate-500 mt-1">{smtpResult.sender_identity.details}</p>}
+                  <HealthStatusBadge status={smtpResult.sender_identity?.ok ? "healthy" : "warning"} />
+                  {smtpResult.sender_identity?.message && <p className="text-slate-500 mt-1">{smtpResult.sender_identity.message}</p>}
                 </div>
               )}
             </div>
@@ -2872,16 +2914,16 @@ function AdministrationPanel() {
 
             {/* Template Preview Modal */}
             {previewTemplate && (
-              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div ref={previewPanelRef} className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 scroll-mt-24" role="region" aria-label={`Preview of ${previewTemplate} template`}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-slate-800">Preview: {previewTemplate}</h4>
-                  <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }}
+                  <button onClick={() => { setPreviewTemplate(null); setPreviewData(null); setPreviewError(null); }} aria-label="Close preview"
                     className="text-slate-500 hover:text-slate-600"><X size={16} /></button>
                 </div>
                 <div className="mb-3">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Template Variables (JSON)</label>
+                  <label htmlFor="preview-variables" className="block text-xs font-medium text-slate-600 mb-1">Template Variables (JSON)</label>
                   <div className="flex gap-2">
-                    <input type="text" value={previewVariables} onChange={(e) => setPreviewVariables(e.target.value)}
+                    <input id="preview-variables" type="text" value={previewVariables} onChange={(e) => setPreviewVariables(e.target.value)}
                       placeholder='{"customer_name": "John", "invoice_number": "INV-001"}'
                       className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand/30/20" />
                     <button onClick={() => handlePreviewTemplate(previewTemplate)} disabled={previewLoading}
@@ -2891,7 +2933,7 @@ function AdministrationPanel() {
                   </div>
                 </div>
                 {previewLoading && <div className="animate-pulse h-32 bg-slate-200 rounded-lg" />}
-                {previewError && <p className="text-xs text-red-600">{previewError}</p>}
+                {previewError && <p role="alert" className="text-xs text-red-600">{previewError}</p>}
                 {previewData && !previewLoading && (
                   <div className="space-y-3">
                     <div className="flex gap-3 text-xs">
@@ -2918,10 +2960,14 @@ function AdministrationPanel() {
                           <FileText size={12} className="text-slate-500" />
                           <span className="text-xs text-slate-500">Rendered HTML Preview</span>
                         </div>
-                        <div className="p-3 bg-white max-h-64 overflow-auto text-xs"
-                          dangerouslySetInnerHTML={{ __html: previewData.rendered_html
-                            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                            .replace(/\son\w+\s*=/gi, ' data-blocked=') }} />
+                        {/* Sandboxed iframe: template <style> rules (body, table, a…) must not
+                            restyle the app, and template markup can never run scripts. */}
+                        <iframe
+                          title={`Preview of ${previewData.template_name}`}
+                          sandbox=""
+                          srcDoc={previewData.rendered_html}
+                          className="block w-full h-96 bg-white"
+                        />
                       </div>
                     )}
                     {previewData.html_content && !previewData.rendered_html && (
@@ -3076,16 +3122,16 @@ function AdministrationPanel() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Provider</span>
-                <span className="font-medium text-slate-800">{exchangeDiag.provider || "—"}</span>
+                <span className="font-medium text-slate-800">{exchangeDiag.provider?.value || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Base Currency</span>
-                <span className="font-medium text-slate-800">{exchangeDiag.base_currency || "—"}</span>
+                <span className="font-medium text-slate-800">{exchangeDiag.base_currency?.value || "—"}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
                 <span className="text-slate-500 block">Last Refreshed</span>
                 <span className="font-medium text-slate-800">
-                  {exchangeDiag.last_refreshed ? new Date(exchangeDiag.last_refreshed).toLocaleDateString() : "—"}
+                  {formatDiagDate(exchangeDiag.last_refreshed?.value)}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">

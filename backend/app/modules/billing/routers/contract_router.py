@@ -8,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import ContractService
@@ -62,7 +63,7 @@ def list_contracts(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
     search_term: Optional[str] = Query(None),
     customer_id: Optional[int] = Query(None),
     quotation_id: Optional[int] = Query(None),
@@ -137,13 +138,16 @@ def get_contract_summary(
     date_to: Optional[str] = Query(None),
 ):
     svc = ContractService(db)
-    return svc.get_contract_summary(
+    return cached_aggregate(
+        "contract.get_contract_summary", current_user.organization_id, {"search_term": search_term, "customer_id": customer_id, "status": status, "date_from": date_from, "date_to": date_to},
+        lambda: svc.get_contract_summary(
         organization_id=current_user.organization_id,
         search_term=search_term,
         customer_id=customer_id,
         status=status,
         date_from=date_from,
         date_to=date_to,
+    ),
     )
 
 

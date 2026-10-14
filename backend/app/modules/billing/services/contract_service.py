@@ -413,7 +413,7 @@ class ContractService:
 
     # ── Contract Items ──────────────────────────────────────────────
 
-    def set_contract_items(self, contract_id: int, organization_id: int, items_data: List[Dict[str, Any]]) -> List[ContractItem]:
+    def set_contract_items(self, contract_id: int, organization_id: int, items_data: List[Dict[str, Any]], *, commit: bool = True) -> List[ContractItem]:
         contract = self.repo.get_by_id(contract_id, organization_id)
         if contract.status not in (ContractStatus.DRAFT, ContractStatus.ACTIVE):
             raise BadRequestException("Cannot modify items on a contract in its current status")
@@ -491,7 +491,9 @@ class ContractService:
 
         contract.value = round_money(grand_total, contract.currency)
 
-        self.audit.log(organization_id, None, BillingAuditAction.UPDATE, "Contract", contract_id)
+        # commit=False: part of the caller's transaction (quotation conversion)
+        log = self.audit.log if commit else self.audit.log_no_commit
+        log(organization_id, None, BillingAuditAction.UPDATE, "Contract", contract_id)
         return created_items
 
     def get_contract_items(self, contract_id: int, organization_id: int) -> List[ContractItem]:
@@ -511,58 +513,94 @@ class ContractService:
         if quotation.status != QuoteStatus.ACCEPTED:
             raise BadRequestException("Only accepted quotations can be converted to contracts")
 
-        existing = self.db.query(Contract).filter(
-            Contract.organization_id == organization_id,
-            Contract.quotation_id == quotation_id,
-            Contract.deleted_at.is_(None),
-        ).first()
-        if existing:
-            raise AlreadyExistsException("Contract", f"already exists for quotation {quotation_id}")
+        # get_configuration() lazily seeds AND COMMITS a missing billing
+        # configuration, and the price resolver / currency fallback below
+        # reach it. Do that (if ever needed) here, before the transaction
+        # opens, so nothing inside it can commit a partial contract -- or
+        # release the quotation lock taken below.
+        self.config_service.get_configuration(organization_id)
 
-        contract_number = data.get("contract_number") or f"CON-{quotation.quote_number}"
-        contract_name = data.get("contract_name") or f"Contract from {quotation.quote_number}"
-        start_date = data.get("start_date") or date.today()
-        end_date = data.get("end_date")
-        notes = data.get("notes") or quotation.notes
+        # One transaction: the contract, its items, the quotation's status
+        # change and the audit entry commit together or not at all. Before,
+        # the contract committed on its own and the quotation stayed
+        # "accepted" -- so it still counted as open pipeline next to the
+        # contract created from it (Batch 7 BUG-06), unlike invoice conversion
+        # which already marks the quotation "converted".
+        try:
+            # Lock the quotation row (SELECT ... FOR UPDATE) and re-check it:
+            # concurrent conversions of the same quotation serialise here, so
+            # the second sees CONVERTED / the first contract and fails with
+            # the same 400 / 409 as a sequential retry. Without this, two
+            # requests with different contract numbers both created a
+            # contract (contracts.quotation_id is not unique).
+            quotation = (
+                self.db.query(Quotation)
+                .filter(Quotation.id == quotation_id, Quotation.organization_id == organization_id)
+                .populate_existing()
+                .with_for_update()
+                .one()
+            )
+            if quotation.status != QuoteStatus.ACCEPTED:
+                raise BadRequestException("Only accepted quotations can be converted to contracts")
 
-        if self.repo.exists(organization_id, contract_number=contract_number):
-            contract_number = f"{contract_number}-{int(date.today().strftime('%Y%m%d'))}"
+            existing = self.db.query(Contract).filter(
+                Contract.organization_id == organization_id,
+                Contract.quotation_id == quotation_id,
+                Contract.deleted_at.is_(None),
+            ).first()
+            if existing:
+                raise AlreadyExistsException("Contract", f"already exists for quotation {quotation_id}")
 
-        contract = self.repo.create(
-            organization_id=organization_id,
-            customer_id=quotation.customer_id,
-            quotation_id=quotation_id,
-            contract_number=contract_number,
-            contract_name=contract_name,
-            status=ContractStatus.DRAFT,
-            start_date=start_date,
-            end_date=end_date,
-            value=quotation.total_amount or Decimal("0"),
-            currency=quotation.currency or self.config_service.get_default_currency(organization_id),
-            notes=notes,
-            created_by=created_by,
-        )
+            contract_number = data.get("contract_number") or f"CON-{quotation.quote_number}"
+            contract_name = data.get("contract_name") or f"Contract from {quotation.quote_number}"
+            start_date = data.get("start_date") or date.today()
+            end_date = data.get("end_date")
+            notes = data.get("notes") or quotation.notes
 
-        items = self.quote_service.list_items(quotation_id, organization_id)
-        if items:
-            ci_data = []
-            for qi in items:
-                ci_data.append({
-                    "product_id": qi.product_id,
-                    "description": qi.description,
-                    "quantity": qi.quantity,
-                    "unit_price": qi.unit_price,
-                    "discount_percentage": qi.discount_percentage,
-                    "tax_percentage": qi.tax_percentage,
-                    "is_tax_inclusive": qi.is_tax_inclusive,
-                    "pricing_plan_id": getattr(qi, "pricing_plan_id", None),
-                    "price_source": getattr(qi, "price_source", None),
-                    "base_price": getattr(qi, "base_price", None),
-                    "resolved_price": getattr(qi, "resolved_price", None),
-                })
-            self.set_contract_items(contract.id, organization_id, ci_data)
+            if self.repo.exists(organization_id, contract_number=contract_number):
+                contract_number = f"{contract_number}-{int(date.today().strftime('%Y%m%d'))}"
 
-        self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "Contract", contract.id)
+            contract = self.repo.create_no_commit(
+                organization_id=organization_id,
+                customer_id=quotation.customer_id,
+                quotation_id=quotation_id,
+                contract_number=contract_number,
+                contract_name=contract_name,
+                status=ContractStatus.DRAFT,
+                start_date=start_date,
+                end_date=end_date,
+                value=quotation.total_amount or Decimal("0"),
+                currency=quotation.currency or self.config_service.get_default_currency(organization_id),
+                notes=notes,
+                created_by=created_by,
+            )
+
+            items = self.quote_service.list_items(quotation_id, organization_id)
+            if items:
+                ci_data = []
+                for qi in items:
+                    ci_data.append({
+                        "product_id": qi.product_id,
+                        "description": qi.description,
+                        "quantity": qi.quantity,
+                        "unit_price": qi.unit_price,
+                        "discount_percentage": qi.discount_percentage,
+                        "tax_percentage": qi.tax_percentage,
+                        "is_tax_inclusive": qi.is_tax_inclusive,
+                        "pricing_plan_id": getattr(qi, "pricing_plan_id", None),
+                        "price_source": getattr(qi, "price_source", None),
+                        "base_price": getattr(qi, "base_price", None),
+                        "resolved_price": getattr(qi, "resolved_price", None),
+                    })
+                self.set_contract_items(contract.id, organization_id, ci_data, commit=False)
+
+            quotation.status = QuoteStatus.CONVERTED
+            self.audit.log_no_commit(organization_id, created_by, BillingAuditAction.CREATE, "Contract", contract.id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
         self.db.refresh(contract)
         return contract
 

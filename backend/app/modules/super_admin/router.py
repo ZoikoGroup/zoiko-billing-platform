@@ -67,6 +67,7 @@ from app.modules.organizations.models import Organization, TenantLifecycleState
 from app.modules.super_admin.attention_service import AttentionService
 from app.modules.super_admin.lifecycle_service import TenantLifecycleService
 from app.modules.super_admin.organization_service import OrganizationDirectoryService
+from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
 from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
 from app.modules.super_admin.saas_reporting_service import SaasReportingService
 from app.modules.super_admin.schemas import SaasReportingResponse
@@ -136,6 +137,7 @@ from app.modules.super_admin.schemas import (
     LifecycleTransitionResponse,
     OrganizationDirectoryResponse,
     OrganizationOverviewResponse,
+    OrganizationPurgeRequest,
     PlatformLifecycleResponse,
     SearchResponse,
     SubscriptionAuditLogListResponse,
@@ -4290,7 +4292,22 @@ def get_attention_counts(
     current_user=Depends(require_capability('governance.read')),
     db: Session = Depends(get_db),
 ):
-    return AttentionCountsResponse(**AttentionService(db).get_counts())
+    # Not user-specific (capability-gated only) -> one global short-TTL entry.
+    from app.core import cache_service
+    from app.modules.super_admin.attention_service import (
+        ATTENTION_COUNTS_CACHE_KEY,
+        POLLED_CACHE_TTL_SECONDS,
+    )
+
+    cached = cache_service.cache_get(ATTENTION_COUNTS_CACHE_KEY)
+    if cached is not None:
+        try:
+            return AttentionCountsResponse(**cached)
+        except Exception:  # noqa: BLE001 - corrupt entry: recompute
+            pass
+    counts = AttentionCountsResponse(**AttentionService(db).get_counts())
+    cache_service.cache_set(ATTENTION_COUNTS_CACHE_KEY, counts.model_dump(mode="json"), ttl=POLLED_CACHE_TTL_SECONDS)
+    return counts
 
 
 @router.post("/attention/{item_id}/acknowledge", response_model=AttentionItemResponse)
@@ -4379,12 +4396,28 @@ def get_triage_summary(
     from datetime import datetime as _dt
 
     from app.config import settings
+    from app.core import cache_service
+    from app.modules.auth.models import User as _User
+    from app.modules.super_admin.attention_service import (
+        POLLED_CACHE_TTL_SECONDS,
+        TRIAGE_SUMMARY_CACHE_KEY,
+    )
     from app.modules.super_admin.kill_switch_service import (
         COMMERCIAL_SUBSCRIPTION_CHARGING,
         DOMAIN_B_BREAKER_CATALOG,
         BillingKillSwitchService,
     )
     from app.modules.super_admin.models import PlatformAuditLog
+
+    # The summary is identical for every triage.read holder (capability gate
+    # only, no per-user filtering), so a single global short-TTL entry cannot
+    # leak one user's data to another. Cache failures fall through to a live read.
+    cached = cache_service.cache_get(TRIAGE_SUMMARY_CACHE_KEY)
+    if cached is not None:
+        try:
+            return TriageSummaryResponse(**cached)
+        except Exception:  # noqa: BLE001 - corrupt entry: recompute
+            pass
 
     attention = AttentionService(db)
     counts = AttentionCountsResponse(**attention.get_counts())
@@ -4394,17 +4427,20 @@ def get_triage_summary(
 
     jobs = TelemetryService(db).get_job_health()
 
-    breaker_svc = BillingKillSwitchService(db)
+    # One query for every breaker row (no per-scope ensure_switch / INSERT).
+    states = BillingKillSwitchService(db).effective_states(
+        [*DOMAIN_B_BREAKER_CATALOG.keys(), COMMERCIAL_SUBSCRIPTION_CHARGING]
+    )
     safety_controls = []
     for scope, meta in DOMAIN_B_BREAKER_CATALOG.items():
-        s = breaker_svc.effective_state(scope)
+        s = states[scope]
         safety_controls.append(
             TriageSafetyControl(
                 scope=scope, display_name=meta["display_name"],
                 enabled=s.enabled, expires_at=s.expires_at, reason=s.reason,
             )
         )
-    commercial = breaker_svc.effective_state(COMMERCIAL_SUBSCRIPTION_CHARGING)
+    commercial = states[COMMERCIAL_SUBSCRIPTION_CHARGING]
     safety_controls.append(
         TriageSafetyControl(
             scope=commercial.scope, display_name="Pause commercial subscription charging",
@@ -4418,14 +4454,14 @@ def get_triage_summary(
         .limit(10)
         .all()
     )
+    actor_ids = {e.actor_id for e in recent_events if e.actor_id}
+    email_by_id = (
+        dict(db.query(_User.id, _User.email).filter(_User.id.in_(actor_ids)).all())
+        if actor_ids else {}
+    )
     critical_events = []
     for e in recent_events:
-        actor_email = None
-        if e.actor_id:
-            from app.modules.auth.models import User as _User
-
-            actor = db.query(_User).filter(_User.id == e.actor_id).first()
-            actor_email = actor.email if actor else None
+        actor_email = email_by_id.get(e.actor_id) if e.actor_id else None
         critical_events.append(
             TriageCriticalEvent(
                 id=e.id,
@@ -4438,7 +4474,7 @@ def get_triage_summary(
             )
         )
 
-    return TriageSummaryResponse(
+    summary = TriageSummaryResponse(
         generated_at=_dt.utcnow(),
         incidents=TriageIncidentsSection(counts=counts, top_items=top_items),
         pipeline_stages=[JobHealthItem(**j) for j in jobs],
@@ -4446,6 +4482,10 @@ def get_triage_summary(
         safety_controls=safety_controls,
         critical_events=critical_events,
     )
+    cache_service.cache_set(
+        TRIAGE_SUMMARY_CACHE_KEY, summary.model_dump(mode="json"), ttl=POLLED_CACHE_TTL_SECONDS
+    )
+    return summary
 
 
 # 
@@ -4573,6 +4613,55 @@ def _latest_lifecycle_correlation_id(db: Session, organization_id: int) -> str:
         .first()
     )
     return row[0] if row else ""
+
+
+@router.post("/organizations/{organization_id}/purge", response_model=SuccessResponse)
+def purge_super_admin_organization(
+    organization_id: int,
+    data: OrganizationPurgeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """PERMANENTLY delete an organization and every row that belongs to it.
+
+    This is the irreversible counterpart to the governed lifecycle
+    offboarding. It requires an exact ``organization_code`` confirmation and a
+    human reason, writes one ``DELETE`` entry to the platform audit trail, then
+    removes the tenant graph (users, billing records, subscriptions, AI data,
+    email rows, …). There is no undo.
+    """
+    from app.core.cache_service import (
+        invalidate_billing_config,
+        invalidate_entitlement_caches,
+        invalidate_subscription_caches,
+    )
+    from app.core.exceptions import BadRequestException, NotFoundException
+
+    org = db.query(Organization).filter(Organization.id == organization_id).first()
+    if org is None:
+        raise NotFoundException("Organization", "id")
+
+    if data.confirmation.strip() != org.organization_code:
+        raise BadRequestException(
+            "Confirmation does not match this organization's code. Type "
+            f"'{org.organization_code}' exactly to confirm permanent deletion."
+        )
+
+    result = OrganizationPurgeService(db).purge(org, actor=current_user, reason=data.reason)
+    db.commit()
+
+    # The tenant's derived caches (access gate, entitlements, billing config,
+    # trial banner) must not survive the row they were derived from.
+    invalidate_subscription_caches(organization_id)
+    invalidate_entitlement_caches(organization_id)
+    invalidate_billing_config(organization_id)
+
+    return SuccessResponse(
+        message=(
+            f'Organization "{result.organization_name}" ({result.organization_code}) and all '
+            f"of its data were permanently deleted."
+        )
+    )
 
 
 @router.get("/platform/lifecycle", response_model=PlatformLifecycleResponse)

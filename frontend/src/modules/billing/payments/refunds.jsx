@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { refundApi, customerApi, invoiceApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
+import useLatestRequest from "../utils/useLatestRequest";
 import {
   Pagination, DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton,
   DASHBOARD_KPI_GRID, StatusBadge, DOMAIN_ACCENTS, ErrorState,
@@ -13,6 +14,7 @@ import {
   Button, ListToolbar, FormModal, DataTable, Field, Select,
 } from "../../../components/billing-ui";
 import { REFUND_IN_FLIGHT_STATUSES, REFUND_FAILED_OR_CANCELLED_STATUSES } from "./refund-constants";
+import { useDropUrlParam } from "../utils/useListUrlFilters";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -100,6 +102,9 @@ export default function RefundsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
+  const dropUrlParam = useDropUrlParam();
+  // User-driven status changes supersede a ?status= deep link.
+  const chooseStatus = (value) => { dropUrlParam("status"); setStatusFilter(value); };
   const [typeFilter, setTypeFilter] = useState("");
   // Open the filter row when arriving via a ?status= deep link (dashboard
   // tiles) so the applied filter is visible, not just silently in effect.
@@ -111,6 +116,7 @@ export default function RefundsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm(""));
   const [customers, setCustomers] = useState([]);
+  const [customersError, setCustomersError] = useState(null);
   const [payments, setPayments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [creditNotes, setCreditNotes] = useState([]);
@@ -137,7 +143,10 @@ export default function RefundsPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the list (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchRefunds = useCallback(async () => {
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -148,16 +157,18 @@ export default function RefundsPage() {
         refund_type: typeFilter || undefined,
         sort_by: sortField, sort_order: sortDir,
       });
+      if (!isCurrent()) return;
       setRefunds(extractArray(data));
       setTotal(data.total || 0);
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load refunds");
       setRefunds([]); setTotal(0);
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
+  }, [beginRequest, safePage, debouncedSearch, statusFilter, typeFilter, sortField, sortDir]);
 
   useEffect(() => { fetchRefunds(); }, [fetchRefunds]);
   useEffect(() => { if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages); }, [totalPages, currentPage]);
@@ -167,8 +178,11 @@ export default function RefundsPage() {
   }, []);
 
   const fetchCustomers = useCallback(async () => {
+    // A failed load used to be swallowed, leaving an empty Customer dropdown
+    // with no explanation; show it with Retry instead.
+    setCustomersError(null);
     try { const data = await customerApi.list({ per_page: 100 }); setCustomers(extractArray(data)); }
-    catch (e) { /* silent */ }
+    catch (e) { setCustomersError(`Unable to load customers${e?.message ? ` (${e.message})` : ""}.`); }
   }, []);
 
   useEffect(() => { if (showCreateModal) fetchCustomers(); }, [showCreateModal, fetchCustomers]);
@@ -318,10 +332,28 @@ export default function RefundsPage() {
     (createForm.refund_source !== "invoice" || createForm.invoice_id) &&
     (createForm.refund_source !== "credit_note" || createForm.credit_note_id);
 
+  // Names the first thing actually missing, instead of one message listing
+  // every field (the user could not tell which one was the problem).
+  const missingFieldMessage = () => {
+    const f = createForm;
+    if (!f.customer_id) return "Select a customer.";
+    if (f.refund_source === "payment" && !f.payment_id) {
+      return payments.length ? "Select the payment to refund." : "This customer has no refundable payments. Choose another source or customer.";
+    }
+    if (f.refund_source === "invoice" && !f.invoice_id) {
+      return invoices.length ? "Select the invoice to refund." : "This customer has no refundable invoices. Choose another source or customer.";
+    }
+    if (f.refund_source === "credit_note" && !f.credit_note_id) {
+      return creditNotes.length ? "Select the credit note to refund." : "This customer has no refundable credit notes. Choose another source or customer.";
+    }
+    if (!f.amount) return "Enter the refund amount.";
+    return null;
+  };
+
   const handleCreate = async () => {
     if (saving) return;
     if (!canSubmitAmount) {
-      setFormError("Select a customer, the refund source and an amount before creating the refund.");
+      setFormError(missingFieldMessage());
       return;
     }
     if (amountError) { setFormError(amountError); return; }
@@ -481,7 +513,7 @@ export default function RefundsPage() {
 
         {showFilters && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
+            <select value={statusFilter} onChange={(e) => { chooseStatus(e.target.value); setCurrentPage(1); }} aria-label="Filter by status"
               className="appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -491,7 +523,7 @@ export default function RefundsPage() {
               {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             {hasActiveFilters && (
-              <button onClick={() => { setSearch(""); setStatusFilter(""); setTypeFilter(""); setCurrentPage(1); }}
+              <button onClick={() => { setSearch(""); chooseStatus(""); setTypeFilter(""); setCurrentPage(1); }}
                 className="text-xs text-brand-600 hover:text-brand-700 font-medium">Clear filters</button>
             )}
           </div>
@@ -546,6 +578,15 @@ export default function RefundsPage() {
         submitLabel="Create"
         size="lg"
       >
+        {customersError && (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <span>{customersError}</span>
+            <button type="button" onClick={() => fetchCustomers()}
+              className="shrink-0 font-semibold underline hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
+              Retry
+            </button>
+          </div>
+        )}
         <Field label="Customer" htmlFor="refund-customer" required>
           <Select id="refund-customer" value={createForm.customer_id} onChange={(v) => handleCustomerChange(v)}
             placeholder="Select customer"

@@ -307,7 +307,7 @@ export default function CreditNoteDetailPage() {
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error" className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
           </div>
         )}
 

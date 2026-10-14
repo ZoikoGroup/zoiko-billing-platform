@@ -167,6 +167,10 @@ class OrganizationDetail(BaseModel):
     timezone: str = "UTC"
     fiscal_year_start: Optional[str] = None
     fiscal_year_end: Optional[str] = None
+    # Editable via PUT /organizations/me; returned so the edit form can show
+    # (and not blank out) the saved values.
+    tax_no: Optional[str] = None
+    registration_number: Optional[str] = None
     billing_classification: Optional[BillingClassification] = None
     billing_source: Optional[BillingSource] = None
     total_customers: int = 0

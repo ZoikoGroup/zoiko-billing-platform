@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -60,8 +60,20 @@ class PricingService:
         self.product_repo = ProductRepository(db)
         self.audit = BillingAuditService(db)
 
+    @staticmethod
+    def _reject_past_effective_from(effective_from) -> None:
+        """A pricing plan cannot start in the past. One day of grace covers the
+        gap between the user's local "today" and the server's UTC date."""
+        if effective_from is None:
+            return
+        if isinstance(effective_from, datetime):
+            effective_from = effective_from.date()
+        if effective_from < date.today() - timedelta(days=1):
+            raise BadRequestException("Effective From cannot be in the past. Choose today or a future date.")
+
     def create_plan(self, organization_id: int, created_by: int, **data: Any) -> PricingPlan:
         data = filter_allowed(data, PLAN_ALLOWED_FIELDS)
+        self._reject_past_effective_from(data.get("effective_from"))
         product_id = data.get("product_id")
         if product_id:
             self.product_repo.get_by_id(product_id, organization_id)
@@ -84,6 +96,10 @@ class PricingService:
             raise BadRequestException("max_quantity must be greater than or equal to min_quantity")
         effective_from = data.get("effective_from", current.effective_from)
         effective_to = data.get("effective_to", current.effective_to)
+        # Only a *changed* start date is checked: editing other fields of an
+        # already-running plan must keep working.
+        if "effective_from" in data and data["effective_from"] != current.effective_from:
+            self._reject_past_effective_from(data["effective_from"])
         if effective_to is not None and effective_from is not None and effective_to < effective_from:
             raise BadRequestException("effective_to must be greater than or equal to effective_from")
         updated = self.repo.update(plan_id, organization_id, **data)
@@ -273,12 +289,26 @@ PRICING_RULE_ALLOWED = {
     "usage_limit", "per_customer_limit",
 }
 
+# Nullable columns where an explicit null on update means "clear it" (no
+# description / open-ended / unlimited / all products / all regions ...).
+# filter_allowed's default drop_none would otherwise silently keep the old
+# value. Non-nullable / defaulted columns are deliberately absent so a null
+# there is still ignored rather than written.
+PRICING_RULE_CLEARABLE = {
+    "description", "value", "min_quantity", "max_quantity", "buy_quantity",
+    "get_quantity", "get_discount_percentage", "customer_id", "customer_group",
+    "product_id", "product_category_id", "region", "country", "state",
+    "currency", "effective_to", "valid_from_time", "valid_to_time",
+    "days_of_week", "usage_limit", "per_customer_limit",
+}
+
 
 class PricingRuleService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = PricingRuleRepository(db)
         self.tier_repo = PricingRuleTierRepository(db)
+        self.product_repo = ProductRepository(db)
         self.audit = BillingAuditService(db)
 
     # Rule types whose whole effect IS an amount: a percentage/fixed discount
@@ -310,10 +340,27 @@ class PricingRuleService:
             raise BadRequestException("Choose the product this product-scoped rule applies to.")
         if scope == "region" and not (rule.get("region") or "").strip():
             raise BadRequestException("Enter the region this region-scoped rule applies to.")
+        # The schema only compares both dates when both arrive in one payload;
+        # an update changing just one side is checked against the stored other.
+        effective_from, effective_to = rule.get("effective_from"), rule.get("effective_to")
+        if effective_from is not None and effective_to is not None and effective_to < effective_from:
+            raise BadRequestException("Effective To must be on or after Effective From.")
+
+    def _ensure_product_in_org(self, product_id: Optional[int], organization_id: int) -> None:
+        """A rule may only target a product of the caller's organization. A
+        missing and a foreign product get the same message so the response
+        does not reveal whether another tenant's product id exists."""
+        if product_id is None:
+            return
+        try:
+            self.product_repo.get_by_id(product_id, organization_id)
+        except NotFoundException:
+            raise BadRequestException(f"Product {product_id} was not found in this organization.")
 
     def create(self, organization_id: int, created_by: int, **data: Any) -> PricingRule:
         data = filter_allowed(data, PRICING_RULE_ALLOWED)
         self._validate_rule_contract(data)
+        self._ensure_product_in_org(data.get("product_id"), organization_id)
         existing = self.repo.get_by_code(organization_id, data.get("code"))
         if existing:
             raise AlreadyExistsException("PricingRule", data.get("code"))
@@ -322,15 +369,25 @@ class PricingRuleService:
         return obj
 
     def update(self, pk: int, organization_id: int, updated_by: int, **data: Any) -> PricingRule:
-        data = filter_allowed(data, PRICING_RULE_ALLOWED)
+        data = {
+            k: v for k, v in filter_allowed(data, PRICING_RULE_ALLOWED, drop_none=False).items()
+            if v is not None or k in PRICING_RULE_CLEARABLE
+        }
         current = self.repo.get_by_id(pk, organization_id)
         if data.get("code") and data["code"] != current.code:
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:
                 raise AlreadyExistsException("PricingRule", data["code"])
-        merged = {k: getattr(current, k, None) for k in ("rule_type", "scope", "value", "value_type", "product_id", "region")}
+        merged = {k: getattr(current, k, None) for k in (
+            "rule_type", "scope", "value", "value_type", "product_id", "region",
+            "effective_from", "effective_to",
+        )}
         merged.update({k: v for k, v in data.items() if k in merged})
         self._validate_rule_contract(merged)
+        # Only a changed target is re-checked, so editing a rule whose product
+        # was later archived does not block unrelated field changes.
+        if data.get("product_id") is not None and data["product_id"] != current.product_id:
+            self._ensure_product_in_org(data["product_id"], organization_id)
         updated = self.repo.update(pk, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "PricingRule", pk, new_values=data)
         return updated

@@ -219,7 +219,7 @@ class TestCorrelationThreadingQ47:
 
     def test_request_id_is_echoed_as_response_header(self):
         import inspect
-        from app import main
-        src = inspect.getsource(main.request_id_middleware)
-        assert 'response.headers["X-Request-ID"]' in src
-        assert 'request.headers.get("X-Request-ID")' in src
+        from app.core import request_middleware
+        src = inspect.getsource(request_middleware.RequestContextMiddleware)
+        assert 'headers["X-Request-ID"]' in src
+        assert 'Headers(scope=scope).get("X-Request-ID")' in src

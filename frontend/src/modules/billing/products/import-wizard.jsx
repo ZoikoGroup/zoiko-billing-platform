@@ -722,16 +722,20 @@ export default function ImportWizardModal({ onClose, onImported }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      {/* No backdrop-click close: a stray click must not discard the
+          uploaded file / column mapping. Use the header X or Cancel. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-import-title"
         className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
         style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)" }}
       >
         {/* Header */}
         <div className="p-6 pb-0 bg-gradient-to-r from-brand to-brand-hover text-white flex items-center justify-between rounded-t-3xl">
           <div>
-            <h2 className="text-lg font-bold">Import Products & Services</h2>
+            <h2 id="product-import-title" className="text-lg font-bold">Import Products & Services</h2>
             <p className="text-brand-100 text-sm mt-0.5">Upload CSV or XLSX to bulk-import your catalog</p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-2 rounded-xl hover:bg-white/20 transition-colors">

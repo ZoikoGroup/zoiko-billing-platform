@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin, get_current_finance_approver
 from app.modules.billing.services.write_off_service import WriteOffService
@@ -88,7 +89,10 @@ def get_dashboard_stats(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_dashboard_stats(current_user.organization_id)
+    return cached_aggregate(
+        "write_off.get_dashboard_stats", current_user.organization_id, {},
+        lambda: svc.get_dashboard_stats(current_user.organization_id),
+    )
 
 
 @router.get("/status-distribution", response_model=list)
@@ -97,7 +101,10 @@ def get_status_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_status_distribution(current_user.organization_id)
+    return cached_aggregate(
+        "write_off.get_status_distribution", current_user.organization_id, {},
+        lambda: svc.get_status_distribution(current_user.organization_id),
+    )
 
 
 @router.get("/type-distribution", response_model=list)
@@ -106,7 +113,10 @@ def get_type_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_type_distribution(current_user.organization_id)
+    return cached_aggregate(
+        "write_off.get_type_distribution", current_user.organization_id, {},
+        lambda: svc.get_type_distribution(current_user.organization_id),
+    )
 
 
 @router.get("/adjustment-type-distribution", response_model=list)
@@ -115,7 +125,10 @@ def get_adjustment_type_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_adjustment_type_distribution(current_user.organization_id)
+    return cached_aggregate(
+        "write_off.get_adjustment_type_distribution", current_user.organization_id, {},
+        lambda: svc.get_adjustment_type_distribution(current_user.organization_id),
+    )
 
 
 @router.get("/source-distribution", response_model=list)
@@ -124,7 +137,10 @@ def get_source_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_source_distribution(current_user.organization_id)
+    return cached_aggregate(
+        "write_off.get_source_distribution", current_user.organization_id, {},
+        lambda: svc.get_source_distribution(current_user.organization_id),
+    )
 
 
 @router.get("/reason-distribution", response_model=list)
@@ -134,7 +150,10 @@ def get_reason_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_reason_distribution(current_user.organization_id, limit)
+    return cached_aggregate(
+        "write_off.get_reason_distribution", current_user.organization_id, {"limit": limit},
+        lambda: svc.get_reason_distribution(current_user.organization_id, limit),
+    )
 
 
 @router.get("/customer-distribution", response_model=list)
@@ -144,7 +163,10 @@ def get_customer_distribution(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_customer_distribution(current_user.organization_id, limit)
+    return cached_aggregate(
+        "write_off.get_customer_distribution", current_user.organization_id, {"limit": limit},
+        lambda: svc.get_customer_distribution(current_user.organization_id, limit),
+    )
 
 
 @router.get("/monthly-trend", response_model=list)
@@ -154,7 +176,10 @@ def get_monthly_trend(
     current_user=Depends(get_current_user),
 ):
     svc = WriteOffService(db)
-    return svc.get_monthly_trend(current_user.organization_id, months)
+    return cached_aggregate(
+        "write_off.get_monthly_trend", current_user.organization_id, {"months": months},
+        lambda: svc.get_monthly_trend(current_user.organization_id, months),
+    )
 
 
 @router.get("/customer/{customer_id}", response_model=WriteOffListResponse)

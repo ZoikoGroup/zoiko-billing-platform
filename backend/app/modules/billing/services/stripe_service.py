@@ -63,6 +63,8 @@ from app.modules.billing.services.stripe_connect_service import (
     _resolve_environment,
     configure_stripe_runtime,
     resolve_connected_account,
+    resolve_stripe_secret_key,
+    resolve_stripe_setting,
 )
 from app.modules.billing.services.subscription_service import SubscriptionService
 
@@ -89,11 +91,14 @@ def _stripe_module():
         raise BadRequestException(
             "The 'stripe' package is not installed. Add stripe to requirements.txt and reinstall."
         )
-    if not settings.STRIPE_SECRET_KEY:
+    key = resolve_stripe_secret_key(settings)
+    if not key:
+        # The missing setting name is for operators (logs), not for end users.
+        logger.warning("Stripe is not configured: STRIPE_SECRET_KEY is unset")
         raise BadRequestException(
-            "Stripe is not configured. Set STRIPE_SECRET_KEY in the environment."
+            "Online card payments are not available yet. Please contact support."
         )
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.api_key = key
     # Transport hardening: bounded retries (with SDK-managed idempotency keys
     # for automatic transport retries) + per-attempt timeout. See
     # stripe_connect_service.configure_stripe_runtime.
@@ -128,11 +133,14 @@ class StripeService:
 
     @staticmethod
     def is_configured() -> bool:
-        return bool(settings.STRIPE_SECRET_KEY)
+        # Self-heals from .env (see resolve_stripe_secret_key): a key added to
+        # .env after the process booted must not leave the invoice payment page
+        # reporting "online card payments are not enabled yet".
+        return bool(resolve_stripe_secret_key(settings))
 
     @staticmethod
     def publishable_key() -> Optional[str]:
-        return settings.STRIPE_PUBLISHABLE_KEY or None
+        return resolve_stripe_setting("STRIPE_PUBLISHABLE_KEY", settings) or None
 
     # ── Connected-account routing (GAP-1) ──────────────────────────────────
     #
@@ -400,7 +408,7 @@ class StripeService:
         return {
             "payment_intent_id": payment_intent.id,
             "client_secret": payment_intent.client_secret,
-            "publishable_key": settings.STRIPE_PUBLISHABLE_KEY or "",
+            "publishable_key": resolve_stripe_setting("STRIPE_PUBLISHABLE_KEY", settings),
             "amount": str(balance),
             "currency": currency,
             "invoice_id": invoice_id,
@@ -632,12 +640,13 @@ class StripeService:
     # ── Webhooks ───────────────────────────────────────────────────────────
 
     def handle_webhook(self, payload: bytes, signature: str) -> Dict[str, Any]:
-        if not settings.STRIPE_WEBHOOK_SECRET:
+        webhook_secret = resolve_stripe_setting("STRIPE_WEBHOOK_SECRET", settings)
+        if not webhook_secret:
             raise BadRequestException("Stripe webhooks are not configured (STRIPE_WEBHOOK_SECRET)")
         stripe = _stripe_module()
         try:
             event = stripe.Webhook.construct_event(
-                payload, signature, settings.STRIPE_WEBHOOK_SECRET,
+                payload, signature, webhook_secret,
             )
         except Exception as e:
             raise BadRequestException(f"Invalid Stripe webhook signature: {e}")

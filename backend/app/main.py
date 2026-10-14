@@ -143,6 +143,8 @@ async def lifespan(app: FastAPI):
     # MFA_ENCRYPTION_KEY checks above) rather than starting in a state that
     # will throw confusing errors on first use of that column.
     verify_critical_columns_present()
+    from app.core.worker_safety import warn_if_multiworker_without_redis
+    warn_if_multiworker_without_redis(settings)
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:
         from app.core.scheduler import start_scheduler
         start_scheduler()
@@ -170,67 +172,13 @@ app.add_exception_handler(ZoikoException, zoiko_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 
 
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    """Standard, safe security headers appropriate for a SPA + JSON API.
+# Security headers + X-Request-ID correlation + per-route metrics / SQL query
+# counter / slow-request log, as ONE pure-ASGI middleware (replaces the two
+# former BaseHTTPMiddleware @app.middleware("http") functions; same headers,
+# same ordering relative to CORS/GZip). See core/request_middleware.py.
+from app.core.request_middleware import RequestContextMiddleware
 
-    - X-Content-Type-Options: nosniff — prevents MIME-type sniffing (no
-      CSP dependency, safe for any deployment).
-    - Referrer-Policy: strict-origin-when-cross-origin — modern browsers send
-      full URL same-origin, only origin cross-origin. Safe and default-y.
-    - X-Frame-Options: DENY — prevents clickjacking of any page that renders
-      in a browser (the SPA never legitimately embeds in an <iframe>).
-    - X-XSS-Protection: 0 — the legacy XSS filter is disabled by modern
-      browsers and can introduce cross-site issues; CSP is the real defense
-      (deliberately not set to 1;mode=block).
-
-    HSTS is intentionally NOT set here: it must only be enabled when the
-    deployment topology is known to be HTTPS-only across the board (set it
-    at the proxy/edge instead). CSP is not set on API responses because the
-    frontend serves its own CSP headers via the static host; adding one here
-    risks breaking the app without validation.
-    """
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "0"
-    response.headers["X-Request-ID"] = getattr(request.state, "request_id", "")
-    return response
-
-
-@app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
-    """Assigns a correlation ID to every request (reused from an incoming
-    X-Request-ID header if the caller already has one, e.g. a frontend retry
-    or an upstream proxy). Exposed on request.state for the error handlers
-    (core/exceptions.py) and echoed back as a response header so a Super
-    Admin reporting "something went wrong" can hand an engineer one ID that
-    resolves directly to the matching server log line — see Section AD of
-    docs/SUPER_ADMIN_ENTERPRISE_AUDIT.md for why this was added.
-
-    Also records server-side handling time for /api/super-admin/* into the
-    in-memory sliding window (core/api_metrics.py) — the real measurement
-    behind launch-readiness item PERF-01 (ZB-SA-CMD-003 §18.2)."""
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    request.state.request_id = request_id
-
-    is_command_center = request.url.path.startswith("/api/super-admin/")
-    started = time.perf_counter() if is_command_center else None
-
-    response = await call_next(request)
-
-    if started is not None:
-        try:
-            import app.core.api_metrics as api_metrics
-
-            api_metrics.record(
-                (time.perf_counter() - started) * 1000, response.status_code
-            )
-        except Exception:  # noqa: BLE001 - telemetry must never break a request
-            pass
-    response.headers["X-Request-ID"] = request_id
-    return response
+app.add_middleware(RequestContextMiddleware)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # _cors_origins is computed above (before `lifespan`), which refuses to boot
@@ -283,6 +231,8 @@ from app.modules.commercial.org_self_service_router import router as commercial_
 from app.modules.commercial.entitlement_router import router as commercial_entitlement_router
 
 app.include_router(auth_router, prefix="/api")
+from app.modules.auth.google_oauth import router as google_oauth_router
+app.include_router(google_oauth_router, prefix="/api")
 app.include_router(auth_user_router, prefix="/api")
 app.include_router(organizations_router, prefix="/api")
 app.include_router(super_admin_router, prefix="/api")

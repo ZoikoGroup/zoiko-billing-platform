@@ -7,6 +7,7 @@ import HRPage from "../../../components/HRPage";
 import { invoiceApi, paymentApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Pagination } from "../../../components/billing-shared";
+import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -125,8 +126,11 @@ export default function BillingHistoryPage() {
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
+  // Only the latest request may update the lists (stale responses are dropped).
+  const beginRequest = useLatestRequest();
   const fetchData = useCallback(async () => {
     const api = activeTab === "invoices" ? invoiceApi : paymentApi;
+    const isCurrent = beginRequest();
     try {
       setError(null);
       setRefreshing(true);
@@ -141,6 +145,7 @@ export default function BillingHistoryPage() {
       };
 
       const data = await api.list(params);
+      if (!isCurrent()) return;
       const items = data.items || data.data || data || [];
       const arr = Array.isArray(items) ? items : [];
 
@@ -152,14 +157,17 @@ export default function BillingHistoryPage() {
         setPaymentsTotal(data.total || arr.length || 0);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err.message || "Failed to load billing data");
       if (activeTab === "invoices") { setInvoices([]); setInvoicesTotal(0); }
       else { setPayments([]); setPaymentsTotal(0); }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd]);
+  }, [beginRequest, activeTab, safePage, debouncedSearch, statusFilter, dateStart, dateEnd]);
 
   useEffect(() => {
     fetchData();
@@ -283,11 +291,12 @@ export default function BillingHistoryPage() {
               <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="whitespace-nowrap text-xs font-medium text-brand-600 hover:text-brand-700">
-                  Clear filters
-                </button>
-              )}
+              <button onClick={clearFilters} disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search, status and date filters" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent">
+                <X size={14} />
+                Clear filters
+              </button>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
