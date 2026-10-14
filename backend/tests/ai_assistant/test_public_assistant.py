@@ -44,6 +44,7 @@ from app.modules.chatbot.public_assistant import (
     PublicAssistantService,
 )
 from app.modules.chatbot.public_router import _client_ip, _hash_ip
+from app.modules.chatbot.knowledge.retrieval import RetrievalResult
 
 
 # Two public docs plus one INTERNAL-only doc. The public path must only ever
@@ -252,6 +253,37 @@ class TestPublicKbScope:
         assert res["answer"] == _ABSTAIN_ANSWER, f"internal doc must not leak; got: {res['answer']!r}"
         assert all(e["source"] != INTERNAL_TITLE for e in res["evidence"])
 
+    def test_evidence_omits_url_when_source_has_none(self, db_session, kb, svc):
+        sess = svc.create_session()
+        res = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what are the billing reports?",
+            ip_hash=None,
+        )
+        assert res["evidence"]
+        assert all(e.get("url") is None for e in res["evidence"])
+
+    def test_evidence_carries_verifiable_source_url(self, db_session, kb, svc):
+        doc = (
+            db_session.query(KnowledgeDocument)
+            .join(KnowledgeSource)
+            .filter(KnowledgeDocument.title == "Billing Reports")
+            .first()
+        )
+        source = db_session.query(KnowledgeSource).filter_by(id=doc.source_id).first()
+        source.source_url = "https://www.zoikobilling.com/help/reports"
+        db_session.commit()
+        sess = svc.create_session()
+        res = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what are the billing reports?",
+            ip_hash=None,
+        )
+        assert any(
+            e["source"] == "Billing Reports" and e["url"] == "https://www.zoikobilling.com/help/reports"
+            for e in res["evidence"]
+        )
+
     def test_off_topic_question_abstains(self, db_session, kb, svc):
         sess = svc.create_session()
         res = svc.send_message(
@@ -260,6 +292,56 @@ class TestPublicKbScope:
             ip_hash=None,
         )
         assert res["answer"] == _ABSTAIN_ANSWER
+
+
+class TestEvidenceUrlSanitization:
+    """Backend backstop: only allowlisted source URLs may reach the public API
+    evidence, mirroring the widget's isAllowedUrl. Unsafe schemes, unapproved
+    hosts and protocol-relative URLs must be dropped to None."""
+
+    def _evidence_urls(self, urls: list[str | None]) -> list[str | None]:
+        results = [
+            RetrievalResult(
+                chunk_text=f"chunk {i}",
+                score=0.9 - i * 0.1,
+                rank=i + 1,
+                source_title=f"Source {i}",
+                source_type="DOC",
+                document_id=i + 1,
+                chunk_id=i + 1,
+                namespace_code="billing_public",
+                source_url=url,
+            )
+            for i, url in enumerate(urls)
+        ]
+        return [e.get("url") for e in PublicAssistantService._evidence_from(results)]
+
+    def test_allows_approved_https_domain(self):
+        assert self._evidence_urls(["https://www.zoikobilling.com/help/reports"]) == [
+            "https://www.zoikobilling.com/help/reports"
+        ]
+
+    def test_allows_approved_host_with_port(self):
+        assert self._evidence_urls(["https://www.zoikobilling.com:443/help/reports"]) == [
+            "https://www.zoikobilling.com:443/help/reports"
+        ]
+
+    def test_allows_relative_same_site_path(self):
+        assert self._evidence_urls(["/help-center"]) == ["/help-center"]
+
+    def test_drops_unsafe_url_schemes(self):
+        for bad in ("javascript:alert(1)", "data:text/html,<script>1</script>", "file:///etc/passwd", "mailto:dev@zoikobilling.com", "#fragment"):
+            assert self._evidence_urls([bad]) == [None], bad
+
+    def test_drops_protocol_relative_url(self):
+        assert self._evidence_urls(["//evil.example.com/phish"]) == [None]
+
+    def test_drops_unapproved_external_host(self):
+        for bad in ("https://evil.example.com/", "http://zoikobilling.com.evil.org/x", "https://help.zoikobilling.com.mx/"):
+            assert self._evidence_urls([bad]) == [None], bad
+
+    def test_drops_none_and_empty(self):
+        assert self._evidence_urls([None, "", "  "]) == [None, None, None]
 
 
 class TestGovernance:
@@ -362,3 +444,76 @@ class TestClientIpResolution:
     def test_distinct_visitors_get_distinct_rate_limit_keys(self):
         reqs = [self._request(xff=ip) for ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3")]
         assert len({_hash_ip(r) for r in reqs}) == 3
+
+
+class TestResponseEnvelope:
+    """Spec §10.1 additions: server-side created_at + echoed intent_id."""
+
+    def test_reply_carries_server_created_at_and_intent_id(self, db_session, kb, svc):
+        sess = svc.create_session()
+        res = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what are the billing reports?",
+            ip_hash=None,
+            intent_id="getting_started",
+        )
+        assert res["intent_id"] == "getting_started"
+        assert res["created_at"] is not None
+
+    def test_abstention_also_carries_intent_id(self, db_session, kb, svc):
+        sess = svc.create_session()
+        res = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what is the capital of mars?",
+            ip_hash=None,
+            intent_id="invoices",
+        )
+        assert res["intent_id"] == "invoices"
+        assert res["created_at"] is not None
+
+    def test_idempotent_replay_carries_created_at(self, db_session, kb, svc):
+        sess = svc.create_session()
+        first = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what are the billing reports?",
+            ip_hash=None,
+            idempotency_key="replay-key-1234",
+        )
+        replay = svc.send_message(
+            session_uid=sess["session_uid"],
+            message="what are the billing reports?",
+            ip_hash=None,
+            idempotency_key="replay-key-1234",
+        )
+        assert replay["message_uid"] == first["message_uid"]
+        assert replay["created_at"] is not None
+
+
+class TestInstrumentation:
+    """Spec §12.3 privacy-minimized instrumentation."""
+
+    def test_allowlisted_event_is_recorded(self, db_session, svc):
+        res = svc.record_event(
+            event="topic_selected",
+            session_uid="session-abc",
+            topic_id="invoices",
+            locale="en-GB",
+            config_version="2026-10-09.1",
+            timing_bucket="0-2s",
+        )
+        assert res["status"] == "recorded"
+
+    def test_unknown_event_is_dropped_not_errored(self, db_session, svc):
+        res = svc.record_event(event="totally_made_up")
+        assert res["status"] == "recorded"
+
+    def test_free_text_metadata_is_not_logged(self, db_session, svc, caplog):
+        with caplog.at_level("INFO", logger="zoiko_billing.ai.public"):
+            svc.record_event(
+                event="message_submitted",
+                session_uid="session-abc",
+                topic_id="how do I refund an invoice for my customer",
+            )
+        record = next(r for r in caplog.records if r.getMessage().startswith("public_event"))
+        assert "how do I refund" not in record.getMessage()
+        assert "topic=None" in record.getMessage()

@@ -649,7 +649,11 @@ class BillingConfigurationService:
         cached = cache_service.cache_get(key)
         if cached is not None:
             return str(cached)
-        config = self.get_configuration(organization_id)
+        config = self.repo.get_currency_view(organization_id)
+        if config is None:
+            # No configuration row yet — lazily seed the full configuration so
+            # the base currency is materialized from the organization identity.
+            config = self.get_configuration(organization_id)
         # Prefer base_currency over default_currency as the authoritative org currency
         if hasattr(config, "base_currency") and config.base_currency:
             val = config.base_currency.value if hasattr(config.base_currency, 'value') else config.base_currency

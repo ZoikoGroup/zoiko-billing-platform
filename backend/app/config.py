@@ -184,6 +184,28 @@ class Settings(BaseSettings):
     PUBLIC_ASSISTANT_RATE_WINDOW_SECONDS: int = 120
     PUBLIC_ASSISTANT_MAX_SESSION_MESSAGES: int = 20
     PUBLIC_ASSISTANT_MAX_CONVERSATION_HISTORY: int = 10
+    # Anonymous sessions expire after this many seconds of inactivity. Sending
+    # after expiry is rejected so expired sessions invalidate correctly (§ A12);
+    # the widget then silently starts a fresh conversation.
+    PUBLIC_ASSISTANT_MAX_SESSION_AGE_SECONDS: int = 86400
+
+    # ── Public assistant: human-support escalation ──
+    # Live chat is offered ONLY when a staffed live support service is actually
+    # integrated. Defaults to False so the widget truthfully shows the support
+    # request form instead of promising an unstaffed channel.
+    PUBLIC_ASSISTANT_LIVE_CHAT_ENABLED: bool = False
+    # Optional support-desk webhook that receives a JSON support request. When
+    # empty the request is still durably recorded with a genuine reference and
+    # reported to the visitor as received, never as "sent to an agent".
+    AI_PUBLIC_SUPPORT_WEBHOOK_URL: str = ""
+    AI_PUBLIC_SUPPORT_WEBHOOK_TIMEOUT_SECONDS: float = 5.0
+    # Origin allowlist for the public assistant endpoints (comma-separated).
+    # Empty = allow same-origin / non-browser callers only (defence in depth;
+    # the Next.js proxy makes the browser same-origin).
+    PUBLIC_ASSISTANT_ALLOWED_ORIGINS: str = ""
+    # Require an explicit affirmative transcript-consent flag before any
+    # conversation excerpt is stored or forwarded.
+    PUBLIC_ASSISTANT_REQUIRE_TRANSCRIPT_CONSENT: bool = True
 
     # ── AI Model Gateway (Anthropic) ──────────────────────────────────
     ANTHROPIC_API_KEY: str = ""

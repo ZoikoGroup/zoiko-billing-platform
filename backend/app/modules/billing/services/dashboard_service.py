@@ -73,7 +73,7 @@ class BillingDashboardService:
         ).distinct().all()
         unique_currencies.update(row[0] for row in pmt_currencies if row[0])
 
-        config = self.exchange_svc.repo.get_by_organization(organization_id)
+        config = self.exchange_svc.repo.get_currency_view(organization_id)
 
         # NOTE: this request path NEVER performs a live exchange-rate API call.
         # Refreshing stale rates is a scheduled background job (see

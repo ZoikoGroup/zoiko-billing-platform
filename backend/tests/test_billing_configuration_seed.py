@@ -228,6 +228,44 @@ def test_seed_billing_configuration_survives_concurrent_insert_race(db_session):
     db_session.commit()
 
 
+def test_currency_resolution_survives_missing_config_column(db_session):
+    """Regression: currency resolution must not depend on the full
+    BillingConfiguration entity.
+
+    Reproduces the live "Dashboard summary" fail-closed: the deployed
+    billing_configurations table was missing columns the ORM model declares
+    (e.g. quote_terms_and_conditions), so the full-entity SELECT raised
+    psycopg UndefinedColumn -> aborted transaction -> every currency-labelled
+    chatbot answer closed as an Inspect abstention. The currency path now
+    reads only the columns it needs (get_currency_view); a broken full-entity
+    query must no longer take the base currency down.
+    """
+    from sqlalchemy.exc import ProgrammingError
+
+    from app.core import cache_service
+    from app.modules.billing.services.dashboard_service import BillingDashboardService
+
+    org = _make_full_org(db_session)
+    BillingConfigurationService(db_session).seed_billing_configuration(org.id)
+    db_session.commit()
+
+    drift_error = ProgrammingError(
+        "SELECT billing_configurations ...",
+        {},
+        Exception("column billing_configurations.quote_terms_and_conditions does not exist"),
+    )
+
+    # Make the full-entity lookup raise exactly as it does against the drifted
+    # live schema; the currency-resolution path must still succeed.
+    with patch.object(
+        BillingConfigurationRepository, "get_by_organization", side_effect=drift_error,
+    ), patch.object(cache_service, "cache_get", return_value=None):
+        assert BillingConfigurationService(db_session).get_default_currency(org.id) == "GBP"
+        # Must not raise.
+        rates = BillingDashboardService(db_session)._build_currency_rates(org.id)
+        assert isinstance(rates, dict)
+
+
 def test_organization_update_does_not_unintentionally_overwrite_billing_config(db_session):
     """Synchronization is intentionally one-way (registration time only):
     later Organization edits must never overwrite an existing configuration."""

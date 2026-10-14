@@ -1,7 +1,26 @@
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from app.modules.billing.models import BillingConfiguration
 from app.modules.billing.repositories.base import BaseRepository
+
+
+# Columns required by the READ-ONLY currency/FX resolution path. These are
+# selected explicitly (never SELECT *) so unrelated configuration columns —
+# e.g. a drifted/missing column — cannot abort the transaction and take down
+# every currency-labelled answer.
+_CURRENCY_VIEW_COLUMNS = (
+    "base_currency",
+    "default_currency",
+    "exchange_rates",
+    "exchange_rate_last_refreshed",
+    "exchange_rate_base_currency",
+    "exchange_rate_usd",
+    "exchange_rate_inr",
+    "exchange_rate_gbp",
+    "exchange_rate_eur",
+    "exchange_rate_aed",
+)
 
 
 class BillingConfigurationRepository(BaseRepository[BillingConfiguration]):
@@ -12,6 +31,28 @@ class BillingConfigurationRepository(BaseRepository[BillingConfiguration]):
         return self.db.query(BillingConfiguration).filter(
             BillingConfiguration.organization_id == organization_id,
         ).first()
+
+    def get_currency_view(self, organization_id: int) -> Optional[SimpleNamespace]:
+        """Load only the currency/FX columns for the org's billing configuration.
+
+        The currency-resolution path (base currency, cached FX rates, rate
+        staleness) must not depend on the rest of the BillingConfiguration
+        schema. Loading the full ORM entity couples it to every column, so a
+        single drifted column aborts the transaction and fails every
+        currency-labelled answer. This projected read touches only the columns
+        the path actually uses and returns a lightweight namespace (or None
+        when no configuration row exists)."""
+        row = (
+            self.db.query(*[getattr(BillingConfiguration, c) for c in _CURRENCY_VIEW_COLUMNS])
+            .filter(BillingConfiguration.organization_id == organization_id)
+            .first()
+        )
+        if row is None:
+            return None
+        return SimpleNamespace(
+            organization_id=organization_id,
+            **dict(zip(_CURRENCY_VIEW_COLUMNS, row)),
+        )
 
     def _apply(self, obj: BillingConfiguration, **data: Any) -> BillingConfiguration:
         """Set fields AND bump the optimistic-lock version in the same

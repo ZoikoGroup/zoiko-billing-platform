@@ -67,11 +67,17 @@ for (const route of ROUTES) {
     await expect(panel.getByText('Billing Assistant', { exact: true })).toBeVisible();
     await expect(panel.getByText(/Online/i)).toBeVisible();
 
-    // All header controls.
+    // Approved header controls (spec §5): options menu, minimize, close only.
+    await expect(panel.getByRole('button', { name: 'Assistant options' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Minimize assistant panel' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Close assistant panel' })).toBeVisible();
+
+    // Admin affordances (new conversation, recent, theme, expand) live inside
+    // the options menu.
+    await panel.getByRole('button', { name: 'Assistant options' }).click();
     await expect(panel.getByRole('button', { name: 'New conversation' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Recent conversations' })).toBeVisible();
     await expect(panel.getByRole('button', { name: /theme/i })).toBeVisible();
     await expect(panel.getByRole('button', { name: /(\bexpand\b|\bcollapse\b)/i })).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Close assistant panel' })).toBeVisible();
   });
 }

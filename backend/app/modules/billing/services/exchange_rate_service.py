@@ -73,7 +73,7 @@ class ExchangeRateService:
         Accepts an already-fetched BillingConfiguration (config=...) so callers
         that hold the row (e.g. get_kpis' currency-rate builder) don't pay a
         second round trip for the same record."""
-        config = config or self.repo.get_by_organization(organization_id)
+        config = config or self.repo.get_currency_view(organization_id)
         if not config or not config.exchange_rate_last_refreshed:
             return True
         last_refreshed = config.exchange_rate_last_refreshed
