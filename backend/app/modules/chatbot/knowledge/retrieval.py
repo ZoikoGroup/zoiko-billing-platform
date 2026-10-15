@@ -125,6 +125,22 @@ _STRUCT_MARKERS = re.compile(
 DIRECTORY_DOC_TITLES = frozenset({"what this assistant can answer (marketing)"})
 _DIRECTORY_DEMOTION = 0.5
 
+# ── Peripheral-document demotion (PUBLIC path only) ─────────────────────────
+# A marketing/positioning document can name-drop every operational verb of a
+# how-to question ("Essentials ... create, send, collect and reconcile core
+# invoices") and so out-score the document actually ABOUT that topic, which
+# only repeats the noun. The approved "Invoices" topic tile ("How do I create
+# and send an invoice?") retrieved the Pricing blurb (base 0.95 + heading) over
+# "Invoices Overview" (0.667 + title) and the answer degraded to an
+# abstention. When at least one candidate's DOCUMENT TITLE matches a query
+# topic word, a candidate whose title matches NONE of them is only mentioning
+# the topic inside an unrelated document, so it is demoted below the real
+# topic document. Sized (0.4) so a marketing blurb that literally contains
+# EVERY query verb (base ~0.99) still lands below a titled topic document that
+# matches only the head noun (~0.6). Scoped to is_public_only so the
+# authenticated engine's ranking is untouched.
+_PERIPHERAL_DEMOTION = 0.4
+
 # ── Brand vocabulary ────────────────────────────────────────────────────────
 # The company name is in most document titles, so the topical-title exemption
 # below keeps it at full weight — which makes it match almost every chunk and
@@ -196,6 +212,11 @@ class RetrievalResult:
         document_id: int,
         chunk_id: int,
         namespace_code: str,
+        # Optional web URL for the source document. Only ever surfaced to the
+        # public widget when the backend owns a verifiable URL (KnowledgeSource.
+        # source_url or KnowledgeDocument.object_uri); the widget allowlists it
+        # again before rendering a link.
+        source_url: str | None = None,
     ):
         self.chunk_text = chunk_text
         self.score = score
@@ -205,6 +226,7 @@ class RetrievalResult:
         self.document_id = document_id
         self.chunk_id = chunk_id
         self.namespace_code = namespace_code
+        self.source_url = source_url
 
     def to_dict(self) -> dict:
         return {
@@ -214,6 +236,7 @@ class RetrievalResult:
             "source_title": self.source_title,
             "source_type": self.source_type,
             "namespace": self.namespace_code,
+            "source_url": self.source_url,
         }
 
 
@@ -613,6 +636,14 @@ class KnowledgeRetriever:
         trace_enabled = bool(os.environ.get("KB_RETRIEVAL_TRACE"))
         stage_trace: dict[int, dict] = {}
 
+        # Whether any surviving candidate belongs to a document whose TITLE
+        # names one of the query's topics. If so, candidates whose title names
+        # none of them are peripheral name-drops (see _PERIPHERAL_DEMOTION).
+        topical_titles_present = any(
+            any(_chunk_matches(title_by_doc.get(c.document_id, ""), w) for w in unique_words)
+            for c, _s, _o in candidates
+        )
+
         for chunk, score, _occ in candidates:
             chunk_lower = chunk.chunk_text.lower()
             if trace_enabled:
@@ -622,10 +653,11 @@ class KnowledgeRetriever:
             # chunk that merely name-drops the term inside an unrelated
             # document is peripheral. Decisive when every candidate mentions
             # the term exactly once and the TF factor cannot separate them.
-            if any(
+            title_hit = any(
                 _chunk_matches(title_by_doc.get(chunk.document_id, ""), w)
                 for w in unique_words
-            ):
+            )
+            if title_hit:
                 score = min(score + 0.1, _SCORE_CAP)
                 if trace_enabled:
                     stage_trace[id(chunk)]["title"] = 0.1
@@ -676,6 +708,17 @@ class KnowledgeRetriever:
                 score = max(score - 0.08, 0.0)
                 if trace_enabled:
                     stage_trace[id(chunk)]["table"] = -0.08
+            # Peripheral-document demotion (see _PERIPHERAL_DEMOTION): final
+            # stage, public path only, applied after every boost so a
+            # title-less name-drop can never out-rank the real topic document.
+            # Price questions are exempt: their answer document ("Pricing and
+            # Plans") is named with the query's price vocabulary ("pricing"),
+            # not the visitor's word ("cost"), so a title-word test would
+            # wrongly demote it (handled by the price mechanism above).
+            if is_public_only and not price_words and topical_titles_present and not title_hit:
+                score = max(score - _PERIPHERAL_DEMOTION, 0.0)
+                if trace_enabled:
+                    stage_trace[id(chunk)]["peripheral"] = -_PERIPHERAL_DEMOTION
             scored_chunks.append((chunk, score))
 
         # Sort by score descending
@@ -750,6 +793,10 @@ class KnowledgeRetriever:
                 document_id=chunk.document_id,
                 chunk_id=chunk.id,
                 namespace_code=namespaces[0].namespace_code if namespaces else "unknown",
+                # Prefer an explicit web URL on the source; fall back to any
+                # object_uri the document carries (may be a non-web local path,
+                # which the widget will refuse to turn into a link).
+                source_url=(source.source_url if source and source.source_url else (doc.object_uri if doc else None)),
             )
             results.append(result)
 

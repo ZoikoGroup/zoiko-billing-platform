@@ -30,6 +30,17 @@ backend/server_err.txt
 backend/*_err.txt
 backend/*_stdout.txt
 backend/*_stderr.txt
+
+# Frontend QA/debug scratch scripts (2026-10-15 PR hygiene fix) -- untracked
+# from git; local dev-only helpers, not meant to ship in the application PR.
+frontend/_debug_web.mjs
+frontend/_measure_web.mjs
+frontend/_qa_public_widget.cjs
+
+# Separate Next.js marketing website repository -- intentionally NOT part of the
+# billing-platform repository or its pull requests.
+zoiko-billing-nextjs/
+
 venv/
 dist/
 build/

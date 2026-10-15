@@ -102,7 +102,7 @@ python -m scripts.seed_org      # demo org + org_admin
 ```
 
 Or just register your own organization through the API/UI at `/register` —
-this creates an org + its first `org_admin` immediately (no approval step).
+this creates an org + its first `org_admin` immediately (no approval steps   ).
 
 **Frontend:**
 

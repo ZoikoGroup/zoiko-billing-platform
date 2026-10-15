@@ -463,4 +463,4 @@ export function isEntitlementLimitError(error) {
   return Boolean(error) && error.code === "SUBSCRIPTION_LIMIT_REACHED";
 }
 
-export { API_BASE_URL, AUTH_INVALID_EVENT };
+export { API_BASE_URL, AUTH_INVALID_EVENT, tryRefreshToken };

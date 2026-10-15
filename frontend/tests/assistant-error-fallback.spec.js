@@ -49,7 +49,9 @@ test('fresh open never shows the generic error unprompted', async ({ page }) => 
   // Background session-list/restore failing (fake token → 401) must stay
   // silent: the panel shows the normal greeting + quick actions instead.
   await expect(panel.getByText(/Ask me about invoices/i)).toBeVisible();
-  await expect(panel.locator('.ab-cat-btn')).toHaveCount(9);
+  // Spec §6/§8: exactly 8 numbered topic tiles + one full-width human action.
+  await expect(panel.locator('.ab-cat-btn')).toHaveCount(8);
+  await expect(panel.locator('.ab-human-btn')).toHaveCount(1);
   await expect(panel).not.toContainText(TEMPORARY_ISSUE);
   await expect(panel).not.toContainText("Couldn't reach the assistant just now");
 });

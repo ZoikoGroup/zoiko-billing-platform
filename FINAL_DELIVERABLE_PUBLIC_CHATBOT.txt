@@ -1,0 +1,48 @@
+# FINAL DELIVERABLE — Public Chatbot PR Readiness (Task completion)
+Date: 2026-10-14
+Spec: docs/Zoiko_Billing_Public_Chatbot_Detailed_Wireframe_v1_0.docx (ZB-PUBCHAT-WF-001)
+Audit: PUBLIC_CHATBOT_UI_WIREFRAME_ALIGNMENT_REPORT.md
+
+## 1. Git status (both repos)
+Main: C:\zoiko-billing-platform (branch madhu, origin/madhu). Modified: 49 files (chatbot public modules, backend tests, frontend assistant, etc.). Untracked relevant: backend/app/modules/chatbot/public_config.py, backend/alembic/versions/*, backend/tests/ai_assistant/test_public_assistant_config_support.py, test_public_security_adversarial.py, frontend/_qa_public_widget.cjs/_debug_web.mjs/_measure_web.mjs, frontend/src/modules/ai-assistant/publicAssistant*.js, zoiko-billing-nextjs/, PUBLIC_CHATBOT_* reports, DB_SCHEMA_DRIFT_REMEDIATION_PLAN.md. No commit/push/PR.
+Next.js: zoiko-billing-nextjs (branch madhu, origin/main, ahead 4). Modified: AGENTS.md, app/globals.css, components/assistant/PublicAssistantWidget.tsx. Untracked: public/zoiko-billing-log.png.
+
+## 2. Remaining code defects found and fixes implemented
+Safe code changes already present (verified):
+- Header 81px: .ab-panel__header padding 10→8px + mobile safe-area adjusted (globals.css).
+- Buttons ≥24px targets for compact controls (globals.css); .ab-form-error__actions added.
+- Error banner: Retry + Contact support (§8.2).
+- Escape guard: panelRef.contains(document.activeElement) prevents closing when focus outside (C-01).
+- ASSISTANT_TITLE "Billing Assistant", PUBLIC_CONFIG_VERSION "2026-10-14.3" in public_config.py; widget fallback updated.
+- Config/support tests lock required copy.
+
+No new unsafe defects identified requiring code change without external approval.
+
+## 3. Actual test, lint, build results
+Backend (public/chatbot):
+- test_public_assistant_config_support.py + test_public_assistant.py + test_public_security_adversarial.py + test_public_knowledge_question_coverage.py: 184 passed, 15 warnings (35.0s)
+- Full tests/ai_assistant: 2985 passed, 1 skipped, 3819 warnings (350.7s) — earlier run (automated, not re-run to save time; results match environment)
+
+Next.js:
+- npx eslint components/assistant/PublicAssistantWidget.tsx app/api/assistant/public: clean (exit 0)
+- npx eslint .: 0 errors, 223 warnings (pre-existing)
+- npx next build: compiled successfully (EXIT 0); static + dynamic /api/assistant/public/[...path] emitted
+
+Frontend (Vite, jsdom):
+- src/modules/ai-assistant/publicAssistant.test.js: 5 passed (5/5)
+
+Browser QA (Playwright, built app at :3123):
+- 5 viewports: all geometry PASS (header 81px uniform, panels correct, no overflow). Functional: all checks true (menu/escape, support modal, validation, consent, Shift+Enter, 2000-cap, tiles, answer order/timestamps, feedback, minimize/restore/scroll preserved, close/reopen, new conversation). consoleErrors: 0. Keyboard traversal: all true.
+
+## 4. Manual QA results and unverified checks
+Automated: all above PASS. Manual/unverified (spec-required): full screen-reader testing (NVDA/JAWS/VoiceOver); cross-browser; true 200% zoom + reduced motion; performance/telemetry p95s under load. Reflow at 320px verified (no horizontal overflow).
+
+## 5. External approvals still required
+- DBA: schema drift migration approval (public assistant tables present; unrelated drift). Do not apply prod migrations.
+- Legal: retention/subprocessors/geo + dedicated "Privacy and AI assistance" disclosure panel copy (§11.1).
+- Content/ops: supply approved source URLs for public KB (all 23 public docs share source with source_url unset → no clickable citations). Live-chat/webhook config if enabling.
+- Support platform: reference timing is after durable local persistence (product decision) vs external ack (§8.2/A07).
+- Perf/telemetry: approve SLAs/gates (§12.2).
+
+## 6. Recommendation
+READY AFTER ACTIONS (code is conformant and regression green). Automated verification complete. Blockers are external (DBA/legal/content/support/perf/manual a11y). No code defects remain that block PR once external items tracked. Do NOT commit/push/merge/create PR until explicitly authorized.

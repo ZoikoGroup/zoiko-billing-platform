@@ -359,7 +359,48 @@ def _verify_postgres_schema_is_migrated() -> None:
             "migrations.",
             len(missing), missing,
         )
-    else:
+
+    # Column-level drift: create_all only ever created MISSING TABLES and never
+    # added COLUMNS to tables that already exist, so a table can be present while
+    # a column a running code path needs is absent (e.g. a column added by a later
+    # migration). Because the alembic_version table is stamped, a not-yet-applied
+    # migration is otherwise invisible at startup — surface it loudly here instead
+    # of failing on first use with an opaque ProgrammingError. Warning-only (like
+    # the missing-table check) so a benign extra model column never blocks boot.
+    # One information_schema round trip (not get_columns per table) keeps this
+    # cheap even against a remote pooler.
+    missing_columns: dict[str, list[str]] = {}
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema()"
+                )
+            ).fetchall()
+        present_by_table: dict[str, set[str]] = {}
+        for table_name, column_name in rows:
+            present_by_table.setdefault(table_name, set()).add(column_name)
+        for table in Base.metadata.tables.values():
+            if table.name not in existing_tables:
+                continue
+            absent = sorted(
+                {col.name for col in table.columns}
+                - present_by_table.get(table.name, set())
+            )
+            if absent:
+                missing_columns[table.name] = absent
+    except exc.SQLAlchemyError:
+        logger.warning("Could not introspect columns to verify schema drift; skipping.")
+    if missing_columns:
+        logger.warning(
+            "Postgres schema is Alembic-managed but %d table(s) are missing "
+            "column(s) the models define: %s. Run `alembic upgrade head` to apply "
+            "pending migrations before relying on the affected features.",
+            len(missing_columns), missing_columns,
+        )
+
+    if not missing and not missing_columns:
         logger.info(
             "Postgres schema verified: Alembic-managed and up to date (%d tables).",
             len(existing_tables),

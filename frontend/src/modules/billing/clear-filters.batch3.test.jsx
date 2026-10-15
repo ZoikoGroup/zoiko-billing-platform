@@ -49,7 +49,7 @@ describe("R. Customer billing history", () => {
   it("clears search, status and dates together", async () => {
     renderPage(BillingHistoryPage);
     await waitFor(() => expect(m.invList).toHaveBeenCalled());
-    expect(clearBtn()).toBeDisabled();
+    await waitFor(() => expect(clearBtn()).toBeDisabled());
     fireEvent.change(screen.getByLabelText("Search billing history"), { target: { value: "INV-9" } });
     fireEvent.click(screen.getByRole("button", { name: "Toggle filters" }));
     fireEvent.change(screen.getByLabelText("Filter by status"), { target: { value: "paid" } });
@@ -65,7 +65,7 @@ describe("R. Customer billing history", () => {
   it("switching tabs drops an invoice-only status filter", async () => {
     renderPage(BillingHistoryPage);
     await waitFor(() => expect(m.invList).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Toggle filters" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Toggle filters" }));
     fireEvent.change(screen.getByLabelText("Filter by status"), { target: { value: "overdue" } });
     fireEvent.click(screen.getByRole("button", { name: /payments/i }));
     await waitFor(() => expect(m.payList).toHaveBeenCalled());
@@ -77,6 +77,7 @@ describe("S. Products", () => {
   it("Clear filters appears with a filter and restores the unfiltered list", async () => {
     renderPage(ProductListPage);
     await waitFor(() => expect(m.prodList).toHaveBeenCalled());
+    await screen.findByRole("button", { name: "Toggle filters" });
     expect(clearBtn()).toBeUndefined();
     fireEvent.change(screen.getAllByRole("textbox")[0], { target: { value: "widget" } });
     await waitFor(() => expect(clearBtn()).toBeDefined());
@@ -91,7 +92,7 @@ describe("T. Product pricing plans", () => {
   it("clears search, type and status", async () => {
     renderPage(PricingPlansPage);
     await waitFor(() => expect(m.planList).toHaveBeenCalled());
-    expect(clearBtn()).toBeDisabled();
+    await waitFor(() => expect(clearBtn()).toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Toggle filters" }));
     fireEvent.change(screen.getByLabelText("Plan status"), { target: { value: "inactive" } });
     // The status filter now counts as a filter in the empty state too.

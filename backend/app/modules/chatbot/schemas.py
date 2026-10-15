@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ── Request Schemas ──────────────────────────────────────────────────────────
@@ -71,6 +71,11 @@ class ChatbotEvidence(BaseModel):
     reference: str | None = None
     summary: str = ""
     fields: dict[str, Any] = Field(default_factory=dict)
+    # Optional web URL a visitor can open for the source. Populated only when
+    # the knowledge source/document carries a verifiable URL; consumers must
+    # allowlist it before rendering as a link.
+    url: str | None = None
+    version: str | None = None
 
 
 class ChatbotContext(BaseModel):
@@ -201,7 +206,9 @@ class HealthResponse(BaseModel):
 class PublicCreateSessionRequest(BaseModel):
     # Optional client-generated UUID so the widget can survive a page reload
     # (the same uid can be re-posted; the server treats it as idempotent).
-    session_uid: str | None = Field(None, min_length=8, max_length=64)
+    # Bounded to the 36-char DB column so an oversized value is a 422, never a
+    # DB truncation/error.
+    session_uid: str | None = Field(None, min_length=8, max_length=36)
     # Optional current marketing page slug (e.g. "/pricing") for page-context
     # boosting of retrieval.
     page: str | None = Field(None, max_length=300)
@@ -210,6 +217,11 @@ class PublicCreateSessionRequest(BaseModel):
 class PublicSendMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     page: str | None = Field(None, max_length=300)
+    # Client-generated idempotency key for this logical turn. A retried send
+    # with the same key returns the original exchange instead of duplicating it.
+    message_id: str | None = Field(None, min_length=8, max_length=64)
+    # Optional stable intent id from a topic tile (e.g. "invoices").
+    intent_id: str | None = Field(None, max_length=64)
 
 
 class PublicMessage(BaseModel):
@@ -246,3 +258,127 @@ class PublicChatResponse(BaseModel):
     risk_class: str = "R0"
     evidence: list[ChatbotEvidence] = Field(default_factory=list)
     suggested_prompts: list[str] = Field(default_factory=list)
+    # True when the question needs account-specific data the public assistant
+    # can never access; the widget then shows the sign-in call to action.
+    requires_auth: bool = False
+    # Coarse, non-sensitive state for the widget: "answered" | "uncertain" |
+    # "refused" | "degraded". Never carries model confidence or internals.
+    safety_state: str = "answered"
+    # Server-side timestamp of the assistant turn (spec §10.1) so the widget can
+    # show the message time from a trusted clock instead of the browser's.
+    created_at: datetime | None = None
+    # Echo of the topic-tile intent id that produced this turn (spec §10.1),
+    # so the widget can attribute the answer to the originating tile.
+    intent_id: str | None = None
+
+
+# ── Public assistant instrumentation (spec §12.3) ───────────────────────────
+
+class PublicEventRequest(BaseModel):
+    """Privacy-minimized client instrumentation event.
+
+    Only an allowlisted event name plus the spec §12.3 safe metadata
+    (anonymous session id, topic id, locale, config version, timing bucket)
+    are accepted. Raw question text and any free-text field are never part of
+    this contract.
+    """
+
+    event: str = Field(..., min_length=1, max_length=64)
+    session_uid: str | None = Field(None, max_length=64)
+    topic_id: str | None = Field(None, max_length=64)
+    locale: str | None = Field(None, max_length=16)
+    config_version: str | None = Field(None, max_length=40)
+    timing_bucket: str | None = Field(None, max_length=16)
+
+
+class PublicEventResponse(BaseModel):
+    status: str = "recorded"
+
+
+# ── Public assistant config / support / feedback (ZB-AI-PUB-001) ────────────
+
+class PublicTopicTile(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    icon: str = "help-circle"
+    accent: str = "#0868F7"
+    tint: str = "#EEF4FA"
+    starter_question: str
+
+
+class PublicSupportConfig(BaseModel):
+    mode: str
+    live_chat_enabled: bool = False
+    request_form_enabled: bool = True
+    issue_types: list[str] = Field(default_factory=list)
+    response_time_claim: str | None = None
+
+
+class PublicLinkAllowlist(BaseModel):
+    relative_prefixes: list[str] = Field(default_factory=list)
+    external_domains: list[str] = Field(default_factory=list)
+
+
+class PublicConfigResponse(BaseModel):
+    config_version: str
+    assistant_title: str
+    greeting_title: str
+    greeting_body: str
+    composer_placeholder: str
+    disclosure: str
+    human_support_label: str = "Speak to a human"
+    human_support_description: str = "Get help from our support team"
+    uncertainty_message: str
+    privacy_url: str
+    privacy_label: str
+    help_center_url: str
+    contact_support_url: str
+    sign_in_url: str
+    sign_in_label: str
+    tiles: list[PublicTopicTile]
+    support: PublicSupportConfig
+    link_allowlist: PublicLinkAllowlist
+
+
+class PublicHealthResponse(BaseModel):
+    # Deliberately minimal: availability + degraded mode only. Never the
+    # provider, model, version or any internal detail.
+    status: str = "ok"
+    available: bool = True
+    degraded: bool = False
+
+
+class PublicSupportRequestCreate(BaseModel):
+    issue_type: str = Field(..., min_length=1, max_length=40)
+    email: EmailStr
+    summary: str = Field(..., min_length=3, max_length=500)
+    message: str | None = Field(None, max_length=4000)
+    # Consent is required before any transcript excerpt is shared.
+    transcript_consent: bool = False
+    session_uid: str | None = Field(None, min_length=8, max_length=36)
+    # Client-minted idempotency key (e.g. a UUID) generated once per support
+    # form. Retries after a lost response reuse it; the server returns the
+    # original reference instead of creating a duplicate request.
+    client_request_id: str | None = Field(None, min_length=8, max_length=64)
+
+
+class PublicSupportRequestResponse(BaseModel):
+    reference: str
+    status: str = "received"
+    message: str
+    transcript_shared: bool = False
+    # A downstream support-desk delivery is only reported true when the
+    # configured webhook actually acknowledged the request.
+    delivered_to_desk: bool = False
+
+
+class PublicFeedbackRequest(BaseModel):
+    session_uid: str | None = Field(None, max_length=36)
+    message_uid: str | None = Field(None, max_length=36)
+    helpful: bool
+    reason: str | None = Field(None, max_length=500)
+
+
+class PublicFeedbackResponse(BaseModel):
+    status: str = "recorded"
