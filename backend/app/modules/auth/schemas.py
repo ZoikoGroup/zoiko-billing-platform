@@ -151,7 +151,7 @@ class UserResponse(BaseModel):
     is_verified: bool = False
     last_login_at: Optional[datetime] = None
     created_at: datetime
-    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
+    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None means no platform role assigned (grants no capabilities)
     # P14: truthful invite-email outcome — None = no email was attempted
     # (send_invite=False on creation), True/False = the actual SMTP result.
     # Callers must not infer "invitation sent" from a 2xx response alone.

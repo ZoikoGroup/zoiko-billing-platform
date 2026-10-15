@@ -105,6 +105,10 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     login_locked_until = Column(DateTime, nullable=True)
 
+    # Temporary support-access accounts only: the moment the account stops
+    # working. Login, refresh and every authenticated request enforce it.
+    access_expires_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

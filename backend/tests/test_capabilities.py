@@ -10,8 +10,8 @@ declaration mechanics.
 
 Coverage:
   1. unknown capability rejected at declaration time (unchanged)
-  2. a NULL platform_role (every pre-existing super_admin account) keeps
-     full access — backward compatible, no data migration needed
+  2. a NULL platform_role grants NO capabilities (GOV-01; migration
+     a7c3e91d4b52 backfilled existing accounts)
   3. PLATFORM_ADMINISTRATOR explicitly set has full access
   4. SUPPORT_OPERATOR can request tenant support access but NOT read
      financial consistency (horizontal capability boundary)
@@ -45,11 +45,11 @@ def test_unknown_capability_rejected_at_declaration_time():
         require_capability("not_a_real_capability")
 
 
-def test_null_platform_role_keeps_full_access():
+def test_null_platform_role_grants_no_access():
     user = _super_admin("legacy@cap.example", platform_role=None)
-    assert has_capability(user, "tenant_support.request")
-    assert has_capability(user, "financial_consistency.read")
-    assert has_capability(user, "platform_role.manage")
+    assert not has_capability(user, "tenant_support.request")
+    assert not has_capability(user, "financial_consistency.read")
+    assert not has_capability(user, "platform_role.manage")
 
 
 def test_explicit_platform_administrator_has_full_access():
@@ -90,7 +90,7 @@ def test_reliability_operator_boundary():
 
 
 def test_only_platform_administrator_can_manage_platform_roles():
-    admin = _super_admin("admin2@cap.example", platform_role=None)
+    admin = _super_admin("admin2@cap.example", platform_role=PlatformRole.PLATFORM_ADMINISTRATOR)
     support = _super_admin("support2@cap.example", platform_role=PlatformRole.SUPPORT_OPERATOR)
     security = _super_admin("security2@cap.example", platform_role=PlatformRole.SECURITY_OPERATOR)
     auditor = _super_admin("auditor2@cap.example", platform_role=PlatformRole.AUDITOR)

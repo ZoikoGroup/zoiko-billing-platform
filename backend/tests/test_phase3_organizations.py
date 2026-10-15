@@ -525,6 +525,9 @@ def test_overview_includes_audit_history_and_privileged_grants(db_session):
     sa = _sa_user_persisted(db_session)
 
     _transition(db_session, org.id, "suspended")
+    from tests.conftest import make_org_admin
+
+    make_org_admin(db_session, org.id)
     PrivilegedAccessService(db_session).request_access(
         actor=sa,
         organization_id=org.id,

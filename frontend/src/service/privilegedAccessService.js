@@ -19,9 +19,6 @@ export const searchOrganizations = (search = "") =>
 export const requestPrivilegedAccess = (data) =>
   api.post("/api/super-admin/privileged-access/request", data);
 
-export const activatePrivilegedAccess = (grantId, data) =>
-  api.post(`/api/super-admin/privileged-access/${grantId}/activate`, data);
-
 export const getActivePrivilegedAccess = () =>
   api.get("/api/super-admin/privileged-access/active");
 
@@ -31,8 +28,45 @@ export const exitPrivilegedAccess = (grantId) =>
 export const listMyPrivilegedAccess = (limit = 20) =>
   api.get("/api/super-admin/privileged-access/mine", { params: { limit } });
 
+export const revokePrivilegedAccess = (grantId, data) =>
+  api.post(`/api/super-admin/privileged-access/${grantId}/revoke`, data);
+
+// Requester withdraws their own not-yet-active request (no revoke capability needed).
+export const cancelPrivilegedAccess = (grantId) =>
+  api.post(`/api/super-admin/privileged-access/${grantId}/cancel`, {});
+
+// Every pending/approved/active grant across operators (tenant_support.revoke).
+export const listLivePrivilegedAccess = () =>
+  api.get("/api/super-admin/privileged-access/live");
+
+export const openBreakGlass = (data) =>
+  api.post("/api/super-admin/privileged-access/break-glass", data);
+
+export const reviewBreakGlass = (grantId, data) =>
+  api.post(`/api/super-admin/privileged-access/${grantId}/review`, data);
+
+export const listPendingReviews = () =>
+  api.get("/api/super-admin/privileged-access/pending-review");
+
+// Temporary read-only tenant login for the caller's own active session.
+export const getSupportAccessCredentials = (grantId) =>
+  api.get(`/api/super-admin/privileged-access/${grantId}/credentials`);
+
 export const getPrivilegedAccessTenantSummary = (grantId) =>
   api.get(`/api/super-admin/privileged-access/${grantId}/tenant-summary`);
+
+// ── Tenant-side endpoints ──────────────────────────────────────────────
+export const getPrivilegedAccessLog = (limit = 50) =>
+  api.get("/api/organizations/me/privileged-access-log", { params: { limit } });
+
+export const tenantRevokePrivilegedAccess = (grantId, data) =>
+  api.post(`/api/organizations/me/privileged-access/${grantId}/revoke`, data);
+
+export const tenantApprovePrivilegedAccess = (grantId, data = {}) =>
+  api.post(`/api/organizations/me/privileged-access/${grantId}/approve`, data);
+
+export const tenantDenyPrivilegedAccess = (grantId, data) =>
+  api.post(`/api/organizations/me/privileged-access/${grantId}/deny`, data);
 
 // ── Domain C telemetry ──────────────────────────────────────────────────
 export const getOrganizationTelemetry = () =>

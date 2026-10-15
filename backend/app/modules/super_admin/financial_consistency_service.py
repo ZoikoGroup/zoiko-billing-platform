@@ -56,7 +56,6 @@ class FinancialConsistencyService:
             .all()
         )
         over_allocated_count = len(all_over_allocated)
-        over_allocated_rows = all_over_allocated[:limit_examples]
 
         under_allocated_paid_count = (
             self.db.query(func.count())
@@ -111,16 +110,9 @@ class FinancialConsistencyService:
                 ),
             },
             "over_allocated_count": over_allocated_count,
-            "over_allocated_examples": [
-                {
-                    "invoice_id": r.id,
-                    "organization_id": r.organization_id,
-                    "invoice_number": r.invoice_number,
-                    "total_amount": str(r.total_amount),
-                    "allocated_amount": str(r.allocated),
-                }
-                for r in over_allocated_rows
-            ],
+            # ZB-SEC-PRIV-001: per-tenant masked counts, never invoice rows. The
+            # key name is kept so the response envelope is unchanged.
+            "over_allocated_examples": self._over_allocated_by_tenant(all_over_allocated),
             "under_allocated_paid_count_informational": under_allocated_paid_count,
             "coverage_note": (
                 "Compares PaymentAllocation totals against Invoice.total_amount only. "
@@ -132,6 +124,29 @@ class FinancialConsistencyService:
                 "this codebase — see ISS-017)."
             ),
         }
+
+    def _over_allocated_by_tenant(self, rows) -> list:
+        from app.modules.organizations.models import Organization
+        from app.modules.super_admin.privacy import masked_count
+
+        per_org: Dict[int, int] = {}
+        for r in rows:
+            per_org[r.organization_id] = per_org.get(r.organization_id, 0) + 1
+        names = {}
+        if per_org:
+            names = dict(
+                self.db.query(Organization.id, Organization.organization_name)
+                .filter(Organization.id.in_(list(per_org)))
+                .all()
+            )
+        return [
+            {
+                "organization_id": oid,
+                "organization_name": names.get(oid, "UNKNOWN"),
+                **masked_count("over_allocated_count", n),
+            }
+            for oid, n in sorted(per_org.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
+        ]
 
     def run_scheduled_check(self) -> Dict[str, Any]:
         """Scheduled entry point (financial-consistency job). Runs the
@@ -153,7 +168,8 @@ class FinancialConsistencyService:
                 title="Financial integrity check failing (over-allocated payments)",
                 description=(
                     f"{result['over_allocated_count']} invoice(s) have PaymentAllocation "
-                    f"totals exceeding their total_amount. Examples: {examples}."
+                    f"totals exceeding their total_amount, across {len(examples)} "
+                    "tenant(s). Record detail requires approved support access."
                 ),
                 base_severity=AttentionSeverity.P0,  # §8 severity floor
             )

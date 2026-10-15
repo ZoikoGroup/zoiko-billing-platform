@@ -7,18 +7,8 @@ import {
 } from "../../service/commandCenterService";
 import { PageHeader, DataTable, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState, StatusBadge } from "../../components/billing-shared";
+import { OrganizationLink, MaskedValue, CurrencyTotals, CountChips, SupportAccessNote, rowsOf } from "./PrivacyCells";
 import { CREDIT_NOTE_STATUS_OPTIONS, REFUND_STATUS_OPTIONS, WRITE_OFF_STATUS_OPTIONS } from "./constants";
-
-function money(strAmount) {
-  const n = parseFloat(strAmount || "0");
-  if (isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-}
 
 function StatusDistributionStrip({ distribution, options }) {
   if (!distribution || distribution.length === 0) return null;
@@ -27,44 +17,31 @@ function StatusDistributionStrip({ distribution, options }) {
       {distribution.map((d) => (
         <span key={d.status} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px]">
           <StatusBadge status={d.status} options={options} />
-          <span className="font-semibold text-slate-700">{d.count}</span>
+          <span className="font-semibold text-slate-700"><MaskedValue value={d.count} /></span>
         </span>
       ))}
     </div>
   );
 }
 
+const statusLabel = (key) => String(key).replaceAll("_", " ");
+
 const CREDIT_NOTE_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "customer_name", label: "Customer", render: (r) => <span className="text-slate-600">{r.customer_name}</span> },
-  { key: "credit_note_number", label: "Credit Note", render: (r) => <span className="font-semibold text-brand-600">{r.credit_note_number}</span> },
-  { key: "credit_note_type", label: "Type", render: (r) => <span className="text-xs capitalize text-slate-600">{r.credit_note_type.replaceAll("_", " ")}</span> },
-  { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} options={CREDIT_NOTE_STATUS_OPTIONS} /> },
-  { key: "total_amount", label: "Total", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.total_amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "remaining_amount", label: "Remaining", numeric: true, render: (r) => <span className="text-slate-700">{money(r.remaining_amount)}</span> },
-  { key: "issue_date", label: "Issued", render: (r) => <span className="text-slate-500">{formatDate(r.issue_date)}</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "count_by_status", label: "Credit Notes by Status", render: (r) => <CountChips counts={r.count_by_status} labelFor={statusLabel} /> },
+  { key: "total_by_currency", label: "Total", numeric: true, render: (r) => <CurrencyTotals totals={r.total_by_currency} /> },
 ];
 
 const REFUND_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "customer_name", label: "Customer", render: (r) => <span className="text-slate-600">{r.customer_name}</span> },
-  { key: "refund_number", label: "Refund", render: (r) => <span className="font-semibold text-brand-600">{r.refund_number}</span> },
-  { key: "refund_type", label: "Type", render: (r) => <span className="text-xs capitalize text-slate-600">{r.refund_type.replaceAll("_", " ")}</span> },
-  { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} options={REFUND_STATUS_OPTIONS} /> },
-  { key: "amount", label: "Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "reason", label: "Reason", render: (r) => <span className="text-xs text-slate-500">{r.reason || "—"}</span> },
-  { key: "created_at", label: "Created", render: (r) => <span className="text-slate-500">{formatDate(r.created_at)}</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "count_by_status", label: "Refunds by Status", render: (r) => <CountChips counts={r.count_by_status} labelFor={statusLabel} /> },
+  { key: "total_by_currency", label: "Total", numeric: true, render: (r) => <CurrencyTotals totals={r.total_by_currency} /> },
 ];
 
 const WRITE_OFF_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "customer_name", label: "Customer", render: (r) => <span className="text-slate-600">{r.customer_name}</span> },
-  { key: "write_off_number", label: "Write-off", render: (r) => <span className="font-semibold text-brand-600">{r.write_off_number}</span> },
-  { key: "write_off_type", label: "Type", render: (r) => <span className="text-xs capitalize text-slate-600">{r.write_off_type.replaceAll("_", " ")}</span> },
-  { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} options={WRITE_OFF_STATUS_OPTIONS} /> },
-  { key: "amount", label: "Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "reason", label: "Reason", render: (r) => <span className="text-xs text-slate-500">{r.reason || "—"}</span> },
-  { key: "created_at", label: "Created", render: (r) => <span className="text-slate-500">{formatDate(r.created_at)}</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "count_by_status", label: "Write-offs by Status", render: (r) => <CountChips counts={r.count_by_status} labelFor={statusLabel} /> },
+  { key: "total_by_currency", label: "Total", numeric: true, render: (r) => <CurrencyTotals totals={r.total_by_currency} /> },
 ];
 
 // `embedded` drops this page's own PageHeader and padding when it is mounted
@@ -127,18 +104,19 @@ export default function CreditsRefundsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Undo2}
           title="Credit Notes"
-          description="Issued credit notes, their type, and how much remains unapplied."
+          description="Credit notes per tenant, by status, with totals per currency."
         >
           {errors.creditNotes ? (
             <ErrorState title="Unable to load credit notes" message={errors.creditNotes} onRetry={load} />
           ) : (
             <>
               <StatusDistributionStrip distribution={creditNotes?.status_distribution} options={CREDIT_NOTE_STATUS_OPTIONS} />
-              {(creditNotes?.items || []).length === 0 ? (
+              {rowsOf(creditNotes).length === 0 ? (
                 <EmptyState icon={Undo2} title="No credit notes yet" message="Credit notes issued to customers will appear here." />
               ) : (
-                <DataTable columns={CREDIT_NOTE_COLUMNS} data={creditNotes.items} rowKey={(r) => r.credit_note_id} minWidth={840} />
+                <DataTable columns={CREDIT_NOTE_COLUMNS} data={rowsOf(creditNotes)} rowKey={(r) => r.organization_id} minWidth={560} />
               )}
+              <SupportAccessNote />
             </>
           )}
         </SectionCard>
@@ -148,18 +126,19 @@ export default function CreditsRefundsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Undo2}
           title="Refunds"
-          description="Cash refunds across every tenant, by status and origin."
+          description="Cash refunds per tenant, by status, with totals per currency."
         >
           {errors.refunds ? (
             <ErrorState title="Unable to load refunds" message={errors.refunds} onRetry={load} />
           ) : (
             <>
               <StatusDistributionStrip distribution={refunds?.status_distribution} options={REFUND_STATUS_OPTIONS} />
-              {(refunds?.items || []).length === 0 ? (
+              {rowsOf(refunds).length === 0 ? (
                 <EmptyState icon={Undo2} title="No refunds yet" message="Refunds issued to customers will appear here." />
               ) : (
-                <DataTable columns={REFUND_COLUMNS} data={refunds.items} rowKey={(r) => r.refund_id} minWidth={840} />
+                <DataTable columns={REFUND_COLUMNS} data={rowsOf(refunds)} rowKey={(r) => r.organization_id} minWidth={560} />
               )}
+              <SupportAccessNote />
             </>
           )}
         </SectionCard>
@@ -169,18 +148,19 @@ export default function CreditsRefundsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Undo2}
           title="Write-offs"
-          description="Bad-debt and adjustment write-offs — collection given up on, distinct from a refund."
+          description="Bad-debt and adjustment write-offs per tenant, by status, with totals per currency."
         >
           {errors.writeOffs ? (
             <ErrorState title="Unable to load write-offs" message={errors.writeOffs} onRetry={load} />
           ) : (
             <>
               <StatusDistributionStrip distribution={writeOffs?.status_distribution} options={WRITE_OFF_STATUS_OPTIONS} />
-              {(writeOffs?.items || []).length === 0 ? (
+              {rowsOf(writeOffs).length === 0 ? (
                 <EmptyState icon={Undo2} title="No write-offs yet" message="Bad-debt or adjustment write-offs will appear here." />
               ) : (
-                <DataTable columns={WRITE_OFF_COLUMNS} data={writeOffs.items} rowKey={(r) => r.write_off_id} minWidth={840} />
+                <DataTable columns={WRITE_OFF_COLUMNS} data={rowsOf(writeOffs)} rowKey={(r) => r.organization_id} minWidth={560} />
               )}
+              <SupportAccessNote />
             </>
           )}
         </SectionCard>

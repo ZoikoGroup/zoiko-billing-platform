@@ -264,6 +264,24 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const handleRevokeLink = async () => {
+    if (actionLoading) return;
+    setActionLoading("revoke-link");
+    try {
+      await invoiceApi.revokePublicLink(id);
+      setPublicLink(null);
+      setFlashMessage({ type: "success", text: "Public payment link revoked. A new link will be generated on the next send." });
+      // Re-fetch the new public link after revocation
+      invoiceApi.getPublicLink(Number(id))
+        .then((d) => setPublicLink(d?.url || null))
+        .catch(() => {});
+    } catch (err) {
+      setFlashMessage({ type: "warning", text: err?.detail || err?.message || "Failed to revoke public link" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -591,6 +609,16 @@ export default function InvoiceDetailPage() {
                 >
                   <CreditCard className="h-3.5 w-3.5" /> View Invoice &amp; Payment Options
                 </a>
+              )}
+              {!isDraft && !isClosed && publicLink && (
+                <button
+                  onClick={handleRevokeLink}
+                  disabled={actionLoading === "revoke-link"}
+                  className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  aria-label="Revoke the current public payment link"
+                >
+                  {actionLoading === "revoke-link" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />} Revoke Payment Link
+                </button>
               )}
             </div>
           </div>

@@ -6,8 +6,10 @@ modules/billing/routers/quote_router.py
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
+
+from app.core.rate_limiter import limit_route
 
 from app.database import get_db
 from app.core.dependencies import (
@@ -113,8 +115,10 @@ public_quote_router = APIRouter(prefix="/quotations/public", tags=["🧾 Quotati
     "/{token}",
     summary="Publicly view a quotation estimate via signed link token",
 )
+@limit_route("30/minute")
 def get_public_quote(
     token: str,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = QuoteService(db)
@@ -126,8 +130,10 @@ def get_public_quote(
     response_model=QuotationResponse,
     summary="Publicly accept a quotation estimate via signed link token",
 )
+@limit_route("30/minute")
 def accept_public_quote(
     token: str,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = QuoteService(db)
@@ -139,9 +145,11 @@ def accept_public_quote(
     response_model=QuotationResponse,
     summary="Publicly reject a quotation estimate via signed link token",
 )
+@limit_route("30/minute")
 def reject_public_quote(
     token: str,
     data: PublicQuoteRejectRequest,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = QuoteService(db)
@@ -360,6 +368,25 @@ def cancel_quote(
 ):
     svc = QuoteService(db)
     return svc.cancel_quote(
+        quote_id=quote_id,
+        organization_id=current_user.organization_id,
+        updated_by=current_user.id,
+    )
+
+
+@router.post(
+    "/{quote_id}/public-link/revoke",
+    response_model=dict,
+    summary="Revoke public quote payment/estimate link",
+    dependencies=[Depends(get_current_billing_admin)],
+)
+def revoke_quote_public_link(
+    quote_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    svc = QuoteService(db)
+    return svc.revoke_public_link(
         quote_id=quote_id,
         organization_id=current_user.organization_id,
         updated_by=current_user.id,

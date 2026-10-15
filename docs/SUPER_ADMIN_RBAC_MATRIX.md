@@ -2,9 +2,9 @@
 
 Generated: 2026-08-21, updated session 6. **Session 6 replaced session 5's
 scaffolding with real, ENFORCED per-role differentiation.** A `super_admin`
-account now carries a second, orthogonal `PlatformRole` (NULL = full
-access, backward compatible with every account that existed before this
-column was added), and `require_capability()` genuinely checks it —
+account now carries a second, orthogonal `PlatformRole` (NULL grants
+NO capabilities; migration `a7c3e91d4b52` backfilled existing accounts to
+`platform_administrator`), and `require_capability()` genuinely checks it —
 calling an endpoint the caller's role doesn't include now returns a real
 403, verified adversarially.
 
@@ -14,7 +14,7 @@ calling an endpoint the caller's role doesn't include now returns a real
 UserRole.SUPER_ADMIN          <- unchanged floor every endpoint still requires
         │
         ▼
-PlatformRole (NULL = full access = PLATFORM_ADMINISTRATOR)
+PlatformRole (NULL = no capabilities; must be assigned explicitly)
     ├── PLATFORM_ADMINISTRATOR   full access to every capability below
     ├── SUPPORT_OPERATOR         tenant_support.* + read-only triage/reliability/governance/search
     ├── SECURITY_OPERATOR        governance/incident/circuit_breaker + audit.read
@@ -33,14 +33,20 @@ Source: `backend/app/modules/auth/models.py:PlatformRole`,
 | `triage.read` | View triage-relevant state | SUPPORT_OPERATOR, SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /triage/summary` (session 7 — standalone endpoint composing attention + jobs + breakers + audit tail) |
 | `reliability.read` | View Reliability lens | RELIABILITY_OPERATOR, SECURITY_OPERATOR, AUDITOR, SUPPORT_OPERATOR | `GET /telemetry/organizations`, `GET /telemetry/jobs` |
 | `governance.read` | View Governance lens | SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR, SUPPORT_OPERATOR | `GET /attention`, `GET /attention/counts` |
-| `tenant_support.request` | Request a Domain B grant | SUPPORT_OPERATOR only | `POST /privileged-access/request`, `GET .../active`, `GET .../mine`, `GET .../{id}/tenant-summary` |
-| `tenant_support.activate` | Complete MFA step-up on a grant | SUPPORT_OPERATOR only | `POST /privileged-access/{id}/activate` |
-| `tenant_support.exit` | Explicitly end a grant | SUPPORT_OPERATOR only | `POST /privileged-access/{id}/exit` |
+| `tenant_support.request` | Request a Domain B grant; cancel own not-yet-active request | SUPPORT_OPERATOR only | `POST /privileged-access/request`, `POST .../{id}/cancel`, `GET .../active`\*, `GET .../mine`\*, `GET .../{id}/tenant-summary`\* |
+| `tenant_support.approve` | Approve/deny a Domain B grant (requester != approver) | SECURITY_OPERATOR, PLATFORM_ADMINISTRATOR | `GET /privileged-access/pending-approval`, `POST .../{id}/approve`, `POST .../{id}/deny` |
+| `tenant_support.activate` | Complete MFA step-up on an approved grant | SUPPORT_OPERATOR only | `POST /privileged-access/{id}/activate` |
+| `tenant_support.revoke` | Revoke a pending, approved, or active grant; see every live grant | SECURITY_OPERATOR, PLATFORM_ADMINISTRATOR | `POST /privileged-access/{id}/revoke`, `GET /privileged-access/live` |
+| `tenant_support.break_glass` | Open emergency support access (explicit only, fresh MFA, P1 alert) | SECURITY_OPERATOR only (`EXPLICIT_ONLY_CAPABILITIES`) | `POST /privileged-access/break-glass` |
+| `tenant_support.review_break_glass` | Review a break-glass access session (reviewer != opener) | SECURITY_OPERATOR, AUDITOR | `POST /privileged-access/{id}/review` |
+| `tenant_support.exit` | Explicitly end a grant | SUPPORT_OPERATOR only | `POST /privileged-access/{id}/exit`\* |
+
+\* Also reachable with `tenant_support.break_glass`, so a break-glass opener can see, read and end the session they opened. These endpoints are owner-scoped in the service: they only ever return or act on the caller's own grants.
 | `incident.acknowledge` | Acknowledge an Attention item | SECURITY_OPERATOR, RELIABILITY_OPERATOR | `POST /attention/{id}/acknowledge` |
 | `incident.assign` | Assign an Attention item | SECURITY_OPERATOR, RELIABILITY_OPERATOR | `POST /attention/{id}/assign` |
 | `incident.transition` | Move an Attention item through its lifecycle | SECURITY_OPERATOR, RELIABILITY_OPERATOR | `POST /attention/{id}/transition` |
 | `incident.suppress` | Suppress an Attention item | SECURITY_OPERATOR, RELIABILITY_OPERATOR | `POST /attention/{id}/suppress` |
-| `audit.read` | View audit logs | SECURITY_OPERATOR, AUDITOR | Pre-existing endpoint (not migrated to `require_capability` — see below) |
+| `audit.read` | View audit logs and verify audit hash chain integrity | SECURITY_OPERATOR, AUDITOR | `GET /audit-logs/verify` (enforced via `require_capability`); `GET /audit-logs` (pre-existing) |
 | `launch_readiness.read` | View Launch Readiness | SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /launch-readiness` |
 | `financial_consistency.read` | View the internal financial consistency check | AUDITOR, FINANCE_READONLY | `GET /financial-consistency` |
 | `metric_dictionary.read` | View the Metric Dictionary | SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR, FINANCE_READONLY | `GET /metric-dictionary` |
@@ -58,7 +64,7 @@ Source: `backend/app/modules/auth/models.py:PlatformRole`,
 | `platform_config.read` | View the platform configuration inventory | SUPPORT_OPERATOR, SECURITY_OPERATOR, RELIABILITY_OPERATOR, AUDITOR | `GET /configuration`, `GET /settings` |
 | `platform_config.manage` | Mutate platform settings (audited) | SECURITY_OPERATOR | `POST /settings`, `PUT /settings/{key}` |
 
-**Deliberately not built**: `tenant_support.break_glass` (privileged access keeps its request→activate flow; there is no bypass), `commercial.read`/`financial_ops.read` (Domain A / not-built lens, out of scope). Session 7 note: the previously-missing breaker maker-checker capabilities now EXIST (`circuit_breaker.manage` covers both direct break-glass engage and proposal; the checker path is also gated by `circuit_breaker.manage` — the old "single toggle, no workflow" limitation is closed).
+**Deliberately not built**: `commercial.read`/`financial_ops.read` (Domain A / not-built lens, out of scope). Privileged access independent approval, revocation, break-glass, and break-glass review are fully implemented per ZB-SEC-PRIV-001.
 
 ## What IS real authorization beyond the capability check
 
@@ -88,7 +94,7 @@ Domain A code not otherwise touched this session), not an oversight.
 values), rejects non-super_admin targets and invalid role names. Frontend:
 `pages/UsersPage.jsx` — a "Platform Role" column with an inline `<select>`
 editor, visible only to a viewer whose OWN platform_role is
-PLATFORM_ADMINISTRATOR (or NULL).
+PLATFORM_ADMINISTRATOR.
 
 ## Existing platform-wide roles (unchanged)
 
@@ -97,3 +103,20 @@ PLATFORM_ADMINISTRATOR (or NULL).
 `backend/app/modules/auth/models.py`. None of these five were modified
 this session; `PlatformRole` is a wholly new, additive, nullable column
 only ever consulted when `role == super_admin`.
+
+## GOV-01 role model (ZB-SEC-PRIV-001)
+
+- A super admin with `platform_role = NULL` holds **no** capabilities:
+  `has_capability` returns False (and logs a warning); every
+  `require_capability` route returns 403 ("platform role (none assigned)").
+  `UserRole.SUPER_ADMIN` alone is only the identity floor.
+- Migration `a7c3e91d4b52` set `platform_administrator` on every existing
+  super admin whose role was NULL. `scripts/seed_super_admin.py` sets it
+  explicitly. No API path creates super admins; `POST /users/invite` only
+  creates tenant-role users (platform_role stays NULL and is irrelevant for
+  them), and `PUT /users/{id}/platform-role` is the way to assign one.
+- `EXPLICIT_ONLY_CAPABILITIES` (`core/capabilities.py`, currently empty):
+  capabilities the implicit PLATFORM_ADMINISTRATOR grant does not cover; they
+  are held only by roles listed in `_CAPABILITY_ROLE_MAP`.
+- No capability grants record-level tenant data; that requires the
+  privileged access grant.

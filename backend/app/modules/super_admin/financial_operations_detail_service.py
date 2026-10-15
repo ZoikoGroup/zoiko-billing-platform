@@ -21,24 +21,87 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.modules.super_admin.privacy import count_cells, currency_totals, masked_count
+
 
 class FinancialOperationsDetailService:
     def __init__(self, db: Session):
         self.db = db
 
-    # -- shared helper (mirrors billing_command_center_service.py) ---------
-    def _customer_name_map(self, customer_ids: List[int]) -> Dict[int, str]:
-        from app.modules.billing.models import BillingCustomer
+    # ── shared helpers (ZB-SEC-PRIV-001) ────────────────────────────────
+    # Every list_* method below returns ONE ROW PER TENANT, aggregated in SQL
+    # (GROUP BY organization_id) and passed through privacy.mask_small_cell.
+    # `limit` means "max tenants returned" (top N by record count — never by a
+    # cross-currency amount sum). No customer / record identifier is selected.
 
-        ids = [c for c in set(customer_ids) if c is not None]
+    def _org_names(self, org_ids) -> Dict[int, str]:
+        from app.modules.organizations.models import Organization
+
+        ids = [o for o in set(org_ids) if o is not None]
         if not ids:
             return {}
+        rows = self.db.query(Organization.id, Organization.organization_name).filter(Organization.id.in_(ids)).all()
+        return {oid: name for oid, name in rows}
+
+    @staticmethod
+    def _enum_value(value) -> str:
+        return value.value if hasattr(value, "value") else str(value)
+
+    def _top_orgs(self, build, org_col, limit: int):
+        """build(*cols) -> Query over the (already filtered) record set.
+        Returns ([(org_id, n)], platform_total)."""
+        total = build(func.count()).scalar() or 0
         rows = (
-            self.db.query(BillingCustomer.id, BillingCustomer.company_name, BillingCustomer.display_name)
-            .filter(BillingCustomer.id.in_(ids))
+            build(org_col, func.count().label("n"))
+            .group_by(org_col)
+            .order_by(func.count().desc(), org_col.asc())
+            .limit(limit)
             .all()
         )
-        return {r[0]: r[1] or r[2] or f"Customer #{r[0]}" for r in rows}
+        return [(r[0], int(r[1] or 0)) for r in rows], int(total)
+
+    def _status_totals_list(
+        self, build, org_col, status_col, currency_col, amount_col, limit: int, single_status: Optional[str] = None
+    ) -> Dict[str, Any]:
+        top, total = self._top_orgs(build, org_col, limit)
+        org_ids = [o for o, _ in top]
+        status_by_org: Dict[int, Dict[str, int]] = {}
+        currency_by_org: Dict[int, list] = {}
+        if org_ids:
+            if status_col is not None:
+                for oid, st, n in (
+                    build(org_col, status_col, func.count())
+                    .filter(org_col.in_(org_ids))
+                    .group_by(org_col, status_col)
+                    .all()
+                ):
+                    status_by_org.setdefault(oid, {})[self._enum_value(st)] = int(n or 0)
+            for oid, cur, n, amt in (
+                build(org_col, currency_col, func.count(), func.coalesce(func.sum(amount_col), 0))
+                .filter(org_col.in_(org_ids))
+                .group_by(org_col, currency_col)
+                .all()
+            ):
+                currency_by_org.setdefault(oid, []).append((cur, n, amt))
+        names = self._org_names(org_ids)
+        items = []
+        for oid, n in top:
+            statuses = status_by_org.get(oid) or ({single_status: n} if single_status else {})
+            items.append(
+                {
+                    "organization_id": oid,
+                    "organization_name": names.get(oid, "UNKNOWN"),
+                    "count_by_status": count_cells(statuses),
+                    "total_by_currency": currency_totals(currency_by_org.get(oid, [])),
+                }
+            )
+        return {**masked_count("total", total), "items": items}
+
+    def _status_distribution(self, model, status_col, *filters) -> list:
+        rows = (
+            self.db.query(status_col, func.count(model.id)).filter(*filters).group_by(status_col).all()
+        )
+        return [{"status": self._enum_value(s), "count": int(c or 0)} for s, c in rows]
 
     # ── Invoice Engine ──────────────────────────────────────────────────
     def invoice_status_distribution(self) -> Dict[str, Any]:
@@ -83,107 +146,80 @@ class FinancialOperationsDetailService:
 
     # ── Payments & Disputes ─────────────────────────────────────────────
     def list_failed_payments(self, limit: int = 50) -> Dict[str, Any]:
-        from app.modules.billing.models import Payment, PaymentStatus, PaymentAttempt
-        from app.modules.organizations.models import Organization
+        from app.modules.billing.models import Payment, PaymentStatus
 
-        base = self.db.query(Payment).filter(Payment.status == PaymentStatus.FAILED, Payment.deleted_at.is_(None))
-        total = base.with_entities(func.count(Payment.id)).scalar() or 0
-        rows = (
-            base.join(Organization, Organization.id == Payment.organization_id)
-            .order_by(Payment.payment_date.desc())
-            .limit(limit)
-            .with_entities(
-                Payment.id,
-                Payment.organization_id,
-                Organization.organization_name,
-                Payment.customer_id,
-                Payment.amount,
-                Payment.currency,
-                Payment.failure_code,
-                Payment.failure_reason,
-                Payment.payment_date,
-            )
-            .all()
-        )
-        customer_names = self._customer_name_map([r[3] for r in rows])
-        payment_ids = [r[0] for r in rows]
-        attempt_counts: Dict[int, int] = {}
-        if payment_ids:
-            attempt_counts = dict(
-                self.db.query(PaymentAttempt.payment_id, func.count(PaymentAttempt.id))
-                .filter(PaymentAttempt.payment_id.in_(payment_ids))
-                .group_by(PaymentAttempt.payment_id)
+        def build(*cols):
+            return self.db.query(*cols).filter(Payment.status == PaymentStatus.FAILED, Payment.deleted_at.is_(None))
+
+        top, total = self._top_orgs(build, Payment.organization_id, limit)
+        org_ids = [o for o, _ in top]
+        currency_by_org: Dict[int, list] = {}
+        reasons_by_org: Dict[int, list] = {}
+        if org_ids:
+            for oid, cur, n, amt in (
+                build(Payment.organization_id, Payment.currency, func.count(), func.coalesce(func.sum(Payment.amount), 0))
+                .filter(Payment.organization_id.in_(org_ids))
+                .group_by(Payment.organization_id, Payment.currency)
                 .all()
+            ):
+                currency_by_org.setdefault(oid, []).append((cur, n, amt))
+            # failure_code is a processor error category; free-text failure_reason
+            # can embed customer details and is deliberately never selected.
+            for oid, code, n in (
+                build(Payment.organization_id, Payment.failure_code, func.count())
+                .filter(Payment.organization_id.in_(org_ids))
+                .group_by(Payment.organization_id, Payment.failure_code)
+                .all()
+            ):
+                reasons_by_org.setdefault(oid, []).append((code or "unspecified", int(n or 0)))
+        names = self._org_names(org_ids)
+        items = []
+        for oid, n in top:
+            reasons = sorted(reasons_by_org.get(oid, []), key=lambda r: (-r[1], r[0]))[:3]
+            items.append(
+                {
+                    "organization_id": oid,
+                    "organization_name": names.get(oid, "UNKNOWN"),
+                    **masked_count("failed_count", n),
+                    "failed_total_by_currency": currency_totals(currency_by_org.get(oid, [])),
+                    "top_failure_reasons": [
+                        {"reason": reason, **masked_count("count", cnt)} for reason, cnt in reasons
+                    ],
+                }
             )
-        items = [
-            {
-                "payment_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "customer_name": customer_names.get(r[3], "UNKNOWN"),
-                "amount": str(r[4] or 0),
-                "currency": r[5] or "UNKNOWN",
-                "failure_code": r[6],
-                "failure_reason": r[7],
-                "payment_date": r[8],
-                "attempt_count": int(attempt_counts.get(r[0], 0)),
-            }
-            for r in rows
-        ]
-        return {"total": total, "items": items}
+        return {**masked_count("total", total), "items": items}
 
     def list_dunning_cases(self, limit: int = 50) -> Dict[str, Any]:
-        from app.modules.billing.models import DunningCase, Invoice
-        from app.modules.organizations.models import Organization
+        from app.modules.billing.models import DunningCase
 
-        total = self.db.query(func.count(DunningCase.id)).scalar() or 0
-        rows = (
-            self.db.query(
-                DunningCase.id,
-                DunningCase.organization_id,
-                Organization.organization_name,
-                DunningCase.customer_id,
-                DunningCase.invoice_id,
-                Invoice.invoice_number,
-                Invoice.currency,
-                DunningCase.status,
-                DunningCase.current_level,
-                DunningCase.total_overdue_amount,
-                DunningCase.days_overdue,
-                DunningCase.last_action_at,
-                DunningCase.next_action_at,
-            )
-            .join(Organization, Organization.id == DunningCase.organization_id)
-            .outerjoin(Invoice, Invoice.id == DunningCase.invoice_id)
-            .order_by(DunningCase.days_overdue.desc())
-            .limit(limit)
-            .all()
-        )
-        customer_names = self._customer_name_map([r[3] for r in rows])
+        def build(*cols):
+            return self.db.query(*cols).select_from(DunningCase)
+
+        top, total = self._top_orgs(build, DunningCase.organization_id, limit)
+        org_ids = [o for o, _ in top]
+        stages: Dict[int, Dict[str, int]] = {}
+        if org_ids:
+            for oid, level, n in (
+                build(DunningCase.organization_id, DunningCase.current_level, func.count())
+                .filter(DunningCase.organization_id.in_(org_ids))
+                .group_by(DunningCase.organization_id, DunningCase.current_level)
+                .all()
+            ):
+                stages.setdefault(oid, {})[f"level_{level}"] = int(n or 0)
+        names = self._org_names(org_ids)
         items = [
             {
-                "dunning_case_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "customer_name": customer_names.get(r[3], "UNKNOWN"),
-                "invoice_id": r[4],
-                "invoice_number": r[5],
-                "currency": r[6] or "UNKNOWN",
-                "status": r[7].value if hasattr(r[7], "value") else str(r[7]),
-                "current_level": r[8],
-                "total_overdue_amount": str(r[9] or 0),
-                "days_overdue": r[10],
-                "last_action_at": r[11],
-                "next_action_at": r[12],
+                "organization_id": oid,
+                "organization_name": names.get(oid, "UNKNOWN"),
+                "case_count_by_stage": count_cells(dict(sorted(stages.get(oid, {}).items()))),
             }
-            for r in rows
+            for oid, _ in top
         ]
-        return {"total": total, "items": items}
+        return {**masked_count("total", total), "items": items}
 
     # ── Balances & Allocations ──────────────────────────────────────────
     def list_allocation_exceptions(self, limit: int = 50) -> Dict[str, Any]:
         from app.modules.billing.models import Invoice, PaymentAllocation
-        from app.modules.organizations.models import Organization
 
         allocated_totals = (
             self.db.query(
@@ -193,220 +229,85 @@ class FinancialOperationsDetailService:
             .group_by(PaymentAllocation.invoice_id)
             .subquery()
         )
-        over_allocated = (
-            self.db.query(
-                Invoice.id,
-                Invoice.organization_id,
-                Organization.organization_name,
-                Invoice.invoice_number,
-                Invoice.currency,
-                Invoice.total_amount,
-                allocated_totals.c.allocated,
+
+        def build(*cols):
+            return (
+                self.db.query(*cols)
+                .select_from(Invoice)
+                .join(allocated_totals, allocated_totals.c.invoice_id == Invoice.id)
+                .filter(allocated_totals.c.allocated > Invoice.total_amount)
             )
-            .join(allocated_totals, allocated_totals.c.invoice_id == Invoice.id)
-            .join(Organization, Organization.id == Invoice.organization_id)
-            .filter(allocated_totals.c.allocated > Invoice.total_amount)
-            .all()
-        )
-        total = len(over_allocated)
+
+        top, total = self._top_orgs(build, Invoice.organization_id, limit)
+        names = self._org_names([o for o, _ in top])
         items = [
             {
-                "invoice_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "invoice_number": r[3],
-                "currency": r[4] or "UNKNOWN",
-                "total_amount": str(r[5] or 0),
-                "allocated_amount": str(r[6] or 0),
+                "organization_id": oid,
+                "organization_name": names.get(oid, "UNKNOWN"),
+                "exception_count_by_type": count_cells({"over_allocated": n}),
             }
-            for r in over_allocated[:limit]
+            for oid, n in top
         ]
-        return {"total": total, "items": items}
+        return {**masked_count("total", total), "items": items}
 
     def list_credit_applications(self, limit: int = 50) -> Dict[str, Any]:
-        from app.modules.billing.models import CreditNoteApplication, CreditNote, Invoice
-        from app.modules.organizations.models import Organization
+        from app.modules.billing.models import CreditNote, CreditNoteApplication
 
-        total = self.db.query(func.count(CreditNoteApplication.id)).scalar() or 0
-        rows = (
-            self.db.query(
-                CreditNoteApplication.id,
-                CreditNoteApplication.organization_id,
-                Organization.organization_name,
-                CreditNote.credit_note_number,
-                Invoice.invoice_number,
-                CreditNoteApplication.amount,
-                CreditNote.currency,
-                CreditNoteApplication.created_at,
+        def build(*cols):
+            return (
+                self.db.query(*cols)
+                .select_from(CreditNoteApplication)
+                .join(CreditNote, CreditNote.id == CreditNoteApplication.credit_note_id)
             )
-            .join(CreditNote, CreditNote.id == CreditNoteApplication.credit_note_id)
-            .join(Invoice, Invoice.id == CreditNoteApplication.invoice_id)
-            .join(Organization, Organization.id == CreditNoteApplication.organization_id)
-            .order_by(CreditNoteApplication.created_at.desc())
-            .limit(limit)
-            .all()
+
+        return self._status_totals_list(
+            build,
+            CreditNoteApplication.organization_id,
+            None,
+            CreditNote.currency,
+            CreditNoteApplication.amount,
+            limit,
+            single_status="applied",
         )
-        items = [
-            {
-                "application_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "credit_note_number": r[3],
-                "invoice_number": r[4],
-                "amount": str(r[5] or 0),
-                "currency": r[6] or "UNKNOWN",
-                "created_at": r[7],
-            }
-            for r in rows
-        ]
-        return {"total": total, "items": items}
 
     # ── Credits, Adjustments & Refunds ──────────────────────────────────
     def list_credit_notes(self, limit: int = 50) -> Dict[str, Any]:
         from app.modules.billing.models import CreditNote
-        from app.modules.organizations.models import Organization
 
-        base = self.db.query(CreditNote).filter(CreditNote.deleted_at.is_(None))
-        total = base.with_entities(func.count(CreditNote.id)).scalar() or 0
-        status_rows = (
-            base.with_entities(CreditNote.status, func.count(CreditNote.id)).group_by(CreditNote.status).all()
+        def build(*cols):
+            return self.db.query(*cols).select_from(CreditNote).filter(CreditNote.deleted_at.is_(None))
+
+        out = self._status_totals_list(
+            build, CreditNote.organization_id, CreditNote.status, CreditNote.currency, CreditNote.total_amount, limit
         )
-        status_distribution = [
-            {"status": s.value if hasattr(s, "value") else str(s), "count": int(c or 0)} for s, c in status_rows
-        ]
-        rows = (
-            base.join(Organization, Organization.id == CreditNote.organization_id)
-            .order_by(CreditNote.issue_date.desc())
-            .limit(limit)
-            .with_entities(
-                CreditNote.id,
-                CreditNote.organization_id,
-                Organization.organization_name,
-                CreditNote.customer_id,
-                CreditNote.credit_note_number,
-                CreditNote.credit_note_type,
-                CreditNote.status,
-                CreditNote.total_amount,
-                CreditNote.remaining_amount,
-                CreditNote.currency,
-                CreditNote.issue_date,
-            )
-            .all()
+        out["status_distribution"] = self._status_distribution(
+            CreditNote, CreditNote.status, CreditNote.deleted_at.is_(None)
         )
-        customer_names = self._customer_name_map([r[3] for r in rows])
-        items = [
-            {
-                "credit_note_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "customer_name": customer_names.get(r[3], "UNKNOWN"),
-                "credit_note_number": r[4],
-                "credit_note_type": r[5].value if hasattr(r[5], "value") else str(r[5]),
-                "status": r[6].value if hasattr(r[6], "value") else str(r[6]),
-                "total_amount": str(r[7] or 0),
-                "remaining_amount": str(r[8] or 0),
-                "currency": r[9] or "UNKNOWN",
-                "issue_date": r[10],
-            }
-            for r in rows
-        ]
-        return {"total": total, "items": items, "status_distribution": status_distribution}
+        return out
 
     def list_refunds(self, limit: int = 50) -> Dict[str, Any]:
         from app.modules.billing.models import Refund
-        from app.modules.organizations.models import Organization
 
-        base = self.db.query(Refund).filter(Refund.deleted_at.is_(None))
-        total = base.with_entities(func.count(Refund.id)).scalar() or 0
-        status_rows = base.with_entities(Refund.status, func.count(Refund.id)).group_by(Refund.status).all()
-        status_distribution = [
-            {"status": s.value if hasattr(s, "value") else str(s), "count": int(c or 0)} for s, c in status_rows
-        ]
-        rows = (
-            base.join(Organization, Organization.id == Refund.organization_id)
-            .order_by(Refund.created_at.desc())
-            .limit(limit)
-            .with_entities(
-                Refund.id,
-                Refund.organization_id,
-                Organization.organization_name,
-                Refund.customer_id,
-                Refund.refund_number,
-                Refund.refund_type,
-                Refund.status,
-                Refund.amount,
-                Refund.currency,
-                Refund.reason,
-                Refund.created_at,
-            )
-            .all()
+        def build(*cols):
+            return self.db.query(*cols).select_from(Refund).filter(Refund.deleted_at.is_(None))
+
+        out = self._status_totals_list(
+            build, Refund.organization_id, Refund.status, Refund.currency, Refund.amount, limit
         )
-        customer_names = self._customer_name_map([r[3] for r in rows])
-        items = [
-            {
-                "refund_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "customer_name": customer_names.get(r[3], "UNKNOWN"),
-                "refund_number": r[4],
-                "refund_type": r[5].value if hasattr(r[5], "value") else str(r[5]),
-                "status": r[6].value if hasattr(r[6], "value") else str(r[6]),
-                "amount": str(r[7] or 0),
-                "currency": r[8] or "UNKNOWN",
-                "reason": r[9],
-                "created_at": r[10],
-            }
-            for r in rows
-        ]
-        return {"total": total, "items": items, "status_distribution": status_distribution}
+        out["status_distribution"] = self._status_distribution(Refund, Refund.status, Refund.deleted_at.is_(None))
+        return out
 
     def list_write_offs(self, limit: int = 50) -> Dict[str, Any]:
         from app.modules.billing.models import WriteOff
-        from app.modules.organizations.models import Organization
 
-        base = self.db.query(WriteOff).filter(WriteOff.deleted_at.is_(None))
-        total = base.with_entities(func.count(WriteOff.id)).scalar() or 0
-        status_rows = base.with_entities(WriteOff.status, func.count(WriteOff.id)).group_by(WriteOff.status).all()
-        status_distribution = [
-            {"status": s.value if hasattr(s, "value") else str(s), "count": int(c or 0)} for s, c in status_rows
-        ]
-        rows = (
-            base.join(Organization, Organization.id == WriteOff.organization_id)
-            .order_by(WriteOff.created_at.desc())
-            .limit(limit)
-            .with_entities(
-                WriteOff.id,
-                WriteOff.organization_id,
-                Organization.organization_name,
-                WriteOff.customer_id,
-                WriteOff.write_off_number,
-                WriteOff.write_off_type,
-                WriteOff.status,
-                WriteOff.amount,
-                WriteOff.currency,
-                WriteOff.reason,
-                WriteOff.created_at,
-            )
-            .all()
+        def build(*cols):
+            return self.db.query(*cols).select_from(WriteOff).filter(WriteOff.deleted_at.is_(None))
+
+        out = self._status_totals_list(
+            build, WriteOff.organization_id, WriteOff.status, WriteOff.currency, WriteOff.amount, limit
         )
-        customer_names = self._customer_name_map([r[3] for r in rows])
-        items = [
-            {
-                "write_off_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "customer_name": customer_names.get(r[3], "UNKNOWN"),
-                "write_off_number": r[4],
-                "write_off_type": r[5].value if hasattr(r[5], "value") else str(r[5]),
-                "status": r[6].value if hasattr(r[6], "value") else str(r[6]),
-                "amount": str(r[7] or 0),
-                "currency": r[8] or "UNKNOWN",
-                "reason": r[9],
-                "created_at": r[10],
-            }
-            for r in rows
-        ]
-        return {"total": total, "items": items, "status_distribution": status_distribution}
+        out["status_distribution"] = self._status_distribution(WriteOff, WriteOff.status, WriteOff.deleted_at.is_(None))
+        return out
 
     # ── Tax ──────────────────────────────────────────────────────────────
     def get_tax_summary(self, date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:

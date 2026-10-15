@@ -125,6 +125,42 @@ def make_organization(db, code="ORG1", name="Test Org"):
     return org
 
 
+def make_org_admin(db, organization_id, email=None):
+    """An active org admin for the organization (idempotent). Support access
+    requests need one: the org admin is the only approver."""
+    from app.modules.auth.models import User, UserRole
+
+    existing = (
+        db.query(User)
+        .filter(User.organization_id == organization_id, User.role == UserRole.ORG_ADMIN, User.is_active == True)  # noqa: E712
+        .first()
+    )
+    if existing is not None and email is None:
+        return existing
+    user = User(
+        email=email or f"org_admin_{organization_id}@example.com",
+        hashed_password="x",
+        role=UserRole.ORG_ADMIN,
+        organization_id=organization_id,
+        first_name="Org",
+        last_name="Admin",
+        is_active=True,
+        is_verified=True,
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
+def approve_as_org_admin(db, grant, note=None):
+    """Approve a pending support access grant the only supported way — as an
+    admin of the grant's organization. Returns the (now active) grant."""
+    from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+
+    admin = make_org_admin(db, grant.organization_id)
+    return PrivilegedAccessService(db).tenant_approve_grant(admin, grant.organization_id, grant.id, note=note)
+
+
 def make_customer(db, organization_id, code="CUST1", currency="USD", email="customer@example.com"):
     customer = BillingCustomer(
         organization_id=organization_id,

@@ -92,6 +92,9 @@ export const getSaasCommercialReporting = () =>
 export const listPlatformAuditLogs = (params = {}) =>
   api.get("/api/super-admin/audit-logs", { params });
 
+export const verifyAuditChain = () =>
+  api.get("/api/super-admin/audit-logs/verify");
+
 // ── Subscription lifecycle audit feed (PHASE 13) ────────────────────────
 // Read-only projection over billing_audit_logs (entity_type=CommercialSubscription),
 // surfaced separately from the platform-plane feed above since it's a

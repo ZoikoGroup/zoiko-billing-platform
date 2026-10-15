@@ -69,9 +69,14 @@ export default function PrivilegedSessionBanner() {
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-red-700">
             <Building2 size={13} /> Tenant Context — {activeGrant.organization_name} · DOMAIN B · {ENVIRONMENT_LABEL}
+            {activeGrant.is_break_glass && (
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white animate-pulse">
+                Emergency Access
+              </span>
+            )}
           </p>
           <p className="truncate text-xs text-red-800">
-            Privileged support access · Read-only financial view · {activeGrant.ticket_reference} · Exports disabled
+            {activeGrant.is_break_glass ? "Break-glass emergency access" : "Privileged support access"} · Read-only financial view · {activeGrant.ticket_reference} · Exports disabled
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">

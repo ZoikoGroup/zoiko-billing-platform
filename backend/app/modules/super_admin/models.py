@@ -32,6 +32,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+import sqlalchemy as sa
 from sqlalchemy.orm import relationship
 
 from app.core.db_types import CaseInsensitiveEnum
@@ -77,6 +78,15 @@ class PlatformAuditAction(str, enum.Enum):
     PRIVILEGED_ACCESS_EXITED = "privileged_access_exited"
     PRIVILEGED_ACCESS_EXPIRED = "privileged_access_expired"
     PRIVILEGED_ACCESS_DENIED = "privileged_access_denied"
+
+    # ── ZB-SEC-PRIV-001 — independent approval, revocation, break-glass ──
+    PRIVILEGED_ACCESS_APPROVED = "privileged_access_approved"
+    PRIVILEGED_ACCESS_REVOKED = "privileged_access_revoked"
+    PRIVILEGED_ACCESS_TENANT_APPROVED = "privileged_access_tenant_approved"
+    BREAK_GLASS_OPENED = "break_glass_opened"
+    BREAK_GLASS_REVIEWED = "break_glass_reviewed"
+    PLATFORM_ACCESS_DENIED = "platform_access_denied"
+    AUDIT_CHAIN_VERIFIED = "audit_chain_verified"
 
     # ── ZB-SA-CMD-003 §10/§11 — Attention Engine / incident lifecycle ────
     ATTENTION_OPENED = "attention_opened"
@@ -189,6 +199,8 @@ class PlatformAuditLog(Base):
     actor_role = Column(String(50), nullable=True)
     reason = Column(Text, nullable=True)
     correlation_id = Column(String(100), nullable=True, index=True)
+    prev_hash = Column(String(64), nullable=True)
+    row_hash = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     actor = relationship("User", foreign_keys=[actor_id])
@@ -199,6 +211,7 @@ class PlatformAuditLog(Base):
         Index("ix_platform_audit_logs_entity", "entity_type", "entity_id"),
         Index("ix_platform_audit_logs_action", "action"),
         Index("ix_platform_audit_logs_created_at", "created_at"),
+        Index("ix_platform_audit_logs_row_hash", "row_hash"),
     )
 
     def __repr__(self):
@@ -330,10 +343,14 @@ class BillingKillSwitch(Base):
 
 class PrivilegedAccessStatus(str, enum.Enum):
     PENDING_STEP_UP = "pending_step_up"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
     ACTIVE = "active"
     EXITED = "exited"
     EXPIRED = "expired"
     DENIED = "denied"
+    REVOKED = "revoked"
+    EXPIRED_UNUSED = "expired_unused"
 
 
 class PrivilegedTenantAccessGrant(Base):
@@ -382,11 +399,59 @@ class PrivilegedTenantAccessGrant(Base):
     expires_at = Column(DateTime, nullable=True, index=True)
     exited_at = Column(DateTime, nullable=True)
 
+    # ── ZB-SEC-PRIV-001: independent approval ────────────────────────────
+    approved_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    approved_at = Column(DateTime, nullable=True)
+    approval_note = Column(Text, nullable=True)
+
+    # ── ZB-SEC-PRIV-001: revocation ──────────────────────────────────────
+    revoked_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    revoked_by_tenant = Column(Boolean, default=False, nullable=False, server_default="0")
+    revoked_at = Column(DateTime, nullable=True)
+    revoke_reason = Column(Text, nullable=True)
+
+    # ── ZB-SEC-PRIV-001: break-glass ─────────────────────────────────────
+    is_break_glass = Column(Boolean, default=False, nullable=False, server_default="0")
+    review_due_at = Column(DateTime, nullable=True)
+    reviewed_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    reviewed_at = Column(DateTime, nullable=True)
+    review_outcome = Column(String(50), nullable=True)  # justified | not_justified
+    review_note = Column(Text, nullable=True)
+
+    # ── ZB-SEC-PRIV-001: optional tenant approval ────────────────────────
+    tenant_approved_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    tenant_approved_at = Column(DateTime, nullable=True)
+
+    # Temporary read-only tenant login issued when the grant becomes active.
+    support_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    support_username = Column(String(200), nullable=True)
+    support_password_encrypted = Column(Text, nullable=True)
+
     organization = relationship("Organization", foreign_keys=[organization_id])
     requested_by = relationship("User", foreign_keys=[requested_by_user_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    revoked_by = relationship("User", foreign_keys=[revoked_by_user_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+    tenant_approved_by = relationship("User", foreign_keys=[tenant_approved_by_user_id])
 
     __table_args__ = (
         Index("ix_privileged_access_actor_status", "requested_by_user_id", "status"),
+        # ZB-SEC-PRIV-001: self-approval must be impossible even if someone
+        # bypasses the service layer.
+        sa.CheckConstraint(
+            "approved_by_user_id IS NULL OR approved_by_user_id <> requested_by_user_id",
+            name="ck_privileged_access_no_self_approval",
+        ),
     )
 
     def __repr__(self):

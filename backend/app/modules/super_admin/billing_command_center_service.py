@@ -20,10 +20,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Date, cast, func
+from sqlalchemy import Date, case, cast, exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.modules.super_admin.privacy import currency_totals, masked_count
 
 # Open receivable statuses — an invoice counts toward outstanding balance only
 # while it can still be collected.
@@ -532,263 +533,194 @@ class BillingCommandCenterService:
             "points": points,
         }
 
-    def list_overdue_invoices(self, limit: int = 10) -> Dict[str, Any]:
-        from app.modules.billing.models import Invoice
+    # ── Per-tenant aggregates (ZB-SEC-PRIV-001) ───────────────────────────
+    # Everything below aggregates in SQL by organization. No per-customer or
+    # per-record identifier is selected, returned or logged.
+
+    def _org_names(self, org_ids) -> Dict[int, str]:
         from app.modules.organizations.models import Organization
 
-        today = date.today()
-        total = (
-            self._open_invoice_query()
-            .filter(Invoice.due_date < today)
-            .with_entities(func.count(Invoice.id))
-            .scalar()
-            or 0
-        )
-        rows = (
-            self._open_invoice_query()
-            .filter(Invoice.due_date < today)
-            .join(Organization, Organization.id == Invoice.organization_id)
-            .order_by(Invoice.due_date.asc())
-            .limit(limit)
-            .with_entities(
-                Invoice.id,
-                Invoice.organization_id,
-                Organization.organization_name,
-                Invoice.invoice_number,
-                Invoice.customer_id,
-                Invoice.due_date,
-                Invoice.balance_due,
-                Invoice.currency,
-            )
-            .all()
-        )
-        customer_names = self._customer_name_map([r[4] for r in rows])
-        invoices = [
-            {
-                "invoice_id": r[0],
-                "organization_id": r[1],
-                "organization_name": r[2],
-                "invoice_number": r[3],
-                "customer_id": r[4],
-                "customer_name": customer_names.get(r[4], "UNKNOWN"),
-                "due_date": r[5],
-                "days_overdue": _days_overdue(r[5], today) if r[5] else 0,
-                "amount": str(r[6] or 0),
-                "currency": r[7] or "UNKNOWN",
-            }
-            for r in rows
-        ]
-        return {"total": total, "invoices": invoices}
-
-    def _customer_name_map(self, customer_ids: List[int]) -> Dict[int, str]:
-        from app.modules.billing.models import BillingCustomer
-
-        ids = [c for c in set(customer_ids) if c is not None]
+        ids = [o for o in set(org_ids) if o is not None]
         if not ids:
             return {}
-        rows = (
-            self.db.query(BillingCustomer.id, BillingCustomer.company_name, BillingCustomer.display_name)
-            .filter(BillingCustomer.id.in_(ids))
+        rows = self.db.query(Organization.id, Organization.organization_name).filter(Organization.id.in_(ids)).all()
+        return {oid: name for oid, name in rows}
+
+    def list_overdue_invoices(self, limit: int = 10) -> Dict[str, Any]:
+        from app.modules.billing.models import Invoice
+
+        today = date.today()
+        overdue = self._open_invoice_query().filter(Invoice.due_date < today)
+        total = overdue.with_entities(func.count(Invoice.id)).scalar() or 0
+        org_rows = (
+            overdue.with_entities(
+                Invoice.organization_id,
+                func.count(Invoice.id).label("n"),
+                func.min(Invoice.due_date).label("oldest"),
+            )
+            .group_by(Invoice.organization_id)
+            .order_by(func.count(Invoice.id).desc(), Invoice.organization_id.asc())
+            .limit(limit)
             .all()
         )
-        return {r[0]: r[1] or r[2] or f"Customer #{r[0]}" for r in rows}
+        org_ids = [r[0] for r in org_rows]
+        currency_rows = []
+        if org_ids:
+            currency_rows = (
+                overdue.filter(Invoice.organization_id.in_(org_ids))
+                .with_entities(
+                    Invoice.organization_id,
+                    Invoice.currency,
+                    func.count(Invoice.id),
+                    func.coalesce(func.sum(Invoice.balance_due), 0),
+                )
+                .group_by(Invoice.organization_id, Invoice.currency)
+                .all()
+            )
+        per_org: Dict[int, list] = {}
+        for oid, cur, n, amt in currency_rows:
+            per_org.setdefault(oid, []).append((cur, n, amt))
+        names = self._org_names(org_ids)
+        rows = []
+        for oid, n, oldest in org_rows:
+            days = _days_overdue(oldest, today) if oldest else 0
+            rows.append(
+                {
+                    "organization_id": oid,
+                    "organization_name": names.get(oid, "UNKNOWN"),
+                    **masked_count("overdue_invoice_count", n),
+                    "overdue_total_by_currency": currency_totals(per_org.get(oid, [])),
+                    "oldest_days_overdue_bucket": _aging_key(days) if days > 0 else None,
+                }
+            )
+        return {**masked_count("total", total), "invoices": rows}
 
     def list_collections_risk(self, limit: int = 10) -> Dict[str, Any]:
         from app.modules.billing.models import (
-            BillingCustomer,
             CollectionsCase,
             CollectionsStatus,
             DunningCase,
             DunningStatus,
             Invoice,
-            Payment,
-            PaymentStatus,
         )
-        from app.modules.organizations.models import Organization
 
         today = date.today()
-        base = (
-            self._open_invoice_query()
-            .filter(Invoice.due_date < today)
-            .with_entities(
-                Invoice.customer_id,
-                func.count(Invoice.id).label("invoice_count"),
-                func.coalesce(func.sum(Invoice.balance_due), 0).label("outstanding"),
-                func.max(Invoice.due_date).label("worst_due"),
-                func.min(Invoice.due_date).label("oldest_due"),
-                func.coalesce(func.max(Invoice.currency), "UNKNOWN").label("currency"),
+        overdue = self._open_invoice_query().filter(Invoice.due_date < today)
+        dunned = exists().where(
+            DunningCase.customer_id == Invoice.customer_id, DunningCase.status == DunningStatus.ACTIVE
+        )
+        collected = exists().where(
+            CollectionsCase.customer_id == Invoice.customer_id, CollectionsCase.status == CollectionsStatus.OPEN
+        )
+        high_flag = func.max(
+            case((or_(Invoice.due_date <= today - timedelta(days=31), dunned, collected), 1), else_=0)
+        )
+        # one inner row per (tenant, account); it never leaves SQL as an identifier
+        per_account = (
+            overdue.with_entities(
+                Invoice.organization_id.label("org_id"),
+                Invoice.customer_id.label("acct"),
+                high_flag.label("is_high"),
             )
-            .group_by(Invoice.customer_id)
-            .order_by(func.sum(Invoice.balance_due).desc())
+            .group_by(Invoice.organization_id, Invoice.customer_id)
+            .subquery()
+        )
+        org_rows = (
+            self.db.query(
+                per_account.c.org_id,
+                func.count().label("n"),
+                func.coalesce(func.sum(per_account.c.is_high), 0).label("high"),
+            )
+            .group_by(per_account.c.org_id)
+            .order_by(func.count().desc(), per_account.c.org_id.asc())
             .limit(limit)
-        ).all()
-
-        customer_ids = [r.customer_id for r in base]
-        if not customer_ids:
+            .all()
+        )
+        org_ids = [r[0] for r in org_rows]
+        if not org_ids:
             return {"rows": []}
-
-        org_map: Dict[int, str] = {}
-        cust_org: Dict[int, int] = {}
-        cust_rows = (
-            self.db.query(BillingCustomer.id, BillingCustomer.organization_id)
-            .filter(BillingCustomer.id.in_(customer_ids))
+        currency_rows = (
+            overdue.filter(Invoice.organization_id.in_(org_ids))
+            .with_entities(
+                Invoice.organization_id,
+                Invoice.currency,
+                func.count(Invoice.id),
+                func.coalesce(func.sum(Invoice.balance_due), 0),
+            )
+            .group_by(Invoice.organization_id, Invoice.currency)
             .all()
         )
-        for cid, oid in cust_rows:
-            cust_org[cid] = oid
-        if cust_org:
-            org_rows = (
-                self.db.query(Organization.id, Organization.organization_name)
-                .filter(Organization.id.in_(set(cust_org.values())))
-                .all()
-            )
-            org_map = {oid: name for oid, name in org_rows}
-
-        last_payment: Dict[int, date] = {}
-        payment_rows = (
-            self.db.query(Payment.customer_id, func.max(Payment.payment_date))
-            .filter(
-                Payment.customer_id.in_(customer_ids),
-                Payment.status == PaymentStatus.CLEARED,
-                Payment.deleted_at.is_(None),
-            )
-            .group_by(Payment.customer_id)
-            .all()
-        )
-        for cid, last in payment_rows:
-            last_payment[cid] = last
-
-        dunned = set(
-            row[0]
-            for row in self.db.query(DunningCase.customer_id)
-            .filter(
-                DunningCase.customer_id.in_(customer_ids),
-                DunningCase.status == DunningStatus.ACTIVE,
-            )
-            .all()
-        )
-        in_collections = set(
-            row[0]
-            for row in self.db.query(CollectionsCase.customer_id)
-            .filter(
-                CollectionsCase.customer_id.in_(customer_ids),
-                CollectionsCase.status == CollectionsStatus.OPEN,
-            )
-            .all()
-        )
-
-        name_map = self._customer_name_map(customer_ids)
-        rows: List[Dict[str, Any]] = []
-        for r in base:
-            oldest_days = _days_overdue(r.oldest_due, today) if r.oldest_due else 0
-            risk = "High" if (oldest_days >= 31 or r.customer_id in dunned or r.customer_id in in_collections) else "Medium"
-            notes: List[str] = []
-            notes.append(f"{r.invoice_count} overdue invoice{'s' if r.invoice_count != 1 else ''}")
-            if r.customer_id in dunned:
-                notes.append("active dunning case")
-            if r.customer_id in in_collections:
-                notes.append("open collections case")
-            note = ", ".join(notes)
+        per_org: Dict[int, list] = {}
+        for oid, cur, n, amt in currency_rows:
+            per_org.setdefault(oid, []).append((cur, n, amt))
+        names = self._org_names(org_ids)
+        rows = []
+        for oid, n, high in org_rows:
+            n = int(n or 0)
+            high = int(high or 0)
             rows.append(
                 {
-                    "customer_id": r.customer_id,
-                    "customer_name": name_map.get(r.customer_id, f"Customer #{r.customer_id}"),
-                    "organization_name": org_map.get(cust_org.get(r.customer_id), "UNKNOWN"),
-                    "outstanding": str(r.outstanding or 0),
-                    "currency": r.currency,
-                    "risk": risk,
-                    "last_activity": last_payment.get(r.customer_id),
-                    "note": note,
+                    "organization_id": oid,
+                    "organization_name": names.get(oid, "UNKNOWN"),
+                    **masked_count("accounts_at_risk_count", n),
+                    **masked_count("risk_high_count", high),
+                    **masked_count("risk_medium_count", n - high),
+                    "total_overdue_by_currency": currency_totals(per_org.get(oid, [])),
                 }
             )
         return {"rows": rows}
 
     def list_recent_activity(self, limit: int = 8) -> Dict[str, Any]:
+        """Counts per event type per tenant over the trailing 30 days. No
+        record references, actors, amounts or customer names."""
         from app.modules.billing.models import Invoice, Payment, PaymentStatus, SubscriptionEvent
-        from app.modules.auth.models import User
 
-        actor_ids = set()
+        since = datetime.utcnow() - timedelta(days=30)
+        found: List[tuple] = []  # (org_id, event_type, count, last_at)
 
-        payments = (
-            self.db.query(Payment)
-            .filter(
-                Payment.status.in_([PaymentStatus.CLEARED, PaymentStatus.FAILED]),
-                Payment.deleted_at.is_(None),
-            )
-            .order_by(Payment.created_at.desc())
-            .limit(limit)
+        for status, kind in ((PaymentStatus.CLEARED, "payment_received"), (PaymentStatus.FAILED, "payment_failed")):
+            for oid, n, last in (
+                self.db.query(Payment.organization_id, func.count(Payment.id), func.max(Payment.created_at))
+                .filter(Payment.status == status, Payment.deleted_at.is_(None), Payment.created_at >= since)
+                .group_by(Payment.organization_id)
+                .all()
+            ):
+                found.append((oid, kind, int(n or 0), last))
+        for oid, n, last in (
+            self.db.query(Invoice.organization_id, func.count(Invoice.id), func.max(Invoice.sent_at))
+            .filter(Invoice.sent_at.isnot(None), Invoice.deleted_at.is_(None), Invoice.sent_at >= since)
+            .group_by(Invoice.organization_id)
             .all()
-        )
-        invoices = (
-            self.db.query(Invoice)
-            .filter(Invoice.sent_at.isnot(None), Invoice.deleted_at.is_(None))
-            .order_by(Invoice.sent_at.desc())
-            .limit(limit)
+        ):
+            found.append((oid, "invoice_sent", int(n or 0), last))
+        for oid, n, last in (
+            self.db.query(
+                SubscriptionEvent.organization_id,
+                func.count(SubscriptionEvent.id),
+                func.max(SubscriptionEvent.created_at),
+            )
+            .filter(SubscriptionEvent.created_at >= since)
+            .group_by(SubscriptionEvent.organization_id)
             .all()
-        )
-        sub_events = (
-            self.db.query(SubscriptionEvent).order_by(SubscriptionEvent.created_at.desc()).limit(limit).all()
-        )
+        ):
+            found.append((oid, "subscription_changed", int(n or 0), last))
 
-        items: List[Dict[str, Any]] = []
-
-        payment_customer_names = self._customer_name_map([p.customer_id for p in payments])
-        invoice_customer_names = self._customer_name_map([i.customer_id for i in invoices])
-
-        for p in payments:
-            occurred = p.cleared_at if p.status == PaymentStatus.CLEARED and p.cleared_at else p.created_at
-            if p.created_by:
-                actor_ids.add(p.created_by)
-            items.append(
-                {
-                    "kind": "payment_received" if p.status == PaymentStatus.CLEARED else "payment_failed",
-                    "title": "Payment received" if p.status == PaymentStatus.CLEARED else "Payment failed",
-                    "meta": f"{p.currency or ''} {p.amount} · {payment_customer_names.get(p.customer_id, 'Unknown customer')}".strip(),
-                    "actor_id": p.created_by,
-                    "occurred_at": occurred or p.created_at,
-                }
-            )
-        for inv in invoices:
-            if inv.created_by:
-                actor_ids.add(inv.created_by)
-            items.append(
-                {
-                    "kind": "invoice_sent",
-                    "title": "Invoice sent",
-                    "meta": f"{inv.invoice_number} to {invoice_customer_names.get(inv.customer_id, 'Unknown customer')}",
-                    "actor_id": inv.created_by,
-                    "occurred_at": inv.sent_at,
-                }
-            )
-        for ev in sub_events:
-            if ev.created_by:
-                actor_ids.add(ev.created_by)
-            items.append(
-                {
-                    "kind": "subscription_changed",
-                    "title": "Subscription changed",
-                    "meta": f"{str(ev.event_type or '').replace('_', ' ')} on subscription #{ev.subscription_id}",
-                    "actor_id": ev.created_by,
-                    "occurred_at": ev.created_at,
-                }
-            )
-
-        def _occurred_ts(item: Dict[str, Any]) -> datetime:
-            value = item["occurred_at"]
+        def _ts(value) -> datetime:
             if isinstance(value, datetime):
-                if value.tzinfo is not None:
-                    return value.replace(tzinfo=None)
-                return value
+                return value.replace(tzinfo=None) if value.tzinfo is not None else value
             return datetime.min
 
-        items.sort(key=_occurred_ts, reverse=True)
-        items = items[:limit]
-
-        actors: Dict[int, str] = {}
-        if actor_ids:
-            user_rows = self.db.query(User.id, User.email).filter(User.id.in_(list(actor_ids))).all()
-            actors = {uid: email for uid, email in user_rows}
-        for item in items:
-            item["actor"] = actors.get(item.pop("actor_id"))
-
+        found.sort(key=lambda r: _ts(r[3]), reverse=True)
+        found = found[:limit]
+        names = self._org_names([r[0] for r in found])
+        items = [
+            {
+                "organization_id": oid,
+                "organization_name": names.get(oid, "UNKNOWN"),
+                "event_type": kind,
+                **masked_count("event_count", n),
+                "last_event_at": last,
+            }
+            for oid, kind, n, last in found
+        ]
         return {"items": items}

@@ -53,6 +53,89 @@ NON_DRAFT_INVOICE_STATUSES = (
 )
 
 
+# ZB-SEC-PRIV-001 — reviewed allowlist of exception `detail` keys that may be
+# shown to a platform operator. Everything else (document numbers, Stripe
+# PaymentIntent / checkout ids, payment ids, raw stored values, per-record
+# amounts) is dropped.
+SAFE_EXCEPTION_DETAIL_KEYS = frozenset(
+    {"reason", "currency", "ledger_currency", "stripe_currency", "ledger_status", "stripe_status"}
+)
+
+
+def sanitize_exception_detail(detail: dict | None) -> dict | None:
+    if not isinstance(detail, dict):
+        return None
+    out = {k: v for k, v in detail.items() if k in SAFE_EXCEPTION_DETAIL_KEYS and k != "stored_value"}
+    return out or None
+
+
+def _discrepancy_amount(kind: str, detail: dict | None) -> tuple[str | None, Decimal | None]:
+    """(currency, absolute discrepancy) derived from an exception's detail, or
+    (None, None) when the kind carries no monetary discrepancy."""
+    if not isinstance(detail, dict):
+        return None, None
+    try:
+        if kind == "invoice_balance_mismatch":
+            return (
+                detail.get("currency"),
+                abs(Decimal(str(detail["balance_due"])) - Decimal(str(detail["expected_balance_due"]))),
+            )
+        if kind == "payment_over_allocation":
+            return (
+                detail.get("currency"),
+                abs(Decimal(str(detail["allocated_total"])) - Decimal(str(detail["payment_amount"]))),
+            )
+        if kind == "amount_mismatch":
+            return (
+                detail.get("currency"),
+                abs(Decimal(str(detail["ledger_amount"])) - Decimal(str(detail["stripe_amount"]))),
+            )
+    except (KeyError, ArithmeticError, ValueError):
+        pass
+    return None, None
+
+
+def summarize_run_exceptions(db: Session, run_id: int) -> list[dict]:
+    """One row per (tenant, exception kind) for a run: masked count and masked
+    per-currency discrepancy totals. No record id or document number."""
+    from app.modules.organizations.models import Organization
+    from app.modules.super_admin.privacy import currency_totals, masked_count
+
+    rows = db.execute(
+        select(
+            ReconciliationException.organization_id,
+            ReconciliationException.kind,
+            ReconciliationException.detail,
+        ).where(ReconciliationException.run_id == run_id)
+    ).all()
+    counts: dict[tuple, int] = {}
+    amounts: dict[tuple, list] = {}
+    for org_id, kind, detail in rows:
+        key = (org_id, kind)
+        counts[key] = counts.get(key, 0) + 1
+        cur, amt = _discrepancy_amount(kind, detail)
+        if amt is not None:
+            amounts.setdefault(key, []).append((cur, 1, amt))
+    org_ids = {k[0] for k in counts if k[0] is not None}
+    names = (
+        {oid: name for oid, name in db.query(Organization.id, Organization.organization_name).filter(Organization.id.in_(org_ids)).all()}
+        if org_ids
+        else {}
+    )
+    out = []
+    for (org_id, kind), n in sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0]))):
+        out.append(
+            {
+                "organization_id": org_id,
+                "organization_name": names.get(org_id),
+                "exception_kind": kind,
+                **masked_count("count", n),
+                "discrepancy_total_by_currency": currency_totals(amounts.get(key := (org_id, kind), [])),
+            }
+        )
+    return out
+
+
 class ReconciliationService:
     def __init__(self, db: Session):
         self.db = db
@@ -77,7 +160,6 @@ class ReconciliationService:
                         entity_type="invoice",
                         entity_id=inv.id,
                         detail={
-                            "invoice_number": inv.invoice_number,
                             "currency": inv.currency,
                             "total_amount": float(inv.total_amount or 0),
                             "paid_amount": float(inv.paid_amount or 0),
@@ -114,7 +196,6 @@ class ReconciliationService:
                         entity_type="payment",
                         entity_id=pay.id,
                         detail={
-                            "payment_number": pay.payment_number,
                             "currency": pay.currency,
                             "payment_amount": float(payment_amount),
                             "allocated_total": round(float(allocated), 2),
@@ -417,7 +498,7 @@ class ReconciliationService:
                     title=f"Ledger discrepancy: {exception.kind}",
                     description=(
                         f"Reconciliation run #{run.id} detected {exception.kind} "
-                        f"for {exception.entity_type} {exception.entity_id or 'without an entity id'} "
+                        f"for a {exception.entity_type} record "
                         f"in organization {exception.organization_id or 'unknown'}. "
                         "Assign an owner in the reconciliation console."
                     ),

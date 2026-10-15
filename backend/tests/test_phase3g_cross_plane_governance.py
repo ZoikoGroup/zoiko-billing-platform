@@ -66,6 +66,8 @@ from app.modules.super_admin.router import (
 from app.modules.super_admin.user_admin_service import UserAdminService
 
 from tests.conftest import (
+    approve_as_org_admin,
+    make_org_admin,
     make_customer,
     make_invoice,
     make_organization,
@@ -339,6 +341,7 @@ def test_grant_duration_capped_at_thirty_minutes(db_session):
     db_session.commit()
     sa, _secret = _jit_super_admin(db_session, "g7@jit.example")
 
+    make_org_admin(db_session, org.id)
     grant = PrivilegedAccessService(db_session).request_access(
         sa, org.id, "Investigate billing discrepancy", "TICKET-G7",
         requested_minutes=9999,
@@ -352,12 +355,14 @@ def test_exited_grant_cannot_be_reactivated(db_session):
     sa, secret = _jit_super_admin(db_session, "g8@jit.example")
     service = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = service.request_access(sa, org.id, "Support session", "TICKET-G8")
-    service.activate(sa, grant.id, code=pyotp.TOTP(secret).now(), recovery_code=None)
+    approve_as_org_admin(db_session, grant)
     service.exit_grant(sa, grant.id)
 
+    # An ended session cannot be approved back into life.
     with pytest.raises(BadRequestException):
-        service.activate(sa, grant.id, code=pyotp.TOTP(secret).now(), recovery_code=None)
+        approve_as_org_admin(db_session, grant)
 
 
 def test_mid_session_expiry_blocks_summary_read(db_session):
@@ -368,8 +373,9 @@ def test_mid_session_expiry_blocks_summary_read(db_session):
     sa, secret = _jit_super_admin(db_session, "g9@jit.example")
     service = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = service.request_access(sa, org.id, "Support session", "TICKET-G9")
-    service.activate(sa, grant.id, code=pyotp.TOTP(secret).now(), recovery_code=None)
+    approve_as_org_admin(db_session, grant)
 
     # Simulate the clock running past expires_at while status is still ACTIVE.
     stored = db_session.query(PrivilegedTenantAccessGrant).get(grant.id)
@@ -380,38 +386,6 @@ def test_mid_session_expiry_blocks_summary_read(db_session):
         service.get_tenant_summary(sa, grant.id)
     refreshed = db_session.query(PrivilegedTenantAccessGrant).get(grant.id)
     assert refreshed.status == PrivilegedAccessStatus.EXPIRED
-
-
-def test_mfa_locked_admin_cannot_activate_grant(db_session):
-    from app.config import settings
-
-    org = make_organization(db_session, code="GA")
-    db_session.commit()
-    sa, _secret = _jit_super_admin(db_session, "ga@jit.example")
-
-    for _ in range(settings.MFA_MAX_FAILED_ATTEMPTS):
-        with pytest.raises(UnauthorizedException):
-            mfa_service.verify_step_up(db_session, sa, code="000000", recovery_code=None)
-
-    service = PrivilegedAccessService(db_session)
-    grant = service.request_access(sa, org.id, "Support session", "TICKET-GA")
-    with pytest.raises(UnauthorizedException):
-        service.activate(sa, grant.id, code="000000", recovery_code=None)
-
-    failed_events = (
-        db_session.query(PlatformAuditLog)
-        .filter(
-            PlatformAuditLog.entity_id == grant.id,
-            PlatformAuditLog.action == PlatformAuditAction.PRIVILEGED_ACCESS_STEP_UP_FAILED,
-        )
-        .count()
-    )
-    assert failed_events >= 1
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# D — auditability (correlated trails, no secrets)
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 def test_invite_audit_trail_never_carries_tokens_or_links(db_session, monkeypatch):

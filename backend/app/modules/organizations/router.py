@@ -37,6 +37,9 @@ from app.modules.organizations.schemas import (
     OrganizationDetail,
     PrivilegedAccessLogEntry,
     PrivilegedAccessLogResponse,
+    TenantPrivilegedAccessRevokeRequest,
+    TenantPrivilegedAccessApproveRequest,
+    TenantPrivilegedAccessDenyRequest,
     RecentCustomer,
 )
 from app.modules.commercial.schemas import (
@@ -283,19 +286,14 @@ def get_my_privileged_access_log(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """ZB-SA-CMD-003 §19/§20 — tenant-visible privileged support-access log
-    (ISS-021). One row per support-access session, read directly from
-    PrivilegedTenantAccessGrant (scoped to THIS org only) rather than
-    replaying raw platform audit-log rows — reason/ticket_reference are
-    always present since they live on the grant itself. Any org-scoped
-    role may read it (transparency feature, not a write path); Super Admin
-    actor identity is intentionally not exposed here, matching the
-    specification's own tenant-context chrome example (which shows
-    reason/ticket/duration, not the operator's identity)."""
+    """ZB-SA-CMD-003 §19/§20, ZB-SEC-PRIV-001 — tenant-visible privileged support-access log.
+    Includes status (pending, approved, active, revoked, emergency) so tenant sees live state."""
     from app.core.dependencies import get_organization_id
     from app.modules.super_admin.models import PrivilegedTenantAccessGrant
+    from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
 
     org_id = get_organization_id(current_user)
+    svc = PrivilegedAccessService(db)
 
     grants = (
         db.query(PrivilegedTenantAccessGrant)
@@ -305,19 +303,97 @@ def get_my_privileged_access_log(
         .all()
     )
 
-    entries = [
-        PrivilegedAccessLogEntry(
-            requested_at=g.requested_at,
-            status=g.status.value,
-            reason=g.reason,
-            ticket_reference=g.ticket_reference,
-            activated_at=g.activated_at,
-            ended_at=g.exited_at,
-            correlation_id=g.correlation_id,
+    entries = []
+    for g in grants:
+        g = svc._expire_if_stale(g)
+        entries.append(
+            PrivilegedAccessLogEntry(
+                id=g.id,
+                requested_at=g.requested_at,
+                status=g.status.value,
+                reason=g.reason,
+                ticket_reference=g.ticket_reference,
+                activated_at=g.activated_at,
+                ended_at=g.exited_at or (g.expires_at if g.status.value == "expired" else None),
+                correlation_id=g.correlation_id,
+                is_break_glass=g.is_break_glass,
+                requested_minutes=g.requested_minutes,
+                expires_at=g.expires_at,
+                approval_expires_at=PrivilegedAccessService.approval_deadline(g),
+                decision_note=g.approval_note or g.revoke_reason,
+                support_username=g.support_username,
+            )
         )
-        for g in grants
-    ]
     return PrivilegedAccessLogResponse(entries=entries)
+
+
+@router.post("/me/privileged-access/{grant_id}/revoke", response_model=SuccessResponse)
+def tenant_revoke_privileged_access(
+    grant_id: int,
+    payload: TenantPrivilegedAccessRevokeRequest,
+    current_user=Depends(get_current_org_admin),
+    db: Session = Depends(get_db),
+):
+    """PRV-02, AT-18: Tenant org admin revokes support access immediately.
+    Takes effect on the very next request. Returns 404 for grants not of caller's org."""
+    from app.core.dependencies import get_organization_id
+    from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+
+    org_id = get_organization_id(current_user)
+    svc = PrivilegedAccessService(db)
+    svc.revoke_grant(
+        actor=current_user,
+        grant_id=grant_id,
+        reason=payload.reason,
+        is_tenant=True,
+        tenant_org_id=org_id,
+    )
+    return {"message": "Privileged access grant revoked successfully."}
+
+
+@router.post("/me/privileged-access/{grant_id}/approve", response_model=SuccessResponse)
+def tenant_approve_privileged_access(
+    grant_id: int,
+    payload: TenantPrivilegedAccessApproveRequest = None,
+    current_user=Depends(get_current_org_admin),
+    db: Session = Depends(get_db),
+):
+    """An org admin approves a support access request. This is the only
+    approval: it starts the read-only session immediately."""
+    from app.core.dependencies import get_organization_id
+    from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+
+    org_id = get_organization_id(current_user)
+    svc = PrivilegedAccessService(db)
+    note = payload.note if payload else None
+    svc.tenant_approve_grant(
+        tenant_user=current_user,
+        organization_id=org_id,
+        grant_id=grant_id,
+        note=note,
+    )
+    return {"message": "Support access approved. The session is active now."}
+
+
+@router.post("/me/privileged-access/{grant_id}/deny", response_model=SuccessResponse)
+def tenant_deny_privileged_access(
+    grant_id: int,
+    payload: TenantPrivilegedAccessDenyRequest,
+    current_user=Depends(get_current_org_admin),
+    db: Session = Depends(get_db),
+):
+    """An org admin declines a pending support access request."""
+    from app.core.dependencies import get_organization_id
+    from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+
+    org_id = get_organization_id(current_user)
+    PrivilegedAccessService(db).tenant_deny_grant(
+        tenant_user=current_user,
+        organization_id=org_id,
+        grant_id=grant_id,
+        note=payload.note,
+    )
+    return {"message": "Support access request declined."}
 
 
 @router.get("/me/detail", response_model=OrganizationDetail)

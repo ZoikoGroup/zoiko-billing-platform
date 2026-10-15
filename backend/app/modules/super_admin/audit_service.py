@@ -19,12 +19,15 @@ optional organization_id, and structured old/new/metadata state of auditable
 fields. No passwords, tokens, JWTs, or payment credentials are ever stored.
 """
 
+import hashlib
+import json
 import logging
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.super_admin.models import (
@@ -56,6 +59,11 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _canonical_audit_json(data: dict) -> str:
+    """Deterministic, sorted-key JSON string for hash chain verification."""
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+
+
 class PlatformAuditService:
     def __init__(self, db: Session):
         self.db = db
@@ -81,11 +89,6 @@ class PlatformAuditService:
         discards both the mutation and its audit row together. Callers must
         invoke this ONLY after a mutation has succeeded, so a failed
         operation never produces an audit row.
-
-        actor_role / reason / correlation_id (ZB-COM-BILL-001 §R3/§29) are
-        optional so every existing call site keeps working unchanged; new
-        call sites (billing classification changes, catalog version
-        publish/reject, kill-switch toggles) supply them.
         """
         entry = PlatformAuditLog(
             actor_id=actor_id,
@@ -102,4 +105,92 @@ class PlatformAuditService:
         )
         self.db.add(entry)
         self.db.flush()
+
+        # Compute tamper-evident hash chain (AUD-01)
+        # 1. Serialize writers on Postgres; skip on SQLite
+        try:
+            bind = self.db.get_bind() if hasattr(self.db, "get_bind") else getattr(self.db, "bind", None)
+            dialect = bind.dialect.name if bind and hasattr(bind, "dialect") else "sqlite"
+        except Exception:
+            dialect = "sqlite"
+
+        if dialect == "postgresql":
+            self.db.execute(text("SELECT pg_advisory_xact_lock(849302751)"))
+
+        # 2. Get last hashed row
+        prev_row = (
+            self.db.query(PlatformAuditLog.row_hash)
+            .filter(
+                PlatformAuditLog.id != entry.id,
+                PlatformAuditLog.row_hash.isnot(None),
+            )
+            .order_by(PlatformAuditLog.created_at.desc(), PlatformAuditLog.id.desc())
+            .first()
+        )
+        prev_hash = prev_row[0] if prev_row and prev_row[0] else "GENESIS"
+
+        # 3. Canonical hash over non-nullable content fields.
+        # DO NOT include actor_id or organization_id (ON DELETE SET NULL cascades).
+        canonical = _canonical_audit_json({
+            "id": entry.id,
+            "action": entry.action.value if hasattr(entry.action, "value") else str(entry.action),
+            "entity_type": entry.entity_type,
+            "entity_id": entry.entity_id,
+            "old_values": entry.old_values,
+            "new_values": entry.new_values,
+            "metadata": entry.metadata_,
+            "reason": entry.reason,
+            "correlation_id": entry.correlation_id,
+            "created_at": entry.created_at.strftime("%Y-%m-%dT%H:%M:%S.%f") if entry.created_at else None,
+        })
+        entry.prev_hash = prev_hash
+        entry.row_hash = hashlib.sha256((prev_hash + canonical).encode("utf-8")).hexdigest()
+        self.db.flush()
+
         return entry
+
+    @classmethod
+    def verify_audit_chain(cls, db: Session, limit: Optional[int] = None) -> Optional[int]:
+        """Verify the tamper-evident hash chain (AUD-01).
+        Returns the first broken row id, or None if the chain is fully valid.
+        """
+        query = (
+            db.query(PlatformAuditLog)
+            .filter(PlatformAuditLog.row_hash.isnot(None))
+            .order_by(PlatformAuditLog.created_at.asc(), PlatformAuditLog.id.asc())
+        )
+        if limit is not None:
+            query = query.limit(limit)
+
+        rows = query.all()
+        if not rows:
+            return None
+
+        expected_prev_hash = "GENESIS"
+        for row in rows:
+            if row.prev_hash != expected_prev_hash:
+                return row.id
+
+            canonical = _canonical_audit_json({
+                "id": row.id,
+                "action": row.action.value if hasattr(row.action, "value") else str(row.action),
+                "entity_type": row.entity_type,
+                "entity_id": row.entity_id,
+                "old_values": row.old_values,
+                "new_values": row.new_values,
+                "metadata": row.metadata_,
+                "reason": row.reason,
+                "correlation_id": row.correlation_id,
+                "created_at": row.created_at.strftime("%Y-%m-%dT%H:%M:%S.%f") if row.created_at else None,
+            })
+            expected_row_hash = hashlib.sha256((expected_prev_hash + canonical).encode("utf-8")).hexdigest()
+            if row.row_hash != expected_row_hash:
+                return row.id
+
+            expected_prev_hash = row.row_hash
+
+        return None
+
+    def verify_chain(self, limit: Optional[int] = None) -> Optional[int]:
+        """Instance convenience helper for verify_audit_chain."""
+        return self.verify_audit_chain(self.db, limit=limit)

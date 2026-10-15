@@ -4,7 +4,7 @@ modules/super_admin/schemas.py
 """
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -120,7 +120,7 @@ class SuperAdminUserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     mfa_enabled: Optional[bool] = None  # only meaningful for role == super_admin
-    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None == platform_administrator
+    platform_role: Optional[str] = None  # only meaningful for role == super_admin; None means no platform role assigned (grants no capabilities)
     # P14: truthful invite-email outcome — None = no email attempted
     # (send_invite=False), True/False = the actual SMTP result.
     invite_email_sent: Optional[bool] = None
@@ -517,9 +517,83 @@ class PrivilegedAccessGrantResponse(BaseModel):
     expires_at: Optional[datetime] = None
     exited_at: Optional[datetime] = None
 
+    # ZB-SEC-PRIV-001 extensions
+    approved_by_user_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    approval_note: Optional[str] = None
+    revoked_by_user_id: Optional[int] = None
+    revoked_by_tenant: bool = False
+    revoked_at: Optional[datetime] = None
+    revoke_reason: Optional[str] = None
+    is_break_glass: bool = False
+    review_due_at: Optional[datetime] = None
+    reviewed_by_user_id: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    review_outcome: Optional[str] = None
+    review_note: Optional[str] = None
+    tenant_approved_by_user_id: Optional[int] = None
+    tenant_approved_at: Optional[datetime] = None
+
+    # Display-only enrichment (filled by the router, never read back)
+    organization_code: Optional[str] = None
+    requested_by_email: Optional[str] = None
+    approved_by_email: Optional[str] = None
+    # Platform-approved, still waiting on the tenant admin's approval
+    awaiting_tenant_approval: bool = False
+    # PENDING_APPROVAL: when the request lapses unused
+    approval_expires_at: Optional[datetime] = None
+    # APPROVED: last moment MFA step-up can activate it
+    activation_deadline: Optional[datetime] = None
+    # Temporary tenant login issued for this grant (the password is only
+    # ever returned by GET .../{id}/credentials, to the requester).
+    support_username: Optional[str] = None
+
+
+class SupportAccessCredentialsResponse(BaseModel):
+    grant_id: int
+    username: str
+    password: str
+    login_url: str
+    role: str
+    access: str
+    expires_at: Optional[datetime] = None
+
 
 class PrivilegedAccessGrantListResponse(BaseModel):
     grants: list[PrivilegedAccessGrantResponse]
+
+
+class PrivilegedAccessApproveRequest(BaseModel):
+    note: Optional[str] = Field(None, max_length=2000)
+
+
+class PrivilegedAccessDenyRequest(BaseModel):
+    note: str = Field(..., min_length=1, max_length=2000)
+
+
+class PrivilegedAccessRevokeRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class BreakGlassRequest(BaseModel):
+    organization_id: int
+    reason: str = Field(..., min_length=1, max_length=2000)
+    incident_reference: str = Field(..., min_length=1, max_length=100)
+    code: Optional[str] = Field(None, min_length=6, max_length=10)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+    @model_validator(mode="after")
+    def _one_factor_required(self):
+        if step_up_bypass_active():
+            return self
+        if not self.code and not self.recovery_code:
+            raise ValueError("Either a TOTP code or a recovery code is required for break-glass.")
+        return self
+
+
+class BreakGlassReviewRequest(BaseModel):
+    outcome: Literal["justified", "not_justified"]
+    note: str = Field(..., min_length=1, max_length=2000)
 
 
 class TenantAccessSummaryResponse(BaseModel):
@@ -952,49 +1026,62 @@ class BillingTrendResponse(BaseModel):
     points: list[BillingTrendPoint]
 
 
-class OverdueInvoiceRow(BaseModel):
-    invoice_id: int
+# ZB-SEC-PRIV-001 — per-tenant aggregate shapes. No row identifies an individual
+# customer, invoice, payment, credit note or refund. Masked cells (0 < n < 5)
+# have count=None plus a label — see modules/super_admin/privacy.py.
+class CountCell(BaseModel):
+    count: Optional[int] = None
+    count_label: Optional[str] = None  # "fewer than 5" when masked
+
+
+class CurrencyTotalCell(BaseModel):
+    count: Optional[int] = None
+    count_label: Optional[str] = None
+    amount: Optional[str] = None  # None when masked
+
+
+class OverdueByTenantRow(BaseModel):
     organization_id: int
     organization_name: str
-    invoice_number: str
-    customer_id: int
-    customer_name: str
-    due_date: date
-    days_overdue: int
-    amount: str
-    currency: str
+    overdue_invoice_count: Optional[int] = None
+    overdue_invoice_count_label: Optional[str] = None
+    overdue_total_by_currency: dict[str, CurrencyTotalCell]
+    oldest_days_overdue_bucket: Optional[str] = None  # 1-30 | 31-60 | 61-90 | 90+
 
 
 class OverdueInvoiceListResponse(BaseModel):
-    total: int
-    invoices: list[OverdueInvoiceRow]
+    total: Optional[int] = None  # platform-wide overdue invoice count (masked if small)
+    total_label: Optional[str] = None
+    invoices: list[OverdueByTenantRow]
 
 
-class CollectionsRiskRow(BaseModel):
-    customer_id: int
-    customer_name: str
+class CollectionsRiskTenantRow(BaseModel):
+    organization_id: int
     organization_name: str
-    outstanding: str
-    currency: str
-    risk: str  # High | Medium
-    last_activity: Optional[date] = None
-    note: str
+    accounts_at_risk_count: Optional[int] = None
+    accounts_at_risk_count_label: Optional[str] = None
+    risk_high_count: Optional[int] = None
+    risk_high_count_label: Optional[str] = None
+    risk_medium_count: Optional[int] = None
+    risk_medium_count_label: Optional[str] = None
+    total_overdue_by_currency: dict[str, CurrencyTotalCell]
 
 
 class CollectionsRiskListResponse(BaseModel):
-    rows: list[CollectionsRiskRow]
+    rows: list[CollectionsRiskTenantRow]
 
 
-class BillingActivityItem(BaseModel):
-    kind: str  # payment_received | payment_failed | invoice_sent | subscription_changed
-    title: str
-    meta: str
-    actor: Optional[str] = None
-    occurred_at: Optional[datetime] = None
+class BillingActivityTenantRow(BaseModel):
+    organization_id: int
+    organization_name: str
+    event_type: str  # payment_received | payment_failed | invoice_sent | subscription_changed
+    event_count: Optional[int] = None
+    event_count_label: Optional[str] = None
+    last_event_at: Optional[datetime] = None
 
 
 class BillingActivityListResponse(BaseModel):
-    items: list[BillingActivityItem]
+    items: list[BillingActivityTenantRow]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1023,74 +1110,49 @@ class InvoiceDeliveryDiagnosticsResponse(BaseModel):
     total: int
 
 
-class FailedPaymentRow(BaseModel):
-    payment_id: int
+class FailureReasonCount(BaseModel):
+    reason: str  # failure-code category only, never free text
+    count: Optional[int] = None
+    count_label: Optional[str] = None
+
+
+class FailedPaymentTenantRow(BaseModel):
     organization_id: int
     organization_name: str
-    customer_name: str
-    amount: str
-    currency: str
-    failure_code: Optional[str] = None
-    failure_reason: Optional[str] = None
-    payment_date: Optional[date] = None
-    attempt_count: int = 0
+    failed_count: Optional[int] = None
+    failed_count_label: Optional[str] = None
+    failed_total_by_currency: dict[str, CurrencyTotalCell]
+    top_failure_reasons: list[FailureReasonCount]
 
 
 class FailedPaymentListResponse(BaseModel):
-    total: int
-    items: list[FailedPaymentRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[FailedPaymentTenantRow]
 
 
-class DunningCaseRow(BaseModel):
-    dunning_case_id: int
+class DunningCaseTenantRow(BaseModel):
     organization_id: int
     organization_name: str
-    customer_name: str
-    invoice_id: Optional[int] = None
-    invoice_number: Optional[str] = None
-    currency: str
-    status: str
-    current_level: int
-    total_overdue_amount: str
-    days_overdue: int
-    last_action_at: Optional[datetime] = None
-    next_action_at: Optional[date] = None
+    case_count_by_stage: dict[str, CountCell]
 
 
 class DunningCaseListResponse(BaseModel):
-    total: int
-    items: list[DunningCaseRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[DunningCaseTenantRow]
 
 
-class AllocationExceptionRow(BaseModel):
-    invoice_id: int
+class AllocationExceptionTenantRow(BaseModel):
     organization_id: int
     organization_name: str
-    invoice_number: str
-    currency: str
-    total_amount: str
-    allocated_amount: str
+    exception_count_by_type: dict[str, CountCell]
 
 
 class AllocationExceptionListResponse(BaseModel):
-    total: int
-    items: list[AllocationExceptionRow]
-
-
-class CreditApplicationRow(BaseModel):
-    application_id: int
-    organization_id: int
-    organization_name: str
-    credit_note_number: str
-    invoice_number: str
-    amount: str
-    currency: str
-    created_at: Optional[datetime] = None
-
-
-class CreditApplicationListResponse(BaseModel):
-    total: int
-    items: list[CreditApplicationRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[AllocationExceptionTenantRow]
 
 
 class StatusCount(BaseModel):
@@ -1098,63 +1160,39 @@ class StatusCount(BaseModel):
     count: int
 
 
-class CreditNoteRow(BaseModel):
-    credit_note_id: int
+class StatusTotalsTenantRow(BaseModel):
+    """Shared per-tenant row for credit-applications, credit-notes, refunds and
+    write-offs."""
     organization_id: int
     organization_name: str
-    customer_name: str
-    credit_note_number: str
-    credit_note_type: str
-    status: str
-    total_amount: str
-    remaining_amount: str
-    currency: str
-    issue_date: Optional[date] = None
+    count_by_status: dict[str, CountCell]
+    total_by_currency: dict[str, CurrencyTotalCell]
+
+
+class CreditApplicationListResponse(BaseModel):
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[StatusTotalsTenantRow]
 
 
 class CreditNoteListResponse(BaseModel):
-    total: int
-    items: list[CreditNoteRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[StatusTotalsTenantRow]
     status_distribution: list[StatusCount]
-
-
-class RefundRow(BaseModel):
-    refund_id: int
-    organization_id: int
-    organization_name: str
-    customer_name: str
-    refund_number: str
-    refund_type: str
-    status: str
-    amount: str
-    currency: str
-    reason: Optional[str] = None
-    created_at: Optional[datetime] = None
 
 
 class RefundListResponse(BaseModel):
-    total: int
-    items: list[RefundRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[StatusTotalsTenantRow]
     status_distribution: list[StatusCount]
 
 
-class WriteOffRow(BaseModel):
-    write_off_id: int
-    organization_id: int
-    organization_name: str
-    customer_name: str
-    write_off_number: str
-    write_off_type: str
-    status: str
-    amount: str
-    currency: str
-    reason: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-
 class WriteOffListResponse(BaseModel):
-    total: int
-    items: list[WriteOffRow]
+    total: Optional[int] = None
+    total_label: Optional[str] = None
+    items: list[StatusTotalsTenantRow]
     status_distribution: list[StatusCount]
 
 
@@ -1177,18 +1215,31 @@ class TaxSummaryResponse(BaseModel):
 # and the inline exception dicts in router.py exactly — no behavior change.
 
 class ReconciliationExceptionResponse(BaseModel):
+    """Exception ownership-workflow ticket. `id` is the platform-owned ticket
+    id used by /reconciliation-exceptions/{id}/acknowledge|resolve — it is not
+    a tenant record id. The underlying record reference (entity_id) and any
+    document number are never exposed; `detail` is a reviewed allowlist."""
     id: int
     run_id: int
     kind: str
     organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
     entity_type: str
-    entity_id: Optional[int] = None
     detail: Optional[dict] = None
     status: str
     owner_user_id: Optional[int] = None
     acknowledged_at: Optional[str] = None
     resolved_at: Optional[str] = None
     resolution_note: Optional[str] = None
+
+
+class ReconciliationExceptionSummaryRow(BaseModel):
+    organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
+    exception_kind: str
+    count: Optional[int] = None
+    count_label: Optional[str] = None
+    discrepancy_total_by_currency: dict[str, CurrencyTotalCell]
 
 
 class ReconciliationRunResponse(BaseModel):
@@ -1214,6 +1265,7 @@ class ReconciliationRunListResponse(BaseModel):
 
 class ReconciliationRunDetailResponse(ReconciliationRunResponse):
     exceptions: list[ReconciliationExceptionResponse] = []
+    exception_summary: list[ReconciliationExceptionSummaryRow] = []
 
 
 class TriggerReconciliationRunRequest(BaseModel):

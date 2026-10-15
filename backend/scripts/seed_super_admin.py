@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import settings
 from app.core.security import hash_password
 from app.database import SessionLocal, initialize_database
-from app.modules.auth.models import User, UserRole
+from app.modules.auth.models import PlatformRole, User, UserRole
 
 SETUP_KEY = os.environ.get("SETUP_KEY", "").strip()
 EMAIL = os.environ.get("BILLING_SUPER_ADMIN_EMAIL", "").strip()
@@ -51,6 +51,7 @@ def main() -> None:
             email=EMAIL,
             hashed_password=hash_password(PASSWORD),
             role=UserRole.SUPER_ADMIN,
+            platform_role=PlatformRole.PLATFORM_ADMINISTRATOR,
             organization_id=None,
             first_name=FIRST_NAME,
             last_name=LAST_NAME,

@@ -77,6 +77,14 @@ class _RedactSensitiveQueryFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_RedactSensitiveQueryFilter())
 
+from app.core.log_redaction import SensitiveDataFilter
+
+_sensitive_data_filter = SensitiveDataFilter()
+for _h in logging.root.handlers:
+    _h.addFilter(_sensitive_data_filter)
+logging.getLogger().addFilter(_sensitive_data_filter)
+logging.getLogger("zoiko_billing").addFilter(_sensitive_data_filter)
+
 # Suppress harmless SQLAlchemy cycle warning from document-conversion FKs
 # (quotations ↔ invoices ↔ contracts ↔ subscriptions ↔ organizations ↔ users).
 # All cross-table FKs are nullable with SET NULL; no INSERT ordering dependency exists.

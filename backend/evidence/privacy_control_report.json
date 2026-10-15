@@ -1,0 +1,128 @@
+{
+  "generated_at": "2026-10-15T08:48:55.357232",
+  "git_commit_sha": "bc8ec0a723405e7115174f1d1aab0a288e68cade",
+  "total_tests": 12,
+  "records": [
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_requester_cannot_approve_own_request",
+      "controls": [
+        "GOV-04",
+        "AT-08"
+      ],
+      "outcome": "passed",
+      "duration": 3.0728,
+      "timestamp": "2026-10-15T08:47:17.982079"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_self_approval_db_check_constraint_enforced",
+      "controls": [
+        "GOV-04",
+        "AT-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0047,
+      "timestamp": "2026-10-15T08:47:18.069620"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_approval_starts_session_immediately",
+      "controls": [
+        "GOV-04",
+        "PRV-01",
+        "PRV-02"
+      ],
+      "outcome": "passed",
+      "duration": 10.4911,
+      "timestamp": "2026-10-15T08:47:28.643784"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_can_decline_with_reason",
+      "controls": [
+        "GOV-04",
+        "PRV-02"
+      ],
+      "outcome": "passed",
+      "duration": 10.9649,
+      "timestamp": "2026-10-15T08:47:39.690952"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_request_refused_when_org_has_no_admin",
+      "controls": [
+        "GOV-04"
+      ],
+      "outcome": "passed",
+      "duration": 0.0066,
+      "timestamp": "2026-10-15T08:47:39.784240"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_approval_expiry_unused_request_older_than_60m",
+      "controls": [
+        "GOV-04",
+        "PRV-01"
+      ],
+      "outcome": "passed",
+      "duration": 2.8568,
+      "timestamp": "2026-10-15T08:47:42.722035"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_of_another_org_cannot_approve",
+      "controls": [
+        "GOV-04",
+        "AT-18"
+      ],
+      "outcome": "passed",
+      "duration": 3.2389,
+      "timestamp": "2026-10-15T08:47:46.039710"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_revoke_takes_effect_immediately",
+      "controls": [
+        "GOV-04",
+        "AT-18"
+      ],
+      "outcome": "passed",
+      "duration": 18.6288,
+      "timestamp": "2026-10-15T08:48:04.755806"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_admin_of_another_org_gets_404",
+      "controls": [
+        "GOV-04",
+        "AT-18"
+      ],
+      "outcome": "passed",
+      "duration": 10.0582,
+      "timestamp": "2026-10-15T08:48:14.955492"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_at_16_break_glass_full_lifecycle",
+      "controls": [
+        "GOV-07",
+        "AT-16"
+      ],
+      "outcome": "passed",
+      "duration": 0.3441,
+      "timestamp": "2026-10-15T08:48:15.496069"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_overdue_break_glass_review_escalates_to_p0",
+      "controls": [
+        "GOV-07",
+        "AT-16"
+      ],
+      "outcome": "passed",
+      "duration": 0.3602,
+      "timestamp": "2026-10-15T08:48:16.006619"
+    },
+    {
+      "test": "tests/privacy/test_privileged_access_governance.py::test_logout_ends_active_grant_and_emails_all_org_admins",
+      "controls": [
+        "PRV-01",
+        "IAM-06",
+        "AT-16"
+      ],
+      "outcome": "passed",
+      "duration": 13.6217,
+      "timestamp": "2026-10-15T08:48:29.947732"
+    }
+  ]
+}

@@ -5,38 +5,19 @@ import {
   listDunningCases,
 } from "../../service/commandCenterService";
 import { PageHeader, DataTable, SectionCard } from "../../components/billing-ui";
-import { ErrorState, Spinner, EmptyState, StatusBadge } from "../../components/billing-shared";
-import { DUNNING_STATUS_OPTIONS } from "./constants";
-
-function money(strAmount) {
-  const n = parseFloat(strAmount || "0");
-  if (isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-}
+import { ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
+import { OrganizationLink, MaskedValue, CurrencyTotals, CountChips, ReasonList, SupportAccessNote, rowsOf } from "./PrivacyCells";
 
 const FAILED_PAYMENT_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "customer_name", label: "Customer", render: (r) => <span className="text-slate-600">{r.customer_name}</span> },
-  { key: "amount", label: "Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "failure_code", label: "Failure Code", render: (r) => <span className="text-slate-600">{r.failure_code || "—"}</span> },
-  { key: "failure_reason", label: "Reason", render: (r) => <span className="text-xs text-slate-500">{r.failure_reason || "—"}</span> },
-  { key: "attempt_count", label: "Attempts", align: "center", numeric: true, render: (r) => <span className="text-slate-700">{r.attempt_count}</span> },
-  { key: "payment_date", label: "Date", render: (r) => <span className="text-slate-500">{formatDate(r.payment_date)}</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "failed_count", label: "Failed Payments", align: "center", numeric: true, render: (r) => <span className="font-semibold text-slate-800"><MaskedValue value={r.failed_count} label={r.failed_count_label} /></span> },
+  { key: "failed_total_by_currency", label: "Failed Total", numeric: true, render: (r) => <CurrencyTotals totals={r.failed_total_by_currency} /> },
+  { key: "top_failure_reasons", label: "Top Failure Reasons", render: (r) => <ReasonList reasons={r.top_failure_reasons} /> },
 ];
 
 const DUNNING_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "customer_name", label: "Customer", render: (r) => <span className="text-slate-600">{r.customer_name}</span> },
-  { key: "invoice_number", label: "Invoice", render: (r) => <span className="font-semibold text-brand-600">{r.invoice_number || "—"}</span> },
-  { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} options={DUNNING_STATUS_OPTIONS} /> },
-  { key: "current_level", label: "Level", align: "center", numeric: true, render: (r) => <span className="text-slate-700">{r.current_level}</span> },
-  { key: "total_overdue_amount", label: "Overdue Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.total_overdue_amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "days_overdue", label: "Days Overdue", align: "center", numeric: true, render: (r) => <span className="font-medium text-red-600">{r.days_overdue}d</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "case_count_by_stage", label: "Cases by Stage", render: (r) => <CountChips counts={r.case_count_by_stage} /> },
 ];
 
 // `embedded` drops this page's own PageHeader and padding when it is mounted
@@ -96,20 +77,21 @@ export default function PaymentsDisputesPage({ embedded = false } = {}) {
           accent="brand"
           icon={CreditCard}
           title="Failed Payment Recovery Queue"
-          description="Payments currently in a failed state, eligible for automatic retry."
+          description="Failed payments per tenant: counts, totals per currency, and failure-reason categories."
         >
           {errors.failedPayments ? (
             <ErrorState title="Unable to load failed payments" message={errors.failedPayments} onRetry={load} />
-          ) : (failedPayments?.items || []).length === 0 ? (
+          ) : rowsOf(failedPayments).length === 0 ? (
             <EmptyState icon={CreditCard} title="No failed payments" message="Every payment on the platform cleared successfully." />
           ) : (
             <DataTable
               columns={FAILED_PAYMENT_COLUMNS}
-              data={failedPayments.items}
-              rowKey={(r) => r.payment_id}
-              minWidth={840}
+              data={rowsOf(failedPayments)}
+              rowKey={(r) => r.organization_id}
+              minWidth={640}
             />
           )}
+          {!errors.failedPayments && <SupportAccessNote />}
         </SectionCard>
 
         <SectionCard
@@ -117,20 +99,21 @@ export default function PaymentsDisputesPage({ embedded = false } = {}) {
           accent="brand"
           icon={CreditCard}
           title="Dunning Cases"
-          description="Accounts currently progressing through the dunning escalation path."
+          description="Open dunning cases per tenant, by escalation stage."
         >
           {errors.dunningCases ? (
             <ErrorState title="Unable to load dunning cases" message={errors.dunningCases} onRetry={load} />
-          ) : (dunningCases?.items || []).length === 0 ? (
+          ) : rowsOf(dunningCases).length === 0 ? (
             <EmptyState icon={CreditCard} title="No active dunning cases" message="No accounts are currently in a dunning cycle." />
           ) : (
             <DataTable
               columns={DUNNING_COLUMNS}
-              data={dunningCases.items}
-              rowKey={(r) => r.dunning_case_id}
-              minWidth={840}
+              data={rowsOf(dunningCases)}
+              rowKey={(r) => r.organization_id}
+              minWidth={640}
             />
           )}
+          {!errors.dunningCases && <SupportAccessNote />}
         </SectionCard>
 
         <SectionCard

@@ -157,6 +157,14 @@ jobs:
       - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)
         run: python -m pytest tests/ai_assistant/ -q
         continue-on-error: true
+      - name: Run privacy control tests (ZB-SEC-PRIV-001 E05)
+        run: python -m pytest tests/privacy/ -m control -v
+      - name: Upload privacy control evidence report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: privacy-control-evidence
+          path: backend/evidence/privacy_control_report.json
 
   frontend-tests:
     runs-on: ubuntu-latest

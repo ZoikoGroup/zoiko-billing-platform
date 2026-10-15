@@ -68,6 +68,7 @@ class OrganizationUpdate(BaseModel):
     timezone: Optional[str] = None
     fiscal_year_start: Optional[str] = None
     fiscal_year_end: Optional[str] = None
+    require_tenant_approval_for_support_access: Optional[bool] = None
 
     @field_validator("currency")
     @classmethod
@@ -114,6 +115,7 @@ class OrganizationResponse(BaseModel):
     billing_classification: BillingClassification
     billing_source: BillingSource
     is_active: bool
+    require_tenant_approval_for_support_access: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -185,14 +187,36 @@ class OrganizationDetail(BaseModel):
 # ticket_reference are always present without reconstructing them from
 # audit-log metadata.
 class PrivilegedAccessLogEntry(BaseModel):
+    id: Optional[int] = None
     requested_at: datetime
-    status: str  # pending_step_up | active | exited | expired | denied
+    status: str  # pending_approval | approved | active | exited | expired | denied | revoked | expired_unused
     reason: str
     ticket_reference: str
     activated_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None  # exited_at, or expires_at if lazily expired
     correlation_id: str
+    is_break_glass: bool = False
+    requested_minutes: Optional[int] = None
+    expires_at: Optional[datetime] = None
+    # pending_approval only: when the request lapses if nobody decides
+    approval_expires_at: Optional[datetime] = None
+    # denial note or revoke reason, when there is one
+    decision_note: Optional[str] = None
+    # the temporary login support used in your organization
+    support_username: Optional[str] = None
 
 
 class PrivilegedAccessLogResponse(BaseModel):
     entries: list[PrivilegedAccessLogEntry]
+
+
+class TenantPrivilegedAccessRevokeRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class TenantPrivilegedAccessApproveRequest(BaseModel):
+    note: Optional[str] = Field(None, max_length=2000)
+
+
+class TenantPrivilegedAccessDenyRequest(BaseModel):
+    note: str = Field(..., min_length=1, max_length=2000)

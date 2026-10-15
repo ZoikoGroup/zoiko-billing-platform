@@ -1359,6 +1359,7 @@ class Quotation(Base):
     notes                     = Column(Text, nullable=True)
     terms                     = Column(Text, nullable=True)
     is_active                 = Column(Boolean, default=True)
+    public_link_version       = Column(Integer, nullable=False, default=1, server_default="1")
     created_by                = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_by                = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at                = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -1617,6 +1618,7 @@ class Invoice(Base):
     is_recurring        = Column(Boolean, default=False)
     is_active           = Column(Boolean, default=True)
     deleted_at          = Column(DateTime, nullable=True)
+    public_link_version = Column(Integer, nullable=False, default=1, server_default="1")
     # Client-supplied key for retry-safe draft invoice creation. It is scoped
     # by organization so a tenant cannot consume another tenant's key.
     idempotency_key      = Column(String(255), nullable=True)

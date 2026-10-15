@@ -28,7 +28,9 @@ export const VALID_ROLES = Object.values(ROLES);
 // Client-side MIRROR of backend app/core/capabilities.py. Used only to avoid
 // firing requests the server will certainly deny (403 noise); the backend
 // remains the single source of authorization truth.
-const NULL_LIKE = [null, undefined, "", "platform_administrator"];
+// A NULL/unset platform role grants NOTHING on the backend (GOV-01), so only an
+// explicit platform_administrator is treated as full access here.
+const NULL_LIKE = ["platform_administrator"];
 
 export const PLATFORM_ROLE_LABELS = {
   platform_administrator: "Platform Administrator",
@@ -94,3 +96,31 @@ export function canWriteCommercialFinancial(platformRole) {
 export function canWriteEvaluationProgram(platformRole) {
   return NULL_LIKE.includes(platformRole);
 }
+
+// ── Privileged tenant support capabilities (ZB-SEC-PRIV-001) ───────────────
+// Mirrors backend app/core/capabilities.py.
+// tenant_support.approve: platform_administrator, security_operator
+// tenant_support.request / activate / exit: support_operator (+ platform_administrator implicitly)
+export function canRequestTenantSupport(platformRole) {
+  return ["platform_administrator", "support_operator"].includes(platformRole);
+}
+
+export function canApproveTenantSupport(platformRole) {
+  return ["platform_administrator", "security_operator"].includes(platformRole);
+}
+
+// tenant_support.revoke: platform_administrator, security_operator
+export function canRevokeTenantSupport(platformRole) {
+  return ["platform_administrator", "security_operator"].includes(platformRole);
+}
+
+// tenant_support.break_glass: SECURITY_OPERATOR only (in EXPLICIT_ONLY_CAPABILITIES)
+export function canBreakGlass(platformRole) {
+  return platformRole === "security_operator";
+}
+
+// tenant_support.review_break_glass: platform_administrator, security_operator, auditor
+export function canReviewBreakGlass(platformRole) {
+  return ["platform_administrator", "security_operator", "auditor"].includes(platformRole);
+}
+

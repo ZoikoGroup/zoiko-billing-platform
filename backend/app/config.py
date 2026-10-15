@@ -10,6 +10,7 @@ old repo's app.config.
 """
 
 from pathlib import Path
+from typing import Optional
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -93,6 +94,9 @@ class Settings(BaseSettings):
     # ── Public-facing links ─────────────────────────────────────────────
     FRONTEND_URL: str = "http://localhost:5173"
     MARKETING_SITE_URL: str = "https://zoikobilling.com"
+    # Email domain for the temporary tenant logins issued on approved support
+    # access. Never receives mail; it only has to be a valid address format.
+    SUPPORT_ACCESS_ACCOUNT_DOMAIN: str = "support-access.zoikobilling.com"
 
     # ── Email / SMTP ──────────────────────────────────────────────────
     SMTP_HOST: str = ""
@@ -223,6 +227,23 @@ class Settings(BaseSettings):
     REDIS_CONFIG_TTL: int = 60
     REDIS_ENTITLEMENT_TTL: int = 60
     REDIS_DASHBOARD_TTL: int = 30
+
+    # -- Platform privacy (ZB-SEC-PRIV-001) ------------------------------
+    # Minimum record count a per-tenant aggregate cell must reach before the
+    # Super Admin API reveals it (smaller non-zero cells are masked).
+    PLATFORM_MIN_CELL_SIZE: int = 5
+
+    # ── Public Links Security (FIN-07, AT-15, ZB-SEC-PRIV-001) ───────────
+    PUBLIC_INVOICE_LINK_TTL_DAYS: int = 90
+    PUBLIC_INVOICE_LEGACY_TOKEN_UNTIL: Optional[str] = None
+
+    # ── Privacy & Audit Detection Settings (AUD-03, GOV-08) ─────────────
+    PLATFORM_ACCESS_HOURS_UTC: str = "06-20"
+    DETECTION_REPEATED_DENIALS_THRESHOLD: int = 5
+    DETECTION_REPEATED_DENIALS_WINDOW_MINUTES: int = 10
+    DETECTION_MANY_TENANTS_THRESHOLD: int = 3
+    DETECTION_HEAVY_VIEWING_THRESHOLD: int = 30
+    DETECTION_DORMANT_DAYS_THRESHOLD: int = 60
 
     # -- Server concurrency / DB pool (docs/PERFORMANCE_DEPLOYMENT.md) ---
     # Budget: WEB_CONCURRENCY x (DB_POOL_SIZE + DB_MAX_OVERFLOW) (+1 per

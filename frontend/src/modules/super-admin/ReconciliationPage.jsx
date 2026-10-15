@@ -10,6 +10,7 @@ import {
 import { listOrganizations } from "../../service/commercialService";
 import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
+import { OrganizationLink, CurrencyTotals, MaskedValue, SupportAccessNote } from "./PrivacyCells";
 import { RECONCILIATION_RUN_STATE_OPTIONS, RECONCILIATION_EXCEPTION_STATUS_OPTIONS } from "./constants";
 
 function orgLabel(org) {
@@ -224,7 +225,7 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
                 <tr className="text-[10px] uppercase tracking-wider text-slate-500">
                   <th className="px-3 py-2">Kind</th>
                   <th className="px-3 py-2">Org</th>
-                  <th className="px-3 py-2">Entity</th>
+                  <th className="px-3 py-2">Record type</th>
                   <th className="px-3 py-2">Detail</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Actions</th>
@@ -235,10 +236,15 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
                   <tr key={exc.id} className="border-t border-slate-100">
                     <td className="px-3 py-2 font-medium text-slate-700">{EXCEPTION_KIND_LABELS[exc.kind] || exc.kind}</td>
                     <td className="px-3 py-2 text-slate-600">
-                      {orgLabel(orgById[exc.organization_id]) || (exc.organization_id ?? "—")}
+                      {exc.organization_id != null ? (
+                        <OrganizationLink
+                          organizationId={exc.organization_id}
+                          name={exc.organization_name || orgLabel(orgById[exc.organization_id])}
+                        />
+                      ) : "—"}
                     </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {exc.entity_type} #{exc.entity_id}
+                    <td className="px-3 py-2 capitalize text-slate-600">
+                      {String(exc.entity_type || "").replaceAll("_", " ")}
                     </td>
                     <td className="px-3 py-2 text-slate-500">
                       <pre className="max-w-[260px] whitespace-pre-wrap break-words text-[10px]">
@@ -270,6 +276,36 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
             </table>
           </div>
         )}
+
+        {(run.exception_summary || []).length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50">
+                <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+                  <th className="px-3 py-2">Organization</th>
+                  <th className="px-3 py-2">Kind</th>
+                  <th className="px-3 py-2">Exceptions</th>
+                  <th className="px-3 py-2 text-right">Discrepancy by currency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.exception_summary.map((row, i) => (
+                  <tr key={`${row.organization_id}-${row.exception_kind}-${i}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2">
+                      {row.organization_id != null ? (
+                        <OrganizationLink organizationId={row.organization_id} name={row.organization_name} />
+                      ) : "—"}
+                    </td>
+                    <td className="px-3 py-2 font-medium text-slate-700">{EXCEPTION_KIND_LABELS[row.exception_kind] || row.exception_kind}</td>
+                    <td className="px-3 py-2 font-semibold text-slate-700"><MaskedValue value={row.count} label={row.count_label} /></td>
+                    <td className="px-3 py-2 text-right"><CurrencyTotals totals={row.discrepancy_total_by_currency} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {((run.exceptions || []).length > 0 || (run.exception_summary || []).length > 0) && <SupportAccessNote />}
       </div>
 
       <ResolveModal open={Boolean(resolveTarget)} onClose={() => setResolveTarget(null)} onSubmit={handleResolve} />

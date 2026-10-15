@@ -6,9 +6,11 @@ modules/billing/routers/invoice_router.py
 from typing import Optional
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from app.core.rate_limiter import limit_route
 
 from app.core.aggregate_cache import cached_aggregate
 from app.database import get_db
@@ -355,6 +357,21 @@ def get_invoice_public_link(
     return svc.get_public_invoice_link(invoice_id=invoice_id, organization_id=current_user.organization_id)
 
 
+@router.post("/{invoice_id}/public-link/revoke", response_model=dict)
+def revoke_invoice_public_link(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    _admin=Depends(get_current_billing_admin),
+):
+    svc = InvoiceService(db)
+    return svc.revoke_public_link(
+        invoice_id=invoice_id,
+        organization_id=current_user.organization_id,
+        updated_by=current_user.id,
+    )
+
+
 @router.put("/{invoice_id}", response_model=InvoiceResponse)
 def update_invoice(
     invoice_id: int,
@@ -585,8 +602,10 @@ class PublicCheckoutCreate(BaseModel):
     "/{token}",
     summary="Publicly view an invoice and its payment options via signed link token",
 )
+@limit_route("30/minute")
 def get_public_invoice(
     token: str,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = InvoiceService(db)
@@ -597,9 +616,11 @@ def get_public_invoice(
     "/{token}/checkout",
     summary="Create a checkout session for a public invoice via signed link token",
 )
+@limit_route("30/minute")
 def create_public_checkout(
     token: str,
     body: PublicCheckoutCreate,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = InvoiceService(db)
