@@ -53,10 +53,13 @@ def _create_tenant_user(db, org_id: int, email: str, role: UserRole = UserRole.B
 @control("ISO-01", "ISO-03", "AT-02", "E06")
 def test_route_discovery_and_tenant_surface():
     """Verify route discovery successfully catalogs the API route surface."""
-    discovered_routes = []
-    for route in app.routes:
-        if hasattr(route, "path") and hasattr(route, "methods"):
-            discovered_routes.append((route.path, list(route.methods)))
+    # Use the public OpenAPI schema rather than walking app.routes: since
+    # FastAPI 0.14x, included routers appear in app.routes as opaque
+    # _IncludedRouter wrappers, so a flat walk only sees top-level routes.
+    discovered_routes = [
+        (path, [m.upper() for m in operations])
+        for path, operations in app.openapi().get("paths", {}).items()
+    ]
 
     assert len(discovered_routes) > 10, "FastAPI route discovery should find all mounted platform routes"
     # Verify tenant billing routes exist in the catalog
