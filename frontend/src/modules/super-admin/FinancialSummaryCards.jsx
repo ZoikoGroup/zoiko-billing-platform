@@ -417,16 +417,10 @@ export function F3IntegrityCard({ consistency }) {
               {overAllocated}
             </strong>
           </p>
-          {isFailed && consistency?.over_allocated_examples?.length > 0 && (
-            <div className="mt-2 space-y-1">
-              <p className="font-semibold text-slate-700">Examples:</p>
-              {consistency.over_allocated_examples.slice(0, 3).map((ex) => (
-                <p key={ex.invoice_id} className="text-slate-600">
-                  Invoice #{ex.invoice_number} — total: {ex.total_amount}, allocated:{" "}
-                  {ex.allocated_amount}
-                </p>
-              ))}
-            </div>
+          {isFailed && (
+            <p className="mt-2 text-[11px] text-slate-500">
+              Per-tenant counts are on the Balances &amp; Allocations tab. Record-level detail requires approved support access.
+            </p>
           )}
         </div>
       </div>

@@ -6,50 +6,17 @@ import {
 } from "../../service/commandCenterService";
 import { PageHeader, DataTable, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
-
-function money(strAmount) {
-  const n = parseFloat(strAmount || "0");
-  if (isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
-
-function formatDateTime(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+import { OrganizationLink, CurrencyTotals, CountChips, SupportAccessNote, rowsOf } from "./PrivacyCells";
 
 const ALLOCATION_EXCEPTION_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "invoice_number", label: "Invoice", render: (r) => <span className="font-semibold text-brand-600">{r.invoice_number}</span> },
-  { key: "total_amount", label: "Invoice Total", numeric: true, render: (r) => <span className="text-slate-700">{money(r.total_amount)} <span className="text-[10px] text-slate-400">{r.currency}</span></span> },
-  {
-    key: "allocated_amount",
-    label: "Allocated",
-    numeric: true,
-    render: (r) => (
-      <span className="font-semibold text-red-700">
-        {money(r.allocated_amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span>
-      </span>
-    ),
-  },
-  {
-    key: "overage",
-    label: "Overage",
-    numeric: true,
-    render: (r) => (
-      <span className="font-semibold text-red-700">
-        {money(String(parseFloat(r.allocated_amount) - parseFloat(r.total_amount)))}
-      </span>
-    ),
-  },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "exception_count_by_type", label: "Exceptions by Type", render: (r) => <CountChips counts={r.exception_count_by_type} /> },
 ];
 
 const CREDIT_APPLICATION_COLUMNS = [
-  { key: "organization_name", label: "Organization", render: (r) => <span className="font-medium text-slate-800">{r.organization_name}</span> },
-  { key: "credit_note_number", label: "Credit Note", render: (r) => <span className="font-semibold text-brand-600">{r.credit_note_number}</span> },
-  { key: "invoice_number", label: "Applied to Invoice", render: (r) => <span className="text-slate-700">{r.invoice_number}</span> },
-  { key: "amount", label: "Amount", numeric: true, render: (r) => <span className="font-semibold text-slate-800">{money(r.amount)} <span className="text-[10px] font-normal text-slate-400">{r.currency}</span></span> },
-  { key: "created_at", label: "Applied At", render: (r) => <span className="text-slate-500">{formatDateTime(r.created_at)}</span> },
+  { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
+  { key: "count_by_status", label: "Applications by Status", render: (r) => <CountChips counts={r.count_by_status} /> },
+  { key: "total_by_currency", label: "Total Applied", numeric: true, render: (r) => <CurrencyTotals totals={r.total_by_currency} /> },
 ];
 
 // `embedded` drops this page's own PageHeader and padding when it is mounted
@@ -110,20 +77,21 @@ export default function BalancesAllocationsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Landmark}
           title="Allocation Exceptions"
-          description="Invoices where PaymentAllocation totals exceed the invoice's own total_amount — a real ledger integrity failure, never a legitimate state."
+          description="Tenants with invoices whose PaymentAllocation totals exceed the invoice total — a real ledger integrity failure, never a legitimate state. Counts per exception type only."
         >
           {errors.exceptions ? (
             <ErrorState title="Unable to load allocation exceptions" message={errors.exceptions} onRetry={load} />
-          ) : (exceptions?.items || []).length === 0 ? (
+          ) : rowsOf(exceptions).length === 0 ? (
             <EmptyState icon={Landmark} title="No allocation exceptions" message="Every invoice's allocated payments are within its total amount." />
           ) : (
             <DataTable
               columns={ALLOCATION_EXCEPTION_COLUMNS}
-              data={exceptions.items}
-              rowKey={(r) => r.invoice_id}
-              minWidth={840}
+              data={rowsOf(exceptions)}
+              rowKey={(r) => r.organization_id}
+              minWidth={560}
             />
           )}
+          <SupportAccessNote />
         </SectionCard>
 
         <SectionCard
@@ -131,20 +99,21 @@ export default function BalancesAllocationsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Landmark}
           title="Credit Note Applications"
-          description="The ledger of which credit note reduced which invoice's balance, and by how much."
+          description="Credit note applications per tenant, by status, with totals per currency."
         >
           {errors.applications ? (
             <ErrorState title="Unable to load credit applications" message={errors.applications} onRetry={load} />
-          ) : (applications?.items || []).length === 0 ? (
+          ) : rowsOf(applications).length === 0 ? (
             <EmptyState icon={Landmark} title="No credit note applications yet" message="Credit notes applied against invoices will appear here." />
           ) : (
             <DataTable
               columns={CREDIT_APPLICATION_COLUMNS}
-              data={applications.items}
-              rowKey={(r) => r.application_id}
-              minWidth={840}
+              data={rowsOf(applications)}
+              rowKey={(r) => r.organization_id}
+              minWidth={560}
             />
           )}
+          <SupportAccessNote />
         </SectionCard>
       </div>
     </div>

@@ -244,8 +244,15 @@ def get_me(current_user=Depends(get_current_user)):
 
 
 @router.post("/logout", response_model=SuccessResponse, summary="Logout")
-def logout(current_user=Depends(get_current_user), request: Request = None):
+def logout(current_user=Depends(get_current_user), request: Request = None, db: Session = Depends(get_db)):
     logger.info("User %s logged out", current_user.email)
+    # ZB-SEC-PRIV-001 (IAM-06): If super admin with an active grant, exit it on logout
+    if current_user.role == UserRole.SUPER_ADMIN:
+        try:
+            from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
+            PrivilegedAccessService(db).exit_all_active_for(current_user)
+        except Exception as exc:
+            logger.warning("Failed to exit active privileged grants on logout for %s: %s", current_user.email, exc)
     return {"message": "Logged out successfully."}
 
 

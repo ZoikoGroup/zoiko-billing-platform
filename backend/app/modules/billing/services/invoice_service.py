@@ -4,9 +4,9 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -1027,51 +1027,145 @@ class InvoiceService:
 
     # ── Public Invoice View / Payment (no auth — token in the emailed link) ──
 
-    def _public_invoice_token(self, invoice_id: int) -> str:
-        """Stateless, signed token for the public invoice/payment link. Nothing
-        is stored in the DB — the token is `base64url(invoice_id.hmac(secret))`
-        and recomputed on each request, so a leaked link cannot be forged and
-        no migration is needed."""
-        sig = hmac.new(
-            settings.BILLING_SECRET_KEY.encode(),
-            str(invoice_id).encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        return base64.urlsafe_b64encode(f"{invoice_id}.{sig}".encode()).decode().rstrip("=")
+    def _public_invoice_token(self, invoice_or_id: Union[Invoice, int]) -> str:
+        """Stateless, signed v2 token for the public invoice/payment link.
+        Format: base64url("v2.{invoice_id}.{version}.{expires_ts}.{hmac}")
+        HMAC-SHA256 over "v2|id|version|expires_ts" (also matching "v2|invoice|id|version|expires_ts").
+        """
+        if isinstance(invoice_or_id, Invoice):
+            inv_id = invoice_or_id.id
+            version = getattr(invoice_or_id, "public_link_version", 1) or 1
+        else:
+            inv_id = int(invoice_or_id)
+            inv = self.db.query(Invoice.public_link_version).filter(Invoice.id == inv_id).first()
+            version = inv[0] if inv and inv[0] is not None else 1
+
+        ttl_days = getattr(settings, "PUBLIC_INVOICE_LINK_TTL_DAYS", 90) or 90
+        now_utc = datetime.now(timezone.utc)
+        expires_ts = int((now_utc + timedelta(days=ttl_days)).timestamp())
+        secret = settings.BILLING_SECRET_KEY or "change-me-billing-platform-secret"
+
+        # HMAC over "v2|id|version|expires_ts" as specified by ZB-SEC-PRIV-001
+        payload = f"v2|{inv_id}|{version}|{expires_ts}"
+        sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        raw = f"v2.{inv_id}.{version}.{expires_ts}.{sig}"
+        return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
     def _resolve_public_invoice(self, token: str) -> Invoice:
         if not token:
             raise NotFoundException("Invoice", 0)
+        secret = settings.BILLING_SECRET_KEY or "change-me-billing-platform-secret"
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+
         try:
             raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()
-            invoice_id_str, _, sig = raw.partition(".")
-            expected = hmac.new(
-                settings.BILLING_SECRET_KEY.encode(),
-                invoice_id_str.encode(),
-                hashlib.sha256,
-            ).hexdigest()
-            if not invoice_id_str.isdigit() or not hmac.compare_digest(sig, expected):
-                raise ValueError("bad signature")
-            invoice_id = int(invoice_id_str)
+            parts = raw.split(".")
+
+            # v2 format: v2.{invoice_id}.{version}.{expires_ts}.{hmac}
+            if len(parts) == 5 and parts[0] == "v2":
+                _, invoice_id_str, version_str, expires_str, sig = parts
+                if not invoice_id_str.isdigit() or not version_str.isdigit() or not expires_str.isdigit():
+                    raise ValueError("invalid format")
+
+                invoice_id = int(invoice_id_str)
+                version = int(version_str)
+                expires_ts = int(expires_str)
+
+                # Check expiry
+                if expires_ts < now_ts:
+                    raise NotFoundException("Invoice", 0)
+
+                # Verify HMAC: supports standard spec ("v2|id|version|expires_ts") and scoped ("v2|invoice|...")
+                expected_spec = hmac.new(
+                    secret.encode(),
+                    f"v2|{invoice_id}|{version}|{expires_ts}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+                expected_scoped = hmac.new(
+                    secret.encode(),
+                    f"v2|invoice|{invoice_id}|{version}|{expires_ts}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+
+                if not (hmac.compare_digest(sig, expected_spec) or hmac.compare_digest(sig, expected_scoped)):
+                    raise ValueError("bad signature")
+
+            # Legacy format: {invoice_id}.{hmac}
+            elif len(parts) == 2 and parts[0].isdigit():
+                invoice_id_str, sig = parts
+                invoice_id = int(invoice_id_str)
+                version = None
+
+                # Check legacy cutoff date
+                cutoff_setting = getattr(settings, "PUBLIC_INVOICE_LEGACY_TOKEN_UNTIL", None)
+                if cutoff_setting:
+                    try:
+                        cutoff_date = date.fromisoformat(cutoff_setting) if isinstance(cutoff_setting, str) else cutoff_setting
+                        if date.today() > cutoff_date:
+                            raise NotFoundException("Invoice", 0)
+                    except (ValueError, TypeError):
+                        pass
+
+                expected = hmac.new(
+                    secret.encode(),
+                    invoice_id_str.encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+                if not hmac.compare_digest(sig, expected):
+                    raise ValueError("bad signature")
+
+                logger.info("Legacy public invoice token used for invoice %d", invoice_id)
+            else:
+                raise ValueError("unrecognized token format")
+
         except Exception:
             raise NotFoundException("Invoice", 0)
+
         inv = self.db.query(Invoice).options(
             joinedload(Invoice.customer)
         ).filter(Invoice.id == invoice_id).first()
+
         if inv is None or inv.deleted_at is not None:
             raise NotFoundException("Invoice", invoice_id)
+
+        # Version match check (for v2 tokens)
+        if version is not None and getattr(inv, "public_link_version", 1) != version:
+            raise NotFoundException("Invoice", invoice_id)
+
+        # Voided / cancelled invoices cannot be resolved
+        if inv.status == InvoiceStatus.CANCELLED or getattr(inv, "is_active", True) is False:
+            raise NotFoundException("Invoice", invoice_id)
+
         return inv
 
     def get_public_invoice_link(self, invoice_id: int, organization_id: int) -> Dict[str, str]:
-        """Authenticated lookup of the same signed link that gets emailed to
+        """Authenticated lookup of the signed v2 link that gets emailed to
         the customer, so the internal invoice-detail UI's "preview" button can
-        open a link that actually resolves (a raw invoice id fails the
-        signature check in `_resolve_public_invoice`)."""
-        self.repo.get_by_id(invoice_id, organization_id)  # tenant-isolation check; raises NotFoundException
-        token = self._public_invoice_token(invoice_id)
+        open a link that actually resolves."""
+        inv = self.repo.get_by_id(invoice_id, organization_id)  # tenant-isolation check; raises NotFoundException
+        token = self._public_invoice_token(inv)
         return {
             "token": token,
             "url": f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{token}",
+        }
+
+    def revoke_public_link(self, invoice_id: int, organization_id: int, updated_by: Optional[int] = None) -> Dict[str, Any]:
+        """Revoke active public invoice link by bumping public_link_version."""
+        inv = self.repo.get_by_id(invoice_id, organization_id)
+        inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
+        safe_commit_and_refresh(self.db, inv)
+        self.audit.log(
+            organization_id,
+            updated_by,
+            BillingAuditAction.UPDATE,
+            "Invoice",
+            invoice_id,
+            new_values={"public_link_version": inv.public_link_version},
+        )
+        return {
+            "invoice_id": invoice_id,
+            "public_link_version": inv.public_link_version,
+            "status": "revoked",
         }
 
     def get_public_invoice(self, token: str) -> Dict[str, Any]:
@@ -1384,6 +1478,7 @@ class InvoiceService:
         inv.status = InvoiceStatus.CANCELLED
         inv.cancelled_at = datetime.utcnow()
         inv.cancellation_reason = reason
+        inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason)
         self.audit.log(organization_id, updated_by, BillingAuditAction.CANCEL, "Invoice", invoice_id)
@@ -1400,6 +1495,7 @@ class InvoiceService:
         inv.cancelled_at = datetime.utcnow()
         inv.cancellation_reason = reason or "Voided"
         inv.is_active = False
+        inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason or "Voided")
         self.audit.log(organization_id, updated_by, BillingAuditAction.VOID, "Invoice", invoice_id)

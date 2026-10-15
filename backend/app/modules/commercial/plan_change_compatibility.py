@@ -106,7 +106,12 @@ def _check_internal_users(ctx: CompatibilityCheckContext) -> CompatibilityCheckR
 
     count = (
         ctx.db.query(User)
-        .filter(User.organization_id == ctx.organization_id, User.is_active.is_(True))
+        .filter(
+            User.organization_id == ctx.organization_id,
+            User.is_active.is_(True),
+            # Temporary support-access logins are not customer seats.
+            User.access_expires_at.is_(None),
+        )
         .count()
     )
     limit = ctx.target_plan.max_users

@@ -218,12 +218,14 @@ def render_zb_sec_018(context: dict):
         f"<p style=\"margin:0 0 16px 0;\">Zoiko Billing support staff requested time-limited, "
         f"read-only access to <strong style=\"color:#FFFFFF;\">{context['organization_name']}</strong> "
         f"for the following reason: \"{context['reason']}\" (ticket {context['ticket_reference']}).</p>"
-        f"<p style=\"margin:0;\">This access requires a separate step-up approval and is time-limited "
-        f"and audited. Contact support immediately if this request is unexpected.</p>"
+        f"<p style=\"margin:0 0 16px 0;\">Nothing is accessible until an administrator of your organization "
+        f"approves it. If you approve, support can view a read-only billing summary for "
+        f"{context.get('requested_minutes') or 30} minutes; you can revoke it at any time, and every view is audited.</p>"
+        f"<p style=\"margin:0;\">If you weren't expecting this request, decline it.</p>"
     )
     html = render_t0_shell(
-        eyebrow=_EYEBROW, heading="Support access was requested",
-        body_html=body, cta_label="Review access request", cta_url=context.get("access_review_url", "#"),
+        eyebrow=_EYEBROW, heading="Your approval is needed for support access",
+        body_html=body, cta_label="Approve or decline", cta_url=context.get("access_review_url", "#"),
     )
     return subject, html
 

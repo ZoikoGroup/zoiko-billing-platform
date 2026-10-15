@@ -2,9 +2,9 @@ import base64
 import hashlib
 import hmac
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session
 
@@ -650,9 +650,29 @@ class QuoteService:
         if quote.status in (QuoteStatus.CONVERTED, QuoteStatus.CANCELLED):
             raise BadRequestException("Quote cannot be cancelled")
         quote.status = QuoteStatus.CANCELLED
+        quote.public_link_version = (getattr(quote, "public_link_version", 1) or 1) + 1
         safe_commit_and_refresh(self.db, quote)
         self.audit.log(organization_id, updated_by, BillingAuditAction.CANCEL, "Quotation", quote_id)
         return quote
+
+    def revoke_public_link(self, quote_id: int, organization_id: int, updated_by: Optional[int] = None) -> Dict[str, Any]:
+        """Revoke active public quote link by bumping public_link_version."""
+        quote = self.repo.get_by_id(quote_id, organization_id)
+        quote.public_link_version = (getattr(quote, "public_link_version", 1) or 1) + 1
+        safe_commit_and_refresh(self.db, quote)
+        self.audit.log(
+            organization_id,
+            updated_by,
+            BillingAuditAction.UPDATE,
+            "Quotation",
+            quote_id,
+            new_values={"public_link_version": quote.public_link_version},
+        )
+        return {
+            "quote_id": quote_id,
+            "public_link_version": quote.public_link_version,
+            "status": "revoked",
+        }
 
     def check_expired(self, quote_id: int, organization_id: int) -> bool:
         quote = self.repo.get_by_id(quote_id, organization_id)
@@ -666,37 +686,106 @@ class QuoteService:
 
     # ── Public Estimate Review (token-signed) ─────────────────────────────
 
-    def _public_quote_token(self, quote_id: int) -> str:
-        """Stateless, signed token for the public estimate link. Nothing is
-        stored in the DB — the token is `base64url(quote_id.hmac(secret))` and
-        recomputed on each request, so a leaked link cannot be forged and no
-        migration is needed."""
-        sig = hmac.new(
-            settings.BILLING_SECRET_KEY.encode(),
-            str(quote_id).encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        return base64.urlsafe_b64encode(f"{quote_id}.{sig}".encode()).decode().rstrip("=")
+    def _public_quote_token(self, quote_or_id: Union[Quotation, int]) -> str:
+        """Stateless, signed v2 token for the public estimate link.
+        Format: base64url("v2.{quote_id}.{version}.{expires_ts}.{hmac}")
+        HMAC-SHA256 over "v2|quote|{quote_id}|{version}|{expires_ts}".
+        """
+        if isinstance(quote_or_id, Quotation):
+            q_id = quote_or_id.id
+            version = getattr(quote_or_id, "public_link_version", 1) or 1
+        else:
+            q_id = int(quote_or_id)
+            q = self.db.query(Quotation.public_link_version).filter(Quotation.id == q_id).first()
+            version = q[0] if q and q[0] is not None else 1
+
+        ttl_days = getattr(settings, "PUBLIC_INVOICE_LINK_TTL_DAYS", 90) or 90
+        now_utc = datetime.now(timezone.utc)
+        expires_ts = int((now_utc + timedelta(days=ttl_days)).timestamp())
+        secret = settings.BILLING_SECRET_KEY or "change-me-billing-platform-secret"
+
+        payload = f"v2|quote|{q_id}|{version}|{expires_ts}"
+        sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        raw = f"v2.{q_id}.{version}.{expires_ts}.{sig}"
+        return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
     def _resolve_public_quote(self, token: str) -> Quotation:
         if not token:
             raise NotFoundException("Quotation", 0)
+        secret = settings.BILLING_SECRET_KEY or "change-me-billing-platform-secret"
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+
         try:
             raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()
-            quote_id_str, _, sig = raw.partition(".")
-            expected = hmac.new(
-                settings.BILLING_SECRET_KEY.encode(),
-                quote_id_str.encode(),
-                hashlib.sha256,
-            ).hexdigest()
-            if not quote_id_str.isdigit() or not hmac.compare_digest(sig, expected):
-                raise ValueError("bad signature")
-            quote_id = int(quote_id_str)
+            parts = raw.split(".")
+
+            # v2 format: v2.{quote_id}.{version}.{expires_ts}.{hmac}
+            if len(parts) == 5 and parts[0] == "v2":
+                _, quote_id_str, version_str, expires_str, sig = parts
+                if not quote_id_str.isdigit() or not version_str.isdigit() or not expires_str.isdigit():
+                    raise ValueError("invalid format")
+
+                quote_id = int(quote_id_str)
+                version = int(version_str)
+                expires_ts = int(expires_str)
+
+                # Check expiry
+                if expires_ts < now_ts:
+                    raise NotFoundException("Quotation", 0)
+
+                # Verify HMAC: scoped to quotes to prevent cross-type confusion
+                expected = hmac.new(
+                    secret.encode(),
+                    f"v2|quote|{quote_id}|{version}|{expires_ts}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+
+                if not hmac.compare_digest(sig, expected):
+                    raise ValueError("bad signature")
+
+            # Legacy format: {quote_id}.{hmac}
+            elif len(parts) == 2 and parts[0].isdigit():
+                quote_id_str, sig = parts
+                quote_id = int(quote_id_str)
+                version = None
+
+                # Check legacy cutoff date
+                cutoff_setting = getattr(settings, "PUBLIC_INVOICE_LEGACY_TOKEN_UNTIL", None)
+                if cutoff_setting:
+                    try:
+                        cutoff_date = date.fromisoformat(cutoff_setting) if isinstance(cutoff_setting, str) else cutoff_setting
+                        if date.today() > cutoff_date:
+                            raise NotFoundException("Quotation", 0)
+                    except (ValueError, TypeError):
+                        pass
+
+                expected = hmac.new(
+                    secret.encode(),
+                    quote_id_str.encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+                if not hmac.compare_digest(sig, expected):
+                    raise ValueError("bad signature")
+
+                logger.info("Legacy public quote token used for quote %d", quote_id)
+            else:
+                raise ValueError("unrecognized token format")
+
         except Exception:
             raise NotFoundException("Quotation", 0)
+
         quote = self.db.query(Quotation).filter(Quotation.id == quote_id).first()
-        if quote is None:
+        if quote is None or getattr(quote, "deleted_at", None) is not None:
             raise NotFoundException("Quotation", quote_id)
+
+        # Version match check (for v2 tokens)
+        if version is not None and getattr(quote, "public_link_version", 1) != version:
+            raise NotFoundException("Quotation", quote_id)
+
+        # Cancelled quotes cannot be resolved publicly
+        if quote.status == QuoteStatus.CANCELLED:
+            raise NotFoundException("Quotation", quote_id)
+
         return quote
 
     def get_public_quote(self, token: str) -> Dict[str, Any]:

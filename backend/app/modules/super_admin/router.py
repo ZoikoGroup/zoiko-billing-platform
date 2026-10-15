@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.cache_service import cache_get_or_set
-from app.core.capabilities import require_capability
+from app.core.capabilities import require_any_capability, require_capability
 from app.core.dependencies import get_current_super_admin
 from app.core.rate_limiter import limit_route
 from app.database import get_db
@@ -68,6 +68,7 @@ from app.modules.super_admin.attention_service import AttentionService
 from app.modules.super_admin.lifecycle_service import TenantLifecycleService
 from app.modules.super_admin.organization_service import OrganizationDirectoryService
 from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
+from app.modules.super_admin.models import PrivilegedAccessStatus
 from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
 from app.modules.super_admin.saas_reporting_service import SaasReportingService
 from app.modules.super_admin.schemas import SaasReportingResponse
@@ -99,6 +100,7 @@ from app.modules.super_admin.schemas import (
     CommercialPlanVersionResponse,
     ConfigurationInventoryResponse,
     DashboardStats,
+    JobHealthItem,
     JobHealthListResponse,
     MetricDictionaryResponse,
     OrganizationHealthResponse,
@@ -107,7 +109,10 @@ from app.modules.super_admin.schemas import (
     PrivilegedAccessGrantListResponse,
     PrivilegedAccessGrantResponse,
     PrivilegedAccessRequestCreate,
-    PrivilegedAccessStepUp,
+    PrivilegedAccessRevokeRequest,
+    SupportAccessCredentialsResponse,
+    BreakGlassRequest,
+    BreakGlassReviewRequest,
     ProductionAcceptanceItem,
     ProductionAcceptanceReport,
     RejectApprovalRequest,
@@ -162,11 +167,11 @@ from app.modules.super_admin.schemas import (
     BillingOverviewResponse,
     BillingTrendPoint,
     BillingTrendResponse,
-    OverdueInvoiceRow,
+    OverdueByTenantRow,
     OverdueInvoiceListResponse,
-    CollectionsRiskRow,
+    CollectionsRiskTenantRow,
     CollectionsRiskListResponse,
-    BillingActivityItem,
+    BillingActivityTenantRow,
     BillingActivityListResponse,
     EmailFailureListResponse,
     EmailDeliveryOverviewResponse,
@@ -305,7 +310,7 @@ def list_platform_users(
                 is_active=u.is_active,
                 created_at=u.created_at,
                 mfa_enabled=mfa_enabled_by_user_id.get(u.id, False) if u.role == UserRole.SUPER_ADMIN else None,
-                platform_role=(u.platform_role.value if u.platform_role else "platform_administrator") if u.role == UserRole.SUPER_ADMIN else None,
+                platform_role=(u.platform_role.value if u.platform_role else None) if u.role == UserRole.SUPER_ADMIN else None,
                 derived_status=user_admin.derived_status(u),
                 last_login_at=u.last_login_at,
                 subscription_status=sub.status if sub else None,
@@ -562,7 +567,7 @@ def set_platform_role(
             f"Unknown platform_role {platform_role!r}. Valid values: {[r.value for r in PlatformRole]}"
         )
 
-    old_role = target.platform_role.value if target.platform_role else "platform_administrator"
+    old_role = target.platform_role.value if target.platform_role else None
     target.platform_role = new_role
 
     from app.modules.super_admin.audit_service import PlatformAuditService
@@ -2479,6 +2484,36 @@ def decide_approval_request(
 # separately and is NOT exposed through this endpoint. Tenants are rejected by
 # get_current_super_admin (403) before the body runs.
 
+@router.get("/audit-logs/verify", summary="Verify audit log hash chain integrity")
+def verify_audit_chain_endpoint(
+    current_user=Depends(require_capability("audit.read")),
+    db: Session = Depends(get_db),
+):
+    """Verify tamper-evident hash chain across all platform audit logs (AUD-01)."""
+    from sqlalchemy import func
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditLog
+
+    broken_id = PlatformAuditService.verify_audit_chain(db)
+    total_records = db.query(func.count(PlatformAuditLog.id)).filter(
+        PlatformAuditLog.row_hash.isnot(None)
+    ).scalar() or 0
+
+    if broken_id:
+        return {
+            "verified": False,
+            "broken_id": broken_id,
+            "total_records": total_records,
+            "message": f"Chain broken at record #{broken_id}",
+        }
+    return {
+        "verified": True,
+        "broken_id": None,
+        "total_records": total_records,
+        "message": f"Chain verified, {total_records} records",
+    }
+
+
 @router.get("/audit-logs", response_model=PlatformAuditLogListResponse)
 def list_platform_audit_logs(
     skip: int = Query(0, ge=0),
@@ -3516,9 +3551,37 @@ def get_production_acceptance_report(
 # Super Admin to see or act on another's privileged-access grant.
 # 
 
+# A break-glass opener (SECURITY_OPERATOR) never holds tenant_support.request,
+# but must still see, read and end the session they opened. These endpoints
+# stay owner-scoped in the service, so widening the role check exposes nothing
+# beyond the caller's own grants.
+_OWN_GRANT_CAPABILITIES = ("tenant_support.request", "tenant_support.break_glass")
+
+
 def _grant_to_response(grant) -> PrivilegedAccessGrantResponse:
     data = PrivilegedAccessGrantResponse.model_validate(grant)
-    data.organization_name = grant.organization.organization_name if grant.organization else None
+    org = grant.organization
+    data.organization_name = (org.display_name or org.organization_name) if org else None
+    data.organization_code = org.organization_code if org else None
+    # Look the users up by id: a relationship loaded before approval would
+    # still read as None in the same session.
+    from sqlalchemy.orm import object_session
+    from app.modules.auth.models import User
+
+    session = object_session(grant)
+
+    def _email(user_id):
+        if not user_id or session is None:
+            return None
+        user = session.get(User, user_id)
+        return user.email if user else None
+
+    data.requested_by_email = _email(grant.requested_by_user_id)
+    data.approved_by_email = _email(grant.approved_by_user_id)
+    # Every pending request waits on the tenant's organization admin.
+    data.awaiting_tenant_approval = grant.status == PrivilegedAccessStatus.PENDING_APPROVAL
+    data.approval_expires_at = PrivilegedAccessService.approval_deadline(grant)
+    data.activation_deadline = PrivilegedAccessService.activation_deadline(grant)
     return data
 
 
@@ -3526,9 +3589,12 @@ def _grant_to_response(grant) -> PrivilegedAccessGrantResponse:
 def request_privileged_access(
     payload: PrivilegedAccessRequestCreate,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user=Depends(require_capability('tenant_support.request')),
     db: Session = Depends(get_db),
 ):
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
     grant = PrivilegedAccessService(db).request_access(
         actor=current_user,
         organization_id=payload.organization_id,
@@ -3536,29 +3602,107 @@ def request_privileged_access(
         ticket_reference=payload.ticket_reference,
         requested_minutes=payload.requested_minutes,
         background_tasks=background_tasks,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
     return _grant_to_response(grant)
 
 
-@router.post("/privileged-access/{grant_id}/activate", response_model=PrivilegedAccessGrantResponse)
-def activate_privileged_access(
-    grant_id: int,
-    payload: PrivilegedAccessStepUp,
-    current_user=Depends(require_capability('tenant_support.activate')),
+@router.get("/privileged-access/live", response_model=PrivilegedAccessGrantListResponse)
+def list_live_privileged_access(
+    current_user=Depends(require_capability('tenant_support.revoke')),
     db: Session = Depends(get_db),
 ):
-    grant = PrivilegedAccessService(db).activate(
+    """Every pending, approved or active grant across all operators, so a
+    revoker can see who currently holds (or is about to hold) tenant access."""
+    grants = PrivilegedAccessService(db).list_live_grants()
+    return PrivilegedAccessGrantListResponse(grants=[_grant_to_response(g) for g in grants])
+
+
+@router.post("/privileged-access/{grant_id}/cancel", response_model=PrivilegedAccessGrantResponse)
+def cancel_privileged_access_request(
+    grant_id: int,
+    current_user=Depends(require_capability('tenant_support.request')),
+    db: Session = Depends(get_db),
+):
+    """The requester withdraws their own request before it becomes active."""
+    grant = PrivilegedAccessService(db).cancel_request(current_user, grant_id)
+    return _grant_to_response(grant)
+
+
+@router.post("/privileged-access/{grant_id}/revoke", response_model=PrivilegedAccessGrantResponse)
+def revoke_privileged_access(
+    grant_id: int,
+    payload: PrivilegedAccessRevokeRequest,
+    request: Request,
+    current_user=Depends(require_capability('tenant_support.revoke')),
+    db: Session = Depends(get_db),
+):
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    grant = PrivilegedAccessService(db).revoke_grant(
         actor=current_user,
         grant_id=grant_id,
-        code=payload.code,
-        recovery_code=payload.recovery_code,
+        reason=payload.reason,
+        is_tenant=False,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
     return _grant_to_response(grant)
+
+
+@router.post("/privileged-access/break-glass", response_model=PrivilegedAccessGrantResponse)
+def open_break_glass_access(
+    payload: BreakGlassRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    current_user=Depends(require_capability('tenant_support.break_glass')),
+    db: Session = Depends(get_db),
+):
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    grant = PrivilegedAccessService(db).open_break_glass(
+        actor=current_user,
+        organization_id=payload.organization_id,
+        reason=payload.reason,
+        incident_reference=payload.incident_reference,
+        code=payload.code,
+        recovery_code=payload.recovery_code,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        background_tasks=background_tasks,
+    )
+    return _grant_to_response(grant)
+
+
+@router.post("/privileged-access/{grant_id}/review", response_model=PrivilegedAccessGrantResponse)
+def review_break_glass_access(
+    grant_id: int,
+    payload: BreakGlassReviewRequest,
+    current_user=Depends(require_capability('tenant_support.review_break_glass')),
+    db: Session = Depends(get_db),
+):
+    grant = PrivilegedAccessService(db).review_break_glass(
+        reviewer=current_user,
+        grant_id=grant_id,
+        outcome=payload.outcome,
+        note=payload.note,
+    )
+    return _grant_to_response(grant)
+
+
+@router.get("/privileged-access/pending-review", response_model=PrivilegedAccessGrantListResponse)
+def list_pending_break_glass_reviews(
+    current_user=Depends(require_capability('tenant_support.review_break_glass')),
+    db: Session = Depends(get_db),
+):
+    grants = PrivilegedAccessService(db).list_pending_reviews(current_user)
+    return PrivilegedAccessGrantListResponse(grants=[_grant_to_response(g) for g in grants])
 
 
 @router.get("/privileged-access/active", response_model=Optional[PrivilegedAccessGrantResponse])
 def get_active_privileged_access(
-    current_user=Depends(require_capability('tenant_support.request')),
+    current_user=Depends(require_any_capability(*_OWN_GRANT_CAPABILITIES)),
     db: Session = Depends(get_db),
 ):
     grant = PrivilegedAccessService(db).get_active_or_pending_grant(current_user)
@@ -3568,7 +3712,7 @@ def get_active_privileged_access(
 @router.post("/privileged-access/{grant_id}/exit", response_model=PrivilegedAccessGrantResponse)
 def exit_privileged_access(
     grant_id: int,
-    current_user=Depends(require_capability('tenant_support.exit')),
+    current_user=Depends(require_any_capability('tenant_support.exit', 'tenant_support.break_glass')),
     db: Session = Depends(get_db),
 ):
     grant = PrivilegedAccessService(db).exit_grant(current_user, grant_id)
@@ -3578,17 +3722,30 @@ def exit_privileged_access(
 @router.get("/privileged-access/mine", response_model=PrivilegedAccessGrantListResponse)
 def list_my_privileged_access(
     limit: int = Query(20, ge=1, le=100),
-    current_user=Depends(require_capability('tenant_support.request')),
+    current_user=Depends(require_any_capability(*_OWN_GRANT_CAPABILITIES)),
     db: Session = Depends(get_db),
 ):
     grants = PrivilegedAccessService(db).list_my_grants(current_user, limit=limit)
     return PrivilegedAccessGrantListResponse(grants=[_grant_to_response(g) for g in grants])
 
 
+@router.get("/privileged-access/{grant_id}/credentials", response_model=SupportAccessCredentialsResponse)
+def get_privileged_access_credentials(
+    grant_id: int,
+    current_user=Depends(require_any_capability(*_OWN_GRANT_CAPABILITIES)),
+    db: Session = Depends(get_db),
+):
+    """The temporary read-only tenant login for the caller's own ACTIVE
+    session. Every read is audited; it stops working when the session ends."""
+    return SupportAccessCredentialsResponse(
+        **PrivilegedAccessService(db).get_support_credentials(current_user, grant_id)
+    )
+
+
 @router.get("/privileged-access/{grant_id}/tenant-summary", response_model=TenantAccessSummaryResponse)
 def get_privileged_access_tenant_summary(
     grant_id: int,
-    current_user=Depends(require_capability('tenant_support.request')),
+    current_user=Depends(require_any_capability(*_OWN_GRANT_CAPABILITIES)),
     db: Session = Depends(get_db),
 ):
     """Read-only Domain B snapshot, built from the same authoritative
@@ -3852,7 +4009,7 @@ def list_failed_payments(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:failed-payments:{limit}",
+        f"fo:v2:failed-payments:{limit}",
         lambda: _fo_detail_service(db).list_failed_payments(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3865,7 +4022,7 @@ def list_dunning_cases(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:dunning-cases:{limit}",
+        f"fo:v2:dunning-cases:{limit}",
         lambda: _fo_detail_service(db).list_dunning_cases(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3878,7 +4035,7 @@ def list_allocation_exceptions(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:allocation-exceptions:{limit}",
+        f"fo:v2:allocation-exceptions:{limit}",
         lambda: _fo_detail_service(db).list_allocation_exceptions(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3891,7 +4048,7 @@ def list_credit_applications(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:credit-applications:{limit}",
+        f"fo:v2:credit-applications:{limit}",
         lambda: _fo_detail_service(db).list_credit_applications(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3904,7 +4061,7 @@ def list_credit_notes(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:credit-notes:{limit}",
+        f"fo:v2:credit-notes:{limit}",
         lambda: _fo_detail_service(db).list_credit_notes(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3917,7 +4074,7 @@ def list_refunds(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:refunds:{limit}",
+        f"fo:v2:refunds:{limit}",
         lambda: _fo_detail_service(db).list_refunds(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -3930,7 +4087,7 @@ def list_write_offs(
     db: Session = Depends(get_db),
 ):
     return cache_get_or_set(
-        f"fo:write-offs:{limit}",
+        f"fo:v2:write-offs:{limit}",
         lambda: _fo_detail_service(db).list_write_offs(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
@@ -4010,13 +4167,14 @@ def list_billing_command_overdue_invoices(
     db: Session = Depends(get_db),
 ):
     data = cache_get_or_set(
-        f"bcc:overdue-invoices:{limit}",
+        f"bcc:v2:overdue-invoices:{limit}",
         lambda: _bcc_service(db).list_overdue_invoices(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
     return OverdueInvoiceListResponse(
         total=data["total"],
-        invoices=[OverdueInvoiceRow(**row) for row in data["invoices"]],
+        total_label=data["total_label"],
+        invoices=[OverdueByTenantRow(**row) for row in data["invoices"]],
     )
 
 
@@ -4027,11 +4185,11 @@ def list_billing_command_collections_risk(
     db: Session = Depends(get_db),
 ):
     data = cache_get_or_set(
-        f"bcc:collections-risk:{limit}",
+        f"bcc:v2:collections-risk:{limit}",
         lambda: _bcc_service(db).list_collections_risk(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
-    return CollectionsRiskListResponse(rows=[CollectionsRiskRow(**row) for row in data["rows"]])
+    return CollectionsRiskListResponse(rows=[CollectionsRiskTenantRow(**row) for row in data["rows"]])
 
 
 @router.get("/billing-command-center/recent-activity", response_model=BillingActivityListResponse)
@@ -4041,11 +4199,11 @@ def list_billing_command_recent_activity(
     db: Session = Depends(get_db),
 ):
     data = cache_get_or_set(
-        f"bcc:recent-activity:{limit}",
+        f"bcc:v2:recent-activity:{limit}",
         lambda: _bcc_service(db).list_recent_activity(limit),
         ttl=settings.REDIS_DASHBOARD_TTL,
     )
-    return BillingActivityListResponse(items=[BillingActivityItem(**item) for item in data["items"]])
+    return BillingActivityListResponse(items=[BillingActivityTenantRow(**item) for item in data["items"]])
 
 
 # 
@@ -4117,21 +4275,37 @@ def get_reconciliation_run(
     run = db.get(ReconciliationRun, run_id)
     if run is None or run.plane != "plane2":
         raise NotFoundException(f"Reconciliation run {run_id} not found")
+    from app.modules.super_admin.reconciliation_service import (
+        sanitize_exception_detail,
+        summarize_run_exceptions,
+    )
+    from app.modules.organizations.models import Organization
+
     exceptions = (
         db.query(ReconciliationException)
         .filter(ReconciliationException.run_id == run_id)
         .order_by(ReconciliationException.id.asc())
         .all()
     )
+    org_names = {
+        oid: name
+        for oid, name in db.query(Organization.id, Organization.organization_name)
+        .filter(Organization.id.in_({e.organization_id for e in exceptions if e.organization_id}))
+        .all()
+    } if exceptions else {}
     data = _serialize_reconciliation_run(run)
+    # `id` is the platform-owned workflow ticket id (acknowledge/resolve); the
+    # underlying record reference (entity_id) and document numbers are never
+    # returned. `detail` passes a reviewed allowlist only.
     data["exceptions"] = [
         {
             "id": e.id,
+            "run_id": e.run_id,
             "kind": e.kind,
             "organization_id": e.organization_id,
+            "organization_name": org_names.get(e.organization_id),
             "entity_type": e.entity_type,
-            "entity_id": e.entity_id,
-            "detail": e.detail,
+            "detail": sanitize_exception_detail(e.detail),
             "status": e.status.value if hasattr(e.status, "value") else str(e.status),
             "owner_user_id": e.owner_user_id,
             "acknowledged_at": str(e.acknowledged_at) if e.acknowledged_at else None,
@@ -4140,6 +4314,7 @@ def get_reconciliation_run(
         }
         for e in exceptions
     ]
+    data["exception_summary"] = summarize_run_exceptions(db, run_id)
     return data
 
 

@@ -17,6 +17,7 @@ import {
   listSubscriptionAuditLogs,
   listCommercialAccounts,
   listSuperAdminUsers,
+  verifyAuditChain,
 } from "../../service/commercialService";
 import { PageHeader, DataTable, Modal, Select, SearchInput, Button, Field, HubTabs, SectionCard } from "../../components/billing-ui";
 import { Pagination, ErrorState, SuccessMessage } from "../../components/billing-shared";
@@ -658,6 +659,27 @@ export default function AuditLogsPage() {
   const [exportError, setExportError] = useState(null);
   const [notice, setNotice] = useState(null);
 
+  const [chainStatus, setChainStatus] = useState(null);
+  const [verifyingChain, setVerifyingChain] = useState(false);
+
+  const checkChain = useCallback(async () => {
+    setVerifyingChain(true);
+    try {
+      const res = await verifyAuditChain();
+      setChainStatus(res);
+    } catch (err) {
+      setChainStatus({ verified: false, message: err?.message || "Failed to verify chain" });
+    } finally {
+      setVerifyingChain(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "platform") {
+      checkChain();
+    }
+  }, [tab, checkChain]);
+
   const loadFilterOptions = useCallback(() => {
     let cancelled = false;
     setOptionsError(null);
@@ -1069,6 +1091,40 @@ export default function AuditLogsPage() {
                 className="shrink-0 text-xs font-semibold text-red-600 hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
               >
                 Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* ── Hash Chain Verification Banner ── */}
+          {tab === "platform" && chainStatus && (
+            <div
+              role="status"
+              className={`mt-4 flex items-center justify-between gap-3 rounded-2xl border p-4 ${
+                chainStatus.verified
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-red-200 bg-red-50"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {chainStatus.verified ? (
+                  <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <ShieldCheck className="h-5 w-5 text-red-600 shrink-0" />
+                )}
+                <span className={`text-sm font-semibold ${chainStatus.verified ? "text-emerald-700" : "text-red-700"}`}>
+                  {chainStatus.verified
+                    ? `Cryptographic hash chain verified · ${chainStatus.total_records?.toLocaleString() ?? "—"} record(s)`
+                    : `⚠ Tamper alert: ${chainStatus.message}`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={checkChain}
+                disabled={verifyingChain}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {verifyingChain ? <RotateCcw className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Re-verify
               </button>
             </div>
           )}

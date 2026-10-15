@@ -201,6 +201,25 @@ def _invalidate_pending_action_tokens(db: Session, email: str, purpose) -> int:
 
 # ── Login ───────────────────────────────────────────────────────────────────
 
+TEMPORARY_ACCESS_ENDED = "This temporary support access has ended."
+
+
+def _ensure_temporary_access_live(user, now: Optional[datetime] = None) -> None:
+    """Temporary support-access accounts stop working at access_expires_at,
+    whatever the background deactivation job has or hasn't done yet."""
+    expires_at = getattr(user, "access_expires_at", None)
+    if expires_at is not None and (now or datetime.utcnow()) >= expires_at:
+        raise UnauthorizedException(TEMPORARY_ACCESS_ENDED)
+
+
+def _access_token_lifetime(user, now: Optional[datetime] = None) -> Optional[timedelta]:
+    """Cap a temporary account's access token at its remaining lifetime."""
+    expires_at = getattr(user, "access_expires_at", None)
+    if expires_at is None:
+        return None
+    default = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return max(timedelta(seconds=1), min(default, expires_at - (now or datetime.utcnow())))
+
 def login_user(
     db: Session, email: str, password: str, background_tasks: Optional["BackgroundTasks"] = None
 ) -> dict:
@@ -245,6 +264,7 @@ def login_user(
                 "Your organization has been suspended. Please contact support."
             )
 
+    _ensure_temporary_access_live(user, now)
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
 
@@ -270,7 +290,7 @@ def login_user(
     # via mfa_service.verify_step_up() (grant activation, circuit-breaker
     # toggles/proposals/decisions). There is deliberately no fallback that
     # bypasses that step-up.
-    access_token = create_access_token(data=token_payload)
+    access_token = create_access_token(data=token_payload, expires_delta=_access_token_lifetime(user, now))
     refresh_token = create_refresh_token(data=token_payload)
 
     logger.info("User %s (%s) logged in", user.email, user.role.value)
@@ -297,6 +317,7 @@ def login_user_via_google(db: Session, email: str) -> dict:
         org = db.query(Organization).filter(Organization.id == user.organization_id).first()
         if org is not None and not org.is_active:
             raise UnauthorizedException("Your organization has been suspended. Please contact support.")
+    _ensure_temporary_access_live(user)
     if not user.is_active:
         raise UnauthorizedException("Your account has been deactivated.")
 
@@ -311,7 +332,7 @@ def login_user_via_google(db: Session, email: str) -> dict:
     }
     logger.info("User %s (%s) logged in via Google", user.email, user.role.value)
     return {
-        "access_token": create_access_token(data=token_payload),
+        "access_token": create_access_token(data=token_payload, expires_delta=_access_token_lifetime(user)),
         "refresh_token": create_refresh_token(data=token_payload),
         "token_type": "bearer",
         "user": user,
@@ -332,6 +353,7 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
         raise BadRequestException("The database is temporarily unavailable. Please try again in a moment.")
     if user is None or not user.is_active:
         raise UnauthorizedException("User not found or inactive.")
+    _ensure_temporary_access_live(user)
 
     if user.organization_id:
         org = db.query(Organization).filter(Organization.id == user.organization_id).first()
@@ -343,7 +365,7 @@ def refresh_user_token(db: Session, refresh_token: str) -> dict:
         "role": user.role.value,
         "user_id": user.id,
         "organization_id": user.organization_id,
-    })
+    }, expires_delta=_access_token_lifetime(user))
     return {
         "access_token": new_access,
         "refresh_token": refresh_token,

@@ -22,7 +22,7 @@ vi.mock("../../../service/api", () => ({
   api: { get: (...args) => mockApiGet(...args) },
 }));
 
-let mockUser = { platform_role: null };
+let mockUser = { platform_role: "platform_administrator" };
 vi.mock("../../../context/AuthContext", () => ({
   useAuth: () => ({ user: mockUser }),
 }));
@@ -38,7 +38,7 @@ function renderLens(jobs = []) {
 }
 
 beforeEach(() => {
-  mockUser = { platform_role: null }; // platform_administrator-equivalent (full access)
+  mockUser = { platform_role: "platform_administrator" }; // explicit full access (NULL grants nothing, GOV-01)
   mockGetApiTelemetry.mockReset().mockResolvedValue({ sample_count: 0 });
   mockGetConfigurationInventory.mockReset();
   mockApiGet.mockReset();

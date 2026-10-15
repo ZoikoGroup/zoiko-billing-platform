@@ -31,6 +31,7 @@ Correctness model
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 import os
 
 from sqlalchemy import event, inspect as sa_inspect
@@ -84,6 +85,8 @@ def get_cached_user(db: Session, user_id: int):
         user.role = UserRole(entry["role"])
         user.organization_id = entry["organization_id"]
         user.is_active = bool(entry["is_active"])
+        expires = entry.get("access_expires_at")
+        user.access_expires_at = datetime.fromisoformat(expires) if expires else None
         make_transient_to_detached(user)
         db.add(user)
     except Exception:  # noqa: BLE001 - never let the cache break auth
@@ -104,6 +107,9 @@ def store_user(user) -> None:
             "role": str(role),
             "organization_id": user.organization_id,
             "is_active": True,
+            "access_expires_at": (
+                user.access_expires_at.isoformat() if getattr(user, "access_expires_at", None) else None
+            ),
         },
         ttl=ttl,
     )

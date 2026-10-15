@@ -197,9 +197,11 @@ def test_g02_platform_config_capability_boundaries():
     assert has_capability(security, "platform_config.read")
     assert has_capability(security, "platform_config.manage")
 
-    # Legacy NULL platform_role keeps full access (backward compatibility).
+    # GOV-01: a NULL platform_role grants nothing.
     legacy = _user("legacy@g02.example", platform_role=None)
-    assert has_capability(legacy, "platform_config.manage")
+    assert not has_capability(legacy, "platform_config.manage")
+    admin = _user("admin@g02.example", platform_role=PlatformRole.PLATFORM_ADMINISTRATOR)
+    assert has_capability(admin, "platform_config.manage")
 
 
 def test_g02_require_capability_dependency_refuses_missing_manage():

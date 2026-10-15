@@ -19,10 +19,14 @@ def run_attention_maintenance_job() -> None:
 
     db = SessionLocal()
     try:
-        lifted = AttentionService(db).lift_expired_suppressions()
+        attention = AttentionService(db)
+        lifted = attention.lift_expired_suppressions()
+        overdue = attention.check_overdue_break_glass_reviews()
         db.commit()
         if lifted:
             logger.info("Lifted %d expired attention suppression(s)", lifted)
+        if overdue:
+            logger.info("Escalated %d overdue break-glass review(s) to P0", overdue)
     except Exception:
         db.rollback()
         logger.exception("Attention maintenance job failed")

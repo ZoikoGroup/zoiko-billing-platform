@@ -495,6 +495,7 @@ export const invoiceApi = {
   addCommunicationNote: (id, data) => api.post(ENDPOINTS.INVOICE_COMMUNICATIONS(id), data),
   getTimeline: (id) => api.get(ENDPOINTS.INVOICE_TIMELINE(id)),
   getPublicLink: (id) => api.get(ENDPOINTS.INVOICE_PUBLIC_LINK(id)),
+  revokePublicLink: (id) => api.post(ENDPOINTS.INVOICE_REVOKE_PUBLIC_LINK(id)),
 };
 
 export const publicInvoiceApi = {

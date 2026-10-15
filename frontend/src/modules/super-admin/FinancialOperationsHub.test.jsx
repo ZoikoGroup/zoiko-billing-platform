@@ -181,3 +181,77 @@ describe("FinancialOperationsPage hub", () => {
     expect(await screen.findByText(/no invoices exist on the platform yet/i)).toBeInTheDocument();
   });
 });
+
+// ZB-SEC-PRIV-001 — platform views render one row per tenant: no customer or
+// invoice identifiers, masked small cells, tenant links, support-access note.
+describe("per-tenant privacy-preserving tables", () => {
+  const MASKED = { count: null, count_label: "fewer than 5" };
+  const MASKED_TOTAL = { count: null, count_label: "fewer than 5", amount: null };
+
+  function expectPrivacyChrome(orgName, orgId) {
+    expect(screen.getAllByRole("link", { name: orgName })[0]).toHaveAttribute("href", `/super-admin/organizations/${orgId}`);
+    expect(screen.getAllByTestId("support-access-note")[0]).toHaveTextContent("Record-level detail requires approved support access");
+    expect(screen.getAllByRole("link", { name: /approved support access/i })[0]).toHaveAttribute("href", "/super-admin/support-access");
+    expect(screen.queryByRole("columnheader", { name: /^(customer|invoice|invoice #|credit note|refund|write-off)$/i })).not.toBeInTheDocument();
+  }
+
+  it("Overview overdue and collections-risk tables are per tenant with masked cells", async () => {
+    svc.listBillingOverdueInvoices.mockResolvedValue({
+      total: 14,
+      invoices: [
+        { organization_id: 7, organization_name: "Tiny Tenant", overdue_invoice_count: null, overdue_invoice_count_label: "fewer than 5", overdue_total_by_currency: { USD: MASKED_TOTAL }, oldest_days_overdue_bucket: "31-60" },
+        { organization_id: 8, organization_name: "Big Tenant", overdue_invoice_count: 12, overdue_invoice_count_label: null, overdue_total_by_currency: { USD: { count: 8, count_label: null, amount: "1200.50" }, EUR: { count: 4, count_label: null, amount: "10.00" } }, oldest_days_overdue_bucket: "90+" },
+      ],
+    });
+    svc.listBillingCollectionsRisk.mockResolvedValue({
+      rows: [{ organization_id: 8, organization_name: "Big Tenant", accounts_at_risk_count: 9, risk_high_count: 5, risk_medium_count: null, risk_medium_count_label: "fewer than 5", total_overdue_by_currency: { USD: { count: 9, count_label: null, amount: "99.00" } } }],
+    });
+    svc.listBillingRecentActivity.mockResolvedValue({
+      items: [{ organization_id: 8, organization_name: "Big Tenant", event_type: "payment_failed", event_count: 20, event_count_label: null, last_event_at: "2026-01-01T00:00:00Z" }],
+    });
+    renderHub();
+    expect(await screen.findByRole("link", { name: "Tiny Tenant" })).toHaveAttribute("href", "/super-admin/organizations/7");
+    expect(screen.getAllByTestId("masked-value").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByTestId("masked-value")[0]).toHaveAttribute("title", "Counts under 5 are hidden to protect individual customers' privacy");
+    expect(screen.getByText("1,200.50")).toBeInTheDocument();
+    expect(screen.getByText("EUR")).toBeInTheDocument(); // totals stay per currency
+    expectPrivacyChrome("Big Tenant", 8);
+  });
+
+  it("Payments & Recovery renders failure-reason categories and stage counts per tenant", async () => {
+    svc.listFailedPayments.mockResolvedValue({
+      total: 30,
+      items: [{ organization_id: 3, organization_name: "Acme", failed_count: 30, failed_count_label: null, failed_total_by_currency: { USD: { count: 30, count_label: null, amount: "500.00" } }, top_failure_reasons: [{ reason: "card_declined", count: 20, count_label: null }, { reason: "expired_card", count: null, count_label: "fewer than 5" }] }],
+    });
+    svc.listDunningCases.mockResolvedValue({
+      total: 6,
+      items: [{ organization_id: 3, organization_name: "Acme", case_count_by_stage: { stage_1: { count: 6, count_label: null }, stage_2: MASKED } }],
+    });
+    renderHub("/super-admin/financial-operations?section=payments-recovery");
+    expect(await screen.findByText("card declined")).toBeInTheDocument();
+    expect(screen.getByText("500.00")).toBeInTheDocument();
+    expect(screen.getAllByTestId("masked-value").length).toBe(2);
+    expectPrivacyChrome("Acme", 3);
+  });
+
+  it("Balances & Allocations and Credits tabs render per-tenant aggregates", async () => {
+    svc.listAllocationExceptions.mockResolvedValue({ total: 7, items: [{ organization_id: 4, organization_name: "Alloc Co", exception_count_by_type: { over_allocated_invoice: { count: 7, count_label: null } } }] });
+    svc.listCreditApplications.mockResolvedValue({ total: 0, items: [{ organization_id: 4, organization_name: "Alloc Co", count_by_status: { applied: MASKED }, total_by_currency: { GBP: MASKED_TOTAL } }] });
+    renderHub("/super-admin/financial-operations?section=balances-allocations");
+    expect(await screen.findByText("over allocated invoice")).toBeInTheDocument();
+    expect(screen.getAllByTestId("masked-value").length).toBe(2);
+    expectPrivacyChrome("Alloc Co", 4);
+  });
+
+  it("Credits, Refunds & Write-offs renders status counts and per-currency totals per tenant", async () => {
+    const row = { organization_id: 5, organization_name: "Refund Co", count_by_status: { completed: { count: 9, count_label: null } }, total_by_currency: { USD: { count: 9, count_label: null, amount: "77.00" } } };
+    svc.listCreditNotesAdmin.mockResolvedValue({ total: 9, items: [row], status_distribution: [{ status: "issued", count: 9 }] });
+    svc.listRefundsAdmin.mockResolvedValue({ total: 9, items: [row], status_distribution: [] });
+    svc.listWriteOffsAdmin.mockResolvedValue({ total: 0, items: [{ ...row, count_by_status: { approved: MASKED }, total_by_currency: { USD: MASKED_TOTAL } }], status_distribution: [] });
+    renderHub("/super-admin/financial-operations?section=credits-refunds");
+    expect((await screen.findAllByText("77.00")).length).toBe(2);
+    expect(screen.getAllByTestId("masked-value").length).toBe(2);
+    expectPrivacyChrome("Refund Co", 5);
+    expect(screen.getAllByTestId("support-access-note")).toHaveLength(3);
+  });
+});

@@ -273,6 +273,18 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "attention_maintenance_job",
             "Attention Suppression Expiry Sweep",
         ),
+        (
+            "app.modules.super_admin.tasks.support_access_expiry:run_support_access_expiry_job",
+            1,
+            "support_access_expiry_job",
+            "Support Access Expiry Sweep",
+        ),
+        (
+            "app.modules.super_admin.tasks.security_detection:run_security_detection_job",
+            5,
+            "security_detection_job",
+            "Security & Anomaly Detection (AUD-03, GOV-08)",
+        ),
     ]
 
 

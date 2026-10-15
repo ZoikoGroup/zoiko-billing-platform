@@ -44,6 +44,7 @@ import {
   ChevronsRight,
   LogOut,
   Link2,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
@@ -206,6 +207,7 @@ const SUPER_ADMIN_NAV_SECTIONS = [
     items: [
       { label: "Organizations", href: "/super-admin/organizations", icon: Building2 },
       { label: "Users", href: "/super-admin/users", icon: UserCog },
+      { label: "Support Access (JIT)", href: "/super-admin/support-access", icon: Shield },
     ],
   },
   {
@@ -244,6 +246,7 @@ const WORKSPACE_NAV_ITEMS = [
 
 const FOOTER_NAV_ITEMS = [
   { label: "User Management", href: "/organization-admin/users", icon: UserCog },
+  { label: "Platform Support Access", href: "/organization-admin/privileged-access-log", icon: Shield },
 ];
 
 function isActive(href, pathname, search = "") {
@@ -569,7 +572,7 @@ export function SidebarContent({ onNavigate, role }) {
         ))}
 
         {visibleFooter.length > 0 ? (
-          <div className="mt-10 border-t border-white/10 pt-6">
+          <div className="mt-10 space-y-3 border-t border-white/10 pt-6">
             {visibleFooter.map((item) => (
               <MenuItem
                 key={item.label}

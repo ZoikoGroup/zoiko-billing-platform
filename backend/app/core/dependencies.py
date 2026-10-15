@@ -14,6 +14,8 @@ it must explicitly pass an organization_id (get_super_admin_organization_id
 or require_organization_access), or it is blocked.
 """
 
+from datetime import datetime
+
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import exc as sa_exc
@@ -102,6 +104,12 @@ def get_current_user(
     jwt_org_id = payload.get("organization_id")
     if jwt_org_id != user.organization_id:
         raise UnauthorizedException("Your organization assignment changed. Please log in again.")
+
+    # Temporary support-access accounts die at access_expires_at, even if a
+    # still-valid token or a cached auth entry says otherwise.
+    expires_at = getattr(user, "access_expires_at", None)
+    if expires_at is not None and datetime.utcnow() >= expires_at:
+        raise UnauthorizedException("This temporary support access has ended.")
 
     # A super_admin token must not carry an organization_id.
     if _role_value(user) == ROLE_SUPER_ADMIN and user.organization_id is not None:

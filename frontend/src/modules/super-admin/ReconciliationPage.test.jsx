@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { axe } from "../../test/a11y";
 
 // Phase 12 — Reconciliation UI completion (ISS-017 processor-comparison
@@ -67,7 +68,7 @@ beforeEach(() => {
 
 // 1. Page renders
 it("renders the Reconciliation page with its title and Run Now control", async () => {
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => expect(screen.getByText("Tenant Ledger Reconciliation")).toBeInTheDocument());
   expect(screen.getByRole("button", { name: /run now/i })).toBeInTheDocument();
   expect(screen.getByText(/compare with stripe/i)).toBeInTheDocument();
@@ -76,7 +77,7 @@ it("renders the Reconciliation page with its title and Run Now control", async (
 // 2. Existing ledger-only reconciliation remains functional (default behavior unchanged)
 it("submits a ledger-only run by default, with compareProcessor false and no dates", async () => {
   mockTriggerRun.mockResolvedValue({ ...BASE_RUN, id: 2 });
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
@@ -87,7 +88,7 @@ it("submits a ledger-only run by default, with compareProcessor false and no dat
 
 // 3 & 4. Processor comparison can be enabled; date range appears
 it("shows the date-range controls only once 'Compare with Stripe' is checked", async () => {
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   expect(screen.queryByLabelText(/start date/i)).not.toBeInTheDocument();
@@ -100,7 +101,7 @@ it("shows the date-range controls only once 'Compare with Stripe' is checked", a
 
 // 5. Invalid date range is rejected
 it("rejects a start date after the end date and disables the Run button", async () => {
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   fireEvent.click(screen.getByRole("checkbox", { name: /compare with stripe/i }));
@@ -113,7 +114,7 @@ it("rejects a start date after the end date and disables the Run button", async 
 });
 
 it("rejects an empty date range when comparison is enabled", async () => {
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
   fireEvent.click(screen.getByRole("checkbox", { name: /compare with stripe/i }));
   expect(screen.getByRole("button", { name: /run now/i })).toBeDisabled();
@@ -125,7 +126,7 @@ it("submits compareProcessor=true with the exact selected range", async () => {
     ...BASE_RUN, id: 3, state: "verified", processor_environment: "test",
     processor_stats: { records_inspected: 1, records_matched: 1, organizations_compared: [1], processor_errors: [], range_start: "2026-08-01", range_end: "2026-08-10" },
   });
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   fireEvent.click(screen.getByRole("checkbox", { name: /compare with stripe/i }));
@@ -143,7 +144,7 @@ it("submits compareProcessor=true with the exact selected range", async () => {
 it("disables the Run button and shows 'Running reconciliation…' while a run is in flight, preventing a duplicate submit", async () => {
   let resolveTrigger;
   mockTriggerRun.mockReturnValue(new Promise((resolve) => { resolveTrigger = resolve; }));
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
@@ -165,7 +166,7 @@ it("renders VERIFIED with an honest completion message, not a credential-based c
     processor_note: null,
     processor_stats: { records_inspected: 3, records_matched: 3, organizations_compared: [1], processor_errors: [] },
   });
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
 
@@ -181,7 +182,7 @@ it("renders PARTIAL using the backend-provided processor_note, not an invented r
     processor_note: "Stripe processor comparison was requested, but no organization has an ACTIVE Stripe connection in the 'test' environment — no Stripe API call was made.",
     processor_stats: null,
   });
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
 
@@ -204,7 +205,7 @@ it("renders FAILED with discrepancy classifications visible in the run detail, n
     ],
   });
   withRuns([{ ...BASE_RUN, id: 7, state: "failed", exceptions_found: 2 }]);
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
   await waitFor(() => expect(screen.getByText(/found 2 discrepancies — review below/i)).toBeInTheDocument());
@@ -225,7 +226,7 @@ it("renders processor statistics (records inspected/matched/organizations compar
     exceptions: [],
   });
   withRuns([{ ...BASE_RUN, id: 8, state: "verified", processor_environment: "test" }]);
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /view/i }));
   fireEvent.click(screen.getByRole("button", { name: /view/i }));
 
@@ -237,7 +238,7 @@ it("renders processor statistics (records inspected/matched/organizations compar
 // 14. API errors render safely, without hiding a successfully-loaded run history
 it("shows an action-error banner on a failed trigger, without hiding the already-loaded run history", async () => {
   mockTriggerRun.mockRejectedValue(Object.assign(new Error("Stripe error (rate_limit): too many requests"), { status: 500 }));
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /run now/i }));
@@ -251,7 +252,7 @@ it("shows an action-error banner on a failed trigger, without hiding the already
 it("shows a clear access error when the run list request is unauthorized, without crashing", async () => {
   mockListRuns.mockReset();
   mockListRuns.mockRejectedValue(Object.assign(new Error("Your platform role (support_operator) does not include the 'financial_consistency.read' capability."), { status: 403 }));
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
 
   await waitFor(() =>
     expect(screen.getByText(/does not include the 'financial_consistency.read' capability/i)).toBeInTheDocument()
@@ -272,7 +273,7 @@ it("never renders a Stripe secret key value, even if one were present in run dat
     exceptions: [],
   });
   withRuns([{ ...BASE_RUN, id: 9 }]);
-  const { container } = render(<ReconciliationPage />);
+  const { container } = render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /view/i }));
   fireEvent.click(screen.getByRole("button", { name: /view/i }));
   await waitFor(() => expect(screen.getByText(/only internal ledger invariants evaluated/i)).toBeInTheDocument());
@@ -286,7 +287,7 @@ it("never renders a Stripe secret key value, even if one were present in run dat
 // visually present. Matches the established page-level a11y pattern (see
 // customer-list.test.jsx).
 it("has no accessibility violations with the processor-comparison controls expanded (axe-core)", async () => {
-  const { container } = render(<ReconciliationPage />);
+  const { container } = render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
   fireEvent.click(screen.getByRole("checkbox", { name: /compare with stripe/i }));
   await waitFor(() => screen.getByLabelText(/start date/i));
@@ -302,13 +303,13 @@ const RUN_WITH_OPEN_EXCEPTION = {
   id: 9,
   exceptions_found: 1,
   exceptions: [
-    { id: 201, run_id: 9, kind: "invoice_balance_mismatch", organization_id: 1, entity_type: "invoice", entity_id: 77, detail: { expected: "10.00", actual: "12.00" }, status: "OPEN" },
+    { id: 201, run_id: 9, kind: "invoice_balance_mismatch", organization_id: 1, organization_name: "Acme Tenant", entity_type: "invoice", detail: { expected: "10.00", actual: "12.00" }, status: "OPEN" },
   ],
 };
 
 async function openResolveModal() {
   withRuns([{ ...BASE_RUN, id: 9, exceptions_found: 1 }]);
-  render(<ReconciliationPage />);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: /view/i }));
   fireEvent.click(await screen.findByRole("button", { name: /^resolve$/i }));
   return screen.findByRole("textbox");
@@ -350,4 +351,22 @@ it("does not allow submitting a whitespace-only resolution note", async () => {
   const note = await openResolveModal();
   fireEvent.change(note, { target: { value: "   " } });
   expect(screen.getAllByRole("button", { name: /^resolve$/i }).at(-1)).toBeDisabled();
+});
+
+it("renders the per-tenant exception summary with masked cells, tenant links and the support-access note", async () => {
+  mockGetRun.mockResolvedValue({
+    ...RUN_WITH_OPEN_EXCEPTION,
+    exception_summary: [
+      { organization_id: 1, organization_name: "Acme Tenant", exception_kind: "invoice_balance_mismatch", count: null, count_label: "fewer than 5", discrepancy_total_by_currency: { USD: { count: null, count_label: "fewer than 5", amount: null } } },
+      { organization_id: 2, organization_name: "Big Tenant", exception_kind: "invoice_balance_mismatch", count: 12, count_label: null, discrepancy_total_by_currency: { EUR: { count: 12, count_label: null, amount: "345.00" } } },
+    ],
+  });
+  withRuns([{ ...BASE_RUN, id: 9, exceptions_found: 1 }]);
+  render(<MemoryRouter><ReconciliationPage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: /view/i }));
+  expect((await screen.findAllByTestId("masked-value")).length).toBe(2);
+  expect(screen.getByText("345.00")).toBeInTheDocument();
+  expect(screen.getAllByRole("link", { name: "Acme Tenant" })[0]).toHaveAttribute("href", "/super-admin/organizations/1");
+  expect(screen.getByTestId("support-access-note")).toHaveTextContent("Record-level detail requires approved support access");
+  expect(screen.queryByText(/#77/)).not.toBeInTheDocument();
 });

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { OrganizationLink, MaskedValue, CurrencyTotals, SupportAccessNote, rowsOf } from "./PrivacyCells";
 import {
   LineChart,
   Line,
@@ -142,12 +143,6 @@ function SeverityBadge({ level }) {
         ? "bg-orange-50 text-orange-600"
         : "bg-emerald-50 text-emerald-600";
   return <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${styles}`}>{level}</span>;
-}
-
-function RiskBadge({ level }) {
-  const styles =
-    level === "High" ? "bg-red-50 text-red-600" : level === "Medium" ? "bg-orange-50 text-orange-600" : "bg-slate-100 text-slate-600";
-  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${styles}`}>{level}</span>;
 }
 
 function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub, subNode, sparkData, sparkColor }) {
@@ -692,62 +687,47 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {!r.overdue ? <PulseBlock innerRef={overdueDeferred.ref} className="h-64 lg:col-span-2" /> : <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-xs font-bold text-slate-800">Overdue Invoices</h3>
+            <h3 className="text-xs font-bold text-slate-800">Overdue Invoices by Tenant</h3>
             {overdue?.total > 0 && <span className="text-[10px] text-slate-400">{overdue.total} total</span>}
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-xs">
+            <table className="w-full min-w-[480px] text-left text-xs">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="pb-2 pr-3 font-medium">Invoice</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Customer</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Due</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Age</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Amount</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Status</th>
-                  <th scope="col" className="pb-2 font-medium"></th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Organization</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Overdue</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Oldest</th>
+                  <th scope="col" className="pb-2 text-right font-medium">Total by currency</th>
                 </tr>
               </thead>
               <tbody>
                 {sourceErrors.overdue ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={4}>
                       <PanelError message={sourceErrors.overdue} onRetry={loadAll} />
                     </td>
                   </tr>
-                ) : (overdue?.invoices || []).length === 0 ? (
+                ) : rowsOf(overdue).length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-xs text-slate-500">
+                    <td colSpan={4} className="py-6 text-center text-xs text-slate-500">
                       <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-500" />
                       Nothing is overdue. All open invoices are within terms.
                     </td>
                   </tr>
                 ) : (
-                  overdue.invoices.map((row) => (
-                    <tr key={row.invoice_id} className="border-t border-slate-100">
-                      <td className="py-2.5 pr-3 font-semibold text-brand-600">{row.invoice_number}</td>
-                      <td className="max-w-[160px] truncate py-2.5 pr-3 text-slate-700" title={row.customer_name}>
-                        {row.customer_name}
-                        <span className="block truncate text-[10px] font-normal text-slate-400">{row.organization_name}</span>
+                  rowsOf(overdue).map((row) => (
+                    <tr key={row.organization_id} className="border-t border-slate-100">
+                      <td className="max-w-[200px] truncate py-2.5 pr-3">
+                        <OrganizationLink organizationId={row.organization_id} name={row.organization_name} />
                       </td>
-                      <td className="py-2.5 pr-3 text-slate-500">
-                        {new Date(row.due_date).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                      <td className="py-2.5 pr-3 font-semibold text-slate-800">
+                        <MaskedValue value={row.overdue_invoice_count} label={row.overdue_invoice_count_label} />
                       </td>
-                      <td className="py-2.5 pr-3 font-medium text-red-500">{row.days_overdue}d</td>
-                      <td className="whitespace-nowrap py-2.5 pr-3 font-semibold text-slate-800">
-                        {money(row.amount)} <span className="text-[10px] font-normal text-slate-400">{row.currency}</span>
+                      <td className="py-2.5 pr-3 font-medium text-red-500">
+                        {row.oldest_days_overdue_bucket ? `${row.oldest_days_overdue_bucket}d` : "—"}
                       </td>
-                      <td className="py-2.5 pr-3">
-                        <span className="text-[11px] font-semibold text-red-500">Overdue</span>
-                      </td>
-                      <td className="py-2.5">
-                        <button
-                          type="button"
-                          onClick={() => navigate(`${FINOPS_HUB}?section=invoice-engine`)}
-                          className="text-[11px] font-medium text-brand-600 hover:underline"
-                        >
-                          Review
-                        </button>
+                      <td className="py-2.5 text-right">
+                        <CurrencyTotals totals={row.overdue_total_by_currency} />
                       </td>
                     </tr>
                   ))
@@ -755,8 +735,9 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
               </tbody>
             </table>
           </div>
+          <SupportAccessNote />
           <div className="mt-3">
-            <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>View all overdue invoices</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=invoice-engine`}>View invoice engine</PanelLink>
           </div>
         </SectionCard>}
 
@@ -808,16 +789,16 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
       {/* Collections Risk + Recent Activity */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {!r.risk ? <PulseBlock innerRef={riskDeferred.ref} className="h-64 lg:col-span-2" /> : <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
-          <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Risk</h3>
+          <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Risk by Tenant</h3>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-xs">
+            <table className="w-full min-w-[480px] text-left text-xs">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="pb-2 pr-3 font-medium">Customer</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Outstanding</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Risk</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Last payment</th>
-                  <th scope="col" className="pb-2 font-medium">Risk note</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Organization</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Accounts at risk</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">High</th>
+                  <th scope="col" className="pb-2 pr-3 font-medium">Medium</th>
+                  <th scope="col" className="pb-2 text-right font-medium">Overdue by currency</th>
                 </tr>
               </thead>
               <tbody>
@@ -827,72 +808,76 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
                       <PanelError message={sourceErrors.risk} onRetry={loadAll} />
                     </td>
                   </tr>
-                ) : (risk?.rows || []).length === 0 ? (
+                ) : rowsOf(risk).length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-6 text-center text-xs text-slate-500">
                       <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-500" />
-                      No customers carry an overdue balance right now.
+                      No tenant carries an overdue balance right now.
                     </td>
                   </tr>
                 ) : (
-                  risk.rows.map((row) => (
-                    <tr key={row.customer_id} className="border-t border-slate-100">
-                      <td className="py-2.5 pr-3">
-                        <span className="font-semibold text-brand-600">{row.customer_name}</span>
-                        <span className="block truncate text-[10px] font-normal text-slate-400">{row.organization_name}</span>
+                  rowsOf(risk).map((row) => (
+                    <tr key={row.organization_id} className="border-t border-slate-100">
+                      <td className="max-w-[200px] truncate py-2.5 pr-3">
+                        <OrganizationLink organizationId={row.organization_id} name={row.organization_name} />
                       </td>
-                      <td className="whitespace-nowrap py-2.5 pr-3 font-semibold text-slate-800">
-                        {money(row.outstanding)} <span className="text-[10px] font-normal text-slate-400">{row.currency}</span>
+                      <td className="py-2.5 pr-3 font-semibold text-slate-800">
+                        <MaskedValue value={row.accounts_at_risk_count} label={row.accounts_at_risk_count_label} />
                       </td>
-                      <td className="py-2.5 pr-3">
-                        <RiskBadge level={row.risk} />
+                      <td className="py-2.5 pr-3 font-medium text-red-600">
+                        <MaskedValue value={row.risk_high_count} label={row.risk_high_count_label} />
                       </td>
-                      <td className="py-2.5 pr-3 text-slate-500">
-                        {row.last_activity
-                          ? new Date(row.last_activity).toLocaleDateString([], { month: "short", day: "numeric" })
-                          : "Never"}
+                      <td className="py-2.5 pr-3 font-medium text-orange-600">
+                        <MaskedValue value={row.risk_medium_count} label={row.risk_medium_count_label} />
                       </td>
-                      <td className="py-2.5 text-slate-500 capitalize">{row.note}</td>
+                      <td className="py-2.5 text-right">
+                        <CurrencyTotals totals={row.total_overdue_by_currency} />
+                      </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
+          <SupportAccessNote />
           <div className="mt-3">
-            <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>View all customers at risk</PanelLink>
+            <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>View recovery &amp; collections</PanelLink>
           </div>
         </SectionCard>}
 
         {!r.activity ? <PulseBlock innerRef={activityDeferred.ref} className="h-64" /> : <SectionCard variant="standard" accent="brand">
-          <h3 className="mb-3 text-xs font-bold text-slate-800">Recent Activity</h3>
+          <h3 className="mb-3 text-xs font-bold text-slate-800">Recent Activity by Tenant</h3>
           <div className="space-y-3.5">
             {sourceErrors.activity ? (
               <PanelError message={sourceErrors.activity} onRetry={loadAll} />
-            ) : (activity?.items || []).length === 0 ? (
+            ) : rowsOf(activity).length === 0 ? (
               <p className="py-4 text-center text-xs text-slate-500">No billing activity recorded yet.</p>
             ) : (
-              activity.items.map((item, i) => {
-                const style = ACTIVITY_STYLES[item.kind] || ACTIVITY_STYLES.invoice_sent;
+              rowsOf(activity).map((item, i) => {
+                const style = ACTIVITY_STYLES[item.event_type] || ACTIVITY_STYLES.invoice_sent;
                 const Icon = style.icon;
                 return (
-                  <div key={`${item.kind}-${item.occurred_at}-${i}`} className="flex items-start gap-2.5">
+                  <div key={`${item.organization_id}-${item.event_type}-${i}`} className="flex items-start gap-2.5">
                     <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg}`}>
                       <Icon size={13} className={style.color} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-slate-800">{item.title}</div>
-                      <div className="truncate text-[10px] text-slate-400">{item.meta}</div>
+                      <div className="truncate text-xs font-semibold text-slate-800">
+                        <MaskedValue value={item.event_count} label={item.event_count_label} /> {String(item.event_type || "").replaceAll("_", " ")}
+                      </div>
+                      <div className="truncate text-[10px]">
+                        <OrganizationLink organizationId={item.organization_id} name={item.organization_name} />
+                      </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-[10px] text-slate-400">{relTime(item.occurred_at)}</div>
-                      {item.actor && <div className="max-w-[90px] truncate text-[10px] text-slate-400">{item.actor}</div>}
+                      <div className="text-[10px] text-slate-400">{relTime(item.last_event_at)}</div>
                     </div>
                   </div>
                 );
               })
             )}
           </div>
+          <SupportAccessNote />
           <div className="mt-4 border-t border-slate-100 pt-2 text-right">
             <PanelLink to="/super-admin/audit-logs">View all activity</PanelLink>
           </div>

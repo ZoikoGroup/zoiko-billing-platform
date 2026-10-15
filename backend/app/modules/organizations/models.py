@@ -119,6 +119,13 @@ class Organization(Base):
         nullable=False,
     )
 
+    # ZB-SEC-PRIV-001: when True, platform approval alone is insufficient —
+    # a tenant admin must also approve before a privileged support grant can
+    # be activated. Defaults to False (opt-in by the tenant org admin).
+    require_tenant_approval_for_support_access = Column(
+        Boolean, default=False, nullable=False, server_default="0",
+    )
+
     created_by_user_id = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -52,7 +52,9 @@ def test_financial_consistency_detects_over_allocation(db_session):
     result = FinancialConsistencyService(db_session).check_allocation_consistency()
     assert result["state"] == "FAILED"
     assert result["over_allocated_count"] == 1
-    assert result["over_allocated_examples"][0]["invoice_id"] == inv.id
+    row = result["over_allocated_examples"][0]
+    assert row["organization_id"] == org.id and "invoice_id" not in row and "invoice_number" not in row
+    assert row["over_allocated_count"] is None and row["over_allocated_count_label"] == "fewer than 5"
     assert "not reconciliation against processor" in result["coverage_note"] or "not reconciliation" in result["coverage_note"]
 
 

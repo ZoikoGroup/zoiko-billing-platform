@@ -410,6 +410,45 @@ class AttentionService:
             invalidate_polled_caches()
         return len(expired)
 
+    def check_overdue_break_glass_reviews(self) -> int:
+        """Step 5 (AUD-04, PRV-04, AT-16): any break-glass grant past review_due_at
+        without a review raises or escalates a P0 attention item."""
+        from app.modules.super_admin.models import PrivilegedTenantAccessGrant
+
+        now = datetime.utcnow()
+        overdue_grants = (
+            self.db.query(PrivilegedTenantAccessGrant)
+            .filter(
+                PrivilegedTenantAccessGrant.is_break_glass == True,  # noqa: E712
+                PrivilegedTenantAccessGrant.reviewed_at.is_(None),
+                PrivilegedTenantAccessGrant.review_due_at <= now,
+            )
+            .all()
+        )
+        escalated_count = 0
+        for grant in overdue_grants:
+            org = grant.organization
+            org_name = (org.display_name or org.organization_name) if org else f"Org #{grant.organization_id}"
+            item = self.report_or_update(
+                source="break_glass_overdue",
+                source_key=f"break_glass_overdue:{grant.id}",
+                title=f"OVERDUE break-glass review for {org_name}",
+                description=(
+                    f"Break-glass support access #{grant.id} opened under incident {grant.ticket_reference} "
+                    f"has exceeded the 24-hour review deadline without an independent security review. Immediate audit review required."
+                ),
+                base_severity=AttentionSeverity.P0,
+                organization_id=grant.organization_id,
+            )
+            if item.severity != AttentionSeverity.P0:
+                item.severity = AttentionSeverity.P0
+                self._set_sla_deadlines(item)
+            escalated_count += 1
+        if overdue_grants:
+            self.db.flush()
+            invalidate_polled_caches()
+        return escalated_count
+
     def _lift_expired_if_no_scheduler(self) -> None:
         """Safety net for deployments where the scheduler is disabled (so the
         attention_maintenance job never runs): lift expired suppressions from

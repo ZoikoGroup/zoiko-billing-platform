@@ -352,7 +352,7 @@ export const ORG_EDIT_FIELDS = [
   "name", "legal_name", "industry", "email", "phone", "website",
   "address", "city", "state", "postal_code", "country",
   "currency", "timezone", "fiscal_year_start", "fiscal_year_end",
-  "tax_no", "registration_number",
+  "tax_no", "registration_number", "require_tenant_approval_for_support_access",
 ];
 
 const TIMEZONES = (() => {
@@ -363,6 +363,7 @@ export function orgToForm(org = {}) {
   const form = {};
   for (const k of ORG_EDIT_FIELDS) form[k] = org[k] ?? "";
   form.timezone = org.timezone || "UTC";
+  form.require_tenant_approval_for_support_access = Boolean(org.require_tenant_approval_for_support_access);
   return form;
 }
 
@@ -371,6 +372,14 @@ export function orgToForm(org = {}) {
 export function orgFormChanges(form, original) {
   const changes = {};
   for (const k of ORG_EDIT_FIELDS) {
+    if (k === "require_tenant_approval_for_support_access") {
+      const currentVal = Boolean(form[k]);
+      const beforeVal = Boolean(original[k]);
+      if (currentVal !== beforeVal) {
+        changes[k] = currentVal;
+      }
+      continue;
+    }
     let v = typeof form[k] === "string" ? form[k].trim() : form[k];
     if (k === "currency" && v) v = v.toUpperCase();
     const before = original[k] ?? "";
@@ -740,6 +749,10 @@ export default function OrgAdminOrganizationPage() {
               <DetailRow label="Fiscal Year" value={org.fiscal_year_start || org.fiscal_year_end ? `${org.fiscal_year_start || "—"} to ${org.fiscal_year_end || "—"}` : null} mono />
               <DetailRow label="Tax ID" value={org.tax_no} mono />
               <DetailRow label="Registration Number" value={org.registration_number} mono />
+              <DetailRow
+                label="Support Access Approval"
+                value="Approved by your organisation admins"
+              />
             </div>
           </div>
         </div>

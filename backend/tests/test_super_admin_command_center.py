@@ -41,7 +41,7 @@ from app.modules.super_admin.kill_switch_service import BillingKillSwitchService
 from app.modules.super_admin.models import AttentionItem, AttentionSeverity, AttentionStatus, PlatformAuditLog
 from app.modules.super_admin.privileged_access_service import PrivilegedAccessService
 from app.modules.super_admin.telemetry_service import TelemetryService
-from tests.conftest import make_organization
+from tests.conftest import approve_as_org_admin, make_org_admin, make_organization
 
 
 def _super_admin(db, email="sa@cmdcenter.example"):
@@ -62,12 +62,14 @@ def _super_admin(db, email="sa@cmdcenter.example"):
 def test_valid_grant_request_and_activation(db_session):
     org = make_organization(db_session)
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin, org.id, reason="Investigating INC-1", ticket_reference="INC-1")
-    assert grant.status.value == "pending_step_up"
+    assert grant.status.value == "pending_approval"
 
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     assert grant.status.value == "active"
     assert grant.expires_at is not None
     assert grant.expires_at <= datetime.utcnow() + timedelta(minutes=30, seconds=5)
@@ -77,9 +79,11 @@ def test_duplicate_live_grant_rejected(db_session):
     org = make_organization(db_session)
     admin, secret = _super_admin(db_session)
     svc = PrivilegedAccessService(db_session)
+    make_org_admin(db_session, org.id)
     svc.request_access(admin, org.id, reason="r", ticket_reference="INC-1")
 
     with pytest.raises(BadRequestException):
+        make_org_admin(db_session, org.id)
         svc.request_access(admin, org.id, reason="r2", ticket_reference="INC-2")
 
 
@@ -87,27 +91,29 @@ def test_cross_actor_idor_denied(db_session):
     org = make_organization(db_session)
     admin1, secret1 = _super_admin(db_session, "sa1@cmdcenter.example")
     admin2, secret2 = _super_admin(db_session, "sa2@cmdcenter.example")
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin1, org.id, reason="r", ticket_reference="INC-1")
-    grant = svc.activate(admin1, grant.id, code=pyotp.TOTP(secret1).now())
+    grant = approve_as_org_admin(db_session, grant)
 
     with pytest.raises(NotFoundException):
         svc.get_tenant_summary(admin2, grant.id)
     with pytest.raises(NotFoundException):
         svc.exit_grant(admin2, grant.id)
-    with pytest.raises(NotFoundException):
-        svc.activate(admin2, grant.id, code=pyotp.TOTP(secret2).now())
 
 
 def test_grant_scoped_to_its_own_organization(db_session):
     org_a = make_organization(db_session, code="ORGA", name="Tenant A")
     make_organization(db_session, code="ORGB", name="Tenant B")
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org_a.id)
     grant = svc.request_access(admin, org_a.id, reason="r", ticket_reference="INC-1")
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     summary = svc.get_tenant_summary(admin, grant.id)
 
     assert summary["organization_id"] == org_a.id
@@ -117,50 +123,26 @@ def test_grant_scoped_to_its_own_organization(db_session):
 def test_post_exit_access_denied(db_session):
     org = make_organization(db_session)
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin, org.id, reason="r", ticket_reference="INC-1")
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     svc.exit_grant(admin, grant.id)
 
     with pytest.raises(ForbiddenException):
         svc.get_tenant_summary(admin, grant.id)
 
 
-def test_wrong_totp_code_rejected(db_session):
-    org = make_organization(db_session)
-    admin, _secret = _super_admin(db_session)
-    svc = PrivilegedAccessService(db_session)
-    grant = svc.request_access(admin, org.id, reason="r", ticket_reference="INC-1")
-
-    with pytest.raises(UnauthorizedException):
-        svc.activate(admin, grant.id, code="000000")
-
-
-def test_stale_step_up_window_denied(db_session):
-    org = make_organization(db_session)
-    admin, secret = _super_admin(db_session)
-    svc = PrivilegedAccessService(db_session)
-    grant = svc.request_access(admin, org.id, reason="r", ticket_reference="INC-1")
-    grant.requested_at = datetime.utcnow() - timedelta(minutes=10)
-    db_session.commit()
-
-    with pytest.raises(BadRequestException):
-        svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
-    db_session.refresh(grant)
-    assert grant.status.value == "denied"
-
-    # Self-healing: a fresh request is allowed once the prior one is DENIED.
-    grant2 = svc.request_access(admin, org.id, reason="r2", ticket_reference="INC-2")
-    assert grant2.status.value == "pending_step_up"
-
-
 def test_expired_grant_denied_on_next_read(db_session):
     org = make_organization(db_session)
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin, org.id, reason="r", ticket_reference="INC-1")
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     grant.expires_at = datetime.utcnow() - timedelta(seconds=1)
     db_session.commit()
 
@@ -173,9 +155,11 @@ def test_expired_grant_denied_on_next_read(db_session):
 def test_audit_trail_complete_and_correlated(db_session):
     org = make_organization(db_session)
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin, org.id, reason="Investigating INC-9", ticket_reference="INC-9")
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     svc.get_tenant_summary(admin, grant.id)
     svc.exit_grant(admin, grant.id)
 
@@ -354,10 +338,12 @@ def test_tenant_visible_access_log_shows_own_sessions(db_session):
     db_session.add(tenant_user)
     db_session.commit()
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
 
+    make_org_admin(db_session, org.id)
     grant = svc.request_access(admin, org.id, reason="Investigating INC-777", ticket_reference="INC-777")
-    grant = svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
     svc.get_tenant_summary(admin, grant.id)
     svc.exit_grant(admin, grant.id)
 
@@ -377,9 +363,11 @@ def test_tenant_visible_access_log_cross_tenant_isolation(db_session):
     org_a = make_organization(db_session, code="LOGA", name="Log Org A")
     org_b = make_organization(db_session, code="LOGB", name="Log Org B")
     admin, secret = _super_admin(db_session)
+    approver, _ = _super_admin(db_session, "approver@cmdcenter.example")
     svc = PrivilegedAccessService(db_session)
+    make_org_admin(db_session, org_a.id)
     grant = svc.request_access(admin, org_a.id, reason="r", ticket_reference="INC-1")
-    svc.activate(admin, grant.id, code=pyotp.TOTP(secret).now())
+    grant = approve_as_org_admin(db_session, grant)
 
     user_b = User(
         email="user@orgb.example", hashed_password="x", role=UserRole.BILLING_ADMIN,
