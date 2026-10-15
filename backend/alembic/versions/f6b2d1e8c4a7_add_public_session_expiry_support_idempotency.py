@@ -28,37 +28,64 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Idempotent guards: some databases (incl. production) already have parts of
+# this schema — created outside Alembic or by a partially applied run — while
+# alembic_version doesn't record this revision. Every step checks first, so the
+# migration converges on the target schema instead of failing on duplicates.
+def _inspector():
+    return sa.inspect(op.get_bind())
+
+
+def _has_table(table: str) -> bool:
+    return _inspector().has_table(table)
+
+
+def _has_column(table: str, column: str) -> bool:
+    return _has_table(table) and column in {c["name"] for c in _inspector().get_columns(table)}
+
+
+def _has_index(table: str, index: str) -> bool:
+    return _has_table(table) and index in {i["name"] for i in _inspector().get_indexes(table)}
+
+
+def _add_column(table: str, column: sa.Column) -> None:
+    if not _has_column(table, column.name):
+        op.add_column(table, column)
+
+
+def _create_index(name: str, table: str, columns: list, unique: bool = False) -> None:
+    if not _has_index(table, name):
+        op.create_index(name, table, columns, unique=unique)
+
+
+def _drop_index(name: str, table: str) -> None:
+    if _has_index(table, name):
+        op.drop_index(name, table_name=table)
+
+
+def _drop_column(table: str, column: str) -> None:
+    if _has_column(table, column):
+        op.drop_column(table, column)
+
+
+def _drop_table(table: str) -> None:
+    if _has_table(table):
+        op.drop_table(table)
+
+
 def upgrade() -> None:
     """Upgrade schema."""
-    op.drop_index('ix_ai_public_msg_session_idem', table_name='ai_public_assistant_message')
-    op.create_index(
-        'uq_ai_public_msg_session_idem',
-        'ai_public_assistant_message',
-        ['session_id', 'idempotency_key'],
-        unique=True,
-    )
+    _drop_index('ix_ai_public_msg_session_idem', 'ai_public_assistant_message')
+    _create_index('uq_ai_public_msg_session_idem', 'ai_public_assistant_message', ['session_id', 'idempotency_key'], unique=True)
 
-    op.add_column(
-        'ai_public_support_request',
-        sa.Column('client_request_id', sa.String(length=64), nullable=True),
-    )
-    op.create_index(
-        'uq_ai_public_support_client_request_id',
-        'ai_public_support_request',
-        ['client_request_id'],
-        unique=True,
-    )
+    _add_column('ai_public_support_request', sa.Column('client_request_id', sa.String(length=64), nullable=True))
+    _create_index('uq_ai_public_support_client_request_id', 'ai_public_support_request', ['client_request_id'], unique=True)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('uq_ai_public_support_client_request_id', table_name='ai_public_support_request')
-    op.drop_column('ai_public_support_request', 'client_request_id')
+    _drop_index('uq_ai_public_support_client_request_id', 'ai_public_support_request')
+    _drop_column('ai_public_support_request', 'client_request_id')
 
-    op.drop_index('uq_ai_public_msg_session_idem', table_name='ai_public_assistant_message')
-    op.create_index(
-        'ix_ai_public_msg_session_idem',
-        'ai_public_assistant_message',
-        ['session_id', 'idempotency_key'],
-        unique=False,
-    )
+    _drop_index('uq_ai_public_msg_session_idem', 'ai_public_assistant_message')
+    _create_index('ix_ai_public_msg_session_idem', 'ai_public_assistant_message', ['session_id', 'idempotency_key'])
