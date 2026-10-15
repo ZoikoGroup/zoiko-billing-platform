@@ -8108,7 +8108,7 @@ class ConversationEngine:
         )
         from datetime import timezone as _tz
         svc = ExchangeRateService(self.db)
-        config = svc.repo.get_by_organization(org_id)
+        config = svc.repo.get_currency_view(org_id)
         if not config or not config.exchange_rate_last_refreshed:
             return {"is_stale": True, "age_hours": None}
         last = config.exchange_rate_last_refreshed

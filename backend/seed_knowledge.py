@@ -302,6 +302,37 @@ KB_ENTRIES = [
 ]
 
 
+# ── Approved public source URLs ──────────────────────────────────────────────
+# Per-document canonical URL for the anonymous marketing assistant's citations.
+# A title is listed here ONLY when a real, existing zoikobilling.com page covers
+# that document's topic; retrieval surfaces this via KnowledgeDocument.object_uri
+# (retrieval.py prefers source.source_url, then falls back to doc.object_uri) and
+# the widget renders it only if is_public_url_allowed() accepts the host.
+#
+# Titles that are deliberately NOT mapped (no page covers the whole topic) stay
+# absent: their citations render as a plain, non-clickable source pill rather
+# than an invented link. Adding a mapping here is a product/compliance decision
+# and must point at a page that actually covers the document.
+PUBLIC_SOURCE_URLS: dict[str, str] = {
+    "Billing Reports": "https://www.zoikobilling.com/reporting-and-analytics",
+    "Invoices Overview": "https://www.zoikobilling.com/invoices",
+    "Payments and Allocations": "https://www.zoikobilling.com/payments-and-reconcilliation",
+    "Credit Notes vs Refunds": "https://www.zoikobilling.com/invoices",
+    "Customers and Accounts": "https://www.zoikobilling.com/customer-records",
+    "Invoices and Credit Notes (How It Works)": "https://www.zoikobilling.com/invoices",
+    "Multi-Currency Billing (Marketing)": "https://www.zoikobilling.com/multi-currency",
+    "Payments and Reconciliation (How It Works)": "https://www.zoikobilling.com/payments-and-reconcilliation",
+    "Automation and Workflows (Marketing)": "https://www.zoikobilling.com/automation",
+    "Global and Multi-Entity Billing (Marketing)": "https://www.zoikobilling.com/global-billing",
+    "Zoiko Billing Platform Overview (Marketing)": "https://www.zoikobilling.com/platform-overview",
+    "Pricing and Plans (Marketing)": "https://www.zoikobilling.com/pricing",
+    "Who Zoiko Billing Is For (Marketing)": "https://www.zoikobilling.com/why-zoiko-billing",
+    "Integrations (Marketing)": "https://www.zoikobilling.com/integrations",
+    "Security and Compliance Posture (Marketing)": "https://www.zoikobilling.com/security-overview",
+    "Getting Started and Requesting a Demo (Marketing)": "https://www.zoikobilling.com/",
+}
+
+
 def seed():
     initialize_database()
     db = SessionLocal()
@@ -355,8 +386,11 @@ def seed():
         for entry in KB_ENTRIES:
             chunks = entry["chunks"]
             is_public = entry.get("is_public", False)
+            # Only public documents carry a citation URL; unmapped titles keep
+            # object_uri=None so the widget shows a plain source pill.
+            source_url = PUBLIC_SOURCE_URLS.get(entry["title"]) if is_public else None
             content_hash = hashlib.sha256(
-                (str(is_public) + "\n" + "\n".join(chunks)).encode("utf-8")
+                (str(is_public) + "\n" + (source_url or "") + "\n" + "\n".join(chunks)).encode("utf-8")
             ).hexdigest()
             docs = db.query(KnowledgeDocument).filter(
                 KnowledgeDocument.source_id == src.id,
@@ -384,6 +418,7 @@ def seed():
                 title=entry["title"],
                 status="approved",
                 is_public=is_public,
+                object_uri=source_url,
             )
             db.add(doc)
             db.flush()

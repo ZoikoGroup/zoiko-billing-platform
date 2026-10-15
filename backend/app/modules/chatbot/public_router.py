@@ -7,7 +7,11 @@ UNAUTHENTICATED assistant API for the zoikobilling.com marketing-site widget
   POST  /api/assistant/public/sessions                   -> PublicSessionResponse
   GET   /api/assistant/public/sessions                    -> list[PublicSessionSummary]
   POST  /api/assistant/public/sessions/{uid}/messages    -> PublicChatResponse
-  GET   /api/assistant/public/health                     -> liveness
+  GET   /api/assistant/public/config                      -> PublicConfigResponse
+  POST  /api/assistant/public/support/request             -> PublicSupportRequestResponse
+  POST  /api/assistant/public/feedback                    -> PublicFeedbackResponse
+  POST  /api/assistant/public/events                      -> PublicEventResponse
+  GET   /api/assistant/public/health                      -> PublicHealthResponse
 
 Deliberately free of require_active_subscription / get_current_user — the
 widget runs on a public marketing page. Abuse controls:
@@ -25,16 +29,26 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from slowapi.util import get_remote_address
 
+from app.config import settings
 from app.core.rate_limiter import limit_route
 from app.database import get_db
 
 from .public_assistant import PublicAssistantService, _resolve_public_gateway
+from .public_config import build_public_config
 from .schemas import (
     PublicChatResponse,
+    PublicConfigResponse,
     PublicCreateSessionRequest,
+    PublicEventRequest,
+    PublicEventResponse,
+    PublicFeedbackRequest,
+    PublicFeedbackResponse,
+    PublicHealthResponse,
     PublicSendMessageRequest,
     PublicSessionResponse,
     PublicSessionSummary,
+    PublicSupportRequestCreate,
+    PublicSupportRequestResponse,
 )
 
 _logger = logging.getLogger("zoiko_billing.chatbot.public")
@@ -169,6 +183,8 @@ def send_public_message(
             message=body.message,
             ip_hash=_hash_ip(request),
             page=body.page,
+            idempotency_key=body.message_id,
+            intent_id=body.intent_id,
         )
     except HTTPException:
         raise
@@ -181,12 +197,116 @@ def send_public_message(
         )
 
 
-@router.get("/health")
+@router.get("/config", response_model=PublicConfigResponse)
+@limit_route("60/minute")
+def public_config(request: Request):
+    """Widget configuration: copy, the eight approved topic tiles, theme,
+    support mode and the link allowlist.
+
+    The tiles are served from a managed config so the product team can change
+    entry points WITHOUT editing the model prompt. No feature promises live in
+    the AI prompt.
+    """
+    return build_public_config()
+
+
+@router.post("/support/request", response_model=PublicSupportRequestResponse, status_code=201)
+@limit_route("10/minute")
+def create_support_request(
+    body: PublicSupportRequestCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a human-support request from the public widget.
+
+    Consent for transcript sharing is explicit and optional. A reference is
+    returned only after this system has durably persisted the request; delivery
+    to a support desk is reported only when a configured webhook acknowledged
+    it. Never fabricates a ticket or support availability.
+    """
+    service = _service(db)
+    try:
+        return service.create_support_request(
+            issue_type=body.issue_type,
+            email=body.email,
+            summary=body.summary,
+            message=body.message,
+            transcript_consent=body.transcript_consent,
+            session_uid=body.session_uid,
+            ip_hash=_hash_ip(request),
+            client_request_id=body.client_request_id,
+        )
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _logger.error("public support request failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not submit your support request right now. Please try again in a moment.",
+        )
+
+
+@router.post("/feedback", response_model=PublicFeedbackResponse, status_code=201)
+@limit_route("60/minute")
+def public_feedback(
+    body: PublicFeedbackRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Optional, privacy-minimal helpful/not-helpful signal on one answer."""
+    service = _service(db)
+    try:
+        return service.record_feedback(
+            session_uid=body.session_uid,
+            message_uid=body.message_uid,
+            helpful=body.helpful,
+            reason=body.reason,
+        )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _logger.error("public feedback failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not record feedback right now.")
+
+
+@router.post("/events", response_model=PublicEventResponse, status_code=202)
+@limit_route("240/minute")
+def public_event(
+    body: PublicEventRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Record one privacy-minimized widget instrumentation event (spec §12.3).
+
+    Fire-and-forget from the widget. Only allowlisted event names plus the
+    §12.3 safe metadata are accepted; the visitor's question text is never part
+    of this contract. Unknown events are dropped server-side, so a client typo
+    can never widen the telemetry surface.
+    """
+    service = _service(db)
+    return service.record_event(
+        event=body.event,
+        session_uid=body.session_uid,
+        topic_id=body.topic_id,
+        locale=body.locale,
+        config_version=body.config_version,
+        timing_bucket=body.timing_bucket,
+    )
+
+
+@router.get("/health", response_model=PublicHealthResponse)
 def public_health():
-    """Liveness for the widget's tiny pre-flight: does the module exist and
-    is the model gateway configured (rules-only mode otherwise)?"""
+    """Liveness for the widget's pre-flight.
+
+    Deliberately minimal: availability + degraded mode only. Never reveals the
+    provider, model, version or any other internal detail. ``available`` is
+    true whenever the assistant module is enabled; ``degraded`` is true when a
+    model gateway is not configured (deterministic rules-only mode).
+    """
+    enabled = bool(settings.PUBLIC_ASSISTANT_ENABLED)
+    rules_only = _PUBLIC_GATEWAY is None
     return {
-        "status": "ok",
-        "module": "public_assistant",
-        "gateway": _PUBLIC_GATEWAY.provider_name if _PUBLIC_GATEWAY else "rules-only",
+        "status": "ok" if enabled else "degraded",
+        "available": enabled,
+        "degraded": enabled and rules_only,
     }

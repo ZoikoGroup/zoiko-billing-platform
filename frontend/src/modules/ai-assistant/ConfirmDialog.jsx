@@ -76,7 +76,7 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
             {money.total && (
               <div className="flex justify-between">
                 <span className="text-slate-500">Total</span>
-                <span className="font-bold text-base" style={{ color: "var(--ab-accent-text, #F5841F)" }}>
+                <span className="font-bold text-base" style={{ color: "var(--ab-accent-text, #0868F7)" }}>
                   {money.display || `${money.currency || ""} ${Number(money.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                 </span>
               </div>
@@ -104,7 +104,7 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
               className="mt-0.5 rounded border-slate-300 focus:ring-brand"
-              style={{ accentColor: "var(--ab-accent, #F5841F)" }}
+              style={{ accentColor: "var(--ab-accent, #0868F7)" }}
             />
             <span className="text-xs text-slate-600">
               I have reviewed the preview and confirm this action is correct. I understand this
@@ -125,7 +125,7 @@ export default function ConfirmDialog({ preview, onConfirm, onCancel }) {
             onClick={() => onConfirm(preview)}
             disabled={!acknowledged}
             className="px-6 py-2 text-sm font-semibold text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: "var(--ab-accent, #F5841F)" }}
+            style={{ background: "var(--ab-accent, #0868F7)" }}
           >
             {confirmLabel}
           </button>

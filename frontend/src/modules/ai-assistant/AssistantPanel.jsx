@@ -24,11 +24,20 @@ import {
   History,
   Sun,
   Moon,
-  LifeBuoy,
   ArrowRight,
   ArrowLeft,
   Maximize2,
   Minimize2,
+  MoreVertical,
+  Minus,
+  Rocket,
+  CreditCard,
+  BarChart3,
+  RotateCcw,
+  Database,
+  Users,
+  HelpCircle,
+  Headset,
 } from "lucide-react";
 import ZoikoMark from "../../components/ZoikoMark";
 import ReactMarkdown from "react-markdown";
@@ -44,10 +53,11 @@ import {
   executeAction,
   cancelAction,
 } from "./api";
+import { hasAuthenticatedSession, sendPublicMessage } from "./publicAssistant";
 import { useTypewriter, splitStablePrefix } from "./useTypewriter";
 import PreviewCard from "./PreviewCard";
 import ConfirmDialog from "./ConfirmDialog";
-import { FAQ_CATEGORIES, WELCOME_MESSAGE, DEFAULT_PROMPTS, CONTEXTUAL_PROMPTS, TOPIC_KEYWORDS } from "./suggestedPrompts";
+import { FAQ_CATEGORIES, HUMAN_SUPPORT, WELCOME_MESSAGE, DEFAULT_PROMPTS, CONTEXTUAL_PROMPTS, TOPIC_KEYWORDS } from "./suggestedPrompts";
 
 // ── Theme definitions ────────────────────────────────────────────────────────
 
@@ -55,35 +65,41 @@ const THEME_KEY = "billingAssistantTheme";
 
 const THEMES = {
   light: {
+    // Approved palette — ZB-PUBCHAT-WF-001 §3.2:
+    // navy #082644 · action #0868F7 · cyan #04ADD1 · canvas #F6F9FC ·
+    // surface #FFFFFF · border #D6E4F2 · secondary #53677F · online #008E5A
     "--ab-bg": "#ffffff",
-    "--ab-surface": "#f8fafc",
-    "--ab-surface-raised": "#f1f5f9",
-    "--ab-border": "#e2e8f0",
-    "--ab-border-subtle": "#f1f5f9",
-    "--ab-text": "#0f172a",
-    "--ab-text-secondary": "#475569",
-    "--ab-text-muted": "#94a3b8",
-    "--ab-text-dim": "#cbd5e1",
-    "--ab-accent": "#F5841F",
-    "--ab-accent-hover": "#e0750f",
-    "--ab-accent-10": "rgba(245,132,31,0.10)",
-    "--ab-accent-15": "rgba(245,132,31,0.15)",
-    "--ab-accent-text": "#F5841F",
-    "--ab-icon-btn-bg": "rgba(123,58,237,0.10)",
-    "--ab-icon-btn-text": "#4C2CC5",
-    "--ab-icon-btn-hover-bg": "rgba(245,132,31,0.15)",
-    "--ab-icon-btn-hover-text": "#F5841F",
-    "--ab-user-bubble": "#F5841F",
-    "--ab-assistant-bubble": "#f1f5f9",
-    "--ab-assistant-bubble-text": "#0f172a",
-    "--ab-system-bubble": "#fff7ed",
-    "--ab-system-bubble-text": "#9a3412",
-    "--ab-system-bubble-border": "#fed7aa",
+    "--ab-surface": "#f6f9fc",
+    "--ab-surface-raised": "#eef4fb",
+    "--ab-border": "#d6e4f2",
+    "--ab-border-subtle": "#e6eef7",
+    "--ab-text": "#082644",
+    "--ab-text-secondary": "#53677f",
+    "--ab-text-muted": "#7c8da3",
+    "--ab-text-dim": "#b4c2d4",
+    "--ab-accent": "#0868f7",
+    "--ab-accent-hover": "#0a5bd6",
+    "--ab-accent-10": "rgba(8,104,247,0.10)",
+    "--ab-accent-15": "rgba(8,104,247,0.15)",
+    "--ab-accent-20": "rgba(8,104,247,0.20)",
+    "--ab-accent-30": "rgba(8,104,247,0.30)",
+    "--ab-accent-text": "#0868f7",
+    "--ab-icon-btn-bg": "rgba(8,104,247,0.08)",
+    "--ab-icon-btn-text": "#082644",
+    "--ab-icon-btn-hover-bg": "rgba(8,104,247,0.15)",
+    "--ab-icon-btn-hover-text": "#0868f7",
+    "--ab-user-bubble": "#0868f7",
+    "--ab-assistant-bubble": "#f6f9fc",
+    "--ab-assistant-bubble-text": "#082644",
+    "--ab-system-bubble": "#fef3f2",
+    "--ab-system-bubble-text": "#b42318",
+    "--ab-system-bubble-border": "#fecdca",
     "--ab-input-bg": "#ffffff",
-    "--ab-input-border": "#e2e8f0",
-    "--ab-input-text": "#0f172a",
-    "--ab-input-placeholder": "#94a3b8",
-    "--ab-focus-ring": "rgba(245,132,31,0.3)",
+    "--ab-input-border": "#d6e4f2",
+    "--ab-input-text": "#082644",
+    "--ab-input-placeholder": "#7c8da3",
+    "--ab-online": "#008e5a",
+    "--ab-focus-ring": "rgba(8,104,247,0.35)",
   },
   dark: {
     "--ab-bg": "#0F1729",
@@ -95,16 +111,18 @@ const THEMES = {
     "--ab-text-secondary": "#94a3b8",
     "--ab-text-muted": "#64748b",
     "--ab-text-dim": "#475569",
-    "--ab-accent": "#F5841F",
-    "--ab-accent-hover": "#ff9a4d",
-    "--ab-accent-10": "rgba(245,132,31,0.12)",
-    "--ab-accent-15": "rgba(245,132,31,0.18)",
-    "--ab-accent-text": "#F5841F",
-    "--ab-icon-btn-bg": "rgba(123,58,237,0.22)",
-    "--ab-icon-btn-text": "#C4A5FF",
-    "--ab-icon-btn-hover-bg": "rgba(245,132,31,0.20)",
-    "--ab-icon-btn-hover-text": "#F5841F",
-    "--ab-user-bubble": "#F5841F",
+    "--ab-accent": "#4d9bff",
+    "--ab-accent-hover": "#7ab6ff",
+    "--ab-accent-10": "rgba(77,155,255,0.12)",
+    "--ab-accent-15": "rgba(77,155,255,0.18)",
+    "--ab-accent-20": "rgba(77,155,255,0.24)",
+    "--ab-accent-30": "rgba(77,155,255,0.34)",
+    "--ab-accent-text": "#6cb2ff",
+    "--ab-icon-btn-bg": "rgba(77,155,255,0.14)",
+    "--ab-icon-btn-text": "#b7cbea",
+    "--ab-icon-btn-hover-bg": "rgba(77,155,255,0.22)",
+    "--ab-icon-btn-hover-text": "#6cb2ff",
+    "--ab-user-bubble": "#2563eb",
     "--ab-assistant-bubble": "#1e293b",
     "--ab-assistant-bubble-text": "#e2e8f0",
     "--ab-system-bubble": "rgba(154,52,18,0.15)",
@@ -114,7 +132,8 @@ const THEMES = {
     "--ab-input-border": "#334155",
     "--ab-input-text": "#f1f5f9",
     "--ab-input-placeholder": "#64748b",
-    "--ab-focus-ring": "rgba(245,132,31,0.35)",
+    "--ab-online": "#2fbf87",
+    "--ab-focus-ring": "rgba(77,155,255,0.4)",
   },
 };
 
@@ -224,13 +243,18 @@ const MODE_CONFIG = {
   M5_ESCALATE: { label: "Escalate", icon: AlertTriangle, color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200", description: "Requires human attention" },
 };
 
-const RISK_COLORS = {
-  R0: "bg-[var(--ab-surface-raised)] text-[var(--ab-text-secondary)]",
-  R1: "bg-emerald-100 text-emerald-700",
-  R2: "bg-amber-100 text-amber-700",
-  R3: "bg-orange-100 text-orange-700",
-  R4: "bg-red-100 text-red-700",
-  RX: "bg-red-200 text-red-800",
+// Category icon names are carried as string keys in suggestedPrompts so the
+// content stays serializable; resolve them to Lucide line icons here.
+const TOPIC_ICONS = {
+  rocket: Rocket,
+  "file-text": FileText,
+  "credit-card": CreditCard,
+  "bar-chart-3": BarChart3,
+  "rotate-ccw": RotateCcw,
+  database: Database,
+  users: Users,
+  "help-circle": HelpCircle,
+  headset: Headset,
 };
 
 // ── Conversation titling (mirrors backend derive_conversation_title) ─────────
@@ -302,6 +326,13 @@ export default function AssistantPanel({ isOpen, onClose }) {
   const [initializing, setInitializing] = useState(false);
   const [statusAnnouncement, setStatusAnnouncement] = useState("");
   const [recentOpen, setRecentOpen] = useState(false);
+  // Header options menu (spec §5: options menu + minimize + close). Holds the
+  // admin-only affordances the approved header does not surface directly
+  // (New conversation, Recent conversations, Back to Main Menu, theme toggle,
+  // expand/collapse) so admin capability is preserved without the extra
+  // header icons the approved design forbids.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [activeAction, setActiveAction] = useState(null);
@@ -316,6 +347,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
   const chatViewportRef = useRef(null);
   const inputRef = useRef(null);
   const recentRef = useRef(null);
+  const menuRef = useRef(null);
   const sessionsLoadingRef = useRef(false);
   // Auto-follow (ChatGPT-style): while TRUE the chat keeps the LATEST content
   // pinned at the bottom (message sends + every typewriter chunk + the final
@@ -472,6 +504,12 @@ export default function AssistantPanel({ isOpen, onClose }) {
     if (err?.sessionExpired) {
       errorText = "Your session has expired. Please sign in again to continue.";
       errorStatus = "Session expired";
+    } else if (err?.forbidden) {
+      // 403 is an authorization/entitlement decision, NOT an expired session —
+      // saying "your session has expired" here sent admins chasing a login
+      // problem that did not exist.
+      errorText = "You don't have access to the billing assistant. Ask your organization admin to check your plan and permissions.";
+      errorStatus = "Not permitted";
     } else if (err?.status === 429) {
       const wait = err?.retryAfter || 10;
       errorText = `You're sending messages a bit quickly — please wait ${wait}s and try again.`;
@@ -497,6 +535,67 @@ export default function AssistantPanel({ isOpen, onClose }) {
       created_at: new Date().toISOString(),
     }]);
     setStatusAnnouncement(errorStatus);
+  };
+
+  // Public-assistant fallback (ZB-AI-PUB-001). When there is no usable admin
+  // session, GENERAL product questions are still answered — through the same
+  // UNAUTHENTICATED public service the marketing-site widget uses. It is
+  // guidance-only: account-specific questions come back with `requires_auth`
+  // and are surfaced as a sign-in prompt, and the public service never exposes
+  // tenant data (enforced server-side). No Authorization header is sent, and
+  // nothing here weakens backend authorization.
+  const submitViaPublic = async (text) => {
+    setLoading(true);
+    setStatusAnnouncement("Assistant is thinking...");
+    const respUid = newClientUid("pub");
+    setMessages((prev) => [...prev, {
+      message_uid: respUid,
+      sender_type: "assistant",
+      message_text: "",
+      mode: "M0_EXPLAIN",
+      risk_class: "R0",
+      structured_payload: {},
+      created_at: new Date().toISOString(),
+    }]);
+    try {
+      const resp = await sendPublicMessage(text);
+      const requiresAuth = Boolean(resp?.requires_auth);
+      setMessages((prev) => prev.map((m) => (
+        m.message_uid === respUid
+          ? {
+              ...m,
+              message_text: resp?.answer || "",
+              mode: resp?.mode || "M0_EXPLAIN",
+              risk_class: resp?.risk_class || "R0",
+              structured_payload: {
+                evidence: resp?.evidence || [],
+                next_actions: [],
+                suggested_prompts: [],
+                // Account-specific question: give the visitor the one useful
+                // next step. The public answer never contains account data.
+                actions: requiresAuth ? [{ action: "sign_in", label: "Sign in" }] : [],
+              },
+            }
+          : m
+      )));
+      if (requiresAuth) {
+        // Short canned answer + an actionable CTA: show both immediately rather
+        // than deferring the Sign-in button behind a typewriter reveal.
+        setAnimatingUid(null);
+        setAnimDoneUid(respUid);
+      } else {
+        setAnimatingUid(respUid);
+        setAnimDoneUid(null);
+      }
+      setStatusAnnouncement(requiresAuth ? "Sign-in required for account-specific details" : "Answer received");
+    } catch (err) {
+      // Drop the empty placeholder, then report through the standard path so
+      // copy, logging and the live-region announcement stay in one place.
+      setMessages((prev) => prev.filter((m) => m.message_uid !== respUid));
+      notifySendFailure(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSend = async (overrideText) => {
@@ -532,6 +631,20 @@ export default function AssistantPanel({ isOpen, onClose }) {
     let didStartStream = false;
     let streamSettled = false;
     try {
+      // No admin session at all -> answer through the public assistant so a
+      // general product question never dead-ends on a sign-in wall. Account-
+      // specific questions come back as a sign-in prompt from the public
+      // service, which never exposes tenant data.
+      if (!hasAuthenticatedSession()) {
+        setMessages((prev) => [...prev, {
+          message_uid: newClientUid("temp"),
+          sender_type: "user",
+          message_text: text,
+          created_at: new Date().toISOString(),
+        }]);
+        await submitViaPublic(text);
+        return;
+      }
       if (!targetUid) {
         const userMsg = { message_uid: newClientUid("temp"), sender_type: "user", message_text: text, created_at: new Date().toISOString() };
         setMessages([userMsg]);
@@ -558,7 +671,14 @@ export default function AssistantPanel({ isOpen, onClose }) {
           setStatusAnnouncement(`${modeConfig.label} response received`);
         } catch (err) {
           console.warn("[assistant-cx] createSession FAILED:", err?.name, err?.message);
-          notifySendFailure(err);
+          if (err?.authInvalid && !err?.forbidden) {
+            // Admin token present but unusable and refresh failed: fall back to
+            // the public assistant instead of a false "session expired"
+            // dead-end. The user's bubble is already on screen.
+            await submitViaPublic(text);
+          } else {
+            notifySendFailure(err);
+          }
         }
         return;
       }
@@ -685,6 +805,19 @@ export default function AssistantPanel({ isOpen, onClose }) {
           if (streamState.done) return;
           console.error("[CHATBOT-DIAG] stream FAILED:", err?.name, err?.message);
           setStreamingUid(null);
+          if (err?.authInvalid && !err?.forbidden) {
+            // The admin session is unusable and the silent refresh failed.
+            // Answer the question through the public assistant instead of
+            // telling a signed-in admin their "session has expired". The
+            // optimistic empty bubble is removed and replaced in place.
+            streamState.done = true;
+            streamSettled = true;
+            if (streamState.flushTimer) { clearTimeout(streamState.flushTimer); streamState.flushTimer = null; }
+            streamCtlRef.current = null;
+            setMessages((prev) => prev.filter((m) => !(m.message_uid === streamState.respUid && !m.message_text)));
+            void submitViaPublic(text);
+            return;
+          }
           settle();
           notifySendFailure(err);
         },
@@ -811,6 +944,13 @@ export default function AssistantPanel({ isOpen, onClose }) {
 
   const handleAction = useCallback(async (actionObj) => {
     const { action, action_uid } = actionObj;
+    if (action === "sign_in") {
+      // Emitted by the public-assistant fallback when a question needs account
+      // data. Routing to sign-in is the only correct next step.
+      navigate("/login");
+      onClose();
+      return;
+    }
     if (action === "preview_draft") {
       try {
         setLoading(true);
@@ -871,7 +1011,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [navigate, onClose]);
 
   const handlePreviewConfirm = useCallback(async (preview) => {
     const uid = preview.action_uid || activeAction?.action_uid;
@@ -999,6 +1139,34 @@ export default function AssistantPanel({ isOpen, onClose }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [recentOpen]);
 
+  // Options menu (spec §5): Escape closes, clicking outside closes.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    const handleEscape = (e) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
+
+  // Privacy and AI assistance — local disclosure (spec §4/§10). No external
+  // page exists; Escape closes the disclosure.
+  useEffect(() => {
+    if (!privacyOpen) return;
+    const handleEscape = (e) => {
+      if (e.key === "Escape") setPrivacyOpen(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [privacyOpen]);
+
   if (!isOpen) return null;
 
   const s = (light, dark) => (isDark ? dark : light);
@@ -1020,129 +1188,194 @@ export default function AssistantPanel({ isOpen, onClose }) {
         style={themeVars}
         data-expanded={isExpanded || undefined}
       >
-        {/* Header — spec §5.2: assistant name, connection/status indicator,
-            close/expand controls */}
-        <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid var(--ab-border)` }}>
-          <div className="flex items-center gap-2">
-            <ZoikoMark size={32} />
-            <div>
-              <h2 className="text-sm font-semibold" style={{ color: "var(--ab-text)" }}>Billing Assistant</h2>
-              <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--ab-text-secondary)" }}>
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                Online · Zoiko Billing AI
-              </p>
+        {/* Header — spec §5: compact header (76–84 px) with the assistant
+            identity + status on the left and ONLY the approved controls on the
+            right (options menu, minimize, close). Admin-only affordances (New
+            conversation, Recent conversations, Back to Main Menu, theme toggle,
+            expand/collapse) live inside the options menu so the approved header
+            stays uncluttered while admin capability is preserved. */}
+        <header
+          className="ab-header flex items-center justify-between gap-2 px-4"
+          style={{ borderBottom: `1px solid var(--ab-border)`, minHeight: 76 }}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Zoiko Billing identity: the compact Z symbol (ZoikoMark →
+                zoiko-icon.png) sits beside the full Zoiko Billing wordmark, with
+                the assistant name/status beneath — matching the approved
+                reference. */}
+            <ZoikoMark size={40} rounded="rounded-lg" />
+            <div className="flex flex-col items-start gap-0.5 min-w-0">
+              <img src="/zoiko-billing-logo.png" alt="Zoiko Billing" className="ab-wordmark" draggable={false} />
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold leading-tight" style={{ color: "var(--ab-text)" }}>
+                  Billing Assistant
+                </h2>
+                <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--ab-text-secondary)" }}>
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--ab-online)" }} aria-hidden="true" />
+                  Online
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* New Conversation */}
-            <button
-              onClick={handleNewConversation}
-              disabled={initializing}
-              className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="New conversation"
-              title="New conversation"
-            >
-              <Plus size={16} strokeWidth={2} />
-            </button>
-
-            {/* Back to Main Menu — header-level navigation control. Appends the
-                main menu BELOW the existing conversation without clearing
-                messages or touching the backend. */}
-            {messages.length > 0 && (
+          <div className="flex items-center gap-1">
+            {/* Options menu (spec §5: overflow menu with the secondary actions;
+                native button semantics, Escape/outside-click to close) */}
+            <div className="relative" ref={menuRef}>
               <button
                 type="button"
-                onClick={handleBackToMenu}
-                className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
-                aria-label="Back to Main Menu"
-                title="Back to Main Menu"
+                onClick={() => setMenuOpen((p) => !p)}
+                className={`ab-icon-btn h-9 w-9 rounded-full flex items-center justify-center transition-colors ${menuOpen ? "ab-icon-btn--active" : ""}`}
+                aria-label="Assistant options"
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
+                title="More options"
               >
-                <ArrowLeft size={16} strokeWidth={2} />
-              </button>
-            )}
-
-            {/* Recent Conversations */}
-            <div className="relative" ref={recentRef}>
-              <button
-                onClick={() => { if (!recentOpen) loadSessions(); setRecentOpen((p) => !p); }}
-                className={`ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors ${recentOpen ? "ab-icon-btn--active" : ""}`}
-                aria-label="Recent conversations"
-                aria-expanded={recentOpen}
-                aria-haspopup="listbox"
-                title="Recent conversations"
-              >
-                <History size={16} strokeWidth={2} />
+                <MoreVertical size={18} strokeWidth={2} />
               </button>
 
-              {recentOpen && (
-                <div className="ab-dropdown absolute right-0 top-full mt-2 w-80 max-h-72 overflow-y-auto rounded-xl shadow-lg z-[60]" role="listbox" aria-label="Recent conversations">
-                  {sessions.length === 0 ? (
-                    <div className="px-4 py-6 text-center">
-                      <p className="text-xs" style={{ color: "var(--ab-text-muted)" }}>No conversations yet</p>
-                    </div>
-                  ) : (
-                    sessions.map((s) => {
-                      const isActive = s.conversation_uid === activeSession?.conversation_uid;
-                      const ts = s.created_at ? new Date(s.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-                      return (
-                        <button
-                          key={s.conversation_uid}
-                          role="option"
-                          aria-selected={isActive}
-                          onClick={() => { selectSession(s.conversation_uid); setRecentOpen(false); }}
-                          className={`ab-dropdown-item w-full text-left px-4 py-3 transition-colors ${isActive ? "ab-dropdown-item--active" : ""}`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm truncate ${isActive ? "font-medium" : ""}`} style={{ color: isActive ? "var(--ab-accent-text)" : "var(--ab-text)" }}>
-                              {s.title || "Untitled"}
-                            </p>
-                            <span className="text-[10px] whitespace-nowrap mt-0.5" style={{ color: "var(--ab-text-muted)" }}>{ts}</span>
+              {menuOpen && (
+                <div
+                  className="ab-dropdown absolute right-0 top-full mt-2 w-64 rounded-xl shadow-lg z-[60] py-1"
+                  aria-label="Assistant options"
+                >
+                  {/* New conversation */}
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); handleNewConversation(); }}
+                    disabled={initializing}
+                    className="ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />
+                    <span style={{ color: "var(--ab-text)" }}>New conversation</span>
+                  </button>
+
+                  {/* Recent conversations — nested listbox inside the menu */}
+                  <div className="relative" ref={recentRef}>
+                    <button
+                      type="button"
+                      onClick={() => { if (!recentOpen) loadSessions(); setRecentOpen((p) => !p); }}
+                      className={`ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors ${recentOpen ? "ab-menu-item--active" : ""}`}
+                      aria-haspopup="listbox"
+                      aria-expanded={recentOpen}
+                    >
+                      <History size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />
+                      <span style={{ color: "var(--ab-text)" }}>Recent conversations</span>
+                    </button>
+
+                    {recentOpen && (
+                      <div className="ab-dropdown mx-2 mb-1 max-h-64 overflow-y-auto rounded-lg" role="listbox" aria-label="Recent conversations">
+                        {sessions.length === 0 ? (
+                          <div className="px-4 py-6 text-center">
+                            <p className="text-xs" style={{ color: "var(--ab-text-muted)" }}>No conversations yet</p>
                           </div>
-                          <p className="text-[11px] mt-0.5" style={{ color: "var(--ab-text-muted)" }}>
-                            {s.message_count || 0} messages · {s.status}
-                          </p>
-                        </button>
-                      );
-                    })
+                        ) : (
+                          sessions.map((s) => {
+                            const isActive = s.conversation_uid === activeSession?.conversation_uid;
+                            const ts = s.created_at ? new Date(s.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+                            return (
+                              <button
+                                key={s.conversation_uid}
+                                role="option"
+                                aria-selected={isActive}
+                                onClick={() => { selectSession(s.conversation_uid); setRecentOpen(false); setMenuOpen(false); }}
+                                className={`ab-dropdown-item w-full text-left px-4 py-3 transition-colors ${isActive ? "ab-dropdown-item--active" : ""}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className={`text-sm truncate ${isActive ? "font-medium" : ""}`} style={{ color: isActive ? "var(--ab-accent-text)" : "var(--ab-text)" }}>
+                                    {s.title || "Untitled"}
+                                  </p>
+                                  <span className="text-[10px] whitespace-nowrap mt-0.5" style={{ color: "var(--ab-text-muted)" }}>{ts}</span>
+                                </div>
+                                <p className="text-[11px] mt-0.5" style={{ color: "var(--ab-text-muted)" }}>
+                                  {s.message_count || 0} messages · {s.status}
+                                </p>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Back to Main Menu — appends the menu BELOW the existing
+                      conversation without clearing messages or the backend. */}
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); handleBackToMenu(); }}
+                      className="ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                    >
+                      <ArrowLeft size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />
+                      <span style={{ color: "var(--ab-text)" }}>Back to Main Menu</span>
+                    </button>
                   )}
+
+                  {/* Theme toggle (admin-only; not in the approved header) */}
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); toggle(); }}
+                    className="ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                    aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+                  >
+                    {isDark ? <Sun size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} /> : <Moon size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />}
+                    <span style={{ color: "var(--ab-text)" }}>{isDark ? "Light mode" : "Dark mode"}</span>
+                  </button>
+
+                  {/* Expand / collapse workspace (admin-only) */}
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); setIsExpanded((p) => !p); }}
+                    className="ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                    aria-label={isExpanded ? "Collapse assistant panel" : "Expand assistant panel"}
+                    aria-pressed={isExpanded}
+                  >
+                    {isExpanded ? <Minimize2 size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} /> : <Maximize2 size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />}
+                    <span style={{ color: "var(--ab-text)" }}>{isExpanded ? "Collapse panel" : "Expand panel"}</span>
+                  </button>
+
+                  {/* Privacy and AI assistance (local disclosure) */}
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); setPrivacyOpen(true); }}
+                    className="ab-menu-item w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                  >
+                    <Shield size={16} strokeWidth={2} style={{ color: "var(--ab-accent-text)" }} />
+                    <span style={{ color: "var(--ab-text)" }}>Privacy and AI assistance</span>
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Theme toggle */}
+            {/* Minimize — hides the panel without destroying the in-session state
+                (spec §5 C-05). The launcher restores it. */}
             <button
-              onClick={toggle}
-              className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
-              aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-              title={isDark ? "Light mode" : "Dark mode"}
-            >
-              {isDark ? <Sun size={16} strokeWidth={2} /> : <Moon size={16} strokeWidth={2} />}
-            </button>
-
-            {/* Expand / collapse workspace (spec §5.2 header controls) */}
-            <button
-              onClick={() => setIsExpanded((p) => !p)}
-              className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
-              aria-label={isExpanded ? "Collapse assistant panel" : "Expand assistant panel"}
-              aria-pressed={isExpanded}
-              title={isExpanded ? "Collapse panel" : "Expand panel"}
-            >
-              {isExpanded ? <Minimize2 size={16} strokeWidth={2} /> : <Maximize2 size={16} strokeWidth={2} />}
-            </button>
-
-            {/* Close */}
-            <button
+              type="button"
               onClick={onClose}
-              className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
-              aria-label="Close assistant panel"
+              className="ab-icon-btn h-9 w-9 rounded-full flex items-center justify-center transition-colors"
+              aria-label="Minimize assistant panel"
+              title="Minimize"
             >
-              <X size={16} strokeWidth={2} />
+              <Minus size={18} strokeWidth={2} />
+            </button>
+
+            {/* Close (spec §5 C-06) */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="ab-icon-btn h-9 w-9 rounded-full flex items-center justify-center transition-colors"
+              aria-label="Close assistant panel"
+              title="Close"
+            >
+              <X size={18} strokeWidth={2} />
             </button>
           </div>
         </header>
 
-        {/* Messages viewport */}
-        <div ref={chatViewportRef} className="ab-viewport flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
+        {/* Messages viewport — the only scrollable region. `min-h-0` lets this
+            flex child shrink so the pinned header/composer are never pushed
+            out of the panel when the conversation is long. */}
+        <div ref={chatViewportRef} className="ab-viewport flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4" role="log" aria-label="Conversation messages">
           {messages.map((msg, idx) => {
             const animating =
               msg.sender_type === "assistant" && msg.message_uid === animatingUid;
@@ -1284,8 +1517,15 @@ export default function AssistantPanel({ isOpen, onClose }) {
           />
         )}
 
-        {/* Composer */}
-        <footer className="ab-footer px-4 py-3" style={{ borderTop: `1px solid var(--ab-border)` }}>
+        {privacyOpen && <PrivacyDisclosure onClose={() => setPrivacyOpen(false)} />}
+
+        {/* Composer — pinned to the bottom of the panel (`shrink-0`) so it can
+            never be compressed or clipped by the scrolling region above it.
+            The bottom padding also clears the mobile safe area (home indicator). */}
+        <footer
+          className="ab-footer shrink-0 px-4 py-3"
+          style={{ borderTop: `1px solid var(--ab-border)`, paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
           <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
@@ -1293,8 +1533,9 @@ export default function AssistantPanel({ isOpen, onClose }) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask about billing..."
+              maxLength={2000}
               rows={1}
-              className="ab-input flex-1 resize-none rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none focus:ring-2"
+              className="ab-input flex-1 resize-none rounded-xl px-3 py-[9px] text-sm leading-5 transition-colors focus:outline-none focus:ring-2"
               style={{ "--tw-ring-color": "var(--ab-focus-ring)" }}
               aria-label="Type your billing question"
               disabled={loading || initializing}
@@ -1303,7 +1544,7 @@ export default function AssistantPanel({ isOpen, onClose }) {
               <button
                 type="button"
                 onClick={handleStop}
-                className="p-2.5 rounded-xl bg-brand text-white hover:bg-brand-hover transition-colors"
+                className="ab-send-btn h-10 w-10 inline-flex items-center justify-center rounded-xl text-white transition-colors"
                 aria-label="Stop generating"
                 title="Stop generating"
               >
@@ -1314,15 +1555,25 @@ export default function AssistantPanel({ isOpen, onClose }) {
                 type="button"
                 onClick={handleSend}
                 disabled={!input.trim() || loading}
-                className="p-2.5 rounded-xl bg-brand text-white hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="ab-send-btn h-10 w-10 inline-flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="Send message"
               >
                 <Send size={16} />
               </button>
             )}
           </div>
-          <p className="mt-2 text-[10px] text-center" style={{ color: "var(--ab-text-muted)" }}>
-            AI-assisted. Verify financial data in billing records.
+          {/* Trust footer (spec §4/§10): exact disclosure copy + local
+              "Privacy and AI assistance" disclosure. */}
+          <p className="mt-2 text-[11px] leading-snug text-center" style={{ color: "var(--ab-text-muted)" }}>
+            AI-assisted guidance about Zoiko Billing. Verify financial information in your billing records.{" "}
+            <button
+              type="button"
+              onClick={() => setPrivacyOpen(true)}
+              className="underline underline-offset-2 transition-colors"
+              style={{ color: "var(--ab-accent-text)" }}
+            >
+              Privacy and AI assistance
+            </button>
           </p>
         </footer>
       </div>
@@ -1362,32 +1613,42 @@ function CaptionTimestamp({ iso, label }) {
 function AssistantMenuSection({ onSelectCategory }) {
   return (
     <>
-      <div className="flex items-start gap-2">
-        <ZoikoMark size={28} rounded="rounded-lg" />
+      <div className="flex items-start gap-2.5">
+        <ZoikoMark size={32} rounded="rounded-lg" />
         <div className="ab-bubble-assistant rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[85%]">
           <div className="whitespace-pre-wrap">{WELCOME_MESSAGE}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mt-2">
+      {/* Approved topic grid (spec §6): 8 icon tiles, 2-up once the inner
+          grid clears 376 px, 1-up below (full-screen sheet). */}
+      <div className="grid grid-cols-1 min-[408px]:grid-cols-2 gap-3 mt-1">
         {FAQ_CATEGORIES.map((cat) => {
-          const isEscalate = cat.action === "escalate";
+          const Icon = TOPIC_ICONS[cat.icon] || HelpCircle;
           return (
             <button
               key={cat.num}
+              type="button"
               onClick={() => onSelectCategory(cat)}
-              className={`ab-cat-btn group flex items-center gap-2.5 text-left transition-colors ${
-                isEscalate ? "ab-cat-btn--escalate" : ""
-              }`}
+              className="ab-cat-btn group flex items-center gap-3 text-left transition-colors"
             >
-              <span className="ab-cat-num inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-bold">
-                {isEscalate ? <LifeBuoy size={12} strokeWidth={2.5} /> : cat.num}
+              <span
+                className="ab-cat-icon inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px]"
+                style={{ background: cat.tint, color: cat.accent }}
+                aria-hidden="true"
+              >
+                <Icon size={20} strokeWidth={2} />
               </span>
-              <span className="text-[13px] font-medium leading-tight flex-1" style={{ color: "var(--ab-text)" }}>
-                {cat.label}
+              <span className="flex flex-col gap-0.5 flex-1 min-w-0">
+                <span className="text-[15px] font-medium leading-tight line-clamp-2" style={{ color: "var(--ab-text)" }}>
+                  {cat.label}
+                </span>
+                <span className="text-[12px] leading-tight line-clamp-2" style={{ color: "var(--ab-text-secondary)" }}>
+                  {cat.description}
+                </span>
               </span>
               <ArrowRight
-                size={12}
+                size={16}
                 className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ color: "var(--ab-accent-text)" }}
               />
@@ -1395,7 +1656,78 @@ function AssistantMenuSection({ onSelectCategory }) {
           );
         })}
       </div>
+
+      {/* "Speak to a human" — full-width action AFTER the grid, never a tile
+          (spec §8). */}
+      <button
+        type="button"
+        onClick={() => onSelectCategory(HUMAN_SUPPORT)}
+        className="ab-human-btn w-full flex items-center gap-3 text-left transition-colors"
+      >
+        <span className="ab-human-icon inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px]" aria-hidden="true">
+          <Headset size={20} strokeWidth={2} />
+        </span>
+        <span className="flex flex-col gap-0.5 flex-1 min-w-0">
+          <span className="text-sm font-semibold leading-tight" style={{ color: "var(--ab-text)" }}>
+            {HUMAN_SUPPORT.label}
+          </span>
+          <span className="text-[12.5px] leading-tight" style={{ color: "var(--ab-text-secondary)" }}>
+            {HUMAN_SUPPORT.description}
+          </span>
+        </span>
+        <ArrowRight size={16} className="flex-shrink-0" style={{ color: "var(--ab-accent-text)" }} />
+      </button>
     </>
+  );
+}
+
+// ── Privacy and AI assistance disclosure (spec §4/§10) ────────────────────────
+// The approved design links "Privacy and AI assistance"; no such route exists in
+// the app, so we surface an in-panel disclosure rather than invent a URL. Keeps
+// the assistant honest about AI limitations without leaving the panel.
+function PrivacyDisclosure({ onClose }) {
+  return (
+    <div
+      className="absolute inset-0 z-[70] flex items-end justify-center p-4"
+      style={{ background: "rgba(8,38,68,0.45)" }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Privacy and AI assistance"
+        className="w-full max-w-md rounded-2xl shadow-2xl p-5 text-sm"
+        style={{ background: "var(--ab-bg)", border: "1px solid var(--ab-border)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h3 className="text-[15px] font-semibold" style={{ color: "var(--ab-text)" }}>
+            Privacy and AI assistance
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ab-icon-btn h-8 w-8 rounded-full flex items-center justify-center transition-colors"
+            aria-label="Close privacy and AI assistance"
+          >
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
+        <p className="leading-relaxed mb-2" style={{ color: "var(--ab-text-secondary)" }}>
+          This assistant is AI-assisted. It provides guidance about Zoiko Billing
+          features and workflows, and can help you navigate the product.
+        </p>
+        <p className="leading-relaxed mb-2" style={{ color: "var(--ab-text-secondary)" }}>
+          Your conversation may be processed to generate responses and to improve
+          the assistant. Always verify financial information in your billing
+          records, and do not share payment credentials or other sensitive
+          secrets in chat.
+        </p>
+        <p className="leading-relaxed" style={{ color: "var(--ab-text-secondary)" }}>
+          For account-specific or sensitive matters, use “Speak to a human”.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -1636,7 +1968,6 @@ export function MessageBubble({ message, animate = false, streaming = false, def
   const isUser = message.sender_type === "user";
   const isSystem = message.sender_type === "system";
   const mode = message.mode ? MODE_CONFIG[message.mode] : null;
-  const riskClass = message.risk_class || "R0";
   const evidence = message.structured_payload?.evidence || [];
 
   const primaryEvidence = evidence[0] || {};
@@ -1655,18 +1986,17 @@ export function MessageBubble({ message, animate = false, streaming = false, def
       )}
 
       <div className={`max-w-[85%] min-w-0 ${isUser ? "order-1" : ""}`}>
-        {mode && (
+        {mode && isSystem && (
           <div className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full mb-1 ${mode.bg} ${mode.color} ${mode.border} border`}>
             <mode.icon size={10} />
             {mode.label}
-            <span className={`ml-1 px-1 rounded text-[9px] ${RISK_COLORS[riskClass]}`}>{riskClass}</span>
           </div>
         )}
 
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
             isUser
-              ? "bg-brand text-white rounded-br-sm"
+              ? "ab-bubble-user text-white rounded-br-sm"
               : isSystem
               ? "ab-bubble-system rounded-bl-sm"
               : "ab-bubble-assistant rounded-bl-sm"

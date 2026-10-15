@@ -7,6 +7,7 @@
 
 import { getAccessToken } from "../../service/sessionStorage";
 import { apiUrl } from "../../config/apiBase";
+import { tryRefreshToken } from "../../service/api";
 
 const API_BASE = apiUrl("/api/chatbot");
 
@@ -21,7 +22,30 @@ function authHeaders() {
   };
 }
 
-export async function createSession(title, initialMessage) {
+/**
+ * Classify a rejected authenticated request so callers branch on the real
+ * cause instead of assuming every 4xx means "session expired".
+ *
+ *   401 -> `authInvalid`  : token missing/expired. Callers attempt a silent
+ *                           refresh+replay first; only when that also fails do
+ *                           they additionally mark `sessionExpired`.
+ *   403 -> `forbidden`    : authenticated but not authorized (RBAC) or the
+ *                           billing subscription is inactive/over limit. This
+ *                           is NOT an expired session and must never be shown
+ *                           as one.
+ */
+function classifyAuthRejection(err, status) {
+  if (status === 401) err.authInvalid = true;
+  if (status === 403) err.forbidden = true;
+  return err;
+}
+
+/**
+ * createSession — POST /sessions. On a 401 the call is silently refreshed and
+ * replayed exactly once; a 403 is reported as `forbidden`, never as expiry.
+ * `_retry` is internal (guards the single replay).
+ */
+export async function createSession(title, initialMessage, _retry = true) {
   let res;
   try {
     res = await fetch(`${API_BASE}/sessions`, {
@@ -43,12 +67,16 @@ export async function createSession(title, initialMessage) {
       err.code = data?.code;
       err.detail = data?.message || data?.detail || data?.error || "";
     } catch { /* non-JSON error body is fine */ }
-    if (res.status === 401 || res.status === 403) err.sessionExpired = true;
     if (res.status === 429) {
       const retryAfter = res.headers.get("Retry-After");
       err.retryAfter = retryAfter ? parseInt(retryAfter, 10) || 10 : 10;
     }
-    throw err;
+    if (res.status === 401 && _retry) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed.ok) return createSession(title, initialMessage, false);
+      err.sessionExpired = true;
+    }
+    throw classifyAuthRejection(err, res.status);
   }
   return res.json();
 }
@@ -105,10 +133,7 @@ export async function sendMessage(conversationUid, message, page) {
       const retryAfter = res.headers.get("Retry-After");
       err.retryAfter = retryAfter ? parseInt(retryAfter, 10) || 10 : 10;
     }
-    if (res.status === 401 || res.status === 403) {
-      err.sessionExpired = true;
-    }
-    throw err;
+    throw classifyAuthRejection(err, res.status);
   }
   return res.json();
 }
@@ -152,6 +177,9 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
 
   let attempts = 0;
   let sawFrame = false;
+  // Guard so the 401 refresh+replay happens at most once per send (separate
+  // from `attempts`, which only rides out transient network/5xx/429 failures).
+  let authRetried = false;
   const handleSseEvent = (name, args) => {
     sawFrame = true;
     if (name === "ready") onReady(args);
@@ -185,12 +213,23 @@ export function sendMessageStreamed(conversationUid, message, page, opts) {
           } catch { /* non-JSON error body is fine */ }
           const err = new Error(`Send message failed: ${status}${detailText ? ` — ${detailText}` : ""}`);
           err.status = status;
-          if (status === 401 || status === 403) err.sessionExpired = true;
           if (status === 429) {
             const ra = response.headers.get("Retry-After");
             err.retryAfter = ra ? parseInt(ra, 10) || 10 : 10;
           }
-          throw err;
+          if (status === 401 && !authRetried) {
+            // Silent session recovery: refresh once, then replay the SSE
+            // request once. Only ever attempted before the stream opened
+            // (sawFrame) so an in-flight answer is never re-sent.
+            authRetried = true;
+            const refreshed = await tryRefreshToken();
+            if (refreshed.ok && !sawFrame) {
+              attempt();
+              return;
+            }
+            err.sessionExpired = true;
+          }
+          throw classifyAuthRejection(err, status);
         }
         if (!response.body) {
           const err = new Error("Send message failed: empty response body");

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -30,8 +30,13 @@ vi.mock("./api", () => ({
   cancelStream: (...args) => mockCancelStream(...args),
 }));
 
+// Mutable so individual tests can simulate "no admin session" (the public
+// fallback path). vi.hoisted keeps the value available to the hoisted mock
+// factory without a TDZ error.
+const authState = vi.hoisted(() => ({ accessToken: "test-token" }));
+
 vi.mock("../../service/sessionStorage", () => ({
-  getAccessToken: () => "test-token",
+  getAccessToken: () => authState.accessToken,
 }));
 
 // jsdom does not implement Element.scrollTo; the panel calls it on mount via
@@ -61,6 +66,19 @@ function renderPanel(session) {
     </MemoryRouter>,
     { legacyRoot: false }
   );
+}
+
+// Spec §5: the approved header exposes only an options menu, minimize and
+// close. Admin-only affordances (New conversation, Recent conversations, Back
+// to Main Menu, theme, expand/collapse) live inside the options menu, so tests
+// must open it before interacting with those controls. Idempotent: opening only
+// when the menu is not already expanded.
+function ensureAssistantMenuOpen() {
+  const toggle = screen.getByRole("button", { name: /assistant options/i });
+  if (toggle.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(toggle);
+  }
+  return toggle;
 }
 
 async function loadPanelWithSuggestions() {
@@ -96,6 +114,7 @@ async function loadPanelWithSuggestions() {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  authState.accessToken = "test-token";
 });
 
 describe("Suggestion chips — one-click quick questions", () => {
@@ -248,6 +267,23 @@ describe("Fresh-conversation category buttons", () => {
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
     expect(mockCreateSession.mock.calls[0][1]).toBe("How do I get started with Zoiko Billing?");
   });
+
+  it("renders eight category ICON tiles (never numeric placeholders) + one human card", async () => {
+    mockListSessions.mockResolvedValue([]);
+    renderPanel(null);
+
+    await screen.findByRole("button", { name: /getting started/i });
+
+    // Regression: the empty-state grid must show pastel category icons, not the
+    // legacy 1..8 number badges (`ab-cat-num`).
+    expect(document.querySelectorAll(".ab-cat-icon")).toHaveLength(8);
+    expect(document.querySelectorAll(".ab-cat-num")).toHaveLength(0);
+    expect(document.querySelectorAll(".ab-cat-btn")).toHaveLength(8);
+    expect(document.querySelector(".ab-human-btn")).toBeTruthy();
+    // Every tile renders an inline SVG line icon inside its icon container.
+    const icons = document.querySelectorAll(".ab-cat-icon svg");
+    expect(icons).toHaveLength(8);
+  });
 });
 
 describe("Loading lifecycle clears after final response", () => {
@@ -378,6 +414,7 @@ describe("Back to Main Menu", () => {
   // The chatbot exposes a single Back to Main Menu control in the header. The
   // former orange in-conversation duplicate must not render.
   function menuButtons() {
+    ensureAssistantMenuOpen();
     return screen.getAllByRole("button", { name: /back to main menu/i });
   }
   const headerMenuButton = () => menuButtons()[0];
@@ -385,14 +422,16 @@ describe("Back to Main Menu", () => {
   it("appears exactly once only when a conversation is on screen", async () => {
     await loadConversation();
     expect(menuButtons().length).toBe(1);
-    expect(screen.queryByText("Back to Main Menu")).toBeNull();
+    // Exactly one Back to Main Menu control exists in the DOM (the options-menu
+    // item) — never an in-conversation duplicate.
+    expect(screen.getAllByText("Back to Main Menu").length).toBe(1);
 
     // On the empty welcome state there are no messages, so no Back to Menu
     // controls are shown.
     cleanup();
     mockListSessions.mockResolvedValue([]);
     renderPanel(null);
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     expect(screen.queryAllByRole("button", { name: /back to main menu/i }).length).toBe(0);
   });
 
@@ -409,7 +448,7 @@ describe("Back to Main Menu", () => {
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
 
     // The existing welcome/main menu appears BELOW the conversation.
-    await waitFor(() => expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1));
+    await waitFor(() => expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1));
     expect(screen.getByRole("button", { name: /getting started/i })).toBeTruthy();
 
     // Menu appended vs. messages replaced: one intended control stays.
@@ -424,7 +463,7 @@ describe("Back to Main Menu", () => {
     mockGetSession.mockClear();
 
     fireEvent.click(headerMenuButton());
-    await waitFor(() => expect(screen.getByText(/hi, i'm your billing assistant/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/hi, i'm your zoiko billing assistant/i)).toBeTruthy());
     expect(mockSendStreamed).not.toHaveBeenCalled();
     expect(mockCreateSession).not.toHaveBeenCalled();
     expect(mockListSessions).not.toHaveBeenCalled();
@@ -436,14 +475,14 @@ describe("Back to Main Menu", () => {
 
     // Trigger from the header button.
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
 
     // Re-triggering is idempotent: same menu, same messages,
     // still exactly one menu section.
     fireEvent.click(headerMenuButton());
-    await waitFor(() => expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1));
+    await waitFor(() => expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1));
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
   });
 
@@ -463,7 +502,7 @@ describe("Back to Main Menu", () => {
       expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
       expect(screen.queryByText(/checking records/i)).toBeNull();
       expect(screen.getByLabelText(/type your billing question/i)).not.toBeDisabled();
-      expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+      expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     });
     // Completed messages survive; the in-flight one keeps its partial text.
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
@@ -497,7 +536,7 @@ describe("Back to Main Menu", () => {
     // below it — still exactly one menu section (never duplicated on top).
     await waitFor(() => {
       expect(screen.getByText(/answer to: how do i get started/i)).toBeTruthy();
-      expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+      expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
       expect(screen.getByRole("button", { name: /getting started/i })).toBeTruthy();
     });
   });
@@ -507,8 +546,8 @@ describe("Back to Main Menu", () => {
 
     // Return to the main menu first.
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
 
     // Ask a new question while holding the stream open.
     mockSendStreamed.mockClear();
@@ -522,13 +561,13 @@ describe("Back to Main Menu", () => {
     // question), the new user message appears BELOW it, and exactly one
     // request exists.  The menu is never hidden during streaming.
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop generating" })).toBeTruthy());
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     expect(screen.getByRole("button", { name: /getting started/i })).toBeTruthy();
     expect(screen.getByText("What is my current revenue?")).toBeTruthy();
     expect(mockSendStreamed).toHaveBeenCalledTimes(1);
 
     // The anchored menu must sit ABOVE the new user message (order preserved).
-    const welcomeTexts = screen.getAllByText(/hi, i'm your billing assistant/i);
+    const welcomeTexts = screen.getAllByText(/hi, i'm your zoiko billing assistant/i);
     expect(welcomeTexts.length).toBe(1);
     const menuPos = welcomeTexts[0].compareDocumentPosition(
       screen.getByText("What is my current revenue?")
@@ -551,7 +590,7 @@ describe("Back to Main Menu", () => {
       expect(screen.getByLabelText(/type your billing question/i)).not.toBeDisabled();
       expect(screen.queryByText(/checking records/i)).toBeNull();
     });
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     expect(screen.getByRole("button", { name: /getting started/i })).toBeTruthy();
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
     expect(screen.getAllByText("What is my current revenue?").length).toBe(1);
@@ -559,7 +598,7 @@ describe("Back to Main Menu", () => {
 
     // NO duplicate menu appears below the answer, and the single menu is NOT
     // repositioned after it — the answer stays the last conversation item.
-    const menuEl = screen.getAllByText(/hi, i'm your billing assistant/i)[0];
+    const menuEl = screen.getAllByText(/hi, i'm your zoiko billing assistant/i)[0];
     const answerEl = screen.getByText(/total revenue is/i);
     expect(menuEl.compareDocumentPosition(answerEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -568,14 +607,14 @@ describe("Back to Main Menu", () => {
     await loadConversation();
 
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
 
     // Clicking again with no new messages anchors at the same end and must not
     // add a second menu section.
     fireEvent.click(headerMenuButton());
     fireEvent.click(headerMenuButton());
-    await waitFor(() => expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1));
+    await waitFor(() => expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1));
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
   });
 
@@ -584,7 +623,7 @@ describe("Back to Main Menu", () => {
 
     // Return to the main menu, then ask a question that errors out.
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     mockSendStreamed.mockClear();
     let optsRef;
     mockSendStreamed.mockImplementation((uid, msg, page, opts) => { optsRef = opts; });
@@ -601,7 +640,7 @@ describe("Back to Main Menu", () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/type your billing question/i)).not.toBeDisabled();
       expect(screen.queryByText(/checking records/i)).toBeNull();
-      expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+      expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
       expect(screen.getByText(/here is what i found/i)).toBeTruthy();
       expect(screen.getByText(/break it/i)).toBeTruthy();
     });
@@ -610,7 +649,7 @@ describe("Back to Main Menu", () => {
   it("restores the main menu when generation is stopped mid-stream", async () => {
     await loadConversation();
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
 
     mockSendStreamed.mockClear();
     mockSendStreamed.mockImplementation(() => {});
@@ -628,7 +667,7 @@ describe("Back to Main Menu", () => {
       expect(screen.getByLabelText(/type your billing question/i)).not.toBeDisabled();
     });
     // No broken menu state: the menu returns below the stopped response.
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
     expect(screen.getByText(/stop me/i)).toBeTruthy();
   });
@@ -644,15 +683,16 @@ describe("Back to Main Menu", () => {
 
     // Back to Main Menu preserves the conversation (no new session).
     fireEvent.click(headerMenuButton());
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     expect(screen.getByText(/here is what i found/i)).toBeTruthy();
     expect(mockCreateSession).not.toHaveBeenCalled();
 
-    // New Conversation in the header still resets to a blank conversation.
+    // New Conversation in the options menu still resets to a blank conversation.
+    ensureAssistantMenuOpen();
     fireEvent.click(screen.getByRole("button", { name: /new conversation/i }));
     await waitFor(() => expect(screen.queryByText(/here is what i found/i)).toBeNull());
     // A fresh blank conversation shows exactly one welcome menu (top state).
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     // No Back to Main Menu controls with no messages.
     expect(screen.queryAllByRole("button", { name: /back to main menu/i }).length).toBe(0);
   });
@@ -729,7 +769,7 @@ describe("Message timestamps", () => {
   it("never shows a timestamp for the empty welcome/menu state", async () => {
     mockListSessions.mockResolvedValue([]);
     renderPanel(null);
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     expect(timeSpans().length).toBe(0);
   });
 
@@ -753,8 +793,9 @@ describe("Message timestamps", () => {
     const before = timeSpans();
     expect(before.length).toBe(1);
 
+    ensureAssistantMenuOpen();
     fireEvent.click(screen.getAllByRole("button", { name: /back to main menu/i })[0]);
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
 
     // Same single timestamp, same value — the menu adds no fake timestamps.
     const after = timeSpans();
@@ -777,8 +818,8 @@ describe("Initial New Conversation main menu (anchored)", () => {
       messages: [],
     });
     renderPanel(null);
-    await screen.findByText(/hi, i'm your billing assistant/i);
-    return screen.getAllByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
+    return screen.getAllByText(/hi, i'm your zoiko billing assistant/i);
   }
 
   async function askGettingStarted() {
@@ -830,11 +871,12 @@ describe("Initial New Conversation main menu (anchored)", () => {
       messages: [],
     });
     mockCreateSession.mockClear();
+    ensureAssistantMenuOpen();
     fireEvent.click(screen.getByRole("button", { name: /new conversation/i }));
     await waitFor(() => expect(screen.queryByText(/here is what i found/i)).toBeNull());
 
     // Fresh blank conversation shows exactly one anchored menu, top state.
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     expect(screen.getByRole("button", { name: /getting started/i })).toBeTruthy();
   });
 
@@ -850,8 +892,8 @@ describe("Initial New Conversation main menu (anchored)", () => {
     await screen.findByText(/here is how to get started/i);
 
     expect(screen.getAllByText("How do I get started with Zoiko Billing?").length).toBe(1);
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
-    const singleMenu = screen.getAllByText(/hi, i'm your billing assistant/i)[0];
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
+    const singleMenu = screen.getAllByText(/hi, i'm your zoiko billing assistant/i)[0];
     const questionEl = screen.getByText("How do I get started with Zoiko Billing?");
     const answerEl = screen.getByText(/here is how to get started/i);
     expect(singleMenu.compareDocumentPosition(questionEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -862,8 +904,8 @@ describe("Initial New Conversation main menu (anchored)", () => {
   it("menu remains visible above the fresh question with exactly one request", async () => {
     await askGettingStarted();
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
-    const menuEl = screen.getAllByText(/hi, i'm your billing assistant/i)[0];
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
+    const menuEl = screen.getAllByText(/hi, i'm your zoiko billing assistant/i)[0];
     expect(menuEl.compareDocumentPosition(
       screen.getByText("How do I get started with Zoiko Billing?")
     ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -907,6 +949,7 @@ describe("Message ordering & reconciliation (BUG 1 / BUG 2)", () => {
   // Open the Recent conversations dropdown and click the option whose visible
   // label matches `label` (options are named by session title).
   async function selectSessionViaDropdown(label) {
+    ensureAssistantMenuOpen();
     fireEvent.click(screen.getByRole("button", { name: /recent conversations/i }));
     const option = await screen.findByRole("option", { name: new RegExp(label) });
     fireEvent.click(option);
@@ -1041,8 +1084,9 @@ describe("Message ordering & reconciliation (BUG 1 / BUG 2)", () => {
     renderPanel(session);
     await screen.findByText(/answer three/i);
 
+    ensureAssistantMenuOpen();
     fireEvent.click(screen.getAllByRole("button", { name: /back to main menu/i })[0]);
-    await screen.findByText(/hi, i'm your billing assistant/i);
+    await screen.findByText(/hi, i'm your zoiko billing assistant/i);
     // Messages remain on screen, in order, and the new question stays below.
     expect(screen.getByText("question three")).toBeTruthy();
     expect(screen.getByText(/answer three/)).toBeTruthy();
@@ -1051,7 +1095,7 @@ describe("Message ordering & reconciliation (BUG 1 / BUG 2)", () => {
     // Same-session history refresh/reconcile must not remove or move the
     // frontend-only menu anchor.
     await selectSessionViaDropdown("Test Conv");
-    expect(screen.getAllByText(/hi, i'm your billing assistant/i).length).toBe(1);
+    expect(screen.getAllByText(/hi, i'm your zoiko billing assistant/i).length).toBe(1);
     expectOrdered("question three", "answer three");
   });
 
@@ -1074,5 +1118,115 @@ describe("Message ordering & reconciliation (BUG 1 / BUG 2)", () => {
     expectOrdered("second question", "second answer");
     expect(screen.getAllByText(/^first answer$/).length).toBe(1);
     expect(screen.getAllByText(/^second answer$/).length).toBe(1);
+  });
+});
+
+// ── Public-assistant fallback ────────────────────────────────────────────────
+// The panel is only mounted inside the authenticated shell, but the admin
+// session can be missing or have expired mid-conversation. A general PRODUCT
+// question used to dead-end with "Your session has expired." — these tests lock
+// in the fix: general questions are answered through the UNAUTHENTICATED public
+// assistant, account-specific ones surface a Sign-in action, and a false
+// "session expired" is never shown.
+describe("Public-assistant fallback (no usable admin session)", () => {
+  beforeEach(() => {
+    // These tests fully control the flow: drop any implementation leaked from
+    // earlier tests and start from a clean, empty conversation.
+    mockListSessions.mockReset();
+    mockGetSession.mockReset();
+    mockCreateSession.mockReset();
+    mockSendStreamed.mockReset();
+    mockListSessions.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function messageLogText() {
+    return screen.getByRole("log").textContent || "";
+  }
+
+  function publicFetch(answerPayload) {
+    return vi.fn(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/api/assistant/public/sessions")) {
+        return { ok: true, status: 201, json: async () => ({ session_uid: "pub-sess-1", status: "active", messages: [] }) };
+      }
+      return { ok: true, status: 200, json: async () => answerPayload };
+    });
+  }
+
+  it("TEST A — answers a general product question without demanding login", async () => {
+    authState.accessToken = null;
+    localStorage.clear();
+    vi.stubGlobal("fetch", publicFetch({
+      message_uid: "m-1",
+      answer: "Payments are billed monthly against your subscription.",
+      mode: "M0_EXPLAIN",
+      risk_class: "R0",
+      requires_auth: false,
+    }));
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText(/type your billing question/i), {
+      target: { value: "How do payments work in Zoiko Billing platform?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(messageLogText()).toMatch(/payments are billed monthly/i));
+    // The authenticated path is never touched, and the false dead-end never shows.
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockSendStreamed).not.toHaveBeenCalled();
+    expect(screen.queryByText(/your session has expired/i)).toBeNull();
+  });
+
+  it("TEST B — on an invalid admin session the message is answered publicly (no 'session expired')", async () => {
+    localStorage.clear();
+    vi.stubGlobal("fetch", publicFetch({
+      answer: "Payments are billed monthly against your subscription.",
+      mode: "M0_EXPLAIN",
+      risk_class: "R0",
+      requires_auth: false,
+    }));
+    const session = makeAssistantSession([
+      { message_uid: "a1", sender_type: "assistant", message_text: "Welcome back.", mode: "M0_EXPLAIN", risk_class: "R0", structured_payload: { suggested_prompts: [], next_actions: [], evidence: [] } },
+    ]);
+    mockListSessions.mockResolvedValue([session]);
+    mockGetSession.mockResolvedValue(session);
+    // The authenticated stream reports an unusable session (refresh already failed).
+    mockSendStreamed.mockImplementation((uid, msg, page, opts) => {
+      opts.onError?.({ name: "Error", message: "Send message failed: 401", status: 401, authInvalid: true });
+    });
+    renderPanel();
+
+    await screen.findByText(/welcome back/i);
+    fireEvent.change(screen.getByLabelText(/type your billing question/i), {
+      target: { value: "How do payments work in Zoiko Billing platform?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(messageLogText()).toMatch(/payments are billed monthly/i));
+    expect(screen.queryByText(/your session has expired/i)).toBeNull();
+  });
+
+  it("TEST C — an account-specific question surfaces a Sign in action, never tenant data", async () => {
+    authState.accessToken = null;
+    localStorage.clear();
+    vi.stubGlobal("fetch", publicFetch({
+      answer: "I can't access account-specific information here. Sign in to view your invoices.",
+      mode: "M0_EXPLAIN",
+      risk_class: "R0",
+      requires_auth: true,
+    }));
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText(/type your billing question/i), {
+      target: { value: "show my invoices" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(messageLogText()).toMatch(/can't access account-specific information/i));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy());
   });
 });

@@ -884,10 +884,20 @@ class PublicAssistantMessage(Base):
     message_text = Column(Text, nullable=False)
     mode = Column(String(20), nullable=True)
     risk_class = Column(SAEnum(RiskClass, native_enum=False), default=RiskClass.R0)
+    # Client-supplied idempotency key for the USER turn, so a retried send
+    # (double-click, flaky network, page refresh) never creates a second
+    # exchange. Nullable: sessions created before this column carry none.
+    idempotency_key = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("ix_ai_public_msg_session_created", "session_id", "created_at"),
+        # DB-level enforcement of the idempotency contract: one user turn per
+        # (session, idempotency_key). SQLite and Postgres both treat NULL keys
+        # as distinct, so legacy rows without a key stay unaffected. Pairs with
+        # the whole request: a concurrent duplicate that outruns the application
+        # lookup is caught here and replayed in public_assistant._finish.
+        UniqueConstraint("session_id", "idempotency_key", name="uq_ai_public_msg_session_idem"),
     )
 
 
@@ -908,3 +918,58 @@ class PublicRateLimitCounter(Base):
     __table_args__ = (
         UniqueConstraint("rate_key", "window_start", name="uq_ai_public_rate_window"),
     )
+
+
+class PublicSupportRequest(Base):
+    """A visitor-submitted human-support request from the public widget.
+
+    Created only after the visitor explicitly consents to sharing their
+    conversation excerpt. There is NO tenant linkage: the public assistant has
+    no authenticated identity. The ``reference`` is a genuine row identifier
+    minted by this system on successful persistence, so the widget can show it
+    only when creation is confirmed. Live-chat routing is NOT asserted here;
+    delivery to a downstream support desk is a separate, configuration-gated
+    integration (see ``AI_PUBLIC_SUPPORT_WEBHOOK_URL``).
+    """
+    __tablename__ = "ai_public_support_request"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String(24), unique=True, nullable=False, index=True)
+    session_uid = Column(String(36), nullable=True, index=True)
+    issue_type = Column(String(40), nullable=False)
+    email = Column(String(320), nullable=False)
+    summary = Column(String(500), nullable=False)
+    message = Column(Text, nullable=True)
+    # Consent is mandatory: no transcript excerpt is ever stored or forwarded
+    # unless the visitor opted in with an explicit affirmative.
+    transcript_consent = Column(Boolean, default=False, nullable=False)
+    transcript_excerpt = Column(Text, nullable=True)
+    status = Column(String(20), default="received", nullable=False)
+    ip_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Client-minted idempotency key for this support request. A retried submit
+    # after a lost response reuses the key and the server returns the ORIGINAL
+    # reference instead of creating a duplicate request (the widget keeps one
+    # key for the lifetime of the form, so a network retry is deduplicated).
+    client_request_id = Column(String(64), nullable=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("client_request_id", name="uq_ai_public_support_client_request_id"),
+    )
+
+
+class PublicAssistantFeedback(Base):
+    """Optional, privacy-minimal helpful/not-helpful signal on one answer.
+
+    No user profiling: a single boolean and an anonymous session pointer. The
+    optional reason is sanitized + length-capped before storage.
+    """
+    __tablename__ = "ai_public_assistant_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_uid = Column(String(36), nullable=True, index=True)
+    message_uid = Column(String(36), nullable=True, index=True)
+    helpful = Column(Boolean, nullable=False)
+    reason = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
