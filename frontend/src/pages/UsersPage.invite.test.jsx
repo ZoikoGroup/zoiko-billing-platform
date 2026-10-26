@@ -36,7 +36,8 @@ describe("UsersPage invite tenant administrator", () => {
 
   it("selects an organization without crashing and invites into it", async () => {
     render(<UsersPage />);
-    fireEvent.click(await screen.findByRole("button", { name: /Invite Organization Admin/i }));
+    // The header button (the empty roster also offers one).
+    fireEvent.click((await screen.findAllByRole("button", { name: /Invite Organization Admin/i }))[0]);
     const dialog = await screen.findByRole("dialog");
 
     const org = within(dialog).getByLabelText(/^Organization/i, { selector: "select" });

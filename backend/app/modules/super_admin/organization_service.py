@@ -20,11 +20,12 @@ Domain-boundary guarantees enforced here:
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.auth.models import User, UserRole
+from app.modules.commercial.enums import CommercialSubscriptionStatus
 from app.modules.commercial.models import CommercialAccount, CommercialSubscription
 from app.modules.commercial.service import (
     CommercialAccountService,
@@ -51,6 +52,39 @@ _OPEN_ATTENTION_STATUSES = {
 # Roles that are tenant-side administrators (never super admins).
 _TENANT_ADMIN_ROLES = {UserRole.ORG_ADMIN}
 
+# ── Account status: one answer to "what is this account right now?" ─────────
+# Combines the tenant lifecycle with the org's current Zoiko subscription so
+# the directory says Trial / Active / … instead of exposing lifecycle
+# bookkeeping states such as ONBOARDING. account_status_for() (per row) and
+# _account_status_case() (SQL, for filtering and counts) encode the SAME
+# rules and must be kept in step.
+ACCOUNT_STATUSES = ("trial", "active", "past_due", "suspended", "deactivated", "no_plan")
+
+_DEACTIVATED_STATES = (TenantLifecycleState.DEACTIVATING, TenantLifecycleState.DEACTIVATED)
+_SUSPENDED_SUB = (CommercialSubscriptionStatus.SUSPENDED,)
+_PAST_DUE_SUB = (CommercialSubscriptionStatus.PAST_DUE, CommercialSubscriptionStatus.RESTRICTED)
+_TRIAL_SUB = (CommercialSubscriptionStatus.TRIALING, CommercialSubscriptionStatus.TRIAL_RECOVERY)
+_ACTIVE_SUB = (
+    CommercialSubscriptionStatus.ACTIVE,
+    CommercialSubscriptionStatus.SCHEDULED_CHANGE,
+    CommercialSubscriptionStatus.CANCEL_AT_PERIOD_END,
+    CommercialSubscriptionStatus.CONVERTED,
+)
+
+
+def account_status_for(lifecycle_state, subscription_status) -> str:
+    if lifecycle_state in _DEACTIVATED_STATES:
+        return "deactivated"
+    if lifecycle_state == TenantLifecycleState.SUSPENDED or subscription_status in _SUSPENDED_SUB:
+        return "suspended"
+    if subscription_status in _PAST_DUE_SUB:
+        return "past_due"
+    if subscription_status in _TRIAL_SUB:
+        return "trial"
+    if subscription_status in _ACTIVE_SUB:
+        return "active"
+    return "no_plan"
+
 
 class OrganizationDirectoryService:
     def __init__(self, db: Session):
@@ -70,8 +104,14 @@ class OrganizationDirectoryService:
         currency: Optional[str] = None,
         billing_classification=None,
         billing_source=None,
+        account_status: Optional[str] = None,
     ) -> dict:
-        query = self.db.query(Organization)
+        if account_status not in (None, "", *ACCOUNT_STATUSES):
+            raise BadRequestException(f"account_status must be one of: {', '.join(ACCOUNT_STATUSES)}")
+        latest_sub, status_expr = self._account_status_case()
+        query = self.db.query(Organization).outerjoin(latest_sub, latest_sub.c.org_id == Organization.id).outerjoin(
+            CommercialSubscription, CommercialSubscription.id == latest_sub.c.sub_id
+        )
 
         if search:
             like = f"%{search}%"
@@ -96,6 +136,8 @@ class OrganizationDirectoryService:
             query = query.filter(Organization.billing_classification == billing_classification)
         if billing_source is not None:
             query = query.filter(Organization.billing_source == billing_source)
+        if account_status:
+            query = query.filter(status_expr == account_status)
 
         total = query.count()
         orgs = (
@@ -123,7 +165,51 @@ class OrganizationDirectoryService:
             )
             for org in orgs
         ]
-        return {"total": total, "organizations": items}
+        return {"total": total, "organizations": items, "status_counts": self.account_status_counts()}
+
+    def _account_status_case(self):
+        """(latest-open-subscription subquery, SQL CASE yielding account_status).
+        The subquery picks each org's most recent open subscription (max id),
+        the same one _commercial_map() reports per row."""
+        latest_sub = (
+            self.db.query(
+                CommercialAccount.organization_id.label("org_id"),
+                func.max(CommercialSubscription.id).label("sub_id"),
+            )
+            .join(CommercialSubscription, CommercialSubscription.commercial_account_id == CommercialAccount.id)
+            .filter(CommercialSubscription.status.in_(list(CommercialSubscriptionService._OPEN_STATUSES)))
+            .group_by(CommercialAccount.organization_id)
+            .subquery()
+        )
+        sub_status = CommercialSubscription.status
+        status_expr = case(
+            (Organization.lifecycle_state.in_(_DEACTIVATED_STATES), "deactivated"),
+            (
+                or_(Organization.lifecycle_state == TenantLifecycleState.SUSPENDED, sub_status.in_(_SUSPENDED_SUB)),
+                "suspended",
+            ),
+            (sub_status.in_(_PAST_DUE_SUB), "past_due"),
+            (sub_status.in_(_TRIAL_SUB), "trial"),
+            (sub_status.in_(_ACTIVE_SUB), "active"),
+            else_="no_plan",
+        )
+        return latest_sub, status_expr
+
+    def account_status_counts(self) -> dict:
+        """Fleet-wide organization count per account status (unfiltered)."""
+        latest_sub, status_expr = self._account_status_case()
+        rows = (
+            self.db.query(status_expr.label("account_status"), func.count(Organization.id))
+            .select_from(Organization)
+            .outerjoin(latest_sub, latest_sub.c.org_id == Organization.id)
+            .outerjoin(CommercialSubscription, CommercialSubscription.id == latest_sub.c.sub_id)
+            .group_by(status_expr)
+            .all()
+        )
+        counts = {status: 0 for status in ACCOUNT_STATUSES}
+        for status, count in rows:
+            counts[status] = int(count or 0)
+        return counts
 
     def _directory_item(self, org, user_counts, incident_counts, last_activity_at, commercial=None) -> dict:
         state = TenantLifecycleService(self.db).effective_state(org)
@@ -152,6 +238,7 @@ class OrganizationDirectoryService:
             "currency": org.currency,
             "is_active": bool(org.is_active),
             "lifecycle_state": state.value,
+            "account_status": account_status_for(state, current_sub.status if current_sub else None),
             "billing_classification": org.billing_classification,
             "billing_source": org.billing_source,
             "commercial_account_status": account.status if account else None,
@@ -318,7 +405,9 @@ class OrganizationDirectoryService:
             )
             .all()
         )
-        sub_by_account = {s.commercial_account_id: s for s in subs}
+        # Most recent open subscription per account (max id), matching
+        # _account_status_case() so the row badge and the counts agree.
+        sub_by_account = {s.commercial_account_id: s for s in sorted(subs, key=lambda s: s.id)}
         for account in accounts:
             result[account.organization_id] = (
                 account,

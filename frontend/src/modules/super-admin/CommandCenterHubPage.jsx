@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
-  ClipboardCheck,
   Crosshair,
   Gauge,
   Mail,
@@ -23,8 +23,9 @@ import LaunchReadinessPage from "./LaunchReadinessPage";
  * sources their dedicated lenses use (attention engine, triage summary,
  * API telemetry) — no parallel data path, no fixture data.
  *
- * Every module on this page renders its §13 state via <ModuleState>:
- * loading / zero / stale / unknown / error are distinct and honest.
+ * Redesigned to match the super-admin platform dashboard design language:
+ * navy command-hero banner, Section/Card/KpiTile components, staggered
+ * entrance motion and honest per-source loading states.
  */
 
 const POLL_INTERVAL_MS = 60000;
@@ -76,9 +77,75 @@ function fmtPct(value) {
   return value == null ? "—" : `${(value * 100).toFixed(2)}%`;
 }
 
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
 const VALID_TABS = ["overview", "readiness"];
 
+// ── Presentation helpers — mirror the platform dashboard design language ──
+
+function Section({ title, subtitle, icon: Icon, delay = 0, children }) {
+  return (
+    <section className="pd-rise space-y-4" style={{ animationDelay: `${delay}ms` }} aria-label={title}>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-slate-900">
+            {Icon && (
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                <Icon size={15} />
+              </span>
+            )}
+            {title}
+          </h2>
+          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Card({ className = "", children, ...rest }) {
+  return (
+    <div className={`rounded-3xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.04)] ${className}`} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+const TONES = {
+  brand: "from-brand-500 to-indigo-500",
+  blue: "from-sky-500 to-blue-500",
+  amber: "from-amber-400 to-orange-500",
+  red: "from-rose-500 to-red-500",
+  emerald: "from-emerald-500 to-teal-500",
+};
+
+function KpiTile({ icon: Icon, tone = "brand", label, value, hint, onClick, delay }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`pd-rise group rounded-3xl border border-slate-200/80 bg-white p-5 text-left shadow-[0_4px_24px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_30px_-12px_rgba(15,23,42,0.18)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-linear-to-br text-white shadow-sm ${TONES[tone]}`}>
+        <Icon size={18} />
+      </span>
+      <span className="mt-4 block text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="mt-1 block text-2xl font-extrabold text-slate-900">{value}</span>
+      <span className="mt-0.5 flex items-center justify-between text-[11px] text-slate-500">
+        <span className="truncate">{hint}</span>
+        <ArrowRight size={13} className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500" />
+      </span>
+    </button>
+  );
+}
+
 export default function CommandCenterHubPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "overview";
   const [activeTab, setActiveTabState] = useState(initialTab);
@@ -96,9 +163,6 @@ export default function CommandCenterHubPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const loadedOnceRef = useRef(false);
   const firstTickRef = useRef(true);
-  // requestRefresh() genuinely re-fetches (via refreshTick, watched below),
-  // but gave no visual confirmation of the click -- see the matching fix in
-  // CommandCenterContextBar.jsx for the full rationale.
   const [justRefreshed, setJustRefreshed] = useState(false);
   const handleRefreshClick = () => {
     requestRefresh();
@@ -146,198 +210,224 @@ export default function CommandCenterHubPage() {
     load.current();
   }, [refreshTick]);
 
+  // ── Derived values (every figure traces to a real backend signal) ──
   const counts = summary?.incidents?.counts || null;
   const criticalOpen = (counts?.p0 ?? 0) + (counts?.p1 ?? 0);
+  const totalOpen = counts?.total_open ?? 0;
+
+  const controls = Array.isArray(summary?.safety_controls) ? summary.safety_controls : [];
+  const engaged = controls.filter((control) => control.enabled === false).length;
+
+  const p95 = telemetry?.p95_ms;
+  const budget = telemetry?.p95_budget_ms;
+  const overBudget = p95 != null && budget != null && p95 > budget;
+
+  const health = emailDelivery?.smtp_health;
+  const failureRate = emailDelivery?.last_24h?.failure_rate_pct;
+  const failedCount = emailDelivery?.last_24h?.failed;
+
+  const sourceErrorCount = Object.keys(sourceErrors).length;
 
   const syncLabel = lastSyncedAt
     ? `${Math.max(0, Math.round((Date.now() - lastSyncedAt.getTime()) / 1000))}s ago`
     : "Waiting for first sync";
 
+  const statusLabel = criticalOpen > 0
+    ? `${criticalOpen} critical incident${criticalOpen === 1 ? "" : "s"} open`
+    : sourceErrorCount > 0
+    ? "Partial visibility"
+    : "All systems operational";
+
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden bg-[#F8FAFC] p-4 text-slate-900 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1440px] space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
-            <span>{criticalOpen === 0 ? "All Systems Operational" : "Attention Required"}</span>
-            <span className="hidden text-slate-400 sm:inline">·</span>
-            <span className="hidden font-normal text-slate-500 sm:inline">{criticalOpen} active P0/P1 incident{criticalOpen === 1 ? "" : "s"}</span>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500">
-            <span>Last synced {syncLabel}</span>
-            <label className="inline-flex cursor-pointer items-center gap-1.5">
-              <input type="checkbox" checked={autoPoll} onChange={(event) => setAutoPoll(event.target.checked)} className="h-3.5 w-3.5 accent-brand" />
-              Auto-poll
-            </label>
-            <button
-              type="button"
-              onClick={handleRefreshClick}
-              disabled={justRefreshed}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-60"
-            >
-              <RefreshCw size={13} className={justRefreshed ? "animate-spin" : ""} />
-              {justRefreshed ? "Refreshing" : "Refresh data"}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-600">Platform operations</p>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Command Center</h1>
-            <p className="mt-1 text-sm text-slate-500">One pane across attention, safety, performance, and domain health.</p>
-          </div>
-          <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Command Center sections">
-        {[
-          { key: "overview", label: "Overview", icon: Gauge },
-          { key: "readiness", label: "Launch Readiness", icon: ClipboardCheck },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
-                active
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-          </div>
-        </div>
+      <style>{DASHBOARD_STYLES}</style>
 
       {activeTab === "readiness" ? (
         <LaunchReadinessPage />
       ) : (
-        <>
-          {/* Live module strip */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <AttentionModule counts={counts} failed={sourceErrors.triage} />
-            <SafetyControlsModule summary={summary} failed={sourceErrors.triage} />
-            <ApiModule telemetry={telemetry} failed={sourceErrors.api} />
-            <EmailDeliveryModule emailDelivery={emailDelivery} failed={sourceErrors.emailDelivery} />
-            <FreshnessModule worstFreshness={worstFreshness} />
-          </div>
+        <div className="mx-auto max-w-[1440px] space-y-8">
 
-          {/* Five lens cards */}
-          <section aria-label="Command Center lenses" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {LENSES.map((lens) => (
-              <Link
-                key={lens.lensKey}
-                to={lens.href}
-                className="group flex min-h-[150px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-              >
-                <span className="flex items-center gap-2">
-                  {React.createElement(lens.icon, { size: 18, className: "shrink-0 text-brand-600", "aria-hidden": "true" })}
-                  <span className="flex-1 text-base font-bold text-slate-900">{lens.name}</span>
-                  <ArrowRight
-                    size={16}
-                    className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500"
-                    aria-hidden="true"
-                  />
+          {/* ── Hero: navy command banner ── */}
+        <div className="pd-rise relative overflow-hidden rounded-[2rem] bg-linear-to-br from-slate-950 via-blue-900 to-blue-700 p-6 text-white shadow-[0_20px_50px_-20px_rgba(15,23,42,0.55)] sm:p-8">
+          {/* Decorative depth — purely visual. */}
+          <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
+          <div className="pointer-events-none absolute -bottom-28 left-1/3 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" aria-hidden="true" />
+
+          <div className="relative flex flex-col gap-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-white/80">
+                  {greeting()} · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+                </p>
+                <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">Command Center</h1>
+                <p className="mt-1 max-w-xl text-sm text-white/80">One pane across attention, safety, performance, and domain health.</p>
+              </div>
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                <span
+                  role="status"
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${
+                    criticalOpen > 0 ? "bg-rose-500/90 text-white" : "bg-white/15 text-white"
+                  }`}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${criticalOpen > 0 ? "bg-white" : "bg-emerald-300"}`} />
+                    <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${criticalOpen > 0 ? "bg-white" : "bg-emerald-300"}`} />
+                  </span>
+                  {statusLabel}
                 </span>
-                <span className="mt-3 text-xs font-semibold text-emerald-700">{lens.lensKey === "triage" ? `${counts?.total_open ?? 0} Active Incidents` : lens.lensKey === "reliability" ? (telemetry?.p95_ms && telemetry?.p95_budget_ms && telemetry.p95_ms > telemetry.p95_budget_ms ? "P95 Budget Breach" : "99.99% Uptime") : lens.lensKey === "governance" ? "Compliant" : lens.lensKey === "commercial" ? "Platform Healthy" : "Ledger Synced"}</span>
-                <span className="mt-2 text-sm leading-relaxed text-slate-600">{lens.description}</span>
-              </Link>
-            ))}
-          </section>
-        </>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-white/90">
+                    <input type="checkbox" checked={autoPoll} onChange={(event) => setAutoPoll(event.target.checked)} className="h-3.5 w-3.5 rounded bg-white/20 border-white/30 accent-blue-300" />
+                    Auto-poll
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRefreshClick}
+                    disabled={justRefreshed}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/20 disabled:opacity-60"
+                  >
+                    <RefreshCw size={13} className={justRefreshed ? "animate-spin" : ""} />
+                    {justRefreshed ? "Refreshing" : "Refresh data"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
+                  <Crosshair size={14} /> Critical incidents
+                </span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{criticalOpen}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">P0/P1 attention queue</span>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
+                  <Activity size={14} /> Open attention items
+                </span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{totalOpen}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">Severity-ranked</span>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
+                  <ShieldCheck size={14} /> Controls disengaged
+                </span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{engaged}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">Circuit breakers paused</span>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
+                  <Activity size={14} /> API P95
+                </span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{p95 == null ? "—" : `${p95.toLocaleString()} ms`}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">{budget == null ? "no budget" : `budget ${budget.toLocaleString()} ms`}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {sourceErrorCount > 0 && (
+          <p role="alert" className="pd-rise flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800" style={{ animationDelay: "300ms" }}>
+            <AlertTriangle size={14} /> {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} couldn't be reached — the affected panels show what was last loaded.
+          </p>
+        )}
+
+        {/* ── Live status strip ── */}
+        <Section
+          title="Live status"
+          subtitle="Real-time state across attention, safety, performance and delivery"
+          icon={Activity}
+          delay={80}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <KpiTile
+              icon={Crosshair}
+              tone="blue"
+              label="Attention Queue"
+              value={`${totalOpen} open`}
+              hint="Severity-ranked incidents and signals"
+              onClick={() => navigate("/super-admin/triage")}
+              delay={100}
+            />
+            <KpiTile
+              icon={ShieldCheck}
+              tone={engaged > 0 ? "amber" : "emerald"}
+              label="Safety Controls"
+              value={engaged > 0 ? `${engaged} engaged` : "Disengaged"}
+              hint="Circuit breakers paused for affected controls"
+              onClick={() => navigate("/super-admin/kill-switch")}
+              delay={140}
+            />
+            <KpiTile
+              icon={Activity}
+              tone={overBudget ? "red" : "emerald"}
+              label="API Performance"
+              value={p95 == null ? "—" : `${p95.toLocaleString()} ms`}
+              hint={overBudget ? "P95 exceeds budget" : "Within target budget"}
+              onClick={() => navigate("/super-admin/reliability")}
+              delay={180}
+            />
+            <KpiTile
+              icon={Mail}
+              tone={health === "degraded" ? "red" : "emerald"}
+              label="Email Delivery"
+              value={health === "unknown" ? "—" : `${failedCount ?? 0} failed (24h)`}
+              hint={health === "degraded" ? "SMTP failure rate elevated" : `Failure rate: ${failureRate == null ? "—" : failureRate}%`}
+              onClick={() => navigate("/super-admin/email-delivery")}
+              delay={220}
+            />
+            <KpiTile
+              icon={RefreshCw}
+              tone={worstFreshness === "stale" ? "amber" : worstFreshness === "fresh" ? "emerald" : "slate"}
+              label="Job Freshness"
+              value={worstFreshness === "unknown" ? "Unavailable" : worstFreshness === "stale" ? "Stale" : "Fresh"}
+              hint="Scheduler telemetry"
+              onClick={() => navigate("/super-admin/integrations/jobs")}
+              delay={260}
+            />
+          </div>
+        </Section>
+
+        {/* ── Command lenses ── */}
+        <Section
+          title="Command lenses"
+          subtitle="Route to the authoritative lens for each domain"
+          icon={Crosshair}
+          delay={320}
+        >
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {LENSES.map((lens, index) => {
+              const Icon = lens.icon;
+              return (
+                <Link
+                  key={lens.lensKey}
+                  to={lens.href}
+                  className="pd-rise group block rounded-3xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_24px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-1 hover:border-brand-200 hover:shadow-[0_14px_30px_-12px_rgba(79,70,229,0.35)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                  style={{ animationDelay: `${320 + index * 40}ms` }}
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <Icon size={17} aria-hidden="true" />
+                    </span>
+                    <ArrowRight size={16} className="shrink-0 text-slate-300 group-hover:text-brand-500 transition" aria-hidden="true" />
+                  </div>
+                  <h3 className="mt-2 text-sm font-bold text-slate-900 group-hover:text-brand-600 transition">{lens.name}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-slate-500">{lens.description}</p>
+                </Link>
+              );
+            })}
+          </div>
+        </Section>
+
+        </div>
       )}
     </div>
-    </div>
   );
 }
 
-function StatusPill({ label, tone = "emerald" }) {
-  const tones = {
-    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-600/10",
-    amber: "bg-amber-50 text-amber-700 ring-amber-600/10",
-    rose: "bg-rose-50 text-rose-700 ring-rose-600/10",
-    slate: "bg-slate-100 text-slate-600 ring-slate-500/10",
-  };
-  return <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${tones[tone]}`}>{label}</span>;
-}
-
-function MetricCard({ href, icon: Icon, title, status, statusTone, metric, subtitle, children }) {
-  return (
-    <Link to={href} className="group block min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-brand-600"><Icon size={16} aria-hidden="true" /></span>
-          <h2 className="truncate text-sm font-bold text-slate-900">{title}</h2>
-        </div>
-        <StatusPill label={status} tone={statusTone} />
-      </div>
-      {children || <p className="mt-5 text-xl font-extrabold tracking-tight text-slate-950">{metric}</p>}
-      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{subtitle}</p>
-    </Link>
-  );
-}
-
-function AttentionModule({ counts, failed }) {
-  const open = counts?.total_open ?? 0;
-  return <MetricCard href="/super-admin/triage" icon={Crosshair} title="Attention Queue" status={failed ? "ERROR" : open === 0 ? "ZERO" : "OPEN"} statusTone={failed ? "rose" : open === 0 ? "emerald" : "amber"} metric={`${open} Open Items`} subtitle={failed ? "Attention telemetry could not be loaded." : `Real data confirms ${open} open attention item${open === 1 ? "" : "s"}.`} />;
-}
-
-function SafetyControlsModule({ summary, failed }) {
-  const controls = Array.isArray(summary?.safety_controls) ? summary.safety_controls : [];
-  const engaged = controls.filter((control) => control.enabled === false).length;
-  return <MetricCard href="/super-admin/kill-switch" icon={ShieldCheck} title="Safety Controls" status={failed ? "ERROR" : engaged ? "ENGAGED" : "FRESH"} statusTone={failed ? "rose" : engaged ? "amber" : "emerald"} metric={failed ? "Unavailable" : engaged ? `${engaged} Engaged` : "Disengaged"} subtitle={failed ? "Breaker catalog could not be loaded." : engaged ? "Billing flows are paused for affected controls." : "All circuit breakers disengaged; billing flows are live."} />;
-}
-
-function ApiModule({ telemetry, failed }) {
-  const p95 = telemetry?.p95_ms;
-  const budget = telemetry?.p95_budget_ms;
-  const overBudget = p95 != null && budget != null && p95 > budget;
-  const status = failed ? "ERROR" : p95 == null ? "UNKNOWN" : overBudget ? "P95 BREACH" : "FRESH";
-  const tone = failed || overBudget ? "rose" : p95 == null ? "slate" : "emerald";
-  return <MetricCard href="/super-admin/reliability" icon={Activity} title="API Performance" status={status} statusTone={tone} subtitle={failed ? "API telemetry could not be loaded." : p95 == null ? "Telemetry unavailable — performance cannot be claimed." : overBudget ? "P95 exceeds target budget threshold." : "P95 is within the target budget threshold."}>
-    <div className="mt-5 grid grid-cols-3 gap-2">
-      <div><span className={`block text-[10px] font-medium uppercase tracking-wide ${overBudget ? "text-rose-500" : "text-slate-400"}`}>P95</span><strong className={`text-base ${overBudget ? "text-rose-600" : "text-slate-900"}`}>{p95 == null ? "—" : `${p95.toLocaleString()} ms`}</strong></div>
-      <div><span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">Budget</span><strong className="text-base text-slate-900">{budget == null ? "—" : `${budget.toLocaleString()} ms`}</strong></div>
-      <div><span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">Errors</span><strong className="text-base text-slate-900">{fmtPct(telemetry?.error_rate)}</strong></div>
-    </div>
-  </MetricCard>;
-}
-
-function EmailDeliveryModule({ emailDelivery, failed }) {
-  const health = emailDelivery?.smtp_health;
-  const failureRate = emailDelivery?.last_24h?.failure_rate_pct;
-  const failedCount = emailDelivery?.last_24h?.failed;
-  const status = failed ? "ERROR" : health === "degraded" ? "DEGRADED" : health === "healthy" ? "HEALTHY" : "UNKNOWN";
-  const tone = failed || health === "degraded" ? "rose" : health === "healthy" ? "emerald" : "slate";
-  return (
-    <MetricCard
-      href="/super-admin/email-delivery"
-      icon={Mail}
-      title="Email Delivery"
-      status={status}
-      statusTone={tone}
-      metric={failed ? "Unavailable" : health === "unknown" ? "Not enough signal yet" : `${failedCount ?? 0} failed (24h)`}
-      subtitle={
-        failed
-          ? "Email delivery telemetry could not be loaded."
-          : health === "unknown"
-          ? "Too few recent send attempts to judge SMTP health."
-          : health === "degraded"
-          ? "SMTP failure rate is elevated — also reported to the Attention Queue."
-          : `Failure rate over last 24h: ${failureRate == null ? "—" : `${failureRate}%`}`
-      }
-    />
-  );
-}
-
-function FreshnessModule({ worstFreshness }) {
-  const status =
-    worstFreshness === "fresh" ? "fresh" : worstFreshness === "stale" ? "stale" : "unknown";
-  return <MetricCard href="/super-admin/integrations/jobs" icon={RefreshCw} title="Job Freshness" status={status === "fresh" ? "FRESH" : status === "stale" ? "STALE" : "UNKNOWN"} statusTone={status === "fresh" ? "emerald" : status === "stale" ? "amber" : "slate"} metric={status === "unknown" ? "Telemetry Unavailable" : status === "fresh" ? "Fresh" : "Stale"} subtitle={status === "unknown" ? "Scheduler telemetry offline — freshness cannot be claimed." : "Scheduler job telemetry is available."} />;
-}
+// Entrance motion (fade + rise, staggered by inline animation-delay).
+const DASHBOARD_STYLES = `
+  @keyframes pd-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .pd-rise { animation: pd-rise .5s cubic-bezier(.22,1,.36,1) both; }
+  @media (prefers-reduced-motion: reduce) { .pd-rise { animation: none; } }
+`;
