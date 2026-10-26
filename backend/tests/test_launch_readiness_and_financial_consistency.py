@@ -17,6 +17,7 @@ Coverage:
 from decimal import Decimal
 
 import pyotp
+import pytest
 
 from app.core.mfa_crypto import encrypt_secret
 from app.modules.auth.models import SuperAdminMFA, User, UserRole
@@ -64,6 +65,7 @@ def test_financial_consistency_no_invoices_is_unknown_not_pass(db_session):
     assert result["total_invoices_checked"] == 0
 
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_launch_readiness_runs_real_checks(db_session):
     report = LaunchReadinessService(db_session).evaluate()
     ids = {item["id"] for item in report["items"]}
@@ -89,6 +91,7 @@ def test_launch_readiness_overall_fails_when_any_item_fails(db_session):
     assert fin_item["status"] == "FAIL"
 
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_launch_readiness_mfa_enrollment_reflects_real_state(db_session):
     user = User(
         email="sa-noenroll@readiness.example", hashed_password="x", role=UserRole.SUPER_ADMIN,

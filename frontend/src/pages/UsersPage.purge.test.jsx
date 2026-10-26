@@ -37,7 +37,8 @@ function mockApi() {
 async function openPurgeModal() {
   render(<UsersPage />);
   await waitFor(() => expect(screen.getByText("Acme Inc.")).toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: /Delete organization/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Actions for jane@acme.com/i }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Delete organization permanently/i }));
   await screen.findByText("Delete organization permanently");
 }
 

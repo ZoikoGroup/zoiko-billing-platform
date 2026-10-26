@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-15T08:48:55.357232",
-  "git_commit_sha": "bc8ec0a723405e7115174f1d1aab0a288e68cade",
-  "total_tests": 12,
+  "generated_at": "2026-10-26T06:17:09.458024",
+  "git_commit_sha": "a229c45c25f695127a9db7ec9aa544dc67a66d82",
+  "total_tests": 22,
   "records": [
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_requester_cannot_approve_own_request",
@@ -10,8 +10,8 @@
         "AT-08"
       ],
       "outcome": "passed",
-      "duration": 3.0728,
-      "timestamp": "2026-10-15T08:47:17.982079"
+      "duration": 7.1586,
+      "timestamp": "2026-10-26T06:12:38.047188"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_self_approval_db_check_constraint_enforced",
@@ -21,7 +21,7 @@
       ],
       "outcome": "passed",
       "duration": 0.0047,
-      "timestamp": "2026-10-15T08:47:18.069620"
+      "timestamp": "2026-10-26T06:12:38.139511"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_approval_starts_session_immediately",
@@ -31,8 +31,8 @@
         "PRV-02"
       ],
       "outcome": "passed",
-      "duration": 10.4911,
-      "timestamp": "2026-10-15T08:47:28.643784"
+      "duration": 6.194,
+      "timestamp": "2026-10-26T06:12:44.425561"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_can_decline_with_reason",
@@ -41,8 +41,8 @@
         "PRV-02"
       ],
       "outcome": "passed",
-      "duration": 10.9649,
-      "timestamp": "2026-10-15T08:47:39.690952"
+      "duration": 5.7619,
+      "timestamp": "2026-10-26T06:12:50.273878"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_request_refused_when_org_has_no_admin",
@@ -50,8 +50,8 @@
         "GOV-04"
       ],
       "outcome": "passed",
-      "duration": 0.0066,
-      "timestamp": "2026-10-15T08:47:39.784240"
+      "duration": 0.0075,
+      "timestamp": "2026-10-26T06:12:50.375324"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_approval_expiry_unused_request_older_than_60m",
@@ -60,8 +60,8 @@
         "PRV-01"
       ],
       "outcome": "passed",
-      "duration": 2.8568,
-      "timestamp": "2026-10-15T08:47:42.722035"
+      "duration": 3.5395,
+      "timestamp": "2026-10-26T06:12:54.004194"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_of_another_org_cannot_approve",
@@ -70,8 +70,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 3.2389,
-      "timestamp": "2026-10-15T08:47:46.039710"
+      "duration": 3.2473,
+      "timestamp": "2026-10-26T06:12:57.338641"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_revoke_takes_effect_immediately",
@@ -80,8 +80,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 18.6288,
-      "timestamp": "2026-10-15T08:48:04.755806"
+      "duration": 11.6617,
+      "timestamp": "2026-10-26T06:13:09.087883"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_admin_of_another_org_gets_404",
@@ -90,8 +90,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 10.0582,
-      "timestamp": "2026-10-15T08:48:14.955492"
+      "duration": 5.5579,
+      "timestamp": "2026-10-26T06:13:14.749663"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_16_break_glass_full_lifecycle",
@@ -100,8 +100,8 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 0.3441,
-      "timestamp": "2026-10-15T08:48:15.496069"
+      "duration": 0.236,
+      "timestamp": "2026-10-26T06:13:15.097339"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_overdue_break_glass_review_escalates_to_p0",
@@ -110,8 +110,8 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 0.3602,
-      "timestamp": "2026-10-15T08:48:16.006619"
+      "duration": 0.2003,
+      "timestamp": "2026-10-26T06:13:15.396824"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_logout_ends_active_grant_and_emails_all_org_admins",
@@ -121,8 +121,103 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 13.6217,
-      "timestamp": "2026-10-15T08:48:29.947732"
+      "duration": 8.7378,
+      "timestamp": "2026-10-26T06:13:24.223740"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_null_platform_role_has_no_capability",
+      "controls": [
+        "IAM-01",
+        "IAM-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.0042,
+      "timestamp": "2026-10-26T06:13:24.317385"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_null_role_super_admin_gets_403_on_capability_routes[/api/super-admin/financial-consistency]",
+      "controls": [
+        "IAM-01",
+        "IAM-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.01,
+      "timestamp": "2026-10-26T06:13:24.416943"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_null_role_super_admin_gets_403_on_capability_routes[/api/super-admin/billing-command-center/overdue-invoices]",
+      "controls": [
+        "IAM-01",
+        "IAM-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.0079,
+      "timestamp": "2026-10-26T06:13:24.510757"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_platform_administrator_not_blocked_by_role_check",
+      "controls": [
+        "IAM-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.013,
+      "timestamp": "2026-10-26T06:13:24.615398"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_explicit_only_set_contains_break_glass",
+      "controls": [
+        "IAM-04"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-10-26T06:13:24.617241"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_explicit_only_capability_not_implicitly_held_by_platform_admin",
+      "controls": [
+        "IAM-04"
+      ],
+      "outcome": "passed",
+      "duration": 0.0033,
+      "timestamp": "2026-10-26T06:13:24.713980"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_explicit_only_capability_can_be_held_when_admin_is_listed",
+      "controls": [
+        "IAM-04"
+      ],
+      "outcome": "passed",
+      "duration": 0.0024,
+      "timestamp": "2026-10-26T06:13:24.815118"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_invite_without_role_is_rejected",
+      "controls": [
+        "IAM-01",
+        "IAM-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.0128,
+      "timestamp": "2026-10-26T06:13:24.925055"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_invite_with_role_persists_it",
+      "controls": [
+        "IAM-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.192,
+      "timestamp": "2026-10-26T06:13:25.212140"
+    },
+    {
+      "test": "tests/privacy/test_role_model.py::test_invite_cannot_create_super_admin",
+      "controls": [
+        "IAM-01",
+        "IAM-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.0083,
+      "timestamp": "2026-10-26T06:13:25.311754"
     }
   ]
 }

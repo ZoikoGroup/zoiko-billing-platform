@@ -35,6 +35,11 @@ from app.modules.auth import mfa_service
 from app.modules.auth.models import SuperAdminMFA, User, UserRole
 
 
+# These tests cover MFA step-up while it is switched on; it is retired by
+# default (see test_mfa_step_up_retired.py).
+pytestmark = pytest.mark.usefixtures("mfa_step_up_enabled")
+
+
 def _mfa_super_admin(db, email="mfa@test.example"):
     user = User(
         email=email, hashed_password="x", role=UserRole.SUPER_ADMIN, organization_id=None,

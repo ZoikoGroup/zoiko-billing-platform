@@ -248,6 +248,10 @@ def verify_step_up(db: Session, user: User, code: str | None, recovery_code: str
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
+    if not settings.MFA_STEP_UP_ENABLED:
+        # MFA step-up is retired (see config.MFA_STEP_UP_ENABLED).
+        return
+
     if step_up_is_bypassed():
         # Deliberately NOT silent. A bypassed privileged action must be visible
         # in the logs, because the whole point of the flag is that the operator

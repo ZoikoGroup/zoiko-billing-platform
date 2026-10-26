@@ -201,6 +201,7 @@ def test_existing_org_login_with_legacy_2a_bcrypt_hash_still_works(db_session):
 
 # ══ 2. Privileged step-up MFA still enforced (no fallback) ═══════════════════
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_breaker_toggle_without_mfa_rejected(db_session):
     """A syntactically valid code from an admin with NO MFA enrollment is
     refused at the step-up gate — there is no fallback that skips MFA."""
@@ -213,6 +214,7 @@ def test_breaker_toggle_without_mfa_rejected(db_session):
         )
 
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_breaker_toggle_with_wrong_mfa_code_rejected(db_session):
     admin, _secret = _super_admin_with_mfa(db_session, "wrongcode@s8.example")
     with pytest.raises(UnauthorizedException):
@@ -235,6 +237,7 @@ def test_breaker_toggle_with_valid_fresh_mfa_permitted(db_session):
     assert resp.enabled is False
 
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_breaker_toggle_accepts_recovery_code_as_step_up_factor(db_session):
     from app.modules.auth.mfa_service import _hash_code
     from app.modules.auth.models import SuperAdminMFARecoveryCode
@@ -260,6 +263,7 @@ def test_breaker_toggle_accepts_recovery_code_as_step_up_factor(db_session):
         )
 
 
+@pytest.mark.usefixtures("mfa_step_up_enabled")
 def test_maker_checker_decision_still_demands_fresh_mfa(db_session):
     maker, maker_secret = _super_admin_with_mfa(db_session, "maker@s8.example")
     checker, checker_secret = _super_admin_with_mfa(db_session, "checker@s8.example")
@@ -466,3 +470,22 @@ def test_email_failure_never_fails_committed_registration(db_session, monkeypatc
     assert org.currency == "INR"
     admin = db_session.query(User).filter_by(email="committed@s8.example").first()
     assert admin is not None and admin.is_active
+
+
+def test_super_admin_new_organization_form_payload_creates_org(db_session, quiet_emails):
+    """The exact payload the Super Admin "New Organization" modal sends —
+    every field filled, plus the country and billing currency it now
+    requires. Before those were added, this 400'd with "Cannot determine a
+    billing currency ... 'unknown country'"."""
+    actor = _user(db_session, "creator2@s8.example", UserRole.SUPER_ADMIN)
+    data = OrganizationBase(
+        organization_name="Payroll", industry="software", email="sampath@zoikogroup.com",
+        address="Pune, Maharashtra", phone="+91 6325417894", tax_no="123",
+        registration_number="123456", country="India", currency="INR",
+    )
+
+    create_organization(data, current_user=actor, db=db_session)
+
+    org = db_session.query(Organization).filter_by(organization_name="Payroll").first()
+    assert org.country == "India"
+    assert org.currency == "INR"

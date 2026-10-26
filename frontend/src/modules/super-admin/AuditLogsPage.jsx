@@ -657,6 +657,15 @@ export default function AuditLogsPage() {
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
+
+  // Export messages belong to the tab that produced them: a "nothing to
+  // export" from an empty Subscription Activity tab must not stay on screen
+  // over a Platform Events table full of rows.
+  const switchTab = useCallback((next) => {
+    setTab(next);
+    setNotice(null);
+    setExportError(null);
+  }, []);
   const [notice, setNotice] = useState(null);
 
   const [chainStatus, setChainStatus] = useState(null);
@@ -970,7 +979,12 @@ export default function AuditLogsPage() {
         skip += EXPORT_PAGE_LIMIT;
       }
       if (rows.length === 0) {
-        setNotice("No rows matched the current filters — nothing to export.");
+        if (matchTotal > 0) {
+          // The table says rows match; an empty export is a failure, not "no data".
+          setExportError(`Export failed: the server returned no rows although ${matchTotal.toLocaleString()} match these filters. Try again.`);
+        } else {
+          setNotice("No rows matched the current filters — nothing to export.");
+        }
         return;
       }
       downloadCSV(rows.map(toRow), headers, filename);
@@ -1070,7 +1084,7 @@ export default function AuditLogsPage() {
       ) : (
         <>
           <div className="mt-6">
-            <TabBar tab={tab} onChange={setTab} />
+            <TabBar tab={tab} onChange={switchTab} />
           </div>
 
           {notice && (

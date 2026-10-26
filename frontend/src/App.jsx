@@ -36,7 +36,6 @@ const BillingAdminWorkspaceHelp = lazyRoute(() => import("./modules/billing-admi
 // loading keeps that out of the eagerly-loaded main bundle (matches every
 // other route below).
 const UsersPage = lazyRoute(() => import("./pages/UsersPage"));
-const SettingsPage = lazyRoute(() => import("./pages/SettingsPage"));
 
 const BillingDashboard = lazyRoute(() => import("./modules/billing/dashboard/dashboard"));
 const ReportsPage = lazyRoute(() => import("./modules/billing/dashboard/reports"));
@@ -255,7 +254,6 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/organizations", element: <CommercialOrganizationsPage /> },
   { path: "/super-admin/organizations/:organizationId", element: <CommercialOrganizationDetailPage /> },
   { path: "/super-admin/users", element: <UsersPage /> },
-  { path: "/super-admin/settings", element: <SettingsPage /> },
   { path: "/super-admin/platform/lifecycle", element: <LifecycleOnboardingPage /> },
   { path: "/super-admin/support-access", element: <SupportAccessPage /> },
   { path: "/super-admin/tenant-health", element: <TenantHealthPage /> },
@@ -293,7 +291,10 @@ const SUPER_ADMIN_ROUTES = [
 const SUPER_ADMIN_LEGACY_REDIRECTS = [
   { from: "/dashboard", to: "/super-admin/dashboard" },
   { from: "/users", to: "/super-admin/users" },
-  { from: "/settings", to: "/super-admin/settings" },
+  { from: "/settings", to: "/super-admin/dashboard" },
+  // The Platform Settings page (and its MFA step-up card) was removed;
+  // platform settings are still listed read-only under Configuration.
+  { from: "/super-admin/settings", to: "/super-admin/dashboard" },
   { from: "/organizations", to: "/super-admin/organizations" },
   { from: "/admin/billing", to: "/super-admin/financial-operations?section=overview" },
   { from: "/super-admin/commercial/dashboard", to: "/super-admin/dashboard" },

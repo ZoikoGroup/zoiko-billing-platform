@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIcon, Trash2 } from "lucide-react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { KeyRound, Power, UserPlus, GitBranch, Building2, Mail, Users as UsersIcon, Trash2, MoreHorizontal, X } from "lucide-react";
 
 import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, ListToolbar, Select, Modal, Field, Button } from "../components/billing-ui";
@@ -31,7 +31,7 @@ const DERIVED_STATUS_BADGES = {
   active: { label: "Active", color: "bg-emerald-100 text-emerald-700" },
   invited: { label: "Invited (not yet accepted)", color: "bg-indigo-100 text-indigo-700" },
   suspended: { label: "Suspended", color: "bg-red-100 text-red-700" },
-  locked: { label: "Locked (MFA)", color: "bg-amber-100 text-amber-700" },
+  locked: { label: "Locked", color: "bg-amber-100 text-amber-700" },
 };
 
 const DERIVED_STATUS_OPTIONS = Object.entries(DERIVED_STATUS_BADGES).map(([value, badge]) => ({
@@ -92,23 +92,95 @@ function ReasonModal({ open, onClose, title, icon, description, busy, error, sub
   );
 }
 
-/** Compact icon-only secondary action, grouped inside a bordered pill row. */
-function IconAction({ icon: Icon, title, disabled, onClick, danger = false }) {
+/**
+ * Per-row actions as a labelled menu. The old strip of five unlabelled icons
+ * did not fit its column (icons overlapped and clipped) and gave no clue what
+ * e.g. the key icon did. The menu is position:fixed from the trigger's
+ * rectangle so the table's overflow container cannot clip it.
+ */
+function RowActionsMenu({ label, items }) {
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const open = pos !== null;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setPos(null);
+    const onPointer = (e) => {
+      if (!menuRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target)) close();
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        close();
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    menuRef.current?.querySelector("button:not(:disabled)")?.focus();
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  function toggle() {
+    if (open) return setPos(null);
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuHeight = items.length * 36 + 16;
+    const openUp = r.bottom + menuHeight > window.innerHeight && r.top > menuHeight;
+    setPos({ right: window.innerWidth - r.right, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+  }
+
   return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        danger
-          ? "text-red-500 hover:bg-red-50 hover:text-red-700"
-          : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-      }`}
-    >
-      <Icon size={14} />
-    </button>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggle}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          style={{ position: "fixed", ...pos }}
+          className="z-50 w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
+        >
+          {items.map(({ label: itemLabel, icon: Icon, onClick, disabled, danger, separated }) => (
+            <React.Fragment key={itemLabel}>
+              {separated && <div className="my-1 h-px bg-slate-100" />}
+              <button
+                type="button"
+                role="menuitem"
+                disabled={disabled}
+                onClick={() => {
+                  setPos(null);
+                  onClick();
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  danger ? "text-red-600 hover:bg-red-50" : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Icon size={15} className="shrink-0" />
+                <span className="truncate">{itemLabel}</span>
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -191,6 +263,17 @@ export default function UsersPage() {
 
   const resetToFirstPage = useCallback((value) => {
     setSearch(value);
+    setPage(1);
+  }, []);
+
+  // Bumped on clear to remount the toolbar's search box, so text still inside
+  // its debounce window is discarded instead of re-applying a moment later.
+  const [toolbarResetKey, setToolbarResetKey] = useState(0);
+  const hasActiveFilters = Boolean(search || status);
+  const clearFilters = useCallback(() => {
+    setToolbarResetKey((k) => k + 1);
+    setSearch("");
+    setStatus("");
     setPage(1);
   }, []);
 
@@ -386,31 +469,38 @@ export default function UsersPage() {
       {
         key: "actions",
         label: "",
-        width: 100,
-        render: (u) => (
-          <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5">
-            <IconAction
-              title={u.is_active ? "Deactivate" : "Activate"}
-              icon={Power}
-              disabled={busyId === u.id || (me && me.id === u.id)}
-              onClick={() => openStatus(u)}
-            />
-            {u.derived_status === "invited" && (
-              <IconAction title="Resend invitation email" icon={Mail} disabled={busyId === u.id} onClick={() => resendInvite(u)} />
-            )}
-            <IconAction title="Move to another organization" icon={GitBranch} disabled={busyId === u.id} onClick={() => openMembership(u)} />
-            <IconAction title="Send password reset link" icon={KeyRound} disabled={busyId === u.id} onClick={() => resetPassword(u)} />
-            {u.organization_id && (
-              <IconAction
-                title={`Delete organization "${u.organization_name || u.organization_id}" (permanent)`}
-                icon={Trash2}
-                danger
-                disabled={busyId === u.id}
-                onClick={() => openPurge(u)}
-              />
-            )}
-          </div>
-        ),
+        width: 56,
+        render: (u) => {
+          const busy = busyId === u.id;
+          const items = [
+            {
+              label: u.is_active ? "Deactivate account" : "Activate account",
+              icon: Power,
+              disabled: busy || (me && me.id === u.id),
+              onClick: () => openStatus(u),
+            },
+            ...(u.derived_status === "invited"
+              ? [{ label: "Resend invitation email", icon: Mail, disabled: busy, onClick: () => resendInvite(u) }]
+              : []),
+            { label: "Move to another organization", icon: GitBranch, disabled: busy, onClick: () => openMembership(u) },
+            { label: "Send password reset link", icon: KeyRound, disabled: busy, onClick: () => resetPassword(u) },
+            ...(u.organization_id
+              ? [{
+                  label: "Delete organization permanently",
+                  icon: Trash2,
+                  danger: true,
+                  separated: true,
+                  disabled: busy,
+                  onClick: () => openPurge(u),
+                }]
+              : []),
+          ];
+          return (
+            <div className="flex justify-end">
+              <RowActionsMenu label={`Actions for ${u.email}`} items={items} />
+            </div>
+          );
+        },
       },
     ],
     [busyId, me]
@@ -466,6 +556,7 @@ export default function UsersPage() {
         <>
           <div className="mt-6">
             <ListToolbar
+              key={toolbarResetKey}
               search={search}
               onSearchChange={resetToFirstPage}
               searchPlaceholder="Search email, name or organization…"
@@ -474,6 +565,16 @@ export default function UsersPage() {
               refreshing={loading}
             >
               <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All statuses" className="w-40" aria-label="Filter users by status" />
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search and status filter" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              >
+                <X size={14} />
+                Clear filters
+              </button>
             </ListToolbar>
           </div>
 
@@ -511,7 +612,12 @@ export default function UsersPage() {
               loading={loading}
               rowKey={(u) => u.id}
               emptyTitle="No organization admins found"
-              emptyMessage={search || status ? "No organization admins match your current filters." : "Organization admins will appear here once organizations are provisioned."}
+              emptyMessage={hasActiveFilters ? "No organization admins match your current filters." : "Organization admins will appear here once organizations are provisioned."}
+              emptyAction={
+                hasActiveFilters ? (
+                  <Button variant="secondary" size="sm" icon={X} onClick={clearFilters}>Clear filters</Button>
+                ) : null
+              }
               minWidth={0}
               tableClassName="table-fixed"
             />
@@ -681,8 +787,9 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const set = (key) => (e) =>
-    setForm((f) => ({ ...f, [key]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const setValue = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  // Read the input synchronously, outside the state updater.
+  const set = (key) => (e) => setValue(key, e.target.type === "checkbox" ? e.target.checked : e.target.value);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -723,7 +830,7 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
       <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <Field label="Organization" htmlFor="invite-org" required>
-            <OrgSelect id="invite-org" value={form.organization_id} onChange={set("organization_id")} organizations={organizations} />
+            <OrgSelect id="invite-org" value={form.organization_id} onChange={(value) => setValue("organization_id", value)} organizations={organizations} />
           </Field>
         </div>
         <Field label="Email" htmlFor="invite-email" required>

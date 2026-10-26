@@ -19,7 +19,6 @@ import {
   suppressAttentionItem,
   getInvoiceFinalizationBreaker,
   setInvoiceFinalizationBreaker,
-  getMfaStepUpStatus,
 } from "../../service/commandCenterService";
 import { PageHeader, Modal, Field, Button, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, EmptyState } from "../../components/billing-shared";
@@ -189,22 +188,20 @@ function AttentionRow({ item, currentUserId, onAction }) {
 }
 
 // ZB-SA-CMD-003 §18 — the one real Domain B circuit breaker implemented so
-// far. Toggling requires a reason AND a fresh MFA step-up code every time
-// (both pause and resume) — enforced server-side, not just hidden here.
+// far. Toggling requires a reason every time (both pause and resume).
 // Engaging (pausing) additionally requires an incident reference: the server
 // rejects an engage without one, because a platform-wide invoice stop is only
 // defensible when it is tied to a tracked incident.
-function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit, mfaBypassed = false }) {
+function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
   const [reason, setReason] = useState("");
   const [incidentReference, setIncidentReference] = useState("");
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const engaging = targetEnabled === false;
   const needsReference = engaging;
 
   useEffect(() => {
-    if (open) { setReason(""); setIncidentReference(""); setCode(""); setError(null); }
+    if (open) { setReason(""); setIncidentReference(""); setError(null); }
   }, [open]);
 
   async function handleSubmit(e) {
@@ -212,9 +209,7 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit, mfaBypasse
     setBusy(true);
     setError(null);
     try {
-      // Under the dev bypass the server ignores the factor entirely, so do not
-      // make the operator invent one.
-      await onSubmit(reason, mfaBypassed ? "" : code, incidentReference.trim());
+      await onSubmit(reason, incidentReference.trim());
       onClose();
     } catch (err) {
       setError(err?.message || "Failed to update the circuit breaker.");
@@ -225,14 +220,7 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit, mfaBypasse
 
   const canSubmit =
     Boolean(reason.trim()) &&
-    (mfaBypassed || code.length >= 6) &&
     (!needsReference || incidentReference.trim().length > 0);
-
-  // Safety net for the case the up-front card check cannot cover: MFA was
-  // turned off (or enrolment was abandoned) after the card fetched its status,
-  // so the only signal is the server's own rejection. Recognising the exact
-  // refusal is what turns a dead end into a route to enrollment.
-  const mfaNotEnrolledError = /MFA is not enabled/i.test(error || "");
 
   return (
     <Modal open={open} onClose={onClose} title={targetEnabled ? "Resume invoice finalization?" : "Pause invoice finalization?"} icon={targetEnabled ? Power : ShieldAlert} size="sm">
@@ -264,32 +252,9 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit, mfaBypasse
             />
           </Field>
         )}
-        {mfaBypassed ? (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            MFA step-up is <strong>bypassed</strong> on this deployment, so no code is required. This is a
-            development-only setting and must be off in production.
-          </p>
-        ) : (
-          <Field label="MFA code" htmlFor="breaker-mfa" required hint="A fresh authenticator code — required every time this breaker changes.">
-            <input id="breaker-mfa" required inputMode="numeric" maxLength={8} value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\s/g, ""))} placeholder="123456"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-lg tracking-widest focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
-          </Field>
-        )}
         {error && (
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             <p>{error}</p>
-            {mfaNotEnrolledError && (
-              <p className="mt-1.5">
-                Your account has no MFA factor, so the server will reject this change regardless of the code entered.
-                <Link
-                  to="/super-admin/settings"
-                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-2.5 py-1 font-semibold text-red-700 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
-                >
-                  Enable MFA in Platform Settings <ArrowRightCircle size={12} />
-                </Link>
-              </p>
-            )}
           </div>
         )}
         <div className="flex justify-end gap-2">
@@ -307,40 +272,16 @@ function CircuitBreakerCard() {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [modalTarget, setModalTarget] = useState(null);
-  // Tri-state: null = still checking. A breaker change runs verify_step_up(),
-  // which hard-fails with "MFA is not enabled on this account" when this is
-  // false, so the card checks up front instead of letting the operator fill in
-  // a form that can only ever 400.
-  const [mfaEnabled, setMfaEnabled] = useState(null);
-  const [mfaBypassed, setMfaBypassed] = useState(false);
-
   const load = useCallback(() => {
     setError(null);
     getInvoiceFinalizationBreaker().then(setState).catch((e) => setError(e?.message || "Failed to load."));
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    let cancelled = false;
-    getMfaStepUpStatus()
-      .then((data) => {
-        if (cancelled) return;
-        setMfaBypassed(Boolean(data?.bypassed));
-        setMfaEnabled(Boolean(data?.enabled));
-      })
-      // A status probe that fails is not proof MFA is off, and must not be
-      // reported as such — leave it unknown and let the server have the final
-      // word on an actual attempt.
-      .catch(() => { if (!cancelled) setMfaEnabled(null); });
-    return () => { cancelled = true; };
-  }, []);
-
-  async function handleSubmit(reason, code, incidentReference) {
-    const updated = await setInvoiceFinalizationBreaker(modalTarget, reason, code, undefined, incidentReference);
+  async function handleSubmit(reason, incidentReference) {
+    const updated = await setInvoiceFinalizationBreaker(modalTarget, reason, incidentReference);
     setState(updated);
   }
-
-  const mfaMissing = mfaEnabled === false;
 
   return (
     <SectionCard
@@ -348,16 +289,7 @@ function CircuitBreakerCard() {
       accent="slate"
       icon={Power}
       title="Circuit Breakers"
-      description={
-        <>
-          Real, server-enforced platform-wide controls.
-          {mfaBypassed ? (
-            <span className="font-semibold text-amber-700"> MFA step-up is currently bypassed on this deployment.</span>
-          ) : (
-            <> MFA step-up required on every change.</>
-          )}
-        </>
-      }
+      description="Real, server-enforced platform-wide controls. Every change requires a reason and is audited."
     >
       {error ? (
         <ErrorState message={error} onRetry={load} title="Unable to load breaker state" />
@@ -365,23 +297,6 @@ function CircuitBreakerCard() {
         <Spinner />
       ) : (
         <>
-          {mfaMissing && (
-            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
-                <ShieldAlert size={15} /> MFA step-up is not enrolled on your account
-              </p>
-              <p className="mt-1 text-xs text-amber-700">
-                The server refuses every breaker change without it, so changing this switch is currently impossible.
-                Enrol once, then return here.
-              </p>
-              <Link
-                to="/super-admin/settings"
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
-              >
-                Enable MFA in Platform Settings <ArrowRightCircle size={13} />
-              </Link>
-            </div>
-          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Invoice Finalization</p>
@@ -393,8 +308,6 @@ function CircuitBreakerCard() {
             <Button
               variant={state.enabled ? "danger" : "primary"}
               icon={state.enabled ? ShieldAlert : Power}
-              disabled={mfaMissing}
-              title={mfaMissing ? "Enable MFA step-up in Platform Settings before changing this breaker." : undefined}
               onClick={() => setModalTarget(!state.enabled)}
             >
               {state.enabled ? "Pause" : "Resume"}
@@ -407,7 +320,6 @@ function CircuitBreakerCard() {
         targetEnabled={modalTarget}
         onClose={() => setModalTarget(null)}
         onSubmit={handleSubmit}
-        mfaBypassed={mfaBypassed}
       />
     </SectionCard>
   );

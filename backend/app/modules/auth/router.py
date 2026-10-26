@@ -176,10 +176,13 @@ def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get
     from app.modules.auth import mfa_service
 
     _require_super_admin(current_user)
-    bypassed = mfa_service.step_up_is_bypassed()
-    # Under the dev bypass, step-up will accept the action without a factor, so
-    # reporting enabled=False would make the UI block a control that is in fact
-    # open. Report what will actually happen, and say why.
+    from app.config import step_up_required
+
+    # When step-up is not required (retired, or the dev bypass), privileged
+    # actions are accepted without a factor, so reporting enabled=False would
+    # make a UI block a control that is in fact open. Report what will
+    # actually happen.
+    bypassed = not step_up_required()
     return {
         "enabled": bypassed or mfa_service.is_mfa_enabled(db, current_user.id),
         "bypassed": bypassed,

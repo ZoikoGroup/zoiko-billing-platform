@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import {
   ShieldAlert,
   KeyRound,
@@ -40,7 +40,6 @@ import {
   reviewBreakGlass,
   listPendingReviews,
 } from "../../service/privilegedAccessService";
-import { getMfaStepUpStatus } from "../../service/commandCenterService";
 import { PageHeader, Modal, Field, Button, SearchInput, HubTabs } from "../../components/billing-ui";
 import { ErrorState, Spinner, SuccessMessage, StatusBadge, EmptyState, useConfirmationDialog } from "../../components/billing-shared";
 import useIsDesktopViewport from "../../hooks/useIsDesktopViewport";
@@ -263,95 +262,6 @@ function FlowTracker({ current }) {
   );
 }
 
-// ── MFA status: bypass / not enrolled awareness ─────────────────────────────
-function useMfaStatus(active) {
-  const [status, setStatus] = useState({ known: false, enabled: true, bypassed: false });
-  useEffect(() => {
-    if (!active) return undefined;
-    let cancelled = false;
-    getMfaStepUpStatus()
-      .then((data) => {
-        if (!cancelled) setStatus({ known: true, enabled: Boolean(data?.enabled), bypassed: Boolean(data?.bypassed) });
-      })
-      // A failed probe is not proof MFA is off — leave it unknown and let the server decide.
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [active]);
-  return status;
-}
-
-/** Shared TOTP / recovery-code input used by activation and break-glass. */
-function MfaFactorInput({ mfa, idPrefix, code, setCode, recoveryCode, setRecoveryCode, useRecovery, setUseRecovery, danger = false }) {
-  const inputClass = danger ? DANGER_INPUT_CLASS : INPUT_CLASS;
-  if (mfa.bypassed) {
-    return (
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        MFA step-up is <strong>bypassed</strong> on this development deployment, so no code is needed.
-      </p>
-    );
-  }
-  if (mfa.known && !mfa.enabled) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800">
-        <p className="font-semibold">MFA is not set up on your account.</p>
-        <p className="mt-0.5">
-          Support access always needs a fresh MFA code. Enrol an authenticator app in{" "}
-          <Link to="/super-admin/settings" className="font-semibold underline">Settings → Security</Link>, then come back.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-2">
-      {!useRecovery ? (
-        <Field label="6-digit code from your authenticator app" htmlFor={`${idPrefix}-code`} required>
-          <input
-            id={`${idPrefix}-code`}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={8}
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            placeholder="123456"
-            className={`${inputClass} text-center text-lg tracking-[0.4em]`}
-          />
-        </Field>
-      ) : (
-        <Field label="Recovery code" htmlFor={`${idPrefix}-recovery`} required hint="One of the single-use codes you saved when enrolling MFA.">
-          <input
-            id={`${idPrefix}-recovery`}
-            autoFocus
-            value={recoveryCode}
-            onChange={(e) => setRecoveryCode(e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-      )}
-      <button
-        type="button"
-        className="text-xs font-medium text-brand-600 hover:underline"
-        onClick={() => setUseRecovery((v) => !v)}
-      >
-        {useRecovery ? "Use authenticator code instead" : "Lost your device? Use a recovery code"}
-      </button>
-    </div>
-  );
-}
-
-function mfaFactorReady(mfa, useRecovery, code, recoveryCode) {
-  if (mfa.bypassed) return true;
-  if (mfa.known && !mfa.enabled) return false;
-  return useRecovery ? recoveryCode.trim().length >= 6 : code.length >= 6;
-}
-
-function mfaPayload(mfa, useRecovery, code, recoveryCode) {
-  if (mfa.bypassed) return {};
-  return useRecovery ? { recovery_code: recoveryCode.trim() } : { code: code.trim() };
-}
-
 function FormError({ message }) {
   if (!message) return null;
   return (
@@ -564,22 +474,15 @@ function BreakGlassModal({ open, onClose, onActivated, initialOrgCode = "" }) {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [reason, setReason] = useState("");
   const [incidentRef, setIncidentRef] = useState("");
-  const [code, setCode] = useState("");
-  const [useRecovery, setUseRecovery] = useState(false);
-  const [recoveryCode, setRecoveryCode] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const mfa = useMfaStatus(open);
 
   useEffect(() => {
     if (!open) {
       setSelectedOrg(null);
       setReason("");
       setIncidentRef("");
-      setCode("");
-      setRecoveryCode("");
-      setUseRecovery(false);
       setAcknowledged(false);
       setError(null);
     }
@@ -595,7 +498,6 @@ function BreakGlassModal({ open, onClose, onActivated, initialOrgCode = "" }) {
         organization_id: selectedOrg.id,
         reason: reason.trim(),
         incident_reference: incidentRef.trim(),
-        ...mfaPayload(mfa, useRecovery, code, recoveryCode),
       });
       onActivated(grant);
     } catch (err) {
@@ -605,8 +507,7 @@ function BreakGlassModal({ open, onClose, onActivated, initialOrgCode = "" }) {
     }
   }
 
-  const ready =
-    selectedOrg && reason.trim() && incidentRef.trim() && acknowledged && mfaFactorReady(mfa, useRecovery, code, recoveryCode);
+  const ready = selectedOrg && reason.trim() && incidentRef.trim() && acknowledged;
 
   return (
     <Modal open={open} onClose={onClose} title="Emergency (break-glass) access" icon={AlertOctagon} size="md" closeOnBackdrop={false}>
@@ -648,18 +549,6 @@ function BreakGlassModal({ open, onClose, onActivated, initialOrgCode = "" }) {
             className={DANGER_INPUT_CLASS}
           />
         </Field>
-
-        <MfaFactorInput
-          mfa={mfa}
-          idPrefix="bg-stepup"
-          code={code}
-          setCode={setCode}
-          recoveryCode={recoveryCode}
-          setRecoveryCode={setRecoveryCode}
-          useRecovery={useRecovery}
-          setUseRecovery={(v) => { setUseRecovery(v); setError(null); }}
-          danger
-        />
 
         <label className="flex cursor-pointer items-start gap-2 text-xs text-slate-700">
           <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} className="mt-0.5" />

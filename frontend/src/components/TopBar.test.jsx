@@ -11,19 +11,21 @@ import { MemoryRouter } from "react-router-dom";
 // notifications feed (WorkspaceNotificationsPage) actually relies on. A
 // billing_admin-only gate previously left org_admin -- the default landing
 // role for /organization-admin/dashboard -- with a permanently disabled
-// bell on their own home page (QA bug #41). super_admin has its own route
-// entry in NOTIFICATIONS_ROUTE_BY_ROLE but is intentionally not in
-// ORG_CONTEXT_ROLES (this feed is org-scoped, not platform-scoped), so it
-// still gets the disabled placeholder here.
+// bell on their own home page (QA bug #41). super_admin links to its own
+// platform-scoped feed (/super-admin/notifications).
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: vi.fn(),
+}));
+vi.mock("../context/CommandCenterContext", () => ({
+  useCommandCenter: vi.fn(() => null),
 }));
 vi.mock("../service/orgAdminService", () => ({
   getOrganizationDetails: vi.fn(() => new Promise(() => {})),
 }));
 
 import { useAuth } from "../context/AuthContext";
+import { useCommandCenter } from "../context/CommandCenterContext";
 import TopBar from "./TopBar";
 
 function renderTopBar() {
@@ -51,12 +53,18 @@ describe("TopBar notification icon", () => {
     expect(link).toHaveAttribute("href", expectedHref);
   });
 
-  it("is an honestly disabled placeholder for super_admin (org-scoped feed, not platform-scoped)", () => {
+  it("links super_admin to the platform notifications feed", () => {
     useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "super_admin", logout: vi.fn() });
     renderTopBar();
-    const button = screen.getByRole("button", { name: /notifications/i });
-    expect(button).toBeDisabled();
-    expect(screen.queryByRole("link", { name: /notifications/i })).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /notifications/i });
+    expect(link).toHaveAttribute("href", "/super-admin/notifications");
+  });
+
+  it("shows the real open attention-item count for super_admin", () => {
+    useAuth.mockReturnValue({ user: { email: "a@b.com" }, role: "super_admin", logout: vi.fn() });
+    useCommandCenter.mockReturnValue({ attentionCounts: { total_open: 3 } });
+    renderTopBar();
+    expect(screen.getByRole("link", { name: "Notifications (3 open)" })).toHaveTextContent("3");
   });
 
   it("is an honestly disabled placeholder for a role with no notifications feed", () => {

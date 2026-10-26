@@ -125,6 +125,12 @@ class Settings(BaseSettings):
     # Hard-refused unless DEBUG is on — see _guard_mfa_bypass. This is a
     # development convenience, not a way to run production without step-up.
     MFA_STEP_UP_BYPASS: bool = False
+    # MFA step-up is retired: privileged actions (break-glass, circuit-breaker
+    # changes, approval decisions) no longer ask for a one-time code, and the
+    # MFA UI has been removed. The enrollment tables, service and endpoints are
+    # kept so the control can be restored by setting this to true (and
+    # restoring the UI) — see step_up_required().
+    MFA_STEP_UP_ENABLED: bool = False
 
     @model_validator(mode="after")
     def _guard_mfa_bypass(self):
@@ -384,6 +390,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def step_up_required() -> bool:
+    """Whether privileged actions must present a fresh MFA code. False while
+    MFA step-up is retired (MFA_STEP_UP_ENABLED off) or under the dev bypass.
+    Every enforcement point (request schemas, verify_step_up, the status
+    endpoint) consults this so they cannot drift apart."""
+    return bool(settings.MFA_STEP_UP_ENABLED) and not step_up_bypass_active()
 
 
 def step_up_bypass_active() -> bool:
