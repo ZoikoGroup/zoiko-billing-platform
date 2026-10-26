@@ -849,15 +849,70 @@ def set_evaluation_program_status(
     program_id: int,
     data: EvaluationProgramStatusRequest,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_super_admin),
 ):
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
     program = db.query(CommercialEvaluationProgram).filter(CommercialEvaluationProgram.id == program_id).first()
     if program is None:
         raise BadRequestException(f"CommercialEvaluationProgram {program_id} not found")
     if data.is_active and program.approved_by is None:
         raise BadRequestException(
-            "Cannot activate an evaluation program with no approved_by — §B3 requires a logged approval."
+            "Cannot activate an evaluation program with no approved_by — §B3 requires a logged approval. "
+            "Approve it first."
         )
-    program.is_active = data.is_active
+    if program.is_active != data.is_active:
+        program.is_active = data.is_active
+        PlatformAuditService(db).log_no_commit(
+            actor_id=current_user.id,
+            actor_role="super_admin",
+            action=PlatformAuditAction.ACTIVATE if data.is_active else PlatformAuditAction.DEACTIVATE,
+            entity_type="CommercialEvaluationProgram",
+            entity_id=program.id,
+            old_values={"is_active": not data.is_active},
+            new_values={"is_active": data.is_active},
+        )
+    db.commit()
+    db.refresh(program)
+    return _serialize_evaluation_program(program)
+
+
+@router.post(
+    "/evaluation-programs/{program_id}/approve",
+    summary="Record the §B3 approval for an evaluation program so it can be activated",
+    dependencies=[Depends(require_capability("commercial_evaluation_program.write"))],
+)
+def approve_evaluation_program(
+    program_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_super_admin),
+):
+    """Sets approved_by to the calling Super Admin (the creator may approve
+    their own program) and writes the approval to the platform audit trail.
+    Approval does not activate the program — that stays an explicit,
+    separate switch."""
+    from app.modules.super_admin.audit_service import PlatformAuditService
+    from app.modules.super_admin.models import PlatformAuditAction
+
+    program = db.query(CommercialEvaluationProgram).filter(CommercialEvaluationProgram.id == program_id).first()
+    if program is None:
+        raise BadRequestException(f"CommercialEvaluationProgram {program_id} not found")
+    if program.approved_by is not None:
+        raise BadRequestException(
+            f"CommercialEvaluationProgram {program_id} is already approved (by user #{program.approved_by})."
+        )
+    program.approved_by = current_user.id
+    PlatformAuditService(db).log_no_commit(
+        actor_id=current_user.id,
+        actor_role="super_admin",
+        action=PlatformAuditAction.UPDATE,
+        entity_type="CommercialEvaluationProgram",
+        entity_id=program.id,
+        old_values={"approved_by": None},
+        new_values={"approved_by": current_user.id},
+        metadata={"event": "evaluation_program_approved"},
+    )
     db.commit()
     db.refresh(program)
     return _serialize_evaluation_program(program)
@@ -1140,4 +1195,9 @@ def get_public_invoice(token: str, db: Session = Depends(get_db)):
         invoice = svc.get_public_invoice(token)
     except ValueError as e:  # unknown/expired link token
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return _serialize_public_invoice(invoice)
+    from app.modules.commercial.platform_stripe_service import _platform_secret_key
+
+    # Lets the page show payment instructions instead of a Pay button that
+    # can only dead-end on "Online payment is not available yet". A boolean
+    # only — nothing about the key itself is exposed.
+    return {**_serialize_public_invoice(invoice), "online_payment_available": bool(_platform_secret_key())}

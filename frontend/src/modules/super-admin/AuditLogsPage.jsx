@@ -973,7 +973,13 @@ export default function AuditLogsPage() {
       let skip = 0;
       while (rows.length < EXPORT_MAX_ROWS) {
         const data = await fetchPage(skip, EXPORT_PAGE_LIMIT);
-        const batch = data?.logs || [];
+        // A non-JSON reply (e.g. a proxy's HTML error page) comes back from the
+        // API client as text; reading `.logs` off it used to yield [] and report
+        // "nothing to export" instead of the failure it was.
+        if (!data || !Array.isArray(data.logs)) {
+          throw new Error("the audit log service returned an unexpected response");
+        }
+        const batch = data.logs;
         rows.push(...batch);
         if (batch.length < EXPORT_PAGE_LIMIT) break;
         skip += EXPORT_PAGE_LIMIT;

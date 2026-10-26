@@ -1,49 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Clock, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, ClipboardCheck, Clock, RefreshCw } from "lucide-react";
 import { getProductionAcceptanceReport } from "../../service/commercialService";
-import { PageHeader, SectionCard } from "../../components/billing-ui";
+import { Button, PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, StatusBadge } from "../../components/billing-shared";
 import { ACCEPTANCE_STATUS_OPTIONS, formatDateTime } from "./constants";
 
 /** FAIL first — the blocking criteria must never be scrolled past. */
 const STATUS_ORDER = { FAIL: 0, WARNING: 1, NOT_CONFIGURED: 2, PASS: 3, NOT_APPLICABLE: 4 };
 
-const OVERALL_VERDICT_STYLES = {
-  BLOCKED: {
-    icon: ShieldAlert,
-    wrapper: "border-red-200 bg-red-50 text-red-800",
-    iconWrapper: "bg-red-100 text-red-600",
-    label: "NOT READY FOR PRODUCTION — BLOCKED",
-  },
-  CONDITIONAL: {
-    icon: ShieldQuestion,
-    wrapper: "border-amber-200 bg-amber-50 text-amber-800",
-    iconWrapper: "bg-amber-100 text-amber-600",
-    label: "CONDITIONALLY READY",
-  },
-  READY: {
-    icon: ShieldCheck,
-    wrapper: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    iconWrapper: "bg-emerald-100 text-emerald-700",
-    label: "READY",
-  },
-};
-
-/**
- * Deliberately NOT a fallback to CONDITIONAL. A release gate that quietly
- * renders "CONDITIONALLY READY" for a verdict it does not recognise is worse
- * than one that renders nothing: it puts a plausible-looking answer on a
- * go-live decision. Say the verdict is unreadable instead.
- */
-const UNRECOGNISED_VERDICT = {
-  icon: HelpCircle,
-  wrapper: "border-slate-300 bg-slate-100 text-slate-800",
-  iconWrapper: "bg-slate-200 text-slate-600",
-  label: "UNRECOGNISED VERDICT",
-};
-
 /** Same rationale: point-in-time assessment, not live monitoring. */
 const STALE_AFTER_MS = 60 * 60 * 1000;
+
+// The server recomputes every criterion on each request, so the page keeps
+// itself current instead of asking the operator to reload: it re-runs on a
+// timer while the tab is visible and as soon as the tab regains focus.
+export const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const FILTERS = [
   { key: "ALL", label: "All", match: () => true },
@@ -52,6 +23,15 @@ const FILTERS = [
   { key: "CLEAR", label: "Passing", match: (s) => s === "PASS" },
   { key: "NA", label: "Not applicable", match: (s) => s === "NOT_APPLICABLE" },
 ];
+
+// What an empty filter means. Zero blocking criteria is the good outcome, so
+// that filter stays clickable and says so instead of greying out.
+const EMPTY_FILTER_MESSAGES = {
+  BLOCKING: "Nothing is blocking go-live — no criterion is failing.",
+  ATTENTION: "No criteria need attention.",
+  CLEAR: "No criteria are passing yet.",
+  NA: "No criteria are marked not applicable.",
+};
 
 function describeAge(generatedAt) {
   const ts = new Date(generatedAt).getTime();
@@ -64,31 +44,6 @@ function describeAge(generatedAt) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return { text: `${hours} h ago`, stale: true };
   return { text: `${Math.floor(hours / 24)} d ago`, stale: true };
-}
-
-function VerdictBanner({ overallStatus, summary }) {
-  const verdict = OVERALL_VERDICT_STYLES[overallStatus] || UNRECOGNISED_VERDICT;
-  const Icon = verdict.icon;
-  return (
-    <div className={`mb-6 flex items-start gap-4 rounded-3xl border p-5 ${verdict.wrapper}`} role="alert">
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${verdict.iconWrapper}`}>
-        <Icon size={22} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold uppercase tracking-wider">Overall verdict</p>
-        <h2 className="mt-1 text-lg font-extrabold">{verdict.label}</h2>
-        {overallStatus && !OVERALL_VERDICT_STYLES[overallStatus] ? (
-          <p className="mt-1.5 text-sm leading-6">
-            This report returned the verdict <code className="rounded bg-white/70 px-1 font-mono">{overallStatus}</code>,
-            which this page does not recognise. Treat the checklist below as unverified and do not read it as an
-            approval.
-          </p>
-        ) : (
-          <p className="mt-1.5 text-sm leading-6">{summary}</p>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function CriteriaCard({ item }) {
@@ -126,18 +81,53 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("ALL");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  // Re-renders the "N min ago" label without refetching.
+  const [, setClock] = useState(0);
+  const inFlight = useRef(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
+  // First load shows a spinner; later re-runs keep the current report on
+  // screen and only mark it as refreshing, so the checklist never blanks out.
+  const load = useCallback((background = false) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    if (background) setRefreshing(true);
+    else {
+      setLoading(true);
+      setError(null);
+    }
+    setRefreshError(null);
     getProductionAcceptanceReport()
       .then(setReport)
-      .catch((e) => setError(e?.message || "Failed to load the production acceptance report."))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        const message = e?.message || "Failed to load the production acceptance report.";
+        if (background) setRefreshError(message);
+        else setError(message);
+      })
+      .finally(() => {
+        inFlight.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, []);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const rerun = () => {
+      if (document.visibilityState === "visible") load(true);
+    };
+    const timer = setInterval(rerun, AUTO_REFRESH_MS);
+    const tick = setInterval(() => setClock((n) => n + 1), 60 * 1000);
+    document.addEventListener("visibilitychange", rerun);
+    return () => {
+      clearInterval(timer);
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", rerun);
+    };
   }, [load]);
 
   const items = useMemo(() => report?.items ?? [], [report]);
@@ -158,12 +148,6 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
     return ordered.filter((item) => active.match(item.status));
   }, [ordered, filter]);
 
-  // Reset to All if a filter would otherwise show an empty list that looks
-  // like the report has no criteria.
-  useEffect(() => {
-    if (!loading && filter !== "ALL" && visible.length === 0) setFilter("ALL");
-  }, [loading, filter, visible.length]);
-
   const age = report?.generated_at ? describeAge(report.generated_at) : null;
 
   return (
@@ -171,7 +155,7 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
       {!embedded && (
         <PageHeader
           title="Production Readiness"
-          description="ZB-COM-BILL-001 §26 Mandatory Production Acceptance Checklist — a point-in-time architecture assessment, not live monitoring. GO-01 (signed acceptance) remains a governance action this report cannot certify."
+          description="ZB-COM-BILL-001 §26 Mandatory Production Acceptance Checklist — an architecture assessment re-checked automatically while this page is open. GO-01 (signed acceptance) remains a governance action this report cannot certify."
           icon={ClipboardCheck}
           meta={report ? `Generated ${formatDateTime(report.generated_at)}` : null}
           accent="teal"
@@ -180,8 +164,8 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
 
       {embedded && (
         <p className="mb-4 text-xs text-slate-500">
-          A point-in-time architecture assessment, not live monitoring. GO-01 (signed acceptance) is a governance
-          action this report cannot certify.
+          An architecture assessment against the go-live checklist, re-checked automatically while this page is
+          open. GO-01 (signed acceptance) is a governance action this report cannot certify.
         </p>
       )}
 
@@ -192,10 +176,6 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
           <ErrorState message={error} onRetry={load} title="Unable to load the production acceptance report" />
         ) : (
           <>
-            {report?.overall_status ? (
-              <VerdictBanner overallStatus={report.overall_status} summary={report.summary} />
-            ) : null}
-
             <SectionCard variant="standard">
               {/* Reordering the tiles so FAIL leads: previously every status got
                   an identical prominent card, which let "Not Applicable" — the
@@ -220,16 +200,25 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
               </div>
 
               {age && (
-                <p
-                  className={`mt-3 flex items-center gap-1.5 text-xs ${
-                    age.stale ? "font-semibold text-amber-700" : "text-slate-500"
-                  }`}
-                >
-                  <Clock size={13} />
-                  Generated {formatDateTime(report.generated_at)} ({age.text}).
-                  {age.stale
-                    ? " This assessment is a snapshot and nothing here re-checks itself — reload before relying on it."
-                    : ""}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p
+                    className={`flex items-center gap-1.5 text-xs ${
+                      age.stale ? "font-semibold text-amber-700" : "text-slate-500"
+                    }`}
+                  >
+                    <Clock size={13} />
+                    Assessed {formatDateTime(report.generated_at)} ({age.text}) · re-checks automatically every{" "}
+                    {AUTO_REFRESH_MS / 60000} min while this page is open.
+                    {age.stale ? " The last automatic re-check did not complete — re-run it now." : ""}
+                  </p>
+                  <Button size="sm" variant="secondary" icon={RefreshCw} loading={refreshing} onClick={() => load(true)}>
+                    {refreshing ? "Re-running…" : "Re-run now"}
+                  </Button>
+                </div>
+              )}
+              {refreshError && (
+                <p role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  Re-run failed: {refreshError}. Showing the previous assessment.
                 </p>
               )}
 
@@ -242,12 +231,11 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
                       key={f.key}
                       type="button"
                       aria-pressed={active}
-                      disabled={total === 0 && !active}
                       onClick={() => setFilter(f.key)}
                       className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
                           ? "border-slate-800 bg-slate-800 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                       }`}
                     >
                       {f.label}
@@ -257,11 +245,18 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
                 })}
               </div>
 
-              <ul className="mt-4 space-y-3">
-                {visible.map((item) => (
-                  <CriteriaCard key={item.id} item={item} />
-                ))}
-              </ul>
+              {visible.length === 0 ? (
+                <div className="mt-4 flex items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                  <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />
+                  {EMPTY_FILTER_MESSAGES[filter] || "No criteria in this view."}
+                </div>
+              ) : (
+                <ul className="mt-4 space-y-3">
+                  {visible.map((item) => (
+                    <CriteriaCard key={item.id} item={item} />
+                  ))}
+                </ul>
+              )}
             </SectionCard>
           </>
         )}

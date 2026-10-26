@@ -60,6 +60,9 @@ describe("BUG-04 Contracts KPI cards from ?status=expired", () => {
     await waitFor(() => expect(loc()).toMatch(/expiring=30/));
     expect(loc()).not.toMatch(/status=/);
     await waitFor(() => { const p = last(m.contractList); expect(p.expiring_within_days).toBe(30); expect(p.status).toBeUndefined(); expect(p.date_from).toBeUndefined(); });
+    // The click is visible: the card is marked as the applied filter.
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Expiring Soon \(30d\):/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("button", { name: /^Expired:/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("Total Contract Value: clears the status filter and lists every contract (all-time)", async () => {
@@ -67,6 +70,10 @@ describe("BUG-04 Contracts KPI cards from ?status=expired", () => {
     fireEvent.click(await card(/^Total Contract Value:/));
     await waitFor(() => expect(loc()).not.toMatch(/status=/));
     await waitFor(() => { const p = last(m.contractList); expect(p.status).toBeUndefined(); expect(p.expiring_within_days).toBeUndefined(); expect(p.date_from).toBeUndefined(); });
+    // A value card orders by value, so it is not a duplicate of "Contracts".
+    await waitFor(() => { const p = last(m.contractList); expect(p.sort_by).toBe("value"); expect(p.sort_order).toBe("desc"); });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Total Contract Value:/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("button", { name: /^Contracts:/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("Active Value: filters to active contracts (all-time)", async () => {
@@ -74,6 +81,9 @@ describe("BUG-04 Contracts KPI cards from ?status=expired", () => {
     fireEvent.click(await card(/^Active Value:/));
     await waitFor(() => expect(loc()).toMatch(/status=active/));
     await waitFor(() => { const p = last(m.contractList); expect(p.status).toBe("active"); expect(p.date_from).toBeUndefined(); });
+    await waitFor(() => { const p = last(m.contractList); expect(p.sort_by).toBe("value"); expect(p.sort_order).toBe("desc"); });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Active Value:/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("button", { name: /^Active Contracts:/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it.each([["Monthly Recurring"], ["Annual Recurring"]])("%s: opens the contract reports (a metric, not a list filter)", async (title) => {

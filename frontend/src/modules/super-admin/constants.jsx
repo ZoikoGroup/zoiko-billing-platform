@@ -134,6 +134,7 @@ export const OVERRIDE_STATUS_OPTIONS = [
   { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700" },
   { value: "revoked", label: "Revoked", color: "bg-slate-100 text-slate-600" },
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-500" },
+  { value: "withdrawn", label: "Withdrawn", color: "bg-slate-100 text-slate-500" },
 ];
 
 // ── Plan-change orchestration (ZB-COM-ENT-001 Part 3 §7-§8) ──────────────

@@ -256,6 +256,59 @@ describe("AuditLogsPage", () => {
     expect(screen.getByText(/exported 1 row\(s\)/i)).toBeInTheDocument();
   });
 
+  it("reports a non-JSON export response as a failure, not 'nothing to export'", async () => {
+    // The API client returns text for a non-JSON body (e.g. a proxy error page).
+    listPlatformAuditLogs.mockImplementation(({ limit }) =>
+      Promise.resolve(limit === 200 ? "<html>502 Bad Gateway</html>" : { logs: [PLATFORM_LOG], total: 1 })
+    );
+    render(
+      <Wrapper>
+        <AuditLogsPage />
+      </Wrapper>
+    );
+    await waitFor(() => expect(screen.getByText("admin@example.com")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unexpected response/i);
+    expect(screen.queryByText(/nothing to export/i)).not.toBeInTheDocument();
+    expect(downloadCSV).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty export as a failure when the table reports matching rows", async () => {
+    // The table's page has the row; the export's (limit 200) page comes back empty.
+    listPlatformAuditLogs.mockImplementation(({ limit }) =>
+      Promise.resolve(limit === 200 ? { logs: [], total: 1 } : { logs: [PLATFORM_LOG], total: 1 })
+    );
+    render(
+      <Wrapper>
+        <AuditLogsPage />
+      </Wrapper>
+    );
+    await waitFor(() => expect(screen.getByText("admin@example.com")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/returned no rows although 1 match/i);
+    expect(screen.queryByText(/nothing to export/i)).not.toBeInTheDocument();
+    expect(downloadCSV).not.toHaveBeenCalled();
+  });
+
+  it("does not carry one tab's export message onto the other tab", async () => {
+    render(
+      <Wrapper>
+        <AuditLogsPage />
+      </Wrapper>
+    );
+    await waitFor(() => expect(screen.getByText("admin@example.com")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("tab", { name: /subscription activity/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+    await waitFor(() => expect(screen.getByText(/nothing to export/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("tab", { name: /platform events/i }));
+    expect(screen.queryByText(/nothing to export/i)).not.toBeInTheDocument();
+  });
+
   it("surfaces an export failure as an error, not a success message", async () => {
     downloadCSV.mockImplementationOnce(() => {
       throw new Error("export blocked by policy");
@@ -412,7 +465,7 @@ describe("ProductionAcceptancePage release control", () => {
       items: [item("COM-01", "PASS"), item("TAX-01", "NOT_APPLICABLE"), item("SEC-01", "FAIL")],
     });
 
-    await waitFor(() => expect(screen.getByText("NOT READY FOR PRODUCTION — BLOCKED")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Criterion SEC-01")).toBeInTheDocument());
 
     const headings = screen.getAllByText(/^Criterion /).map((n) => n.textContent);
     expect(headings[0]).toBe("Criterion SEC-01");
@@ -440,21 +493,19 @@ describe("ProductionAcceptancePage release control", () => {
     expect(screen.queryByText("COM-01")).not.toBeInTheDocument();
   });
 
-  it("refuses to present an unrecognised verdict as ready", async () => {
-    // The backend contract is READY | CONDITIONAL | BLOCKED. Anything else
-    // means the page's vocabulary has drifted from the report's, and a
-    // release gate must not answer a go-live question with a guess.
+  it("shows no overall verdict banner, only the per-criterion statuses", async () => {
+    // The verdict banner was removed at the user's request; the checklist
+    // still carries every item's own status.
     renderPage({
       generated_at: freshIso(60_000),
-      overall_status: "READY_PENDING_SIGNOFF",
-      summary: "All good, probably.",
-      items: [item("COM-01", "PASS")],
+      overall_status: "CONDITIONAL",
+      summary: "Conditionally ready. 1 need attention: COM-01.",
+      items: [item("COM-01", "WARNING")],
     });
 
-    await waitFor(() => expect(screen.getByText("UNRECOGNISED VERDICT")).toBeInTheDocument());
-    expect(screen.queryByText(/^READY$/)).not.toBeInTheDocument();
-    expect(screen.queryByText("CONDITIONALLY READY")).not.toBeInTheDocument();
-    expect(screen.queryByText("All good, probably.")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Criterion COM-01")).toBeInTheDocument());
+    expect(screen.queryByText(/overall verdict/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Conditionally ready. 1 need attention: COM-01.")).not.toBeInTheDocument();
   });
 
   it("renders long evidence verbatim instead of truncating it", async () => {
@@ -469,7 +520,7 @@ describe("ProductionAcceptancePage release control", () => {
     await waitFor(() => expect(screen.getByText(longEvidence)).toBeInTheDocument());
   });
 
-  it("flags a stale snapshot on a page that is explicitly not live monitoring", async () => {
+  it("flags an assessment whose automatic re-check has not landed", async () => {
     renderPage({
       generated_at: freshIso(3 * 24 * 60 * 60 * 1000),
       overall_status: "CONDITIONAL",
@@ -477,8 +528,8 @@ describe("ProductionAcceptancePage release control", () => {
       items: [item("COM-01", "PASS")],
     });
 
-    await waitFor(() => expect(screen.getByText(/not live monitoring/i)).toBeInTheDocument());
-    expect(screen.getByText(/snapshot and nothing here re-checks itself/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/last automatic re-check did not complete/i)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /re-run now/i })).toBeInTheDocument();
   });
 
   it("does not add a staleness warning to a freshly generated report", async () => {
@@ -490,7 +541,7 @@ describe("ProductionAcceptancePage release control", () => {
     });
 
     await waitFor(() => expect(screen.getByText("COM-01")).toBeInTheDocument());
-    expect(screen.queryByText(/re-checks itself/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/did not complete/i)).not.toBeInTheDocument();
   });
 });
 

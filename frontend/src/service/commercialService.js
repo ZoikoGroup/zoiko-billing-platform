@@ -174,6 +174,10 @@ export const rejectCommercialOverride = (overrideId, rejectionReason) =>
 export const revokeCommercialOverride = (overrideId, reason) =>
   api.post(`/api/super-admin/commercial-overrides/${overrideId}/revoke`, { reason });
 
+// The submitter pulls back their own pending override (they cannot reject it).
+export const withdrawCommercialOverride = (overrideId, reason) =>
+  api.post(`/api/super-admin/commercial-overrides/${overrideId}/withdraw`, { reason });
+
 // ── Billing kill switch (ZB-COM-BILL-001 §30.1) ─────────────────────────
 export const getBillingKillSwitch = () =>
   api.get("/api/super-admin/billing-kill-switch");

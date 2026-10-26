@@ -147,6 +147,18 @@ export default function PricingPlansPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const activeFilterCount = [search, statusFilter, modelFilter, periodFilter].filter(Boolean).length;
+  const hasActiveFilters = activeFilterCount > 0;
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    // Skip the 400 ms debounce so the list resets immediately.
+    setDebouncedSearch("");
+    setStatusFilter("");
+    setModelFilter("");
+    setPeriodFilter("");
+    setCurrentPage(1);
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
 
@@ -884,8 +896,16 @@ export default function PricingPlansPage() {
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
                 className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-                aria-label="Toggle filters" aria-pressed={showFilters}>
-                <Filter size={18} />
+                aria-label={hasActiveFilters ? `Toggle filters (${activeFilterCount} active)` : "Toggle filters"} aria-pressed={showFilters}>
+                <span className="relative block">
+                  <Filter size={18} />
+                  {/* Filters stay applied when this row is collapsed — say so. */}
+                  {hasActiveFilters && (
+                    <span className="absolute -right-2.5 -top-2.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold leading-none text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </span>
               </button>
               <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Refresh pricing plans">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
@@ -907,7 +927,7 @@ export default function PricingPlansPage() {
           {showFilters && (
             <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
               <div className="relative">
-                <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                <select aria-label="Filter by status" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Statuses</option>
                   <option value="active">Active</option>
@@ -916,7 +936,7 @@ export default function PricingPlansPage() {
                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
-                <select value={modelFilter} onChange={(e) => { setModelFilter(e.target.value); setCurrentPage(1); }}
+                <select aria-label="Filter by pricing model" value={modelFilter} onChange={(e) => { setModelFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Models</option>
                   {PRICING_MODEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -924,7 +944,7 @@ export default function PricingPlansPage() {
                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
-                <select value={periodFilter} onChange={(e) => { setPeriodFilter(e.target.value); setCurrentPage(1); }}
+                <select aria-label="Filter by billing period" value={periodFilter} onChange={(e) => { setPeriodFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   <option value="">All Periods</option>
                   {BILLING_PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -932,7 +952,7 @@ export default function PricingPlansPage() {
                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               </div>
               <div className="relative">
-                <select value={sortField} onChange={(e) => setSortField(e.target.value)}
+                <select aria-label="Sort by" value={sortField} onChange={(e) => setSortField(e.target.value)}
                   className="appearance-none px-4 py-2 pr-8 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                   {SORT_FIELDS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
@@ -941,6 +961,16 @@ export default function PricingPlansPage() {
               <button onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
                 className="flex items-center gap-1 px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
                 <ArrowUpDown size={14} /> {sortDir === "asc" ? "A-Z" : "Z-A"}
+              </button>
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                title={hasActiveFilters ? "Reset search, status, model and period filters" : "No filters applied"}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              >
+                <X size={14} />
+                Clear filters
               </button>
             </div>
           )}
@@ -987,7 +1017,13 @@ export default function PricingPlansPage() {
                     <div className="flex flex-col items-center">
                       <Tag size={40} className="text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">No pricing plans found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter || modelFilter ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                      <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                      {hasActiveFilters && (
+                        <button type="button" onClick={clearFilters}
+                          className="mt-3 inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50">
+                          <X size={14} /> Clear filters
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

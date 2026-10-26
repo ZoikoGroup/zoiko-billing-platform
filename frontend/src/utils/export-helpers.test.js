@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // ZB-SA-CMD-003 §17 — Domain B containment at the shared export choke
 // point: while a privileged session suppression reason is set, every shared
@@ -43,5 +43,46 @@ describe("export suppression gate", () => {
     expect(() => assertExportsAllowed()).toThrow();
     setExportSuppressed(null);
     expect(() => assertExportsAllowed()).not.toThrow();
+  });
+});
+
+describe("downloadCSV file delivery", () => {
+  it("clicks an attached link and keeps the object URL alive past the click", async () => {
+    vi.useFakeTimers();
+    const created = [];
+    const revoked = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (blob) => { created.push(blob); return "blob:test"; };
+    URL.revokeObjectURL = (url) => revoked.push(url);
+    let clickedWhileAttached = null;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+      clickedWhileAttached = document.body.contains(this);
+      expect(this.download).toBe("audit.csv");
+    });
+    try {
+      downloadCSV([["a", 'say "hi"']], ["Col1", "Col2"], "audit.csv");
+      // Revoking in the same tick could cancel the browser's download.
+      expect(clickedWhileAttached).toBe(true);
+      expect(revoked).toEqual([]);
+      vi.runAllTimers();
+      expect(revoked).toEqual(["blob:test"]);
+      vi.useRealTimers(); // FileReader needs real timers
+
+      const text = await new Promise((resolve) => {
+        const reader = new FileReader();
+        // Decode raw bytes: readAsText would silently strip the BOM under test.
+        reader.onload = () => resolve(new TextDecoder("utf-8", { ignoreBOM: true }).decode(reader.result));
+        reader.readAsArrayBuffer(created[0]);
+      });
+      expect(text.charCodeAt(0)).toBe(0xfeff);
+      expect(text.slice(1)).toBe('Col1,Col2\r\n"a","say ""hi"""');
+      expect(document.querySelector("a[download]")).toBeNull();
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      vi.useRealTimers();
+    }
   });
 });

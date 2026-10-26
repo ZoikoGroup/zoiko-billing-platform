@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { KeySquare, Package } from "lucide-react";
+import { KeySquare, Package, X } from "lucide-react";
 import {
   listCommercialPlans,
   listCommercialPlanVersions,
   listPlanVersionEntitlements,
 } from "../../service/commercialService";
-import { PageHeader, SectionCard, DataTable, Select } from "../../components/billing-ui";
+import { PageHeader, SectionCard, DataTable, Select, SearchInput } from "../../components/billing-ui";
 import { StatusBadge, ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
 import {
   CATALOG_VERSION_STATUS_OPTIONS,
+  ENTITLEMENT_ENFORCEMENT_OPTIONS,
+  ENTITLEMENT_RISK_OPTIONS,
+  ENTITLEMENT_VALUE_TYPE_OPTIONS,
   EntitlementEnforcementBadge,
   EntitlementRiskBadge,
   EntitlementValueTypeBadge,
@@ -27,6 +30,16 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
   const [loading, setLoading] = useState(true);
   const [versionLoading, setVersionLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Row filters over the selected version's entitlements (client-side: one
+  // version's bundle is small and already fully loaded).
+  const [search, setSearch] = useState("");
+  const [riskFilter, setRiskFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [enforcementFilter, setEnforcementFilter] = useState("");
+  // Bumped on clear to remount SearchInput, so text still inside its debounce
+  // window is discarded instead of re-applying a moment later.
+  const [searchResetKey, setSearchResetKey] = useState(0);
 
   // Which of the three cascading fetches (plan list / versions-for-plan /
   // entitlements-for-version) last failed, so Retry re-runs that one fetch
@@ -133,6 +146,27 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
     () => versions.find((v) => String(v.id) === versionId),
     [versions, versionId]
   );
+  const isPublished = selectedVersion?.status === "published";
+
+  const hasActiveFilters = Boolean(search || riskFilter || typeFilter || enforcementFilter);
+  const clearFilters = useCallback(() => {
+    setSearchResetKey((k) => k + 1);
+    setSearch("");
+    setRiskFilter("");
+    setTypeFilter("");
+    setEnforcementFilter("");
+  }, []);
+
+  const filteredEntitlements = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return entitlements.filter(
+      (row) =>
+        (!term || (row.key || "").toLowerCase().includes(term)) &&
+        (!riskFilter || row.risk_classification === riskFilter) &&
+        (!typeFilter || row.value_type === typeFilter) &&
+        (!enforcementFilter || row.enforcement_type === enforcementFilter)
+    );
+  }, [entitlements, search, riskFilter, typeFilter, enforcementFilter]);
 
   const columns = useMemo(
     () => [
@@ -194,7 +228,7 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
         title="Plan Entitlements"
         description="ZB-COM-ENT-001 · Part 1 · read-only per-plan-version entitlement matrix (§13). Pick a plan and version to inspect its typed entitlement snapshot."
         icon={KeySquare}
-        meta={selectedVersion ? `v${selectedVersion.version_number} · ${selectedVersion.status}` : null}
+        meta={!embedded && selectedVersion ? `v${selectedVersion.version_number} · ${selectedVersion.status}` : null}
       />
 
       <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
@@ -233,11 +267,40 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
         </div>
 
         {selectedVersion && (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <Package size={13} className="text-brand-600" />
-            Snapshot: {selectedVersion.plan_name || `v${selectedVersion.version_number}`} ·
-            effective {selectedVersion.effective_from ? new Date(selectedVersion.effective_from).toLocaleDateString() : "—"}
-            the published version is immutable; values shown are the approved bundle.
+          <div className="flex items-start gap-2 text-xs text-slate-500">
+            <Package size={13} className="mt-0.5 shrink-0 text-brand-600" />
+            <span>
+              Snapshot: {selectedVersion.plan_name || `v${selectedVersion.version_number}`} · effective{" "}
+              {selectedVersion.effective_from ? new Date(selectedVersion.effective_from).toLocaleDateString() : "—"} ·{" "}
+              {isPublished
+                ? "the published version is immutable; values shown are the approved bundle."
+                : `this version is ${selectedVersion.status.replace(/_/g, " ")}, so these values are not yet the approved bundle.`}
+            </span>
+          </div>
+        )}
+
+        {selectedPlanId && entitlements.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3">
+            <SearchInput
+              key={searchResetKey}
+              value={search}
+              onChange={setSearch}
+              placeholder="Search entitlement key…"
+              className="w-full max-w-xs"
+            />
+            <Select value={riskFilter} onChange={setRiskFilter} options={ENTITLEMENT_RISK_OPTIONS} placeholder="All risk levels" className="w-40" aria-label="Filter by risk" />
+            <Select value={typeFilter} onChange={setTypeFilter} options={ENTITLEMENT_VALUE_TYPE_OPTIONS} placeholder="All value types" className="w-40" aria-label="Filter by value type" />
+            <Select value={enforcementFilter} onChange={setEnforcementFilter} options={ENTITLEMENT_ENFORCEMENT_OPTIONS} placeholder="All enforcement" className="w-44" aria-label="Filter by enforcement" />
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              title={hasActiveFilters ? "Reset search, risk, value type and enforcement filters" : "No filters applied"}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
           </div>
         )}
 
@@ -249,7 +312,11 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
             accent="violet"
             icon={KeySquare}
             title="Plan Entitlement Matrix"
-            description="Read-only per-plan-version entitlement snapshot — the published version is immutable, so values shown are the approved bundle."
+            description={
+              selectedVersion && !isPublished
+                ? "Read-only view of this version's entitlement values. It is not published, so these are not yet the approved bundle — edit drafts from the plan's Versions page."
+                : "Read-only per-plan-version entitlement snapshot — the published version is immutable, so values shown are the approved bundle."
+            }
           >
             {loading ? (
               <Spinner />
@@ -262,10 +329,25 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
             ) : (
               <DataTable
                 columns={columns}
-                data={entitlements}
+                data={filteredEntitlements}
                 loading={versionLoading}
-                emptyTitle="No entitlements bound to this version"
-                emptyMessage="This version has no PlanEntitlement rows yet — parts of the bundle may be unseeded for drafts."
+                emptyTitle={hasActiveFilters ? "No entitlements match your filters" : "No entitlements bound to this version"}
+                emptyMessage={
+                  hasActiveFilters
+                    ? "Try a different key, risk level, value type or enforcement."
+                    : "This version has no PlanEntitlement rows yet — parts of the bundle may be unseeded for drafts."
+                }
+                emptyAction={
+                  hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50"
+                    >
+                      <X size={14} /> Clear filters
+                    </button>
+                  ) : null
+                }
                 minWidth={820}
               />
             )}
@@ -276,7 +358,9 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
           <SectionCard variant="quiet">
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <StatusBadge status={selectedVersion?.status || ""} options={CATALOG_VERSION_STATUS_OPTIONS} />
-              {displayValue(entitlements.length)} entitlement(s) resolved for this version.
+              {hasActiveFilters
+                ? `Showing ${filteredEntitlements.length} of ${entitlements.length} entitlement(s) for this version.`
+                : `${displayValue(entitlements.length)} entitlement(s) resolved for this version.`}
             </div>
           </SectionCard>
         )}

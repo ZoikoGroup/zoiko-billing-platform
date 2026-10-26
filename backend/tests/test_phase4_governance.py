@@ -342,7 +342,7 @@ def test_g03_environment_capabilities_report_status_never_value(db_session):
     cap_names = [
         name for name, e in entries.items() if e["category"] == "environment_capability"
     ]
-    assert {"stripe.gateway", "smtp.provider", "mfa.encryption_key"} <= set(cap_names)
+    assert {"stripe.gateway", "stripe.connect", "stripe.platform_checkout", "stripe.platform_webhook", "smtp.provider", "mfa.encryption_key"} <= set(cap_names)
     for name in cap_names:
         entry = entries[name]
         assert entry["value"] in {"CONFIGURED", "NOT_CONFIGURED"}, name

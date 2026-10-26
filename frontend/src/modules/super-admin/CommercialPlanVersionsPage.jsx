@@ -37,10 +37,20 @@ function parseEntitlementValue(raw, valueType) {
   return raw;
 }
 
+// Stored value -> the string the matrix input edits.
+function toEditableValue(value, valueType) {
+  if (value === null || value === undefined) return "";
+  if (valueType === "set" && Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
 function EntitlementMatrixModal({ open, onClose, version, onSaved }) {
   const [definitions, setDefinitions] = useState([]);
   const [values, setValues] = useState({}); // definition_id -> raw editable value
+  const [stored, setStored] = useState({}); // definition_id -> editable form of the server's value
   const [saving, setSaving] = useState({}); // definition_id -> bool
+  const [justSaved, setJustSaved] = useState({}); // definition_id -> bool
+  const [closing, setClosing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -59,12 +69,10 @@ function EntitlementMatrixModal({ open, onClose, version, onSaved }) {
           byDefId[ent.entitlement_definition_id] = ent.value;
         }
         const initial = {};
-        for (const def of defs) {
-          const value = byDefId[def.id];
-          initial[def.id] =
-            def.value_type === "set" && Array.isArray(value) ? value.join(", ") : value ?? "";
-        }
+        for (const def of defs) initial[def.id] = toEditableValue(byDefId[def.id], def.value_type);
         setValues(initial);
+        setStored(initial);
+        setJustSaved({});
       })
       .catch((err) => alive && setError(err?.message || "Failed to load entitlements for this version."))
       .finally(() => alive && setLoading(false));
@@ -73,19 +81,57 @@ function EntitlementMatrixModal({ open, onClose, version, onSaved }) {
     };
   }, [open, version]);
 
+  const isDirty = (def) => (values[def.id] ?? "") !== (stored[def.id] ?? "");
+  const dirtyDefinitions = definitions.filter(isDirty);
+
+  // Returns true when the row is now stored server-side.
   async function handleSave(definition) {
     setSaving((s) => ({ ...s, [definition.id]: true }));
     setError(null);
     try {
       const parsed = parseEntitlementValue(values[definition.id], definition.value_type);
-      await setCommercialPlanVersionEntitlement(version.id, definition.id, parsed);
+      const saved = await setCommercialPlanVersionEntitlement(version.id, definition.id, parsed);
+      // Show what the server actually stored (e.g. a non-numeric integer
+      // entry is stored as unset), so the row never claims a value it lacks.
+      const editable = toEditableValue(saved?.value ?? parsed, definition.value_type);
+      setValues((s) => ({ ...s, [definition.id]: editable }));
+      setStored((s) => ({ ...s, [definition.id]: editable }));
+      setJustSaved((s) => ({ ...s, [definition.id]: true }));
       onSaved?.();
+      return true;
     } catch (err) {
       setError(err?.message || `Failed to save ${definition.key}.`);
+      return false;
     } finally {
       setSaving((s) => ({ ...s, [definition.id]: false }));
     }
   }
+
+  // Done never discards edits: unsaved rows are saved first, and the modal
+  // stays open (showing the error) if any of them fails.
+  async function handleDone() {
+    if (dirtyDefinitions.length === 0) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    let allSaved = true;
+    for (const def of dirtyDefinitions) {
+      // Sequential: each save is audited, and a failure should stop the batch
+      // with the remaining edits still visible.
+      if (!(await handleSave(def))) {
+        allSaved = false;
+        break;
+      }
+    }
+    setClosing(false);
+    if (allSaved) onClose();
+  }
+
+  const setRowValue = (defId, value) => {
+    setValues((s) => ({ ...s, [defId]: value }));
+    setJustSaved((s) => ({ ...s, [defId]: false }));
+  };
 
   return (
     <Modal open={open} onClose={onClose} title={`Edit entitlements — v${version?.version_number ?? ""}`} icon={KeyRound} size="xl">
@@ -117,31 +163,50 @@ function EntitlementMatrixModal({ open, onClose, version, onSaved }) {
                       {def.value_type === "boolean" ? (
                         <Select
                           value={values[def.id] === "" ? "" : String(values[def.id])}
-                          onChange={(v) => setValues((s) => ({ ...s, [def.id]: v === "" ? "" : v }))}
+                          onChange={(v) => setRowValue(def.id, v)}
                           options={[{ value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]}
                           placeholder="Unset"
                         />
                       ) : (
                         <input
                           value={values[def.id] ?? ""}
-                          onChange={(e) => setValues((s) => ({ ...s, [def.id]: e.target.value }))}
+                          onChange={(e) => setRowValue(def.id, e.target.value)}
                           placeholder={def.value_type === "set" ? "comma-separated" : def.value_type}
                           className={MATRIX_INPUT_CLASS}
                         />
                       )}
                     </td>
                     <td className="py-2 pr-3 text-right">
-                      <Button size="sm" variant="secondary" loading={Boolean(saving[def.id])} onClick={() => handleSave(def)}>
-                        Save
-                      </Button>
+                      {justSaved[def.id] && !isDirty(def) ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                          <Check size={13} /> Saved
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={isDirty(def) ? "primary" : "secondary"}
+                          loading={Boolean(saving[def.id])}
+                          disabled={!isDirty(def) || closing}
+                          onClick={() => handleSave(def)}
+                        >
+                          Save
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-end">
-            <Button variant="primary" onClick={onClose}>Done</Button>
+          <div className="flex items-center justify-end gap-3">
+            {dirtyDefinitions.length > 0 && (
+              <span className="text-xs text-amber-700">
+                {dirtyDefinitions.length} unsaved change{dirtyDefinitions.length === 1 ? "" : "s"}
+              </span>
+            )}
+            <Button variant="primary" loading={closing} onClick={handleDone}>
+              {dirtyDefinitions.length > 0 ? `Save ${dirtyDefinitions.length} & close` : "Done"}
+            </Button>
           </div>
         </div>
       )}

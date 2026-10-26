@@ -329,6 +329,24 @@ class ConfigurationGovernanceService:
                 "Payment gateway credentials for tenant payment captures (key value never shown).",
             ),
             _capability(
+                "stripe.connect",
+                bool((env_settings.STRIPE_CONNECT_CLIENT_ID or "").strip()),
+                "Stripe Connect platform client ID (STRIPE_CONNECT_CLIENT_ID). Without it tenants cannot "
+                "connect their Stripe account and the Connect Stripe button stays disabled.",
+            ),
+            _capability(
+                "stripe.platform_checkout",
+                bool((env_settings.PLATFORM_STRIPE_SECRET_KEY or "").strip()),
+                "Zoiko's own Stripe account (PLATFORM_STRIPE_SECRET_KEY) for charging organizations' Zoiko "
+                "subscription invoices. Without it Pay Now shows 'Online payment is not available yet'.",
+            ),
+            _capability(
+                "stripe.platform_webhook",
+                bool((env_settings.PLATFORM_STRIPE_WEBHOOK_SECRET or "").strip()),
+                "Signing secret for /api/commercial/stripe/webhook (PLATFORM_STRIPE_WEBHOOK_SECRET). Without it "
+                "a completed checkout is never recorded, so the Zoiko invoice stays unpaid.",
+            ),
+            _capability(
                 "mfa.encryption_key",
                 bool((env_settings.MFA_ENCRYPTION_KEY or "").strip()),
                 "Dedicated Fernet key encrypting MFA secrets at rest (key value never shown).",

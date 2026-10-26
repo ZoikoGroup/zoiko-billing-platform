@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ShieldAlert, Plus, Send, Check, X, Undo2, ShieldOff } from "lucide-react";
+import { ShieldAlert, Plus, Send, Check, X, Undo2, ShieldOff, CornerUpLeft } from "lucide-react";
 import {
   listCommercialOverrides,
   createCommercialOverride,
@@ -7,6 +7,7 @@ import {
   approveCommercialOverride,
   rejectCommercialOverride,
   revokeCommercialOverride,
+  withdrawCommercialOverride,
   listEntitlementDefinitions,
   listOrganizations,
 } from "../../service/commercialService";
@@ -20,6 +21,25 @@ import {
   formatDateTime,
   displayValue,
 } from "./constants";
+
+// Expiry is picked as a date, so it is stored as midnight; show just the date
+// then, instead of a misleading "12:00 am".
+function formatExpiry(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.getHours() === 0 && d.getMinutes() === 0
+    ? d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })
+    : formatDateTime(value);
+}
+
+const isPastExpiry = (row) => Boolean(row.expires_at) && new Date(row.expires_at).getTime() <= Date.now();
+
+function localDateInput(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100";
@@ -166,7 +186,7 @@ function CreateDraftModal({ open, onClose, organizations, definitions, onCreated
           <ValueInput definition={definition} value={rawValue} onChange={setRawValue} />
         </Field>
         <Field label="Expires at" htmlFor="ov-expires" hint="Optional — leave blank for a permanent (Enterprise) override.">
-          <input id="ov-expires" type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className={inputClass} />
+          <input id="ov-expires" type="date" min={localDateInput(1)} value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className={inputClass} />
         </Field>
         <Field label="Reason" htmlFor="ov-reason" required hint="Why this org needs a non-standard value for this key.">
           <textarea id="ov-reason" required rows={2} value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} />
@@ -235,6 +255,15 @@ export default function OverridesPage({ embedded = false } = {}) {
   const [definitions, setDefinitions] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  // Bumped on clear to remount SearchInput, so text still inside its debounce
+  // window is discarded instead of re-applying the search a moment later.
+  const [searchResetKey, setSearchResetKey] = useState(0);
+  const hasActiveFilters = Boolean(search || statusFilter);
+  const clearFilters = useCallback(() => {
+    setSearchResetKey((k) => k + 1);
+    setSearch("");
+    setStatusFilter("");
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -242,6 +271,10 @@ export default function OverridesPage({ embedded = false } = {}) {
   const [submitTarget, setSubmitTarget] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
+  const [withdrawTarget, setWithdrawTarget] = useState(null);
+  // A failed row action. Kept apart from `error` (a failed LOAD), which
+  // replaces the whole table — a rejected approval must not hide the list.
+  const [actionError, setActionError] = useState(null);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
   const load = useCallback(async () => {
@@ -302,12 +335,13 @@ export default function OverridesPage({ embedded = false } = {}) {
         tone: "primary",
       });
       if (!ok) return;
+      setActionError(null);
       try {
         await approveCommercialOverride(row.id);
         setSuccess(`Override for ${row.entitlement_key} approved.`);
         load();
       } catch (err) {
-        setError(err?.message || "Failed to approve.");
+        setActionError(err?.message || "Failed to approve.");
       }
     },
     [confirm, load]
@@ -349,8 +383,27 @@ export default function OverridesPage({ embedded = false } = {}) {
           return <span className="text-xs font-medium text-slate-700">{formatEntitlementValue(row.value, def?.value_type)}</span>;
         },
       },
-      { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} options={OVERRIDE_STATUS_OPTIONS} /> },
-      { key: "expires_at", label: "Expires", render: (row) => <span className="text-xs text-slate-500">{row.expires_at ? formatDateTime(row.expires_at) : "Never"}</span> },
+      {
+        key: "status",
+        label: "Status",
+        render: (row) => (
+          <span className="flex flex-col items-start gap-1">
+            <StatusBadge status={row.status} options={OVERRIDE_STATUS_OPTIONS} />
+            {row.status === "pending_approval" && isPastExpiry(row) && (
+              <span className="text-[11px] font-medium text-red-600">Expired before approval</span>
+            )}
+          </span>
+        ),
+      },
+      {
+        key: "expires_at",
+        label: "Expires",
+        render: (row) => (
+          <span className={`text-xs ${isPastExpiry(row) ? "text-red-600" : "text-slate-500"}`}>
+            {row.expires_at ? formatExpiry(row.expires_at) : "Never"}
+          </span>
+        ),
+      },
       { key: "reason", label: "Reason", render: (row) => <span className="block max-w-xs truncate text-xs text-slate-500" title={row.reason}>{row.reason}</span> },
       {
         key: "actions",
@@ -363,15 +416,27 @@ export default function OverridesPage({ embedded = false } = {}) {
           if (row.status === "pending_approval") {
             const isSelf = user?.id && row.requested_by_user_id === user.id;
             if (isSelf) {
+              // Maker-checker: the submitter can't approve or reject, but can
+              // pull the request back instead of leaving it stuck.
               return (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                  <ShieldAlert size={13} /> Self-approval blocked
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700"
+                    title="A different Super Admin must approve or reject your request"
+                  >
+                    <ShieldAlert size={13} /> Awaiting another admin
+                  </span>
+                  <Button size="sm" variant="secondary" icon={CornerUpLeft} onClick={() => setWithdrawTarget(row)}>Withdraw</Button>
+                </div>
               );
             }
+            // Approving a lapsed request would grant nothing (the server
+            // refuses it too) — only Reject clears it from the queue.
             return (
               <div className="flex items-center gap-1.5">
-                <Button size="sm" variant="primary" icon={Check} onClick={() => handleApprove(row)}>Approve</Button>
+                {!isPastExpiry(row) && (
+                  <Button size="sm" variant="primary" icon={Check} onClick={() => handleApprove(row)}>Approve</Button>
+                )}
                 <Button size="sm" variant="danger" icon={X} onClick={() => setRejectTarget(row)}>Reject</Button>
               </div>
             );
@@ -409,11 +474,29 @@ export default function OverridesPage({ embedded = false } = {}) {
         </SectionCard>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by organization or key…" className="w-full max-w-sm" />
-          <Select value={statusFilter} onChange={setStatusFilter} options={OVERRIDE_STATUS_OPTIONS} placeholder="All statuses" className="w-48" />
+          <SearchInput key={searchResetKey} value={search} onChange={setSearch} placeholder="Search by organization or key…" className="w-full max-w-sm" />
+          <div className="flex items-center gap-3">
+            <Select value={statusFilter} onChange={setStatusFilter} options={OVERRIDE_STATUS_OPTIONS} placeholder="All statuses" className="w-48" aria-label="Filter overrides by status" />
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              title={hasActiveFilters ? "Reset search and status filter" : "No filters applied"}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
+          </div>
         </div>
 
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
+        {actionError && (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{actionError}</span>
+            <button type="button" onClick={() => setActionError(null)} className="text-xs font-semibold underline">Dismiss</button>
+          </div>
+        )}
 
         {/* error and the table used to render independently, so a failed
             fetch (which also clears `rows` to []) showed the error banner
@@ -440,8 +523,13 @@ export default function OverridesPage({ embedded = false } = {}) {
                 data={rows}
                 loading={loading}
                 rowKey={(row) => row.id}
-                emptyTitle="No commercial overrides yet"
-                emptyMessage={search || statusFilter ? "No overrides match your filters." : "Create the first override to grant an org a non-standard entitlement value."}
+                emptyTitle={hasActiveFilters ? "No overrides found" : "No commercial overrides yet"}
+                emptyMessage={hasActiveFilters ? "No overrides match your filters." : "Create the first override to grant an org a non-standard entitlement value."}
+                emptyAction={
+                  hasActiveFilters ? (
+                    <Button variant="secondary" size="sm" icon={X} onClick={clearFilters}>Clear filters</Button>
+                  ) : null
+                }
                 minWidth={1080}
               />
             )}
@@ -499,6 +587,19 @@ export default function OverridesPage({ embedded = false } = {}) {
         onSubmit={async (reason) => {
           await revokeCommercialOverride(revokeTarget.id, reason);
           setSuccess(`Override for ${revokeTarget.entitlement_key} revoked.`);
+          load();
+        }}
+      />
+
+      <ReasonModal
+        open={Boolean(withdrawTarget)}
+        onClose={() => setWithdrawTarget(null)}
+        title="Withdraw your override request"
+        icon={CornerUpLeft}
+        submitLabel="Withdraw"
+        onSubmit={async (reason) => {
+          await withdrawCommercialOverride(withdrawTarget.id, reason);
+          setSuccess(`Override request for ${withdrawTarget.entitlement_key} withdrawn.`);
           load();
         }}
       />

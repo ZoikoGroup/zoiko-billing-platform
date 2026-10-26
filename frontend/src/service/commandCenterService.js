@@ -302,6 +302,11 @@ export const createEvaluationProgram = (data) =>
 export const setEvaluationProgramStatus = (programId, isActive) =>
   api.patch(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/status`, { is_active: isActive });
 
+// §B3 approval: records the calling Super Admin as approved_by (required
+// before a program can be activated). Approval never activates by itself.
+export const approveEvaluationProgram = (programId) =>
+  api.post(`/api/super-admin/commercial-billing/evaluation-programs/${programId}/approve`);
+
 // ── B3 — Email delivery health (read model over CommunicationAuditLog) ────
 // Backs the CommandCenterHub's "Email Delivery" tile and its dedicated page.
 

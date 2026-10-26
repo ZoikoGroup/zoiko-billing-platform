@@ -670,3 +670,100 @@ def test_router_commit_immediate_downgrade_blocked_creates_investigable_row(db_s
     assert persisted.status == SubscriptionChangeStatus.BLOCKED
     fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
     assert fresh_sub.commercial_plan_id == from_plan.id  # nothing applied
+
+
+# ── Scheduled downgrade with no renewal date / changing a scheduled plan ─────
+
+
+def test_downgrade_on_subscription_without_period_end_gets_a_real_date(db_session):
+    """Regression: scheduling off a NULL current_period_end stored a change
+    with no effective_at — shown as "on —" and never applied by the job."""
+    from app.modules.commercial.org_self_service_router import PlanChangeCommitRequest, commit_plan_change
+
+    from_plan, _ = _plan_with_published_version(db_session, "NPEFROM", price_amount=399)
+    to_plan, _ = _plan_with_published_version(db_session, "NPETO", price_amount=49)
+    org, account, sub = _org_active_subscription(db_session, "NPEORG", from_plan)
+    sub.current_period_end = None
+    sub.start_at = datetime.utcnow() - timedelta(days=40)
+    db_session.commit()
+
+    result = commit_plan_change(
+        PlanChangeCommitRequest(target_plan_id=to_plan.id), db=db_session, current_user=_fake_billing_admin(org.id),
+    )
+    assert result["status"] == "scheduled"
+    effective = datetime.fromisoformat(result["effective_at"])
+    # Next monthly boundary after start_at that is still in the future.
+    assert datetime.utcnow() < effective <= datetime.utcnow() + timedelta(days=31)
+
+
+def test_scheduled_job_dates_and_later_applies_an_undated_change(db_session, monkeypatch):
+    from app.modules.commercial.tasks import apply_scheduled_change
+
+    monkeypatch.setattr("app.config.settings.ENABLE_SCHEDULED_PLAN_CHANGES", True)
+    monkeypatch.setattr(apply_scheduled_change, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    from_plan, _ = _plan_with_published_version(db_session, "UNDFROM", price_amount=100)
+    to_plan, _ = _plan_with_published_version(db_session, "UNDTO", price_amount=50)
+    org, account, sub = _org_active_subscription(db_session, "UNDORG", from_plan)
+    sub.current_period_end = None
+    change = SubscriptionChange(
+        commercial_subscription_id=sub.id, from_plan_id=from_plan.id, to_plan_id=to_plan.id,
+        direction=SubscriptionChangeDirection.DOWNGRADE, status=SubscriptionChangeStatus.SCHEDULED,
+        effective_at=None, requested_by_user_id=1,
+    )
+    db_session.add(change)
+    db_session.flush()
+    CommercialSubscriptionService(db_session).transition(sub, CommercialSubscriptionStatus.SCHEDULED_CHANGE)
+    db_session.commit()
+
+    summary = apply_scheduled_change.run_scheduled_plan_change_job()
+    assert summary["dated"] == 1
+    fresh = db_session.query(SubscriptionChange).get(change.id)
+    assert fresh.effective_at is not None and fresh.effective_at > datetime.utcnow()
+    assert fresh.status == SubscriptionChangeStatus.SCHEDULED  # dated, not yet due
+
+    # Once that date passes, the ordinary due-sweep applies it.
+    fresh.effective_at = datetime.utcnow() - timedelta(minutes=1)
+    db_session.commit()
+    assert apply_scheduled_change.run_scheduled_plan_change_job()["applied"] == 1
+    assert db_session.query(CommercialSubscription).get(sub.id).commercial_plan_id == to_plan.id
+
+
+def test_choosing_another_plan_replaces_the_scheduled_downgrade(db_session):
+    from app.modules.commercial.org_self_service_router import (
+        PlanChangeCommitRequest,
+        PlanChangePreviewRequest,
+        commit_plan_change,
+        preview_plan_change,
+    )
+
+    business, _ = _plan_with_published_version(db_session, "RPLBUS", price_amount=399)
+    professional, _ = _plan_with_published_version(db_session, "RPLPRO", price_amount=149)
+    essentials, _ = _plan_with_published_version(db_session, "RPLESS", price_amount=49)
+    org, account, sub = _org_active_subscription(db_session, "RPLORG", business)
+    admin = _fake_billing_admin(org.id)
+
+    first = commit_plan_change(PlanChangeCommitRequest(target_plan_id=essentials.id), db=db_session, current_user=admin)
+    assert first["status"] == "scheduled"
+
+    # Still previewable while a downgrade is scheduled (used to 400).
+    assert preview_plan_change(
+        PlanChangePreviewRequest(target_plan_id=professional.id), db=db_session, current_user=admin,
+    )["direction"] == "downgrade"
+
+    second = commit_plan_change(PlanChangeCommitRequest(target_plan_id=professional.id), db=db_session, current_user=admin)
+    assert second["status"] == "scheduled"
+    assert second["subscription_change_id"] != first["subscription_change_id"]
+
+    changes = {c.id: c for c in db_session.query(SubscriptionChange).filter(SubscriptionChange.commercial_subscription_id == sub.id)}
+    assert changes[first["subscription_change_id"]].status == SubscriptionChangeStatus.REVERSED
+    assert changes[second["subscription_change_id"]].status == SubscriptionChangeStatus.SCHEDULED
+    assert changes[second["subscription_change_id"]].to_plan_id == professional.id
+    fresh_sub = db_session.query(CommercialSubscription).get(sub.id)
+    assert fresh_sub.status == CommercialSubscriptionStatus.SCHEDULED_CHANGE
+    assert fresh_sub.commercial_plan_id == business.id  # still on Business until renewal
+
+    # Re-choosing the already-scheduled plan is a no-op, not a second change.
+    again = commit_plan_change(PlanChangeCommitRequest(target_plan_id=professional.id), db=db_session, current_user=admin)
+    assert again["subscription_change_id"] == second["subscription_change_id"]

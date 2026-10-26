@@ -778,7 +778,12 @@ export default function OrgAdminOrganizationPage() {
                   </button>
                 </>
               ) : (
-                <button className="btn btn-primary btn-sm" onClick={handleConnectStripe} disabled={stripe?.connect_configured === false || stripeBusy === "connect" || stripeBusy === "callback"}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleConnectStripe}
+                  disabled={stripe?.connect_configured === false || stripeBusy === "connect" || stripeBusy === "callback"}
+                  title={stripe?.connect_configured === false ? "Online payments haven't been enabled for this platform yet — contact Zoiko support." : undefined}
+                >
                   {stripeBusy === "connect" || stripeBusy === "callback" ? "Connecting..." : "Connect Stripe"}
                 </button>
               )}

@@ -127,6 +127,39 @@ describe("PlanChangePanel", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it("keeps other plans selectable while a downgrade is scheduled, and marks the scheduled one", async () => {
+    // The user's case: on Business, Essentials scheduled — Professional and
+    // Essentials used to be disabled until the schedule was cancelled.
+    const business = {
+      plans: PLANS.plans.map((p) => ({ ...p, is_current: p.plan_code === "business" })),
+    };
+    platformSelfServiceApi.getAvailablePlans.mockResolvedValue(business);
+    platformSelfServiceApi.previewPlanChange.mockResolvedValue({ ...DOWNGRADE_PREVIEW, renewal_at: "2026-11-05T00:00:00Z" });
+    platformSelfServiceApi.commitPlanChange.mockResolvedValue({ status: "scheduled", effective_at: "2026-11-05T00:00:00Z" });
+    renderPanel({
+      subscription: { ...SUB, status: "scheduled_change", plan_code: "business", price_amount: "399.00", current_period_end: null },
+      pendingChange: { id: 7, direction: "downgrade", status: "scheduled", to_plan_id: 1, to_plan_name: "Essentials", effective_at: "2026-11-05T00:00:00Z" },
+    });
+
+    const scheduled = await screen.findByRole("button", { name: /essentials is already scheduled/i });
+    expect(scheduled).toBeDisabled();
+    expect(screen.queryByText(/cancel the scheduled downgrade first/i)).not.toBeInTheDocument();
+
+    const professional = screen.getByRole("button", { name: /downgrade to professional/i });
+    expect(professional).toBeEnabled();
+    fireEvent.click(professional);
+    expect(await screen.findByText(/replaces your scheduled move to/i)).toBeInTheDocument();
+    // The renewal date comes from the server when current_period_end is empty.
+    const until = screen.getByText(/keep everything you have until/i);
+    expect(until.textContent).toMatch(/2026/);
+    expect(until.textContent).not.toMatch(/until —/);
+
+    fireEvent.click(screen.getByRole("button", { name: /schedule downgrade/i }));
+    await waitFor(() =>
+      expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalledWith({ targetPlanId: 2, confirmImmediate: false })
+    );
+  });
+
   it("shows an upgrade awaiting payment with a pay action", async () => {
     const { navigate } = renderPanel({
       pendingChange: { id: 8, direction: "upgrade", status: "pending", to_plan_name: "Business", invoice_public_token: "tok_pay", amount_due: "125.00", currency: "USD" },
