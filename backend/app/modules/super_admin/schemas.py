@@ -145,6 +145,9 @@ class SuperAdminUserResponse(BaseModel):
 class SuperAdminUserListResponse(BaseModel):
     users: list[SuperAdminUserResponse]
     total: int
+    # Roster-wide count per derived status (active / invited / suspended),
+    # scoped by role/organization but not by search or status filter.
+    status_counts: dict[str, int] = {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1304,6 +1307,9 @@ class OrganizationDirectoryItem(BaseModel):
     currency: Optional[str] = None
     is_active: bool
     lifecycle_state: str
+    # trial | active | past_due | suspended | deactivated | no_plan — see
+    # organization_service.account_status_for().
+    account_status: str = "no_plan"
     billing_classification: Optional[str] = None
     billing_source: Optional[str] = None
     commercial_account_status: Optional[str] = None
@@ -1329,6 +1335,8 @@ class OrganizationDirectoryItem(BaseModel):
 class OrganizationDirectoryResponse(BaseModel):
     total: int
     organizations: list[OrganizationDirectoryItem]
+    # Fleet-wide (unfiltered) organization count per account_status.
+    status_counts: dict[str, int] = {}
 
 
 class OrganizationAdministratorItem(BaseModel):

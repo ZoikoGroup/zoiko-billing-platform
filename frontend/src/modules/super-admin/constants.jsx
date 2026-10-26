@@ -567,3 +567,28 @@ export function formatEntitlementValue(value, valueType, isContracted = false) {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
+
+// ── Organization account status (Super Admin directory + dashboard) ─────────
+// What an organization's account is right now, as reported by the directory
+// API (organization_service.account_status_for): replaces lifecycle
+// bookkeeping states such as "Onboarding" with Trial / Active / Deactivated.
+// `hex` is the same hue for charts.
+export const ORG_ACCOUNT_STATUS = {
+  trial: { label: "Trial", dot: "bg-blue-500", badge: "bg-blue-100 text-blue-700", hex: "#3B82F6" },
+  active: { label: "Active", dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", hex: "#10B981" },
+  past_due: { label: "Past due", dot: "bg-orange-500", badge: "bg-orange-100 text-orange-700", hex: "#F97316" },
+  suspended: { label: "Suspended", dot: "bg-amber-500", badge: "bg-amber-100 text-amber-800", hex: "#F59E0B" },
+  deactivated: { label: "Deactivated", dot: "bg-slate-400", badge: "bg-slate-200 text-slate-600", hex: "#94A3B8" },
+  no_plan: { label: "No plan", dot: "bg-slate-300", badge: "bg-slate-100 text-slate-500", hex: "#CBD5E1" },
+};
+export const ORG_ACCOUNT_STATUS_ORDER = ["trial", "active", "past_due", "suspended", "deactivated", "no_plan"];
+
+export function OrgAccountStatusBadge({ value }) {
+  const meta = ORG_ACCOUNT_STATUS[value] || ORG_ACCOUNT_STATUS.no_plan;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${meta.badge}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} aria-hidden="true" />
+      {meta.label}
+    </span>
+  );
+}

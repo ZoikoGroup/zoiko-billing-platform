@@ -10,9 +10,11 @@ vi.mock("../../service/commercialService", () => ({
           id: 1,
           organization_name: "Acme Inc.",
           organization_code: "ACME",
-          lifecycle_state: "active",
-          billing_source: "self_serve",
-          billing_classification: "standard",
+          lifecycle_state: "onboarding",
+          account_status: "trial",
+          trial_ends_at: "2099-01-01T00:00:00Z",
+          billing_source: "registered_via_standalone",
+          billing_classification: "commercial_standalone",
           subscription_status: "active",
           subscription_plan_code: "PRO",
           active_users: 3,
@@ -24,6 +26,7 @@ vi.mock("../../service/commercialService", () => ({
         },
       ],
       total: 1,
+      status_counts: { trial: 1, active: 2, past_due: 0, suspended: 1, deactivated: 1, no_plan: 0 },
     })
   ),
   createOrganization: vi.fn(() => Promise.resolve({ id: 9, organization_name: "Payroll" })),
@@ -202,7 +205,7 @@ vi.mock("../../api/client", () => ({
 }));
 
 import { CommandCenterProvider } from "../../context/CommandCenterContext";
-import { createOrganization } from "../../service/commercialService";
+import { createOrganization, getPlatformLifecycle, listOrganizations } from "../../service/commercialService";
 import OrganizationsPage from "./OrganizationsPage";
 import SupportAccessPage from "./SupportAccessPage";
 import LifecycleOnboardingPage from "./LifecycleOnboardingPage";
@@ -315,27 +318,101 @@ describe("New Organization modal", () => {
   });
 });
 
-describe("Organizations filters", () => {
-  it("clears the search and lifecycle filter in one click", async () => {
+describe("Organizations directory (redesign)", () => {
+  const renderOrgs = () =>
     render(
       <Wrapper>
         <OrganizationsPage />
       </Wrapper>
     );
+  const tiles = () => screen.getByRole("group", { name: /filter by account status/i });
+
+  it("shows account-status counts as tiles that filter the list", async () => {
+    renderOrgs();
+    await screen.findByText("Acme Inc.");
+    const group = tiles();
+    await waitFor(() => expect(within(group).getByRole("button", { name: /all organizations\s*5/i })).toBeInTheDocument());
+    expect(within(group).getByRole("button", { name: /trial\s*1/i })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: /deactivated\s*1/i })).toBeInTheDocument();
+    // Lifecycle bookkeeping states are gone.
+    expect(within(group).queryByRole("button", { name: /onboarding|provisioning/i })).not.toBeInTheDocument();
+
+    fireEvent.click(within(group).getByRole("button", { name: /^.*active\s*2$/i }));
+    await waitFor(() =>
+      expect(listOrganizations).toHaveBeenLastCalledWith(expect.objectContaining({ account_status: "active" }))
+    );
+  });
+
+  it("shows the account as on Trial, not Onboarding, with its trial countdown", async () => {
+    renderOrgs();
+    const row = (await screen.findByText("Acme Inc.")).closest("tr");
+    expect(within(row).getByText("Trial")).toBeInTheDocument();
+    expect(within(row).queryByText(/onboarding/i)).not.toBeInTheDocument();
+    expect(within(row).getByText(/left/)).toBeInTheDocument();
+  });
+
+  it("shows one Standalone billing badge, not two", async () => {
+    renderOrgs();
+    const row = (await screen.findByText("Acme Inc.")).closest("tr");
+    // Source and classification are both "standalone": rendered once.
+    expect(within(row).getAllByText(/^standalone$/i)).toHaveLength(1);
+    expect(within(row).queryByText(/via standalone/i)).not.toBeInTheDocument();
+  });
+
+  it("scrolls with the page, not inside a nested table scroll box", async () => {
+    renderOrgs();
+    await screen.findByText("Acme Inc.");
+    expect(screen.queryByRole("region", { name: /data table, scrollable/i })).not.toBeInTheDocument();
+  });
+
+  it("clears the search and lifecycle filter in one click", async () => {
+    renderOrgs();
     const clear = await screen.findByRole("button", { name: /^clear filters$/i });
     expect(clear).toBeDisabled();
 
-    const lifecycle = screen.getByLabelText(/filter by lifecycle state/i);
-    fireEvent.change(lifecycle, { target: { value: lifecycle.options[1].value } });
-    const search = screen.getByRole("searchbox");
-    fireEvent.change(search, { target: { value: "acme" } });
+    fireEvent.click(within(tiles()).getByRole("button", { name: /suspended/i }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "acme" } });
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^clear filters$/i })[0]).toBeEnabled());
 
     fireEvent.click(screen.getAllByRole("button", { name: /^clear filters$/i })[0]);
-    await waitFor(() => expect(lifecycle).toHaveValue(""));
+    await waitFor(() =>
+      expect(within(tiles()).getByRole("button", { name: /all organizations/i })).toHaveAttribute("aria-pressed", "true")
+    );
     // SearchInput is remounted on clear — even text still inside its debounce
     // window is discarded.
     expect(screen.getByRole("searchbox")).toHaveValue("");
     expect(screen.getAllByRole("button", { name: /^clear filters$/i })[0]).toBeDisabled();
+  });
+
+  it("has no Needs attention panel", async () => {
+    renderOrgs();
+    await screen.findByText("Acme Inc.");
+    expect(screen.queryByRole("complementary", { name: /needs attention/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/access blocked/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the full organization name (wraps, never truncated)", async () => {
+    renderOrgs();
+    const name = await screen.findByText("Acme Inc.");
+    expect(name).toHaveAttribute("title", "Acme Inc.");
+    expect(name.className).not.toMatch(/truncate/);
+    expect(name.className).toMatch(/line-clamp-2/);
+    // The name column has a guaranteed share of the table.
+    expect(screen.getByRole("columnheader", { name: "Organization" })).toHaveStyle({ width: "34%" });
+  });
+});
+
+describe("Organizations page without sub-tabs", () => {
+  it.each(["lifecycle", "health", "support"])("an old ?tab=%s link opens the organization directory", async (tab) => {
+    render(
+      <MemoryRouter initialEntries={[`/super-admin/organizations?tab=${tab}`]}>
+        <CommandCenterProvider>
+          <OrganizationsPage />
+        </CommandCenterProvider>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText("Acme Inc.")).toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: /organizations sections/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /lifecycle|tenant health|support access/i })).not.toBeInTheDocument();
   });
 });

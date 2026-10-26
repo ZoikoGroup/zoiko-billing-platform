@@ -529,3 +529,31 @@ def test_registration_org_visible_in_lifecycle_directory(db_session):
     assert row.derived_status == STATUS_ACTIVE
     org = db_session.query(Organization).filter_by(id=row.organization_id).first()
     assert org.lifecycle_state == TenantLifecycleState.ONBOARDING
+
+
+def test_list_users_filters_and_counts_by_derived_status(db_session):
+    """The Users page tiles: Active / Invited / Suspended counts and filter use
+    the same rule as the per-row derived_status."""
+    org = _org(db_session, code="P3BCNT")
+    _tenant_user(db_session, org.id, "act@cnt.example")
+    _tenant_user(db_session, org.id, "inv@cnt.example", is_verified=False)
+    _tenant_user(db_session, org.id, "sus@cnt.example", is_active=False)
+    sa = _sa_user(db_session)
+
+    def call(**kw):
+        return list_platform_users(
+            skip=0, limit=50, search="", role="org_admin", organization_id=org.id, is_active=None,
+            current_user=sa, db=db_session, **kw,
+        )
+
+    everyone = call()
+    assert everyone.status_counts == {"active": 1, "invited": 1, "suspended": 1}
+    for status in ("active", "invited", "suspended"):
+        res = call(derived_status=status)
+        assert res.total == 1
+        assert [u.derived_status for u in res.users] == [status]
+        # Tiles describe the whole roster regardless of the active filter.
+        assert res.status_counts == everyone.status_counts
+
+    with pytest.raises(BadRequestException):
+        call(derived_status="locked-out")

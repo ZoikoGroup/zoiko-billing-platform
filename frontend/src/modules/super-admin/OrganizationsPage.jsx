@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Activity, Building2, ChevronRight, Layers, Plus, ShieldAlert, X } from "lucide-react";
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { AlertTriangle, Building2, ChevronRight, Plus, X } from "lucide-react";
 import {
   createOrganization,
   getCountryDefaults,
@@ -9,21 +8,18 @@ import {
 } from "../../service/commercialService";
 import { getCurrencyInfo } from "../../utils/currency";
 import { PageHeader, DataTable, SearchInput, Modal, Field, Button } from "../../components/billing-ui";
-import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage, DashboardChartCard, DashboardChartErrorBoundary } from "../../components/billing-shared";
+import { Pagination, ErrorState, Spinner, SuccessMessage } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
-  LIFECYCLE_STATE_BADGES,
   formatDateTime,
   displayValue,
-  CommercialSourceBadge,
   CommercialClassificationBadge,
-  LifecycleStateBadge,
   formatTrialRemaining,
   TrialProgressBar,
+  ORG_ACCOUNT_STATUS as ACCOUNT_STATUS,
+  ORG_ACCOUNT_STATUS_ORDER as ACCOUNT_STATUS_ORDER,
+  OrgAccountStatusBadge as AccountStatusBadge,
 } from "./constants";
-import LifecycleOnboardingPage from "./LifecycleOnboardingPage";
-import TenantHealthPage from "./TenantHealthPage";
-import SupportAccessPage from "./SupportAccessPage";
 
 const EMPTY_ORG_FORM = {
   organization_name: "",
@@ -67,21 +63,6 @@ function useCountryDefaults(open) {
   return { ...state, retry: () => setAttempt((n) => n + 1) };
 }
 
-// Lifecycle filter options mirror the backend enum — labels only.
-const LIFECYCLE_FILTER_OPTIONS = Object.entries(LIFECYCLE_STATE_BADGES).map(
-  ([value, meta]) => ({ value, label: meta.label })
-);
-
-// Platform sidebar consolidation — Lifecycle & Onboarding, Tenant Health and
-// Support Access no longer have their own sidebar links; they're reachable
-// here as tabs (their standalone routes still work unchanged for deep links).
-const VALID_TABS = ["organizations", "lifecycle", "health", "support"];
-const TABS = [
-  { key: "organizations", label: "Organizations", icon: Building2 },
-  { key: "lifecycle", label: "Lifecycle & Onboarding", icon: Layers },
-  { key: "health", label: "Tenant Health", icon: Activity },
-  { key: "support", label: "Support Access", icon: ShieldAlert },
-];
 
 function CreateOrganizationModal({ open, onClose, onCreated }) {
   const [form, setForm] = useState(EMPTY_ORG_FORM);
@@ -235,25 +216,156 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
   );
 }
 
+// ── Directory presentation helpers ───────────────────────────────────────────
+
+// One billing badge. Source ("registered via") and classification were two
+// badges that, for nearly every tenant, both read "Standalone". Show the
+// classification, and the source only when it says something different.
+const SOURCE_LABELS = { registered_via_standalone: "Standalone", registered_via_zoiko_one: "Zoiko One" };
+function BillingBadge({ classification, source }) {
+  const sourceLabel = SOURCE_LABELS[source] || null;
+  const classLabel = CLASSIFICATION_LABEL(classification);
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <CommercialClassificationBadge value={classification} />
+      {sourceLabel && sourceLabel !== classLabel && (
+        <span className="text-[11px] text-slate-500">via {sourceLabel}</span>
+      )}
+    </span>
+  );
+}
+const CLASSIFICATION_LABEL = (value) =>
+  ({ commercial_standalone: "Standalone", commercial_zoiko_one: "Zoiko One" })[value] || null;
+
+const AVATAR_TONES = [
+  "bg-brand-50 text-brand-700",
+  "bg-emerald-50 text-emerald-700",
+  "bg-violet-50 text-violet-700",
+  "bg-amber-50 text-amber-700",
+  "bg-sky-50 text-sky-700",
+  "bg-rose-50 text-rose-700",
+];
+
+function initialsOf(name) {
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  return (words.length === 1 ? words[0].slice(0, 2) : words[0][0] + words[1][0]).toUpperCase();
+}
+
+function OrgAvatar({ name, seed }) {
+  const tone = AVATAR_TONES[Math.abs(Number(seed) || 0) % AVATAR_TONES.length];
+  return (
+    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${tone}`} aria-hidden="true">
+      {initialsOf(name)}
+    </span>
+  );
+}
+
+function relativeTime(value) {
+  if (!value) return null;
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return null;
+  const minutes = Math.floor((Date.now() - ts) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(months / 12)}y ago`;
+}
+
+function UsersMeter({ active, total, admins }) {
+  const pct = total > 0 ? Math.round((active / total) * 100) : 0;
+  return (
+    <div className="w-28">
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="font-semibold text-slate-700">
+          {displayValue(active)}<span className="font-normal text-slate-400">/{displayValue(total)}</span>
+        </span>
+        {admins > 0 && <span className="text-[10px] text-slate-500">{admins} admin{admins === 1 ? "" : "s"}</span>}
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100" title={`${active} of ${total} users active`}>
+        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Clickable status tiles: fleet-wide counts that double as the filter. */
+function AccountStatusOverview({ counts, selected, onSelect }) {
+  const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
+  const tiles = [{ key: "", label: "All organizations", count: total, dot: "bg-slate-800" }].concat(
+    ACCOUNT_STATUS_ORDER.map((key) => ({ key, label: ACCOUNT_STATUS[key].label, count: counts ? counts[key] ?? 0 : null, dot: ACCOUNT_STATUS[key].dot }))
+  );
+  return (
+    <div role="group" aria-label="Filter by account status" className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+      {tiles.map((tile) => {
+        const active = selected === tile.key;
+        const empty = tile.key !== "" && tile.count === 0;
+        return (
+          <button
+            key={tile.key || "all"}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onSelect(tile.key)}
+            className={`rounded-2xl border p-3.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
+              active ? "border-brand-500 bg-brand-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+            } ${empty && !active ? "opacity-60" : ""}`}
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <span className={`h-2 w-2 rounded-full ${tile.dot}`} aria-hidden="true" />
+              <span className="truncate">{tile.label}</span>
+            </span>
+            <span className={`mt-1.5 block text-2xl font-extrabold ${active ? "text-brand-700" : "text-slate-800"}`}>
+              {tile.count == null ? "—" : tile.count.toLocaleString()}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function OrganizationsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  // The Lifecycle & Onboarding, Tenant Health and Support Access tabs were
+  // removed from this page. Old ?tab= links (bookmarks) just open the
+  // directory; drop the stale param so it doesn't linger in the URL.
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = VALID_TABS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "organizations";
-  const [activeTab, setActiveTabState] = useState(initialTab);
-  const setActiveTab = (tab) => {
-    setActiveTabState(tab);
-    setSearchParams({ tab }, { replace: true });
-  };
+  useEffect(() => {
+    if (searchParams.has("tab")) setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [orgs, setOrgs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [lifecycleFilter, setLifecycleFilter] = useState("");
+  // ?status=<account_status> opens the list pre-filtered (dashboard links).
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const value = searchParams.get("status");
+    return value && ACCOUNT_STATUS_ORDER.includes(value) ? value : "";
+  });
+  // Once the user picks another filter, drop the deep-link param so a reload
+  // doesn't resurrect it.
+  useEffect(() => {
+    const linked = searchParams.get("status");
+    if (linked && linked !== statusFilter) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("status");
+        return next;
+      }, { replace: true });
+    }
+  }, [statusFilter, searchParams, setSearchParams]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState(location.state?.notice || null);
+
+  // Fleet-wide count per account status, returned with every directory page.
+  const [statusCounts, setStatusCounts] = useState(null);
 
   const load = useCallback(async (pageNum, term, state) => {
     setLoading(true);
@@ -263,10 +375,11 @@ export default function OrganizationsPage() {
         skip: (pageNum - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         search: term,
-        lifecycle_state: state || undefined,
+        account_status: state || undefined,
       });
       setOrgs(data.organizations || []);
       setTotal(data.total || 0);
+      if (data.status_counts) setStatusCounts(data.status_counts);
     } catch (err) {
       setError(err?.message || "Failed to load organizations.");
       setOrgs([]);
@@ -277,8 +390,8 @@ export default function OrganizationsPage() {
   }, []);
 
   useEffect(() => {
-    load(page, search, lifecycleFilter);
-  }, [load, page, search, lifecycleFilter]);
+    load(page, search, statusFilter);
+  }, [load, page, search, statusFilter]);
 
   useEffect(() => {
     if (location.state?.notice) {
@@ -293,47 +406,62 @@ export default function OrganizationsPage() {
     setPage(1);
   }, []);
 
+  const selectStatus = useCallback((state) => {
+    setStatusFilter(state);
+    setPage(1);
+  }, []);
+
   // Bumped on clear to remount SearchInput, so text still inside its debounce
   // window is discarded instead of re-applying the search a moment later.
   const [searchResetKey, setSearchResetKey] = useState(0);
-  const hasActiveFilters = Boolean(search || lifecycleFilter);
+  const hasActiveFilters = Boolean(search || statusFilter);
   const clearFilters = useCallback(() => {
     setSearchResetKey((k) => k + 1);
     setSearch("");
-    setLifecycleFilter("");
+    setStatusFilter("");
     setPage(1);
   }, []);
+
+  const openOrg = useCallback((id) => navigate(`/super-admin/organizations/${id}`), [navigate]);
 
   const columns = useMemo(
     () => [
       {
         key: "organization",
         label: "Organization",
+        // A guaranteed share of the fixed-layout table, and the name wraps
+        // (up to two lines) instead of being cut to "Acme Interna…".
+        width: "34%",
         render: (row) => (
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-              <Building2 size={16} />
-            </span>
+          <div className="flex min-w-0 items-center gap-3">
+            <OrgAvatar name={row.organization_name} seed={row.id} />
             <span className="min-w-0">
-              <span className="block font-semibold text-slate-800">{row.organization_name}</span>
-              <span className="block truncate text-xs text-slate-500" title={row.organization_code}>{row.organization_code}</span>
+              <span className="line-clamp-2 break-words text-sm font-semibold leading-snug text-slate-900" title={row.organization_name}>
+                {row.organization_name}
+              </span>
+              <span className="block truncate text-xs text-slate-500" title={row.organization_code}>
+                {row.organization_code}
+                {row.country ? ` · ${row.country}` : ""}
+              </span>
             </span>
           </div>
         ),
       },
       {
-        key: "lifecycle_state",
-        label: "Lifecycle",
-        render: (row) => <LifecycleStateBadge value={row.lifecycle_state} />,
-      },
-      {
-        key: "billing_source",
-        label: "Source / Class",
-        hideBelow: "lg",
+        key: "account_status",
+        label: "Status",
+        width: 170,
         render: (row) => (
-          <div className="flex flex-col items-start gap-1">
-            <CommercialSourceBadge value={row.billing_source} />
-            <CommercialClassificationBadge value={row.billing_classification} />
+          <div className="flex flex-col items-start gap-1.5">
+            <AccountStatusBadge value={row.account_status} />
+            {row.account_status === "trial" && (
+              <TrialProgressBar trial={formatTrialRemaining(row.trial_ends_at, row.subscription_status, row.recovery_ends_at)} />
+            )}
+            {row.open_incident_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                <AlertTriangle size={11} /> {row.open_incident_count} open incident{row.open_incident_count === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
         ),
       },
@@ -343,44 +471,41 @@ export default function OrganizationsPage() {
         hideBelow: "md",
         render: (row) =>
           row.subscription_plan_code ? (
-            <span>
-              <span className="block font-medium text-slate-700">
-                {row.subscription_plan_name || row.subscription_plan_code}
-              </span>
-              <span className="block text-xs text-slate-500">
-                {displayValue(row.subscription_status)}
-              </span>
+            <span className="block truncate font-medium text-slate-700" title={row.subscription_plan_name || row.subscription_plan_code}>
+              {row.subscription_plan_name || row.subscription_plan_code}
             </span>
           ) : (
             <span className="text-xs text-slate-400">No plan assigned</span>
           ),
       },
       {
-        key: "users",
-        label: "Users",
-        hideBelow: "lg",
+        key: "source",
+        label: "Billing",
+        // Only on very wide screens — it competed with the name for space.
+        hideBelow: "2xl",
         render: (row) => (
-          <span className="text-xs text-slate-600">
-            {displayValue(row.active_users)}/{displayValue(row.total_users)} active
-            {row.org_admins > 0 && (
-              <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                {row.org_admins} admin{row.org_admins === 1 ? "" : "s"}
-              </span>
-            )}
-          </span>
+          <BillingBadge classification={row.billing_classification} source={row.billing_source} />
         ),
       },
       {
-        key: "activity_created",
-        label: "Activity / Created",
-        hideBelow: "xl",
+        key: "users",
+        label: "Users",
+        width: 140,
+        hideBelow: "lg",
+        render: (row) => <UsersMeter active={row.active_users || 0} total={row.total_users || 0} admins={row.org_admins || 0} />,
+      },
+      {
+        key: "activity",
+        label: "Last activity",
+        width: 130,
+        hideBelow: "lg",
         render: (row) => (
-          <span className="block text-xs text-slate-500 leading-5">
-            <span className="block" title="Last activity">
-              {row.last_activity_at ? formatDateTime(row.last_activity_at) : "No activity"}
+          <span className="block text-xs leading-5">
+            <span className="block font-medium text-slate-700" title={row.last_activity_at ? formatDateTime(row.last_activity_at) : undefined}>
+              {relativeTime(row.last_activity_at) || <span className="font-normal text-slate-400">No activity</span>}
             </span>
-            <span className="block text-slate-400" title="Created">
-              {formatDateTime(row.created_at)}
+            <span className="block text-slate-400" title={`Created ${formatDateTime(row.created_at)}`}>
+              Joined {relativeTime(row.created_at) || "—"}
             </span>
           </span>
         ),
@@ -388,7 +513,7 @@ export default function OrganizationsPage() {
       {
         key: "open",
         label: "",
-        width: 40,
+        width: 36,
         render: () => <ChevronRight size={15} className="text-slate-300" />,
       },
     ],
@@ -397,144 +522,55 @@ export default function OrganizationsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Trial Period Overview — remaining trial days per org on the current
-  // page (trial_ends_at lives on the org's commercial subscription). Most
-  // urgent first; all bars rendered blue.
-  const trialChartData = useMemo(() => {
-    const data = [];
-    for (const row of orgs) {
-      if (!row.organization_name || !row.trial_ends_at) continue;
-      if (row.subscription_status !== "trialing" && row.subscription_status !== "pending") continue;
-      const end = new Date(row.trial_ends_at);
-      if (Number.isNaN(end.getTime())) continue;
-      const days = Math.max(0, Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-      data.push({ org: row.organization_name, days, color: "#3B82F6" });
-    }
-    return data.sort((a, b) => a.days - b.days);
-  }, [orgs]);
+  const fleetTotal = statusCounts ? Object.values(statusCounts).reduce((a, b) => a + b, 0) : null;
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <PageHeader
         title="Organizations"
-        description="Tenant directory — identity, lifecycle state, selected plan, free-trial time remaining, operational counts and incident load. Financial records stay behind privileged access."
+        description="Every tenant on the platform — account status, plan, trial time, users and incident load. Financial records stay behind privileged access."
         icon={Building2}
-        meta={activeTab === "organizations" ? `${displayValue(total)} organization(s)` : undefined}
+        meta={fleetTotal != null ? `${displayValue(fleetTotal)} organization(s) on the platform` : undefined}
         actions={
-          activeTab === "organizations" ? (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-            >
-              <Plus size={15} />
-              New Organization
-            </button>
-          ) : undefined
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            New Organization
+          </Button>
         }
       />
 
-      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Organizations sections">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
-                active
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {notice && <SuccessMessage message={notice} onDismiss={() => setNotice(null)} />}
 
-      {activeTab === "lifecycle" ? (
-        <div className="mt-6">
-          <LifecycleOnboardingPage />
-        </div>
-      ) : activeTab === "health" ? (
-        <div className="mt-6">
-          <TenantHealthPage />
-        </div>
-      ) : activeTab === "support" ? (
-        <div className="mt-6">
-          <SupportAccessPage />
-        </div>
-      ) : (
-        <>
-          {notice && <div className="mt-4"><SuccessMessage message={notice} onDismiss={() => setNotice(null)} /></div>}
+      <AccountStatusOverview counts={statusCounts} selected={statusFilter} onSelect={selectStatus} />
 
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <SearchInput key={searchResetKey} value={search} onChange={onSearch} placeholder="Search by name, code or legal name…" className="w-full max-w-sm" />
-            <label htmlFor="lifecycle-filter" className="sr-only">Filter by lifecycle state</label>
-            <select
-              id="lifecycle-filter"
-              value={lifecycleFilter}
-              onChange={(e) => {
-                setLifecycleFilter(e.target.value);
-                setPage(1);
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
-            >
-              <option value="">All lifecycle states</option>
-              {LIFECYCLE_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+      <div className="min-w-0">
+        <section className="min-w-0 rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)]" aria-label="Organization directory">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
+            <SearchInput
+              key={searchResetKey}
+              value={search}
+              onChange={onSearch}
+              placeholder="Search by name, code or legal name…"
+              className="w-full min-w-0 flex-1 sm:max-w-sm"
+            />
+            <span className="text-xs text-slate-500" aria-live="polite">
+              {loading ? "Loading…" : `${displayValue(total)} result${total === 1 ? "" : "s"}`}
+              {statusFilter && ` · ${ACCOUNT_STATUS[statusFilter]?.label || statusFilter}`}
+            </span>
             <button
               type="button"
               onClick={clearFilters}
               disabled={!hasActiveFilters}
-              title={hasActiveFilters ? "Reset search and lifecycle filter" : "No filters applied"}
-              className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              title={hasActiveFilters ? "Reset search and status filter" : "No filters applied"}
+              className="ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
             >
               <X size={14} />
               Clear filters
             </button>
           </div>
 
-          {trialChartData.length > 0 && (
-            <div className="mt-6">
-              <DashboardChartCard
-                title="Trial Period Overview"
-                action={<span className="text-xs text-slate-400">{trialChartData.length} org(s) on trial</span>}
-              >
-                <div className="h-64 w-full" aria-label="Remaining trial days per organization">
-                  <DashboardChartErrorBoundary>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={trialChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                        <XAxis dataKey="org" tick={{ fontSize: 11, fill: "#64748B" }} interval={0} angle={-25} textAnchor="end" height={56} />
-                        <YAxis tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
-                        <Tooltip formatter={(value) => [`${value} day(s)`, "Trial remaining"]} />
-                        <Bar dataKey="days" radius={[6, 6, 0, 0]}>
-                          {trialChartData.map((d, i) => (
-                            <Cell key={i} fill={d.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </DashboardChartErrorBoundary>
-                </div>
-              </DashboardChartCard>
-            </div>
-          )}
-
-          <div className="mt-4">
+          <div className="p-2 sm:p-3">
             {error ? (
-              <div className="rounded-3xl border border-slate-200 bg-white">
-                <ErrorState message={error} onRetry={() => load(page, search, lifecycleFilter)} title="Unable to load organizations" />
-              </div>
+              <ErrorState message={error} onRetry={() => load(page, search, statusFilter)} title="Unable to load organizations" />
             ) : loading && orgs.length === 0 ? (
               <Spinner />
             ) : (
@@ -542,29 +578,34 @@ export default function OrganizationsPage() {
                 columns={columns}
                 data={orgs}
                 loading={loading}
-                onRowClick={(row) => navigate(`/super-admin/organizations/${row.id}`)}
+                onRowClick={(row) => openOrg(row.id)}
                 emptyTitle="No organizations found"
                 emptyMessage={hasActiveFilters ? "No organizations match your filters." : "Organizations will appear here once they are provisioned."}
                 emptyAction={
                   hasActiveFilters ? (
                     <Button variant="secondary" size="sm" icon={X} onClick={clearFilters}>Clear filters</Button>
-                  ) : null
+                  ) : (
+                    <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreating(true)}>New Organization</Button>
+                  )
                 }
                 minWidth={0}
                 tableClassName="table-fixed"
+                // One scroll: the page. The table's own 560px scroll box
+                // nested a second scrollbar inside the page.
+                stickyHeader={false}
               />
             )}
           </div>
 
-          {!error && (
-            <div className="mt-4">
+          {!error && totalPages > 1 && (
+            <div className="border-t border-slate-100 px-4 py-3">
               <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
                 {displayValue(total)} organization(s)
               </Pagination>
             </div>
           )}
-        </>
-      )}
+        </section>
+      </div>
 
       <CreateOrganizationModal
         open={creating}
@@ -573,7 +614,7 @@ export default function OrganizationsPage() {
           setCreating(false);
           setNotice(`Organization "${org.organization_name}" created.`);
           setPage(1);
-          load(1, search, lifecycleFilter);
+          load(1, search, statusFilter);
         }}
       />
     </div>

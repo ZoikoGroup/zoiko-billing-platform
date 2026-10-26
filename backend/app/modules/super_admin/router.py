@@ -253,9 +253,23 @@ def list_platform_users(
     role: str = Query(""),
     organization_id: int = Query(None),
     is_active: bool | None = Query(None),
+    derived_status: str | None = None,  # active | invited | suspended
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
+    from app.core.exceptions import BadRequestException
+
+    # SQL form of UserAdminService.derived_status() for tenant users (the
+    # MFA "locked" state only ever applied to Super Admins), so the Users
+    # page can filter and count by the same status it shows per row.
+    status_filters = {
+        "suspended": [User.is_active.is_(False)],
+        "invited": [User.is_active.is_(True), User.is_verified.is_(False)],
+        "active": [User.is_active.is_(True), User.is_verified.is_(True)],
+    }
+    if derived_status and derived_status not in status_filters:
+        raise BadRequestException("derived_status must be one of: active, invited, suspended")
+
     query = db.query(User, Organization).outerjoin(
         Organization, Organization.id == User.organization_id
     )
@@ -273,6 +287,17 @@ def list_platform_users(
         query = query.filter(User.organization_id == organization_id)
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
+    if derived_status:
+        query = query.filter(*status_filters[derived_status])
+
+    # Counts for the status tiles: same role/organization scope, but ignoring
+    # search and status so the tiles describe the whole roster.
+    count_base = db.query(User)
+    if role:
+        count_base = count_base.filter(User.role == role)
+    if organization_id:
+        count_base = count_base.filter(User.organization_id == organization_id)
+    status_counts = {key: count_base.filter(*conds).count() for key, conds in status_filters.items()}
 
     total = query.count()
     rows = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
@@ -320,7 +345,7 @@ def list_platform_users(
                 recovery_ends_at=sub.recovery_ends_at if sub else None,
             )
         )
-    return SuperAdminUserListResponse(users=users, total=total)
+    return SuperAdminUserListResponse(users=users, total=total, status_counts=status_counts)
 
 
 @router.put("/users/{user_id}/status", response_model=SuccessResponse)
@@ -4733,6 +4758,7 @@ def list_super_admin_organizations(
     currency: str | None = None,
     billing_classification: str | None = None,
     billing_source: BillingSource | None = None,
+    account_status: str | None = None,
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
@@ -4758,10 +4784,12 @@ def list_super_admin_organizations(
         currency=currency,
         billing_classification=classification,
         billing_source=billing_source,
+        account_status=account_status,
     )
     return OrganizationDirectoryResponse(
         total=result["total"],
         organizations=result["organizations"],
+        status_counts=result["status_counts"],
     )
 
 
