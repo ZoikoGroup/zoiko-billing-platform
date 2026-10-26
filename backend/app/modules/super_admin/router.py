@@ -16,7 +16,7 @@ from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.cache_service import cache_get_or_set
+from app.core.cache_service import cache_delete, cache_get_or_set
 from app.core.capabilities import require_any_capability, require_capability
 from app.core.dependencies import get_current_super_admin
 from app.core.rate_limiter import limit_route
@@ -1163,6 +1163,15 @@ def set_commercial_plan_default(
 # approval is rejected server-side) or reject. No prices are invented — every
 # structural field mirrors CommercialPlan and stays NULL unless supplied.
 
+def _invalidate_plan_version_caches(version) -> None:
+    """Drop the short-lived read caches a plan-version write makes stale: the
+    plan's version list and this version's entitlement values. Without this,
+    a value saved in the Edit entitlements modal read back as empty on
+    reopen (the pre-save list was served from cache for up to
+    REDIS_ENTITLEMENT_TTL seconds), so saved entries looked deleted."""
+    cache_delete(f"plan:versions:{version.plan_id}", f"plan:version-entitlements:{version.id}")
+
+
 def _version_payload(version) -> CommercialPlanVersionResponse:
     return CommercialPlanVersionResponse(
         id=version.id,
@@ -1207,9 +1216,8 @@ def list_commercial_plan_versions(
     # matrix — N plans means N of these plus N more to the entitlements
     # endpoint below, on every load of that tab. Plan versions are
     # admin-configured and change rarely, so a short cache absorbs repeat
-    # tab loads without needing an invalidation hook on every version-write
-    # path (worst case: a just-published version is invisible for up to
-    # REDIS_ENTITLEMENT_TTL seconds).
+    # tab loads. Every version-write endpoint clears it (and the version's
+    # entitlement cache) via _invalidate_plan_version_caches.
     versions = cache_get_or_set(
         f"plan:versions:{plan_id}",
         # cache_get_or_set round-trips through json.dumps/json.loads on a
@@ -1248,6 +1256,7 @@ def create_commercial_plan_version(
         **data.model_dump(),
     )
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1293,6 +1302,7 @@ def update_commercial_plan_version(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1322,6 +1332,7 @@ def set_commercial_plan_version_entitlement(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(row)
     definition = db.query(EntitlementDefinition).filter(EntitlementDefinition.id == definition_id).first()
     return PlanEntitlementResponse(
@@ -1351,6 +1362,7 @@ def submit_commercial_plan_version(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1377,6 +1389,7 @@ def approve_commercial_plan_version(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1404,6 +1417,7 @@ def reject_commercial_plan_version(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1425,6 +1439,7 @@ def archive_commercial_plan_version(
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
+    _invalidate_plan_version_caches(version)
     db.refresh(version)
     return _version_payload(version)
 
@@ -1741,6 +1756,31 @@ def revoke_commercial_override(
         raise NotFoundException("Commercial Override", "id")
     try:
         override = svc.revoke(override, actor_id=current_user.id, reason=data.reason)
+    except ValueError as exc:
+        raise BadRequestException(str(exc))
+    db.commit()
+    db.refresh(override)
+    return _override_payload(override)
+
+
+@router.post("/commercial-overrides/{override_id}/withdraw", response_model=CommercialOverrideResponse)
+def withdraw_commercial_override(
+    override_id: int,
+    data: CommercialOverrideRevokeRequest,
+    current_user=Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """The submitter pulls back their own PENDING_APPROVAL override (they
+    cannot reject it — maker-checker). Same {reason} body as revoke."""
+    from app.core.exceptions import BadRequestException, NotFoundException
+    from app.modules.commercial.entitlement_override_service import CommercialOverrideService
+
+    svc = CommercialOverrideService(db)
+    override = svc.get_override(override_id)
+    if override is None:
+        raise NotFoundException("Commercial Override", "id")
+    try:
+        override = svc.withdraw(override, actor_id=current_user.id, reason=data.reason)
     except ValueError as exc:
         raise BadRequestException(str(exc))
     db.commit()
@@ -3316,24 +3356,35 @@ def get_production_acceptance_report(
             "logs event_id/event_type/exception only, no request/response payload."
         ),
     ))
+    # SEC-01 — evidence follows the live MFA configuration so it cannot go
+    # stale again (it used to describe step-up as enforced "with no bypass"
+    # after step-up had been retired).
+    from app.config import settings as _settings
+
+    if _settings.MFA_STEP_UP_ENABLED:
+        sec01_mfa = (
+            "Backend-enforced TOTP MFA is ON as a step-up factor: break-glass tenant access, circuit-breaker "
+            "toggles and approval decisions each demand a fresh TOTP or single-use recovery code verified "
+            "server-side (mfa_service.verify_step_up), with replay protection and lockout. Secrets are encrypted "
+            "with a key separate from the JWT key (core/mfa_crypto.py); recovery codes are stored only as hashes."
+        )
+    else:
+        sec01_mfa = (
+            "MFA step-up is TURNED OFF (MFA_STEP_UP_ENABLED=false): break-glass tenant access, circuit-breaker "
+            "changes and approval decisions require only an authenticated Super Admin session plus a reason. "
+            "The MFA service, tables and enrolments are retained, so the control can be switched back on."
+        )
     items.append(ProductionAcceptanceItem(
         id="SEC-01",
         criterion="RBAC, MFA/step-up, dual control, secret management and break-glass procedures pass Security review.",
         status="WARNING",
         evidence=(
-            "RBAC exists (super_admin/org_admin/billing_admin, server-enforced). Backend-enforced TOTP MFA exists "
-            "as a STEP-UP factor for every privileged Super Admin action (mfa_service.py): normal login issues a "
-            "real token on a valid password for every role (no login-time MFA gate, per the ZB-SA-CMD-003 v3.0 "
-            "master directive), but tenant-access activation, circuit-breaker toggles/proposals/decisions each "
-            "demand a fresh TOTP code or single-use recovery code verified server-side at the moment of the "
-            "action (verify_step_up) -- with replay protection and no bypass. Secrets are encrypted at rest with "
-            "a key separate from the JWT signing key (core/mfa_crypto.py); recovery codes are stored only as "
-            "SHA-256 hashes. Brute-force protection (account lockout after repeated failures) and an audited "
-            "administrative break-glass reset (MFA_ADMIN_RESET) both exist. Remaining gap: DUAL CONTROL now "
-            "covers circuit-breaker changes (maker-checker via ApprovalRequest) but other single-actor Super "
-            "Admin actions (MFA admin-reset, org deletion) still require only one authenticated actor, and "
-            "processor-credential secret management is unassessed since no real payment processor integration "
-            "exists yet (see PAY-01/PAY-02) -- not yet a full PASS."
+            "RBAC exists (super_admin platform roles + org_admin/billing_admin, server-enforced capabilities). "
+            + sec01_mfa
+            + " Dual control (maker-checker via ApprovalRequest) covers circuit-breaker changes, plan-version "
+            "publication and entitlement overrides; break-glass access is time-boxed, raises a P1 alert and "
+            "requires an independent review. Remaining gaps: other single-actor Super Admin actions (e.g. "
+            "organization deletion) need only one actor, and no formal Security review has been recorded."
         ),
     ))
     items.append(ProductionAcceptanceItem(

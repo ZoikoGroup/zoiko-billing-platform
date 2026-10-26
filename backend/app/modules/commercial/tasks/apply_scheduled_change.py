@@ -59,6 +59,25 @@ def run_scheduled_plan_change_job() -> Dict[str, Any]:
         sub_svc = CommercialSubscriptionService(db)
         audit = PlatformAuditService(db)
 
+        # Repair changes scheduled before next_renewal_at existed: they were
+        # stored with effective_at = NULL (the subscription had no
+        # current_period_end), which the due-query below can never match, so
+        # they would have stayed scheduled forever.
+        undated = (
+            db.query(SubscriptionChange)
+            .filter(
+                SubscriptionChange.status == SubscriptionChangeStatus.SCHEDULED,
+                SubscriptionChange.effective_at.is_(None),
+            )
+            .all()
+        )
+        for change in undated:
+            if change.subscription is not None:
+                change.effective_at = sub_svc.next_renewal_at(change.subscription)
+        if undated:
+            db.commit()
+            summary["dated"] = len(undated)
+
         due = (
             db.query(SubscriptionChange)
             .filter(

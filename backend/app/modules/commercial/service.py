@@ -1152,6 +1152,32 @@ class CommercialSubscriptionService:
         subscription.current_period_end = self._add_months(start, months)
         self.db.flush()
 
+    def next_renewal_at(self, subscription: CommercialSubscription, now: datetime | None = None) -> datetime:
+        """When the subscription next renews — the moment a scheduled
+        downgrade takes effect. Uses current_period_end when it is set and
+        still ahead; otherwise steps forward from the last known period
+        boundary (period end, period start, start_at, created_at) by the
+        plan's billing interval until it passes `now`.
+
+        Subscriptions created outside the self-serve/Stripe paths can have a
+        NULL current_period_end; scheduling off that NULL produced a
+        downgrade with no date that the scheduler never applied."""
+        from app.modules.commercial.enums import CommercialBillingInterval
+
+        now = now or datetime.utcnow()
+        end = subscription.current_period_end
+        if end is not None and end > now:
+            return end
+        resolved = self.resolve_price(subscription)
+        interval = resolved[2] if resolved is not None else None
+        months = 12 if interval == CommercialBillingInterval.ANNUAL else 1
+        anchor = end or subscription.current_period_start or subscription.start_at or subscription.created_at or now
+        if getattr(anchor, "tzinfo", None) is not None:
+            anchor = anchor.replace(tzinfo=None)
+        while anchor <= now:
+            anchor = self._add_months(anchor, months)
+        return anchor
+
     @staticmethod
     def _add_months(start: datetime, months: int) -> datetime:
         import calendar

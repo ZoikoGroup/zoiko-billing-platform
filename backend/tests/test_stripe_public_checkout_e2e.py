@@ -226,3 +226,35 @@ class TestPlane1PlatformInvoiceStripe:
         assert pinv.status == PlatformInvoiceStatus.PAID
         assert pinv.balance_due == Decimal("0.00")
         assert pinv.paid_amount == Decimal("299.00")
+
+
+class TestPlane1PublicInvoiceOnlinePaymentFlag:
+    """The public platform-invoice view says whether card payment can start,
+    so the page shows payment instructions instead of a Pay button that can
+    only dead-end on "Online payment is not available yet"."""
+
+    def _invoice(self, db):
+        from datetime import date
+
+        org = Organization(id=11, organization_name="Tenant Eleven", organization_code="tenant-eleven")
+        db.add(org)
+        account = CommercialAccount(id=11, organization_id=org.id, status=CommercialAccountStatus.ACTIVE)
+        db.add(account)
+        db.add(PlatformInvoice(
+            id=51, commercial_account_id=account.id, invoice_number="PINV-0051",
+            status=PlatformInvoiceStatus.ISSUED, payment_status=PlatformInvoicePaymentStatus.NONE,
+            total_amount=Decimal("149.00"), balance_due=Decimal("149.00"), paid_amount=Decimal("0.00"),
+            currency="USD", issue_date=date.today(), due_date=date.today(), public_token="tok_pinv_51",
+        ))
+        db.commit()
+
+    @pytest.mark.parametrize("key,expected", [("", False), ("sk_test_123", True)])
+    def test_view_reports_whether_online_payment_is_available(self, db, monkeypatch, key, expected):
+        from app.modules.commercial import platform_stripe_service
+        from app.modules.commercial.commercial_billing_router import get_public_invoice
+
+        self._invoice(db)
+        monkeypatch.setattr(platform_stripe_service, "_platform_secret_key", lambda: key)
+        view = get_public_invoice("tok_pinv_51", db=db)
+        assert view["online_payment_available"] is expected
+        assert view["invoice_number"] == "PINV-0051"

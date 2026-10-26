@@ -22,7 +22,7 @@ Never commits — the caller's transaction owns atomicity.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -76,6 +76,12 @@ class CommercialOverrideService:
     ) -> CommercialOverride:
         if not reason or not reason.strip():
             raise ValueError("A reason is required to create a CommercialOverride.")
+        if expires_at is not None and expires_at.tzinfo is not None:
+            # The column is naive UTC; an offset-aware value would also make
+            # the comparison below raise TypeError.
+            expires_at = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if expires_at is not None and expires_at <= datetime.utcnow():
+            raise ValueError("expires_at must be in the future — this override would never take effect.")
 
         existing_live = (
             self.db.query(CommercialOverride)
@@ -164,6 +170,11 @@ class CommercialOverrideService:
             raise ValueError(
                 f"CommercialOverride {override.id} is {override.status.name}, "
                 "not PENDING_APPROVAL; cannot approve."
+            )
+        if override.expires_at is not None and override.expires_at <= datetime.utcnow():
+            raise ValueError(
+                f"CommercialOverride {override.id} expired on {override.expires_at:%Y-%m-%d} before it was "
+                "approved; approving it would grant nothing. Reject it and submit a new override."
             )
         request = ApprovalService(self.db).get_request(override.approval_request_id)
         if request is None:
@@ -258,6 +269,45 @@ class CommercialOverrideService:
         except Exception as mail_exc:
             logger.warning("Failed to send override rejected email: %s", mail_exc)
 
+        return override
+
+    def withdraw(self, override: CommercialOverride, *, actor_id: int, reason: str) -> CommercialOverride:
+        """PENDING_APPROVAL -> WITHDRAWN, by the user who submitted it. The
+        requester is blocked from rejecting their own request, so without
+        this a mistaken or stale submission sat pending until someone else
+        cleaned it up. Cancels the linked ApprovalRequest; nothing was ever
+        live, so no entitlement recompute is needed."""
+        from app.modules.super_admin.approval_service import ApprovalService
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        if override.status != CommercialOverrideStatus.PENDING_APPROVAL:
+            raise ValueError(
+                f"CommercialOverride {override.id} is {override.status.name}, "
+                "not PENDING_APPROVAL; cannot withdraw."
+            )
+        if override.requested_by_user_id != actor_id:
+            raise ValueError("Only the Super Admin who submitted this override can withdraw it.")
+        request = ApprovalService(self.db).get_request(override.approval_request_id)
+        if request is not None:
+            ApprovalService(self.db).cancel(request)
+        override.status = CommercialOverrideStatus.WITHDRAWN
+        self.db.flush()
+        logger.info("CommercialOverride %s withdrawn by %s", override.id, actor_id)
+
+        PlatformAuditService(self.db).log_no_commit(
+            actor_id=actor_id,
+            actor_role="super_admin",
+            action=PlatformAuditAction.UPDATE,
+            entity_type="CommercialOverride",
+            entity_id=override.id,
+            organization_id=override.organization_id,
+            old_values={"status": "pending_approval"},
+            new_values={"status": "withdrawn"},
+            metadata={"event": "entitlement_override_withdrawn"},
+            reason=reason,
+            correlation_id=f"commercial_override:{override.id}",
+        )
         return override
 
     def revoke(self, override: CommercialOverride, *, actor_id: int | None, reason: str) -> CommercialOverride:

@@ -721,6 +721,9 @@ export function DashboardStatCard({
   compact = true,
   sparkline,
   tooltip,
+  // Optional: marks the card whose filter is currently applied to the list
+  // below, so a click visibly "takes" (pages pass it; others ignore it).
+  active,
 }) {
   const navigate = useNavigate();
   const handleClick = onClick || (href ? () => navigate(href) : undefined);
@@ -742,10 +745,13 @@ export function DashboardStatCard({
 
   return (
     <div
-      className={`bg-white border border-slate-200 rounded-3xl p-5 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.02)] min-w-0 h-full ${
+      className={`bg-white border rounded-3xl p-5 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.02)] min-w-0 h-full ${
+        active ? "border-brand ring-2 ring-brand/30" : "border-slate-200"
+      } ${
         interactive ? "cursor-pointer hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50" : ""
       }`}
       onClick={handleClick}
+      aria-pressed={interactive && active !== undefined ? Boolean(active) : undefined}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } } : undefined}

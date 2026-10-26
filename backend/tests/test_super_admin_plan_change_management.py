@@ -130,6 +130,52 @@ def test_router_update_and_set_entitlement_endpoints(db_session):
     assert ent_result.key == "billing.invoice.create"
 
 
+def test_saved_entitlement_is_visible_on_reopen_despite_read_cache(db_session):
+    """Regression: the entitlement list is cached; Save did not clear it, so
+    reopening the Edit entitlements modal showed the pre-save (empty) values
+    and saved entries looked deleted."""
+    from app.modules.commercial.schemas import PlanEntitlementSet
+    from app.modules.super_admin.router import (
+        list_commercial_plan_versions,
+        list_plan_version_entitlements,
+        set_commercial_plan_version_entitlement,
+        submit_commercial_plan_version,
+    )
+    from app.modules.super_admin.schemas import SubmitForApprovalRequest
+
+    plan, version = _draft_version(db_session, "CACHEPLAN")
+    boolean_def = _definition(db_session, "billing.invoice.create", EntitlementValueType.BOOLEAN)
+    integer_def = _definition(db_session, "api.requests_per_day", EntitlementValueType.INTEGER)
+    db_session.commit()
+    admin = _fake_super_admin()
+
+    # Opening the modal warms the cache with "nothing set".
+    assert list_plan_version_entitlements(version.id, current_user=admin, db=db_session).entitlements == []
+
+    set_commercial_plan_version_entitlement(
+        version.id, boolean_def.id, PlanEntitlementSet(value=True), current_user=admin, db=db_session,
+    )
+    set_commercial_plan_version_entitlement(
+        version.id, integer_def.id, PlanEntitlementSet(value=5000), current_user=admin, db=db_session,
+    )
+
+    # Reopening must read the saved values, not the cached empty list.
+    reopened = list_plan_version_entitlements(version.id, current_user=admin, db=db_session).entitlements
+    assert {e.key: e.value for e in reopened} == {
+        "billing.invoice.create": True,
+        "api.requests_per_day": 5000,
+    }
+
+    # Same for the plan's version list after a status change.
+    assert [v.status for v in list_commercial_plan_versions(plan.id, current_user=admin, db=db_session).versions] == ["draft"]
+    submit_commercial_plan_version(
+        version.id, SubmitForApprovalRequest(reason="ready"), current_user=admin, db=db_session,
+    )
+    assert [v.status for v in list_commercial_plan_versions(plan.id, current_user=admin, db=db_session).versions] == [
+        "pending_approval"
+    ]
+
+
 # ── Usage diagnostics ────────────────────────────────────────────────────────
 
 

@@ -5,9 +5,10 @@ import {
   listEvaluationPrograms,
   createEvaluationProgram,
   setEvaluationProgramStatus,
+  approveEvaluationProgram,
 } from "../../service/commandCenterService";
 import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select } from "../../components/billing-ui";
-import { ErrorState, Spinner } from "../../components/billing-shared";
+import { ErrorState, Spinner, SuccessMessage } from "../../components/billing-shared";
 import { displayValue } from "./constants";
 
 const PAYMENT_REQUIREMENT_OPTIONS = [
@@ -32,7 +33,6 @@ const EMPTY_FORM = {
   payment_requirement: "none",
   conversion_policy: "manual",
   expiry_action: "suspend",
-  approved_by: "",
 };
 
 function programStatusPill(isActive) {
@@ -63,6 +63,11 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
   const [submitting, setSubmitting] = useState(false);
 
   const [togglingId, setTogglingId] = useState(null);
+  const [approvingId, setApprovingId] = useState(null);
+  // Row-action outcomes. Kept apart from `error` (a failed LOAD), which
+  // replaces the whole table — a rejected toggle must not hide the list.
+  const [actionError, setActionError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
@@ -112,7 +117,6 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
         payment_requirement: form.payment_requirement,
         conversion_policy: form.conversion_policy,
         expiry_action: form.expiry_action,
-        approved_by: form.approved_by ? Number(form.approved_by) : undefined,
       });
       setCreateOpen(false);
       setForm(EMPTY_FORM);
@@ -124,15 +128,35 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
     }
   };
 
+  const programLabel = (program) => `${program.plan_code || `plan #${program.plan_id}`} program #${program.id}`;
+
   const handleToggle = async (program) => {
     setTogglingId(program.id);
+    setActionError(null);
+    setNotice(null);
     try {
       await setEvaluationProgramStatus(program.id, !program.is_active);
+      setNotice(`${programLabel(program)} ${program.is_active ? "deactivated" : "activated"}.`);
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to update program status.");
+      setActionError(err?.message || "Failed to update program status.");
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  const handleApprove = async (program) => {
+    setApprovingId(program.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await approveEvaluationProgram(program.id);
+      setNotice(`${programLabel(program)} approved — it can now be activated.`);
+      await load();
+    } catch (err) {
+      setActionError(err?.message || "Failed to approve program.");
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -197,7 +221,12 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
       {
         key: "approved_by",
         label: "Approved By",
-        render: (row) => <span className="text-xs text-slate-600">{row.approved_by ? `user #${row.approved_by}` : "—"}</span>,
+        render: (row) =>
+          row.approved_by ? (
+            <span className="text-xs text-slate-600">user #{row.approved_by}</span>
+          ) : (
+            <span className="text-xs font-medium text-amber-700">Not approved</span>
+          ),
       },
       {
         key: "actions",
@@ -208,25 +237,37 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
             <Button size="sm" variant="secondary" onClick={() => setDetail(row)}>
               Inspect
             </Button>
-            <Button
-              size="sm"
-              variant={row.is_active ? "danger" : "primary"}
-              loading={togglingId === row.id}
-              onClick={() => handleToggle(row)}
-              disabled={!row.is_active && row.approved_by === null}
-              title={
-                !row.is_active && row.approved_by === null
-                  ? "Cannot activate — §B3 requires an approved_by before activation."
-                  : "Toggle is_active (the explicit on/off switch)"
-              }
-            >
-              {row.is_active ? "Deactivate" : "Activate"}
-            </Button>
+            {!row.is_active && row.approved_by == null ? (
+              // §B3: activation needs a logged approval first. Offer the
+              // approval itself rather than a dead, disabled Activate.
+              <Button
+                size="sm"
+                variant="primary"
+                icon={ShieldCheck}
+                loading={approvingId === row.id}
+                disabled={togglingId !== null || approvingId !== null}
+                onClick={() => handleApprove(row)}
+                title="Record your approval (§B3) so this program can be activated"
+              >
+                Approve
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant={row.is_active ? "danger" : "primary"}
+                loading={togglingId === row.id}
+                disabled={togglingId !== null || approvingId !== null}
+                onClick={() => handleToggle(row)}
+                title={row.is_active ? "Stop granting this trial to new signups" : "Start granting this trial to new signups"}
+              >
+                {row.is_active ? "Deactivate" : "Activate"}
+              </Button>
+            )}
           </div>
         ),
       },
     ],
-    [togglingId]
+    [togglingId, approvingId]
   );
 
   return (
@@ -252,8 +293,9 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
             even with no program configured here. Create a program only when a specific plan needs custom trial
             terms (duration, payment requirement, conversion policy) — it then overrides the default for that plan.
             A program with an <span className="font-semibold">unset grant plan</span> falls back to the §5 default
-            (Professional bundle) at provision time. Activation is blocked without{" "}
-            <span className="font-semibold">approved_by</span>.
+            (Professional bundle) at provision time. A program must be{" "}
+            <span className="font-semibold">approved</span> before it can be activated — use{" "}
+            <span className="font-semibold">Approve</span>, then <span className="font-semibold">Activate</span>.
           </p>
         </SectionCard>
 
@@ -261,6 +303,14 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
             fetch (which also clears `programs` to []) showed the error banner
             stacked directly above "No evaluation programs" — a fetch failure
             presented as an empty catalogue. They're mutually exclusive now. */}
+        {notice && <SuccessMessage message={notice} onDismiss={() => setNotice(null)} />}
+        {actionError && (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{actionError}</span>
+            <button type="button" onClick={() => setActionError(null)} className="text-xs font-semibold underline">Dismiss</button>
+          </div>
+        )}
+
         {error ? (
           <ErrorState message={error} onRetry={load} title="Unable to load evaluation programs" />
         ) : (
@@ -292,7 +342,7 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Create evaluation program"
-        description="Starts inactive — creating a program does NOT by itself grant any trial. §B3 mandates an approved_by before activation."
+        description="Starts inactive and unapproved — creating a program does NOT by itself grant any trial. Approve it, then activate it, from the programs list."
         icon={Clock}
         size="md"
       >

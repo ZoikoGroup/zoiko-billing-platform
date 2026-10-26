@@ -410,6 +410,10 @@ class CommercialOverrideStatus(str, enum.Enum):
                         resolver already excludes any APPROVED row whose
                         expires_at has passed without needing this status
                         to be set (no cleanup job required, AC-10).
+    WITHDRAWN         — pulled back by its own requester while still
+                        PENDING_APPROVAL (the requester cannot reject their
+                        own request); terminal. Stored as VARCHAR, so no
+                        migration is needed for this value.
     """
     DRAFT = "draft"
     PENDING_APPROVAL = "pending_approval"
@@ -417,6 +421,7 @@ class CommercialOverrideStatus(str, enum.Enum):
     REJECTED = "rejected"
     REVOKED = "revoked"
     EXPIRED = "expired"
+    WITHDRAWN = "withdrawn"
 
 
 class SubscriptionChangeStatus(str, enum.Enum):

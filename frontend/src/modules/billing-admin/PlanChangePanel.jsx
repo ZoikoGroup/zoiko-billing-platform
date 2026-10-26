@@ -164,7 +164,11 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
   const blockers = preview?.blockers || [];
   const warnings = preview?.warnings || [];
   const impact = preview?.price_impact;
-  const canChoose = trial || subscription?.status === "active" || isAwaitingPayment;
+  // A scheduled downgrade doesn't lock the picker: choosing another plan
+  // replaces it server-side (the subscription is still on its current plan).
+  const canChoose =
+    trial || subscription?.status === "active" || subscription?.status === "scheduled_change" || isScheduled || isAwaitingPayment;
+  const scheduledPlanId = isScheduled ? pendingChange.to_plan_id : null;
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-5" aria-label="Change plan">
@@ -187,7 +191,7 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
             <div>
               <p className="font-semibold">Downgrade scheduled</p>
               <p className="text-xs text-blue-700 mt-0.5">
-                You'll move to <strong>{pendingChange.to_plan_name}</strong> on {fmtDate(pendingChange.effective_at)}. You keep your current plan until then.
+                You'll move to <strong>{pendingChange.to_plan_name}</strong> on {fmtDate(pendingChange.effective_at)}. You keep your current plan until then — or pick a different plan below to change it.
               </p>
             </div>
           </div>
@@ -235,16 +239,14 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
       {plans && plans.length > 0 && (
         <>
           {!canChoose && (
-            <p className="text-xs text-slate-500">
-              Plan changes are available while your subscription is active
-              {isScheduled ? " — cancel the scheduled downgrade first to pick a different plan." : "."}
-            </p>
+            <p className="text-xs text-slate-500">Plan changes are available while your subscription is active.</p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {plans.map((plan) => {
               const price = Number(plan.price_amount);
               const isUpgrade = currentPrice != null && price > currentPrice;
               const isCurrent = plan.is_current && !trial;
+              const isScheduledTarget = scheduledPlanId != null && plan.id === scheduledPlanId;
               return (
                 <div
                   key={plan.id}
@@ -258,6 +260,11 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                           Current plan
                         </span>
                       )}
+                      {isScheduledTarget && (
+                        <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-1.5 py-0.5">
+                          Scheduled
+                        </span>
+                      )}
                     </div>
                     <p className="mt-2 text-2xl font-extrabold text-[#0B192C]">
                       {money(plan.price_amount, plan.currency)}
@@ -268,9 +275,15 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                     )}
                   </div>
                   <button
-                    disabled={isCurrent || !canChoose}
+                    disabled={isCurrent || isScheduledTarget || !canChoose}
                     onClick={() => openPlan(plan)}
-                    aria-label={trial ? `Pay for ${plan.plan_name}` : `${isUpgrade ? "Upgrade" : "Downgrade"} to ${plan.plan_name}`}
+                    aria-label={
+                      trial
+                        ? `Pay for ${plan.plan_name}`
+                        : isScheduledTarget
+                        ? `${plan.plan_name} is already scheduled`
+                        : `${isUpgrade ? "Upgrade" : "Downgrade"} to ${plan.plan_name}`
+                    }
                     className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
                       isUpgrade || trial
                         ? "text-white bg-[#1A56DB] hover:bg-[#1546B0]"
@@ -280,6 +293,10 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                     {isCurrent ? (
                       <>
                         <Check className="w-3.5 h-3.5" /> Current plan
+                      </>
+                    ) : isScheduledTarget ? (
+                      <>
+                        <CalendarClock className="w-3.5 h-3.5" /> Scheduled for {fmtDate(pendingChange.effective_at)}
                       </>
                     ) : trial ? (
                       <>
@@ -381,7 +398,7 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                       <span>
                         <span className="font-semibold text-slate-800">At your next renewal (recommended)</span>
                         <span className="block text-xs text-slate-500">
-                          Keep everything you have until {fmtDate(subscription?.current_period_end)}, then move to {selected.plan_name}. No refund or charge.
+                          Keep everything you have until {fmtDate(preview?.renewal_at || subscription?.current_period_end)}, then move to {selected.plan_name}. No refund or charge.
                         </span>
                       </span>
                     </label>
@@ -402,6 +419,12 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                       </span>
                     </label>
                   </div>
+                )}
+
+                {isScheduled && direction !== "purchase" && (
+                  <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                    This replaces your scheduled move to <strong>{pendingChange.to_plan_name}</strong>.
+                  </p>
                 )}
 
                 {blockers.length > 0 && (

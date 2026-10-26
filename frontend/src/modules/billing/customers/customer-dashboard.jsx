@@ -338,7 +338,21 @@ export default function CustomerDashboard() {
         <DashboardStatCard title="Active" value={d.active_customers || 0} subtitle={`${d.total_customers ? Math.round((d.active_customers / d.total_customers) * 100) : 0}% of total`} icon={CheckCircle} color="from-green-500 to-emerald-500" href="/billing/customers?status=active" />
         <DashboardStatCard title="Inactive" value={d.inactive_customers || 0} subtitle={`${d.total_customers ? Math.round((d.inactive_customers / d.total_customers) * 100) : 0}% of total`} icon={Clock} color="from-slate-500 to-slate-600" href="/billing/customers?status=inactive" />
         <DashboardStatCard title="New This Month" value={newThisMonth} subtitle="Joined in the current calendar month" icon={Sparkles} color="from-cyan-500 to-blue-500" href="/billing/customers" />
-        <DashboardStatCard title="Avg Revenue/Customer" value={Number(d.avg_revenue_per_customer || 0)} currency={baseCurrency} subtitle="Average per customer (lifetime)" icon={DollarSign} color="from-emerald-500 to-emerald-600" />
+        {/* Lifetime cleared payments ÷ all registered records (the backend's
+            basis), so $0 means nothing has been collected yet. It links to
+            its numerator — the same all-time cleared-payments list as Total
+            Revenue — NOT to Customer Reports, whose figures use a different
+            basis (BUG-15). Uses the org's own term, like the other cards. */}
+        <DashboardStatCard
+          title={`Avg Revenue/${singular}`}
+          value={Number(d.avg_revenue_per_customer || 0)}
+          currency={baseCurrency}
+          subtitle={`Collected revenue ÷ ${d.total_customers || 0} ${(d.total_customers === 1 ? singular : plural).toLowerCase()} (lifetime)`}
+          icon={DollarSign}
+          color="from-emerald-500 to-emerald-600"
+          href="/billing/payments?status=cleared&all_dates=1"
+          tooltip="Lifetime collected (cleared) payments divided by all registered records"
+        />
       </StatGroup>
 
       <StatGroup title="Revenue & Collections">

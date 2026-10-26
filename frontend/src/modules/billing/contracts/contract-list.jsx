@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText, Search, Filter, X, ChevronDown, Plus, CheckCircle, Clock, XCircle, ArrowUpDown, Ban, DollarSign, Wallet, TrendingUp, Percent, Loader2, Eye, Receipt,
@@ -77,10 +77,20 @@ export default function ContractListPage() {
   // Every KPI card filters to exactly the records it counts -- all-time, like
   // the KPI numbers themselves -- through the URL, so the view is shareable
   // and the applied filter is visible (dropdown / chips).
-  const applyCard = (opts = {}) => {
+  //
+  // The click must also be visible: the list sits below two rows of cards,
+  // so the page scrolls to it, the chosen card is highlighted, and the value
+  // cards sort by contract value (highest first) — otherwise "Total Contract
+  // Value" and "Active Value" opened lists identical to "Contracts" and
+  // "Active Contracts" and looked like they did nothing.
+  const listRef = useRef(null);
+  const applyCard = ({ sortByValue = false, ...opts } = {}) => {
     urlFilters.applyCardFilter(opts);
     setCurrentPage(1);
-    if (opts.status) setShowFilters(true);
+    setSortField(sortByValue ? "value" : "created_at");
+    setSortDir("desc");
+    setShowFilters(Boolean(opts.status || opts.expiring));
+    setTimeout(() => listRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 0);
   };
 
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -217,6 +227,12 @@ export default function ContractListPage() {
     ? (contracts.find((c) => c.currency)?.currency || "")
     : "";
 
+  // Which card's filter is applied (all-time card filters always set all_dates).
+  const cardScope = urlFilters.allDates && !debouncedSearch && !billingFilter;
+  const byValue = sortField === "value";
+  const isCard = (status, { expiring = null, value = false } = {}) =>
+    cardScope && statusFilter === (status || "") && (urlFilters.expiringDays || null) === expiring && byValue === value;
+
   const kpiTotal        = summary?.total         ?? total;
   const kpiActive       = summary?.active_count   ?? contracts.filter((c) => c.status === "active").length;
   const kpiExpiring     = summary?.expiring_count ?? contracts.filter((c) => {
@@ -256,22 +272,22 @@ export default function ContractListPage() {
       <DashboardHeader {...headerProps} />
       <div className="space-y-6">
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Contracts" value={kpiTotal} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => applyCard()} />
-          <DashboardStatCard title="Active Contracts" value={kpiActive} icon={FileText} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => applyCard({ status: "active" })} />
-          <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={Clock} color="from-amber-500 to-orange-500" loading={summaryLoading} onClick={() => applyCard({ expiring: 30 })} />
-          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => applyCard({ status: "expired" })} />
+          <DashboardStatCard title="Contracts" value={kpiTotal} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} active={isCard("")} onClick={() => applyCard()} />
+          <DashboardStatCard title="Active Contracts" value={kpiActive} icon={FileText} color="from-emerald-500 to-emerald-600" loading={summaryLoading} active={isCard("active")} onClick={() => applyCard({ status: "active" })} />
+          <DashboardStatCard title="Expiring Soon (30d)" value={kpiExpiring} icon={Clock} color="from-amber-500 to-orange-500" loading={summaryLoading} active={isCard("", { expiring: 30 })} onClick={() => applyCard({ expiring: 30 })} />
+          <DashboardStatCard title="Expired" value={kpiExpired} icon={XCircle} color="from-slate-500 to-slate-600" loading={summaryLoading} active={isCard("expired")} onClick={() => applyCard({ status: "expired" })} />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
-          <DashboardStatCard title="Draft" value={kpiDraft} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} onClick={() => applyCard({ status: "draft" })} />
-          <DashboardStatCard title="Total Contract Value" value={Number(kpiTotalValue)} currency={defaultCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} onClick={() => applyCard()} />
-          <DashboardStatCard title="Active Value" value={Number(kpiActiveValue)} currency={defaultCurrency} icon={Wallet} color="from-emerald-500 to-emerald-600" loading={summaryLoading} onClick={() => applyCard({ status: "active" })} />
+          <DashboardStatCard title="Draft" value={kpiDraft} icon={FileText} color="from-slate-500 to-slate-600" loading={summaryLoading} active={isCard("draft")} onClick={() => applyCard({ status: "draft" })} />
+          <DashboardStatCard title="Total Contract Value" value={Number(kpiTotalValue)} currency={defaultCurrency} icon={DollarSign} color="from-brand to-brand-hover" loading={summaryLoading} active={isCard("", { value: true })} onClick={() => applyCard({ sortByValue: true })} />
+          <DashboardStatCard title="Active Value" value={Number(kpiActiveValue)} currency={defaultCurrency} icon={Wallet} color="from-emerald-500 to-emerald-600" loading={summaryLoading} active={isCard("active", { value: true })} onClick={() => applyCard({ status: "active", sortByValue: true })} />
           <DashboardStatCard title="Monthly Recurring" value={Number(kpiMrr)} currency={defaultCurrency} icon={TrendingUp} color="from-blue-500 to-blue-600" loading={summaryLoading} href="/billing/contracts/reports" />
         </div>
         <div className={DASHBOARD_KPI_GRID}>
           <DashboardStatCard title="Annual Recurring" value={Number(kpiArr)} currency={defaultCurrency} icon={Percent} color="from-brand to-brand-hover" loading={summaryLoading} href="/billing/contracts/reports" />
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+        <div ref={listRef} className="scroll-mt-6 bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">

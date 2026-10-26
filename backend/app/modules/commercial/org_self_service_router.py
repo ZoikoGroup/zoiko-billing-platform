@@ -86,6 +86,13 @@ def _serialize_pending_change(db: Session, subscription) -> dict | None:
         return None
     to_plan = change.to_plan
     invoice = invoice_for_change(db, change) if change.status == SubscriptionChangeStatus.PENDING else None
+    effective_at = change.effective_at
+    if effective_at is None and change.status == SubscriptionChangeStatus.SCHEDULED and change.subscription is not None:
+        # Legacy rows scheduled before next_renewal_at existed: show the real
+        # renewal date (the scheduler job persists it) rather than "—".
+        from app.modules.commercial.service import CommercialSubscriptionService
+
+        effective_at = CommercialSubscriptionService(db).next_renewal_at(change.subscription)
     return {
         "id": change.id,
         "direction": change.direction.value,
@@ -93,7 +100,7 @@ def _serialize_pending_change(db: Session, subscription) -> dict | None:
         "to_plan_id": change.to_plan_id,
         "to_plan_code": to_plan.plan_code if to_plan else None,
         "to_plan_name": to_plan.plan_name if to_plan else None,
-        "effective_at": change.effective_at.isoformat() if change.effective_at else None,
+        "effective_at": effective_at.isoformat() if effective_at else None,
         "invoice_number": invoice.invoice_number if invoice else None,
         "invoice_public_token": invoice.public_token if invoice else None,
         "amount_due": str(invoice.balance_due) if invoice else None,
@@ -458,7 +465,7 @@ class PlanChangeCommitRequest(BaseModel):
     reason: str | None = None
 
 
-def _resolve_org_active_subscription(db: Session, current_user):
+def _resolve_org_active_subscription(db: Session, current_user, *, allow_scheduled: bool = False):
     from app.modules.commercial.enums import CommercialSubscriptionStatus
     from app.modules.commercial.service import CommercialSubscriptionService
 
@@ -475,7 +482,12 @@ def _resolve_org_active_subscription(db: Session, current_user):
     if account is None:
         raise NotFoundException("Commercial Account", "organization_id")
     subscription = CommercialSubscriptionService(db).get_active_subscription(account.id)
-    if subscription is None or subscription.status != CommercialSubscriptionStatus.ACTIVE:
+    eligible = {CommercialSubscriptionStatus.ACTIVE}
+    if allow_scheduled:
+        # A subscription with a downgrade already scheduled is still on its
+        # current plan; choosing another plan replaces the scheduled change.
+        eligible.add(CommercialSubscriptionStatus.SCHEDULED_CHANGE)
+    if subscription is None or subscription.status not in eligible:
         raise BadRequestException(
             "Only an ACTIVE subscription is eligible for a plan change."
         )
@@ -554,7 +566,7 @@ def _run_preview(db: Session, current_user, target_plan_id: int):
     from app.modules.commercial.plan_change_compatibility import run_compatibility_checks
     from app.modules.commercial.service import CommercialSubscriptionService
 
-    account, subscription = _resolve_org_active_subscription(db, current_user)
+    account, subscription = _resolve_org_active_subscription(db, current_user, allow_scheduled=True)
 
     target_plan = db.query(CommercialPlan).filter(CommercialPlan.id == target_plan_id).first()
     if target_plan is None:
@@ -591,6 +603,8 @@ def _run_preview(db: Session, current_user, target_plan_id: int):
         "warnings": [c.__dict__ for c in warnings],
         "price_impact": price_impact,
         "immediate_eligible": direction == SubscriptionChangeDirection.UPGRADE or len(blockers) == 0,
+        # When a scheduled (renewal-time) downgrade would take effect.
+        "renewal_at": CommercialSubscriptionService(db).next_renewal_at(subscription).isoformat(),
     }
 
 
@@ -806,11 +820,51 @@ def commit_plan_change(
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
-    account, subscription = _resolve_org_active_subscription(db, current_user)
+    account, subscription = _resolve_org_active_subscription(db, current_user, allow_scheduled=True)
     target_plan = db.query(CommercialPlan).filter(CommercialPlan.id == data.target_plan_id).first()
     if target_plan is None:
         raise NotFoundException("Commercial Plan", "id")
     _assert_self_serve_target(target_plan)
+
+    # A downgrade is already scheduled: choosing the same plan again is a
+    # no-op; choosing any other plan replaces it (the newer request wins),
+    # in this same transaction, so the subscription never holds two.
+    from app.modules.commercial.enums import CommercialSubscriptionStatus as _SubStatus
+
+    if subscription.status == _SubStatus.SCHEDULED_CHANGE:
+        scheduled = (
+            db.query(SubscriptionChange)
+            .filter(
+                SubscriptionChange.commercial_subscription_id == subscription.id,
+                SubscriptionChange.status == SubscriptionChangeStatus.SCHEDULED,
+            )
+            .order_by(SubscriptionChange.id.desc())
+            .first()
+        )
+        if scheduled is not None and scheduled.to_plan_id == target_plan.id and not data.confirm_immediate:
+            effective = scheduled.effective_at or CommercialSubscriptionService(db).next_renewal_at(subscription)
+            return {
+                "status": "scheduled",
+                "direction": "downgrade",
+                "subscription_change_id": scheduled.id,
+                "effective_at": effective.isoformat(),
+                "blockers": scheduled.blockers or [],
+            }
+    else:
+        scheduled = None
+
+    def _replace_scheduled():
+        # Called only on paths that go on to succeed, so a refused request
+        # (e.g. a blocked immediate downgrade, which commits its BLOCKED
+        # record) never silently cancels the downgrade already scheduled.
+        if scheduled is None:
+            return
+        try:
+            CommercialSubscriptionService(db).reverse_scheduled_change(
+                scheduled, actor_id=current_user.id, reason=f"Replaced by a change to {target_plan.plan_code}",
+            )
+        except ValueError as exc:
+            raise _self_service_error(exc, "plan change")
 
     # Never trust a client-cached preview for the actual gating decision —
     # re-run it fresh, server-side, at commit time.
@@ -819,6 +873,7 @@ def commit_plan_change(
     sub_svc = CommercialSubscriptionService(db)
 
     if direction == SubscriptionChangeDirection.UPGRADE:
+        _replace_scheduled()
         return _commit_upgrade(db, current_user, account, subscription, target_plan, preview, data.reason)
 
     # DOWNGRADE
@@ -865,6 +920,7 @@ def commit_plan_change(
                     "blockers": preview["blockers"],
                 },
             )
+        _replace_scheduled()
         from_plan_id = subscription.commercial_plan_id
         try:
             sub_svc.apply_plan_change(
@@ -892,6 +948,7 @@ def commit_plan_change(
         return {"status": "applied", "direction": "downgrade", "subscription_status": subscription.status.value}
 
     # Default downgrade path: schedule for the subscription's next renewal.
+    _replace_scheduled()
     change = SubscriptionChange(
         commercial_subscription_id=subscription.id,
         from_plan_id=subscription.commercial_plan_id,
@@ -899,7 +956,7 @@ def commit_plan_change(
         to_catalog_version_id=_resolve_target_plan_price(db, target_plan)[3],
         direction=direction,
         status=SubscriptionChangeStatus.SCHEDULED,
-        effective_at=subscription.current_period_end,
+        effective_at=sub_svc.next_renewal_at(subscription),
         requested_by_user_id=current_user.id,
         reason=data.reason,
         blockers=preview["blockers"],

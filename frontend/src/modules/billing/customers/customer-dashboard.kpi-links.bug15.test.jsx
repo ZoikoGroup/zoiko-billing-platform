@@ -12,9 +12,11 @@ import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 //  - "Over Credit Limit" -> /billing/customers?over_credit_limit=1 (server
 //    filter with the KPI's own predicate, see test_customer_over_credit_limit_bug15.py).
 //  - "Avg Invoice" and "Avg Collection Period" stay informational (approved).
-//  - "Avg Revenue/Customer" stays informational: the only candidate report
-//    (Customer Reports > Growth) computes a different figure (paid invoices,
-//    first 100 records, no currency conversion), so linking it would mislead.
+//  - "Avg Revenue/<term>" must NOT link to Customer Reports, which computes a
+//    different figure (paid invoices, first 100 records, no currency
+//    conversion). It links to its own numerator instead: all-time cleared
+//    payments (/billing/payments?status=cleared&all_dates=1), and its
+//    subtitle states the formula.
 
 if (typeof global.ResizeObserver === "undefined") {
   global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -56,6 +58,7 @@ describe("BUG-15 Customer Dashboard KPI cards", () => {
     ["period Revenue", /^(?!Total)[\w\s()]+ Revenue:/, "/billing/payments?status=cleared"],
     ["Total Revenue (all time)", /^Total Revenue:/, "/billing/payments?status=cleared&all_dates=1"],
     ["Over Credit Limit", /^Over Credit Limit:/, "/billing/customers?over_credit_limit=1"],
+    ["Avg Revenue (its numerator: all-time cleared payments)", /^Avg Revenue\/Customer:/, "/billing/payments?status=cleared&all_dates=1"],
   ])("%s opens its approved destination", async (_label, name, destination) => {
     renderDashboard();
     const el = await card(name);
@@ -74,7 +77,7 @@ describe("BUG-15 Customer Dashboard KPI cards", () => {
     expect((await screen.findByTestId("location")).textContent).toBe(destination);
   });
 
-  it.each(["Avg Invoice", "Avg Revenue/Customer", "Avg Collection Period"])(
+  it.each(["Avg Invoice", "Avg Collection Period"])(
     "%s stays informational (no navigation)", async (title) => {
       renderDashboard();
       await card(/^Total Revenue:/);
@@ -83,6 +86,12 @@ describe("BUG-15 Customer Dashboard KPI cards", () => {
       expect(screen.queryByTestId("location")).not.toBeInTheDocument();
     },
   );
+
+  it("Avg Revenue states its basis in the org's own terms", async () => {
+    renderDashboard();
+    await card(/^Avg Revenue\/Customer:/);
+    expect(screen.getByText("Collected revenue ÷ 5 customers (lifetime)")).toBeInTheDocument();
+  });
 
   it("the previously linked cards keep their destinations", async () => {
     renderDashboard();

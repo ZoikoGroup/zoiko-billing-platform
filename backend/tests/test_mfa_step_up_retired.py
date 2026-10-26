@@ -79,3 +79,14 @@ def test_breaker_can_be_paused_and_resumed_without_a_code(db_session):
         user, db_session,
     )
     assert resumed.enabled is True
+
+
+def test_production_acceptance_sec01_describes_step_up_as_off(db_session):
+    from types import SimpleNamespace
+    from app.modules.super_admin.router import get_production_acceptance_report
+
+    report = get_production_acceptance_report(current_user=SimpleNamespace(id=1), db=db_session)
+    sec01 = next(i for i in report.items if i.id == "SEC-01")
+    assert sec01.status == "WARNING"
+    assert "TURNED OFF" in sec01.evidence
+    assert "no bypass" not in sec01.evidence

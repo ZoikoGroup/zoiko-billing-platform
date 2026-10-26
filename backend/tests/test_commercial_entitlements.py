@@ -801,3 +801,77 @@ def test_enforcement_noop_for_super_admin_caller(db_session):
     svc = EntitlementEnforcementService(db_session)
     svc.assert_boolean(organization_id=None, key="collections.dunning")  # must not raise
     svc.assert_within_limit(organization_id=None, key="org.entity.max", current_count=999999)  # must not raise
+
+
+def test_override_cannot_be_created_already_expired(db_session):
+    plan, definition = _plan_with_entitlement(db_session, "PASTPKG", "p2.past.key", False)
+    org, account, sub = _org_with_active_subscription(db_session, "PASTORG", plan)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="must be in the future"):
+        CommercialOverrideService(db_session).create_draft(
+            organization_id=org.id, entitlement_definition_id=definition.id, value=True,
+            reason="test", requested_by_user_id=101, expires_at=datetime.utcnow() - timedelta(days=1),
+        )
+
+
+def test_override_create_accepts_timezone_aware_expiry(db_session):
+    from datetime import timezone
+
+    plan, definition = _plan_with_entitlement(db_session, "TZPKG", "p2.tz.key", False)
+    org, account, sub = _org_with_active_subscription(db_session, "TZORG", plan)
+    db_session.commit()
+
+    aware = datetime.now(timezone.utc) + timedelta(days=3)
+    override = CommercialOverrideService(db_session).create_draft(
+        organization_id=org.id, entitlement_definition_id=definition.id, value=True,
+        reason="test", requested_by_user_id=101, expires_at=aware,
+    )
+    assert override.expires_at.tzinfo is None
+
+
+def test_pending_override_that_expired_cannot_be_approved(db_session):
+    plan, definition = _plan_with_entitlement(db_session, "LAPSEPKG", "p2.lapse.key", False)
+    org, account, sub = _org_with_active_subscription(db_session, "LAPSEORG", plan)
+    db_session.commit()
+
+    svc = CommercialOverrideService(db_session)
+    override = svc.create_draft(
+        organization_id=org.id, entitlement_definition_id=definition.id, value=True,
+        reason="test", requested_by_user_id=101, expires_at=datetime.utcnow() + timedelta(days=1),
+    )
+    override, _request = svc.submit_for_approval(override, requested_by_user_id=101, reason="please")
+    override.expires_at = datetime.utcnow() - timedelta(days=1)  # nobody approved it in time
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="before it was approved"):
+        svc.approve_and_activate(override, approver_user_id=102)
+    # It can still be rejected to clear it from the queue.
+    assert svc.reject(override, approver_user_id=102, rejection_reason="lapsed").status == CommercialOverrideStatus.REJECTED
+
+
+def test_requester_can_withdraw_their_pending_override_but_others_cannot(db_session):
+    from app.modules.super_admin.models import ApprovalRequest, ApprovalStatus
+
+    plan, definition = _plan_with_entitlement(db_session, "WDPKG", "p2.wd.key", False)
+    org, account, sub = _org_with_active_subscription(db_session, "WDORG", plan)
+    db_session.commit()
+
+    svc = CommercialOverrideService(db_session)
+    override = svc.create_draft(
+        organization_id=org.id, entitlement_definition_id=definition.id, value=True,
+        reason="test", requested_by_user_id=101,
+    )
+    override, request = svc.submit_for_approval(override, requested_by_user_id=101, reason="please")
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="Only the Super Admin who submitted"):
+        svc.withdraw(override, actor_id=102, reason="not mine")
+
+    override = svc.withdraw(override, actor_id=101, reason="submitted by mistake")
+    db_session.commit()
+    assert override.status == CommercialOverrideStatus.WITHDRAWN
+    assert db_session.get(ApprovalRequest, request.id).status == ApprovalStatus.CANCELLED
+
+    with pytest.raises(ValueError, match="cannot withdraw"):
+        svc.withdraw(override, actor_id=101, reason="again")

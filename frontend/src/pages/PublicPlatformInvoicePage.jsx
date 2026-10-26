@@ -142,6 +142,8 @@ export default function PublicPlatformInvoicePage() {
   const isOverdue = status === "overdue";
   const items = Array.isArray(invoice.items) ? invoice.items : [];
   const canPay = !isPaid && !isVoided && Number(invoice.balance_due) > 0.005;
+  // Older API responses lack the flag; only an explicit false hides Pay.
+  const onlinePayment = invoice.online_payment_available !== false;
 
   return (
     <div className="pinv-root">
@@ -164,14 +166,20 @@ export default function PublicPlatformInvoicePage() {
                 Due {fmtDate(invoice.due_date)}
               </p>
             )}
-            {canPay && (
+            {canPay && onlinePayment && (
               <button type="button" className="pinv-pay-btn" onClick={handlePayNow}>
                 {`Pay ${fmtCcy(invoice.balance_due, currency)}`}
               </button>
             )}
-            {canPay && (
+            {canPay && onlinePayment && (
               <p className="pinv-pay-hint">
                 <span aria-hidden="true">🔒 </span>Secure payment by card via Stripe
+              </p>
+            )}
+            {canPay && !onlinePayment && (
+              <p className="pinv-pay-hint" role="status">
+                Card payment isn't available for this invoice yet. Zoiko Billing Accounts will send payment
+                instructions — or contact them quoting {invoice.invoice_number}.
               </p>
             )}
           </div>

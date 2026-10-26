@@ -260,6 +260,7 @@ export default function StripeConnectSettingsPage() {
           <div className="flex flex-wrap items-center gap-3">
             {!isActive && (
               <button onClick={handleConnect} disabled={connecting || connectUnavailable}
+                title={connectUnavailable ? "Online payments haven't been enabled for this platform yet — contact Zoiko support." : undefined}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
                 {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                 {isConnected ? "Continue Connecting Stripe" : "Connect Stripe"}
