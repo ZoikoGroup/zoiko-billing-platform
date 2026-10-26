@@ -48,7 +48,7 @@ export default function LaunchReadinessPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Launch Readiness"
-        description="Real checks against the Command Center's own operational state — database, secrets, MFA enrollment, audit logging, scheduler health, CORS, open P0/P1 attention, and internal financial consistency. UNKNOWN means genuinely not verifiable here (e.g. accessibility, performance), never a hidden PASS."
+        description="Real checks against the Command Center's own operational state — database, secrets, MFA step-up status, audit logging, scheduler health, CORS, open P0/P1 attention, and internal financial consistency. UNKNOWN means genuinely not verifiable here (e.g. accessibility, performance), never a hidden PASS."
         icon={ClipboardCheck}
         actions={<Button variant="secondary" onClick={load}>Re-run checks</Button>}
       />

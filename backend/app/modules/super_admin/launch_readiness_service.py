@@ -35,10 +35,13 @@ class LaunchReadinessService:
         self.db = db
 
     def evaluate(self) -> Dict[str, Any]:
+        from app.config import settings
+
         items: List[Dict[str, Any]] = [
             self._check_database(),
             self._check_secrets(),
-            self._check_mfa_encryption(),
+            # The MFA secret key only matters while step-up is in use.
+            *([self._check_mfa_encryption()] if settings.MFA_STEP_UP_ENABLED else []),
             self._check_super_admin_mfa_enrollment(),
             self._check_audit_logging(),
             self._check_scheduler(),
@@ -112,7 +115,16 @@ class LaunchReadinessService:
         )
 
     def _check_super_admin_mfa_enrollment(self) -> Dict[str, Any]:
+        from app.config import settings
         from app.modules.auth.models import SuperAdminMFA, User, UserRole
+
+        if not settings.MFA_STEP_UP_ENABLED:
+            return self._item(
+                "SEC-MFA-01", "MFA step-up for privileged actions",
+                ReadinessStatus.WARNING,
+                "MFA step-up is turned off (MFA_STEP_UP_ENABLED=false): break-glass access, "
+                "circuit-breaker changes and approval decisions do not require a second factor.",
+            )
 
         total_super_admins = self.db.query(User).filter(User.role == UserRole.SUPER_ADMIN, User.is_active == True).count()  # noqa: E712
         enrolled = (

@@ -11,9 +11,9 @@ import { useCommandCenter } from "../context/CommandCenterContext";
  *   - the active privileged-access tenant scope chip (§6 — "you are acting
  *     in the context of tenant X" must be visible everywhere, not one page),
  *   - the worst-freshness rollup across tracked jobs (§10.2).
- * Collapses to a one-line healthy state when there is nothing open, per
- * §15.3's empty-state law ("a true zero is useful, never hidden as if it
- * proves nothing needs building").
+ * Hidden when there is nothing open, unless the scope chip or a freshness
+ * warning still needs showing. The all-clear count is already on the
+ * Platform Overview Action Center ("No P0/P1 attention items open").
  */
 
 const FRESHNESS_CHIP = {
@@ -58,9 +58,13 @@ export default function TriageStrip() {
   ) : null;
 
   if (totalOpen === 0) {
+    // Nothing open: no all-clear banner. The strip only appears when it still
+    // carries a signal that must stay visible — the privileged-access scope
+    // chip (§6) or a stale/unknown job-freshness warning.
+    const freshnessWarning = worstFreshness && worstFreshness !== "fresh";
+    if (!scopeChip && !freshnessWarning) return null;
     return (
-      <div className="flex flex-wrap items-center gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-medium text-emerald-700 sm:px-6">
-        <span>No active P0/P1 — 0 open attention items</span>
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-700 sm:px-6">
         {scopeChip}
         {freshness && FreshnessIcon && (
           <span className={`ml-auto flex items-center gap-1.5 ${freshness.className}`}>

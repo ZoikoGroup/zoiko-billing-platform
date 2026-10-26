@@ -75,3 +75,33 @@ def test_financial_operations_with_live_records(db_session):
     assert Decimal(result["billings"]["collected_amount"]) == Decimal("100.00")
     assert result["billings"]["overdue_count"] == 1
     assert Decimal(result["billings"]["overdue_amount"]) == Decimal("50.00")
+
+
+def test_f1_billings_excludes_unissued_and_counts_partial_and_past_due(db_session):
+    from datetime import date, timedelta
+
+    org = make_organization(db_session)
+    cust = make_customer(db_session, org.id)
+
+    # Never issued / voided — not billed revenue.
+    make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.DRAFT,
+                 total_amount="1000.00", invoice_number="INV-D")
+    make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.CANCELLED,
+                 total_amount="500.00", invoice_number="INV-C")
+    # Fully paid.
+    make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.PAID,
+                 total_amount="100.00", paid_amount="100.00", invoice_number="INV-P")
+    # Partially paid and past due, never flagged OVERDUE (scheduler is off by default).
+    partial = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.PARTIALLY_PAID,
+                           total_amount="200.00", paid_amount="80.00", invoice_number="INV-PP")
+    partial.due_date = date.today() - timedelta(days=5)
+    db_session.commit()
+
+    billings = FinancialConsistencyService(db_session).get_financial_operations_summary()["billings"]
+
+    assert billings["total_invoices"] == 2
+    assert Decimal(billings["invoiced_amount"]) == Decimal("300.00")
+    assert Decimal(billings["collected_amount"]) == Decimal("180.00")
+    assert billings["overdue_count"] == 1
+    # The balance still owed, not the original invoice total.
+    assert Decimal(billings["overdue_amount"]) == Decimal("120.00")

@@ -39,7 +39,7 @@ export const getMetricDictionary = (domain) =>
 
 // ZB-SA-CMD-003 §18 — Domain B circuit breaker (session 6). Real,
 // server-enforced (InvoiceService.finalize_invoice() itself checks this
-// state) — not a UI-only switch. Toggling requires fresh MFA step-up.
+// state) — not a UI-only switch. Every toggle carries a reason and is audited.
 export const getInvoiceFinalizationBreaker = () =>
   api.get("/api/super-admin/circuit-breakers/tenant-invoice-finalization");
 
@@ -47,22 +47,12 @@ export const getInvoiceFinalizationBreaker = () =>
 // rejects any engage (enabled=false) without it. Sending it only when present
 // keeps resume calls valid while making the engage case send what the server
 // demands, rather than collecting it and dropping it on the floor.
-export const setInvoiceFinalizationBreaker = (enabled, reason, code, recoveryCode, incidentReference) =>
+export const setInvoiceFinalizationBreaker = (enabled, reason, incidentReference) =>
   api.put("/api/super-admin/circuit-breakers/tenant-invoice-finalization", {
     enabled,
     reason,
     incident_reference: incidentReference || undefined,
-    code: code || undefined,
-    recovery_code: recoveryCode || undefined,
   });
-
-// Whether the CALLING super_admin has MFA enrolled. Every breaker change runs
-// verify_step_up(), which refuses outright when this is false — so a UI that
-// offers the action without checking leaves the operator at a dead end with a
-// raw "MFA is not enabled on this account" error and no path forward.
-// Enrollment itself lives in SettingsPage's "Security — MFA step-up" card.
-export const getMfaStepUpStatus = () =>
-  api.get("/api/auth/mfa/status");
 
 // ZB-SA-CMD-003 §9 — generalized breaker catalog + break-glass toggle
 // (session 7). Engaging REQUIRES an incident_reference; every engaged pause
@@ -73,14 +63,12 @@ export const getCircuitBreakerCatalog = () =>
 export const getCircuitBreaker = (scope) =>
   api.get(`/api/super-admin/circuit-breakers/${scope}`);
 
-export const setCircuitBreaker = (scope, { enabled, reason, incidentReference, autoExpireMinutes, code, recoveryCode }) =>
+export const setCircuitBreaker = (scope, { enabled, reason, incidentReference, autoExpireMinutes }) =>
   api.put(`/api/super-admin/circuit-breakers/${scope}`, {
     enabled,
     reason,
     incident_reference: incidentReference || undefined,
     auto_expire_minutes: autoExpireMinutes ?? undefined,
-    code: code || undefined,
-    recovery_code: recoveryCode || undefined,
   });
 
 // §9 maker-checker path: stage a breaker change for a second Super Admin.

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Activity, Building2, ChevronRight, Layers, Plus, ShieldAlert } from "lucide-react";
+import { Activity, Building2, ChevronRight, Layers, Plus, ShieldAlert, X } from "lucide-react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   createOrganization,
+  getCountryDefaults,
   listOrganizations,
 } from "../../service/commercialService";
+import { getCurrencyInfo } from "../../utils/currency";
 import { PageHeader, DataTable, SearchInput, Modal, Field, Button } from "../../components/billing-ui";
 import { Pagination, StatusBadge, ErrorState, Spinner, SuccessMessage, DashboardChartCard, DashboardChartErrorBoundary } from "../../components/billing-shared";
 import {
@@ -31,7 +33,39 @@ const EMPTY_ORG_FORM = {
   phone: "",
   tax_no: "",
   registration_number: "",
+  country: "",
+  currency: "",
 };
+
+// Loads the backend's supported countries and their default currencies once
+// per modal open. A failure is surfaced, never replaced by a guessed list.
+function useCountryDefaults(open) {
+  const [state, setState] = useState({ countries: [], currencies: [], loading: true, error: null });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    getCountryDefaults()
+      .then((res) => {
+        if (cancelled) return;
+        const countries = (res?.countries || []).filter((c) => c.currency);
+        const codes = [...new Set(countries.map((c) => c.currency))].sort();
+        const currencies = codes.map((code) => {
+          const info = getCurrencyInfo(code);
+          return { value: code, label: info?.name ? `${code} — ${info.name}` : code };
+        });
+        setState({ countries, currencies, loading: false, error: null });
+      })
+      .catch((e) => {
+        if (!cancelled) setState({ countries: [], currencies: [], loading: false, error: e?.message || "Failed to load countries." });
+      });
+    return () => { cancelled = true; };
+  }, [open, attempt]);
+
+  return { ...state, retry: () => setAttempt((n) => n + 1) };
+}
 
 // Lifecycle filter options mirror the backend enum — labels only.
 const LIFECYCLE_FILTER_OPTIONS = Object.entries(LIFECYCLE_STATE_BADGES).map(
@@ -53,6 +87,7 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
   const [form, setForm] = useState(EMPTY_ORG_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const countryDefaults = useCountryDefaults(open);
 
   // Reset to a blank form each time the modal is (re-)opened, so a prior
   // create/cancel never leaks into the next one.
@@ -64,6 +99,14 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
   }, [open]);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  // Picking a country pre-selects its default billing currency; the currency
+  // stays editable for organizations billed in a different one.
+  function handleCountryChange(e) {
+    const country = e.target.value;
+    const match = countryDefaults.countries.find((c) => c.name === country);
+    setForm((f) => ({ ...f, country, currency: match?.currency || f.currency }));
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -132,6 +175,42 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
           />
         </Field>
+        <Field label="Country" htmlFor="new-org-country" required hint="Sets the default billing currency.">
+          <select
+            id="new-org-country"
+            required
+            value={form.country}
+            onChange={handleCountryChange}
+            disabled={countryDefaults.loading || !!countryDefaults.error}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+          >
+            <option value="">{countryDefaults.loading ? "Loading countries…" : "Select country"}</option>
+            {countryDefaults.countries.map((c) => (
+              <option key={c.code} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Billing Currency" htmlFor="new-org-currency" required>
+          <select
+            id="new-org-currency"
+            required
+            value={form.currency}
+            onChange={set("currency")}
+            disabled={countryDefaults.loading || !!countryDefaults.error}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+          >
+            <option value="">Select currency</option>
+            {countryDefaults.currencies.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+        </Field>
+        {countryDefaults.error && (
+          <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:col-span-2">
+            Couldn't load the country list: {countryDefaults.error}{" "}
+            <button type="button" onClick={countryDefaults.retry} className="font-semibold underline">Retry</button>
+          </p>
+        )}
         <Field label="Registration Number" htmlFor="new-org-registration" className="sm:col-span-2">
           <input
             id="new-org-registration"
@@ -211,6 +290,17 @@ export default function OrganizationsPage() {
 
   const onSearch = useCallback((value) => {
     setSearch(value);
+    setPage(1);
+  }, []);
+
+  // Bumped on clear to remount SearchInput, so text still inside its debounce
+  // window is discarded instead of re-applying the search a moment later.
+  const [searchResetKey, setSearchResetKey] = useState(0);
+  const hasActiveFilters = Boolean(search || lifecycleFilter);
+  const clearFilters = useCallback(() => {
+    setSearchResetKey((k) => k + 1);
+    setSearch("");
+    setLifecycleFilter("");
     setPage(1);
   }, []);
 
@@ -385,7 +475,7 @@ export default function OrganizationsPage() {
           {notice && <div className="mt-4"><SuccessMessage message={notice} onDismiss={() => setNotice(null)} /></div>}
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <SearchInput value={search} onChange={onSearch} placeholder="Search by name, code or legal name…" className="w-full max-w-sm" />
+            <SearchInput key={searchResetKey} value={search} onChange={onSearch} placeholder="Search by name, code or legal name…" className="w-full max-w-sm" />
             <label htmlFor="lifecycle-filter" className="sr-only">Filter by lifecycle state</label>
             <select
               id="lifecycle-filter"
@@ -401,6 +491,16 @@ export default function OrganizationsPage() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              title={hasActiveFilters ? "Reset search and lifecycle filter" : "No filters applied"}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
           </div>
 
           {trialChartData.length > 0 && (
@@ -444,7 +544,12 @@ export default function OrganizationsPage() {
                 loading={loading}
                 onRowClick={(row) => navigate(`/super-admin/organizations/${row.id}`)}
                 emptyTitle="No organizations found"
-                emptyMessage={search || lifecycleFilter ? "No organizations match your filters." : "Organizations will appear here once they are provisioned."}
+                emptyMessage={hasActiveFilters ? "No organizations match your filters." : "Organizations will appear here once they are provisioned."}
+                emptyAction={
+                  hasActiveFilters ? (
+                    <Button variant="secondary" size="sm" icon={X} onClick={clearFilters}>Clear filters</Button>
+                  ) : null
+                }
                 minWidth={0}
                 tableClassName="table-fixed"
               />

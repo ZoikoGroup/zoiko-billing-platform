@@ -35,6 +35,12 @@ export const getOrganizationProfile = (organizationId) =>
 export const createOrganization = (data) =>
   api.post("/api/organizations/", data);
 
+// The backend's authoritative country → default-currency map (the same one
+// registration uses), so New Organization can offer only countries and
+// currencies the backend will accept.
+export const getCountryDefaults = () =>
+  api.get("/api/auth/country-defaults");
+
 export const setOrganizationStatus = (organizationId, isActive) =>
   api.patch(`/api/organizations/${organizationId}/status`, undefined, {
     params: { is_active: isActive },

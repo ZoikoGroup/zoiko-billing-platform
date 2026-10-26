@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("../../service/commercialService", () => ({
@@ -26,7 +26,15 @@ vi.mock("../../service/commercialService", () => ({
       total: 1,
     })
   ),
-  createOrganization: vi.fn(),
+  createOrganization: vi.fn(() => Promise.resolve({ id: 9, organization_name: "Payroll" })),
+  getCountryDefaults: vi.fn(() =>
+    Promise.resolve({
+      countries: [
+        { name: "India", code: "IN", currency: "INR" },
+        { name: "United States", code: "US", currency: "USD" },
+      ],
+    })
+  ),
   getPlatformLifecycle: vi.fn(() =>
     Promise.resolve({
       total_organizations: 2,
@@ -194,6 +202,7 @@ vi.mock("../../api/client", () => ({
 }));
 
 import { CommandCenterProvider } from "../../context/CommandCenterContext";
+import { createOrganization } from "../../service/commercialService";
 import OrganizationsPage from "./OrganizationsPage";
 import SupportAccessPage from "./SupportAccessPage";
 import LifecycleOnboardingPage from "./LifecycleOnboardingPage";
@@ -275,5 +284,58 @@ describe("TenantHealthPage capability gating", () => {
 
     await waitFor(() => expect(screen.getByText(/organization\(s\) · plane/i)).toBeInTheDocument());
     expect(screen.queryByText(/does not include the reliability\.read capability/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("New Organization modal", () => {
+  it("requires a country, pre-selects its billing currency, and sends both", async () => {
+    render(
+      <Wrapper>
+        <OrganizationsPage />
+      </Wrapper>
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /new organization/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    const country = within(dialog).getByLabelText(/country/i);
+    expect(country).toBeRequired();
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: "India" })).toBeInTheDocument());
+
+    fireEvent.change(within(dialog).getByLabelText(/^name/i), { target: { value: "Payroll" } });
+    fireEvent.change(country, { target: { value: "India" } });
+    expect(within(dialog).getByLabelText(/billing currency/i)).toHaveValue("INR");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /^create$/i }));
+    await waitFor(() => expect(createOrganization).toHaveBeenCalledTimes(1));
+    expect(createOrganization.mock.calls[0][0]).toMatchObject({
+      organization_name: "Payroll",
+      country: "India",
+      currency: "INR",
+    });
+  });
+});
+
+describe("Organizations filters", () => {
+  it("clears the search and lifecycle filter in one click", async () => {
+    render(
+      <Wrapper>
+        <OrganizationsPage />
+      </Wrapper>
+    );
+    const clear = await screen.findByRole("button", { name: /^clear filters$/i });
+    expect(clear).toBeDisabled();
+
+    const lifecycle = screen.getByLabelText(/filter by lifecycle state/i);
+    fireEvent.change(lifecycle, { target: { value: lifecycle.options[1].value } });
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "acme" } });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^clear filters$/i })[0]).toBeEnabled());
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^clear filters$/i })[0]);
+    await waitFor(() => expect(lifecycle).toHaveValue(""));
+    // SearchInput is remounted on clear — even text still inside its debounce
+    // window is discarded.
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(screen.getAllByRole("button", { name: /^clear filters$/i })[0]).toBeDisabled();
   });
 });

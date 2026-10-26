@@ -47,6 +47,11 @@ from app.modules.super_admin.schemas import CircuitBreakerToggleRequest
 from tests.conftest import make_customer, make_invoice, make_organization
 
 
+# These tests cover MFA step-up while it is switched on; it is retired by
+# default (see test_mfa_step_up_retired.py).
+pytestmark = pytest.mark.usefixtures("mfa_step_up_enabled")
+
+
 def _security_operator(db, email="security@breaker.example"):
     user = User(
         email=email, hashed_password="x", role=UserRole.SUPER_ADMIN, organization_id=None,

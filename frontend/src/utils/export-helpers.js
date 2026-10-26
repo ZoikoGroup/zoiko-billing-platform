@@ -20,15 +20,26 @@ export function assertExportsAllowed() {
   }
 }
 
-export function downloadJSON(data, filename) {
-  assertExportsAllowed();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+// Save a Blob as a file. The link must be in the document when clicked, and
+// the object URL must outlive the click: Chromium starts the download
+// asynchronously, so revoking the URL in the same tick (as this used to) can
+// silently drop the download even though the page reports success.
+export function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function downloadJSON(data, filename) {
+  assertExportsAllowed();
+  triggerDownload(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), filename);
 }
 
 export function downloadCSV(rows, headers, filename) {
@@ -36,14 +47,9 @@ export function downloadCSV(rows, headers, filename) {
   const csv = [
     headers.join(","),
     ...rows.map((r) => r.map((v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`).join(",")),
-  ].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  ].join("\r\n");
+  // UTF-8 BOM so Excel reads non-ASCII names and currency symbols correctly.
+  triggerDownload(new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 // `rows`/`headers` here are always data this app already fetched from its

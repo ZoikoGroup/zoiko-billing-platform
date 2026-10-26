@@ -105,6 +105,19 @@ def _force_step_up_enforced():
     settings.MFA_STEP_UP_BYPASS = original
 
 
+@pytest.fixture()
+def mfa_step_up_enabled():
+    """MFA step-up is retired by default (MFA_STEP_UP_ENABLED=false). Tests
+    that prove how the control behaves when it is switched back on opt in
+    with this fixture."""
+    from app.config import settings
+
+    original = settings.MFA_STEP_UP_ENABLED
+    settings.MFA_STEP_UP_ENABLED = True
+    yield
+    settings.MFA_STEP_UP_ENABLED = original
+
+
 @pytest.fixture(autouse=True)
 def _clear_in_process_caches():
     """Every test gets a fresh in-memory DB (above) with auto-increment ids

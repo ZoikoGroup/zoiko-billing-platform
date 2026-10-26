@@ -77,6 +77,12 @@ class BillingCommandCenterService:
         from app.modules.billing.models import Invoice, InvoiceStatus
 
         today = date.today()
+        # Drafts were never issued and cancelled invoices were voided — neither
+        # is billed revenue (same rule as the F1 Billings card).
+        billed_filters = (
+            Invoice.deleted_at.is_(None),
+            Invoice.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+        )
 
         invoiced_rows = (
             self.db.query(
@@ -84,19 +90,18 @@ class BillingCommandCenterService:
                 func.count(Invoice.id),
                 func.coalesce(func.sum(Invoice.total_amount), 0),
             )
-            .filter(Invoice.deleted_at.is_(None))
+            .filter(*billed_filters)
             .group_by(Invoice.currency)
             .all()
         )
+        # Money actually received, so partial payments count; refunded money
+        # has gone back out.
         collected_rows = dict(
             self.db.query(
                 Invoice.currency,
-                func.coalesce(func.sum(Invoice.total_amount), 0),
+                func.coalesce(func.sum(Invoice.paid_amount), 0),
             )
-            .filter(
-                Invoice.status == InvoiceStatus.PAID,
-                Invoice.deleted_at.is_(None),
-            )
+            .filter(*billed_filters, Invoice.status != InvoiceStatus.REFUNDED)
             .group_by(Invoice.currency)
             .all()
         )

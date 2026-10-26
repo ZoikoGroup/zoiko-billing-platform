@@ -209,37 +209,55 @@ class FinancialConsistencyService:
             DunningLevel,
         )
 
+        from app.modules.billing.repositories.invoice import InvoiceRepository
+
         consistency = self.check_allocation_consistency()
 
         # ── Per-currency billings aggregation (never cross-currency sums) ──
         # One grouped query per status dimension; buckets are joined in Python
         # so each currency carries its own invoiced/collected/overdue figures.
+        #
+        # Only issued, live invoices count as "billed": drafts were never sent,
+        # cancelled invoices were voided, and soft-deleted rows are gone.
+        # Counting them inflated Invoiced and dragged the collection rate down.
+        billed_filters = (
+            Invoice.deleted_at.is_(None),
+            Invoice.is_active.isnot(False),
+            Invoice.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+        )
         invoiced_rows = (
             self.db.query(
                 Invoice.currency,
                 func.count(Invoice.id),
                 func.coalesce(func.sum(Invoice.total_amount), 0),
             )
+            .filter(*billed_filters)
             .group_by(Invoice.currency)
             .all()
         )
+        # Collected is money actually received (paid_amount), so partial
+        # payments count — summing total_amount of PAID invoices only ignored
+        # every partially-paid invoice. Refunded money has gone back out.
         collected_rows = dict(
             self.db.query(
                 Invoice.currency,
-                func.coalesce(func.sum(Invoice.total_amount), 0),
+                func.coalesce(func.sum(Invoice.paid_amount), 0),
             )
-            .filter(Invoice.status == InvoiceStatus.PAID)
+            .filter(*billed_filters, Invoice.status != InvoiceStatus.REFUNDED)
             .group_by(Invoice.currency)
             .all()
         )
+        # Overdue uses the shared business rule (flagged OVERDUE, or open and
+        # past due — the flag alone depends on an off-by-default scheduler) and
+        # reports what is still owed (balance_due), not the original total.
         overdue_rows = {
             currency: (count, amount)
             for currency, count, amount in self.db.query(
                 Invoice.currency,
                 func.count(Invoice.id),
-                func.coalesce(func.sum(Invoice.total_amount), 0),
+                func.coalesce(func.sum(Invoice.balance_due), 0),
             )
-            .filter(Invoice.status == InvoiceStatus.OVERDUE)
+            .filter(*billed_filters, InvoiceRepository.overdue_filter_clause())
             .group_by(Invoice.currency)
             .all()
         }

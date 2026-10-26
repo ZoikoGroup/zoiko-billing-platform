@@ -8,9 +8,8 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from "recharts";
 import {
-  dashboardApi, invoiceApi, paymentApi, customerApi, subscriptionApi, contractApi, collectionApi, auditApi, productApi, settingsApi
+  dashboardApi, invoiceApi, paymentApi, customerApi, subscriptionApi, contractApi, collectionApi, auditApi, settingsApi
 } from "../../../service/billingService";
-import CatalogOnboarding from "../products/catalog-onboarding";
 import { extractArray, formatDisplayCurrency, formatCompactMoney } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
@@ -194,7 +193,6 @@ export default function ZoikoBillingModule() {
   useEffect(() => { dateRangeRef.current = dateRange; }, [dateRange]);
   useEffect(() => { dateRangeValueRef.current = dateRangeValue; }, [dateRangeValue]);
 
-  const [productCount, setProductCount] = useState(null);
   const [subscriptionReporting, setSubscriptionReporting] = useState(null);
   const [healthSummary, setHealthSummary] = useState(null);
 
@@ -220,13 +218,11 @@ export default function ZoikoBillingModule() {
   const auditDeferred = useDeferredLoad({ strategy: "visible" });
   const agingDeferred = useDeferredLoad({ strategy: "visible" });
   const expiringDeferred = useDeferredLoad({ strategy: "idle" });
-  const productsDeferred = useDeferredLoad({ strategy: "idle" });
   const deferredRef = useRef({});
   deferredRef.current = {
     aging: agingDeferred.triggered,
     expiring: expiringDeferred.triggered,
     audit: auditDeferred.triggered,
-    products: productsDeferred.triggered,
   };
 
   const markReady = useCallback((keys) => {
@@ -262,9 +258,6 @@ export default function ZoikoBillingModule() {
       agingBuckets: [PRIORITY_DEFERRED, () => collectionApi.getAgingBuckets(), setList("agingBuckets")],
       expiringContracts: [PRIORITY_DEFERRED, () => contractApi.listExpiring(30), setList("expiringContracts")],
       auditLogs: [PRIORITY_DEFERRED, () => auditApi.list({ per_page: 10 }), setList("auditLogs")],
-      products: [PRIORITY_DEFERRED, () => productApi.list({ per_page: 1 }), (v) => {
-        if (v) setProductCount(v.total ?? v.items?.length ?? 0);
-      }],
     };
     const [priority, call, apply] = defs[key];
     const id = (taskSeqRef.current[key] = (taskSeqRef.current[key] || 0) + 1);
@@ -311,7 +304,6 @@ export default function ZoikoBillingModule() {
       if (deferred.aging) keys.push("agingBuckets");
       if (deferred.expiring) keys.push("expiringContracts");
       if (deferred.audit) keys.push("auditLogs");
-      if (deferred.products) keys.push("products");
       await Promise.all(keys.map((k) => startTask(k, range)));
 
       if (currentRequestId !== requestIdRef.current) return;
@@ -344,7 +336,6 @@ export default function ZoikoBillingModule() {
   useEffect(() => { if (agingDeferred.triggered) startTask("agingBuckets", dateRangeRef.current); }, [agingDeferred.triggered, startTask]);
   useEffect(() => { if (expiringDeferred.triggered) startTask("expiringContracts", dateRangeRef.current); }, [expiringDeferred.triggered, startTask]);
   useEffect(() => { if (auditDeferred.triggered) startTask("auditLogs", dateRangeRef.current); }, [auditDeferred.triggered, startTask]);
-  useEffect(() => { if (productsDeferred.triggered) startTask("products", dateRangeRef.current); }, [productsDeferred.triggered, startTask]);
 
   // System Health badge (readiness score / "N of M components healthy") is a
   // secondary diagnostic widget, not a revenue KPI -- it must never gate the
@@ -806,15 +797,6 @@ export default function ZoikoBillingModule() {
   return (
     <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen">
       <style>{`@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }`}</style>
-
-      {productCount === 0 && (
-        <CatalogOnboarding
-          onAddManually={() => navigate("/billing/products")}
-          onImported={() => {
-            fetchDashboardData();
-          }}
-        />
-      )}
 
       <div className="mb-6">
         <PageHeader

@@ -32,14 +32,13 @@ vi.mock("../../service/commercialService", () => ({
 
 vi.mock("../../utils/export-helpers", () => ({ downloadCSV }));
 
-const { getJobTelemetry, getTriageSummary, getConfigurationInventory, listAttentionItems, getInvoiceFinalizationBreaker, setInvoiceFinalizationBreaker, getMfaStepUpStatus } = vi.hoisted(() => ({
+const { getJobTelemetry, getTriageSummary, getConfigurationInventory, listAttentionItems, getInvoiceFinalizationBreaker, setInvoiceFinalizationBreaker } = vi.hoisted(() => ({
   getJobTelemetry: vi.fn(),
   getTriageSummary: vi.fn(),
   getConfigurationInventory: vi.fn(),
   listAttentionItems: vi.fn(),
   getInvoiceFinalizationBreaker: vi.fn(),
   setInvoiceFinalizationBreaker: vi.fn(),
-  getMfaStepUpStatus: vi.fn(),
 }));
 
 vi.mock("../../service/privilegedAccessService", () => ({ getJobTelemetry }));
@@ -49,7 +48,6 @@ vi.mock("../../service/commandCenterService", () => ({
   listAttentionItems,
   getInvoiceFinalizationBreaker,
   setInvoiceFinalizationBreaker,
-  getMfaStepUpStatus,
 }));
 vi.mock("../../context/CommandCenterContext", () => ({
   useCommandCenter: () => ({
@@ -130,9 +128,6 @@ beforeEach(() => {
     changed_by_email: "admin@example.com",
     changed_at: null,
   });
-  // Default to enrolled: MFA being absent is a specific state under test, so
-  // the baseline must be the one where the breaker action is actually possible.
-  getMfaStepUpStatus.mockResolvedValue({ enabled: true });
   // Verdict must be one of READY | CONDITIONAL | BLOCKED. A fixture using an
   // invalid value would have hidden the page's verdict-vocabulary drift.
   getProductionAcceptanceReport.mockResolvedValue({
@@ -185,21 +180,21 @@ describe("AuditLogsPage", () => {
     const referenceInput = within(dialog).getByLabelText(/incident reference/i);
     expect(referenceInput).toBeRequired();
 
-    // Submit stays disabled until reason + reference + MFA code are all real.
+    // Submit stays disabled until reason + reference are both filled in.
     const submit = within(dialog).getByRole("button", { name: /^pause$/i });
     expect(submit).toBeDisabled();
 
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: "duplicate invoices" } });
     fireEvent.change(referenceInput, { target: { value: "INC-2026-014" } });
-    fireEvent.change(within(dialog).getByLabelText(/mfa code/i), { target: { value: "123456" } });
+    // MFA step-up is retired: no code is asked for.
+    expect(within(dialog).queryByLabelText(/mfa code/i)).not.toBeInTheDocument();
 
     await waitFor(() => expect(within(dialog).getByRole("button", { name: /^pause$/i })).toBeEnabled());
     fireEvent.click(within(dialog).getByRole("button", { name: /^pause$/i }));
 
     await waitFor(() => expect(setInvoiceFinalizationBreaker).toHaveBeenCalledTimes(1));
-    const [, reason, code, , incidentReference] = setInvoiceFinalizationBreaker.mock.calls[0];
+    const [, reason, incidentReference] = setInvoiceFinalizationBreaker.mock.calls[0];
     expect(reason).toBe("duplicate invoices");
-    expect(code).toBe("123456");
     expect(incidentReference).toBe("INC-2026-014");
   });
 
@@ -226,100 +221,10 @@ describe("AuditLogsPage", () => {
     expect(within(dialog).queryByLabelText(/incident reference/i)).not.toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: "resolved" } });
-    fireEvent.change(within(dialog).getByLabelText(/mfa code/i), { target: { value: "123456" } });
     fireEvent.click(within(dialog).getByRole("button", { name: /^resume$/i }));
 
     await waitFor(() => expect(setInvoiceFinalizationBreaker).toHaveBeenCalledTimes(1));
-    expect(setInvoiceFinalizationBreaker.mock.calls[0][4]).toBe("");
-  });
-
-  it("blocks the breaker and points at enrollment when MFA step-up is missing", async () => {
-    getMfaStepUpStatus.mockResolvedValue({ enabled: false });
-    render(
-      <Wrapper initialEntries={["/super-admin/audit-logs?tab=data-governance"]}>
-        <AuditLogsPage />
-      </Wrapper>
-    );
-
-    // The server hard-fails every change with "MFA is not enabled on this
-    // account", so the card must not offer an action that can only 400 — and
-    // the operator needs somewhere to actually go.
-    await waitFor(() => expect(screen.getByText(/MFA step-up is not enrolled/i)).toBeInTheDocument());
-    const pause = screen.getByRole("button", { name: /^pause$/i });
-    expect(pause).toBeDisabled();
-
-    const enable = screen.getByRole("link", { name: /enable mfa/i });
-    expect(enable).toHaveAttribute("href", "/super-admin/settings");
-  });
-
-  it("lets the breaker through with no code when step-up is bypassed", async () => {
-    // Dev-only deployment flag. The server skips verification entirely, so the
-    // UI must not block on a code nobody will check.
-    getMfaStepUpStatus.mockResolvedValue({ enabled: true, bypassed: true });
-    render(
-      <Wrapper initialEntries={["/super-admin/audit-logs?tab=data-governance"]}>
-        <AuditLogsPage />
-      </Wrapper>
-    );
-
-    await waitFor(() => expect(screen.getByRole("button", { name: /^pause$/i })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: /^pause$/i })).not.toBeDisabled();
-    // The card must stop claiming MFA is enforced.
-    expect(screen.queryByText(/MFA step-up required on every change/i)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /^pause$/i }));
-    const dialog = await screen.findByRole("dialog");
-    // No code field at all, rather than a field whose value is ignored.
-    expect(within(dialog).queryByLabelText(/mfa code/i)).not.toBeInTheDocument();
-    expect(within(dialog).getByText(/bypassed/i)).toBeInTheDocument();
-
-    // Reason + incident reference are still required — the bypass is only
-    // about the second factor, not about dropping the audit trail.
-    fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: "maintenance" } });
-    expect(within(dialog).getByRole("button", { name: /^pause$/i })).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText(/incident reference/i), { target: { value: "INC-2026-1" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: /^pause$/i }));
-
-    await waitFor(() => expect(setInvoiceFinalizationBreaker).toHaveBeenCalledTimes(1));
     expect(setInvoiceFinalizationBreaker.mock.calls[0][2]).toBe("");
-  });
-
-  it("does not claim MFA is missing when the status probe itself fails", async () => {    // A failed probe is not evidence of missing MFA. Claiming it would show a
-    // false alarm and hide the action on a perfectly valid account.
-    getMfaStepUpStatus.mockRejectedValue(new Error("status probe down"));
-    render(
-      <Wrapper initialEntries={["/super-admin/audit-logs?tab=data-governance"]}>
-        <AuditLogsPage />
-      </Wrapper>
-    );
-
-    await waitFor(() => expect(screen.getByRole("button", { name: /^pause$/i })).toBeInTheDocument());
-    expect(screen.queryByText(/MFA step-up is not enrolled/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^pause$/i })).not.toBeDisabled();
-  });
-
-  it("routes to enrollment from the server's MFA rejection when the card status is stale", async () => {
-    // Status says enrolled, but MFA was disabled server-side in the meantime:
-    // the card cannot pre-empt this, so the modal must recognise the refusal.
-    setInvoiceFinalizationBreaker.mockRejectedValue(
-      new Error("MFA is not enabled on this account. Step-up verification requires MFA.")
-    );
-    render(
-      <Wrapper initialEntries={["/super-admin/audit-logs?tab=data-governance"]}>
-        <AuditLogsPage />
-      </Wrapper>
-    );
-    await waitFor(() => expect(screen.getByRole("button", { name: /^pause$/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^pause$/i }));
-
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: "dupes" } });
-    fireEvent.change(within(dialog).getByLabelText(/incident reference/i), { target: { value: "INC-2026-1" } });
-    fireEvent.change(within(dialog).getByLabelText(/mfa code/i), { target: { value: "123456" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: /^pause$/i }));
-
-    await waitFor(() => expect(within(dialog).getByText(/MFA is not enabled on this account/i)).toBeInTheDocument());
-    expect(within(dialog).getByRole("link", { name: /enable mfa/i })).toHaveAttribute("href", "/super-admin/settings");
   });
 
   it("shows a structured before/after diff from real old/new values", async () => {    render(

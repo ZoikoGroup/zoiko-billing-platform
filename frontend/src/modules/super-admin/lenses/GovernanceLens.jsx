@@ -104,7 +104,7 @@ export default function GovernanceLens({ readiness, activity }) {
             <span className="font-bold text-slate-800">Just-In-Time Tenant Access</span>
             <p className="mt-1 text-[11px] text-slate-600">
               Standing tenant access is disabled. Operator access requires ticket reference, business
-              reason, TOTP step-up, and auto-expires in ≤ 30 minutes.
+              reason, independent approval, and auto-expires in ≤ 30 minutes.
             </p>
           </div>
           <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">

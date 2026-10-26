@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bell, ChevronDown, User, Building, LogOut, Menu, X, HelpCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useCommandCenter } from "../context/CommandCenterContext";
 import { ROLE_LABELS } from "../config/roles";
 import { getOrganizationDetails } from "../service/orgAdminService";
 
@@ -77,6 +78,8 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
+  const commandCenter = useCommandCenter({ required: false });
+  const openAttention = role === "super_admin" ? commandCenter?.attentionCounts?.total_open ?? 0 : 0;
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
@@ -144,22 +147,24 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           </Link>
         )}
 
-        {/* Notification Icon — links to the real (non-fabricated) billing
-            workspace notifications feed. The feed itself (WorkspaceNotificationsPage)
-            only calls org-scoped billing endpoints (overdue invoices, expiring
-            contracts, aging buckets, billing config) that both org_admin and
-            billing_admin are already authorized to call, and org_admin is the
-            default landing role for /organization-admin/dashboard — the exact
-            page this was reported broken on — so it must not be billing_admin-only.
-            For every other role this is an inert placeholder: it must never show
-            a fake "unread" dot when nothing was ever fetched (ORG-01). */}
-        {ORG_CONTEXT_ROLES.includes(role) ? (
+        {/* Notification Icon — links to each role's real (non-fabricated)
+            notifications feed: the org-scoped billing feed for org_admin /
+            billing_admin, and the platform feed (open attention items + audit
+            events) for super_admin. The only badge is the real open
+            attention-item count for super_admin; there is never a fake
+            "unread" dot (ORG-01). Roles without a feed get an inert placeholder. */}
+        {NOTIFICATIONS_ROUTE_BY_ROLE[role] ? (
           <Link
             to={NOTIFICATIONS_ROUTE_BY_ROLE[role]}
-            className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-            aria-label="Notifications"
+            className="relative p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            aria-label={openAttention > 0 ? `Notifications (${openAttention} open)` : "Notifications"}
           >
             <Bell size={20} />
+            {openAttention > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+                {openAttention > 99 ? "99+" : openAttention}
+              </span>
+            )}
           </Link>
         ) : (
           <button
@@ -207,15 +212,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           {/* Dropdown Menu */}
           {isDropdownOpen && (
             <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg p-1.5 flex flex-col gap-1 z-50">
-              {role === "super_admin" ? (
-                <Link
-                  to="/super-admin/settings"
-                  onClick={closeDropdown}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <User size={16} /> Platform Settings
-                </Link>
-              ) : role === "billing_admin" ? (
+              {role === "super_admin" ? null : role === "billing_admin" ? (
                 <>
                   <Link
                     to="/billing/workspace/organization"
@@ -235,9 +232,8 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
               ) : (
                 // org_admin (and other org-scoped roles without a surface of
                 // their own): there is no standalone user-profile page in
-                // this app, and "/settings" only redirects to the Super
-                // Admin-only platform settings page — never route a
-                // non-super_admin user there.
+                // this app — never route a non-super_admin user to "/settings"
+                // (a Super Admin legacy redirect).
                 <Link
                   to="/organization-admin/organization"
                   onClick={closeDropdown}
@@ -247,7 +243,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
                 </Link>
               )}
 
-              <div className="h-px bg-gray-100 my-1" />
+              {role !== "super_admin" && <div className="h-px bg-gray-100 my-1" />}
 
               {/* Sign Out Action */}
               <button

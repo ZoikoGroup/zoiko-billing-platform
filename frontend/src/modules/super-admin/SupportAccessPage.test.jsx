@@ -13,10 +13,6 @@ vi.mock("../../hooks/useIsDesktopViewport", () => ({
   default: () => true,
 }));
 
-vi.mock("../../service/commandCenterService", () => ({
-  getMfaStepUpStatus: vi.fn(() => Promise.resolve({ enabled: true, bypassed: false })),
-}));
-
 vi.mock("../../service/privilegedAccessService", () => ({
   getActivePrivilegedAccess: vi.fn(),
   listMyPrivilegedAccess: vi.fn(),
