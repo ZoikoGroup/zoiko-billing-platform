@@ -461,15 +461,15 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/products/product-list.jsx:744` | Edit Product | Save Changes |
 | `modules/billing/products/usage-billing.jsx:422` | Create Meter | Create Meter |
 | `modules/billing/products/usage-billing.jsx:511` | Test API Event | Send Event |
-| `modules/billing/quotations/quotation-detail.jsx:720` | Reject Quotation | Reject |
-| `modules/billing/quotations/quotation-detail.jsx:740` | Cancel Quotation | Cancel Quotation |
-| `modules/billing/quotations/quotation-detail.jsx:757` | Convert to Contract | Create Contract |
-| `modules/billing/quotations/quotation-detail.jsx:796` | Convert to Invoice | Convert |
-| `modules/billing/quotations/quotation-list.jsx:714` | New Quotation | (labels computed in code) |
-| `modules/billing/subscriptions/subscription-detail.jsx:883` | Change Plan | (labels computed in code) |
-| `modules/billing/subscriptions/subscription-detail.jsx:929` | Generate Invoice | (labels computed in code) |
-| `modules/billing/subscriptions/subscription-detail.jsx:965` | Pause Subscription | (labels computed in code) |
-| `modules/billing/subscriptions/subscription-detail.jsx:989` | Cancel Subscription | (labels computed in code) |
+| `modules/billing/quotations/quotation-detail.jsx:720` | Reject Quotation — **Migrated (B2)** | Reject |
+| `modules/billing/quotations/quotation-detail.jsx:740` | Cancel Quotation — **Migrated (B2)** | Cancel Quotation |
+| `modules/billing/quotations/quotation-detail.jsx:757` | Convert to Contract — **Migrated (B2)** | Create Contract |
+| `modules/billing/quotations/quotation-detail.jsx:796` | Convert to Invoice — **Migrated (B2)** | Convert |
+| `modules/billing/quotations/quotation-list.jsx:714` | New Quotation — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:883` | Change Plan — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:929` | Generate Invoice — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:965` | Pause Subscription — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:989` | Cancel Subscription — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/tax/tax-rate-import-wizard.jsx:693` | Import Tax Rates | Back |
 | `modules/billing/tax/tax-rates.jsx:481` | *(title computed in code)* | Create Tax Rate |
 | `modules/organization-admin/UserManagementPage.jsx:612` | Invite User | Cancel, Send Invite |
@@ -502,6 +502,26 @@ Measured at 390 and 1280 (refund, write-off and dunning detail use route-interce
 **Caught by the new tests and fixed before commit:** the conversion script dropped attributes written on the same line as `<button` — the "Log a Promise to Pay" Save button had lost its `onClick={handleCreatePromise}` and its disabled rule. Restored word for word; a scan of every `onClick`/`disabled`/`onChange`/`value` expression in the 8 files against `HEAD` shows nothing else missing (the only differences are overlay/× close handlers, now in `onClose`). The script is fixed for the next modules.
 
 **Follow-up (pre-existing, not changed):** `payment-detail.jsx` reads allocations through `extractArray`, which understands arrays, `items` and `data` but not `{ allocations: [...] }` (the shape its own error fallback uses). If the API returns that shape, the Allocations tab would show empty. Needs a check against the real response; out of scope here.
+
+#### B2 results — Subscriptions & quotations (9 dialogs): done
+
+All 9 rebuilt on the shared `Modal`, actions in the pinned footer, handlers / validation / field names / API calls word for word (checked mechanically: every `onClick`, `disabled`, `onChange`, `value`, `placeholder` … expression at `HEAD` is still present, except overlay and × close handlers, which are now the `Modal`'s `onClose`). Esc-only dialogs (Reject Quotation, Change Plan) keep `closeOnBackdrop={false}`.
+
+| Dialog | Status | Notes |
+|---|---|---|
+| quotation-detail — Reject / Cancel / Convert to Contract / Convert to Invoice | **Migrated** | Plain-text intro lines became the dialog description; Cancel Quotation's warning stays in the body |
+| quotation-list — New Quotation (4-step wizard, opened from `?create=1`) | **Migrated** | Same treatment as Record Payment: `xl` (full screen on phones), shared `Stepper`, Back / Cancel / Continue / Create Quotation in the footer with the same step validation; step contents unchanged. The header "New Quotation" button goes to the separate full-page create screen (`/billing/quotations/create`, B3), not this wizard |
+| subscription-detail — Change Plan / Generate Invoice / Pause / Cancel | **Migrated** | Pause keeps its amber button (no shared amber variant), sized like the shared `Button`; Cancel Subscription uses `destructive`, Generate Invoice `success` |
+
+No footer has more than three actions, so no "⋯" overflow was needed.
+
+Measured at 390 and 1280 (sent/accepted quotations via route interception — the local DB has no quotations; subscription dialogs and the wizard use real local data): primary in the pinned footer, visible and uncovered, 44px on phones, no horizontal overflow. Before, at 390 the wizard's Continue sat mid-page under a clipped step row and the confirm dialogs' buttons were 36px. Screenshots: `shots/phase3/stepB2-subs-quotes/{before,before-r2,after}/` (`before-r2` re-shoots the wizard and Reject with the right openers).
+
+**Desktop differences (1280):** as in B1 / Payments — blurred backdrop, close ×, footer band, bordered Cancel; wizard step row uses the shared `Stepper`.
+
+**Tests:** smoke tests for every dialog (opens → primary calls its API with the expected arguments → closes), added to `quotation-detail.test.jsx` and `subscription-detail.test.jsx` plus a new `quotation-list.dialogs.test.jsx` that drives the wizard through all 4 steps to `quoteApi.create`. One existing test locator was updated (`quotation-detail.test.jsx` found the Convert to Invoice dialog through `heading.closest("div").parentElement`; it now uses `getByRole("dialog", { name })`, same assertions). Module run: 6 files, 38 passed, 1 skipped (below).
+
+**Pre-existing bug found (not fixed — needs a decision):** the New Quotation wizard cannot be closed. `handleCloseWizard` hides it and navigates from `?create=1` to `/billing/quotations`, but the effect `if (searchParams.get("create") === "1" && !showWizard) openWizard();` runs before the navigation lands (React Router 7 applies it in a transition) and reopens and resets the wizard. Verified in the browser on the commit *before* this change: Cancel leaves it open. The old hand-built overlay had no Esc handler; the shared `Modal`'s Esc now calls the same `handleCloseWizard`, so Esc fails the same way. Only entry point is `?create=1`, used from the customer profile (`customer-profile.jsx` lines 1047, 2237). The test for it is `it.skip` with a pointer here.
 
 ## 9. Local environment safety notes
 

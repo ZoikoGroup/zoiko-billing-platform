@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { FileSignature, Search, Filter, X, ChevronDown, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, FileText, XCircle, ArrowUpDown, Download, Ban, Send, User, Package, DollarSign, Eye, Trash2, Loader2, ShoppingCart, CreditCard, Percent, BarChart3 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal, Stepper } from "../../../components/billing-ui";
 import { quoteApi, customerApi, productApi, pricingApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { CalculationEngine } from "../utils/calculation-engine";
@@ -60,19 +61,6 @@ const STATUS_ICONS = { accepted: CheckCircle, rejected: XCircle, converted: Refr
 
 function StatusBadge({ status }) {
   return <SharedStatusBadge status={status} options={STATUS_OPTIONS} icon={STATUS_ICONS[status] || Clock} />;
-}
-
-function WizardStep({ number, label, active, completed }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-        completed ? "bg-emerald-500 text-white" : active ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-500"
-      }`}>
-        {completed ? <CheckCircle size={16} /> : number}
-      </div>
-      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-700" : "text-slate-500"}`}>{label}</span>
-    </div>
-  );
 }
 
 export default function QuotationListPage() {
@@ -711,384 +699,370 @@ export default function QuotationListPage() {
       </div>
 
       {showWizard && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-10 overflow-y-auto" onClick={handleCloseWizard}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl mx-4 mb-10" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">New Quotation</h2>
-              <button onClick={handleCloseWizard} disabled={wizardLoading} aria-label="Close modal" className="p-1 hover:bg-slate-100 rounded-lg disabled:opacity-50"><X size={20} /></button>
-            </div>
+        <Modal
+          open
+          onClose={handleCloseWizard}
+          title="New Quotation"
+          size="xl"
+          footer={
+            <>
+              {wizardStep > 1 && (
+                <Button variant="ghost" className="sm:mr-auto" onClick={() => setWizardStep((s) => s - 1)}>Back</Button>
+              )}
+              <Button variant="ghost" onClick={handleCloseWizard} disabled={wizardLoading}>Cancel</Button>
+              {wizardStep < 4 ? (
+                <Button variant="primary" onClick={() => {
+                  if (wizardStep === 1 && !wizardData.customer_id) { setWizardError("Please select a customer"); return; }
+                  if (wizardStep === 2 && wizardData.items.length === 0) { setWizardError("Please add at least one product"); return; }
+                  setWizardError(null);
+                  setWizardStep((s) => s + 1);
+                }} disabled={wizardStep === 1 && !wizardData.customer_id}>
+                  Continue
+                </Button>
+              ) : (
+                <Button variant="primary" onClick={handleCreateQuotation} disabled={wizardLoading}>
+                  {wizardLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+                  {wizardLoading ? "Creating..." : "Create Quotation"}
+                </Button>
+              )}
+            </>
+          }
+        >
+          <Stepper
+            className="mb-6 sm:mb-8"
+            current={wizardStep - 1}
+            steps={[{ label: singular }, { label: "Products" }, { label: "Pricing Review" }, { label: "Preview" }]}
+          />
 
-            <div className="flex items-center justify-between mb-8 px-4">
-              <WizardStep number={1} label={singular} active={wizardStep === 1} completed={wizardStep > 1} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={2} label="Products" active={wizardStep === 2} completed={wizardStep > 2} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={3} label="Pricing Review" active={wizardStep === 3} completed={wizardStep > 3} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={4} label="Preview" active={wizardStep === 4} completed={wizardStep > 4} />
-            </div>
+          {wizardError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{wizardError}</div>
+          )}
 
-            {wizardError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{wizardError}</div>
-            )}
-
-            {wizardStep === 1 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><User size={20} className="text-brand-500" /> Select {singular}</h3>
-                {wizardData.customer_id ? (
-                  <div className="p-4 bg-brand-50 border border-brand-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
-                      <p className="text-sm text-slate-500">{wizardData.customer_email}{wizardData.customer_phone ? ` · ${wizardData.customer_phone}` : ""}</p>
+          {wizardStep === 1 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><User size={20} className="text-brand-500" /> Select {singular}</h3>
+              {wizardData.customer_id ? (
+                <div className="p-4 bg-brand-50 border border-brand-200 rounded-xl flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
+                    <p className="text-sm text-slate-500">{wizardData.customer_email}{wizardData.customer_phone ? ` · ${wizardData.customer_phone}` : ""}</p>
+                  </div>
+                  <button onClick={() => setWizardData((p) => ({ ...p, customer_id: "", customer_name: "", customer_email: "", customer_phone: "" }))}
+                    className="text-sm text-brand-600 hover:text-brand-700 font-medium">Change</button>
+                </div>
+              ) : (
+                <div>
+                  <div className="relative mb-3">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input type="text" placeholder={`Search ${singular.toLowerCase()}s by name, email, or phone...`} aria-label={`Search ${singular.toLowerCase()}s by name, email, or phone`} value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  </div>
+                  {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
+                  {customerResults.length > 0 && (
+                    <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                      {customerResults.map((c) => (
+                        <button key={c.id} onClick={() => selectCustomer(c)}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
+                          <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `${singular} #${c.id}`}</p>
+                          <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
+                        </button>
+                      ))}
                     </div>
-                    <button onClick={() => setWizardData((p) => ({ ...p, customer_id: "", customer_name: "", customer_email: "", customer_phone: "" }))}
-                      className="text-sm text-brand-600 hover:text-brand-700 font-medium">Change</button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="relative mb-3">
-                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input type="text" placeholder={`Search ${singular.toLowerCase()}s by name, email, or phone...`} aria-label={`Search ${singular.toLowerCase()}s by name, email, or phone`} value={customerSearch}
-                        onChange={(e) => setCustomerSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                    </div>
-                    {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
-                    {customerResults.length > 0 && (
-                      <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                        {customerResults.map((c) => (
-                          <button key={c.id} onClick={() => selectCustomer(c)}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
-                            <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `${singular} #${c.id}`}</p>
-                            <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {customerResults.length === 0 && customerSearch.trim() && !customerSearching && (
-                      <p className="text-sm text-slate-500 text-center py-4">No {singular.toLowerCase()}s found</p>
-                    )}
-                  </div>
-                )}
+                  )}
+                  {customerResults.length === 0 && customerSearch.trim() && !customerSearching && (
+                    <p className="text-sm text-slate-500 text-center py-4">No {singular.toLowerCase()}s found</p>
+                  )}
+                </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number</label>
-                    <input type="text" value={wizardData.quote_number}
-                      onChange={(e) => setWizardData((p) => ({ ...p, quote_number: e.target.value }))}
-                      placeholder="Auto-generated on save"
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Valid Until</label>
-                    <input type="date" value={wizardData.valid_until}
-                      onChange={(e) => setWizardData((p) => ({ ...p, valid_until: e.target.value }))}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Quote Number</label>
+                  <input type="text" value={wizardData.quote_number}
+                    onChange={(e) => setWizardData((p) => ({ ...p, quote_number: e.target.value }))}
+                    placeholder="Auto-generated on save"
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Subject</label>
-                  <input type="text" value={wizardData.subject}
-                    onChange={(e) => setWizardData((p) => ({ ...p, subject: e.target.value }))}
-                    placeholder="Brief description of this quotation..."
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Valid Until</label>
+                  <input type="date" value={wizardData.valid_until}
+                    onChange={(e) => setWizardData((p) => ({ ...p, valid_until: e.target.value }))}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
-            )}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Subject</label>
+                <input type="text" value={wizardData.subject}
+                  onChange={(e) => setWizardData((p) => ({ ...p, subject: e.target.value }))}
+                  placeholder="Brief description of this quotation..."
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+          )}
 
-            {wizardStep === 2 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Package size={20} className="text-brand-500" /> Products & Services</h3>
+          {wizardStep === 2 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Package size={20} className="text-brand-500" /> Products & Services</h3>
 
-                {productLoading ? (
-                  <div className="flex items-center justify-center py-8"><Loader2 size={24} className="animate-spin text-brand-600" /></div>
-                ) : (
-                  <div className="relative mb-4">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <select value="" onChange={(e) => { if (e.target.value) { addLineItem(e.target.value); e.target.value = ""; } }}
-                      className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 appearance-none">
-                      <option value="">Add a product or service...</option>
-                      {productList.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatDisplayCurrency(p.default_price, wizardData.currency)}</option>)}
-                    </select>
-                  </div>
-                )}
+              {productLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 size={24} className="animate-spin text-brand-600" /></div>
+              ) : (
+                <div className="relative mb-4">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <select value="" onChange={(e) => { if (e.target.value) { addLineItem(e.target.value); e.target.value = ""; } }}
+                    className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 appearance-none">
+                    <option value="">Add a product or service...</option>
+                    {productList.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatDisplayCurrency(p.default_price, wizardData.currency)}</option>)}
+                  </select>
+                </div>
+              )}
 
-                {wizardData.items.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">
-                    <ShoppingCart size={32} className="mx-auto mb-2 text-slate-300" />
-                    <p>No line items yet. Select a product above to add one.</p>
-                  </div>
-                ) : (
-                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
-                    {wizardData.items.map((item) => {
-                      const totals = calcItemTotal(item);
-                      return (
-                        <div key={item.id} className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
-                            <button onClick={() => removeLineItem(item.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label="Remove line item" title="Remove line item"><Trash2 size={14} /></button>
-                          </div>
-                          {item.needs_plan_selection && (
-                            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                              <p className="text-xs font-medium text-amber-700 mb-2">Select a pricing plan for this item:</p>
-                              <div className="flex flex-wrap gap-2">
-                                <button onClick={() => handlePlanSelect(item.id, null)}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-brand-200 transition-colors">
-                                  Catalog Price
+              {wizardData.items.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <ShoppingCart size={32} className="mx-auto mb-2 text-slate-300" />
+                  <p>No line items yet. Select a product above to add one.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+                  {wizardData.items.map((item) => {
+                    const totals = calcItemTotal(item);
+                    return (
+                      <div key={item.id} className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
+                          <button onClick={() => removeLineItem(item.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label="Remove line item" title="Remove line item"><Trash2 size={14} /></button>
+                        </div>
+                        {item.needs_plan_selection && (
+                          <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <p className="text-xs font-medium text-amber-700 mb-2">Select a pricing plan for this item:</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button onClick={() => handlePlanSelect(item.id, null)}
+                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-brand-200 transition-colors">
+                                Catalog Price
+                              </button>
+                              {item.available_plans && item.available_plans.map((plan) => (
+                                <button key={plan.id} onClick={() => handlePlanSelect(item.id, plan.id)}
+                                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-700 transition-colors">
+                                  {plan.name || plan.plan_name || `Plan #${plan.id}`}
+                                  {plan.unit_price != null && <span className="ml-1 text-slate-500">— {formatDisplayCurrency(plan.unit_price, wizardData.currency)}</span>}
                                 </button>
-                                {item.available_plans && item.available_plans.map((plan) => (
-                                  <button key={plan.id} onClick={() => handlePlanSelect(item.id, plan.id)}
-                                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-700 transition-colors">
-                                    {plan.name || plan.plan_name || `Plan #${plan.id}`}
-                                    {plan.unit_price != null && <span className="ml-1 text-slate-500">— {formatDisplayCurrency(plan.unit_price, wizardData.currency)}</span>}
-                                  </button>
-                                ))}
-                              </div>
+                              ))}
                             </div>
-                          )}
-                          <div className="grid grid-cols-5 gap-3">
-                            <div>
-                              <label className="text-xs text-slate-500">Qty</label>
-                              <input type="number" min="1" step="1" value={item.quantity}
-                                onChange={(e) => updateLineItem(item.id, "quantity", Math.max(1, parseInt(e.target.value) || 1))}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                            </div>
-                            <div>
-                              <label className="text-xs text-slate-500">Unit Price</label>
-                              <input type="number" min="0" step="0.01" value={item.unit_price}
-                                onChange={(e) => updateLineItem(item.id, "unit_price", parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                            </div>
-                            <div>
-                              <label className="text-xs text-slate-500">Disc %</label>
-                              <input type="number" min="0" max="100" step="0.1" value={item.discount_percentage}
-                                onChange={(e) => updateLineItem(item.id, "discount_percentage", parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                            </div>
-                            <div>
-                              <label className="text-xs text-slate-500">Tax %</label>
-                              <input type="number" min="0" max="100" step="0.1" value={item.tax_percentage}
-                                onChange={(e) => updateLineItem(item.id, "tax_percentage", parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                            </div>
-                            <div className="flex items-end justify-end">
-                              <p className="text-sm font-semibold text-slate-800">{formatDisplayCurrency(totals.total, wizardData.currency)}</p>
-                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-5 gap-3">
+                          <div>
+                            <label className="text-xs text-slate-500">Qty</label>
+                            <input type="number" min="1" step="1" value={item.quantity}
+                              onChange={(e) => updateLineItem(item.id, "quantity", Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500">Unit Price</label>
+                            <input type="number" min="0" step="0.01" value={item.unit_price}
+                              onChange={(e) => updateLineItem(item.id, "unit_price", parseFloat(e.target.value) || 0)}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500">Disc %</label>
+                            <input type="number" min="0" max="100" step="0.1" value={item.discount_percentage}
+                              onChange={(e) => updateLineItem(item.id, "discount_percentage", parseFloat(e.target.value) || 0)}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500">Tax %</label>
+                            <input type="number" min="0" max="100" step="0.1" value={item.tax_percentage}
+                              onChange={(e) => updateLineItem(item.id, "tax_percentage", parseFloat(e.target.value) || 0)}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                          </div>
+                          <div className="flex items-end justify-end">
+                            <p className="text-sm font-semibold text-slate-800">{formatDisplayCurrency(totals.total, wizardData.currency)}</p>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea value={wizardData.notes} onChange={(e) => setWizardData((p) => ({ ...p, notes: e.target.value }))}
+                  rows={2} placeholder="Internal notes..."
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 3 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><DollarSign size={20} className="text-brand-500" /> Pricing Review</h3>
+
+              {wizardData.items.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <p>No items to review. Add products in the previous step.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Item</th>
+                        <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Qty</th>
+                        <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Price</th>
+                        <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Disc</th>
+                        <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Tax</th>
+                        <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {wizardData.items.map((item) => {
+                        const t = calcItemTotal(item);
+                        return (
+                          <tr key={item.id}>
+                            <td className="px-4 py-2 text-slate-800">{item.product_name || item.description}</td>
+                            <td className="px-4 py-2 text-right text-slate-600">{item.quantity}</td>
+                            <td className="px-4 py-2 text-right text-slate-600">{formatDisplayCurrency(item.unit_price, wizardData.currency)}</td>
+                            <td className="px-4 py-2 text-right text-slate-500">{item.discount_percentage > 0 ? `${item.discount_percentage}%` : "—"}</td>
+                            <td className="px-4 py-2 text-right text-slate-500">{item.tax_percentage > 0 ? `${item.tax_percentage}%` : "—"}</td>
+                            <td className="px-4 py-2 text-right font-medium text-slate-800">{formatDisplayCurrency(t.total, wizardData.currency)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
+                <div className="relative max-w-xs">
+                  <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input type="number" min="0" max="100" step="0.1" value={wizardData.discount_percentage}
+                    onChange={(e) => setWizardData((p) => ({ ...p, discount_percentage: parseFloat(e.target.value) || 0 }))}
+                    className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 pt-4">
+                <div className="flex justify-between text-sm text-slate-600 mb-1">
+                  <span>Subtotal ({wizardData.items.length} item(s))</span>
+                  <span>{formatDisplayCurrency(calcWizardTotals().subtotal, wizardData.currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-600 mb-1">
+                  <span>Discount</span>
+                  <span className="text-red-500">-{formatDisplayCurrency(calcWizardTotals().discount, wizardData.currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-600 mb-1">
+                  <span>Tax</span>
+                  <span>{formatDisplayCurrency(calcWizardTotals().taxAmount, wizardData.currency)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold text-slate-800 border-t border-slate-200 pt-2 mt-2">
+                  <span>Total</span>
+                  <span>{formatDisplayCurrency(calcWizardTotals().total, wizardData.currency)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Terms & Conditions</label>
+                <textarea value={wizardData.terms} onChange={(e) => setWizardData((p) => ({ ...p, terms: e.target.value }))}
+                  rows={2} placeholder="Payment terms, delivery terms, etc."
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 4 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Eye size={20} className="text-brand-500" /> Preview</h3>
+
+              <div className="border border-slate-200 rounded-xl p-6 bg-white">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800">QUOTATION</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {wizardData.quote_number ? `#${wizardData.quote_number}` : "Auto-generated on save"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-slate-500">Valid Until: {formatDisplayDate(wizardData.valid_until)}</p>
+                    <p className="text-xs text-slate-500 mt-1">Status: Draft</p>
+                  </div>
+                </div>
+
+                <div className="mb-6 p-4 bg-slate-50 rounded-xl">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">{singular}</p>
+                  <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
+                  {wizardData.customer_email && <p className="text-sm text-slate-500">{wizardData.customer_email}</p>}
+                  {wizardData.customer_phone && <p className="text-sm text-slate-500">{wizardData.customer_phone}</p>}
+                </div>
+
+                {wizardData.subject && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Subject</p>
+                    <p className="text-sm text-slate-700">{wizardData.subject}</p>
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                  <textarea value={wizardData.notes} onChange={(e) => setWizardData((p) => ({ ...p, notes: e.target.value }))}
-                    rows={2} placeholder="Internal notes..."
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 3 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><DollarSign size={20} className="text-brand-500" /> Pricing Review</h3>
-
-                {wizardData.items.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">
-                    <p>No items to review. Add products in the previous step.</p>
-                  </div>
-                ) : (
-                  <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                {wizardData.items.length > 0 && (
+                  <div className="overflow-x-auto mb-4">
                     <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Item</th>
-                          <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Qty</th>
-                          <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Price</th>
-                          <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Disc</th>
-                          <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Tax</th>
-                          <th scope="col" className="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Total</th>
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th scope="col" className="py-2 text-left text-xs font-semibold text-slate-500 uppercase">Item</th>
+                        <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Qty</th>
+                        <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Price</th>
+                        <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {wizardData.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="py-2 text-slate-800">{item.product_name || item.description}</td>
+                          <td className="py-2 text-right text-slate-600">{item.quantity}</td>
+                          <td className="py-2 text-right text-slate-600">{formatDisplayCurrency(item.unit_price, wizardData.currency)}</td>
+                          <td className="py-2 text-right font-medium text-slate-800">{formatDisplayCurrency(calcItemTotal(item).total, wizardData.currency)}</td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {wizardData.items.map((item) => {
-                          const t = calcItemTotal(item);
-                          return (
-                            <tr key={item.id}>
-                              <td className="px-4 py-2 text-slate-800">{item.product_name || item.description}</td>
-                              <td className="px-4 py-2 text-right text-slate-600">{item.quantity}</td>
-                              <td className="px-4 py-2 text-right text-slate-600">{formatDisplayCurrency(item.unit_price, wizardData.currency)}</td>
-                              <td className="px-4 py-2 text-right text-slate-500">{item.discount_percentage > 0 ? `${item.discount_percentage}%` : "—"}</td>
-                              <td className="px-4 py-2 text-right text-slate-500">{item.tax_percentage > 0 ? `${item.tax_percentage}%` : "—"}</td>
-                              <td className="px-4 py-2 text-right font-medium text-slate-800">{formatDisplayCurrency(t.total, wizardData.currency)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
+                      ))}
+                    </tbody>
                     </table>
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
-                  <div className="relative max-w-xs">
-                    <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input type="number" min="0" max="100" step="0.1" value={wizardData.discount_percentage}
-                      onChange={(e) => setWizardData((p) => ({ ...p, discount_percentage: parseFloat(e.target.value) || 0 }))}
-                      className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                </div>
-
-                <div className="border-t border-slate-200 pt-4">
+                <div className="border-t border-slate-200 pt-3 ml-auto w-64">
                   <div className="flex justify-between text-sm text-slate-600 mb-1">
-                    <span>Subtotal ({wizardData.items.length} item(s))</span>
+                    <span>Subtotal</span>
                     <span>{formatDisplayCurrency(calcWizardTotals().subtotal, wizardData.currency)}</span>
                   </div>
-                  <div className="flex justify-between text-sm text-slate-600 mb-1">
-                    <span>Discount</span>
-                    <span className="text-red-500">-{formatDisplayCurrency(calcWizardTotals().discount, wizardData.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-slate-600 mb-1">
-                    <span>Tax</span>
-                    <span>{formatDisplayCurrency(calcWizardTotals().taxAmount, wizardData.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold text-slate-800 border-t border-slate-200 pt-2 mt-2">
+                  {calcWizardTotals().discount > 0 && (
+                    <div className="flex justify-between text-sm text-red-500 mb-1">
+                      <span>Discount</span>
+                      <span>-{formatDisplayCurrency(calcWizardTotals().discount, wizardData.currency)}</span>
+                    </div>
+                  )}
+                  {calcWizardTotals().taxAmount > 0 && (
+                    <div className="flex justify-between text-sm text-slate-600 mb-1">
+                      <span>Tax</span>
+                      <span>{formatDisplayCurrency(calcWizardTotals().taxAmount, wizardData.currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-2 mt-1">
                     <span>Total</span>
                     <span>{formatDisplayCurrency(calcWizardTotals().total, wizardData.currency)}</span>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Terms & Conditions</label>
-                  <textarea value={wizardData.terms} onChange={(e) => setWizardData((p) => ({ ...p, terms: e.target.value }))}
-                    rows={2} placeholder="Payment terms, delivery terms, etc."
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 4 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Eye size={20} className="text-brand-500" /> Preview</h3>
-
-                <div className="border border-slate-200 rounded-xl p-6 bg-white">
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-800">QUOTATION</h2>
-                      <p className="text-sm text-slate-500 mt-1">
-                        {wizardData.quote_number ? `#${wizardData.quote_number}` : "Auto-generated on save"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-slate-500">Valid Until: {formatDisplayDate(wizardData.valid_until)}</p>
-                      <p className="text-xs text-slate-500 mt-1">Status: Draft</p>
-                    </div>
+                {wizardData.terms && (
+                  <div className="mt-4 p-3 bg-slate-50 rounded-lg text-xs text-slate-500">
+                    <p className="font-medium text-slate-600 mb-1">Terms</p>
+                    <p className="whitespace-pre-wrap">{wizardData.terms}</p>
                   </div>
-
-                  <div className="mb-6 p-4 bg-slate-50 rounded-xl">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">{singular}</p>
-                    <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
-                    {wizardData.customer_email && <p className="text-sm text-slate-500">{wizardData.customer_email}</p>}
-                    {wizardData.customer_phone && <p className="text-sm text-slate-500">{wizardData.customer_phone}</p>}
-                  </div>
-
-                  {wizardData.subject && (
-                    <div className="mb-4">
-                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-                      <p className="text-sm text-slate-700">{wizardData.subject}</p>
-                    </div>
-                  )}
-
-                  {wizardData.items.length > 0 && (
-                    <div className="overflow-x-auto mb-4">
-                      <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th scope="col" className="py-2 text-left text-xs font-semibold text-slate-500 uppercase">Item</th>
-                          <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Qty</th>
-                          <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Price</th>
-                          <th scope="col" className="py-2 text-right text-xs font-semibold text-slate-500 uppercase">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {wizardData.items.map((item) => (
-                          <tr key={item.id}>
-                            <td className="py-2 text-slate-800">{item.product_name || item.description}</td>
-                            <td className="py-2 text-right text-slate-600">{item.quantity}</td>
-                            <td className="py-2 text-right text-slate-600">{formatDisplayCurrency(item.unit_price, wizardData.currency)}</td>
-                            <td className="py-2 text-right font-medium text-slate-800">{formatDisplayCurrency(calcItemTotal(item).total, wizardData.currency)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  <div className="border-t border-slate-200 pt-3 ml-auto w-64">
-                    <div className="flex justify-between text-sm text-slate-600 mb-1">
-                      <span>Subtotal</span>
-                      <span>{formatDisplayCurrency(calcWizardTotals().subtotal, wizardData.currency)}</span>
-                    </div>
-                    {calcWizardTotals().discount > 0 && (
-                      <div className="flex justify-between text-sm text-red-500 mb-1">
-                        <span>Discount</span>
-                        <span>-{formatDisplayCurrency(calcWizardTotals().discount, wizardData.currency)}</span>
-                      </div>
-                    )}
-                    {calcWizardTotals().taxAmount > 0 && (
-                      <div className="flex justify-between text-sm text-slate-600 mb-1">
-                        <span>Tax</span>
-                        <span>{formatDisplayCurrency(calcWizardTotals().taxAmount, wizardData.currency)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-2 mt-1">
-                      <span>Total</span>
-                      <span>{formatDisplayCurrency(calcWizardTotals().total, wizardData.currency)}</span>
-                    </div>
-                  </div>
-
-                  {wizardData.terms && (
-                    <div className="mt-4 p-3 bg-slate-50 rounded-lg text-xs text-slate-500">
-                      <p className="font-medium text-slate-600 mb-1">Terms</p>
-                      <p className="whitespace-pre-wrap">{wizardData.terms}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-between mt-8 pt-6 border-t border-slate-100">
-              <div>
-                {wizardStep > 1 && (
-                  <button onClick={() => setWizardStep((s) => s - 1)}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Back</button>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={handleCloseWizard}
-                  disabled={wizardLoading}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
-                {wizardStep < 4 ? (
-                  <button onClick={() => {
-                    if (wizardStep === 1 && !wizardData.customer_id) { setWizardError("Please select a customer"); return; }
-                    if (wizardStep === 2 && wizardData.items.length === 0) { setWizardError("Please add at least one product"); return; }
-                    setWizardError(null);
-                    setWizardStep((s) => s + 1);
-                  }} disabled={wizardStep === 1 && !wizardData.customer_id}
-                    className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                    Continue
-                  </button>
-                ) : (
-                  <button onClick={handleCreateQuotation} disabled={wizardLoading}
-                    className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                    {wizardLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-                    {wizardLoading ? "Creating..." : "Create Quotation"}
-                  </button>
                 )}
               </div>
             </div>
-          </div>
-        </div>
+          )}
+        </Modal>
       )}
       {ConfirmationDialog}
     </HRPage>
