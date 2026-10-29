@@ -1576,7 +1576,7 @@ export function useConfirmationDialog() {
   const ConfirmationDialog = options ? (
     // Phones: edge-to-edge bottom sheet (buttons already stack full width
     // below sm); from sm up the original centred card.
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="billing-confirm-title">
+    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-900/50 sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="billing-confirm-title">
       <div ref={panelRef} className="w-full max-w-md rounded-t-2xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6">
         <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full ${options.tone === "danger" ? "bg-red-100 text-red-600" : "bg-brand-100 text-brand-600"}`}>
           <AlertCircle size={22} />

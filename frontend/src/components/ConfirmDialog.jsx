@@ -37,7 +37,7 @@ export default function ConfirmDialog({ title, message, confirmLabel = "Delete",
     // Phones: an edge-to-edge bottom sheet with full-width 44px buttons
     // (it used to touch the screen edges as a centred card). From sm up it is
     // the original centred card.
-    <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 sm:items-center sm:p-4">
+    <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-[110] sm:items-center sm:p-4">
       <div
         role="dialog"
         aria-modal="true"

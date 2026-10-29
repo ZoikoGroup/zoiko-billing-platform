@@ -91,7 +91,7 @@ describe("CustomerListPage", () => {
     await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-    const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+    const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
 
     // Company name required, so the Create button starts disabled.
     const createBtn = within(dialog).getByRole("button", { name: /^create/i });
@@ -113,7 +113,7 @@ describe("CustomerListPage", () => {
     await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-    const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+    const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
     fireEvent.change(fieldByLabel(dialog, /company name/i), { target: { value: "New Co" } });
     fireEvent.change(fieldByLabel(dialog, /^email/i), { target: { value: "new@co.com" } });
 
@@ -145,7 +145,7 @@ describe("CustomerListPage", () => {
       renderWithRouter(<CustomerListPage />);
       await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
       fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-      const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+      const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
       fireEvent.change(fieldByLabel(dialog, /company name/i), { target: { value: "New Co" } });
       fireEvent.change(fieldByLabel(dialog, /^email/i), { target: { value: "new@co.com" } });
       fireEvent.click(within(dialog).getByRole("button", { name: /^create/i }));

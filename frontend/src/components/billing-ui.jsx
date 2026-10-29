@@ -1110,7 +1110,9 @@ export function StickyFooter({ children, className = "", contentClassName = "mx-
  * Modal — consistent, accessible overlay
  * ------------------------------------------------------------------ */
 
-const MODAL_SIZES = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl" };
+const MODAL_SIZES = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", "3xl": "max-w-3xl", xl: "max-w-4xl" };
+// Sizes that become a full-screen sheet on phones (forms and long content).
+const FULLSCREEN_ON_PHONE = new Set(["lg", "3xl", "xl"]);
 
 function getFocusableElements(container) {
   if (!container) return [];
@@ -1132,8 +1134,17 @@ export function Modal({
   size = "md",
   closeOnBackdrop = true,
   ariaLabel,
+  // Optional, for form dialogs: a node shown in the header (e.g. a
+  // "Section 2 of 4" chip), a back arrow instead of the close button on
+  // phones, and a ref to the scrolling body (see useActiveSection).
+  headerAside,
+  mobileBack = false,
+  backLabel = "Back",
+  bodyRef,
 }) {
   const panelRef = useRef(null);
+  const isPhone = useMediaQuery(BELOW_SM);
+  const showBack = mobileBack && isPhone;
   const triggerRef = useRef(null);
   // onClose is normally a fresh inline arrow function on every render of the
   // caller. Reading it through a ref (instead of putting it in the effect's
@@ -1208,11 +1219,21 @@ export function Modal({
         // with the header and footer fixed and only the body scrolling, so the
         // footer's primary action is always visible. Unchanged from sm up.
         className={`relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none sm:rounded-3xl ${
-          size === "lg" || size === "xl" ? "max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none" : ""
+          FULLSCREEN_ON_PHONE.has(size) ? "max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none" : ""
         } ${MODAL_SIZES[size] || MODAL_SIZES.md}`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:gap-4 sm:px-6 sm:py-5">
-          <div className="flex min-w-0 items-start gap-3">
+          <div className={`flex min-w-0 gap-3 ${showBack ? "items-center self-center" : "items-start"}`}>
+            {showBack && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={backLabel}
+                className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
             {Icon && (
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 sm:h-10 sm:w-10">
                 <Icon size={20} />
@@ -1223,16 +1244,19 @@ export function Modal({
               {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="-mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:mr-0 sm:h-auto sm:w-auto sm:p-1.5"
-          >
-            <X size={18} />
-          </button>
+          {headerAside && <div className="flex shrink-0 items-center self-center">{headerAside}</div>}
+          {!showBack && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="-mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:mr-0 sm:h-auto sm:w-auto sm:p-1.5"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
-        <div className={`flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5"}`}>{children}</div>
+        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5"}`}>{children}</div>
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:[&>*]:flex-1 sm:gap-3 sm:px-6 sm:py-4">
             {footer}
@@ -1555,6 +1579,7 @@ export { ChevronUp, ChevronDown };
 // One column on phones, two from sm (three from lg with cols={3}). Rows align
 // to the top so a wrapping label never drags its neighbour's input (T1).
 const FORM_GRID_COLS = {
+  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
   1: "grid-cols-1",
   2: "grid-cols-1 sm:grid-cols-2",
   3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
@@ -1562,6 +1587,32 @@ const FORM_GRID_COLS = {
 
 export function FormGrid({ cols = 2, className = "", children }) {
   return <div className={`grid items-start gap-4 ${FORM_GRID_COLS[cols] || FORM_GRID_COLS[2]} ${className}`}>{children}</div>;
+}
+
+// For long forms split into sections: which section (1-based) is at the top
+// of the scrolling container, and how many there are. Sections are the
+// container's descendants marked with data-form-section.
+export function useActiveSection(scrollRef) {
+  const [state, setState] = useState({ index: 1, total: 0 });
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const sections = Array.from(el.querySelectorAll("[data-form-section]"));
+      const edge = el.getBoundingClientRect().top + 24;
+      let index = 1;
+      sections.forEach((section, i) => {
+        if (section.getBoundingClientRect().top <= edge) index = i + 1;
+      });
+      // At the very end the last section may be too short to reach the top.
+      if (sections.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 2) index = sections.length;
+      setState((prev) => (prev.index === index && prev.total === sections.length ? prev : { index, total: sections.length }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    return () => el.removeEventListener("scroll", update);
+  });
+  return state;
 }
 
 // The one "* Required" note a form shows (T7).
