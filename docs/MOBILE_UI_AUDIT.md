@@ -251,6 +251,8 @@ These depend on production code that is not on `nikhil-new`. They will be picked
   - **All Phase 0.5 and Phase 1 screenshots/measurements were taken with fallback fonts.** The 5 key Phase 1 "after" screenshots were retaken with correct fonts (`shots/phase1/after-fonts/`); their metrics are unchanged (login 0 overflow at 360/390; banner 14% at 390; AI button covers nothing at 390/1280; drawer checks pass). The desktop trial card measures 26% instead of 24% of 1280×800 because Inter is slightly taller. A full sweep with correct fonts is in `shots/phase2/sweep-2026-10-29-before-fonts/`.
 - **"Book a Demo" does nothing (team follow-up, not fixed here).** The "Book a Demo" button in `src/landing/LandingHeader.jsx` has no click handler or link, at every width including desktop. Phase 1 hides it below `sm` to make the auth header fit; on desktop it is still shown and still does nothing. Needs a product decision on where it should go (demo form, calendar link, sales email).
 - **Screenshot history:** the Phase 0.5 sweep screenshots were overwritten by the first Phase 1 sweep (both wrote to `D:\zoiko-local\audit\shots\`). The Phase 0.5 numbers in this document are unaffected (they come from the saved results). From Phase 2 on, every run writes to its own folder (`phaseN\before\`, `phaseN\after\`, `phaseN\sweep-<date>-<label>\`), and the capture scripts refuse to write into a non-empty folder.
+- **Back doesn't close dialogs (follow-up, needs a router change, out of scope).** Esc and the dialog's own Back/✕/Cancel close dialogs; the browser Back button doesn't. Doing it safely means pushing a history entry per open dialog, which interacts with save-then-navigate flows and needs router-level support.
+- **The unsaved-changes guard can't catch the browser Back button (follow-up, needs a router change, out of scope).** The app uses `<BrowserRouter>` rather than a data router, so React Router's navigation blocking (`useBlocker`) isn't available. `useUnsavedChangesGuard` covers reload, tab close and in-app link clicks; Back needs the data router.
 - **Local-environment limitation (not a UI bug):** some dashboard and report queries use PostgreSQL's `date_trunc`, which SQLite lacks (40 errors in the local backend log), so a few charts are empty in the local audit. Production on Postgres is unaffected.
 
 ## 8a. Phase 1 results (re-measured, all 135 route checks)
@@ -316,6 +318,132 @@ Measured with real fonts: before = commit `559d02d` served from a separate workt
 - **Unsaved-changes guard:** the app uses `<BrowserRouter>` (not a data router), so React Router's `useBlocker` isn't available. `useUnsavedChangesGuard` covers reload, tab close and in-app link clicks; the browser Back button isn't intercepted.
 - **Dialogs and Back:** Esc closes dialogs; the browser Back button doesn't. Doing that safely needs history entries that interact with save-then-navigate flows.
 - **`FormPageBar` / `FormActionBar`** (sticky mobile top bar with back, title and step; sticky Cancel/primary footer) are built and tested but not yet used by any page. They are applied to create/edit pages in Phase 3.
+
+## 8c. Phase 3 Step A — customer create/edit form (reference screen)
+
+The customer create and edit dialogs (`customers/customer-form-dialog.jsx`, used by `customer-list.jsx`) are rebuilt on the shared form pattern. Validation, API calls, field names and handlers are unchanged; the billing-country handlers were moved out of the JSX verbatim.
+
+| Acceptance criterion | Result |
+|---|---|
+| Sticky top bar on phones: back, title, "Section X of Y" | **Met.** Back (44×44), "New Customer" / "Edit Customer", "Section 1 of 5" chip that follows the scroll position (create 5 sections, edit 4) |
+| Cancel + Save pinned, safe area, visible at every scroll position | **Met.** Visible and on top at top/middle/bottom at 360 and 412 for create and edit (Save 44px tall), and at 1280 |
+| One column below `sm`, two from `sm` up | **Met.** Every form grid has 1 column at 360/412; 2 at 1280 (billing terms 4 at `lg`, as before) |
+| `*` + one "* Required" note, no "(optional)" | **Met.** One note per form; 0 "(optional)" labels |
+| Mobile card headers (smaller icon, full-width description, `p-4`) | **Met** via `SectionCard` (Phase 2) |
+| Disabled fields / "Coming soon" | **Not applicable:** this form has no disabled or coming-soon fields. The shared styles are in place for forms that do |
+| Unsaved-changes guard only when values differ from the loaded ones, never after save | **Met.** Unchanged form closes at once; an edit asks "Discard changes?" (prompt stacks above the dialog); "Keep editing" keeps input; editing a field back to its loaded value counts as unchanged; after a successful save the dialog closes without a prompt (it unmounts). Reload/in-app links are guarded too. Browser Back is not (router limitation, §8) |
+| AI button doesn't crowd the top bar | **Met.** On phones the form is a full-screen sheet above the app top bar; the AI button is covered while the form is open |
+| No horizontal scroll | **Met.** 0 at 360/412/1280 |
+
+**Supporting changes (shared, optional/non-breaking):**
+- `Modal`: optional `size="3xl"` (full-screen on phones), `headerAside`, `mobileBack`, `bodyRef`.
+- `useActiveSection` hook; `FormGrid cols={4}`.
+- Both confirm dialogs stack above `Modal` (`z-[110]`), so a prompt raised from inside a dialog is never hidden under it.
+
+**Desktop differences (1280):**
+- **Fields grouped into five section cards** (Basic details, Billing terms, Addresses, Tax identifiers, Notes) with icon headers.
+- **Labels use the shared `Field` style** (small uppercase) instead of sentence-case labels.
+- **Same width as before** (`max-w-3xl`); Cancel/Save sit in the dialog's footer bar.
+- **The form is taller** (scrollable height 826px vs 294px before, because of the section headers). Save stays visible throughout.
+- **New behavior on desktop too:** Esc closes the dialog (asking first if edited), focus stays inside the dialog (focus trap) and returns to the opening button afterwards.
+- **No backdrop-click close** (unchanged).
+
+**Test changes (intentional):**
+- `customer-list.test.jsx` and `customer-list.create.bug13.test.jsx` locate the dialog with `getByRole("dialog", { name: /^New Customer$/i })` instead of walking up from the heading (the old path depended on the dialog's inner markup).
+- The "Require Billing Address" test now checks that the label carries `*` and the textarea has `aria-required`, because the shared `Field` renders the asterisk in its own element.
+- New `customer-form-dialog.stepA.test.jsx` (4 tests) covers the guard and the pattern.
+
+Screenshots: `shots/phase3/stepA/before/` and `shots/phase3/stepA/after/` (`create-form__{360,412}__{top,middle,bottom}.png`, `create-form__1280__top.png`, the same for `edit-form`, plus `create-form__360__discard-prompt.png`). A first capture before a header-alignment fix is kept in `after-draft1/`.
+
+### Dialogs with the primary action inside the content (Phase 3 Step B, first item)
+
+Generated by scanning `frontend/src` (scanner kept outside the repo). **76 dialogs**: 15 use the shared `Modal` but put their buttons in the body instead of the `footer` prop; 61 are hand-rolled overlays (`fixed inset-0 …`), which never have the shared pinned footer. Excluded: the three shared confirm sheets (`ConfirmDialog`, the `useConfirmationDialog` sheet and the assistant's confirm, which are short bottom sheets whose buttons are always visible), the super-admin command palette (search overlay, no primary action) and the AI assistant panel's backdrop. Already migrated: customer create/edit (Step A).
+
+**A. Shared `Modal` without a `footer` (15)** — fix: move the action buttons into `footer` (small, mechanical).
+
+| Location | Dialog | Buttons detected |
+|---|---|---|
+| `modules/super-admin/EvaluationProgramsPage.jsx:341` | Create evaluation program | Cancel, Create program |
+| `modules/super-admin/GovernancePage.jsx:103` | Suppress attention item | Cancel |
+| `modules/super-admin/GovernancePage.jsx:226` | *(title computed in code)* | Pause |
+| `modules/super-admin/KillSwitchPage.jsx:49` | *(title computed in code)* | Disable charging |
+| `modules/super-admin/OrganizationsPage.jsx:107` | New Organization | Retry, Create |
+| `modules/super-admin/OverridesPage.jsx:171` | Draft a commercial override | Create draft |
+| `modules/super-admin/Plane1BillingPage.jsx:1341` | *(title computed in code)* | Set Discount, Send Quote, Approve |
+| `modules/super-admin/Plane1BillingPage.jsx:1557` | *(title computed in code)* | Finalize, Send Invoice |
+| `modules/super-admin/ReconciliationPage.jsx:175` | Reconciliation run #${run.id} | Acknowledge, Resolve |
+| `modules/super-admin/SubscriptionsPage.jsx:356` | Create commercial subscription | Cancel, Create subscription |
+| `modules/super-admin/SubscriptionsPage.jsx:418` | Change subscription plan | Cancel, Change plan |
+| `modules/super-admin/SupportAccessPage.jsx:924` | Review emergency access | Submit review |
+| `pages/UsersPage.jsx:73` | *(title computed in code)* | Cancel |
+| `pages/UsersPage.jsx:709` | Delete organization permanently | Delete organization |
+| `pages/UsersPage.jsx:843` | Invite tenant administrator | Create invitation |
+
+**B. Hand-rolled overlays (61)** — fix: rebuild on `Modal` (or `FormModal` for simple forms), with actions in `footer`.
+
+| Location | Dialog | Buttons detected |
+|---|---|---|
+| `modules/billing-admin/PlanChangePanel.jsx:326` | *(title computed in code)* | Not now, Schedule downgrade |
+| `modules/billing/contracts/contract-detail.jsx:896` | Renew Contract | Renew |
+| `modules/billing/contracts/contract-detail.jsx:924` | Terminate Contract | Terminate |
+| `modules/billing/contracts/contract-detail.jsx:944` | Create Amendment | Create Amendment |
+| `modules/billing/contracts/contract-edit.jsx:669` | Active Contract Requires Amendment | Save with Amendment |
+| `modules/billing/contracts/retainers.jsx:330` | Create Retainer | Create |
+| `modules/billing/contracts/retainers.jsx:394` | Edit | Save |
+| `modules/billing/contracts/retainers.jsx:455` | Delete Retainer | Delete |
+| `modules/billing/customers/customer-import-wizard.jsx:713` | Import Customers | Back |
+| `modules/billing/customers/customer-profile.jsx:44` | *(title computed in code)* | Cancel |
+| `modules/billing/payments/collections-case-detail.jsx:217` | Assign Case | (labels computed in code) |
+| `modules/billing/payments/collections-case-detail.jsx:236` | Log Collection Action | (labels computed in code) |
+| `modules/billing/payments/collections-case-detail.jsx:262` | Resolve Collections Case | (labels computed in code) |
+| `modules/billing/payments/credits.jsx:358` | Void Credit Note | Void |
+| `modules/billing/payments/dunning-case-detail.jsx:249` | Resolve Dunning Case | (labels computed in code) |
+| `modules/billing/payments/dunning-case-detail.jsx:268` | Log a Promise to Pay | Save |
+| `modules/billing/payments/dunning-levels.jsx:268` | *(title computed in code)* | Create |
+| `modules/billing/payments/payment-detail.jsx:820` | Reverse Allocation | (labels computed in code) |
+| `modules/billing/payments/payment-detail.jsx:837` | Refund Payment | Process Refund |
+| `modules/billing/payments/payment-list.jsx:714` | Record Payment | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:480` | Start Processing Refund | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:511` | Reject Refund | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:530` | Mark Refund as Failed | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:549` | Cancel Refund | (labels computed in code) |
+| `modules/billing/payments/write-off-detail.jsx:470` | Reverse Write-off | (labels computed in code) |
+| `modules/billing/payments/write-off-detail.jsx:492` | Cancel Write-off | (labels computed in code) |
+| `modules/billing/pricing/currency-pricing.jsx:74` | *(title computed in code)* | Save |
+| `modules/billing/pricing/discount-engine.jsx:193` | *(title computed in code)* | Create Discount |
+| `modules/billing/pricing/discount-engine.jsx:278` | Discount Details | Close |
+| `modules/billing/pricing/pricing-plans.jsx:745` | *(title computed in code)* | (labels computed in code) |
+| `modules/billing/pricing/pricing-plans.jsx:776` | Pricing Preview | (labels computed in code) |
+| `modules/billing/pricing/pricing-rules.jsx:161` | *(title computed in code)* | Create Rule |
+| `modules/billing/pricing/pricing-rules.jsx:229` | Pricing Rule Details | Close |
+| `modules/billing/pricing/tax-pricing.jsx:106` | *(title computed in code)* | Create Tax |
+| `modules/billing/pricing/tax-pricing.jsx:160` | Tax Pricing Details | Close |
+| `modules/billing/pricing/tax-pricing.jsx:287` | Tax Groups | Create, Add |
+| `modules/billing/pricing/tax-pricing.jsx:350` | Members: | Add |
+| `modules/billing/pricing/tier-management.jsx:84` | Add Tier | Add Tier |
+| `modules/billing/pricing/tier-management.jsx:138` | Remove Tier | Remove |
+| `modules/billing/products/categories.jsx:498` | *(title computed in code)* | Create Category |
+| `modules/billing/products/import-wizard.jsx:723` | Import Products & Services | Back |
+| `modules/billing/products/pricing-plans.jsx:549` | *(title computed in code)* | Create Plan |
+| `modules/billing/products/pricing-plans.jsx:646` | Pricing Tiers | Add |
+| `modules/billing/products/product-list.jsx:718` | New Product | Create Product |
+| `modules/billing/products/product-list.jsx:744` | Edit Product | Save Changes |
+| `modules/billing/products/usage-billing.jsx:422` | Create Meter | Create Meter |
+| `modules/billing/products/usage-billing.jsx:511` | Test API Event | Send Event |
+| `modules/billing/quotations/quotation-detail.jsx:720` | Reject Quotation | Reject |
+| `modules/billing/quotations/quotation-detail.jsx:740` | Cancel Quotation | Cancel Quotation |
+| `modules/billing/quotations/quotation-detail.jsx:757` | Convert to Contract | Create Contract |
+| `modules/billing/quotations/quotation-detail.jsx:796` | Convert to Invoice | Convert |
+| `modules/billing/quotations/quotation-list.jsx:714` | New Quotation | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:883` | Change Plan | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:929` | Generate Invoice | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:965` | Pause Subscription | (labels computed in code) |
+| `modules/billing/subscriptions/subscription-detail.jsx:989` | Cancel Subscription | (labels computed in code) |
+| `modules/billing/tax/tax-rate-import-wizard.jsx:693` | Import Tax Rates | Back |
+| `modules/billing/tax/tax-rates.jsx:481` | *(title computed in code)* | Create Tax Rate |
+| `modules/organization-admin/UserManagementPage.jsx:612` | Invite User | Cancel, Send Invite |
+| `modules/organization-admin/UserManagementPage.jsx:713` | Edit User | Cancel, Save Changes |
+| `modules/super-admin/TriagePage.jsx:551` | *(title computed in code)* | (labels computed in code) |
 
 ## 9. Local environment safety notes
 
