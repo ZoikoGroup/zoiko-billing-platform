@@ -440,19 +440,19 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/payments/refund-detail.jsx:549` | Cancel Refund — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/payments/write-off-detail.jsx:470` | Reverse Write-off — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/payments/write-off-detail.jsx:492` | Cancel Write-off — **Migrated (B2)** | (labels computed in code) |
-| `modules/billing/pricing/currency-pricing.jsx:74` | *(title computed in code)* | Save |
-| `modules/billing/pricing/discount-engine.jsx:193` | *(title computed in code)* | Create Discount |
-| `modules/billing/pricing/discount-engine.jsx:278` | Discount Details | Close |
-| `modules/billing/pricing/pricing-plans.jsx:745` | *(title computed in code)* | (labels computed in code) |
-| `modules/billing/pricing/pricing-plans.jsx:776` | Pricing Preview | (labels computed in code) |
-| `modules/billing/pricing/pricing-rules.jsx:161` | *(title computed in code)* | Create Rule |
-| `modules/billing/pricing/pricing-rules.jsx:229` | Pricing Rule Details | Close |
-| `modules/billing/pricing/tax-pricing.jsx:106` | *(title computed in code)* | Create Tax |
-| `modules/billing/pricing/tax-pricing.jsx:160` | Tax Pricing Details | Close |
-| `modules/billing/pricing/tax-pricing.jsx:287` | Tax Groups | Create, Add |
-| `modules/billing/pricing/tax-pricing.jsx:350` | Members: | Add |
-| `modules/billing/pricing/tier-management.jsx:84` | Add Tier | Add Tier |
-| `modules/billing/pricing/tier-management.jsx:138` | Remove Tier | Remove |
+| `modules/billing/pricing/currency-pricing.jsx:74` | *(title computed in code)* — **Migrated (B2)** | Save |
+| `modules/billing/pricing/discount-engine.jsx:193` | *(title computed in code)* — **Migrated (B2)** | Create Discount |
+| `modules/billing/pricing/discount-engine.jsx:278` | Discount Details — **Migrated (B2)** | Close |
+| `modules/billing/pricing/pricing-plans.jsx:745` | *(title computed in code)* — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/pricing/pricing-plans.jsx:776` | Pricing Preview — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/pricing/pricing-rules.jsx:161` | *(title computed in code)* — **Migrated (B2)** | Create Rule |
+| `modules/billing/pricing/pricing-rules.jsx:229` | Pricing Rule Details — **Migrated (B2)** | Close |
+| `modules/billing/pricing/tax-pricing.jsx:106` | *(title computed in code)* — **Migrated (B2)** | Create Tax |
+| `modules/billing/pricing/tax-pricing.jsx:160` | Tax Pricing Details — **Migrated (B2)** | Close |
+| `modules/billing/pricing/tax-pricing.jsx:287` | Tax Groups — **Migrated (B2)** | Create, Add |
+| `modules/billing/pricing/tax-pricing.jsx:350` | Members: — **Migrated (B2)** | Add |
+| `modules/billing/pricing/tier-management.jsx:84` | Add Tier — **Wrapped (B2)** | Add Tier |
+| `modules/billing/pricing/tier-management.jsx:138` | Remove Tier — **Wrapped (B2)** | Remove |
 | `modules/billing/products/categories.jsx:498` | *(title computed in code)* — **Migrated (B2)** | Create Category |
 | `modules/billing/products/import-wizard.jsx:723` | Import Products & Services — **Wrapped (B2)** | Back |
 | `modules/billing/products/pricing-plans.jsx:549` | *(title computed in code)* — **Migrated (B2)** | Create Plan |
@@ -583,6 +583,32 @@ Not caused by B2 (only the dialog shell changed; the field reads and payloads ar
 
 Parity: 0 unexplained across the 5 files. A conversion-script bug was caught before commit: the body dedent cut characters from a column-0 `{JSON.stringify(...)}` inside `<pre>` (a parse error the parity check surfaced); the script now only removes indentation that is there, the file was redone from `HEAD`, and all earlier converted commits re-checked (0 unexplained; B1's `e4791b8` shows 6 items that are its hand restructuring — Plane1 status conditions now drive the footer through a ternary with `?.`, capability notices keep the same conditions merged into one expression, and UsersPage's purge button is the intended `danger` → `destructive`).
 Tests: 4 new `*.dialogs.test.jsx` (product-list incl. the import wizard, categories, pricing-plans incl. tiers, usage-billing) — products module 12 files, 44 passed. Screenshots `shots/phase3/stepB2-products/{before,after,import-before}/`: every primary pinned, visible, 44px on phones, no overflow.
+
+#### B2 results — Pricing (13 dialogs): done
+
+| Dialog | Status | Notes |
+|---|---|---|
+| currency-pricing — Add / Edit Currency Pricing | **Migrated** | Phones: the three 2-column field rows stack (`grid-cols-1 sm:grid-cols-2`); desktop unchanged |
+| discount-engine — Create / Edit Discount; Discount Details | **Migrated** | Create was below the fold at 390 (1333–1371px on 844) |
+| pricing-rules — Create / Edit Pricing Rule; Pricing Rule Details | **Migrated** | Same; the Product / Category ID row stacks on phones |
+| tax-pricing — Create / Edit Tax Pricing; Tax Pricing Details | **Migrated** | |
+| tax-pricing — Tax Groups | **Migrated** (management panel) | `3xl` (full screen on phones), "Add Group" in the header (`headerAside`), footer Close; inline group form and table unchanged. Phones: the Description field used `col-span-2` inside a 1-column grid, which created a phantom second column → `sm:col-span-2` |
+| tax-pricing — Members: *group* | **Migrated** | Opens on top of Tax Groups — see stacking below |
+| pricing-plans — New / Edit Pricing Plan; Pricing Preview | **Migrated** | `dense` (fields come from `PlanFormFields`) |
+| tier-management — Add Tier; Remove Tier | **Wrapped** | Already accessible and deliberately hardened (bug09: `alertdialog`, Esc with focus anywhere, Tab cycle, focus back to the exact opener — all pinned by tests). Rebuilding would change those for no gain; phones get 44px buttons that share the row |
+
+**Shared `Modal` changes in this module:**
+- *Stacking.* A dialog opened from another dialog (Tax Groups → Members) used to mean both shared Modals reacted to Esc (closing both) and both trapped Tab; closing the inner one also unlocked page scroll while the outer was open. `Modal` now keeps a stack: only the top-most handles Esc / Tab, and scroll unlocks when the last closes. Single dialogs behave exactly as before.
+- *`headerAside` alignment.* The header is `justify-between` over three children, so an aside (Tax Groups' "Add Group", the customer form's "Section X of Y" chip) sat in the middle; it now sits next to the ×. **Desktop difference** for the customer form: the section chip moves from mid-header to beside the ×.
+- Footer Cancel / Close buttons that were plain `border` buttons (dark outline) now use the shared secondary button, like every other dialog.
+
+Parity: 0 unexplained across the 6 pricing files and `billing-ui.jsx`. Screenshots at 390 / 1280 (`shots/phase3/stepB2-pricing/{before,after}/`): every primary pinned in the footer and visible, 44px on phones, no overflow. Details dialogs and Members need data the local DB doesn't have; they're covered by tests.
+
+**Tests:** new `currency-pricing.dialogs.test.jsx`, `tax-pricing.dialogs.test.jsx` (incl. the stacked case: first Esc closes only Members, Tax Groups stays open and the page stays locked; second Esc closes it), `pricing-plans.dialogs.test.jsx`, `components/Modal.stack.test.jsx`; extended `discount-engine.bug07` and `pricing-rules.validation.bug08` (they checked the API calls, not that the dialog closes). Pricing + components: 29 files, 196 passed. **Full suite (`--maxWorkers=1`): 148 files, 981 passed. `npm run build` passes** (with `NODE_OPTIONS=--max-old-space-size=3072` on this 8GB machine).
+
+**Pre-existing bug found — B2 stopped here (not fixed, needs a decision):** on `/billing/pricing`, the New / Edit Pricing Plan form can't be typed into: each field takes one character and then loses focus (typing "Gold plan" leaves "G", focus on `<body>`). Cause: `PlanFormFields` (and `PreviewModal`) are components declared *inside* `PricingPlansPage` (`pricing-plans.jsx` ~531, ~771), so every keystroke re-renders the page, React sees a new component type and remounts the fields. Verified in the browser on the commit *before* the Pricing changes — same result. (tier-management.jsx had exactly this bug and fixed it by moving its dialogs to module level — see its comment.) jsdom tests don't catch it because `fireEvent.change` sets the whole value at once.
+
+**Notes (not bugs, not changed):** `discount-engine.jsx`'s form adds its own Esc listener on top of `Modal`'s (redundant today; would bypass the stack if something were ever opened over it). Several pricing form labels aren't linked to their inputs (`htmlFor` / `id`) — accessibility follow-up for Phase 4.
 
 ## 9. Local environment safety notes
 

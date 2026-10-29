@@ -1118,6 +1118,8 @@ export function StickyFooter({ children, className = "", contentClassName = "mx-
  * ------------------------------------------------------------------ */
 
 const MODAL_SIZES = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", "3xl": "max-w-3xl", xl: "max-w-4xl" };
+// Open Modals, oldest first (see the keyboard effect in Modal).
+const OPEN_MODALS = [];
 // Sizes that become a full-screen sheet on phones (forms and long content).
 const FULLSCREEN_ON_PHONE = new Set(["lg", "3xl", "xl"]);
 
@@ -1173,8 +1175,13 @@ export function Modal({
     // Remember whatever had focus before the modal opened so it can be
     // restored on close (e.g. the "New Organization" button that triggered it).
     triggerRef.current = document.activeElement;
+    // Stacked dialogs (e.g. Tax Groups → Members): only the top-most one
+    // handles Esc / Tab, and the page stays scroll-locked until the last closes.
+    const stackId = {};
+    OPEN_MODALS.push(stackId);
 
     const onKey = (e) => {
+      if (OPEN_MODALS[OPEN_MODALS.length - 1] !== stackId) return;
       if (e.key === "Escape") {
         onCloseRef.current?.();
         return;
@@ -1197,7 +1204,8 @@ export function Modal({
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      OPEN_MODALS.splice(OPEN_MODALS.indexOf(stackId), 1);
+      if (OPEN_MODALS.length === 0) document.body.style.overflow = "";
       if (triggerRef.current && typeof triggerRef.current.focus === "function") {
         triggerRef.current.focus();
       }
@@ -1256,7 +1264,7 @@ export function Modal({
               {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
             </div>
           </div>
-          {headerAside && <div className="flex shrink-0 items-center self-center">{headerAside}</div>}
+          {headerAside && <div className="ml-auto flex shrink-0 items-center self-center">{headerAside}</div>}
           {!showBack && (
             <button
               type="button"

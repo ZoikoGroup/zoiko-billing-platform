@@ -3,6 +3,7 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, Clock, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { currencyPricingApi, productApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -71,51 +72,54 @@ function CurrencyFormModal({ show, onClose, onSave, editItem, saving, productMap
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">{editItem ? "Edit Currency Pricing" : "Add Currency Pricing"}</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
-        </div>
-        <div className="px-6 py-4 space-y-4">
-          {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
-                <option value="">Select product...</option>
-                {Object.entries(productMap).map(([id, name]) => (
-                  <option key={id} value={id}>{name}</option>
-                ))}
-              </select>
-            </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
-                {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
+    <Modal
+      open
+      dense
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title={editItem ? "Edit Currency Pricing" : "Add Currency Pricing"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={saving}>{saving ? "Saving..." : editItem ? "Update" : "Save"}</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
+              <option value="">Select product...</option>
+              {Object.entries(productMap).map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
-                <option value="manual">Manual</option><option value="live">Live</option><option value="historical">Historical</option>
-              </select>
-            </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
+              {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
           </div>
         </div>
-        <div className="flex gap-2 justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editItem ? "Update" : "Save"}</button>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
+              <option value="manual">Manual</option><option value="live">Live</option><option value="historical">Historical</option>
+            </select>
+          </div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

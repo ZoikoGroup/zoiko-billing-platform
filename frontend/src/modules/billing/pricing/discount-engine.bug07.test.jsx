@@ -70,3 +70,41 @@ describe("BUG-07 Discount Valid To", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
+
+describe("Discount dialogs (smoke, rebuilt on Modal)", () => {
+  const ROW = { id: 4, name: "Autumn", code: "AUT", discount_type: "coupon", value_type: "percentage", discount_value: 10, status: "active", currency: "INR", valid_from: "2026-01-01T00:00:00" };
+
+  it("Create Discount sends the form and closes the dialog", async () => {
+    const dialog = await openCreate();
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Spring" } });
+    fireEvent.change(within(dialog).getByLabelText("Value *"), { target: { value: "5" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create Discount" }));
+    await waitFor(() => expect(m.create).toHaveBeenCalledTimes(1));
+    expect(m.create.mock.calls[0][0]).toMatchObject({ name: "Spring", discount_value: 5, discount_type: "coupon", value_type: "percentage", status: "draft" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("Edit sends Update Discount with the row id", async () => {
+    m.list.mockResolvedValue({ items: [ROW], total: 1, page: 1, per_page: 20, pages: 1 });
+    m.update.mockResolvedValue({ ...ROW });
+    render(<MemoryRouter><DiscountEnginePage /></MemoryRouter>);
+    await screen.findByText("Autumn");
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit Discount" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Update Discount" }));
+    await waitFor(() => expect(m.update).toHaveBeenCalledTimes(1));
+    expect(m.update.mock.calls[0]).toEqual([4, expect.objectContaining({ name: "Autumn", code: "AUT", discount_value: 10 })]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("View opens Discount Details and Close closes it", async () => {
+    m.list.mockResolvedValue({ items: [ROW], total: 1, page: 1, per_page: 20, pages: 1 });
+    render(<MemoryRouter><DiscountEnginePage /></MemoryRouter>);
+    await screen.findByText("Autumn");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    const dialog = await screen.findByRole("dialog", { name: "Discount Details" });
+    expect(within(dialog).getByText("Autumn")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

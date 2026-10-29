@@ -3,6 +3,7 @@ import {
   Percent, Search, Plus, RefreshCw, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { discountApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -190,119 +191,124 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl" role="dialog" aria-modal="true" aria-labelledby="discount-form-title">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 id="discount-form-title" className="text-lg font-semibold">{editItem ? "Edit Discount" : "Create Discount"}</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      dense
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title={editItem ? "Edit Discount" : "Create Discount"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={saving}>{saving ? "Saving..." : editItem ? "Update Discount" : "Create Discount"}</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label htmlFor="discount-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="discount-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+          <div><label htmlFor="discount-code" className="block text-xs font-medium text-slate-500 mb-1">Code</label><input id="discount-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. SUMMER25" /></div>
         </div>
-        <div className="px-6 py-4 space-y-4">
-          {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label htmlFor="discount-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="discount-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-            <div><label htmlFor="discount-code" className="block text-xs font-medium text-slate-500 mb-1">Code</label><input id="discount-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. SUMMER25" /></div>
+        <div><label htmlFor="discount-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="discount-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label htmlFor="discount-discount-type" className="block text-xs font-medium text-slate-500 mb-1">Discount Type *</label>
+            <select id="discount-discount-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.discount_type} onChange={e => set("discount_type", e.target.value)}>
+              {DISCOUNT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
-          <div><label htmlFor="discount-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="discount-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label htmlFor="discount-discount-type" className="block text-xs font-medium text-slate-500 mb-1">Discount Type *</label>
-              <select id="discount-discount-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.discount_type} onChange={e => set("discount_type", e.target.value)}>
-                {DISCOUNT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div><label htmlFor="discount-value-type" className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
-              <select id="discount-value-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
-                {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div><label htmlFor="discount-value" className="block text-xs font-medium text-slate-500 mb-1">Value *</label><input id="discount-value" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.discount_value} onChange={e => set("discount_value", e.target.value)} /></div>
+          <div><label htmlFor="discount-value-type" className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
+            <select id="discount-value-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
+              {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label htmlFor="discount-currency" className="block text-xs font-medium text-slate-500 mb-1">Currency</label>
-              <select id="discount-currency" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
-                {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-            <div><label htmlFor="discount-min-order-amount" className="block text-xs font-medium text-slate-500 mb-1">Min Order Amount</label><input id="discount-min-order-amount" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.min_order_amount} onChange={e => set("min_order_amount", e.target.value)} /></div>
-            <div><label htmlFor="discount-max-discount" className="block text-xs font-medium text-slate-500 mb-1">Max Discount</label><input id="discount-max-discount" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.max_discount_amount} onChange={e => set("max_discount_amount", e.target.value)} /></div>
+          <div><label htmlFor="discount-value" className="block text-xs font-medium text-slate-500 mb-1">Value *</label><input id="discount-value" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.discount_value} onChange={e => set("discount_value", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label htmlFor="discount-currency" className="block text-xs font-medium text-slate-500 mb-1">Currency</label>
+            <select id="discount-currency" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
+              {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label htmlFor="discount-valid-from" className="block text-xs font-medium text-slate-500 mb-1">Valid From *</label><input id="discount-valid-from" type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_from} onChange={e => set("valid_from", e.target.value)} /></div>
-            <div>
-              <label htmlFor="discount-valid-to" className="block text-xs font-medium text-slate-500 mb-1">Valid To</label>
-              {/* The picker can't go before Valid From (the backend rejects
-                  Valid To <= Valid From). Past dates are NOT blocked outright:
-                  existing discounts legitimately carry historical dates. */}
-              {/* The range rule is checked as you type, not only on Save: a typed
-                  year bypasses the picker's min, so a past date used to look
-                  accepted until Save. */}
-              <input id="discount-valid-to" type="datetime-local" min={form.valid_from || undefined}
-                aria-describedby="discount-valid-to-hint" aria-invalid={liveRangeError ? "true" : undefined}
-                className={`w-full border rounded-lg px-3 py-2 text-sm ${liveRangeError ? "border-red-400" : ""}`} value={form.valid_to} onChange={e => set("valid_to", e.target.value)} />
-              {liveRangeError ? (
-                <p id="discount-valid-to-hint" role="alert" className="mt-1 text-xs text-red-600">{liveRangeError}</p>
-              ) : (
-                <p id="discount-valid-to-hint" className={`mt-1 text-xs ${discountDatesNote(form, Boolean(editItem)).tone === "warn" ? "text-amber-600" : "text-slate-500"}`}>
-                  {discountDatesNote(form, Boolean(editItem)).text}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label htmlFor="discount-status" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-              <select id="discount-status" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
-                <option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option>
-              </select>
-            </div>
-            <div><label htmlFor="discount-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="discount-usage-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
-            <div><label htmlFor="discount-per-customer-limit" className="block text-xs font-medium text-slate-500 mb-1">Per Customer Limit</label><input id="discount-per-customer-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.per_customer_limit} onChange={e => set("per_customer_limit", e.target.value)} /></div>
-          </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.auto_apply} onChange={e => set("auto_apply", e.target.checked)} className="rounded" /> Auto Apply</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.stackable} onChange={e => set("stackable", e.target.checked)} className="rounded" /> Stackable</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.first_order_only} onChange={e => set("first_order_only", e.target.checked)} className="rounded" /> First Order Only</label>
+          <div><label htmlFor="discount-min-order-amount" className="block text-xs font-medium text-slate-500 mb-1">Min Order Amount</label><input id="discount-min-order-amount" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.min_order_amount} onChange={e => set("min_order_amount", e.target.value)} /></div>
+          <div><label htmlFor="discount-max-discount" className="block text-xs font-medium text-slate-500 mb-1">Max Discount</label><input id="discount-max-discount" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.max_discount_amount} onChange={e => set("max_discount_amount", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label htmlFor="discount-valid-from" className="block text-xs font-medium text-slate-500 mb-1">Valid From *</label><input id="discount-valid-from" type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.valid_from} onChange={e => set("valid_from", e.target.value)} /></div>
+          <div>
+            <label htmlFor="discount-valid-to" className="block text-xs font-medium text-slate-500 mb-1">Valid To</label>
+            {/* The picker can't go before Valid From (the backend rejects
+                Valid To <= Valid From). Past dates are NOT blocked outright:
+                existing discounts legitimately carry historical dates. */}
+            {/* The range rule is checked as you type, not only on Save: a typed
+                year bypasses the picker's min, so a past date used to look
+                accepted until Save. */}
+            <input id="discount-valid-to" type="datetime-local" min={form.valid_from || undefined}
+              aria-describedby="discount-valid-to-hint" aria-invalid={liveRangeError ? "true" : undefined}
+              className={`w-full border rounded-lg px-3 py-2 text-sm ${liveRangeError ? "border-red-400" : ""}`} value={form.valid_to} onChange={e => set("valid_to", e.target.value)} />
+            {liveRangeError ? (
+              <p id="discount-valid-to-hint" role="alert" className="mt-1 text-xs text-red-600">{liveRangeError}</p>
+            ) : (
+              <p id="discount-valid-to-hint" className={`mt-1 text-xs ${discountDatesNote(form, Boolean(editItem)).tone === "warn" ? "text-amber-600" : "text-slate-500"}`}>
+                {discountDatesNote(form, Boolean(editItem)).text}
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex gap-2 justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editItem ? "Update Discount" : "Create Discount"}</button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label htmlFor="discount-status" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+            <select id="discount-status" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
+              <option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option>
+            </select>
+          </div>
+          <div><label htmlFor="discount-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="discount-usage-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
+          <div><label htmlFor="discount-per-customer-limit" className="block text-xs font-medium text-slate-500 mb-1">Per Customer Limit</label><input id="discount-per-customer-limit" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.per_customer_limit} onChange={e => set("per_customer_limit", e.target.value)} /></div>
+        </div>
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.auto_apply} onChange={e => set("auto_apply", e.target.checked)} className="rounded" /> Auto Apply</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.stackable} onChange={e => set("stackable", e.target.checked)} className="rounded" /> Stackable</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.first_order_only} onChange={e => set("first_order_only", e.target.checked)} className="rounded" /> First Order Only</label>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function DetailModal({ show, onClose, item }) {
   if (!show || !item) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">Discount Details</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title="Discount Details"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
+          <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code || "—"}</span></div>
+          <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.discount_type?.replace("_", " ")}</span></div>
+          <div><span className="text-slate-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.discount_value}%` : formatDisplayCurrency(item.discount_value)}</span></div>
+          <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
+          <div><span className="text-slate-500">Currency:</span> <span className="ml-2">{item.currency}</span></div>
+          <div><span className="text-slate-500">Valid:</span> <span className="ml-2">{formatDisplayDate(item.valid_from)}{item.valid_to ? ` — ${formatDisplayDate(item.valid_to)}` : ""}</span></div>
+          <div><span className="text-slate-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
+          {item.min_order_amount && <div><span className="text-slate-500">Min Order:</span> <span className="ml-2">{formatDisplayCurrency(item.min_order_amount)}</span></div>}
+          {item.max_discount_amount && <div><span className="text-slate-500">Max Discount:</span> <span className="ml-2">{formatDisplayCurrency(item.max_discount_amount)}</span></div>}
+          <div><span className="text-slate-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
+          <div><span className="text-slate-500">Auto Apply:</span> <span className="ml-2">{item.auto_apply ? "Yes" : "No"}</span></div>
         </div>
-        <div className="px-6 py-4 space-y-3">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
-            <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code || "—"}</span></div>
-            <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.discount_type?.replace("_", " ")}</span></div>
-            <div><span className="text-slate-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.discount_value}%` : formatDisplayCurrency(item.discount_value)}</span></div>
-            <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
-            <div><span className="text-slate-500">Currency:</span> <span className="ml-2">{item.currency}</span></div>
-            <div><span className="text-slate-500">Valid:</span> <span className="ml-2">{formatDisplayDate(item.valid_from)}{item.valid_to ? ` — ${formatDisplayDate(item.valid_to)}` : ""}</span></div>
-            <div><span className="text-slate-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
-            {item.min_order_amount && <div><span className="text-slate-500">Min Order:</span> <span className="ml-2">{formatDisplayCurrency(item.min_order_amount)}</span></div>}
-            {item.max_discount_amount && <div><span className="text-slate-500">Max Discount:</span> <span className="ml-2">{formatDisplayCurrency(item.max_discount_amount)}</span></div>}
-            <div><span className="text-slate-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
-            <div><span className="text-slate-500">Auto Apply:</span> <span className="ml-2">{item.auto_apply ? "Yes" : "No"}</span></div>
-          </div>
-          {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
-        </div>
-        <div className="flex justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
-        </div>
+        {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
       </div>
-    </div>
+    </Modal>
   );
 }
 
