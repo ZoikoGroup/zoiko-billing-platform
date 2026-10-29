@@ -485,11 +485,15 @@ export function SectionCard({
   children,
   className = "",
   bodyClassName = "mt-4",
+  // Desktop-only density for long form dialogs: from lg the card uses tighter
+  // padding and a one-line header (icon, title, description). Phones are
+  // unaffected.
+  compact = false,
 }) {
   const tone = resolveAccent(accent);
   const wrapperClasses = `${SECTION_CARD_VARIANTS[variant] || SECTION_CARD_VARIANTS.standard} ${
     variant === "hero" ? tone.heroBorder : ""
-  } ${className}`;
+  } ${compact ? "lg:p-4" : ""} ${className}`;
   const hasHeader = Boolean(title || description || Icon || actions || meta);
 
   return (
@@ -499,10 +503,10 @@ export function SectionCard({
           {/* Grid: on phones description/meta run full width under the
               icon + title row (T5); from sm up they sit indented under the
               title as before. */}
-          <div className={`grid min-w-0 items-start gap-x-3 ${Icon ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>
+          <div className={`grid min-w-0 items-start gap-x-3 ${Icon ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"} ${compact ? "lg:flex lg:flex-wrap lg:items-center lg:gap-x-2.5 lg:gap-y-0" : ""}`}>
             {Icon && (
               <div
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:row-span-3 sm:h-9 sm:w-9 ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:row-span-3 sm:h-9 sm:w-9 ${compact ? "lg:h-7 lg:w-7 lg:rounded-lg" : ""} ${
                   variant === "hero" ? tone.iconChip : SECTION_CARD_ICON_CLASSES[variant] || SECTION_CARD_ICON_CLASSES.standard
                 }`}
               >
@@ -510,7 +514,7 @@ export function SectionCard({
               </div>
             )}
             {title && <h3 className={`min-w-0 self-center wrap-break-word sm:self-auto ${SECTION_CARD_TITLE_CLASSES[variant] || SECTION_CARD_TITLE_CLASSES.standard}`}>{title}</h3>}
-            {description && <p className={`mt-1 text-xs leading-relaxed text-slate-500 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{description}</p>}
+            {description && <p className={`mt-1 text-xs leading-relaxed text-slate-500 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""} ${compact ? "lg:mt-0" : ""}`}>{description}</p>}
             {meta && <p className={`mt-1 text-xs font-medium text-slate-400 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{meta}</p>}
           </div>
           {actions && <div className="max-w-full shrink-0">{actions}</div>}
@@ -1590,8 +1594,28 @@ const FORM_GRID_COLS = {
   3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
 };
 
-export function FormGrid({ cols = 2, className = "", children }) {
-  return <div className={`grid items-start gap-4 ${FORM_GRID_COLS[cols] || FORM_GRID_COLS[2]} ${className}`}>{children}</div>;
+// `dense`: from lg, rows sit closer (gap-y-3). Phones unchanged.
+export function FormGrid({ cols = 2, dense = false, className = "", children }) {
+  return <div className={`grid items-start gap-4 ${dense ? "lg:gap-y-3" : ""} ${FORM_GRID_COLS[cols] || FORM_GRID_COLS[2]} ${className}`}>{children}</div>;
+}
+
+// One section of a long form dialog (the customer-form pattern): a
+// SectionCard marked for useActiveSection. Phones: the standard card (p-4,
+// full-width description). From lg: compact padding and a one-line header so
+// sectioned forms stay close to their unsectioned height.
+// From lg the fields inside are slightly denser too: shorter controls and
+// label spacing (desktop only; phones keep the 44px+ touch sizes).
+const FORM_SECTION_DENSE =
+  "lg:[&_label]:mb-1 lg:[&_input:not([type=checkbox]):not([type=radio])]:py-2 lg:[&_select]:py-2 lg:[&_textarea]:py-2";
+
+export function FormSection({ title, description, icon, children, className = "" }) {
+  return (
+    <div data-form-section className={`${FORM_SECTION_DENSE} ${className}`}>
+      <SectionCard title={title} description={description} icon={icon} compact className="lg:py-3" bodyClassName="mt-4 lg:mt-3">
+        {children}
+      </SectionCard>
+    </div>
+  );
 }
 
 // For long forms split into sections: which section (1-based) is at the top

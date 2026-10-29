@@ -26,7 +26,7 @@ import {
   FormGrid,
   Modal,
   RequiredNote,
-  SectionCard,
+  FormSection,
   useActiveSection,
   useUnsavedChangesGuard,
 } from "../../../components/billing-ui";
@@ -51,16 +51,6 @@ const PAYMENT_TERMS = [
 ];
 
 const SELECT_CLASS = `${FORM_CONTROL_CLASS} bg-white`;
-
-function Section({ title, description, icon, children }) {
-  return (
-    <div data-form-section>
-      <SectionCard title={title} description={description} icon={icon} bodyClassName="mt-4">
-        {children}
-      </SectionCard>
-    </div>
-  );
-}
 
 /**
  * Props:
@@ -190,7 +180,7 @@ export default function CustomerFormDialog({
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4 lg:space-y-3">
         <RequiredNote />
 
         {limitError ? (
@@ -202,8 +192,8 @@ export default function CustomerFormDialog({
           </div>
         ) : null}
 
-        <Section title="Basic details" description="Who this account is and how to reach them." icon={Users}>
-          <FormGrid>
+        <FormSection title="Basic details" description="Who this account is and how to reach them." icon={Users}>
+          <FormGrid dense>
             {textField("company_name", "Company Name", { required: true })}
             {textField("display_name", "Display Name")}
             {textField("email", "Email", { type: "email", required: isCreate })}
@@ -222,10 +212,10 @@ export default function CustomerFormDialog({
               </select>
             </Field>
           </FormGrid>
-        </Section>
+        </FormSection>
 
-        <Section title="Billing terms" description="Currency, payment terms and credit." icon={CreditCard}>
-          <FormGrid cols={4}>
+        <FormSection title="Billing terms" description="Currency, payment terms and credit." icon={CreditCard}>
+          <FormGrid cols={4} dense>
             <Field label="Currency" htmlFor={`${idp}-currency`}>
               <select id={`${idp}-currency`} value={values.currency || ""} onChange={set("currency")} className={SELECT_CLASS}>
                 <option value="">Select</option>
@@ -279,10 +269,10 @@ export default function CustomerFormDialog({
               />
             </Field>
           </FormGrid>
-        </Section>
+        </FormSection>
 
-        <Section title="Addresses" description="Where invoices and goods are sent." icon={MapPin}>
-          <FormGrid>
+        <FormSection title="Addresses" description="Where invoices and goods are sent." icon={MapPin}>
+          <FormGrid dense>
             <Field label="Billing Address" htmlFor={`${idp}-billing_address`} required={requireBillingAddress}>
               <textarea
                 id={`${idp}-billing_address`}
@@ -332,10 +322,10 @@ export default function CustomerFormDialog({
               </>
             )}
           </FormGrid>
-        </Section>
+        </FormSection>
 
-        <Section title="Tax identifiers" description="Registration numbers printed on invoices." icon={Receipt}>
-          <FormGrid>
+        <FormSection title="Tax identifiers" description="Registration numbers printed on invoices." icon={Receipt}>
+          <FormGrid dense>
             {!isCreate &&
               textField("tax_id", "Tax ID", { required: requireTaxId, placeholder: "GST / VAT / Tax registration number", ariaLabel: "Tax ID" })}
             {taxFields.map((f) => (
@@ -359,14 +349,14 @@ export default function CustomerFormDialog({
               <p className="text-xs text-slate-500 sm:col-span-2">A tax ID is required for new customers: fill in at least one of the fields above.</p>
             )}
           </FormGrid>
-        </Section>
+        </FormSection>
 
         {isCreate && (
-          <Section title="Notes" description="Internal notes, not shown to the customer." icon={FileText}>
+          <FormSection title="Notes" description="Internal notes, not shown to the customer." icon={FileText}>
             <Field label="Notes" htmlFor={`${idp}-notes`}>
               <textarea id={`${idp}-notes`} rows={3} value={values.notes || ""} onChange={set("notes")} className={FORM_CONTROL_CLASS} />
             </Field>
-          </Section>
+          </FormSection>
         )}
       </div>
     </Modal>
