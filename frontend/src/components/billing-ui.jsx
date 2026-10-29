@@ -1145,7 +1145,7 @@ export function Modal({
   // "Section 2 of 4" chip), a back arrow instead of the close button on
   // phones, and a ref to the scrolling body (see useActiveSection).
   headerAside,
-  // "danger" tints the icon chip red for destructive dialogs.
+  // "danger" tints the icon chip red for destructive dialogs, "warning" amber.
   tone = "default",
   mobileBack = false,
   backLabel = "Back",
@@ -1247,7 +1247,7 @@ export function Modal({
               </button>
             )}
             {Icon && (
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${tone === "danger" ? "bg-red-50 text-red-600" : "bg-brand-50 text-brand-600"}`}>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${tone === "danger" ? "bg-red-50 text-red-600" : tone === "warning" ? "bg-amber-50 text-amber-500" : "bg-brand-50 text-brand-600"}`}>
                 <Icon size={20} />
               </span>
             )}

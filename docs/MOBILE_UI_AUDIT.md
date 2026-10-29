@@ -415,13 +415,13 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | Location | Dialog | Buttons detected |
 |---|---|---|
 | `modules/billing-admin/PlanChangePanel.jsx:326` | *(title computed in code)* | Not now, Schedule downgrade |
-| `modules/billing/contracts/contract-detail.jsx:896` | Renew Contract | Renew |
-| `modules/billing/contracts/contract-detail.jsx:924` | Terminate Contract | Terminate |
-| `modules/billing/contracts/contract-detail.jsx:944` | Create Amendment | Create Amendment |
-| `modules/billing/contracts/contract-edit.jsx:669` | Active Contract Requires Amendment | Save with Amendment |
-| `modules/billing/contracts/retainers.jsx:330` | Create Retainer | Create |
-| `modules/billing/contracts/retainers.jsx:394` | Edit | Save |
-| `modules/billing/contracts/retainers.jsx:455` | Delete Retainer | Delete |
+| `modules/billing/contracts/contract-detail.jsx:896` | Renew Contract — **Migrated (B2)** | Renew |
+| `modules/billing/contracts/contract-detail.jsx:924` | Terminate Contract — **Migrated (B2)** | Terminate |
+| `modules/billing/contracts/contract-detail.jsx:944` | Create Amendment — **Migrated (B2)** | Create Amendment |
+| `modules/billing/contracts/contract-edit.jsx:669` | Active Contract Requires Amendment — **Migrated (B2)** | Save with Amendment |
+| `modules/billing/contracts/retainers.jsx:330` | Create Retainer — **Migrated (B2)** | Create |
+| `modules/billing/contracts/retainers.jsx:394` | Edit — **Migrated (B2)** | Save |
+| `modules/billing/contracts/retainers.jsx:455` | Delete Retainer — **Migrated (B2)** | Delete |
 | `modules/billing/customers/customer-import-wizard.jsx:713` | Import Customers | Back |
 | `modules/billing/customers/customer-profile.jsx:44` | *(title computed in code)* | Cancel |
 | `modules/billing/payments/collections-case-detail.jsx:217` | Assign Case — **Migrated (B2)** | (labels computed in code) |
@@ -549,6 +549,25 @@ Measured at 390 and 1280 (sent/accepted quotations via route interception — th
 Removed entries by rule, Payments / Subs & quotes: static className 120 / 77 · overlay close → onClose 16 / 9 · WizardStep → Stepper 22 / 22 · title text → title 16 / 9 · panel click guard 11 / 7 · dialog semantics 10 / 6 · × button 6 / 4 · heading id + aria-labelledby 10 / 6 · intro → description 2 / 6.
 
 **Desktop tightening for B2 dialogs.** The `lg` tightening (`e0dd731`) lives in `FormSection` (sectioned forms); the B2 dialogs are short or wizard forms and were not built with it. `39cc4f7` adds `Modal dense`, which applies the same lg-only field density, to the 17 B2 dialogs that contain fields. Measured body height at 1280: Record Payment 484 → 470px, New Quotation 358 → 346px, New Dunning Level 319 → 319, Convert to Invoice 274 → 274 (their fields were already `py-2`/`mb-1`); 390 identical. Section-card tightening doesn't apply (no sections).
+
+#### B2 results — Contracts (7 dialogs): done
+
+| Dialog | Status | Notes |
+|---|---|---|
+| contract-detail — Renew / Terminate / Create Amendment | **Migrated** | `dense`; intro lines → description |
+| contract-edit — Active Contract Requires Amendment | **Migrated** | Amber warning icon kept via a new optional `Modal` `tone="warning"` |
+| retainers — Create Retainer / Edit *name* | **Migrated** | Had no backdrop or Esc close (× and Cancel only): `closeOnBackdrop={false}`; Esc now closes through the shared `Modal` (same as every converted dialog) |
+| retainers — Delete Retainer | **Migrated** | Centred red icon → `icon` + `tone="danger"`, `destructive` button |
+
+Parity (`parity.mjs`, working tree vs `HEAD`): 0 unexplained in the three contracts files; one intended difference in `billing-ui.jsx` (the icon chip `className` gained the `warning` branch). Tests: new `contract-detail.dialogs.test.jsx`, `contract-edit.dialogs.test.jsx`, `retainers.dialogs.test.jsx` — 10 passed (there were no contracts tests before). Screenshots at 390 / 1280 (contract via route interception, retainers via a faked list): every primary pinned in the footer, visible, 44px on phones, no overflow — before, 36–38px and mid-screen. `shots/phase3/stepB2-contracts/{before,after}/`. Create Amendment's trigger is inside the Amendments tab, so it has no screenshot; it is covered by its test.
+
+**Follow-up (minor, behaviour unchanged):** Terminate Contract's Cancel clears the typed reason; closing by backdrop did not, and Esc / × (new via `Modal`) behave like the backdrop, so a reopened dialog can still show the old reason.
+
+**Pre-existing bug found — B2 stopped here (not fixed, needs a decision):** the Retainers page reads product fields the API doesn't return. The products API (`ProductResponse`) returns `code`, `default_price`, `billing_frequency`, `is_active`/`status`; `retainers.jsx` reads `r.sku`, `r.unit_price` / `r.price`, `r.billing_period`. Verified in the browser on local data (created a quarterly retainer, SKU `RET-PROBE`, price 1500 — the API stores all three correctly):
+- the list shows "—" for SKU, price and billing period, and the "total value" tile sums to 0;
+- Edit opens with SKU and price empty and billing period reset to **Monthly**; Save stays disabled until a price is re-typed, and saving then **changes a quarterly retainer to monthly** (and the code to the new SKU field) without the user noticing.
+- Separately, the Billing Period options "Semi-Annual" (`semi_annual`) and "Annual" (`annual`) don't exist in the API's `BillingFrequency` (`one_time, monthly, quarterly, yearly, usage_based, recurring`): creating one fails with "Billing frequency: Input should be …".
+Not caused by B2 (only the dialog shell changed; the field reads and payloads are byte-for-byte the same, per parity).
 
 ## 9. Local environment safety notes
 
