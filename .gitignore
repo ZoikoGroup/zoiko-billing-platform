@@ -53,6 +53,8 @@ ZOIKO_BILLING_ORGANIZATION_INITIALIZATION_AUDIT.md
 docs/*
 !docs/SUPER_ADMIN_FULL_AUTHENTICATED_QA_REPORT.md
 !docs/SUPER_ADMIN_PHASE3_FULL_SYSTEM_QA_REPORT.md
+!docs/MOBILE_UI_AUDIT.md
+!docs/MOBILE_UI_CHANGELOG.md
 
 # Phase 3 architecture remediation, Mandatory Fix 7 (documentation governance):
 # the exceptions below are the Super Admin documents classified AUTHORITATIVE
@@ -88,3 +90,6 @@ docs/*
 !docs/SUPER_ADMIN_PHASE4_IMPLEMENTATION.md
 !docs/SUPER_ADMIN_PHASE4_QA_REPORT.md
 !docs/SUPER_ADMIN_PHASE4_ACCEPTANCE_REPORT.md
+
+# Local-only Playwright test accounts (throwaway SQLite); never commit.
+frontend/tests/.local-credentials.json
