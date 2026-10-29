@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -546,156 +547,159 @@ export default function ProductPricingPlansPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-plan-form-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 id="product-pricing-plan-form-title" className="text-xl font-bold text-slate-800">{editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}</h2>
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
+        <Modal
+          open
+          dense
+          onClose={() => { setShowForm(false); setFormError(null); }}
+          closeOnBackdrop={false}
+          title={editPlan ? "Edit Pricing Plan" : "New Pricing Plan"}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => { setShowForm(false); setFormError(null); }}>Cancel</Button>
+              <Button variant="primary" onClick={handleSubmit} disabled={formLoading || !formData.name || !formData.product_id}>{formLoading ? "Saving..." : editPlan ? "Update Plan" : "Create Plan"}</Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              <AlertCircle size={16} />{formError}
             </div>
-            {formError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                <AlertCircle size={16} />{formError}
-              </div>
-            )}
-            <div className="space-y-4">
+          )}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+              <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Product *</label>
+              {formData.product_id && selectedProductLabel ? (
+                <div className="flex items-center justify-between px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-slate-50">
+                  <span className="text-slate-800">{selectedProductLabel}</span>
+                  <button type="button" onClick={() => { setFormData((p) => ({ ...p, product_id: "" })); setSelectedProductLabel(""); }}
+                    className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <ProductSelector
+                  compact
+                  showFavorites={false}
+                  showRecent={false}
+                  fetchProducts={(params) => productApi.list(params)}
+                  fetchCategories={(params) => productApi.listCategories(params)}
+                  onSelect={(product) => { setFormData((p) => ({ ...p, product_id: product.id })); setSelectedProductLabel(product.name); }}
+                  placeholder="Search products by name, SKU, or category..."
+                />
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
-                <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                <select value={formData.plan_type} onChange={(e) => setFormData((p) => ({ ...p, plan_type: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {PLAN_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Billing Interval</label>
+                <select value={formData.billing_interval} onChange={(e) => setFormData((p) => ({ ...p, billing_interval: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {BILLING_INTERVAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Price *</label>
+                <input type="number" step="0.01" min="0" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Product *</label>
-                {formData.product_id && selectedProductLabel ? (
-                  <div className="flex items-center justify-between px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-slate-50">
-                    <span className="text-slate-800">{selectedProductLabel}</span>
-                    <button type="button" onClick={() => { setFormData((p) => ({ ...p, product_id: "" })); setSelectedProductLabel(""); }}
-                      className="text-xs text-brand-600 hover:text-brand-700 font-medium">
-                      Change
-                    </button>
-                  </div>
-                ) : (
-                  <ProductSelector
-                    compact
-                    showFavorites={false}
-                    showRecent={false}
-                    fetchProducts={(params) => productApi.list(params)}
-                    fetchCategories={(params) => productApi.listCategories(params)}
-                    onSelect={(product) => { setFormData((p) => ({ ...p, product_id: product.id })); setSelectedProductLabel(product.name); }}
-                    placeholder="Search products by name, SKU, or category..."
-                  />
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                  <select value={formData.plan_type} onChange={(e) => setFormData((p) => ({ ...p, plan_type: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {PLAN_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Billing Interval</label>
-                  <select value={formData.billing_interval} onChange={(e) => setFormData((p) => ({ ...p, billing_interval: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {BILLING_INTERVAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Price *</label>
-                  <input type="number" step="0.01" min="0" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
-                  <input type="number" step="0.01" min="0" value={formData.setup_fee} onChange={(e) => setFormData((p) => ({ ...p, setup_fee: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Trial Days</label>
-                  <input type="number" min="0" value={formData.trial_days} onChange={(e) => setFormData((p) => ({ ...p, trial_days: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" min={editPlan?.effective_from && editPlan.effective_from < localToday() ? editPlan.effective_from : localToday()} value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                <input type="date" min={formData.effective_from || undefined} value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
+                <label className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
+                <input type="number" step="0.01" min="0" value={formData.setup_fee} onChange={(e) => setFormData((p) => ({ ...p, setup_fee: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleSubmit} disabled={formLoading || !formData.name || !formData.product_id}
-                className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                {formLoading ? "Saving..." : editPlan ? "Update Plan" : "Create Plan"}
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Trial Days</label>
+                <input type="number" min="0" value={formData.trial_days} onChange={(e) => setFormData((p) => ({ ...p, trial_days: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
+                <input type="date" min={editPlan?.effective_from && editPlan.effective_from < localToday() ? editPlan.effective_from : localToday()} value={formData.effective_from} onChange={(e) => setFormData((p) => ({ ...p, effective_from: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
+              <input type="date" min={formData.effective_from || undefined} value={formData.effective_to} onChange={(e) => setFormData((p) => ({ ...p, effective_to: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showTierModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div role="dialog" aria-modal="true" aria-labelledby="product-pricing-tiers-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 id="product-pricing-tiers-title" className="text-xl font-bold text-slate-800">Pricing Tiers</h2>
-              <button onClick={() => setShowTierModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
+        <Modal
+          open
+          dense
+          onClose={() => setShowTierModal(false)}
+          closeOnBackdrop={false}
+          title="Pricing Tiers"
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowTierModal(false)}>Close</Button>
+            </>
+          }
+        >
+          {tierError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              <AlertCircle size={16} />{tierError}
             </div>
-            {tierError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                <AlertCircle size={16} />{tierError}
-              </div>
-            )}
+          )}
 
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              <input type="number" placeholder="From" value={tierFormData.from} onChange={(e) => setTierFormData((p) => ({ ...p, from: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              <input type="number" placeholder="To" value={tierFormData.to} onChange={(e) => setTierFormData((p) => ({ ...p, to: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              <input type="number" step="0.01" placeholder="Price" value={tierFormData.price} onChange={(e) => setTierFormData((p) => ({ ...p, price: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              <input type="number" step="0.01" min="0" placeholder="Flat fee" value={tierFormData.flat_fee} onChange={(e) => setTierFormData((p) => ({ ...p, flat_fee: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              <button onClick={addTier} disabled={tierFormLoading || !tierFormData.from || !tierFormData.price}
-                className="px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
-                {tierFormLoading ? "..." : "Add"}
-              </button>
-            </div>
-
-            {tiers.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-4">No tiers configured yet</p>
-            ) : (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {tiers.map((tier, i) => (
-                  <div key={tier.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                    <div className="text-sm">
-                      <span className="font-medium text-slate-800">{tier.from_quantity}</span>
-                      <span className="text-slate-500 mx-1">→</span>
-                      <span className="font-medium text-slate-800">{tier.to_quantity ?? "∞"}</span>
-                      <span className="text-slate-500 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
-                      {tier.flat_fee > 0 && <span className="text-slate-500 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
-                    </div>
-                    <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label={`Delete tier ${tier.from_quantity}–${tier.to_quantity ?? "∞"}`}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex justify-end mt-6">
-              <button onClick={() => setShowTierModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Close</button>
-            </div>
+          <div className="grid grid-cols-2 gap-2 mb-4 sm:grid-cols-5">
+            <input type="number" placeholder="From" value={tierFormData.from} onChange={(e) => setTierFormData((p) => ({ ...p, from: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <input type="number" placeholder="To" value={tierFormData.to} onChange={(e) => setTierFormData((p) => ({ ...p, to: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <input type="number" step="0.01" placeholder="Price" value={tierFormData.price} onChange={(e) => setTierFormData((p) => ({ ...p, price: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <input type="number" step="0.01" min="0" placeholder="Flat fee" value={tierFormData.flat_fee} onChange={(e) => setTierFormData((p) => ({ ...p, flat_fee: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <button onClick={addTier} disabled={tierFormLoading || !tierFormData.from || !tierFormData.price}
+              className="col-span-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 max-sm:min-h-11 sm:col-span-1">
+              {tierFormLoading ? "..." : "Add"}
+            </button>
           </div>
-        </div>
+
+          {tiers.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-4">No tiers configured yet</p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {tiers.map((tier, i) => (
+                <div key={tier.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div className="text-sm">
+                    <span className="font-medium text-slate-800">{tier.from_quantity}</span>
+                    <span className="text-slate-500 mx-1">→</span>
+                    <span className="font-medium text-slate-800">{tier.to_quantity ?? "∞"}</span>
+                    <span className="text-slate-500 ml-2">@ {formatCurrency(tier.unit_price || 0, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))}</span>
+                    {tier.flat_fee > 0 && <span className="text-slate-500 ml-1">+ {formatCurrency(tier.flat_fee, getPlanCurrency(plans.find((p) => p.id === tierPlanId)))} flat</span>}
+                  </div>
+                  <button onClick={() => removeTier(tier.id)} className="p-1 text-slate-500 hover:text-red-600" aria-label={`Delete tier ${tier.from_quantity}–${tier.to_quantity ?? "∞"}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+        </Modal>
       )}
       {ConfirmationDialog}
     </HRPage>

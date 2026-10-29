@@ -771,7 +771,7 @@ export default function ImportWizardModal({ onClose, onImported }) {
             <button
               onClick={step === 1 ? onClose : handleBack}
               disabled={loading || step === 3}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-40 max-sm:min-h-11"
             >
               {step === 1 ? <X size={16} /> : <ArrowLeft size={16} />}
               {step === 1 ? "Cancel" : "Back"}
@@ -785,7 +785,7 @@ export default function ImportWizardModal({ onClose, onImported }) {
                 <button
                   onClick={handleNext}
                   disabled={loading || !canProceed() || step === 3}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-brand-200 transition-all disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-brand-200 transition-all disabled:opacity-50 max-sm:min-h-11"
                 >
                   {loading ? <RefreshCw size={16} className="animate-spin" /> : null}
                   {nextLabel()}

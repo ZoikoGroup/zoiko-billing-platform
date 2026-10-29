@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -715,53 +716,53 @@ export default function ProductListPage() {
   );
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div role="dialog" aria-modal="true" aria-labelledby="product-create-title" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-6">
-          <h2 id="product-create-title" className="text-xl font-bold text-slate-800">New Product</h2>
-          <button onClick={closeCreateModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
+    <Modal
+      open
+      dense
+      onClose={closeCreateModal}
+      closeOnBackdrop={false}
+      title="New Product"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={closeCreateModal}>Cancel</Button>
+          <Button variant="primary" onClick={handleCreate} disabled={formLoading || !newProduct.name}>{formLoading ? "Creating..." : "Create Product"}</Button>
+        </>
+      }
+    >
+      {formError && (
+        <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          <AlertCircle size={16} />{formError}
         </div>
-        {formError && (
-          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-            <AlertCircle size={16} />{formError}
-          </div>
-        )}
-        {renderFormFields(newProduct, (updater) => { setNewProduct(updater(newProduct)); }, showAdvancedCreate, setShowAdvancedCreate)}
-        <div className="flex justify-end gap-3 mt-8">
-          <button onClick={closeCreateModal} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-          <button onClick={handleCreate} disabled={formLoading || !newProduct.name}
-            className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-            {formLoading ? "Creating..." : "Create Product"}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+      {renderFormFields(newProduct, (updater) => { setNewProduct(updater(newProduct)); }, showAdvancedCreate, setShowAdvancedCreate)}
+    </Modal>
   );
 
   const renderEditModal = () => {
     if (!editProduct) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div role="dialog" aria-modal="true" aria-labelledby="product-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-6">
-            <h2 id="product-edit-title" className="text-xl font-bold text-slate-800">Edit Product</h2>
-            <button onClick={closeEditModal} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
+      <Modal
+        open
+        dense
+        onClose={closeEditModal}
+        closeOnBackdrop={false}
+        title="Edit Product"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeEditModal}>Cancel</Button>
+            <Button variant="primary" onClick={handleUpdate} disabled={formLoading}>{formLoading ? "Saving..." : "Save Changes"}</Button>
+          </>
+        }
+      >
+        {formError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <AlertCircle size={16} />{formError}
           </div>
-          {formError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-              <AlertCircle size={16} />{formError}
-            </div>
-          )}
-          {renderFormFields(editProduct, setEditProduct, showAdvancedEdit, setShowAdvancedEdit)}
-          <div className="flex justify-end gap-3 mt-8">
-            <button onClick={closeEditModal} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-            <button onClick={handleUpdate} disabled={formLoading}
-              className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-              {formLoading ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
-        </div>
-      </div>
+        )}
+        {renderFormFields(editProduct, setEditProduct, showAdvancedEdit, setShowAdvancedEdit)}
+      </Modal>
     );
   };
 

@@ -453,14 +453,14 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/pricing/tax-pricing.jsx:350` | Members: | Add |
 | `modules/billing/pricing/tier-management.jsx:84` | Add Tier | Add Tier |
 | `modules/billing/pricing/tier-management.jsx:138` | Remove Tier | Remove |
-| `modules/billing/products/categories.jsx:498` | *(title computed in code)* | Create Category |
-| `modules/billing/products/import-wizard.jsx:723` | Import Products & Services | Back |
-| `modules/billing/products/pricing-plans.jsx:549` | *(title computed in code)* | Create Plan |
-| `modules/billing/products/pricing-plans.jsx:646` | Pricing Tiers | Add |
-| `modules/billing/products/product-list.jsx:718` | New Product | Create Product |
-| `modules/billing/products/product-list.jsx:744` | Edit Product | Save Changes |
-| `modules/billing/products/usage-billing.jsx:422` | Create Meter | Create Meter |
-| `modules/billing/products/usage-billing.jsx:511` | Test API Event | Send Event |
+| `modules/billing/products/categories.jsx:498` | *(title computed in code)* — **Migrated (B2)** | Create Category |
+| `modules/billing/products/import-wizard.jsx:723` | Import Products & Services — **Wrapped (B2)** | Back |
+| `modules/billing/products/pricing-plans.jsx:549` | *(title computed in code)* — **Migrated (B2)** | Create Plan |
+| `modules/billing/products/pricing-plans.jsx:646` | Pricing Tiers — **Migrated (B2)** | Add |
+| `modules/billing/products/product-list.jsx:718` | New Product — **Migrated (B2)** | Create Product |
+| `modules/billing/products/product-list.jsx:744` | Edit Product — **Migrated (B2)** | Save Changes |
+| `modules/billing/products/usage-billing.jsx:422` | Create Meter — **Migrated (B2)** | Create Meter |
+| `modules/billing/products/usage-billing.jsx:511` | Test API Event — **Migrated (B2)** | Send Event |
 | `modules/billing/quotations/quotation-detail.jsx:720` | Reject Quotation — **Migrated (B2)** | Reject |
 | `modules/billing/quotations/quotation-detail.jsx:740` | Cancel Quotation — **Migrated (B2)** | Cancel Quotation |
 | `modules/billing/quotations/quotation-detail.jsx:757` | Convert to Contract — **Migrated (B2)** | Create Contract |
@@ -568,6 +568,21 @@ Parity (`parity.mjs`, working tree vs `HEAD`): 0 unexplained in the three contra
 - Edit opens with SKU and price empty and billing period reset to **Monthly**; Save stays disabled until a price is re-typed, and saving then **changes a quarterly retainer to monthly** (and the code to the new SKU field) without the user noticing.
 - Separately, the Billing Period options "Semi-Annual" (`semi_annual`) and "Annual" (`annual`) don't exist in the API's `BillingFrequency` (`one_time, monthly, quarterly, yearly, usage_based, recurring`): creating one fails with "Billing frequency: Input should be …".
 Not caused by B2 (only the dialog shell changed; the field reads and payloads are byte-for-byte the same, per parity).
+
+#### B2 results — Products (8 dialogs): done
+
+| Dialog | Status | Notes |
+|---|---|---|
+| product-list — New Product / Edit Product | **Migrated** | `lg` (full screen on phones) / `md`, `dense`. **Before, Create Product / Save Changes were below the fold even at 1280** (935–971 / 955–991px on an 800px screen, inside a scrolling panel); now pinned (711–751) |
+| categories — Add New Category / Edit Category | **Migrated** | Title and subtitle expressions → `title` / `description` |
+| pricing-plans (products) — New / Edit Pricing Plan | **Migrated** | |
+| pricing-plans (products) — Pricing Tiers | **Migrated** (list editor) | Inline "Add" kept in the body (it adds a row, it isn't the dialog's action); footer Close. Phones only: the 5-column add row becomes 2 columns with a full-width Add (was ~55px per field at 360) |
+| usage-billing — Create Meter | **Migrated** | |
+| usage-billing — Test API Event | **Migrated** | "Send Event" moved from beside the quantity field into the footer (same handler, keeps its violet style). Note: it builds a simulated event locally (as the dialog's description says); no API call |
+| import-wizard — Import Products & Services | **Wrapped** | Already a pinned-footer dialog (header / scrolling content / footer); not rebuilt so it keeps its branded header. Phones: Cancel/Back and Next/Import now 44px (were 36/40) |
+
+Parity: 0 unexplained across the 5 files. A conversion-script bug was caught before commit: the body dedent cut characters from a column-0 `{JSON.stringify(...)}` inside `<pre>` (a parse error the parity check surfaced); the script now only removes indentation that is there, the file was redone from `HEAD`, and all earlier converted commits re-checked (0 unexplained; B1's `e4791b8` shows 6 items that are its hand restructuring — Plane1 status conditions now drive the footer through a ternary with `?.`, capability notices keep the same conditions merged into one expression, and UsersPage's purge button is the intended `danger` → `destructive`).
+Tests: 4 new `*.dialogs.test.jsx` (product-list incl. the import wizard, categories, pricing-plans incl. tiers, usage-billing) — products module 12 files, 44 passed. Screenshots `shots/phase3/stepB2-products/{before,after,import-before}/`: every primary pinned, visible, 44px on phones, no overflow.
 
 ## 9. Local environment safety notes
 
