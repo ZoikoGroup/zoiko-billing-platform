@@ -108,6 +108,9 @@ const BUTTON_VARIANTS = {
     "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300",
   ghost: "bg-transparent border-transparent text-slate-600 hover:bg-slate-100",
   danger: "bg-red-50 border border-red-200 text-red-700 hover:bg-red-100",
+  // Irreversible actions (permanent delete): the solid red of ConfirmDialog's
+  // confirm button, stronger than `danger`.
+  destructive: "bg-red-600 border border-transparent text-white shadow-sm hover:bg-red-700",
   // Confirming money received (e.g. Mark as Paid). Use variants for colour --
   // never colour classes via className, which lose to the variant's own
   // background/text utilities in the generated stylesheet.
@@ -1138,6 +1141,8 @@ export function Modal({
   // "Section 2 of 4" chip), a back arrow instead of the close button on
   // phones, and a ref to the scrolling body (see useActiveSection).
   headerAside,
+  // "danger" tints the icon chip red for destructive dialogs.
+  tone = "default",
   mobileBack = false,
   backLabel = "Back",
   bodyRef,
@@ -1235,7 +1240,7 @@ export function Modal({
               </button>
             )}
             {Icon && (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 sm:h-10 sm:w-10">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${tone === "danger" ? "bg-red-50 text-red-600" : "bg-brand-50 text-brand-600"}`}>
                 <Icon size={20} />
               </span>
             )}

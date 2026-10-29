@@ -100,7 +100,19 @@ function SuppressModal({ open, onClose, onSubmit }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (open) { setReason(""); setMinutes(60); } }, [open]);
   return (
-    <Modal open={open} onClose={onClose} title="Suppress attention item" icon={BellOff} size="sm">
+    <Modal open={open} onClose={onClose} title="Suppress attention item" icon={BellOff} size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="danger" loading={busy} disabled={!reason}
+            onClick={async () => { setBusy(true); try { await onSubmit(reason, minutes); onClose(); } finally { setBusy(false); } }}
+          >
+            Suppress
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-4">
         <p className="text-xs text-slate-500">Suppression is time-bound and cannot be permanent — it returns to Open automatically when it expires.</p>
         <Field label="Reason" htmlFor="suppress-reason" required>
@@ -120,15 +132,6 @@ function SuppressModal({ open, onClose, onSubmit }) {
             <option value={1440}>24 hours</option>
           </select>
         </Field>
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="danger" loading={busy} disabled={!reason}
-            onClick={async () => { setBusy(true); try { await onSubmit(reason, minutes); onClose(); } finally { setBusy(false); } }}
-          >
-            Suppress
-          </Button>
-        </div>
       </div>
     </Modal>
   );
@@ -223,8 +226,17 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
     (!needsReference || incidentReference.trim().length > 0);
 
   return (
-    <Modal open={open} onClose={onClose} title={targetEnabled ? "Resume invoice finalization?" : "Pause invoice finalization?"} icon={targetEnabled ? Power : ShieldAlert} size="sm">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal open={open} onClose={onClose} title={targetEnabled ? "Resume invoice finalization?" : "Pause invoice finalization?"} icon={targetEnabled ? Power : ShieldAlert} size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="breaker-toggle-form" variant={targetEnabled ? "primary" : "danger"} loading={busy} disabled={!canSubmit}>
+            {targetEnabled ? "Resume" : "Pause"}
+          </Button>
+        </>
+      }
+    >
+      <form id="breaker-toggle-form" onSubmit={handleSubmit} className="space-y-4">
         <p className="text-sm text-slate-600">
           {targetEnabled
             ? "Tenants across the platform will be able to finalize invoices again."
@@ -257,12 +269,6 @@ function BreakerToggleModal({ open, onClose, targetEnabled, onSubmit }) {
             <p>{error}</p>
           </div>
         )}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant={targetEnabled ? "primary" : "danger"} loading={busy} disabled={!canSubmit}>
-            {targetEnabled ? "Resume" : "Pause"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );
