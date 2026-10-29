@@ -521,7 +521,34 @@ Measured at 390 and 1280 (sent/accepted quotations via route interception — th
 
 **Tests:** smoke tests for every dialog (opens → primary calls its API with the expected arguments → closes), added to `quotation-detail.test.jsx` and `subscription-detail.test.jsx` plus a new `quotation-list.dialogs.test.jsx` that drives the wizard through all 4 steps to `quoteApi.create`. One existing test locator was updated (`quotation-detail.test.jsx` found the Convert to Invoice dialog through `heading.closest("div").parentElement`; it now uses `getByRole("dialog", { name })`, same assertions). Module run: 6 files, 38 passed, 1 skipped (below).
 
-**Pre-existing bug found (not fixed — needs a decision):** the New Quotation wizard cannot be closed. `handleCloseWizard` hides it and navigates from `?create=1` to `/billing/quotations`, but the effect `if (searchParams.get("create") === "1" && !showWizard) openWizard();` runs before the navigation lands (React Router 7 applies it in a transition) and reopens and resets the wizard. Verified in the browser on the commit *before* this change: Cancel leaves it open. The old hand-built overlay had no Esc handler; the shared `Modal`'s Esc now calls the same `handleCloseWizard`, so Esc fails the same way. Only entry point is `?create=1`, used from the customer profile (`customer-profile.jsx` lines 1047, 2237). The test for it is `it.skip` with a pointer here.
+**Pre-existing bug found — fixed in `3be74fd` (approved):** the New Quotation wizard cannot be closed. `handleCloseWizard` hides it and navigates from `?create=1` to `/billing/quotations`, but the effect `if (searchParams.get("create") === "1" && !showWizard) openWizard();` runs before the navigation lands (React Router 7 applies it in a transition) and reopens and resets the wizard. Verified in the browser on the commit *before* this change: Cancel leaves it open. The old hand-built overlay had no Esc handler; the shared `Modal`'s Esc now calls the same `handleCloseWizard`, so Esc fails the same way. Only entry point is `?create=1`, used from the customer profile (`customer-profile.jsx` lines 1047, 2237). Fix: the `?create=1` effect now opens the wizard once per navigation (keyed on `location.key`), so Cancel / Esc / × close it and it stays closed, Back doesn't reopen it (the parameter is dropped with `replace`), and each new visit through the link opens a fresh wizard. Tests cover all four; without the fix 5 of them fail. Verified in the browser.
+
+#### B2 checkpoint (before Contracts)
+
+**Other dialogs opened from a URL query parameter** (searched for `searchParams.get("create" | "new" | "edit" | "open" | "action" | …)`, `?create=` / `?action=` links and hand-parsed `URLSearchParams`). Each real one was checked in the browser: open via the URL, close with Cancel and with Esc, wait, check.
+
+| Opened by | Dialog | Same reopen bug? | Notes |
+|---|---|---|---|
+| `/billing/quotations?create=1[&customer_id=]` | New Quotation wizard | **Fixed** (`3be74fd`) | |
+| `/billing/payments?create=1` (+ `&invoice_id=`, `&customer_id=`, `&partial=1`) | Record Payment wizard | **Yes — not fixed** | Same pattern: `closeWizard` drops the params with `setSearchParams({}, { replace: true })`, the `?create=1 && !showWizard` effect reopens it first. Cancel and Esc both leave it open. Pre-existing: also on the commit before B2 (Cancel; the old overlay ignored Esc). Linked from invoice detail ("Record payment", "Record partial payment"), customer profile and contract detail |
+| `/billing/refunds?create=1&invoice_id=…` | Create Refund | **Yes (different cause) — not fixed** | Opening drops `?create=1` only when there is no `invoice_id`; with one, the params stay and closing (`setShowCreateModal(false)`) lets the effect reopen it. Cancel and Esc both leave it open. Linked from invoice detail ("Create refund"). Not touched by this work |
+| `/billing/refunds?create=1` | Create Refund | No | Params dropped on open; closes and stays closed |
+| `/billing/invoices?create=1`, `/billing/subscriptions?create=1` | — | No | Redirect (with `replace`) to the full-page create screens; no dialog |
+| `/billing/quotations?action=create&product_id=…`, `/billing/invoices?action=create&product_id=…` | — | n/a — **dead link** | Product profile "New Quotation" / "New Invoice". Nothing reads `action` or `product_id`, so the buttons just open the list. Pre-existing; logged, not changed |
+| `OrganizationPage` `?code=&state=` | — | n/a | Stripe OAuth callback, not a dialog |
+
+**Parity check (every JSX attribute, not just handlers).** `D:\zoiko-local	ools\parity.mjs <commit>` parses each changed `.jsx` before and after with `@babel/parser` and compares, as multisets, *every* attribute on *every* element (name + normalised value: `onSubmit`, `type`, `name`, `id`, `aria-*`, `data-*`, `autoFocus`, `ref`, `key`, spreads, conditional `className` expressions …) and every text / expression child (JSX inside a `{cond && (…)}` is compared element by element, comments ignored). Every entry present before and missing after must match a dialog-shell rule (overlay close handler → `onClose`, panel `stopPropagation`, `role` / `aria-modal` / `aria-labelledby` + heading `id` now provided by `Modal`, title / intro text → `title` / `description`, × button inside a removed overlay, the removed `WizardStep` helper with its labels present in `Stepper`, static `className`); anything else is reported. Elements are also paired by `onClick` handler and each pair's other attributes and children must be identical. Dynamic (conditional) `className`s outside the removed shell are never auto-explained. Checked against planted regressions (dropped `onClick`, changed `disabled` rule, dropped `aria-label` on an unrelated button): all caught.
+
+| Commit | Elements | Attributes | Children | Unexplained |
+|---|---|---|---|---|
+| `2b64717` Payments | 1643 → 1569 | 2481 → 2424 | 1074 → 1054 | **0** |
+| `4fd7909` Subscriptions & quotations | 1071 → 1022 | 1514 → 1470 | 654 → 637 | **0** |
+| `3be74fd` wizard fix | (logic only) | — | — | **0** |
+| `39cc4f7` dense fields | — | — | — | 1 — intended: `Modal` body `className` gained `${dense ? … : ""}` |
+
+Removed entries by rule, Payments / Subs & quotes: static className 120 / 77 · overlay close → onClose 16 / 9 · WizardStep → Stepper 22 / 22 · title text → title 16 / 9 · panel click guard 11 / 7 · dialog semantics 10 / 6 · × button 6 / 4 · heading id + aria-labelledby 10 / 6 · intro → description 2 / 6.
+
+**Desktop tightening for B2 dialogs.** The `lg` tightening (`e0dd731`) lives in `FormSection` (sectioned forms); the B2 dialogs are short or wizard forms and were not built with it. `39cc4f7` adds `Modal dense`, which applies the same lg-only field density, to the 17 B2 dialogs that contain fields. Measured body height at 1280: Record Payment 484 → 470px, New Quotation 358 → 346px, New Dunning Level 319 → 319, Convert to Invoice 274 → 274 (their fields were already `py-2`/`mb-1`); 390 identical. Section-card tightening doesn't apply (no sections).
 
 ## 9. Local environment safety notes
 
