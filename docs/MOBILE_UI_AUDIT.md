@@ -260,6 +260,11 @@ These depend on production code that is not on `nikhil-new`. They will be picked
 
 **Still open (desktop, pre-existing, decision needed):** at 1280 the floating AI button sits over a control on 6 of the 19 pages at some scroll position: "Record Payment" (payments, at first paint), "Sort by Status" (invoices), "Continue" (subscription create), help-page links, and row "View" links mid-scroll. A floating button over scrolling content always covers something eventually. Option: use the top-bar button at every width.
 
+**Phase 1 follow-up (review notes):**
+- *16px inputs are phone-only:* the rule is inside `@media (max-width: 767.98px)`. Verified on the customer create form: every text control is 16px at 360/390 and **14px at 1280 (desktop unchanged)**. Checkboxes are excluded on purpose.
+- *Trial banner keeps its information:* below `sm` it is one strip with a short title ("Free trial" / "Trial ended"), the **days-left badge** and **Upgrade** always visible, and a **"Show trial details"** toggle that reveals the end date and the Free-trial note in place. Still dismissible for the session. Measured with a 14-days-left trial: 57px, **15% of 360×800 including the top bar** (14% at 390); expanded 197px, no sideways scroll.
+- *AI button on mobile:* rather than a smaller floating button offset above footers (and hidden on create/edit pages and when a modal is open), it moved into the top bar below `lg`. It therefore can't cover a footer, primary action, toast or form at any scroll position, and stays available everywhere. Desktop is unchanged apart from lifting above `StickyFooter` (see the open decision above).
+
 **Super-admin privileged banner and support-access strip:** made single-line on mobile in code (Phase 1). They are measured with fake API responses in Phase 5, as agreed.
 
 ## 9. Local environment safety notes

@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowRight,
   CalendarClock,
+  ChevronDown,
   Rocket,
   ShieldCheck,
   X,
@@ -82,6 +83,9 @@ export default function TrialBanner() {
   const [converting, setConverting] = useState(false);
   const [actionMsg, setActionMsg] = useState(null);
   const [actionError, setActionError] = useState(null);
+  // Phones only: the end date and trial note sit behind a toggle so the
+  // banner stays one compact strip. From sm up they are always shown.
+  const [showDetails, setShowDetails] = useState(false);
 
   const eligible = role && TRIAL_ROLES.has(role);
   const isTrial = subscription && ["trialing", "trial_recovery"].includes(subscription.status);
@@ -163,8 +167,9 @@ export default function TrialBanner() {
   const urgent = recovery || (days != null && days <= 3);
 
   // Below sm the banner is a slim full-width strip (title + days badge +
-  // short CTA, details hidden) so it takes ~8% of a phone screen instead of
-  // ~29%. From sm up every class resolves to the original card layout.
+  // short CTA; end date and note behind a "Show trial details" toggle) so it
+  // takes ~7% of a phone screen instead of ~29%. From sm up every class
+  // resolves to the original card layout.
   return (
     <div
       role="status"
@@ -179,8 +184,12 @@ export default function TrialBanner() {
           style={{ width: `${used}%` }}
         />
       </div>
-      <div className="flex items-center justify-between gap-3 px-4 py-1 sm:gap-4 sm:px-6 sm:py-4">
-        <div className="flex min-w-0 items-start gap-3.5">
+      <div
+        className={`flex items-center justify-between gap-3 px-4 py-1 sm:gap-4 sm:px-6 sm:py-4 ${
+          showDetails ? "max-sm:flex-wrap max-sm:py-2" : ""
+        }`}
+      >
+        <div className={`flex min-w-0 items-start gap-3.5 ${showDetails ? "max-sm:basis-full" : ""}`}>
           <div
             className={`hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
               urgent ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
@@ -192,14 +201,17 @@ export default function TrialBanner() {
             <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-bold text-slate-900 sm:gap-2 sm:text-base">
               {recovery ? (
                 <>
-                  <span className="max-sm:truncate max-sm:w-full">Your free trial ended — you're in the recovery window</span>
+                  {/* Short title on phones keeps title + badge on one line. */}
+                  <span className="sm:hidden">Trial ended</span>
+                  <span className="hidden sm:inline">Your free trial ended — you're in the recovery window</span>
                   <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
                     Read / Export only
                   </span>
                 </>
               ) : (
                 <>
-                  You're on the free trial
+                  <span className="sm:hidden">Free trial</span>
+                  <span className="hidden sm:inline">You're on the free trial</span>
                   {days != null ? (
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white ${
@@ -212,7 +224,7 @@ export default function TrialBanner() {
                 </>
               )}
             </p>
-            <p className="mt-1 hidden text-sm leading-5 text-slate-700 sm:block">
+            <p id="trial-banner-details" className={`mt-1 text-sm leading-5 text-slate-700 sm:block ${showDetails ? "block" : "hidden"}`}>
               <CalendarClock className="mr-1 inline h-4 w-4 text-slate-500" />
               {recovery
                 ? dateLabel
@@ -223,14 +235,14 @@ export default function TrialBanner() {
                   : "Convert to a paid plan to keep using Billing after the trial."}
             </p>
             {!recovery && (
-              <p className="mt-1 hidden text-xs text-slate-600 sm:block">
+              <p className={`mt-1 text-xs text-slate-600 sm:block ${showDetails ? "block" : "hidden"}`}>
                 Quotes and invoices you create during the trial carry a “Free trial” banner until you upgrade.
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+        <div className={`flex shrink-0 flex-col items-stretch gap-2 sm:items-end ${showDetails ? "max-sm:ml-auto" : ""}`}>
           <TrialActionMessage actionMsg={actionMsg} actionError={actionError} converting={converting} />
           <div className="flex items-center gap-2">
             <button
@@ -244,6 +256,16 @@ export default function TrialBanner() {
               <span className="sm:hidden">{recovery ? "Restore" : "Upgrade"}</span>
               <span className="hidden sm:inline">{recovery ? "Restore full access" : "Continue with paid plan"}</span>
               <ArrowRight className="hidden h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 sm:block" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              aria-expanded={showDetails}
+              aria-controls="trial-banner-details"
+              aria-label={showDetails ? "Hide trial details" : "Show trial details"}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/60 sm:hidden"
+            >
+              <ChevronDown className={`h-5 w-5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
             </button>
             {!onDashboard && (
               <button
