@@ -41,15 +41,16 @@
   --sticky-footer-h: 0px;
 }
 
-/* Phones/tablets: form controls render at 16px. iOS Safari zooms the page
-   whenever a focused control's font-size is below 16px, which every 14px
-   (text-sm) field in the app triggered. Deliberately unlayered: Tailwind v4
-   utilities live in @layer utilities, and unlayered rules beat layered ones,
-   so this wins over text-sm/text-xs on every page without per-page edits.
-   Desktop keeps its existing sizes. Inputs styled with an inline fontSize
-   (the auth pages) can't be reached by a stylesheet rule, so they read
-   var(--input-font-size, 14px) instead. */
-@media (max-width: 767.98px) {
+/* Phones (below sm) and touch devices (coarse pointer, e.g. tablets): form
+   controls render at 16px. iOS Safari zooms the page whenever a focused
+   control's font-size is below 16px, which every 14px (text-sm) field in the
+   app triggered. Deliberately unlayered: Tailwind v4 utilities live in
+   @layer utilities, and unlayered rules beat layered ones, so this wins over
+   text-sm/text-xs on every page without per-page edits. Desktop (fine
+   pointer, sm and up) keeps its existing sizes. Inputs styled with an inline
+   fontSize (the auth pages) can't be reached by a stylesheet rule, so they
+   read var(--input-font-size, 14px) instead. */
+@media (max-width: 639.98px), (pointer: coarse) {
   :root {
     --input-font-size: 16px;
   }
