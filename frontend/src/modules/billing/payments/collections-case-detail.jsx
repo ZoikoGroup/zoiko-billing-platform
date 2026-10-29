@@ -217,6 +217,7 @@ export default function CollectionsCaseDetailPage() {
       {assignModal.open && (
         <Modal
           open
+          dense
           onClose={() => setAssignModal({ open: false, assignedTo: "" })}
           title="Assign Case"
           size="sm"
@@ -240,6 +241,7 @@ export default function CollectionsCaseDetailPage() {
       {actionModal.open && (
         <Modal
           open
+          dense
           onClose={() => setActionModal({ open: false, description: "", outcome: "" })}
           closeOnBackdrop={false}
           title="Log Collection Action"
@@ -271,6 +273,7 @@ export default function CollectionsCaseDetailPage() {
       {resolveModal.open && (
         <Modal
           open
+          dense
           onClose={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })}
           closeOnBackdrop={false}
           title="Resolve Collections Case"

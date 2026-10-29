@@ -358,6 +358,7 @@ export default function CreditsPage() {
     {voidModal.open && (
       <Modal
         open
+        dense
         onClose={() => { if (actionLoading !== "void") setVoidModal({ open: false, creditId: null, reason: "" }); }}
         title="Void Credit Note"
         size="sm"

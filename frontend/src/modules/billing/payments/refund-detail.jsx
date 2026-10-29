@@ -479,6 +479,7 @@ export default function RefundDetailPage() {
       {showProcessModal && (
         <Modal
           open
+          dense
           onClose={() => setShowProcessModal(false)}
           title="Start Processing Refund"
           size="sm"
@@ -515,6 +516,7 @@ export default function RefundDetailPage() {
         // Esc closes (as before); a backdrop click never did.
         <Modal
           open
+          dense
           onClose={() => setShowRejectModal(false)}
           closeOnBackdrop={false}
           title="Reject Refund"
@@ -539,6 +541,7 @@ export default function RefundDetailPage() {
       {showFailModal && (
         <Modal
           open
+          dense
           onClose={() => setShowFailModal(false)}
           title="Mark Refund as Failed"
           size="sm"
@@ -562,6 +565,7 @@ export default function RefundDetailPage() {
       {showCancelModal && (
         <Modal
           open
+          dense
           onClose={() => setShowCancelModal(false)}
           title="Cancel Refund"
           icon={Ban}

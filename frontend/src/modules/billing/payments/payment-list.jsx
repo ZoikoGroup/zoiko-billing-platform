@@ -701,6 +701,7 @@ export default function PaymentListPage() {
       {showWizard && (
         <Modal
           open
+          dense
           onClose={() => { if (!wizardLoading && !wizardSuccess) closeWizard(); }}
           title="Record Payment"
           size="xl"

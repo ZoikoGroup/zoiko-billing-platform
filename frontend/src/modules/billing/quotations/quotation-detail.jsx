@@ -720,6 +720,7 @@ export default function QuotationDetailPage() {
       {showRejectModal && (
         <Modal
           open
+          dense
           onClose={() => setShowRejectModal(false)}
           closeOnBackdrop={false}
           title="Reject Quotation"
@@ -758,6 +759,7 @@ export default function QuotationDetailPage() {
       {showConvertContractModal && (
         <Modal
           open
+          dense
           onClose={() => setShowConvertContractModal(false)}
           title="Convert to Contract"
           description="Create a contract from this accepted quotation."
@@ -801,6 +803,7 @@ export default function QuotationDetailPage() {
       {showConvertModal && (
         <Modal
           open
+          dense
           onClose={() => setShowConvertModal(false)}
           title="Convert to Invoice"
           description="Create an invoice from this accepted quotation."

@@ -1150,6 +1150,9 @@ export function Modal({
   mobileBack = false,
   backLabel = "Back",
   bodyRef,
+  // Form dialogs: from lg, the same denser fields as FormSection (shorter
+  // controls, tighter label gap). Phones unchanged.
+  dense = false,
 }) {
   const panelRef = useRef(null);
   const isPhone = useMediaQuery(BELOW_SM);
@@ -1265,7 +1268,7 @@ export function Modal({
             </button>
           )}
         </div>
-        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5"}`}>{children}</div>
+        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5"} ${dense ? FORM_SECTION_DENSE : ""}`}>{children}</div>
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1 sm:gap-3 sm:px-6 sm:py-4">
             {footer}

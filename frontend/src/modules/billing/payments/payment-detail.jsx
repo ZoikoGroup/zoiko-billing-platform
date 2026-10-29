@@ -843,6 +843,7 @@ export default function PaymentDetailPage() {
     {showRefundModal && (
       <Modal
         open
+        dense
         onClose={() => { if (actionLoading !== "refund") setShowRefundModal(false); }}
         title="Refund Payment"
         description={`Refundable amount: ${formatDisplayCurrency(payment.amount, payment.currency)}`}

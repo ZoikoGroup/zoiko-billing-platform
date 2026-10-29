@@ -470,6 +470,7 @@ export default function WriteOffDetailPage() {
       {showReverseModal && (
         <Modal
           open
+          dense
           onClose={() => setShowReverseModal(false)}
           title="Reverse Write-off"
           size="sm"
@@ -496,6 +497,7 @@ export default function WriteOffDetailPage() {
       {showCancelModal && (
         <Modal
           open
+          dense
           onClose={() => setShowCancelModal(false)}
           title="Cancel Write-off"
           icon={Ban}

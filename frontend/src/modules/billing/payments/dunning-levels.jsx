@@ -268,6 +268,7 @@ export default function DunningLevelsPage() {
       {showModal && (
         <Modal
           open
+          dense
           onClose={closeModal}
           title={isEdit ? `Edit Dunning Level ${editingLevel.level_number}` : "New Dunning Level"}
           size="md"

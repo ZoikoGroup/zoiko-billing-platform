@@ -249,6 +249,7 @@ export default function DunningCaseDetailPage() {
       {resolveModal.open && (
         <Modal
           open
+          dense
           onClose={() => setResolveModal({ open: false, note: "" })}
           title="Resolve Dunning Case"
           size="sm"
@@ -272,6 +273,7 @@ export default function DunningCaseDetailPage() {
       {promiseModal.open && (
         <Modal
           open
+          dense
           onClose={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })}
           closeOnBackdrop={false}
           title="Log a Promise to Pay"

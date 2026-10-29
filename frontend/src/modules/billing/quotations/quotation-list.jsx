@@ -709,6 +709,7 @@ export default function QuotationListPage() {
       {showWizard && (
         <Modal
           open
+          dense
           onClose={handleCloseWizard}
           title="New Quotation"
           size="xl"
