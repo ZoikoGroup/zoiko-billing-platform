@@ -16,6 +16,7 @@ import { useCurrency, getOrgBaseCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import useLatestRequest from "../utils/useLatestRequest";
 import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
+import { DialogActions } from "../../../components/billing-ui";
 import { useDropUrlParam } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
@@ -471,8 +472,8 @@ export default function CustomerListPage() {
   });
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
-      <div role="dialog" aria-modal="true" aria-labelledby="customer-create-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:overflow-y-auto sm:py-8">
+      <div role="dialog" aria-modal="true" aria-labelledby="customer-create-title" className="bg-white p-5 pt-[max(1.25rem,env(safe-area-inset-top))] w-full max-w-3xl shadow-2xl h-dvh overflow-y-auto overscroll-contain sm:h-auto sm:my-auto sm:rounded-3xl sm:p-8 sm:max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h2 id="customer-create-title" className="text-xl font-bold text-slate-800">New {singular}</h2>
           <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button>
@@ -537,10 +538,10 @@ export default function CustomerListPage() {
           {newCustomer.billing_country && requireTaxId && <p className="md:col-span-2 text-xs text-slate-500">A tax ID is required for new customers: fill in at least one of the fields above.</p>}
         </div>
         <div className="mb-4"><label className="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea rows={2} value={newCustomer.notes} onChange={(e) => setNewCustomer((p) => ({ ...p, notes: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+        <DialogActions>
           <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
           <button onClick={handleCreate} disabled={formLoading || !newCustomer.company_name} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Creating..." : `Create ${singular}`}</button>
-        </div>
+        </DialogActions>
       </div>
     </div>
   );
@@ -548,8 +549,8 @@ export default function CustomerListPage() {
   const renderEditModal = () => {
     if (!editCustomer) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
-        <div role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:overflow-y-auto sm:py-8">
+        <div role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white p-5 pt-[max(1.25rem,env(safe-area-inset-top))] w-full max-w-3xl shadow-2xl h-dvh overflow-y-auto overscroll-contain sm:h-auto sm:my-auto sm:rounded-3xl sm:p-8 sm:max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6"><h2 id="customer-edit-title" className="text-xl font-bold text-slate-800">Edit {singular}</h2><button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button></div>
           {formError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -606,7 +607,7 @@ export default function CustomerListPage() {
             ))}
             {!editCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).</p>}
           </div>
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100"><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button><button onClick={handleUpdate} disabled={formLoading} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Saving..." : "Save Changes"}</button></div>
+          <DialogActions><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button><button onClick={handleUpdate} disabled={formLoading} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Saving..." : "Save Changes"}</button></DialogActions>
         </div>
       </div>
     );

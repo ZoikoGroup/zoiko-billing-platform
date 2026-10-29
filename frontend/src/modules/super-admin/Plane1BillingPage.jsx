@@ -1146,7 +1146,7 @@ export default function Plane1BillingPage() {
 
               {/* Tab bar */}
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
                   {tabs.map((tab) => {
                     const Icon = tab.icon;
                     return (

@@ -13,9 +13,12 @@
  *          SearchInput, Field, Select, ActivityTimeline, CommunicationHistory
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import useMediaQuery, { BELOW_MD, BELOW_SM } from "../hooks/useMediaQuery";
 import {
+  ArrowLeft,
+  MoreHorizontal,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -145,8 +148,141 @@ export function Button({
 }
 
 /* ------------------------------------------------------------------ *
+ * OverflowMenu — "⋯" button + menu of secondary actions
+ * ------------------------------------------------------------------ */
+
+// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. Esc and an
+// outside tap close it; arrow keys move between items; focus returns to the
+// trigger on Esc. Used by PageHeader on phones and available to pages.
+export function OverflowMenu({ items = [], label = "More actions", align = "right", className = "" }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointer = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("touchstart", onPointer);
+    document.addEventListener("keydown", onKey);
+    rootRef.current?.querySelector('[role="menuitem"]:not([disabled])')?.focus();
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("touchstart", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const onMenuKeyDown = (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const entries = Array.from(rootRef.current?.querySelectorAll('[role="menuitem"]:not([disabled])') || []);
+    if (!entries.length) return;
+    const at = entries.indexOf(document.activeElement);
+    const next = e.key === "ArrowDown" ? (at + 1) % entries.length : (at - 1 + entries.length) % entries.length;
+    entries[next].focus();
+  };
+
+  if (!items.length) return null;
+  return (
+    <div ref={rootRef} className={`relative ${className}`}>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+      >
+        <MoreHorizontal size={18} />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} z-50 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
+        >
+          {items.map((item) => {
+            const ItemIcon = item.icon;
+            return (
+              <button
+                key={item.key || item.label}
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick?.();
+                }}
+                className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  item.danger ? "text-red-600 hover:bg-red-50" : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {ItemIcon && <ItemIcon size={16} className="shrink-0" />}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * PageHeader — breadcrumb + title + description + actions + meta
  * ------------------------------------------------------------------ */
+
+// Actions: either the legacy `actions` node (rendered as-is; it wraps on
+// phones), or the structured `primaryAction` (a node, usually one primary
+// <Button>) plus `moreActions` (OverflowMenu items). Structured actions show
+// inline from sm up; below sm only the primary stays visible and the rest
+// move into a "⋯" menu.
+function HeaderActions({ actions, primaryAction, moreActions = [] }) {
+  const isPhone = useMediaQuery(BELOW_SM);
+  const structured = Boolean(primaryAction) || moreActions.length > 0;
+  if (!actions && !structured) return null;
+  return (
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>div]:flex-wrap">
+      {actions}
+      {structured && isPhone && (
+        <>
+          {primaryAction}
+          <OverflowMenu items={moreActions} />
+        </>
+      )}
+      {structured && !isPhone && (
+        <>
+          {moreActions.map((item) => (
+            <Button
+              key={item.key || item.label}
+              variant={item.danger ? "danger" : "secondary"}
+              icon={item.icon}
+              onClick={item.onClick}
+              disabled={item.disabled}
+            >
+              {item.label}
+            </Button>
+          ))}
+          {primaryAction}
+        </>
+      )}
+    </div>
+  );
+}
 
 export function PageHeader({
   crumbs = [],
@@ -154,26 +290,30 @@ export function PageHeader({
   description,
   icon: Icon,
   actions,
+  primaryAction,
+  moreActions,
   meta,
   embedded = false,
   accent = "brand",
   className = "",
 }) {
+  const headerActions = <HeaderActions actions={actions} primaryAction={primaryAction} moreActions={moreActions} />;
+  const hasActions = Boolean(actions || primaryAction || moreActions?.length);
   // A page mounted as a hub tab sits under the hub's own tab-aware header, so
   // repeating its title/description would stack two headers. Embedded mode
   // keeps only what the hub header can't carry: the page's count and actions.
   if (embedded) {
-    if (!meta && !actions) return null;
+    if (!meta && !hasActions) return null;
     return (
       <div className={`flex flex-wrap items-center justify-between gap-3 ${className}`}>
         <div className="text-xs font-medium text-slate-500">{meta}</div>
-        {actions}
+        {hasActions && headerActions}
       </div>
     );
   }
   const tone = resolveAccent(accent);
   return (
-    <div className={`rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] md:p-8 ${className}`}>
+    <div className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] sm:p-6 md:p-8 ${className}`}>
       {crumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {crumbs.map((crumb, idx) => {
@@ -193,26 +333,28 @@ export function PageHeader({
           })}
         </nav>
       )}
-      <div className="flex flex-col gap-5 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between xl:gap-6">
-        <div className="flex min-w-0 items-start gap-4">
+      <div className="flex flex-col gap-4 sm:gap-5 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between xl:gap-6">
+        {/* Grid so that on phones the description runs full width under the
+            icon + title row; from sm up it sits indented under the title as
+            before. */}
+        <div className={`grid min-w-0 items-start gap-x-3 sm:gap-x-4 ${Icon ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>
           {Icon && (
             // Calmer than the old solid brand-gradient chip — a soft accent
             // tint that can vary per hub instead of every page in the app
             // leading with an identical loud blue tile.
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${tone.iconChip}`}>
-              <Icon size={21} />
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:row-span-2 sm:h-11 sm:w-11 sm:rounded-2xl ${tone.iconChip}`}>
+              <Icon size={21} className="h-4.5 w-4.5 sm:h-5.25 sm:w-5.25" />
             </div>
           )}
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-[1.75rem]">{title}</h1>
-            {description && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">{description}</p>}
-          </div>
+          <h1 className="min-w-0 self-center wrap-break-word text-xl font-bold tracking-tight text-slate-900 sm:self-auto sm:text-2xl md:text-[1.75rem]">{title}</h1>
+          {description && (
+            <p className={`mt-1 max-w-2xl text-sm leading-relaxed text-slate-500 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{description}</p>
+          )}
         </div>
-        {/* Below xl the actions sit on their own row; letting the page's action
-            group (and its direct div children) wrap keeps buttons from being
-            clipped at the right edge on phones. With one child this wrapper
-            is layout-neutral on desktop. */}
-        {actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>div]:flex-wrap">{actions}</div>}
+        {/* Below xl the actions sit on their own row. Legacy `actions` (and
+            their direct div children) wrap so nothing clips on phones;
+            structured primaryAction/moreActions collapse into "⋯". */}
+        {hasActions && headerActions}
       </div>
       {/* Secondary to the title by design — smaller, lighter weight, muted
           color — so a "Refreshed HH:MM:SS" stamp never competes with the
@@ -235,9 +377,24 @@ export function PageHeader({
 // were refined.
 export function HubTabs({ tabs, active, onChange, label, accent = "brand", className = "mt-4" }) {
   const tone = resolveAccent(accent);
+  const listRef = useRef(null);
+
+  // Below md the row scrolls sideways instead of wrapping into several rows;
+  // keep the selected tab in view (scrolls the row only, never the page).
+  useEffect(() => {
+    const list = listRef.current;
+    const el = list?.querySelector('[aria-selected="true"]');
+    if (!list || !el || list.scrollWidth <= list.clientWidth) return;
+    const listRect = list.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    if (elRect.left < listRect.left) list.scrollLeft -= listRect.left - elRect.left;
+    else if (elRect.right > listRect.right) list.scrollLeft += elRect.right - listRect.right;
+  }, [active, tabs.length]);
+
   return (
     <div
-      className={`inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50/60 p-1 ${className}`}
+      ref={listRef}
+      className={`flex max-w-full snap-x gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/60 p-1 md:inline-flex md:snap-none md:flex-wrap md:overflow-visible ${className}`}
       role="tablist"
       aria-label={label}
     >
@@ -251,7 +408,7 @@ export function HubTabs({ tabs, active, onChange, label, accent = "brand", class
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(tab.key)}
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${
+            className={`inline-flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 md:min-h-0 md:whitespace-normal ${
               selected
                 ? `${tone.tabActive} shadow-sm`
                 : "border-transparent bg-transparent text-slate-500 hover:bg-white hover:text-slate-700"
@@ -295,9 +452,10 @@ export const TabBar = HubTabs;
  * ------------------------------------------------------------------ */
 
 const SECTION_CARD_VARIANTS = {
-  hero: "rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-12px_rgba(15,23,42,0.10)] md:p-8",
-  standard: "rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]",
-  quiet: "rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5",
+  // p-4 on phones (team feedback T5: heavy padding wasted width); unchanged from sm up.
+  hero: "rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-12px_rgba(15,23,42,0.10)] sm:p-6 md:p-8",
+  standard: "rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:p-6",
+  quiet: "rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 sm:p-5",
 };
 
 const SECTION_CARD_TITLE_CLASSES = {
@@ -335,23 +493,24 @@ export function SectionCard({
     <div className={wrapperClasses}>
       {hasHeader && (
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
+          {/* Grid: on phones description/meta run full width under the
+              icon + title row (T5); from sm up they sit indented under the
+              title as before. */}
+          <div className={`grid min-w-0 items-start gap-x-3 ${Icon ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"}`}>
             {Icon && (
               <div
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:row-span-3 sm:h-9 sm:w-9 ${
                   variant === "hero" ? tone.iconChip : SECTION_CARD_ICON_CLASSES[variant] || SECTION_CARD_ICON_CLASSES.standard
                 }`}
               >
                 <Icon size={variant === "hero" ? 19 : 16} />
               </div>
             )}
-            <div className="min-w-0">
-              {title && <h3 className={SECTION_CARD_TITLE_CLASSES[variant] || SECTION_CARD_TITLE_CLASSES.standard}>{title}</h3>}
-              {description && <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>}
-              {meta && <p className="mt-1 text-xs font-medium text-slate-400">{meta}</p>}
-            </div>
+            {title && <h3 className={`min-w-0 self-center wrap-break-word sm:self-auto ${SECTION_CARD_TITLE_CLASSES[variant] || SECTION_CARD_TITLE_CLASSES.standard}`}>{title}</h3>}
+            {description && <p className={`mt-1 text-xs leading-relaxed text-slate-500 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{description}</p>}
+            {meta && <p className={`mt-1 text-xs font-medium text-slate-400 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{meta}</p>}
           </div>
-          {actions && <div className="shrink-0">{actions}</div>}
+          {actions && <div className="max-w-full shrink-0">{actions}</div>}
         </div>
       )}
       {children != null && <div className={hasHeader ? bodyClassName : ""}>{children}</div>}
@@ -393,6 +552,179 @@ const HIDE_BELOW_CLASSES = {
   "2xl": "hidden 2xl:table-cell",
 };
 
+// Card roles for DataTable's phone layout. A column may set `mobileRole`
+// explicitly ("title" | "badge" | "amount" | "meta" | "actions" | "hidden");
+// otherwise: first column → title, first status-like column → badge, first
+// numeric column → amount, unlabelled / "actions" columns → actions, rest →
+// labelled meta. hideBelow is ignored here: cards have room for every field.
+function resolveCardRoles(columns) {
+  const roles = {};
+  let hasBadge = false;
+  let hasAmount = false;
+  columns.forEach((col, idx) => {
+    let role = col.mobileRole;
+    if (!role) {
+      const text = `${col.key} ${typeof col.label === "string" ? col.label : ""}`;
+      if (idx === 0) role = "title";
+      else if (col.label == null || col.label === "" || /\baction/i.test(text)) role = "actions";
+      else if (!hasBadge && /status/i.test(text)) role = "badge";
+      else if (!hasAmount && col.numeric) role = "amount";
+      else role = "meta";
+    }
+    if (role === "badge") hasBadge = true;
+    if (role === "amount") hasAmount = true;
+    roles[col.key] = role;
+  });
+  return roles;
+}
+
+function DataTableCards({
+  columns,
+  data,
+  loading,
+  loadingRows,
+  rowKey,
+  onRowClick,
+  selectedKeys,
+  onSelectionChange,
+  allSelected,
+  someSelected,
+  toggleAll,
+  toggleRow,
+  emptyTitle,
+  emptyMessage,
+  EmptyIcon,
+  emptyAction,
+}) {
+  const roles = useMemo(() => resolveCardRoles(columns), [columns]);
+  const byRole = (role) => columns.filter((col) => roles[col.key] === role);
+  const cell = (col, row, idx) => (col.render ? col.render(row, idx) : row[col.key]);
+  const titleCols = byRole("title");
+  const badgeCols = byRole("badge");
+  const amountCols = byRole("amount");
+  const metaCols = byRole("meta");
+  const actionCols = byRole("actions");
+
+  if (loading) {
+    return (
+      <ul aria-busy="true" aria-label="Loading records" className="divide-y divide-slate-100">
+        {Array.from({ length: Math.min(loadingRows, 4) }).map((_, i) => (
+          <li key={`skeleton-${i}`} className="space-y-2.5 px-4 py-4" aria-hidden="true">
+            <div className="h-4 w-2/3 animate-pulse rounded-md bg-slate-200/80" />
+            <div className="h-3 w-1/2 animate-pulse rounded-md bg-slate-200/70" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="h-3 animate-pulse rounded-md bg-slate-200/60" />
+              <div className="h-3 animate-pulse rounded-md bg-slate-200/60" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+        <EmptyIcon className="mb-3 h-10 w-10 text-slate-300" />
+        <p className="mb-1 text-sm font-semibold text-slate-700">{emptyTitle}</p>
+        {emptyMessage && <p className="max-w-sm text-xs text-slate-500">{emptyMessage}</p>}
+        {emptyAction && <div className="mt-4">{emptyAction}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {onSelectionChange && (
+        <label className="flex min-h-11 items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <input
+            type="checkbox"
+            aria-label="Select all rows"
+            checked={allSelected}
+            ref={(el) => { if (el) el.indeterminate = someSelected; }}
+            onChange={toggleAll}
+            className="h-5 w-5 rounded border-slate-300 accent-brand"
+          />
+          Select all
+        </label>
+      )}
+      <ul className="divide-y divide-slate-100">
+        {data.map((row, idx) => {
+          const key = rowKey(row, idx);
+          const selected = selectedKeys.includes(key);
+          return (
+            <li
+              key={key}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              onKeyDown={onRowClick ? (e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                  e.preventDefault();
+                  onRowClick(row);
+                }
+              } : undefined}
+              className={`px-4 py-3.5 transition-colors ${
+                onRowClick ? "cursor-pointer hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50" : ""
+              } ${selected ? "bg-brand-50/50" : ""}`}
+            >
+              <div className="flex items-start gap-3">
+                {onSelectionChange && (
+                  <input
+                    type="checkbox"
+                    aria-label="Select row"
+                    checked={selected}
+                    onChange={() => toggleRow(key)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-brand"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  {/* [&_*]:min-w-0 lets cell renders built for wide table cells (icon +
+                      text flex rows, max-w truncation) shrink to the card width. */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 text-sm font-semibold text-slate-900 wrap-anywhere [&_*]:min-w-0">
+                      {titleCols.map((col) => <div key={col.key}>{cell(col, row, idx)}</div>)}
+                    </div>
+                    {badgeCols.length > 0 && (
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {badgeCols.map((col) => <div key={col.key}>{cell(col, row, idx)}</div>)}
+                      </div>
+                    )}
+                  </div>
+                  {amountCols.map((col) => (
+                    <p key={col.key} className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-base font-semibold tabular-nums text-slate-900">{cell(col, row, idx)}</span>
+                      {typeof col.label === "string" && <span className="text-xs text-slate-500">{col.label}</span>}
+                    </p>
+                  ))}
+                  {metaCols.length > 0 && (
+                    <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+                      {metaCols.map((col) => (
+                        <div key={col.key} className="min-w-0">
+                          <dt className="text-xs font-medium text-slate-500">{col.label}</dt>
+                          <dd className={`mt-0.5 text-sm text-slate-700 wrap-anywhere [&_*]:min-w-0 ${col.numeric ? "tabular-nums" : ""}`}>{cell(col, row, idx)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {actionCols.length > 0 && (
+                    // Row actions keep their own click handlers; stop the
+                    // click here so it never also opens the row.
+                    <div className="mt-3 flex flex-wrap items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                      {actionCols.map((col) => <div key={col.key}>{cell(col, row, idx)}</div>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 export function DataTable({
   columns = [],
   data = [],
@@ -411,6 +743,7 @@ export function DataTable({
   emptyIcon: EmptyIcon = Inbox,
   emptyAction,
   minWidth = 720,
+  mobile = "auto",
   stickyHeader = true,
   striped = false,
   dense = false,
@@ -445,6 +778,13 @@ export function DataTable({
     );
   };
 
+  // Phones/small tablets: tables with more than 4 meaningful columns render as
+  // stacked cards (see DataTableCards). `mobile="scroll"` keeps the table,
+  // `mobile="cards"` forces cards; columns can opt out with mobileRole:"hidden".
+  const isNarrow = useMediaQuery(BELOW_MD);
+  const meaningfulColumns = columns.filter((col) => col.mobileRole !== "hidden").length;
+  const useCards = isNarrow && (mobile === "cards" || (mobile === "auto" && meaningfulColumns > 4));
+
   return (
     <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)] ${className}`}>
       {selectedKeys.length > 0 && bulkActions.length > 0 && (
@@ -462,139 +802,160 @@ export function DataTable({
         </div>
       )}
 
-      <div
-        className={`overflow-x-auto ${stickyHeader ? "max-h-[560px] overflow-y-auto" : ""}`}
-        role={stickyHeader ? "region" : undefined}
-        aria-label={stickyHeader ? "Data table, scrollable" : undefined}
-        tabIndex={stickyHeader ? 0 : undefined}
-      >
-        {/* Below lg, minWidth keeps columns readable: the table scrolls
-            sideways inside this container instead of squeezing columns.
-            From lg up it is not applied, so desktop layout is unchanged. */}
-        <table
-          className={`w-full text-left text-sm max-lg:min-w-(--dt-min-w) ${tableClassName}`}
-          style={minWidth ? { "--dt-min-w": `${minWidth}px` } : undefined}
-          aria-busy={loading}
+      {useCards ? (
+        <DataTableCards
+          columns={columns}
+          data={data}
+          loading={loading}
+          loadingRows={loadingRows}
+          rowKey={rowKey}
+          onRowClick={onRowClick}
+          selectedKeys={selectedKeys}
+          onSelectionChange={onSelectionChange}
+          allSelected={allSelected}
+          someSelected={someSelected}
+          toggleAll={toggleAll}
+          toggleRow={toggleRow}
+          emptyTitle={emptyTitle}
+          emptyMessage={emptyMessage}
+          EmptyIcon={EmptyIcon}
+          emptyAction={emptyAction}
+        />
+      ) : (
+        <div
+          className={`overflow-x-auto ${stickyHeader ? "max-h-[560px] overflow-y-auto" : ""}`}
+          role={stickyHeader ? "region" : undefined}
+          aria-label={stickyHeader ? "Data table, scrollable" : undefined}
+          tabIndex={stickyHeader ? 0 : undefined}
         >
-          <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
-            <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              {onSelectionChange && (
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all rows"
-                    checked={allSelected}
-                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
-                    onChange={toggleAll}
-                    className="h-4 w-4 rounded border-slate-300 accent-brand"
-                  />
-                </th>
-              )}
-              {columns.map((col) => {
-                // `numeric: true` right-aligns the column (unless the caller
-                // already set an explicit `align`) and puts tabular figures
-                // on its cells so stacked numbers line up on the digit
-                // instead of ragging left like prose.
-                const align = col.align || (col.numeric ? "right" : "left");
-                return (
-                <th
-                  key={col.key}
-                  scope="col"
-                  style={col.width ? { width: col.width } : undefined}
-                  className={`whitespace-normal px-4 py-3 ${ALIGN_CLASSES[align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
-                >
-                  {col.sortable ? (
-                    <button
-                      type="button"
-                      onClick={() => onSort?.(col.key)}
-                      className="inline-flex items-center gap-0.5 transition-colors hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
-                      aria-label={`Sort by ${col.label}`}
-                    >
-                      {col.label}
-                      <SortIcon col={col} />
-                    </button>
-                  ) : (
-                    col.label
-                  )}
-                </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {loading
-              ? Array.from({ length: loadingRows }).map((_, i) => (
-                  <tr key={`skeleton-${i}`} className="border-b border-slate-100 last:border-0" aria-hidden="true">
-                    {onSelectionChange && <td className="px-4 py-3.5" />}
-                    {columns.map((col) => (
-                      <td key={col.key} className="px-4 py-3.5">
-                        <div className="h-4 animate-pulse rounded-md bg-slate-200/80" style={{ width: `${60 + ((i * 7 + col.key.length * 13) % 34)}%` }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              : data.length === 0
-              ? (
-                  <tr>
-                    <td colSpan={(columns.length + (onSelectionChange ? 1 : 0))}>
-                      <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                        <EmptyIcon className="mb-3 h-10 w-10 text-slate-300" />
-                        <p className="mb-1 text-sm font-semibold text-slate-700">{emptyTitle}</p>
-                        {emptyMessage && <p className="max-w-sm text-xs text-slate-500">{emptyMessage}</p>}
-                        {emptyAction && <div className="mt-4">{emptyAction}</div>}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              : data.map((row, idx) => {
-                  const key = rowKey(row, idx);
-                  const selected = selectedKeys.includes(key);
+          {/* Below lg, minWidth keeps columns readable: the table scrolls
+              sideways inside this container instead of squeezing columns.
+              From lg up it is not applied, so desktop layout is unchanged. */}
+          <table
+            className={`w-full text-left text-sm max-lg:min-w-(--dt-min-w) ${tableClassName}`}
+            style={minWidth ? { "--dt-min-w": `${minWidth}px` } : undefined}
+            aria-busy={loading}
+          >
+            <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
+              <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                {onSelectionChange && (
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all rows"
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                      onChange={toggleAll}
+                      className="h-4 w-4 rounded border-slate-300 accent-brand"
+                    />
+                  </th>
+                )}
+                {columns.map((col) => {
+                  // `numeric: true` right-aligns the column (unless the caller
+                  // already set an explicit `align`) and puts tabular figures
+                  // on its cells so stacked numbers line up on the digit
+                  // instead of ragging left like prose.
+                  const align = col.align || (col.numeric ? "right" : "left");
                   return (
-                    <tr
-                      key={key}
-                      onClick={onRowClick ? () => onRowClick(row) : undefined}
-                      // Clickable rows must also be reachable/activatable by
-                      // keyboard. Only react to keys pressed on the row itself
-                      // so Enter/Space inside a cell's own control (checkbox,
-                      // action button) keeps its native behaviour.
-                      tabIndex={onRowClick ? 0 : undefined}
-                      onKeyDown={onRowClick ? (e) => {
-                        if (e.target !== e.currentTarget) return;
-                        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
-                          e.preventDefault();
-                          onRowClick(row);
-                        }
-                      } : undefined}
-                      className={`border-b border-slate-100 last:border-0 transition-colors ${
-                        onRowClick ? "cursor-pointer hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50" : "hover:bg-slate-50/40"
-                      } ${striped && idx % 2 === 1 ? "bg-slate-50/40" : ""} ${selected ? "bg-brand-50/50" : ""}`}
-                    >
-                      {onSelectionChange && (
-                        <td className="px-4 py-3.5">
-                          <input
-                            type="checkbox"
-                            aria-label="Select row"
-                            checked={selected}
-                            onChange={() => toggleRow(key)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-4 w-4 rounded border-slate-300 accent-brand"
-                          />
-                        </td>
-                      )}
+                  <th
+                    key={col.key}
+                    scope="col"
+                    style={col.width ? { width: col.width } : undefined}
+                    className={`whitespace-normal px-4 py-3 ${ALIGN_CLASSES[align] || ALIGN_CLASSES.left} ${col.headerClassName || ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
+                  >
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort?.(col.key)}
+                        className="inline-flex items-center gap-0.5 transition-colors hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+                        aria-label={`Sort by ${col.label}`}
+                      >
+                        {col.label}
+                        <SortIcon col={col} />
+                      </button>
+                    ) : (
+                      col.label
+                    )}
+                  </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? Array.from({ length: loadingRows }).map((_, i) => (
+                    <tr key={`skeleton-${i}`} className="border-b border-slate-100 last:border-0" aria-hidden="true">
+                      {onSelectionChange && <td className="px-4 py-3.5" />}
                       {columns.map((col) => (
-                        <td
-                          key={col.key}
-                          className={`whitespace-normal px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align || (col.numeric ? "right" : "left")] || ALIGN_CLASSES.left}${col.numeric ? " tabular-nums" : ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
-                        >
-                          {col.render ? col.render(row, idx) : row[col.key]}
+                        <td key={col.key} className="px-4 py-3.5">
+                          <div className="h-4 animate-pulse rounded-md bg-slate-200/80" style={{ width: `${60 + ((i * 7 + col.key.length * 13) % 34)}%` }} />
                         </td>
                       ))}
                     </tr>
-                  );
-                })}
-          </tbody>
-        </table>
-      </div>
+                  ))
+                : data.length === 0
+                ? (
+                    <tr>
+                      <td colSpan={(columns.length + (onSelectionChange ? 1 : 0))}>
+                        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                          <EmptyIcon className="mb-3 h-10 w-10 text-slate-300" />
+                          <p className="mb-1 text-sm font-semibold text-slate-700">{emptyTitle}</p>
+                          {emptyMessage && <p className="max-w-sm text-xs text-slate-500">{emptyMessage}</p>}
+                          {emptyAction && <div className="mt-4">{emptyAction}</div>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                : data.map((row, idx) => {
+                    const key = rowKey(row, idx);
+                    const selected = selectedKeys.includes(key);
+                    return (
+                      <tr
+                        key={key}
+                        onClick={onRowClick ? () => onRowClick(row) : undefined}
+                        // Clickable rows must also be reachable/activatable by
+                        // keyboard. Only react to keys pressed on the row itself
+                        // so Enter/Space inside a cell's own control (checkbox,
+                        // action button) keeps its native behaviour.
+                        tabIndex={onRowClick ? 0 : undefined}
+                        onKeyDown={onRowClick ? (e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                            e.preventDefault();
+                            onRowClick(row);
+                          }
+                        } : undefined}
+                        className={`border-b border-slate-100 last:border-0 transition-colors ${
+                          onRowClick ? "cursor-pointer hover:bg-slate-50/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50" : "hover:bg-slate-50/40"
+                        } ${striped && idx % 2 === 1 ? "bg-slate-50/40" : ""} ${selected ? "bg-brand-50/50" : ""}`}
+                      >
+                        {onSelectionChange && (
+                          <td className="px-4 py-3.5">
+                            <input
+                              type="checkbox"
+                              aria-label="Select row"
+                              checked={selected}
+                              onChange={() => toggleRow(key)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-4 w-4 rounded border-slate-300 accent-brand"
+                            />
+                          </td>
+                        )}
+                        {columns.map((col) => (
+                          <td
+                            key={col.key}
+                            className={`whitespace-normal px-4 text-slate-700 ${dense ? "py-2.5" : "py-3.5"} ${ALIGN_CLASSES[col.align || (col.numeric ? "right" : "left")] || ALIGN_CLASSES.left}${col.numeric ? " tabular-nums" : ""}${col.hideBelow ? ` ${HIDE_BELOW_CLASSES[col.hideBelow] || ""}` : ""}`}
+                          >
+                            {col.render ? col.render(row, idx) : row[col.key]}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {footer && <div className="border-t border-slate-100">{footer}</div>}
     </div>
   );
@@ -607,6 +968,7 @@ export function DataTable({
 export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
   const listRef = useRef(null);
   const activeRef = useRef(null);
+  const isPhone = useMediaQuery(BELOW_SM);
 
   // Keep the active step visible when the step row is wider than its card
   // (7 labelled steps overflow below ~1,400px). Scrolls the list
@@ -623,6 +985,31 @@ export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
   }, [current, steps.length]);
 
   if (!steps.length) return null;
+
+  // Phones: compact "Label · Step X of Y" with a segmented progress bar
+  // instead of a sideways-scrolling row of labelled steps.
+  if (isPhone) {
+    const active = steps[Math.min(Math.max(current, 0), steps.length - 1)];
+    return (
+      <div className={className} role="group" aria-label="Wizard progress">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="min-w-0 truncate text-sm font-semibold text-slate-900" aria-current="step">{active?.label}</p>
+          <p className="shrink-0 text-xs font-medium text-slate-500">
+            Step {Math.min(current + 1, steps.length)} of {steps.length}
+          </p>
+        </div>
+        <div className="mt-2 flex gap-1" aria-hidden="true">
+          {steps.map((step, idx) => (
+            <span
+              key={step.key || step.label}
+              className={`h-1.5 flex-1 rounded-full ${idx < current ? "bg-brand-300" : idx === current ? "bg-brand" : "bg-slate-200"}`}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // overflow-x-auto + min-w-0: step labels never wrap, so on narrower
   // viewports the row scrolls instead of being clipped by the shell's
   // overflow-x-hidden (which hid the right-hand steps). -m-1/p-1 leaves room
@@ -817,17 +1204,22 @@ export function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none sm:rounded-3xl ${MODAL_SIZES[size] || MODAL_SIZES.md}`}
+        // Phones: a bottom sheet (sm/md sizes) or a full-screen sheet (lg/xl),
+        // with the header and footer fixed and only the body scrolling, so the
+        // footer's primary action is always visible. Unchanged from sm up.
+        className={`relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none sm:rounded-3xl ${
+          size === "lg" || size === "xl" ? "max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none" : ""
+        } ${MODAL_SIZES[size] || MODAL_SIZES.md}`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
-          <div className="flex items-start gap-3">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:gap-4 sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-start gap-3">
             {Icon && (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 sm:h-10 sm:w-10">
                 <Icon size={20} />
               </span>
             )}
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+            <div className="min-w-0">
+              <h2 className="wrap-break-word text-base font-bold text-slate-900 sm:text-lg">{title}</h2>
               {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
             </div>
           </div>
@@ -835,13 +1227,17 @@ export function Modal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            className="-mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:mr-0 sm:h-auto sm:w-auto sm:p-1.5"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4">{footer}</div>}
+        <div className={`flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5"}`}>{children}</div>
+        {footer && (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:[&>*]:flex-1 sm:gap-3 sm:px-6 sm:py-4">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -871,6 +1267,7 @@ export function FormModal({
   children,
 }) {
   const guardedClose = busy ? undefined : onClose;
+  const formId = useId();
   return (
     <Modal
       open={open}
@@ -881,6 +1278,18 @@ export function FormModal({
       icon={icon}
       size={size}
       ariaLabel={title}
+      // Actions live in the Modal footer (always visible; only the fields
+      // scroll). The submit button is tied to the form via form={formId}.
+      footer={
+        <>
+          <Button variant="secondary" onClick={guardedClose} disabled={busy}>
+            {cancelLabel}
+          </Button>
+          <Button variant="primary" type="submit" form={formId} loading={busy} icon={busy ? undefined : SubmitIcon}>
+            {submitLabel}
+          </Button>
+        </>
+      }
     >
       {error && (
         <div
@@ -892,6 +1301,7 @@ export function FormModal({
         </div>
       )}
       <form
+        id={formId}
         onSubmit={(e) => {
           e.preventDefault();
           if (!busy) onSubmit?.(e);
@@ -900,14 +1310,6 @@ export function FormModal({
         <fieldset disabled={busy} className="space-y-4">
           {children}
         </fieldset>
-        <div className="mt-6 flex items-center justify-end gap-3">
-          <Button variant="secondary" onClick={guardedClose} disabled={busy}>
-            {cancelLabel}
-          </Button>
-          <Button variant="primary" type="submit" loading={busy} icon={busy ? undefined : SubmitIcon}>
-            {submitLabel}
-          </Button>
-        </div>
       </form>
     </Modal>
   );
@@ -934,25 +1336,42 @@ export function ListToolbar({
   primaryLabel,
   onPrimary,
   primaryIcon: PrimaryIcon = Plus,
+  filterSheet,
+  activeFilterCount = 0,
+  filterSheetTitle = "Filters",
   children,
 }) {
+  // Optional filter sheet: when a page passes `filterSheet` (its filter
+  // controls), phones/small tablets open them in a bottom sheet from the
+  // Filters button; desktop keeps the page's inline toggle (onToggleFilters).
+  const isNarrow = useMediaQuery(BELOW_MD);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const useSheet = Boolean(filterSheet) && isNarrow;
+  const filterActive = useSheet ? sheetOpen : filtersOpen;
+  const onFilterClick = useSheet ? () => setSheetOpen(true) : onToggleFilters;
+  const iconButton = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:min-h-0 sm:min-w-0";
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-1 items-center gap-3">
-        <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} className="max-w-md flex-1" />
-        {showFilters && onToggleFilters && (
+      <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-auto sm:gap-3">
+        <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} className="min-w-0 flex-1 sm:max-w-md" />
+        {showFilters && onFilterClick && (
           <button
             type="button"
-            onClick={onToggleFilters}
-            aria-label={filtersOpen ? "Hide filters" : "Show filters"}
-            aria-expanded={filtersOpen}
-            className={`rounded-xl border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 ${
-              filtersOpen
+            onClick={onFilterClick}
+            aria-label={`${filterActive ? "Hide filters" : "Show filters"}${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
+            aria-expanded={filterActive}
+            className={`relative ${iconButton} ${
+              filterActive || activeFilterCount > 0
                 ? "border-brand-200 bg-brand-50 text-brand-600"
                 : "border-slate-200 text-slate-500 hover:bg-slate-50"
             }`}
           >
             <Filter size={18} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-600 px-1 text-xs font-bold leading-none text-white">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
         )}
         {onRefresh && (
@@ -961,7 +1380,7 @@ export function ListToolbar({
             onClick={onRefresh}
             disabled={refreshing}
             aria-label="Refresh"
-            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-50"
+            className={`${iconButton} border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50`}
           >
             <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
           </button>
@@ -974,7 +1393,7 @@ export function ListToolbar({
             onClick={onExportJson}
             aria-label="Export as JSON"
             title="Export JSON"
-            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            className={`${iconButton} border-slate-200 text-slate-500 hover:bg-slate-50`}
           >
             <Download size={18} />
           </button>
@@ -985,7 +1404,7 @@ export function ListToolbar({
             onClick={onExportCsv}
             aria-label="Export as CSV"
             title="Export CSV"
-            className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            className={`${iconButton} border-slate-200 text-slate-500 hover:bg-slate-50`}
           >
             <FileText size={18} />
           </button>
@@ -997,6 +1416,22 @@ export function ListToolbar({
           </Button>
         )}
       </div>
+      {useSheet && (
+        <Modal
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          title={filterSheetTitle}
+          icon={Filter}
+          size="md"
+          footer={
+            <Button variant="primary" onClick={() => setSheetOpen(false)}>
+              Done
+            </Button>
+          }
+        >
+          <div className="space-y-4">{filterSheet}</div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1057,13 +1492,27 @@ export function SearchInput({ value, onChange, placeholder = "Search…", classN
  * Field + Select — form primitives
  * ------------------------------------------------------------------ */
 
-export function Field({ label, htmlFor, required, error, hint, children, className = "" }) {
+// Shared look for text inputs/textarea. Disabled controls read as clearly
+// unavailable (muted fill, dashed border, not-allowed cursor) instead of
+// looking almost filled in (team feedback T6).
+export const FORM_CONTROL_CLASS =
+  "block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:cursor-not-allowed disabled:border-dashed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500";
+
+// Field: `required` adds the single "*" marker (pair with one <RequiredNote />
+// per form — no "(optional)" labels, T7); `comingSoon` adds a small tag next
+// to the label instead of a button-like pill under the control (T6).
+export function Field({ label, htmlFor, required, comingSoon = false, error, hint, children, className = "" }) {
   return (
     <div className={className}>
       {label && (
         <label htmlFor={htmlFor} className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-600">
           {label}
           {required && <span className="ml-0.5 text-red-500">*</span>}
+          {comingSoon && (
+            <span className="ml-2 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 align-middle text-xs font-medium normal-case tracking-normal text-slate-500">
+              Coming soon
+            </span>
+          )}
         </label>
       )}
       {children}
@@ -1082,7 +1531,7 @@ export function Select({ value, onChange, options = [], placeholder = "All", cla
       <select
         value={value ?? ""}
         onChange={(e) => onChange?.(e.target.value)}
-        className="w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3.5 pr-9 text-sm text-slate-700 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+        className="w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3.5 pr-9 text-sm text-slate-700 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 disabled:cursor-not-allowed disabled:border-dashed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500"
         {...rest}
       >
         {placeholder && <option value="">{placeholder}</option>}
@@ -1098,6 +1547,150 @@ export function Select({ value, onChange, options = [], placeholder = "All", cla
 }
 
 export { ChevronUp, ChevronDown };
+
+/* ------------------------------------------------------------------ *
+ * Form layout + mobile form-page pattern
+ * ------------------------------------------------------------------ */
+
+// One column on phones, two from sm (three from lg with cols={3}). Rows align
+// to the top so a wrapping label never drags its neighbour's input (T1).
+const FORM_GRID_COLS = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+};
+
+export function FormGrid({ cols = 2, className = "", children }) {
+  return <div className={`grid items-start gap-4 ${FORM_GRID_COLS[cols] || FORM_GRID_COLS[2]} ${className}`}>{children}</div>;
+}
+
+// The one "* Required" note a form shows (T7).
+export function RequiredNote({ className = "" }) {
+  return (
+    <p className={`text-xs text-slate-500 ${className}`}>
+      <span className="text-red-500">*</span> Required
+    </p>
+  );
+}
+
+// Sticky context bar for create/edit pages on phones: back, title and
+// "Step X of Y", pinned under the app top bar while the form scrolls (T4).
+// Hidden from sm up, where the page's own header stays in view.
+export function FormPageBar({ title, onBack, backLabel = "Back", step, totalSteps, className = "" }) {
+  return (
+    <div
+      className={`sticky top-0 z-30 -mx-4 -mt-6 mb-4 flex min-h-14 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 backdrop-blur sm:hidden ${className}`}
+    >
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={backLabel}
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        >
+          <ArrowLeft size={20} />
+        </button>
+      )}
+      <p className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-slate-900">{title}</p>
+      {step != null && totalSteps != null && (
+        <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+          Step {step} of {totalSteps}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Sticky Cancel + primary action bar for create/edit pages, built on
+// StickyFooter (safe-area padding; publishes --sticky-footer-h). Buttons
+// share the width on phones and sit right-aligned from sm up.
+export function FormActionBar({
+  onCancel,
+  cancelLabel = "Cancel",
+  primaryLabel = "Save",
+  onPrimary,
+  primaryIcon,
+  form,
+  busy = false,
+  disabled = false,
+  secondary,
+}) {
+  return (
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1">
+      {secondary}
+      {onCancel && (
+        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          {cancelLabel}
+        </Button>
+      )}
+      <Button
+        variant="primary"
+        type={form ? "submit" : "button"}
+        form={form}
+        onClick={onPrimary}
+        loading={busy}
+        disabled={disabled}
+        icon={busy ? undefined : primaryIcon}
+      >
+        {primaryLabel}
+      </Button>
+    </StickyFooter>
+  );
+}
+
+// Actions row for a hand-rolled scrolling dialog panel: sticks to the bottom
+// of the panel so Save/Create is always visible while the fields scroll.
+// The default bleed matches a `p-5 sm:p-8` panel; pass className to adjust.
+// Sticky offsets are measured inside the scroll container's padding, so the
+// negative bottom (= panel padding) is what makes the bar sit flush.
+export function DialogActions({
+  children,
+  className = "-bottom-5 -mx-5 -mb-5 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:-bottom-8 sm:-mx-8 sm:-mb-8 sm:px-8 sm:pb-8",
+}) {
+  return (
+    <div
+      className={`sticky z-10 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-white pt-4 max-sm:[&>*]:flex-1 sm:gap-3 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Unsaved-changes guard for create/edit forms. While `dirty`:
+//  - reload / tab close / external navigation shows the browser's prompt;
+//  - clicking an in-app link (sidebar, breadcrumbs, cards) asks first.
+// The app uses <BrowserRouter> (no data router), so React Router's
+// useBlocker is unavailable and the browser Back button is not intercepted.
+export function useUnsavedChangesGuard(dirty, message = "You have unsaved changes. Leave this page and discard them?") {
+  const messageRef = useRef(message);
+  messageRef.current = message;
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const onClickCapture = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = e.target.closest?.("a[href]");
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      if (!window.confirm(messageRef.current)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClickCapture, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClickCapture, true);
+    };
+  }, [dirty]);
+}
 
 /* ------------------------------------------------------------------ *
  * ActivityTimeline + CommunicationHistory — normalized enterprise
