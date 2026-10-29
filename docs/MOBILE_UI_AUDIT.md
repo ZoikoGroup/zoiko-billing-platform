@@ -424,22 +424,22 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/contracts/retainers.jsx:455` | Delete Retainer | Delete |
 | `modules/billing/customers/customer-import-wizard.jsx:713` | Import Customers | Back |
 | `modules/billing/customers/customer-profile.jsx:44` | *(title computed in code)* | Cancel |
-| `modules/billing/payments/collections-case-detail.jsx:217` | Assign Case | (labels computed in code) |
-| `modules/billing/payments/collections-case-detail.jsx:236` | Log Collection Action | (labels computed in code) |
-| `modules/billing/payments/collections-case-detail.jsx:262` | Resolve Collections Case | (labels computed in code) |
-| `modules/billing/payments/credits.jsx:358` | Void Credit Note | Void |
-| `modules/billing/payments/dunning-case-detail.jsx:249` | Resolve Dunning Case | (labels computed in code) |
-| `modules/billing/payments/dunning-case-detail.jsx:268` | Log a Promise to Pay | Save |
-| `modules/billing/payments/dunning-levels.jsx:268` | *(title computed in code)* | Create |
-| `modules/billing/payments/payment-detail.jsx:820` | Reverse Allocation | (labels computed in code) |
-| `modules/billing/payments/payment-detail.jsx:837` | Refund Payment | Process Refund |
-| `modules/billing/payments/payment-list.jsx:714` | Record Payment | (labels computed in code) |
-| `modules/billing/payments/refund-detail.jsx:480` | Start Processing Refund | (labels computed in code) |
-| `modules/billing/payments/refund-detail.jsx:511` | Reject Refund | (labels computed in code) |
-| `modules/billing/payments/refund-detail.jsx:530` | Mark Refund as Failed | (labels computed in code) |
-| `modules/billing/payments/refund-detail.jsx:549` | Cancel Refund | (labels computed in code) |
-| `modules/billing/payments/write-off-detail.jsx:470` | Reverse Write-off | (labels computed in code) |
-| `modules/billing/payments/write-off-detail.jsx:492` | Cancel Write-off | (labels computed in code) |
+| `modules/billing/payments/collections-case-detail.jsx:217` | Assign Case — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/collections-case-detail.jsx:236` | Log Collection Action — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/collections-case-detail.jsx:262` | Resolve Collections Case — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/credits.jsx:358` | Void Credit Note — **Migrated (B2)** | Void |
+| `modules/billing/payments/dunning-case-detail.jsx:249` | Resolve Dunning Case — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/dunning-case-detail.jsx:268` | Log a Promise to Pay — **Migrated (B2)** | Save |
+| `modules/billing/payments/dunning-levels.jsx:268` | *(title computed in code)* — **Migrated (B2)** | Create |
+| `modules/billing/payments/payment-detail.jsx:820` | Reverse Allocation — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/payment-detail.jsx:837` | Refund Payment — **Migrated (B2)** | Process Refund |
+| `modules/billing/payments/payment-list.jsx:714` | Record Payment — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:480` | Start Processing Refund — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:511` | Reject Refund — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:530` | Mark Refund as Failed — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/refund-detail.jsx:549` | Cancel Refund — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/write-off-detail.jsx:470` | Reverse Write-off — **Migrated (B2)** | (labels computed in code) |
+| `modules/billing/payments/write-off-detail.jsx:492` | Cancel Write-off — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/pricing/currency-pricing.jsx:74` | *(title computed in code)* | Save |
 | `modules/billing/pricing/discount-engine.jsx:193` | *(title computed in code)* | Create Discount |
 | `modules/billing/pricing/discount-engine.jsx:278` | Discount Details | Close |
@@ -475,6 +475,33 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/organization-admin/UserManagementPage.jsx:612` | Invite User | Cancel, Send Invite |
 | `modules/organization-admin/UserManagementPage.jsx:713` | Edit User | Cancel, Save Changes |
 | `modules/super-admin/TriagePage.jsx:551` | *(title computed in code)* | (labels computed in code) |
+
+#### B2 results — Payments (16 dialogs): done
+
+The module has **16** hand-rolled dialogs, not 19 as stated in the B2 plan (the inventory above lists 16 rows). All 16 are rebuilt on the shared `Modal` with their actions in `footer`; handlers, validation, field names, disabled/loading conditions and API calls are copied word for word. Backdrop behaviour is kept per dialog: dialogs that only closed on Esc (Reject Refund, Log Collection Action, Reverse Allocation, Refund Payment) use `closeOnBackdrop={false}`; the guards that block closing while an action is running (`if (actionLoading !== "void")`, `isActing("dealloc")`, `!wizardLoading && !wizardSuccess`) are kept in `onClose`.
+
+| Dialog | Status | Notes |
+|---|---|---|
+| refund-detail — Start Processing / Reject / Mark Failed / Cancel | **Migrated** | `size="sm"`; Cancel Refund keeps its red icon (`tone="danger"`) |
+| write-off-detail — Reverse / Cancel | **Migrated** | Reverse keeps its orange button (no shared orange variant); sized like the shared `Button` and kept on one line. Cancel uses `destructive` |
+| collections-case-detail — Assign / Log Collection Action / Resolve | **Migrated** | |
+| dunning-case-detail — Resolve / Log a Promise to Pay | **Migrated** | |
+| payment-detail — Reverse Allocation / Refund Payment | **Migrated** | Refundable amount moved into the dialog description |
+| credits — Void Credit Note | **Migrated** | |
+| dunning-levels — New / Edit Dunning Level | **Migrated** | Short form (4 fields): plain `Modal` `md`; sections would add height for nothing |
+| payment-list — Record Payment (4-step wizard) | **Migrated** | `Modal size="xl"` (full screen on phones); the hand-built step row is replaced by the shared `Stepper` (compact "Step X of 4" bar on phones, where the old row was clipped at "Revie…"); Back / Cancel / Continue / Record Payment in the footer with the same step validation. Step contents unchanged |
+
+**Shared change:** `Modal` footer buttons are at least 44px tall on phones (`max-sm:[&>*]:min-h-11`); unchanged from `sm` up.
+
+Measured at 390 and 1280 (refund, write-off and dunning detail use route-intercepted data, since the local DB has no refunds, write-offs or dunning cases; Record Payment and Dunning Levels use real local data): primary action in the pinned footer, visible and uncovered, 44px tall on phones, no horizontal overflow. Screenshots: `shots/phase3/stepB2-payments/{before,after,after-r2}/` (`after-r2` = after the write-off Reverse button fix: 56px two-line → 44px one line at 390).
+
+**Desktop differences (1280):** same as B1 — blurred backdrop, a close × in the header, actions in a light footer band with a divider, Cancel drawn as a bordered secondary button. Record Payment's step row now uses the shared `Stepper` (brand-coloured check for completed steps instead of green). Record Payment keeps its width (`xl` = `max-w-4xl`) but now scrolls inside the dialog with the footer pinned, instead of scrolling the whole overlay.
+
+**Tests:** every rebuilt dialog now has a smoke test (opens → primary calls its handler/API with the expected arguments → closes): new `{write-off-detail,collections-case-detail,dunning-case-detail,payment-detail,credits,dunning-levels}.dialogs.test.jsx`, plus Start Processing and Mark Failed added to `refund-detail.test.jsx`. Payments: 14 files, 54 tests pass. Full suite (`--maxWorkers=1`): 135 files, 919 tests pass. `npm run build` passes (the first attempt ran out of Node heap while the dev server was running on this 8GB machine; it passed with `NODE_OPTIONS=--max-old-space-size=3072`, no code change).
+
+**Caught by the new tests and fixed before commit:** the conversion script dropped attributes written on the same line as `<button` — the "Log a Promise to Pay" Save button had lost its `onClick={handleCreatePromise}` and its disabled rule. Restored word for word; a scan of every `onClick`/`disabled`/`onChange`/`value` expression in the 8 files against `HEAD` shows nothing else missing (the only differences are overlay/× close handlers, now in `onClose`). The script is fixed for the next modules.
+
+**Follow-up (pre-existing, not changed):** `payment-detail.jsx` reads allocations through `extractArray`, which understands arrays, `items` and `data` but not `{ allocations: [...] }` (the shape its own error fallback uses). If the API returns that shape, the Allocations tab would show empty. Needs a check against the real response; out of scope here.
 
 ## 9. Local environment safety notes
 

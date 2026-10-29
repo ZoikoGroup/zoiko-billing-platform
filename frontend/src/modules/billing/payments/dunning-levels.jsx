@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, X, Layers, Pencil, CheckCircle, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Layers, Pencil, CheckCircle, Save } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { dunningApi } from "../../../service/billingService";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { ErrorState, useConfirmationDialog } from "../../../components/billing-shared";
@@ -265,17 +266,22 @@ export default function DunningLevelsPage() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeModal}
-          onKeyDown={(e) => { if (e.key === "Escape") closeModal(); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="dunning-level-modal-title"
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h3 id="dunning-level-modal-title" className="text-lg font-semibold text-slate-800">
-                {isEdit ? `Edit Dunning Level ${editingLevel.level_number}` : "New Dunning Level"}
-              </h3>
-              <button onClick={closeModal} aria-label="Close" className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
+        <Modal
+          open
+          onClose={closeModal}
+          title={isEdit ? `Edit Dunning Level ${editingLevel.level_number}` : "New Dunning Level"}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeModal} disabled={saving}>Cancel</Button>
+              <Button variant="primary" onClick={handleSubmit} disabled={saving || !canSubmit}>
+                {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : isEdit ? <Save size={16} /> : <Plus size={16} />}
+                {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save Changes" : "Create"}
+              </Button>
+            </>
+          }
+        >
+            <div className="space-y-4">
               {formError && <div role="alert" className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" /> {formError}</div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -323,16 +329,7 @@ export default function DunningLevelsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={closeModal} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-              <button onClick={handleSubmit} disabled={saving || !canSubmit}
-                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1.5">
-                {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : isEdit ? <Save size={16} /> : <Plus size={16} />}
-                {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save Changes" : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {ConfirmationDialog}
     </HRPage>

@@ -5,6 +5,7 @@ import {
   CheckCircle, X, Clock, HandCoins, UserPlus,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { collectionApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 
@@ -214,77 +215,91 @@ export default function CollectionsCaseDetailPage() {
       </div>
 
       {assignModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAssignModal({ open: false, assignedTo: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Assign Case</h2>
-            <input type="number" placeholder="Employee ID" value={assignModal.assignedTo} onChange={(e) => setAssignModal((p) => ({ ...p, assignedTo: e.target.value }))}
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setAssignModal({ open: false, assignedTo: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button
+        <Modal
+          open
+          onClose={() => setAssignModal({ open: false, assignedTo: "" })}
+          title="Assign Case"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setAssignModal({ open: false, assignedTo: "" })}>Cancel</Button>
+              <Button
+                variant="primary"
                 onClick={async () => { const to = Number(assignModal.assignedTo); setAssignModal({ open: false, assignedTo: "" }); await handleAction("assign", () => collectionApi.assignCase(caseData.id, to)); }}
-                disabled={!assignModal.assignedTo}
-                className="px-6 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+                disabled={!assignModal.assignedTo}>
                 Assign
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <input type="number" placeholder="Employee ID" value={assignModal.assignedTo} onChange={(e) => setAssignModal((p) => ({ ...p, assignedTo: e.target.value }))}
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
 
       {actionModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setActionModal({ open: false, description: "", outcome: "" }); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="log-collection-action-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h2 id="log-collection-action-title" className="text-lg font-bold text-slate-900 mb-4">Log Collection Action</h2>
-            <div className="space-y-3">
-              <textarea autoFocus value={actionModal.description} onChange={(e) => setActionModal((p) => ({ ...p, description: e.target.value }))} rows={2} placeholder="What happened?"
-                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              <input type="text" value={actionModal.outcome} onChange={(e) => setActionModal((p) => ({ ...p, outcome: e.target.value }))} placeholder="Outcome"
-                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setActionModal({ open: false, description: "", outcome: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button
+        <Modal
+          open
+          onClose={() => setActionModal({ open: false, description: "", outcome: "" })}
+          closeOnBackdrop={false}
+          title="Log Collection Action"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setActionModal({ open: false, description: "", outcome: "" })}>Cancel</Button>
+              <Button
+                variant="primary"
                 onClick={async () => {
                   const { description, outcome } = actionModal;
                   setActionModal({ open: false, description: "", outcome: "" });
                   await handleAction("log", () => collectionApi.logAction(caseData.id, { action_type: "phone_call", description, outcome }));
-                }}
-                className="px-6 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 inline-flex items-center gap-2">
+                }}>
                 <HandCoins className="h-4 w-4" /> Save
-              </button>
-            </div>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <textarea autoFocus value={actionModal.description} onChange={(e) => setActionModal((p) => ({ ...p, description: e.target.value }))} rows={2} placeholder="What happened?"
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            <input type="text" value={actionModal.outcome} onChange={(e) => setActionModal((p) => ({ ...p, outcome: e.target.value }))} placeholder="Outcome"
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
-        </div>
+        </Modal>
       )}
 
       {resolveModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setResolveModal({ open: false, resolution: "", amountCollected: "" }); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="resolve-collections-case-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h2 id="resolve-collections-case-title" className="text-lg font-bold text-slate-900 mb-4">Resolve Collections Case</h2>
-            <textarea autoFocus value={resolveModal.resolution} onChange={(e) => setResolveModal((p) => ({ ...p, resolution: e.target.value }))} rows={3} placeholder="How was this resolved? (required)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <label className="block text-xs font-medium text-slate-500 mb-1">Amount Collected (optional)</label>
-            <input type="number" min="0" step="0.01" value={resolveModal.amountCollected}
-              onChange={(e) => setResolveModal((p) => ({ ...p, amountCollected: e.target.value }))}
-              placeholder="0.00"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button
+        <Modal
+          open
+          onClose={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })}
+          closeOnBackdrop={false}
+          title="Resolve Collections Case"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setResolveModal({ open: false, resolution: "", amountCollected: "" })}>Cancel</Button>
+              <Button
+                variant="success"
                 onClick={async () => {
                   const { resolution, amountCollected } = resolveModal;
                   setResolveModal({ open: false, resolution: "", amountCollected: "" });
                   const parsedAmount = amountCollected !== "" ? parseFloat(amountCollected) : undefined;
                   await handleAction("resolve", () => collectionApi.resolveCase(caseData.id, resolution, parsedAmount));
                 }}
-                disabled={!resolveModal.resolution.trim()}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-2">
+                disabled={!resolveModal.resolution.trim()}>
                 <CheckCircle className="h-4 w-4" /> Resolve
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <textarea autoFocus value={resolveModal.resolution} onChange={(e) => setResolveModal((p) => ({ ...p, resolution: e.target.value }))} rows={3} placeholder="How was this resolved? (required)"
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+          <label className="block text-xs font-medium text-slate-500 mb-1">Amount Collected (optional)</label>
+          <input type="number" min="0" step="0.01" value={resolveModal.amountCollected}
+            onChange={(e) => setResolveModal((p) => ({ ...p, amountCollected: e.target.value }))}
+            placeholder="0.00"
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
     </HRPage>
   );

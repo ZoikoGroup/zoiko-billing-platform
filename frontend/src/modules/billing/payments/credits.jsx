@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Receipt, Search, Filter, X, RefreshCw,
   CheckCircle, XCircle, Clock, FileText, Loader2, Send } from "lucide-react"
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
@@ -355,26 +356,28 @@ export default function CreditsPage() {
       </div>
     </HRPage>
     {voidModal.open && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (actionLoading !== "void") setVoidModal({ open: false, creditId: null, reason: "" }); }}>
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Void Credit Note</h3>
+      <Modal
+        open
+        onClose={() => { if (actionLoading !== "void") setVoidModal({ open: false, creditId: null, reason: "" }); }}
+        title="Void Credit Note"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setVoidModal({ open: false, creditId: null, reason: "" })} disabled={actionLoading === "void"}>Cancel</Button>
+            <Button variant="destructive" onClick={handleVoid} disabled={actionLoading === "void"}>
+              {actionLoading === "void" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              Void
+            </Button>
+          </>
+        }
+      >
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">Reason (optional)</label>
             <textarea value={voidModal.reason} onChange={(e) => setVoidModal((p) => ({ ...p, reason: e.target.value }))} rows={3}
               placeholder="Enter reason for voiding..."
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
-          <div className="flex justify-end gap-3 mt-6">
-            <button onClick={() => setVoidModal({ open: false, creditId: null, reason: "" })} disabled={actionLoading === "void"}
-              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg">Cancel</button>
-            <button onClick={handleVoid} disabled={actionLoading === "void"}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">
-              {actionLoading === "void" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-              Void
-            </button>
-          </div>
-        </div>
-      </div>
+      </Modal>
     )}
     </>
   );

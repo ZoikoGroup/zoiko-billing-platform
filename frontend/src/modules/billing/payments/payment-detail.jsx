@@ -4,6 +4,7 @@ import { ArrowLeft, CreditCard, RefreshCw, AlertCircle, Loader2, CheckCircle,
   FileText, User, Layers, Clock, FileEdit, Activity, Shield, Ban, Calendar, Receipt, Plus,
   XCircle, RotateCcw } from "lucide-react"
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { paymentApi, invoiceApi, customerApi, auditApi, refundApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 
@@ -817,27 +818,45 @@ export default function PaymentDetailPage() {
       </div>
     </HRPage>
     {confirmDealloc && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl mx-4">
-          <h3 className="text-lg font-bold text-slate-900 mb-2">Reverse Allocation</h3>
-          <p className="text-sm text-slate-500 mb-5">This will remove the allocation and restore the invoice balance. This action cannot be undone.</p>
-          <div className="flex justify-end gap-3">
-            <button onClick={() => setConfirmDealloc(null)} disabled={isActing("dealloc")}
-              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
-            <button onClick={() => handleDeallocation(confirmDealloc)} disabled={isActing("dealloc")}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">
+      // No backdrop close (as before); Esc/✕ are ignored while reversing.
+      <Modal
+        open
+        onClose={() => { if (!isActing("dealloc")) setConfirmDealloc(null); }}
+        closeOnBackdrop={false}
+        title="Reverse Allocation"
+        icon={RotateCcw}
+        tone="danger"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDealloc(null)} disabled={isActing("dealloc")}>Cancel</Button>
+            <Button variant="destructive" onClick={() => handleDeallocation(confirmDealloc)} disabled={isActing("dealloc")}>
               {isActing("dealloc") ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
               {isActing("dealloc") ? "Reversing..." : "Confirm Reversal"}
-            </button>
-          </div>
-        </div>
-      </div>
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-500">This will remove the allocation and restore the invoice balance. This action cannot be undone.</p>
+      </Modal>
     )}
     {showRefundModal && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (actionLoading !== "refund") setShowRefundModal(false); }}>
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">Refund Payment</h3>
-          <p className="text-sm text-slate-500 mb-4">Refundable amount: {formatDisplayCurrency(payment.amount, payment.currency)}</p>
+      <Modal
+        open
+        onClose={() => { if (actionLoading !== "refund") setShowRefundModal(false); }}
+        title="Refund Payment"
+        description={`Refundable amount: ${formatDisplayCurrency(payment.amount, payment.currency)}`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowRefundModal(false)} disabled={actionLoading === "refund"}>Cancel</Button>
+            <Button variant="primary" onClick={handleRefund} disabled={actionLoading === "refund" || !refundAmount || parseFloat(refundAmount) <= 0}>
+              {actionLoading === "refund" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              {actionLoading === "refund" ? "Processing..." : "Process Refund"}
+            </Button>
+          </>
+        }
+      >
 
           <div className="space-y-4">
             <div>
@@ -869,18 +888,7 @@ export default function PaymentDetailPage() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
             </div>
           </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <button onClick={() => setShowRefundModal(false)} disabled={actionLoading === "refund"}
-              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
-            <button onClick={handleRefund} disabled={actionLoading === "refund" || !refundAmount || parseFloat(refundAmount) <= 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50">
-              {actionLoading === "refund" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-              {actionLoading === "refund" ? "Processing..." : "Process Refund"}
-            </button>
-          </div>
-        </div>
-      </div>
+      </Modal>
     )}
   </>
   );

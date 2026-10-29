@@ -5,6 +5,7 @@ import {
   CheckCircle, X, Clock, HandCoins,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { dunningApi, promiseToPayApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 
@@ -246,54 +247,64 @@ export default function DunningCaseDetailPage() {
       </div>
 
       {resolveModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setResolveModal({ open: false, note: "" })}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Resolve Dunning Case</h2>
-            <textarea value={resolveModal.note} onChange={(e) => setResolveModal((p) => ({ ...p, note: e.target.value }))} rows={3} placeholder="Resolution note (optional)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setResolveModal({ open: false, note: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button
+        <Modal
+          open
+          onClose={() => setResolveModal({ open: false, note: "" })}
+          title="Resolve Dunning Case"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setResolveModal({ open: false, note: "" })}>Cancel</Button>
+              <Button
+                variant="success"
                 onClick={async () => { const note = resolveModal.note; setResolveModal({ open: false, note: "" }); await handleAction("resolve", () => dunningApi.resolveCase(dunningCase.id, note || undefined)); }}
-                disabled={actionLoading === "resolve"}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-2">
+                disabled={actionLoading === "resolve"}>
                 {actionLoading === "resolve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} Resolve
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <textarea value={resolveModal.note} onChange={(e) => setResolveModal((p) => ({ ...p, note: e.target.value }))} rows={3} placeholder="Resolution note (optional)"
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
 
       {promiseModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setPromiseModal({ open: false, amount: "", date: "", notes: "" }); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="promise-to-pay-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h2 id="promise-to-pay-title" className="text-lg font-bold text-slate-900 mb-4">Log a Promise to Pay</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
-                <input autoFocus type="number" min="0" step="0.01" value={promiseModal.amount} onChange={(e) => setPromiseModal((p) => ({ ...p, amount: e.target.value }))}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Promise Date *</label>
-                <input type="date" value={promiseModal.date} onChange={(e) => setPromiseModal((p) => ({ ...p, date: e.target.value }))}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                <textarea value={promiseModal.notes} onChange={(e) => setPromiseModal((p) => ({ ...p, notes: e.target.value }))} rows={2}
-                  className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleCreatePromise} disabled={actionLoading === "promise" || !promiseModal.amount || !promiseModal.date}
-                className="px-6 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 inline-flex items-center gap-2">
+        <Modal
+          open
+          onClose={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })}
+          closeOnBackdrop={false}
+          title="Log a Promise to Pay"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setPromiseModal({ open: false, amount: "", date: "", notes: "" })}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleCreatePromise} disabled={actionLoading === "promise" || !promiseModal.amount || !promiseModal.date}>
                 {actionLoading === "promise" ? <Loader2 className="h-4 w-4 animate-spin" /> : <HandCoins className="h-4 w-4" />} Save
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Amount *</label>
+              <input autoFocus type="number" min="0" step="0.01" value={promiseModal.amount} onChange={(e) => setPromiseModal((p) => ({ ...p, amount: e.target.value }))}
+                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Promise Date *</label>
+              <input type="date" value={promiseModal.date} onChange={(e) => setPromiseModal((p) => ({ ...p, date: e.target.value }))}
+                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+              <textarea value={promiseModal.notes} onChange={(e) => setPromiseModal((p) => ({ ...p, notes: e.target.value }))} rows={2}
+                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </HRPage>
   );

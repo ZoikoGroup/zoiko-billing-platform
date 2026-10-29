@@ -9,6 +9,7 @@ import { useCurrency } from "../utils/CurrencyContext";
 import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
+import { Button, Modal, Stepper } from "../../../components/billing-ui";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -61,19 +62,6 @@ function StatusBadge({ status }) {
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
   const Icon = icons[status] || Clock;
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
-}
-
-function WizardStep({ number, label, active, completed }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-        completed ? "bg-emerald-500 text-white" : active ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-500"
-      }`}>
-        {completed ? <CheckCircle size={16} /> : number}
-      </div>
-      <span className={`text-sm font-medium ${active ? "text-brand-700" : completed ? "text-emerald-700" : "text-slate-500"}`}>{label}</span>
-    </div>
-  );
 }
 
 export default function PaymentListPage() {
@@ -711,425 +699,412 @@ export default function PaymentListPage() {
       </div>
 
       {showWizard && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-10 overflow-y-auto" onClick={() => { if (!wizardLoading && !wizardSuccess) closeWizard(); }}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl mx-4 mb-10" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">Record Payment</h2>
-              <button onClick={() => { if (!wizardLoading && !wizardSuccess) closeWizard(); }} aria-label="Close record payment dialog" className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"><X size={20} /></button>
-            </div>
+        <Modal
+          open
+          onClose={() => { if (!wizardLoading && !wizardSuccess) closeWizard(); }}
+          title="Record Payment"
+          size="xl"
+          footer={
+            <>
+              {wizardStep > 1 && (
+                <Button variant="ghost" className="sm:mr-auto" onClick={() => setWizardStep((s) => s - 1)} disabled={wizardLoading || !!wizardSuccess}>Back</Button>
+              )}
+              <Button variant="ghost" onClick={() => closeWizard()} disabled={wizardLoading || !!wizardSuccess}>Cancel</Button>
+              {wizardStep < 4 ? (
+                <Button variant="primary" onClick={() => {
+                  if (wizardStep === 1 && !wizardData.customer_id) { setWizardError("Please select a customer"); return; }
+                  if (wizardStep === 1 && (!wizardData.amount || parseFloat(wizardData.amount) <= 0)) { setWizardError("Please enter a valid payment amount"); return; }
+                  if (wizardStep === 2 && wizardData.invoice_id) {
+                    const allocAmt = parseFloat(wizardData.allocations[0]?.amount || 0);
+                    if (allocAmt > parseFloat(wizardData.invoice_balance)) { setWizardError("Allocation amount cannot exceed invoice balance"); return; }
+                  }
+                  setWizardError(null);
+                  setWizardStep((s) => s + 1);
+                }} disabled={wizardStep === 1 && (!wizardData.customer_id || !wizardData.amount)}>
+                  Continue
+                </Button>
+              ) : (
+                <Button variant="primary" onClick={handleCreatePayment} disabled={wizardLoading || !!wizardSuccess}>
+                  {wizardLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                  {wizardLoading ? "Recording..." : "Record Payment"}
+                </Button>
+              )}
+            </>
+          }
+        >
+          <Stepper
+            className="mb-6 sm:mb-8"
+            current={wizardStep - 1}
+            steps={[{ label: "Customer / Invoice" }, { label: "Allocation" }, { label: "Review" }, { label: "Confirm" }]}
+          />
 
-            <div className="flex items-center justify-between mb-8 px-4">
-              <WizardStep number={1} label="Customer / Invoice" active={wizardStep === 1} completed={wizardStep > 1} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={2} label="Allocation" active={wizardStep === 2} completed={wizardStep > 2} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={3} label="Review" active={wizardStep === 3} completed={wizardStep > 3} />
-              <div className="flex-1 h-px bg-slate-200 mx-3" />
-              <WizardStep number={4} label="Confirm" active={wizardStep === 4} completed={wizardStep > 4} />
-            </div>
+          {wizardSuccess && <SuccessMessage message={wizardSuccess} />}
+          {wizardError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{wizardError}</div>}
 
-            {wizardSuccess && <SuccessMessage message={wizardSuccess} />}
-            {wizardError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{wizardError}</div>}
-
-            {wizardStep === 1 && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4"><User size={20} className="text-brand-500" /> Select Customer</h3>
-                  {wizardData.customer_id ? (
-                    <div className="p-4 bg-brand-50 border border-brand-200 rounded-xl">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center font-bold">
-                            {wizardData.customer_name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
-                            <p className="text-xs text-slate-500">{wizardData.customer_email}{wizardData.customer_phone ? ` · ${wizardData.customer_phone}` : ""}</p>
-                          </div>
+          {wizardStep === 1 && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4"><User size={20} className="text-brand-500" /> Select Customer</h3>
+                {wizardData.customer_id ? (
+                  <div className="p-4 bg-brand-50 border border-brand-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center font-bold">
+                          {wizardData.customer_name.charAt(0).toUpperCase()}
                         </div>
-                        <button onClick={() => setWizardData((p) => ({ ...p, customer_id: "", customer_name: "", customer_email: "", customer_phone: "", invoice_id: "", invoice_number: "", allocations: [] }))}
-                          className="text-sm text-brand-600 hover:text-brand-700 font-medium">Change</button>
-                      </div>
-
-                      {customerOutstanding.length > 0 && (
-                        <div className="mb-3">
-                          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Outstanding Invoices ({customerOutstanding.length})</p>
-                          <div className="max-h-40 overflow-y-auto space-y-1">
-                            {customerOutstanding.map((inv) => {
-                              const bal = parseFloat(inv.total_amount || inv.amount || 0) - parseFloat(inv.paid_amount || 0);
-                              return (
-                                <button key={inv.id} onClick={() => selectInvoice(inv)}
-                                  className={`w-full text-left p-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                                    wizardData.invoice_id === inv.id ? "bg-brand-100 border border-brand-200" : "bg-white border border-slate-200 hover:bg-slate-50"
-                                  }`}>
-                                  <div>
-                                    <span className="font-medium text-slate-700">{inv.invoice_number || `#${inv.id}`}</span>
-                                    <span className="text-xs text-slate-500 ml-2 capitalize">{inv.status?.replace(/_/g, " ")}</span>
-                                  </div>
-                                  <span className="font-medium text-slate-800">{formatDisplayCurrency(bal, inv.currency)}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {customerCredits.length > 0 && (
-                        <div className="mb-3">
-                          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Available Credits</p>
-                          <p className="text-sm text-slate-600">
-                            {formatDisplayCurrency(sumInBaseCurrency(customerCredits.filter((c) => c.status === "issued" || c.status === "applied"), baseCurrency).total, baseCurrency)}
-                            <span className="text-xs text-slate-500 ml-1">({customerCredits.filter((c) => c.status === "issued").length} issued)</span>
-                          </p>
-                        </div>
-                      )}
-
-                      {customerRecentPayments.length > 0 && (
                         <div>
-                          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Recent Payments</p>
-                          <div className="flex flex-wrap gap-2">
-                            {customerRecentPayments.slice(0, 5).map((p) => (
-                              <span key={p.id} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">
-                                {formatDisplayCurrency(p.amount, p.currency)} · {formatDisplayDate(p.payment_date)}
-                              </span>
-                            ))}
-                          </div>
+                          <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
+                          <p className="text-xs text-slate-500">{wizardData.customer_email}{wizardData.customer_phone ? ` · ${wizardData.customer_phone}` : ""}</p>
                         </div>
-                      )}
-
-                      {customerOutstanding.length === 0 && customerCredits.length === 0 && customerRecentPayments.length === 0 && (
-                        <p className="text-xs text-slate-500">No outstanding invoices, credits, or recent payments found.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="relative mb-3">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input type="text" placeholder="Search customers by name, email, or phone..." aria-label="Search customers by name, email, or phone" value={customerSearch}
-                          onChange={(e) => setCustomerSearch(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
-                      {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
-                      {customerResults.length > 0 && (
-                        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                          {customerResults.map((c) => (
-                            <button key={c.id} onClick={() => selectCustomer(c)}
-                              className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
-                              <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `Customer #${c.id}`}</p>
-                              <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
-                            </button>
+                      <button onClick={() => setWizardData((p) => ({ ...p, customer_id: "", customer_name: "", customer_email: "", customer_phone: "", invoice_id: "", invoice_number: "", allocations: [] }))}
+                        className="text-sm text-brand-600 hover:text-brand-700 font-medium">Change</button>
+                    </div>
+
+                    {customerOutstanding.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Outstanding Invoices ({customerOutstanding.length})</p>
+                        <div className="max-h-40 overflow-y-auto space-y-1">
+                          {customerOutstanding.map((inv) => {
+                            const bal = parseFloat(inv.total_amount || inv.amount || 0) - parseFloat(inv.paid_amount || 0);
+                            return (
+                              <button key={inv.id} onClick={() => selectInvoice(inv)}
+                                className={`w-full text-left p-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                                  wizardData.invoice_id === inv.id ? "bg-brand-100 border border-brand-200" : "bg-white border border-slate-200 hover:bg-slate-50"
+                                }`}>
+                                <div>
+                                  <span className="font-medium text-slate-700">{inv.invoice_number || `#${inv.id}`}</span>
+                                  <span className="text-xs text-slate-500 ml-2 capitalize">{inv.status?.replace(/_/g, " ")}</span>
+                                </div>
+                                <span className="font-medium text-slate-800">{formatDisplayCurrency(bal, inv.currency)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {customerCredits.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Available Credits</p>
+                        <p className="text-sm text-slate-600">
+                          {formatDisplayCurrency(sumInBaseCurrency(customerCredits.filter((c) => c.status === "issued" || c.status === "applied"), baseCurrency).total, baseCurrency)}
+                          <span className="text-xs text-slate-500 ml-1">({customerCredits.filter((c) => c.status === "issued").length} issued)</span>
+                        </p>
+                      </div>
+                    )}
+
+                    {customerRecentPayments.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Recent Payments</p>
+                        <div className="flex flex-wrap gap-2">
+                          {customerRecentPayments.slice(0, 5).map((p) => (
+                            <span key={p.id} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">
+                              {formatDisplayCurrency(p.amount, p.currency)} · {formatDisplayDate(p.payment_date)}
+                            </span>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4"><FileText size={20} className="text-brand-500" /> Invoice (Optional)</h3>
-                  <div className="flex gap-3">
-                    <div className="relative flex-1">
-                      <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input type="text" placeholder="Enter invoice number or ID..." value={customerInvoiceSearch}
-                        onChange={(e) => setCustomerInvoiceSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                    </div>
-                    <button onClick={() => { if (customerInvoiceSearch.trim()) loadInvoiceById(customerInvoiceSearch.trim()); }}
-                      disabled={invoiceSearching || !customerInvoiceSearch.trim()}
-                      className="px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 inline-flex items-center gap-2">
-                      {invoiceSearching && <Loader2 size={14} className="animate-spin" />} Load
-                    </button>
-                  </div>
-
-                  {wizardData.invoice_id && (
-                    <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="font-medium text-slate-800">{wizardData.invoice_number}</p>
-                        <button onClick={() => setWizardData((p) => ({ ...p, invoice_id: "", invoice_number: "", invoice_total: 0, invoice_paid: 0, invoice_balance: 0, allocations: [] }))}
-                          className="text-xs text-blue-600 hover:text-blue-800">Clear</button>
                       </div>
-                      <div className="grid grid-cols-4 gap-3 text-sm">
-                        <div><span className="text-xs text-slate-500">Total</span><p className="font-medium">{formatDisplayCurrency(wizardData.invoice_total, wizardData.currency)}</p></div>
-                        <div><span className="text-xs text-slate-500">Paid</span><p className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.invoice_paid, wizardData.currency)}</p></div>
-                        <div><span className="text-xs text-slate-500">Balance</span><p className="font-medium text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</p></div>
-                        <div><span className="text-xs text-slate-500">Status</span><p className="font-medium capitalize">{wizardData.invoice_status?.replace(/_/g, " ")}</p></div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="payment-number-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Number *</label>
-                    <input id="payment-number-input" type="text" value={wizardData.payment_number}
-                      onChange={(e) => setWizardData((p) => ({ ...p, payment_number: e.target.value }))}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                  <div>
-                    <label htmlFor="payment-date-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Date</label>
-                    <input id="payment-date-input" type="date" value={wizardData.payment_date}
-                      onChange={(e) => setWizardData((p) => ({ ...p, payment_date: e.target.value }))}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="payment-method-select" className="block text-sm font-medium text-slate-700 mb-1">Payment Type</label>
-                    <select id="payment-method-select" value={wizardData.payment_type}
-                      onChange={(e) => setWizardData((p) => ({ ...p, payment_type: e.target.value }))}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                      {PAYMENT_METHOD_OPTIONS.filter((t) => t.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="payment-amount-input" className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
-                    <div className="relative">
-                      <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input id="payment-amount-input" type="number" min="0" step="0.01" value={wizardData.amount}
-                        onChange={(e) => setWizardData((p) => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
-                        className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 2 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Layers size={20} className="text-brand-500" /> Payment Allocation</h3>
-
-                <div className="flex gap-2 mb-4">
-                  {["full", "partial", "overpayment"].map((mode) => (
-                    <button key={mode} onClick={() => setAllocationMode(mode)}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                        allocationMode === mode ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}>
-                      {mode === "full" ? "Full Payment" : mode === "partial" ? "Partial Payment" : "Overpayment"}
-                    </button>
-                  ))}
-                </div>
-
-                {wizardData.invoice_id ? (
-                  <div className="border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p className="font-medium text-slate-800">{wizardData.invoice_number}</p>
-                        <p className="text-xs text-slate-500 capitalize">Status: {wizardData.invoice_status?.replace(/_/g, " ")}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-slate-500">Balance: <span className="font-semibold text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span></p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <label className="block text-xs text-slate-500 mb-1">Allocation Amount</label>
-                        <input type="number" min="0" step="0.01" value={wizardData.allocations[0]?.amount || 0}
-                          onChange={(e) => updateAllocationAmount(0, e.target.value)}
-                          className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                      </div>
-                      <div className="pt-5">
-                        <span className="text-sm text-slate-500">of {formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span>
-                      </div>
-                    </div>
+                    {customerOutstanding.length === 0 && customerCredits.length === 0 && customerRecentPayments.length === 0 && (
+                      <p className="text-xs text-slate-500">No outstanding invoices, credits, or recent payments found.</p>
+                    )}
                   </div>
                 ) : (
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700 flex items-center gap-2">
-                    <AlertCircle size={16} /> No invoice selected. This payment will be recorded without allocation.
+                  <div>
+                    <div className="relative mb-3">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input type="text" placeholder="Search customers by name, email, or phone..." aria-label="Search customers by name, email, or phone" value={customerSearch}
+                        onChange={(e) => setCustomerSearch(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    </div>
+                    {customerSearching && <p className="text-sm text-slate-500 text-center py-2">Searching...</p>}
+                    {customerResults.length > 0 && (
+                      <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                        {customerResults.map((c) => (
+                          <button key={c.id} onClick={() => selectCustomer(c)}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors">
+                            <p className="font-medium text-slate-800">{c.display_name || c.company_name || c.name || `Customer #${c.id}`}</p>
+                            <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ""}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                  <div className="flex justify-between text-sm text-slate-600 mb-1">
-                    <span>Payment Amount</span>
-                    <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-slate-600 mb-1">
-                    <span>Allocated</span>
-                    <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-medium border-t border-slate-200 pt-2 mt-1">
-                    <span>Unallocated / Overpayment</span>
-                    <span className={calcRemaining() > 0 ? "text-amber-600" : calcRemaining() < 0 ? "text-red-600" : "text-slate-800"}>
-                      {formatDisplayCurrency(Math.abs(calcRemaining()), wizardData.currency)}
-                      {calcRemaining() > 0 ? " (unallocated)" : calcRemaining() < 0 ? " (overpayment)" : ""}
-                    </span>
-                  </div>
-                </div>
               </div>
-            )}
 
-            {wizardStep === 3 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><FileText size={20} className="text-brand-500" /> Review Payment</h3>
-
-                <div className="border border-slate-200 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <User size={16} className="text-slate-500" />
-                    <div>
-                      <p className="text-xs text-slate-500">Customer</p>
-                      <p className="text-sm font-medium text-slate-800">{wizardData.customer_name}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Hash size={16} className="text-slate-500" />
-                    <div>
-                      <p className="text-xs text-slate-500">Payment Number</p>
-                      <p className="text-sm font-medium text-slate-800">{wizardData.payment_number}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <DollarSign size={16} className="text-slate-500" />
-                    <div>
-                      <p className="text-xs text-slate-500">Amount</p>
-                      <p className="text-sm font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <CreditCard size={16} className="text-slate-500" />
-                    <div>
-                      <p className="text-xs text-slate-500">Payment Type</p>
-                      <p className="text-sm font-medium text-slate-800 capitalize">{wizardData.payment_type?.replace(/_/g, " ")}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Calendar size={16} className="text-slate-500" />
-                    <div>
-                      <p className="text-xs text-slate-500">Payment Date</p>
-                      <p className="text-sm font-medium text-slate-800">{formatDisplayDate(wizardData.payment_date)}</p>
-                    </div>
-                  </div>
-                  {wizardData.invoice_id && (
-                    <div className="flex items-center gap-3">
-                      <FileText size={16} className="text-slate-500" />
-                      <div>
-                        <p className="text-xs text-slate-500">Invoice</p>
-                        <p className="text-sm font-medium text-slate-800">{wizardData.invoice_number} — {formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)} allocated</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Transaction ID</label>
-                  <input type="text" value={wizardData.transaction_id}
-                    onChange={(e) => setWizardData((p) => ({ ...p, transaction_id: e.target.value }))}
-                    placeholder="Optional transaction reference"
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Gateway</label>
-                    <input type="text" value={wizardData.gateway}
-                      onChange={(e) => setWizardData((p) => ({ ...p, gateway: e.target.value }))}
-                      placeholder="e.g., Stripe, PayPal"
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Gateway Fee</label>
-                    <input type="number" min="0" step="0.01" value={wizardData.gateway_fee}
-                      onChange={(e) => setWizardData((p) => ({ ...p, gateway_fee: parseFloat(e.target.value) || 0 }))}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                  <textarea value={wizardData.notes} onChange={(e) => setWizardData((p) => ({ ...p, notes: e.target.value }))}
-                    rows={2} placeholder="Optional notes..."
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 4 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><CheckCircle size={20} className="text-brand-500" /> Confirm Payment</h3>
-                <div className="border border-slate-200 rounded-xl p-6 bg-white">
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-800">PAYMENT RECEIPT</h2>
-                      <p className="text-sm text-slate-500 mt-1">#{wizardData.payment_number}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-slate-500">Date: {formatDisplayDate(wizardData.payment_date)}</p>
-                      <p className="text-xs text-slate-500 mt-1">Status: Pending</p>
-                    </div>
-                  </div>
-                  <div className="mb-6 p-4 bg-slate-50 rounded-xl">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Customer</p>
-                    <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
-                    {wizardData.customer_email && <p className="text-sm text-slate-500">{wizardData.customer_email}</p>}
-                    {wizardData.customer_phone && <p className="text-sm text-slate-500">{wizardData.customer_phone}</p>}
-                  </div>
-                  <div className="border-t border-slate-200 pt-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Payment Type</span>
-                      <span className="font-medium text-slate-800 capitalize">{wizardData.payment_type?.replace(/_/g, " ")}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Amount</span>
-                      <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</span>
-                    </div>
-                    {wizardData.allocations.length > 0 && wizardData.allocations[0]?.amount > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Allocated to {wizardData.invoice_number}</span>
-                        <span className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
-                      </div>
-                    )}
-                    {calcRemaining() > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Unallocated Balance</span>
-                        <span className="font-medium text-amber-600">{formatDisplayCurrency(calcRemaining(), wizardData.currency)}</span>
-                      </div>
-                    )}
-                    {wizardData.gateway_fee > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Gateway Fee</span>
-                        <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.gateway_fee, wizardData.currency)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-between mt-8 pt-6 border-t border-slate-100">
               <div>
-                {wizardStep > 1 && (
-                  <button onClick={() => setWizardStep((s) => s - 1)} disabled={wizardLoading || !!wizardSuccess}
-                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Back</button>
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4"><FileText size={20} className="text-brand-500" /> Invoice (Optional)</h3>
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input type="text" placeholder="Enter invoice number or ID..." value={customerInvoiceSearch}
+                      onChange={(e) => setCustomerInvoiceSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  </div>
+                  <button onClick={() => { if (customerInvoiceSearch.trim()) loadInvoiceById(customerInvoiceSearch.trim()); }}
+                    disabled={invoiceSearching || !customerInvoiceSearch.trim()}
+                    className="px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 inline-flex items-center gap-2">
+                    {invoiceSearching && <Loader2 size={14} className="animate-spin" />} Load
+                  </button>
+                </div>
+
+                {wizardData.invoice_id && (
+                  <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-medium text-slate-800">{wizardData.invoice_number}</p>
+                      <button onClick={() => setWizardData((p) => ({ ...p, invoice_id: "", invoice_number: "", invoice_total: 0, invoice_paid: 0, invoice_balance: 0, allocations: [] }))}
+                        className="text-xs text-blue-600 hover:text-blue-800">Clear</button>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3 text-sm">
+                      <div><span className="text-xs text-slate-500">Total</span><p className="font-medium">{formatDisplayCurrency(wizardData.invoice_total, wizardData.currency)}</p></div>
+                      <div><span className="text-xs text-slate-500">Paid</span><p className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.invoice_paid, wizardData.currency)}</p></div>
+                      <div><span className="text-xs text-slate-500">Balance</span><p className="font-medium text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</p></div>
+                      <div><span className="text-xs text-slate-500">Status</span><p className="font-medium capitalize">{wizardData.invoice_status?.replace(/_/g, " ")}</p></div>
+                    </div>
+                  </div>
                 )}
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => closeWizard()} disabled={wizardLoading || !!wizardSuccess}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
-                {wizardStep < 4 ? (
-                  <button onClick={() => {
-                    if (wizardStep === 1 && !wizardData.customer_id) { setWizardError("Please select a customer"); return; }
-                    if (wizardStep === 1 && (!wizardData.amount || parseFloat(wizardData.amount) <= 0)) { setWizardError("Please enter a valid payment amount"); return; }
-                    if (wizardStep === 2 && wizardData.invoice_id) {
-                      const allocAmt = parseFloat(wizardData.allocations[0]?.amount || 0);
-                      if (allocAmt > parseFloat(wizardData.invoice_balance)) { setWizardError("Allocation amount cannot exceed invoice balance"); return; }
-                    }
-                    setWizardError(null);
-                    setWizardStep((s) => s + 1);
-                  }} disabled={wizardStep === 1 && (!wizardData.customer_id || !wizardData.amount)}
-                    className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                    Continue
-                  </button>
-                ) : (
-                  <button onClick={handleCreatePayment} disabled={wizardLoading || !!wizardSuccess}
-                    className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                    {wizardLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                    {wizardLoading ? "Recording..." : "Record Payment"}
-                  </button>
-                )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="payment-number-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Number *</label>
+                  <input id="payment-number-input" type="text" value={wizardData.payment_number}
+                    onChange={(e) => setWizardData((p) => ({ ...p, payment_number: e.target.value }))}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                </div>
+                <div>
+                  <label htmlFor="payment-date-input" className="block text-sm font-medium text-slate-700 mb-1">Payment Date</label>
+                  <input id="payment-date-input" type="date" value={wizardData.payment_date}
+                    onChange={(e) => setWizardData((p) => ({ ...p, payment_date: e.target.value }))}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="payment-method-select" className="block text-sm font-medium text-slate-700 mb-1">Payment Type</label>
+                  <select id="payment-method-select" value={wizardData.payment_type}
+                    onChange={(e) => setWizardData((p) => ({ ...p, payment_type: e.target.value }))}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                    {PAYMENT_METHOD_OPTIONS.filter((t) => t.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="payment-amount-input" className="block text-sm font-medium text-slate-700 mb-1">Amount *</label>
+                  <div className="relative">
+                    <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input id="payment-amount-input" type="number" min="0" step="0.01" value={wizardData.amount}
+                      onChange={(e) => setWizardData((p) => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
+                      className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+
+          {wizardStep === 2 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Layers size={20} className="text-brand-500" /> Payment Allocation</h3>
+
+              <div className="flex gap-2 mb-4">
+                {["full", "partial", "overpayment"].map((mode) => (
+                  <button key={mode} onClick={() => setAllocationMode(mode)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      allocationMode === mode ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}>
+                    {mode === "full" ? "Full Payment" : mode === "partial" ? "Partial Payment" : "Overpayment"}
+                  </button>
+                ))}
+              </div>
+
+              {wizardData.invoice_id ? (
+                <div className="border border-slate-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="font-medium text-slate-800">{wizardData.invoice_number}</p>
+                      <p className="text-xs text-slate-500 capitalize">Status: {wizardData.invoice_status?.replace(/_/g, " ")}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-slate-500">Balance: <span className="font-semibold text-amber-600">{formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span></p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-500 mb-1">Allocation Amount</label>
+                      <input type="number" min="0" step="0.01" value={wizardData.allocations[0]?.amount || 0}
+                        onChange={(e) => updateAllocationAmount(0, e.target.value)}
+                        className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                    </div>
+                    <div className="pt-5">
+                      <span className="text-sm text-slate-500">of {formatDisplayCurrency(wizardData.invoice_balance, wizardData.currency)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700 flex items-center gap-2">
+                  <AlertCircle size={16} /> No invoice selected. This payment will be recorded without allocation.
+                </div>
+              )}
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <div className="flex justify-between text-sm text-slate-600 mb-1">
+                  <span>Payment Amount</span>
+                  <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-600 mb-1">
+                  <span>Allocated</span>
+                  <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-medium border-t border-slate-200 pt-2 mt-1">
+                  <span>Unallocated / Overpayment</span>
+                  <span className={calcRemaining() > 0 ? "text-amber-600" : calcRemaining() < 0 ? "text-red-600" : "text-slate-800"}>
+                    {formatDisplayCurrency(Math.abs(calcRemaining()), wizardData.currency)}
+                    {calcRemaining() > 0 ? " (unallocated)" : calcRemaining() < 0 ? " (overpayment)" : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 3 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><FileText size={20} className="text-brand-500" /> Review Payment</h3>
+
+              <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <User size={16} className="text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Customer</p>
+                    <p className="text-sm font-medium text-slate-800">{wizardData.customer_name}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Hash size={16} className="text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Payment Number</p>
+                    <p className="text-sm font-medium text-slate-800">{wizardData.payment_number}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <DollarSign size={16} className="text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Amount</p>
+                    <p className="text-sm font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <CreditCard size={16} className="text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Payment Type</p>
+                    <p className="text-sm font-medium text-slate-800 capitalize">{wizardData.payment_type?.replace(/_/g, " ")}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Calendar size={16} className="text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Payment Date</p>
+                    <p className="text-sm font-medium text-slate-800">{formatDisplayDate(wizardData.payment_date)}</p>
+                  </div>
+                </div>
+                {wizardData.invoice_id && (
+                  <div className="flex items-center gap-3">
+                    <FileText size={16} className="text-slate-500" />
+                    <div>
+                      <p className="text-xs text-slate-500">Invoice</p>
+                      <p className="text-sm font-medium text-slate-800">{wizardData.invoice_number} — {formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)} allocated</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Transaction ID</label>
+                <input type="text" value={wizardData.transaction_id}
+                  onChange={(e) => setWizardData((p) => ({ ...p, transaction_id: e.target.value }))}
+                  placeholder="Optional transaction reference"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Gateway</label>
+                  <input type="text" value={wizardData.gateway}
+                    onChange={(e) => setWizardData((p) => ({ ...p, gateway: e.target.value }))}
+                    placeholder="e.g., Stripe, PayPal"
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Gateway Fee</label>
+                  <input type="number" min="0" step="0.01" value={wizardData.gateway_fee}
+                    onChange={(e) => setWizardData((p) => ({ ...p, gateway_fee: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea value={wizardData.notes} onChange={(e) => setWizardData((p) => ({ ...p, notes: e.target.value }))}
+                  rows={2} placeholder="Optional notes..."
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 4 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><CheckCircle size={20} className="text-brand-500" /> Confirm Payment</h3>
+              <div className="border border-slate-200 rounded-xl p-6 bg-white">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800">PAYMENT RECEIPT</h2>
+                    <p className="text-sm text-slate-500 mt-1">#{wizardData.payment_number}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-slate-500">Date: {formatDisplayDate(wizardData.payment_date)}</p>
+                    <p className="text-xs text-slate-500 mt-1">Status: Pending</p>
+                  </div>
+                </div>
+                <div className="mb-6 p-4 bg-slate-50 rounded-xl">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Customer</p>
+                  <p className="font-medium text-slate-800">{wizardData.customer_name}</p>
+                  {wizardData.customer_email && <p className="text-sm text-slate-500">{wizardData.customer_email}</p>}
+                  {wizardData.customer_phone && <p className="text-sm text-slate-500">{wizardData.customer_phone}</p>}
+                </div>
+                <div className="border-t border-slate-200 pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Payment Type</span>
+                    <span className="font-medium text-slate-800 capitalize">{wizardData.payment_type?.replace(/_/g, " ")}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Amount</span>
+                    <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.amount, wizardData.currency)}</span>
+                  </div>
+                  {wizardData.allocations.length > 0 && wizardData.allocations[0]?.amount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Allocated to {wizardData.invoice_number}</span>
+                      <span className="font-medium text-emerald-700">{formatDisplayCurrency(wizardData.allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0), wizardData.currency)}</span>
+                    </div>
+                  )}
+                  {calcRemaining() > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Unallocated Balance</span>
+                      <span className="font-medium text-amber-600">{formatDisplayCurrency(calcRemaining(), wizardData.currency)}</span>
+                    </div>
+                  )}
+                  {wizardData.gateway_fee > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Gateway Fee</span>
+                      <span className="font-medium text-slate-800">{formatDisplayCurrency(wizardData.gateway_fee, wizardData.currency)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
       )}
       {ConfirmationDialog}
     </div>
