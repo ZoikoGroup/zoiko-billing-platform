@@ -239,7 +239,7 @@ These depend on production code that is not on `nikhil-new`. They will be picked
 
 ## 8. Follow-ups (not in scope to change)
 
-- `vite.config.js` proxies `/api` to `http://localhost:8002`. Locally that proxy is unused, because `frontend/.env` sets `VITE_API_BASE_URL=http://localhost:8001` and the browser calls it directly. Leave it, and log it in the changelog.
+- **Correction (Phase 2): on `nikhil-new`, `vite.config.js` already proxies `/api` to `http://localhost:8001`**, the same port as the backend. The `:8002` target was in the separate, non-git copy of the frontend read during the Phase 0 code audit. There is no stale proxy on this branch. (Locally the proxy is unused either way, because `frontend/.env` sets `VITE_API_BASE_URL=http://localhost:8001`.) Remove this item from the changelog follow-ups.
 - New formatting bug: a raw enum value (`InvoiceStatus.OVERDUE`) is shown in the workspace dashboard activity feed. **Scheduled for Phase 4** (shared status label formatting).
 - **`/billing/quotations/settings` crash: not reproduced, not an app bug as far as can be measured.** 10 targeted attempts (5 fresh logins, 5 after the same preceding routes, each cycling all 5 viewports) loaded cleanly with **0 page errors and no crash**. The one crash in the first sweep happened while Vitest, Vite, the backend and Chromium were all running on an 8GB machine with about 2GB free. During the same session my own Node test process died with `FATAL ERROR: Zone Allocation failed - process out of memory` (heap only about 48MB, so system memory, not a JS leak), and two Vitest workers exited unexpectedly. **Best guess: Chromium's renderer was killed under machine memory pressure.** No console error or stack trace exists for it, because the renderer died rather than throwing. Not fixed (out of mobile scope).
 - **Fonts failing to load — resolved; it was a local environment problem, not a code bug, and production was not affected.** In the local runs, Inter and JetBrains Mono failed on every route and pages fell back to the system font. Root cause: `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono` are declared in `package.json` and pinned in `package-lock.json` (5.3.0), but **were not installed in this machine's `node_modules`**. `src/fonts.css` uses `url("@fontsource-variable/…/*.woff2")`; Vite resolves that as a package import when the package exists. When it's missing, Vite silently leaves the specifier as-is, so the browser requested route-relative URLs and got `index.html` (`OTS parsing error: invalid sfntVersion`). After installing the locked versions locally (`npm install --no-save`, no change to `package.json` or the lockfile):
@@ -274,6 +274,48 @@ These depend on production code that is not on `nikhil-new`. They will be picked
 - *AI button on mobile:* rather than a smaller floating button offset above footers (and hidden on create/edit pages and when a modal is open), it moved into the top bar below `lg`. It therefore can't cover a footer, primary action, toast or form at any scroll position, and stays available everywhere. Desktop is unchanged apart from lifting above `StickyFooter` (see the open decision above).
 
 **Super-admin privileged banner and support-access strip:** made single-line on mobile in code (Phase 1). They are measured with fake API responses in Phase 5, as agreed.
+
+## 8b. Phase 2 results (shared primitives and form pattern)
+
+Measured with real fonts: before = commit `559d02d` served from a separate worktree; after = Phase 2 working tree. Full 135-route sweeps (before: `shots/phase2/sweep-2026-10-29-baseline-559d02d-run2/`, after: `shots/phase2/sweep-2026-10-29-after/`); targeted screens in `shots/phase2/before/` and `shots/phase2/after-final/`.
+
+| Check (390px unless noted) | Before | After |
+|---|---|---|
+| Customer form: Create button | 1,709px down (off-screen); also off-screen at 1280 (986px) | **Pinned at the bottom, visible at 390 and 1280** (sticky `DialogActions`, flush to the panel edge) |
+| `FormModal` (New Refund) | Actions in the scrolling body | **Actions in the pinned footer** |
+| `ConfirmDialog` | Centred card touching the screen edges, 36px buttons | **Edge-to-edge bottom sheet, 44px full-width buttons** |
+| Wide `DataTable` (invoices, 11 columns) | Sideways-scrolling table | **9 cards, no overflow**; desktop table unchanged |
+| Squeezed tables (sweep) | 1 (super-admin Organizations) | **0** |
+| Page header actions | Wrapped buttons, no menu | **Primary + "⋯" menu** (Refresh, Export CSV/JSON) on phones; inline on desktop |
+| `HubTabs` (Plans hub) | **7 rows** | **1 row, scrolls sideways**; desktop unchanged (2 rows at 1280, as before) |
+| Wizard stepper (invoice create) | 7 labelled steps scrolling sideways | **"Customer · Step 1 of 7"** with a progress bar |
+| Page overflow at 360 (sweep) | 0 | 0 |
+
+**The 10 remaining clips from the real-font baseline:**
+- **Resolved (2):** super-admin invoices "Payments" tab (the Plane1 tab row now scrolls); long configuration keys (`break-all`).
+- **Left as planned:**
+  - decorative hero backgrounds (4 pages: org-admin dashboard/organization, super-admin dashboard/command-center)
+  - insight lines for Phase 4 (products, credit-notes and collections dashboards; the workspace activity line, which is also the `InvoiceStatus.OVERDUE` bug)
+  - the "Auto-configured" badge on billing settings (page-level, Phase 3)
+- **Regression found and fixed before commit:** card mode clipped the super-admin entitlement key column (a cell render built for wide table cells). Fixed in the shared card cell (`[&_*]:min-w-0`). A re-check of all 22 card-mode pages at 360/390 found 0 clipped elements.
+- The collections-dashboard insight line clips in some runs and not others (data-dependent width). It's grouped with the Phase 4 insight lines.
+
+**Not yet met: "Save/Create always visible" for every dialog.** It is met for the customer form, every `FormModal`, and both confirm dialogs. Pages that use `Modal` but put their buttons inside the dialog body instead of the `footer` prop still scroll their actions away. Example: super-admin New Organization, Create at 816–856px on an 844px screen. Moving those buttons to `footer` is a page migration, scheduled for Phase 3.
+
+**Desktop differences (all deliberate):**
+- **`FormModal`:** Cancel/Save moved from the bottom of the form body into the dialog's footer bar (light grey bar, top border). It's always visible instead of scrolling with the fields.
+- **Customer create/edit dialogs:** the actions row is pinned at the bottom of the panel. At 1280, Create is visible without scrolling (was 986px down).
+- **Phase 2 also changed the desktop AI launcher** (separate commit `86273a4`, see §8a).
+- **No other desktop change measured:** `PageHeader`, `DashboardHeader`, `HubTabs`, `SectionCard`, `DataTable`, `Stepper`, `ConfirmDialog` and `Modal` keep their desktop classes.
+
+**Corrected during Phase 2:**
+- Inside `<main>` (which has `pt-[65px]`), Chrome resolves `sticky top-0` below the scroll container's padding, so it already sits right under the fixed top bar (measured: `top-0` → 65px, `top-[65px]` → 130px). The privileged-session banner's original `sticky top-0` is therefore correct and was left unchanged.
+- The same rule means a sticky bar inside a padded scroll panel needs a negative offset equal to the padding to sit flush; `DialogActions` does this.
+
+**Limits of the new pattern:**
+- **Unsaved-changes guard:** the app uses `<BrowserRouter>` (not a data router), so React Router's `useBlocker` isn't available. `useUnsavedChangesGuard` covers reload, tab close and in-app link clicks; the browser Back button isn't intercepted.
+- **Dialogs and Back:** Esc closes dialogs; the browser Back button doesn't. Doing that safely needs history entries that interact with save-then-navigate flows.
+- **`FormPageBar` / `FormActionBar`** (sticky mobile top bar with back, title and step; sticky Cancel/primary footer) are built and tested but not yet used by any page. They are applied to create/edit pages in Phase 3.
 
 ## 9. Local environment safety notes
 
