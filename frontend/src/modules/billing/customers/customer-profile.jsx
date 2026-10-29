@@ -1273,7 +1273,7 @@ export default function CustomerProfilePage() {
 
           {/* Existing Detail Sections */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <h3 className="text-lg font-semibold text-slate-900">{singular} Details</h3>
               <div className="flex items-center gap-2">
                 {editing ? (

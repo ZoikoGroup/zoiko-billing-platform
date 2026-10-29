@@ -850,7 +850,7 @@ export default function ProductListPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Enhanced Export Dropdown */}
               <div className="relative">
                 <button

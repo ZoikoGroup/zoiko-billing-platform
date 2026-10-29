@@ -240,8 +240,27 @@ These depend on production code that is not on `nikhil-new`. They will be picked
 ## 8. Follow-ups (not in scope to change)
 
 - `vite.config.js` proxies `/api` to `http://localhost:8002`. Locally that proxy is unused, because `frontend/.env` sets `VITE_API_BASE_URL=http://localhost:8001` and the browser calls it directly. Leave it, and log it in the changelog.
-- New formatting bug: a raw enum value (`InvoiceStatus.OVERDUE`) is shown in the workspace dashboard activity feed. Phase 4 (status formatting).
-- `/billing/quotations/settings` crashed the page once in automation and loaded normally on retry. Re-check in Phase 5.
+- New formatting bug: a raw enum value (`InvoiceStatus.OVERDUE`) is shown in the workspace dashboard activity feed. **Scheduled for Phase 4** (shared status label formatting).
+- **`/billing/quotations/settings` crash: not reproduced, not an app bug as far as can be measured.** 10 targeted attempts (5 fresh logins, 5 after the same preceding routes, each cycling all 5 viewports) loaded cleanly with **0 page errors and no crash**. The one crash in the first sweep happened while Vitest, Vite, the backend and Chromium were all running on an 8GB machine with about 2GB free. During the same session my own Node test process died with `FATAL ERROR: Zone Allocation failed - process out of memory` (heap only about 48MB, so system memory, not a JS leak), and two Vitest workers exited unexpectedly. **Best guess: Chromium's renderer was killed under machine memory pressure.** No console error or stack trace exists for it, because the renderer died rather than throwing. Not fixed (out of mobile scope).
+- **New: Inter / JetBrains Mono fonts fail to load on nested routes.** `src/fonts.css` uses `url("@fontsource-variable/…/*.woff2")`. Vite leaves that bare specifier untouched, so the browser resolves it relative to the current route (e.g. `/billing/quotations/@fontsource-variable/inter/…`), receives `index.html`, and rejects it (`OTS parsing error: invalid sfntVersion: 1008813135`, the bytes `<!DO`). Pages then render in the fallback system font. Seen on every route in dev; production build not yet checked. Likely fix (out of scope here): import the `@fontsource-variable/*` CSS from JS, or use `~`/absolute paths that Vite rewrites.
+- **Local-environment limitation (not a UI bug):** some dashboard and report queries use PostgreSQL's `date_trunc`, which SQLite lacks (40 errors in the local backend log), so a few charts are empty in the local audit. Production on Postgres is unaffected.
+
+## 8a. Phase 1 results (re-measured, all 135 route checks)
+
+| Target | Before | After Phase 1 |
+|---|---|---|
+| Auth pages scrolling sideways at 360 | 6 / 6 (+146–170px) | **0 / 6** (also 0 at 390 / 412) |
+| Trial banner + top bar, share of 360×800 | 38% | **15%** (banner alone ≈ 7%); desktop card unchanged |
+| AI button over a control, the 19 listed pages (360/390/412, scrolled top / mid / bottom) | 19 pages | **0**. Below `lg` the button lives in the top bar |
+| AI button over the draft-invoice action bar at 1280 | "Recalculate" covered | **None**: the button lifts above `StickyFooter` via `--sticky-footer-h` |
+| Form controls under 16px (phones) | all, on 123 pages | **0** |
+| Header and toolbar buttons clipped at 360 | 22 pages | **0** header/toolbar clips. Remaining clipped content is P19 insight lines, the P4 tab row, decorative hero backgrounds and long config keys (Phase 2+) |
+| Drawer: Esc / scroll lock / links focusable while closed | ✗ / ✗ / 23 links | **✓ / ✓ / 0** (overlay tap and browser back still close it) |
+| Overflow at 768 / 1280 | 0 / 0 | 0 / 0 |
+
+**Still open (desktop, pre-existing, decision needed):** at 1280 the floating AI button sits over a control on 6 of the 19 pages at some scroll position: "Record Payment" (payments, at first paint), "Sort by Status" (invoices), "Continue" (subscription create), help-page links, and row "View" links mid-scroll. A floating button over scrolling content always covers something eventually. Option: use the top-bar button at every width.
+
+**Super-admin privileged banner and support-access strip:** made single-line on mobile in code (Phase 1). They are measured with fake API responses in Phase 5, as agreed.
 
 ## 9. Local environment safety notes
 

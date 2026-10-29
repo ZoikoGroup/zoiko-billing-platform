@@ -338,7 +338,7 @@ export default function TaxRatesPage() {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setShowImportWizard(true)}
                 className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50">
                 <Upload size={16} /> Import

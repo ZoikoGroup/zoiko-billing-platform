@@ -603,7 +603,7 @@ export default function PaymentListPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => navigate("/billing/payments/dashboard")}
                   className="px-4 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
                   Dashboard

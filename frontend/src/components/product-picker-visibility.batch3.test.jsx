@@ -66,7 +66,10 @@ describe("H. Bulk product picker controls stay reachable", () => {
 describe("H. Shell leaves room for the floating assistant launcher", () => {
   it("page content area has bottom padding clearing the fixed launcher", () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "BillingShell.jsx"), "utf8");
-    expect(src).toMatch(/fixed bottom-6 right-6/);
+    // Launcher stays bottom-right, 1.5rem up; its bottom is now an inline calc
+    // so it can lift above a mounted StickyFooter (--sticky-footer-h).
+    expect(src).toMatch(/fixed right-6/);
+    expect(src).toMatch(/bottom: "calc\(1\.5rem \+ var\(--sticky-footer-h\)/);
     expect(src).toMatch(/min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24/);
   });
 });

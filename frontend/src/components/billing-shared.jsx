@@ -518,7 +518,9 @@ export function DashboardHeader({
             <ExportMenu onExportCSV={onExportCSV} onExportJSON={onExportJSON} onExportExcel={onExportExcel} />
           </div>
 
-          {primaryAction && <div className="shrink-0 whitespace-nowrap">{primaryAction}</div>}
+          {/* Shrinkable below xl so a page's (flex-wrap) action group can wrap
+              onto its own row on phones instead of being clipped. */}
+          {primaryAction && <div className="min-w-0 max-w-full whitespace-nowrap xl:shrink-0">{primaryAction}</div>}
         </div>
       </div>
 

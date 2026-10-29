@@ -674,7 +674,7 @@ export default function CustomerListPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50"><Upload size={16} /> Import</button>
               <div className="relative group">
                 <button className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50"><Download size={16} /> Export</button>

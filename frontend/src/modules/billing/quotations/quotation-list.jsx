@@ -598,7 +598,7 @@ export default function QuotationListPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => navigate("/billing/quotations/dashboard")}
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                   <BarChart3 size={16} /> Dashboard

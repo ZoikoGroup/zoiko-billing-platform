@@ -497,7 +497,7 @@ export default function CategoriesPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">{editCategory ? "Edit Category" : "Add New Category"}</h2>
                 <p className="text-sm text-slate-500 mt-0.5">{editCategory ? `Update "${editCategory.name}"` : "Create a category to organize products"}</p>

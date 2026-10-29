@@ -399,7 +399,7 @@ export default function ProductPricingPlansPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
                 <button onClick={() => setView("cards")} aria-label="Card view"
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${view === "cards" ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>

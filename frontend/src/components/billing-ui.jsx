@@ -208,7 +208,11 @@ export function PageHeader({
             {description && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">{description}</p>}
           </div>
         </div>
-        {actions}
+        {/* Below xl the actions sit on their own row; letting the page's action
+            group (and its direct div children) wrap keeps buttons from being
+            clipped at the right edge on phones. With one child this wrapper
+            is layout-neutral on desktop. */}
+        {actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>div]:flex-wrap">{actions}</div>}
       </div>
       {/* Secondary to the title by design — smaller, lighter weight, muted
           color — so a "Refreshed HH:MM:SS" stamp never competes with the
@@ -464,7 +468,14 @@ export function DataTable({
         aria-label={stickyHeader ? "Data table, scrollable" : undefined}
         tabIndex={stickyHeader ? 0 : undefined}
       >
-        <table className={`w-full text-left text-sm ${tableClassName}`} aria-busy={loading}>
+        {/* Below lg, minWidth keeps columns readable: the table scrolls
+            sideways inside this container instead of squeezing columns.
+            From lg up it is not applied, so desktop layout is unchanged. */}
+        <table
+          className={`w-full text-left text-sm max-lg:min-w-(--dt-min-w) ${tableClassName}`}
+          style={minWidth ? { "--dt-min-w": `${minWidth}px` } : undefined}
+          aria-busy={loading}
+        >
           <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
             <tr className="border-b border-slate-200 bg-slate-50/95 backdrop-blur text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {onSelectionChange && (
@@ -680,12 +691,19 @@ export function StickyFooter({ children, className = "", contentClassName = "mx-
   useEffect(() => {
     const node = barRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
     const observer = new ResizeObserver((entries) => {
       const measured = entries[0]?.contentRect?.height;
       if (measured) setSpacerHeight(Math.ceil(measured) + STICKY_FOOTER_BREATHING_ROOM);
+      // Publish the bar's full height so other fixed chrome (the AI
+      // assistant launcher) can sit above it instead of on its actions.
+      root.style.setProperty("--sticky-footer-h", `${Math.ceil(node.getBoundingClientRect().height)}px`);
     });
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--sticky-footer-h");
+    };
   }, []);
 
   return (
@@ -693,7 +711,7 @@ export function StickyFooter({ children, className = "", contentClassName = "mx-
       <div aria-hidden="true" style={{ height: spacerHeight }} />
       <div
         ref={barRef}
-        className={`fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur lg:left-72 ${className}`}
+        className={`fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur lg:left-72 ${className}`}
       >
         <div className={contentClassName}>{children}</div>
       </div>

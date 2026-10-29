@@ -4,6 +4,7 @@ import { Bell, ChevronDown, User, Building, LogOut, Menu, X, HelpCircle } from "
 import { useAuth } from "../context/AuthContext";
 import { useCommandCenter } from "../context/CommandCenterContext";
 import { ROLE_LABELS } from "../config/roles";
+import ZoikoMark from "./ZoikoMark";
 import { getOrganizationDetails } from "../service/orgAdminService";
 
 const NOTIFICATIONS_ROUTE_BY_ROLE = {
@@ -74,7 +75,7 @@ function OrgContext({ role }) {
   );
 }
 
-export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed = false }) {
+export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed = false, onAssistantClick }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
@@ -118,7 +119,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           <button
             type="button"
             onClick={onMenuClick}
-            className="lg:hidden -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#E5E0D9] bg-white text-[#6B6560] shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            className="lg:hidden -ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[#E5E0D9] bg-white text-[#6B6560] shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
             aria-label="Toggle navigation"
             aria-expanded={menuOpen}
           >
@@ -129,13 +130,28 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
           className="flex shrink-0 items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
         >
-          <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="123" height="44" className="h-11 w-auto" />
+          <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="123" height="44" className="h-9 w-auto sm:h-11" />
         </Link>
         <OrgContext role={role} />
       </div>
 
       {/* Right: Actions & User Dropdown */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        {/* AI assistant — below lg it lives here instead of floating over
+            page content (it covered list rows, footer actions and "Next"
+            buttons on phones). At lg+ BillingShell keeps the floating one. */}
+        {onAssistantClick && (
+          <button
+            type="button"
+            onClick={onAssistantClick}
+            aria-label="Open AI Billing Assistant"
+            title="AI Billing Assistant"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 lg:hidden"
+          >
+            <ZoikoMark size={30} rounded="rounded-md" showAccentDot />
+          </button>
+        )}
+
         {/* Help / support */}
         {role === "billing_admin" && (
           <Link
@@ -156,7 +172,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
         {NOTIFICATIONS_ROUTE_BY_ROLE[role] ? (
           <Link
             to={NOTIFICATIONS_ROUTE_BY_ROLE[role]}
-            className="relative p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            className="relative p-3 sm:p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
             aria-label={openAttention > 0 ? `Notifications (${openAttention} open)` : "Notifications"}
           >
             <Bell size={20} />
@@ -172,7 +188,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
             disabled
             title="Notifications are not yet available for this workspace"
             aria-label="Notifications (not yet available)"
-            className="p-2 rounded-full text-gray-300 cursor-not-allowed"
+            className="p-3 sm:p-2 rounded-full text-gray-300 cursor-not-allowed"
           >
             <Bell size={20} />
           </button>
@@ -186,7 +202,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
           <button
             type="button"
             onClick={() => setIsDropdownOpen((v) => !v)}
-            className="flex items-center gap-3 p-1.5 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            className="flex items-center gap-3 p-1 sm:p-1.5 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
             aria-haspopup="menu"
             aria-expanded={isDropdownOpen}
             aria-label="Open account menu"
@@ -206,7 +222,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
               </span>
             </div>
 
-            <ChevronDown size={16} className="text-gray-400" />
+            <ChevronDown size={16} className="hidden text-gray-400 sm:block" />
           </button>
 
           {/* Dropdown Menu */}
