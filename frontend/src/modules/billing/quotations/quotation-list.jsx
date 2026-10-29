@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { FileSignature, Search, Filter, X, ChevronDown, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, FileText, XCircle, ArrowUpDown, Download, Ban, Send, User, Package, DollarSign, Eye, Trash2, Loader2, ShoppingCart, CreditCard, Percent, BarChart3 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { Button, Modal, Stepper } from "../../../components/billing-ui";
@@ -285,9 +285,17 @@ export default function QuotationListPage() {
     }
   }, [wizardLoading, searchParams, navigate]);
 
+  // Open the wizard once per arrival via ?create=1 (e.g. the customer
+  // profile link). Keyed on the navigation, so closing it can't reopen it
+  // while the replace-navigation that drops ?create=1 is still pending, but
+  // a new visit through the link opens it again.
+  const location = useLocation();
+  const autoOpenedFor = useRef(null);
   useEffect(() => {
-    if (searchParams.get("create") === "1" && !showWizard) openWizard();
-  }, [searchParams, showWizard]);
+    if (searchParams.get("create") !== "1" || autoOpenedFor.current === location.key) return;
+    autoOpenedFor.current = location.key;
+    if (!showWizard) openWizard();
+  }, [searchParams, showWizard, location.key]);
 
   useEffect(() => {
     const requestedCustomerId = searchParams.get("customer_id");

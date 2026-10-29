@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
 
 // Smoke tests for the "New Quotation" wizard, which is rendered on the shared
 // Modal and opened via /billing/quotations?create=1.
@@ -42,6 +42,34 @@ function renderWizard() {
   );
 }
 
+// Arrive the way users do: from the customer profile's "New quotation" link.
+function ProfileStub() {
+  return <Link to="/billing/quotations?create=1">New quotation</Link>;
+}
+function BackButton() { const navigate = useNavigate(); return <button onClick={() => navigate(-1)}>History back</button>; }
+
+function renderFromProfile() {
+  return render(
+    <MemoryRouter initialEntries={["/billing/customers/7"]}>
+      <Routes>
+        <Route path="/billing/customers/:id" element={<><ProfileStub /><LocationProbe /></>} />
+        <Route path="/billing/quotations" element={<><QuotationListPage /><LocationProbe /><BackButton /></>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+const wizard = () => screen.queryByRole("dialog", { name: "New Quotation" });
+const findWizard = () => screen.findByRole("dialog", { name: "New Quotation" }, { timeout: 4000 });
+
+async function expectClosedAndStaysClosed() {
+  await waitFor(() => expect(wizard()).not.toBeInTheDocument());
+  expect(screen.getByTestId("location").textContent).toBe("/billing/quotations");
+  // Give any pending effects a chance to (wrongly) reopen it.
+  await new Promise((r) => setTimeout(r, 300));
+  expect(wizard()).not.toBeInTheDocument();
+}
+
 async function selectCustomer(dialog) {
   fireEvent.change(within(dialog).getByRole("textbox", { name: /search .* by name, email, or phone/i }), { target: { value: "Acme" } });
   fireEvent.click(await within(dialog).findByRole("button", { name: /acme corp/i }));
@@ -58,6 +86,50 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+describe("New Quotation wizard — opened via ?create=1", () => {
+  it("opens when arriving from the customer profile link", async () => {
+    renderFromProfile();
+    fireEvent.click(screen.getByRole("link", { name: "New quotation" }));
+    expect(await findWizard()).toBeInTheDocument();
+    expect(screen.getByTestId("location").textContent).toBe("/billing/quotations?create=1");
+  });
+
+  it.each([
+    ["Cancel", (dialog) => fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }))],
+    ["Esc", () => fireEvent.keyDown(document, { key: "Escape" })],
+    ["the × button", (dialog) => fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }))],
+  ])("closes on %s, drops ?create=1 and stays closed", async (_how, close) => {
+    renderWizard();
+    close(await findWizard());
+    await expectClosedAndStaysClosed();
+  });
+
+  it("Back after closing does not reopen it (?create=1 was replaced, not pushed)", async () => {
+    renderFromProfile();
+    fireEvent.click(screen.getByRole("link", { name: "New quotation" }));
+    const dialog = await findWizard();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+    await expectClosedAndStaysClosed();
+    fireEvent.click(screen.getByRole("button", { name: "History back" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/billing/customers/7"));
+    expect(wizard()).not.toBeInTheDocument();
+  });
+
+  it("opens again on a second visit through the link", async () => {
+    renderFromProfile();
+    fireEvent.click(screen.getByRole("link", { name: "New quotation" }));
+    let dialog = await findWizard();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+    await expectClosedAndStaysClosed();
+    fireEvent.click(screen.getByRole("button", { name: "History back" }));
+    fireEvent.click(await screen.findByRole("link", { name: "New quotation" }));
+    dialog = await findWizard();
+    expect(dialog).toBeInTheDocument();
+    // A fresh wizard: back at step 1 with Continue gated again.
+    expect(within(dialog).getByRole("button", { name: /^continue$/i })).toBeDisabled();
+  });
+});
+
 describe("New Quotation wizard", () => {
   it("opens from ?create=1 and gates Continue on a customer", async () => {
     renderWizard();
@@ -67,20 +139,6 @@ describe("New Quotation wizard", () => {
 
     await selectCustomer(dialog);
     expect(continueBtn).not.toBeDisabled();
-  });
-
-  // SKIPPED pending a decision: pre-existing bug (also on the commit before the
-  // Modal rebuild; see docs/MOBILE_UI_AUDIT.md, B2 subscriptions & quotations).
-  // handleCloseWizard sets
-  // showWizard=false and navigates away from ?create=1, but React Router 7
-  // applies the navigation in a transition, so the "?create=1 && !showWizard"
-  // effect re-opens (and resets) the wizard first.
-  it.skip("Cancel closes the wizard and clears ?create=1", async () => {
-    renderWizard();
-    const dialog = await screen.findByRole("dialog", { name: "New Quotation" }, { timeout: 4000 });
-    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Quotation" })).not.toBeInTheDocument());
-    expect(screen.getByTestId("location").textContent).toBe("/billing/quotations");
   });
 
   it("drives all four steps and Create Quotation calls quoteApi.create once", async () => {
