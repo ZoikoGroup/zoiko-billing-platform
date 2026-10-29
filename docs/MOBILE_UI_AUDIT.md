@@ -387,7 +387,7 @@ Action buttons moved verbatim into each `Modal`'s `footer` (same buttons, handle
 |---|---|---|
 | EvaluationProgramsPage — Create evaluation program | **Migrated** | |
 | GovernancePage — Suppress attention item | **Migrated** | |
-| GovernancePage — Pause/Resume invoice finalization | **Migrated** | Title already set in code ("Pause/Resume invoice finalization?") |
+| GovernancePage — Pause/Resume invoice finalization | **Migrated** | Title already set in code ("Pause/Resume invoice finalization?"). Verified at 390/1280 on `/super-admin/governance` |
 | KillSwitchPage — Disable/Re-enable commercial charging | **Migrated** | Typed confirmation kept. Checked at 768 and 1280. Below 768 `MobileWriteBlock` still replaces the action (verified at 390: notice shown, 0 write buttons) |
 | OrganizationsPage — New Organization | **Migrated** | Create was off-screen at 390 (816–856 of 844); now in the pinned footer (791–831) |
 | OverridesPage — Draft a commercial override | **Migrated** | |
@@ -395,15 +395,20 @@ Action buttons moved verbatim into each `Modal`'s `footer` (same buttons, handle
 | Plane1BillingPage — Invoice detail | **Migrated** | Finalize (draft) and Void / Send Invoice (issued) in the footer under the same conditions |
 | ReconciliationPage — Reconciliation run | **Wrapped** (no primary action invented) | Per-row Acknowledge/Resolve: the exceptions table now scrolls sideways on phones (it only scrolled vertically, so the actions column could be clipped). Verified with a faked run at 390: all row actions reachable, no page overflow. Desktop unchanged (`sm:` restores the 420px scroll box) |
 | SubscriptionsPage — Create commercial subscription | **Migrated** | |
-| SubscriptionsPage — Change subscription plan | **Migrated** | Couldn't be opened with local data (row action); covered by unit tests |
+| SubscriptionsPage — Change subscription plan | **Migrated** | Verified at 390/1280 (opened from the row's "Plan" button) |
 | SupportAccessPage — Review emergency access | **Migrated** | Below 768 `MobileWriteBlock` unchanged (verified at 390) |
-| UsersPage — Reason dialog (Deactivate/Reactivate user, Move membership) | **Migrated** | Shared helper; every caller passes a title |
+| UsersPage — Reason dialog (Deactivate/Reactivate user, Move membership) | **Migrated** | Shared helper; every caller passes a title. Deactivate verified at 390/1280 |
 | UsersPage — Delete organization permanently | **Migrated** | ConfirmDialog destructive look: solid red "Delete organization" (new optional `Button` variant `destructive`) and red icon chip (new optional `Modal` `tone="danger"`); reason + typed confirmation kept word for word |
 | UsersPage — Invite tenant administrator | **Migrated** | |
 
 "Untitled" in the inventory meant "title computed in code"; every Group A dialog already had a real title, so none needed adding.
 
 Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with local data has its primary action in the pinned footer, visible and not covered. Screenshots: `shots/phase3/stepB1/before/` and `shots/phase3/stepB1/after/`. **Desktop difference:** actions sit in the dialog's footer bar (light grey band with a divider) instead of at the end of the fields, as for `FormModal` in Phase 2.
+
+**B1 follow-ups (after review):**
+- *Plane1 worst-case footers:* at most two actions show at once (sent quote: Reject + Approve; issued invoice: Void + Send Invoice). Checked with faked data at 360 and 1280: both fit on one row with full labels (about 160px each at 360), so no "⋯" menu was needed; status conditions unchanged. Screenshots: `shots/phase3/stepB1/plane1-footers/`.
+- *Previously unchecked dialogs:* Change subscription plan, Deactivate user and Pause/Resume finalization all open with existing local data (the earlier check used the wrong locators); primary action pinned and visible at 390 and 1280. No local data had to be added, and none needs route-interception tests in Phase 5. Screenshots: `shots/phase3/stepB1/after-unchecked/`.
+- *Desktop tightening of sectioned form dialogs (separate commit):* from `lg` up, `FormSection` cards use tighter padding, a one-line header and denser fields; phones unchanged. Customer form scrollable height at 1280: **create 826 → 524px** (old unsectioned form: 294px), **edit 504 → 260px** (old: 138px). The remaining difference from the old height is the five section headers and card borders. This is the pattern for B2's form dialogs. Screenshots: `shots/phase3/stepA-tighten/{before,after}/` (`*-form__1280__{top,bottom}.png`).
 
 **B. Hand-rolled overlays (61)** — fix: rebuild on `Modal` (or `FormModal` for simple forms), with actions in `footer`.
 
