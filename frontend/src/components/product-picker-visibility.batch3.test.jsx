@@ -63,13 +63,13 @@ describe("H. Bulk product picker controls stay reachable", () => {
   });
 });
 
-describe("H. Shell leaves room for the floating assistant launcher", () => {
-  it("page content area has bottom padding clearing the fixed launcher", () => {
+describe("H. Assistant launcher never floats over page content", () => {
+  it("launcher is wired into the TopBar and the page keeps its bottom padding", () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "BillingShell.jsx"), "utf8");
-    // Launcher stays bottom-right, 1.5rem up; its bottom is now an inline calc
-    // so it can lift above a mounted StickyFooter (--sticky-footer-h).
-    expect(src).toMatch(/fixed right-6/);
-    expect(src).toMatch(/bottom: "calc\(1\.5rem \+ var\(--sticky-footer-h\)/);
+    // The launcher moved from a fixed bottom-right button (which covered page
+    // controls) into the TopBar at every width.
+    expect(src).toMatch(/onAssistantClick=\{\(\) => setAssistantOpen\(true\)\}/);
+    expect(src).not.toMatch(/aria-label="Open AI Billing Assistant"/);
     expect(src).toMatch(/min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24/);
   });
 });

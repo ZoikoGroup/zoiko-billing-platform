@@ -137,16 +137,16 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
 
       {/* Right: Actions & User Dropdown */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-        {/* AI assistant — below lg it lives here instead of floating over
-            page content (it covered list rows, footer actions and "Next"
-            buttons on phones). At lg+ BillingShell keeps the floating one. */}
+        {/* AI assistant launcher, at every width. It used to float at the
+            bottom-right of the page, where it covered list rows, footer
+            actions and "Next"/"Record Payment" buttons as pages scrolled. */}
         {onAssistantClick && (
           <button
             type="button"
             onClick={onAssistantClick}
             aria-label="Open AI Billing Assistant"
             title="AI Billing Assistant"
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 lg:hidden"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
           >
             <ZoikoMark size={30} rounded="rounded-md" showAccentDot />
           </button>

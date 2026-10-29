@@ -51,7 +51,6 @@ import { ROLE_LABELS } from "../config/roles";
 import useCockpitStatus from "../hooks/useCockpitStatus";
 import useIsDesktopViewport from "../hooks/useIsDesktopViewport";
 import TopBar from "./TopBar";
-import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
@@ -887,10 +886,9 @@ export default function BillingShell({ children }) {
           {/* Single source of truth for the sidebar-to-content gutter and page
               margins — every page renders here as {children} with no need to
               (and no longer any reason to) set its own horizontal padding. */}
-          {/* pb-24 reserves room under every page for the fixed AI-assistant
-              launcher (desktop only; below lg it lives in the TopBar): without
-              it the launcher sat on top of a page's bottom-right control when
-              scrolled to the end -- e.g. the invoice wizard's Next button. */}
+          {/* pb-24 keeps breathing room under every page's last control (it
+              was added for the old floating AI launcher, which now lives in
+              the TopBar; kept so page endings don't shift). */}
           <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
             <Suspense fallback={<ContentSkeleton />}>
               {children}
@@ -907,22 +905,9 @@ export default function BillingShell({ children }) {
         </Suspense>
       </div>
 
-      {/* AI Assistant launcher (lg+ only; below lg the TopBar carries it so
-          nothing floats over page content). Hidden while the panel is open,
-          and lifted above a mounted StickyFooter (--sticky-footer-h) so it
-          never sits on the footer's actions. */}
-      <button
-        type="button"
-        onClick={() => setAssistantOpen(true)}
-        style={{ bottom: "calc(1.5rem + var(--sticky-footer-h) + env(safe-area-inset-bottom))" }}
-        className={`fixed right-6 z-40 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 ${
-          assistantOpen ? "hidden" : "hidden lg:block"
-        }`}
-        aria-label="Open AI Billing Assistant"
-        title="AI Billing Assistant"
-      >
-        <ZoikoMark size={56} rounded="rounded-lg" showAccentDot className="transition-transform" />
-      </button>
+      {/* The AI Assistant launcher lives in the TopBar at every width
+          (onAssistantClick above). A floating bottom-right button sat on top
+          of list rows, footer actions and primary buttons as pages scrolled. */}
 
       {role === "super_admin" && <CommandPalette />}
     </div>
