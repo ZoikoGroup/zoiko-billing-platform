@@ -50,16 +50,16 @@ const styles = `
   @media (prefers-reduced-motion: reduce){ .org-dash .rise{ animation:none; } }
 
   .org-dash .hero{
-    display:flex; align-items:center; justify-content:space-between; gap:24px;
-    margin-bottom:22px; flex-wrap:wrap;
+    display:flex; align-items:flex-start; justify-content:space-between; gap:20px;
+    margin-bottom:20px; flex-wrap:wrap;
   }
   .org-dash h1.title{
     font-family:'Inter', sans-serif; font-weight:800; font-size:32px; line-height:1.2;
-    margin:0 0 12px; letter-spacing:-0.5px; color:var(--ink);
+    margin:0 0 10px; letter-spacing:-0.5px; color:var(--ink);
   }
   @media (max-width:640px){ .org-dash h1.title{ font-size:26px; } }
   .org-dash .subtitle{ color:var(--ink-soft); font-size:15px; margin:0; max-width:520px; }
-  .org-dash .head-actions{ display:flex; gap:10px; flex:none; }
+  .org-dash .head-actions{ display:flex; gap:10px; flex:none; margin-top:2px; }
 
   .org-dash .btn{
     font-family:'Inter', sans-serif; font-size:13.5px; font-weight:600;
@@ -86,8 +86,8 @@ const styles = `
   .org-dash .glass:hover{ border-color:#D1D5DB; }
 
   .org-dash .id-card{
-    padding:26px 30px; display:flex; align-items:center; justify-content:space-between;
-    gap:24px; margin:30px 0 20px; flex-wrap:wrap; position:relative; overflow:hidden;
+    padding:22px 28px; display:flex; align-items:center; justify-content:space-between;
+    gap:20px; margin:0 0 20px; flex-wrap:wrap; position:relative; overflow:hidden;
   }
   .org-dash .id-left{ display:flex; align-items:center; gap:18px; }
   .org-dash .org-mark{
@@ -125,18 +125,22 @@ const styles = `
   .org-dash .banner-text b{ color:var(--danger); }
 
   .org-dash .stat-strip{ display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:20px; }
-  @media (max-width:860px){ .org-dash .stat-strip{ grid-template-columns:repeat(1, 1fr); } }
-  .org-dash .stat-tile{ padding:22px 22px 20px; position:relative; overflow:hidden; }
+  @media (max-width:860px){ .org-dash .stat-strip{ grid-template-columns:repeat(1, 1fr); gap:12px; } }
+  .org-dash .stat-tile{
+    padding:20px 22px; position:relative; overflow:hidden;
+    display:flex; flex-direction:column; justify-content:space-between;
+    min-height:114px;
+  }
   .org-dash .stat-tile .glow{
     position:absolute; width:120px; height:120px; border-radius:50%; filter:blur(44px);
     top:-40px; right:-30px; opacity:0.18; pointer-events:none;
   }
-  .org-dash .stat-label{ font-size:11.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 12px; }
-  .org-dash .stat-value{ font-family:'Inter', sans-serif; font-size:30px; font-weight:800; margin:0; line-height:1; color:var(--ink); letter-spacing:-0.01em; }
-  .org-dash .stat-sub{ font-size:12px; color:var(--ink-faint); margin-top:8px; }
+  .org-dash .stat-label{ font-size:11.5px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 8px; }
+  .org-dash .stat-value{ font-family:'Inter', sans-serif; font-size:28px; font-weight:800; margin:0 0 6px; line-height:1.1; color:var(--ink); letter-spacing:-0.02em; }
+  .org-dash .stat-sub{ font-size:12px; color:var(--ink-soft); margin:0; line-height:1.4; }
 
-  .org-dash .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-bottom:16px; }
-  @media (max-width:860px){ .org-dash .grid{ grid-template-columns:1fr; } }
+  .org-dash .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-bottom:16px; align-items:start; }
+  @media (max-width:860px){ .org-dash .grid{ grid-template-columns:1fr; gap:14px; } }
 
   .org-dash .panel-head{
     display:flex; align-items:center; gap:12px; padding:20px 24px; border-bottom:1px solid var(--glass-border);
@@ -220,6 +224,7 @@ const styles = `
     display:flex; align-items:center; gap:10px; padding:14px 18px; border-radius:8px;
     font-size:13.5px; font-weight:600; color:#fff; box-shadow:0 18px 40px -14px rgba(15,23,42,0.4);
     animation:org-rise .4s cubic-bezier(.2,.7,.3,1) both;
+    max-width:calc(100vw - 32px);
   }
   .org-dash .toast-success{ background:var(--success); }
   .org-dash .toast-danger{ background:var(--danger); }
@@ -253,10 +258,27 @@ const styles = `
     background:var(--primary-soft); color:var(--primary-deep); border:1px solid rgba(37,99,235,0.22);
   }
   .org-dash .env-tag--live{ background:rgba(5,150,105,0.10); color:var(--success); border-color:rgba(5,150,105,0.25); }
+  .org-dash .stripe-ready-badge{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
+    padding:3px 9px; border-radius:100px; background:var(--success-soft); color:var(--success);
+    border:1px solid rgba(5,150,105,0.25);
+  }
   .org-dash .stripe-hint{
     margin-top:10px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.5;
     background:var(--primary-soft); border:1px solid rgba(37,99,235,0.15); color:var(--ink-soft);
   }
+  .org-dash .stripe-inline-error{
+    display:flex; align-items:flex-start; gap:10px; margin:12px 0 8px; padding:12px 14px;
+    border-radius:8px; background:#FEF2F2; border:1px solid #FECACA; color:#B91C1C;
+    font-size:13px; line-height:1.5;
+  }
+  .org-dash .stripe-inline-error-icon{ flex:none; margin-top:2px; color:#DC2626; }
+  .org-dash .stripe-inline-error-text{ flex:1; min-width:0; overflow-wrap:anywhere; }
+  .org-dash .stripe-inline-error-dismiss{
+    flex:none; background:transparent; border:none; color:#991B1B; cursor:pointer;
+    padding:2px; border-radius:4px; display:flex; align-items:center;
+  }
+  .org-dash .stripe-inline-error-dismiss:hover{ background:rgba(220,38,38,0.12); }
   .org-dash .stripe-warning{
     margin-top:10px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.6;
     background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.28); color:#7C2D12;
@@ -264,6 +286,30 @@ const styles = `
   .org-dash .stripe-warning-title{ font-weight:700; margin-bottom:4px; color:#B45309; }
   .org-dash .stripe-warning-item{ margin:2px 0; }
   .org-dash .stripe-warning-btn{ margin-top:8px; }
+
+  @media (max-width:640px){
+    .org-dash .page{ padding:20px 16px 64px; }
+    .org-dash .hero{ flex-direction:column; align-items:stretch; gap:16px; }
+    .org-dash .head-actions{ width:100%; margin-top:0; }
+    .org-dash .head-actions .btn{ width:100%; justify-content:center; }
+    .org-dash .id-card{ padding:18px 16px; }
+    .org-dash .id-left{ gap:14px; }
+    .org-dash .org-mark{ width:48px; height:48px; border-radius:12px; }
+    .org-dash .org-mark svg{ width:22px; height:22px; }
+    .org-dash .org-name{ font-size:19px; }
+    .org-dash .org-meta{ font-size:12px; gap:8px; }
+    .org-dash .panel-head{ padding:16px; }
+    .org-dash .rows{ padding:4px 16px 14px; }
+    .org-dash .row{ font-size:13px; padding:11px 0; }
+    .org-dash .stripe-panel-head{ padding:16px; flex-direction:column; align-items:stretch; gap:14px; }
+    .org-dash .stripe-panel-title-wrap{ min-width:0; }
+    .org-dash .stripe-panel-actions{ width:100%; }
+    .org-dash .stripe-panel-actions .btn{ width:100%; justify-content:center; padding:11px 16px; font-size:13.5px; min-height:44px; }
+    .org-dash .stripe-panel-body{ padding:4px 16px 18px; }
+    .org-dash .toast{
+      left:16px; right:16px; bottom:16px; max-width:calc(100vw - 32px); justify-content:space-between;
+    }
+  }
 `;
 
 const STATUS_STYLES = {
@@ -435,26 +481,39 @@ export default function OrgAdminOrganizationPage() {
   const [stripe, setStripe] = useState(null);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeBusy, setStripeBusy] = useState(null);
+  const [stripeError, setStripeError] = useState(null);
 
   const fetchStripeStatus = () => {
     setStripeLoading(true);
     return stripeConnectApi.getStatus()
-      .then(setStripe)
-      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to load Stripe status.", type: "error" }))
+      .then((data) => {
+        setStripe(data);
+      })
+      .catch((err) => {
+        const msg = err?.detail || err?.message || "Failed to load Stripe status.";
+        setStripeError(msg);
+        setToast({ msg, type: "error" });
+      })
       .finally(() => setStripeLoading(false));
   };
 
   const refreshStripeStatus = () => {
     setStripeBusy("sync");
+    setStripeError(null);
     stripeConnectApi.sync()
       .then(setStripe)
       .then(() => setToast({ msg: "Stripe status refreshed.", type: "success" }))
-      .catch((err) => setToast({ msg: err?.detail || err?.message || "Failed to refresh Stripe status.", type: "error" }))
+      .catch((err) => {
+        const msg = err?.detail || err?.message || "Failed to refresh Stripe status.";
+        setStripeError(msg);
+        setToast({ msg, type: "error" });
+      })
       .finally(() => setStripeBusy(null));
   };
 
   const handleConnectStripe = async () => {
     setStripeBusy("connect");
+    setStripeError(null);
     try {
       const redirectUri = `${window.location.origin}${window.location.pathname}`;
       const result = await stripeConnectApi.getOnboardingUrl(redirectUri);
@@ -462,9 +521,13 @@ export default function OrgAdminOrganizationPage() {
         window.location.href = result.url;
         return;
       }
-      setToast({ msg: "Stripe onboarding URL could not be generated.", type: "error" });
+      const msg = "Stripe onboarding URL could not be generated.";
+      setStripeError(msg);
+      setToast({ msg, type: "error" });
     } catch (err) {
-      setToast({ msg: err?.detail || err?.message || "Failed to start Stripe onboarding.", type: "error" });
+      const msg = err?.detail || err?.message || "Failed to start Stripe onboarding.";
+      setStripeError(msg);
+      setToast({ msg, type: "error" });
     } finally {
       setStripeBusy(null);
     }
@@ -476,12 +539,15 @@ export default function OrgAdminOrganizationPage() {
     );
     if (!ok) return;
     setStripeBusy("disconnect");
+    setStripeError(null);
     try {
       await stripeConnectApi.disconnect();
       await fetchStripeStatus();
       setToast({ msg: "Stripe disconnected.", type: "success" });
     } catch (err) {
-      setToast({ msg: err?.detail || err?.message || "Failed to disconnect Stripe.", type: "error" });
+      const msg = err?.detail || err?.message || "Failed to disconnect Stripe.";
+      setStripeError(msg);
+      setToast({ msg, type: "error" });
     } finally {
       setStripeBusy(null);
     }
@@ -497,15 +563,29 @@ export default function OrgAdminOrganizationPage() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const state = params.get("state");
+    const errorParam = params.get("error_description") || params.get("error");
+
+    if (errorParam) {
+      const msg = `Stripe connection was not completed: ${errorParam}`;
+      setStripeError(msg);
+      setToast({ msg, type: "error" });
+      window.history.replaceState({}, document.title, window.location.pathname);
+      fetchStripeStatus();
+      return;
+    }
+
     if (!code || !state) {
       fetchStripeStatus();
       return;
     }
     setStripeBusy("callback");
+    setStripeError(null);
     stripeConnectApi.completeOAuth(code, state)
       .then((status) => { setStripe(status); setToast({ msg: "Stripe connected successfully.", type: "success" }); })
       .catch((err) => {
-        setToast({ msg: err?.detail || err?.message || "Failed to complete Stripe connection.", type: "error" });
+        const msg = err?.detail || err?.message || "Failed to complete Stripe connection.";
+        setStripeError(msg);
+        setToast({ msg, type: "error" });
         fetchStripeStatus();
       })
       .finally(() => {
@@ -791,6 +871,21 @@ export default function OrgAdminOrganizationPage() {
           </div>
 
           <div className="stripe-panel-body">
+            {stripeError && (
+              <div className="stripe-inline-error" role="alert">
+                <AlertTriangle className="stripe-inline-error-icon" size={16} />
+                <span className="stripe-inline-error-text">{stripeError}</span>
+                <button
+                  type="button"
+                  className="stripe-inline-error-dismiss"
+                  onClick={() => setStripeError(null)}
+                  aria-label="Dismiss error"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
             {stripeLoading && !stripe ? (
               <div className="stripe-loading" role="status">Loading Stripe connection status…</div>
             ) : (
@@ -802,20 +897,23 @@ export default function OrgAdminOrganizationPage() {
                       {stripe.environment === "live" ? "Live" : "Test"} mode
                     </span>
                   )}
+                  {stripe?.connected && (
+                    <span className="stripe-ready-badge">
+                      <CheckCircle size={12} /> Ready for payments
+                    </span>
+                  )}
                 </div>
 
-                {stripe?.connected_account_id && (
                 <div className="rows">
-                  <DetailRow label="Account ID" value={stripe?.connected_account_id} mono faint />
-                  <DetailRow label="Country" value={stripe?.country} mono />
-                  <DetailRow label="Default Currency" value={stripe?.default_currency} mono />
+                  <DetailRow label="Account ID" value={stripe?.connected_account_id || "—"} mono faint={Boolean(stripe?.connected_account_id)} />
+                  <DetailRow label="Country" value={stripe?.country || "—"} mono={Boolean(stripe?.country)} />
+                  <DetailRow label="Default Currency" value={stripe?.default_currency || "—"} mono={Boolean(stripe?.default_currency)} />
                   <DetailRow label="Charges" value={stripe?.charges_enabled ? "Enabled" : "Disabled"} />
                   <DetailRow label="Payouts" value={stripe?.payouts_enabled ? "Enabled" : "Disabled"} />
                   {stripe?.connected_at && (
                     <DetailRow label="Connected At" value={new Date(stripe.connected_at).toLocaleDateString()} mono />
                   )}
                 </div>
-                )}
 
                 {!stripe?.connected && (
                   <div className="stripe-hint">

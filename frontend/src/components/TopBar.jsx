@@ -80,7 +80,9 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
   const dropdownRef = useRef(null);
   const { user, role, logout } = useAuth();
   const commandCenter = useCommandCenter({ required: false });
-  const openAttention = role === "super_admin" ? commandCenter?.attentionCounts?.total_open ?? 0 : 0;
+  const openAttention = role === "super_admin"
+    ? (commandCenter?.attentionCounts?.unread ?? commandCenter?.attentionCounts?.total_open ?? 0)
+    : 0;
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside

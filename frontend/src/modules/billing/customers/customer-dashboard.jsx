@@ -329,7 +329,7 @@ export default function CustomerDashboard() {
       <div className={DASHBOARD_KPI_GRID}>
         <DashboardStatCard title={`${periodLabel} Revenue`} value={Number(d.period_revenue || 0)} currency={baseCurrency} subtitle="Revenue in period" icon={DollarSign} color="from-emerald-500 to-emerald-600" href="/billing/payments?status=cleared" />
         <DashboardStatCard title={`${periodLabel} Invoices`} value={d.period_total_invoices || 0} subtitle={`${d.period_paid_invoices || 0} paid`} icon={FileText} color="from-blue-500 to-blue-600" href="/billing/invoices" />
-        <DashboardStatCard title={`${periodLabel} Avg Invoice`} value={Number(d.period_avg_invoice_value || 0)} currency={baseCurrency} subtitle="Average invoice value" icon={TrendingUp} color="from-brand to-brand-hover" />
+        <DashboardStatCard title={`${periodLabel} Avg Invoice`} value={Number(d.period_avg_invoice_value || 0)} currency={baseCurrency} subtitle="Average invoice value" icon={TrendingUp} color="from-brand to-brand-hover" href="/billing/invoices" />
         <DashboardStatCard title={`New ${plural} (${periodLabel})`} value={d.period_new_customers || 0} subtitle="Joined in period" icon={UserPlus} color="from-cyan-500 to-cyan-600" href="/billing/customers" />
       </div>
 
@@ -358,7 +358,7 @@ export default function CustomerDashboard() {
       <StatGroup title="Revenue & Collections">
         <DashboardStatCard title="Total Revenue" value={Number(d.total_revenue || 0)} currency={baseCurrency} subtitle="All time" icon={TrendingUp} color="from-blue-500 to-blue-600" href="/billing/payments?status=cleared&all_dates=1" />
         <DashboardStatCard title="Outstanding Balance" value={Number(d.outstanding_balance || 0)} currency={baseCurrency} subtitle="Unpaid invoices" icon={CreditCard} color="from-orange-500 to-orange-600" href="/billing/invoices" />
-        <DashboardStatCard title="Avg Collection Period" value={`${d.avg_collection_time_days || 0} days`} subtitle="Days to collect" icon={Clock} color="from-cyan-500 to-cyan-600" />
+        <DashboardStatCard title="Avg Collection Period" value={`${d.avg_collection_time_days || 0} days`} subtitle="Days to collect" icon={Clock} color="from-cyan-500 to-cyan-600" href="/billing/payments?status=cleared" />
         <DashboardStatCard title="w/ Outstanding" value={d.customers_with_outstanding_balance || 0} subtitle="Have unpaid balance" icon={AlertCircle} color="from-amber-500 to-orange-500" href="/billing/invoices" />
         <DashboardStatCard title="Over Credit Limit" value={d.customers_over_credit_limit || 0} subtitle="Exceeded limit" icon={Target} color="from-red-500 to-rose-500" href="/billing/customers?over_credit_limit=1" />
       </StatGroup>

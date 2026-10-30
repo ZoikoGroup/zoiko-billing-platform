@@ -1515,15 +1515,18 @@ export function SearchInput({ value, onChange, placeholder = "Search…", classN
         onChange={(e) => setDisplay(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
         {...rest}
       />
       {display && (
         <button
           type="button"
-          onClick={() => setDisplay("")}
+          onClick={() => {
+            setDisplay("");
+            onChange?.("");
+          }}
           aria-label="Clear search"
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand/30"
         >
           <X size={14} />
         </button>

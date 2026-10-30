@@ -269,6 +269,8 @@ class AttentionService:
 
     def acknowledge(self, actor: User, item_id: int) -> AttentionItem:
         item = self._load(item_id)
+        if item.status == AttentionStatus.ACKNOWLEDGED:
+            return item
         if item.status not in (AttentionStatus.OPEN,):
             raise BadRequestException(f"Cannot acknowledge from status {item.status.value}.")
         item.status = AttentionStatus.ACKNOWLEDGED
@@ -519,4 +521,12 @@ class AttentionService:
             )
             .scalar()
         ) or 0
-        return {**counts, "total_open": sum(counts.values()), "sla_breaches": sla_breaches}
+        unread = (
+            self.db.query(func.count(AttentionItem.id))
+            .filter(
+                AttentionItem.status == AttentionStatus.OPEN,
+                AttentionItem.acknowledged_at.is_(None),
+            )
+            .scalar()
+        ) or 0
+        return {**counts, "total_open": sum(counts.values()), "sla_breaches": sla_breaches, "unread": unread}

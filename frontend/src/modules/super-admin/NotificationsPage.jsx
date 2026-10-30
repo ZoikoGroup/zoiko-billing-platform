@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, AlertTriangle, ScrollText, HelpCircle } from "lucide-react";
-import { getTriageSummary } from "../../service/commandCenterService";
+import { getTriageSummary, acknowledgeAttentionItem } from "../../service/commandCenterService";
+import { useCommandCenter } from "../../context/CommandCenterContext";
 import { PageHeader } from "../../components/billing-ui";
 import { ErrorState, Spinner, StatusBadge } from "../../components/billing-shared";
 import { formatDateTime } from "./constants";
@@ -24,6 +25,7 @@ function SeverityBadge({ value }) {
 // "unread" state (ORG-01) — this page is a read-only projection.
 export default function NotificationsPage() {
   const navigate = useNavigate();
+  const commandCenter = useCommandCenter({ required: false });
   const [openItems, setOpenItems] = useState([]);
   const [criticalEvents, setCriticalEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,26 @@ export default function NotificationsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleOpenItem = async (item) => {
+    const isUnread = item.status === "open" && !item.acknowledged_at;
+    if (isUnread) {
+      setOpenItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, status: "acknowledged", acknowledged_at: new Date().toISOString() }
+            : i
+        )
+      );
+      try {
+        await acknowledgeAttentionItem(item.id);
+      } catch (err) {
+        console.warn("Failed to acknowledge attention item:", err);
+      }
+      commandCenter?.refresh?.();
+    }
+    navigate("/super-admin/triage");
+  };
 
   const hasNotifications = openItems.length > 0 || criticalEvents.length > 0;
 
@@ -88,27 +110,33 @@ export default function NotificationsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {openItems.map((item) => (
-              <div
-                key={`attn-${item.id}`}
-                onClick={() => navigate("/super-admin/triage")}
-                className="flex items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-[0_4px_20px_rgba(0,0,0,0.03)] cursor-pointer"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                  <AlertTriangle className="h-4 w-4" />
+            {openItems.map((item) => {
+              const isUnread = item.status === "open" && !item.acknowledged_at;
+              return (
+                <div
+                  key={`attn-${item.id}`}
+                  onClick={() => handleOpenItem(item)}
+                  className={`flex items-start gap-3 rounded-3xl border ${isUnread ? "border-brand-200 bg-brand-50/20 shadow-[0_2px_12px_rgba(0,0,0,0.04)]" : "border-slate-200 bg-white"} p-4 transition-shadow hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] cursor-pointer`}
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                    <AlertTriangle className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
+                      {item.title}
+                      <SeverityBadge value={item.severity} />
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${isUnread ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                        {isUnread ? "Unread" : "Read"}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-slate-500">
+                      {item.description || "—"} · opened {formatDateTime(item.opened_at)}
+                      {item.occurrence_count > 1 && ` · ${item.occurrence_count} occurrences`}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
-                    {item.title}
-                    <SeverityBadge value={item.severity} />
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
-                    {item.description || "—"} · opened {formatDateTime(item.opened_at)}
-                    {item.occurrence_count > 1 && ` · ${item.occurrence_count} occurrences`}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {criticalEvents.map((e) => (
               <div
