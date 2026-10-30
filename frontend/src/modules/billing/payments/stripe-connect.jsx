@@ -160,7 +160,7 @@ export default function StripeConnectSettingsPage() {
 
   return (
     <HRPage title="Stripe Connect" subtitle="Connect your Stripe account to accept card payments from customers">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div />
         <div className="flex items-center gap-2">
           {saved && (

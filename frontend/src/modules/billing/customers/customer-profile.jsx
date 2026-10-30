@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from 'react-router-dom';
 import HRPage from '../../../components/HRPage';
+import { Button, Modal } from '../../../components/billing-ui';
 import { customerApi, invoiceApi, paymentApi, contractApi, subscriptionApi, creditNoteApi, quoteApi } from '../../../service/billingService';
 import { loadGlobalBillingConfig } from '../../../service/billingConfigCache';
 import { ArrowLeft, Mail, Phone, Building2, User, CreditCard,
@@ -18,7 +19,6 @@ import { Spinner, ErrorState, EmptyState } from '../../../components/billing-sha
 
 
 function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, confirmLabel, variant }) {
-  const titleId = useId();
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
 
@@ -29,40 +29,27 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, conf
     (variant === 'danger' ? cancelRef.current : confirmRef.current)?.focus();
   }, [open, variant]);
 
-  // Escape closes the dialog (unless an action is in flight).
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape' && !loading) onCancel?.();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, loading, onCancel]);
-
   if (!open) return null;
+  // Escape, the close button and a backdrop tap cancel (unless an action is in flight).
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId}
-        className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className={`h-12 w-12 rounded-full flex items-center justify-center mx-auto mb-4 ${variant === 'danger' ? 'bg-red-100' : 'bg-brand-100'}`}>
-          {variant === 'danger' ? <AlertCircle className="h-6 w-6 text-red-600" /> : <CheckCircle className="h-6 w-6 text-brand-600" />}
-        </div>
-        <h3 id={titleId} className="text-lg font-semibold text-slate-900 text-center mb-2">{title}</h3>
-        <p className="text-sm text-slate-500 text-center mb-6">{message}</p>
-        <div className="flex gap-3 justify-center">
-          <button ref={cancelRef} onClick={onCancel} disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            Cancel
-          </button>
-          <button ref={confirmRef} onClick={onConfirm} disabled={loading}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition-colors ${
-              variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'
-            }`}>
+    <Modal
+      open
+      onClose={() => { if (!loading) onCancel?.(); }}
+      title={title}
+      icon={variant === 'danger' ? AlertCircle : CheckCircle}
+      tone={variant === 'danger' ? 'danger' : 'default'}
+      size="sm"
+      footer={
+        <>
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={loading}>Cancel</Button>
+          <Button ref={confirmRef} variant={variant === 'danger' ? 'destructive' : 'primary'} onClick={onConfirm} disabled={loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {confirmLabel || 'Confirm'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-500">{message}</p>
+    </Modal>
   );
 }
 
@@ -1273,7 +1260,7 @@ export default function CustomerProfilePage() {
 
           {/* Existing Detail Sections */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <h3 className="text-lg font-semibold text-slate-900">{singular} Details</h3>
               <div className="flex items-center gap-2">
                 {editing ? (

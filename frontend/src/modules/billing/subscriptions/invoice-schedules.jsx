@@ -146,8 +146,8 @@ export default function InvoiceSchedulesPage() {
 
   return (
     <HRPage title="Invoice Schedules" subtitle="Manage subscription billing schedules">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input type="text" placeholder="Search schedules..." aria-label="Search schedules" value={search}

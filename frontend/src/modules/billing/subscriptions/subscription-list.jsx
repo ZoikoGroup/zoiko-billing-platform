@@ -320,7 +320,7 @@ export default function SubscriptionListPage() {
               </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => navigate("/billing/subscriptions/create")}
                   className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
                   <Plus size={18} /> Create Subscription

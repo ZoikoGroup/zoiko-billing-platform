@@ -219,7 +219,7 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
         {(run.exceptions || []).length === 0 ? (
           <EmptyState icon={ShieldCheck} title="No exceptions on this run" message="Every internal ledger invariant checked out clean." />
         ) : (
-          <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-200">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 sm:max-h-[420px] sm:overflow-y-auto">
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-slate-50">
                 <tr className="text-[10px] uppercase tracking-wider text-slate-500">

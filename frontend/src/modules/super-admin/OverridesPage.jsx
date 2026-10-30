@@ -168,8 +168,17 @@ function CreateDraftModal({ open, onClose, organizations, definitions, onCreated
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Draft a commercial override" icon={ShieldAlert} size="lg">
-      <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+    <Modal open={open} onClose={onClose} title="Draft a commercial override" icon={ShieldAlert} size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="draft-override-form" variant="primary" loading={busy} disabled={!orgId || !definitionId || !reason.trim()}>
+            Create draft
+          </Button>
+        </>
+      }
+    >
+      <form id="draft-override-form" onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <Field label="Organization" htmlFor="ov-org" required className="sm:col-span-2">
           <Select value={orgId} onChange={setOrgId} options={orgOptions} placeholder="Select an organization…" />
         </Field>
@@ -196,12 +205,6 @@ function CreateDraftModal({ open, onClose, organizations, definitions, onCreated
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 sm:col-span-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!orgId || !definitionId || !reason.trim()}>
-            Create draft
-          </Button>
-        </div>
       </form>
     </Modal>
   );

@@ -3,6 +3,7 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, X, Pencil, Layers,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { taxPricingApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -103,87 +104,92 @@ function TaxFormModal({ show, onClose, onSave, editItem, saving }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">{editItem ? "Edit Tax Pricing" : "Create Tax Pricing"}</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      dense
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title={editItem ? "Edit Tax Pricing" : "Create Tax Pricing"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={saving}>{saving ? "Saving..." : editItem ? "Update Tax" : "Create Tax"}</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
         </div>
-        <div className="px-6 py-4 space-y-4">
-          {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
-          </div>
 <div><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-             <div><label className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
-                {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
-                {PRICING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-</div>
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-             <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">State</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
-</div>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           <div><label className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
+              {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={e => set("is_default", e.target.checked)} className="rounded" /> Default</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.applies_to_products} onChange={e => set("applies_to_products", e.target.checked)} className="rounded" /> Products</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.applies_to_services} onChange={e => set("applies_to_services", e.target.checked)} className="rounded" /> Services</label>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
+              {PRICING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
+</div>
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">State</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
+</div>
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
         </div>
-        <div className="flex gap-2 justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editItem ? "Update Tax" : "Create Tax"}</button>
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={e => set("is_default", e.target.checked)} className="rounded" /> Default</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.applies_to_products} onChange={e => set("applies_to_products", e.target.checked)} className="rounded" /> Products</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.applies_to_services} onChange={e => set("applies_to_services", e.target.checked)} className="rounded" /> Services</label>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function DetailModal({ show, onClose, item }) {
   if (!show || !item) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">Tax Pricing Details</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title="Tax Pricing Details"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+          <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
+          <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
+          <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.tax_type}</span></div>
+          <div><span className="text-slate-500">Rate:</span> <span className="ml-2 font-medium">{item.rate}%</span></div>
+          <div><span className="text-slate-500">Pricing:</span> <span className="ml-2 capitalize">{item.pricing_type}</span></div>
+          <div><span className="text-slate-500">Jurisdiction:</span> <span className="ml-2">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}{item.state ? ` / ${item.state}` : ""}</span></div>
+          <div><span className="text-slate-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
+          <div><span className="text-slate-500">Default:</span> <span className="ml-2">{item.is_default ? "Yes" : "No"}</span></div>
+          <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge is_active={item.is_active} /></span></div>
+          <div><span className="text-slate-500">Products:</span> <span className="ml-2">{item.applies_to_products ? "Yes" : "No"}</span></div>
+          <div><span className="text-slate-500">Services:</span> <span className="ml-2">{item.applies_to_services ? "Yes" : "No"}</span></div>
         </div>
-        <div className="px-6 py-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
-            <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
-            <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.tax_type}</span></div>
-            <div><span className="text-slate-500">Rate:</span> <span className="ml-2 font-medium">{item.rate}%</span></div>
-            <div><span className="text-slate-500">Pricing:</span> <span className="ml-2 capitalize">{item.pricing_type}</span></div>
-            <div><span className="text-slate-500">Jurisdiction:</span> <span className="ml-2">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}{item.state ? ` / ${item.state}` : ""}</span></div>
-            <div><span className="text-slate-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
-            <div><span className="text-slate-500">Default:</span> <span className="ml-2">{item.is_default ? "Yes" : "No"}</span></div>
-            <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge is_active={item.is_active} /></span></div>
-            <div><span className="text-slate-500">Products:</span> <span className="ml-2">{item.applies_to_products ? "Yes" : "No"}</span></div>
-            <div><span className="text-slate-500">Services:</span> <span className="ml-2">{item.applies_to_services ? "Yes" : "No"}</span></div>
-          </div>
-          {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
-        </div>
-        <div className="flex justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
-        </div>
+        {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -284,118 +290,120 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
   const usedTaxIds = new Set((members || []).map(m => m.tax_pricing_id || m.id));
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">Tax Groups</h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setEditGroup(null); setGroupForm({ name: "", code: "", description: "", country: "", is_default: false, is_active: true }); setShowCreateEdit(true); }} className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700"><Plus size={14} /> Add Group</button>
-            <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <>
+      <Modal
+        open
+        dense
+        onClose={onClose}
+        closeOnBackdrop={false}
+        title="Tax Groups"
+        size="3xl"
+        headerAside={
+          <button onClick={() => { setEditGroup(null); setGroupForm({ name: "", code: "", description: "", country: "", is_default: false, is_active: true }); setShowCreateEdit(true); }} className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 max-sm:min-h-11"><Plus size={14} /> Add Group</button>
+        }
+        footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+      >
+        {showCreateEdit && (
+          <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+            <h3 className="text-sm font-semibold">{editGroup ? "Edit Tax Group" : "Create Tax Group"}</h3>
+            {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs">{formError}</div>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
+              <div className="sm:col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
+              <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
+              <div className="flex items-center gap-4 pt-5">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_default} onChange={e => setGroupForm(p => ({ ...p, is_default: e.target.checked }))} className="rounded" /> Default</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_active} onChange={e => setGroupForm(p => ({ ...p, is_active: e.target.checked }))} className="rounded" /> Active</label>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setShowCreateEdit(false); setEditGroup(null); }} className="px-3 py-1.5 border rounded-lg text-xs">Cancel</button>
+              <button onClick={handleSaveGroup} disabled={saving} className="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editGroup ? "Update" : "Create"}</button>
+            </div>
           </div>
-        </div>
-        <div className="px-6 py-4">
-          {showCreateEdit && (
-            <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <h3 className="text-sm font-semibold">{editGroup ? "Edit Tax Group" : "Create Tax Group"}</h3>
-              {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs">{formError}</div>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
-                <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
-                <div className="col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
-                <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
-                <div className="flex items-center gap-4 pt-5">
-                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_default} onChange={e => setGroupForm(p => ({ ...p, is_default: e.target.checked }))} className="rounded" /> Default</label>
-                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_active} onChange={e => setGroupForm(p => ({ ...p, is_active: e.target.checked }))} className="rounded" /> Active</label>
-                </div>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => { setShowCreateEdit(false); setEditGroup(null); }} className="px-3 py-1.5 border rounded-lg text-xs">Cancel</button>
-                <button onClick={handleSaveGroup} disabled={saving} className="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editGroup ? "Update" : "Create"}</button>
-              </div>
-            </div>
-          )}
+        )}
 
-          {loading ? <Spinner /> : !groups.length ? <EmptyState message="No tax groups found" /> : (
-            <div className="bg-white rounded-3xl border overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                  <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-left px-4 py-3">Country</th><th className="text-center px-4 py-3">Default</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
-                </thead>
-                <tbody className="divide-y">
-                  {groups.map(g => (
-                    <tr key={g.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-sm font-medium">{g.name}</td>
-                      <td className="px-4 py-3 text-sm">{g.code}</td>
-                      <td className="px-4 py-3 text-sm">{g.country || "—"}</td>
-                      <td className="px-4 py-3 text-center">{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                      <td className="px-4 py-3 text-center">{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        <button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
-                        <button onClick={() => { setEditGroup(g); setGroupForm({ name: g.name, code: g.code, description: g.description || "", country: g.country || "", is_default: g.is_default ?? false, is_active: g.is_active ?? true }); setShowCreateEdit(true); }} className="text-blue-600 hover:text-blue-800 text-xs"><Pencil size={12} className="inline" /> Edit</button>
-                        <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        <div className="flex justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
-        </div>
-      </div>
+        {loading ? <Spinner /> : !groups.length ? <EmptyState message="No tax groups found" /> : (
+          <div className="bg-white rounded-3xl border overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-left px-4 py-3">Country</th><th className="text-center px-4 py-3">Default</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y">
+                {groups.map(g => (
+                  <tr key={g.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-sm font-medium">{g.name}</td>
+                    <td className="px-4 py-3 text-sm">{g.code}</td>
+                    <td className="px-4 py-3 text-sm">{g.country || "—"}</td>
+                    <td className="px-4 py-3 text-center">{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
+                    <td className="px-4 py-3 text-center">{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
+                    <td className="px-4 py-3 text-right space-x-2">
+                      <button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
+                      <button onClick={() => { setEditGroup(g); setGroupForm({ name: g.name, code: g.code, description: g.description || "", country: g.country || "", is_default: g.is_default ?? false, is_active: g.is_active ?? true }); setShowCreateEdit(true); }} className="text-blue-600 hover:text-blue-800 text-xs"><Pencil size={12} className="inline" /> Edit</button>
+                      <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
 
       {viewMembers && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h2 className="text-lg font-semibold">Members: {viewMembers.name}</h2>
-              <button onClick={() => { setViewMembers(null); setMembers([]); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close"><X size={20} /></button>
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
-                  <select className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
-                    <option value="">Select a tax pricing...</option>
-                    {allTaxItems.filter(t => !usedTaxIds.has(t.id)).map(t => (
-                      <option key={t.id} value={t.id}>{t.name} ({t.code}) - {t.rate}%</option>
-                    ))}
-                  </select>
-                </div>
-                <button onClick={handleAddMember} disabled={!addMemberTaxId || addMemberSaving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 whitespace-nowrap">{addMemberSaving ? "Adding..." : "Add"}</button>
+        <Modal
+          open
+          dense
+          onClose={() => { setViewMembers(null); setMembers([]); }}
+          closeOnBackdrop={false}
+          title={`Members: ${viewMembers.name}`}
+          size="lg"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => { setViewMembers(null); setMembers([]); }}>Close</Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
+                <select className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
+                  <option value="">Select a tax pricing...</option>
+                  {allTaxItems.filter(t => !usedTaxIds.has(t.id)).map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.code}) - {t.rate}%</option>
+                  ))}
+                </select>
               </div>
+              <button onClick={handleAddMember} disabled={!addMemberTaxId || addMemberSaving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 whitespace-nowrap">{addMemberSaving ? "Adding..." : "Add"}</button>
+            </div>
 
-              {loadingMembers ? <Spinner /> : !members.length ? <EmptyState message="No members in this group" /> : (
-                <div className="bg-white rounded-3xl border overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                      <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-right px-4 py-3">Rate</th><th className="text-right px-4 py-3">Actions</th></tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {members.map(m => (
-                        <tr key={m.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 text-sm font-medium">{m.name}</td>
-                          <td className="px-4 py-3 text-sm">{m.code}</td>
-                          <td className="px-4 py-3 text-sm text-right">{m.rate}%</td>
-                          <td className="px-4 py-3 text-right">
-                            <button onClick={() => handleRemoveMember(m.tax_pricing_id || m.id)} className="text-red-500 hover:text-red-700 text-xs">Remove</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end px-6 py-4 border-t">
-              <button onClick={() => { setViewMembers(null); setMembers([]); }} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
-            </div>
+            {loadingMembers ? <Spinner /> : !members.length ? <EmptyState message="No members in this group" /> : (
+              <div className="bg-white rounded-3xl border overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                    <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-right px-4 py-3">Rate</th><th className="text-right px-4 py-3">Actions</th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {members.map(m => (
+                      <tr key={m.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-sm font-medium">{m.name}</td>
+                        <td className="px-4 py-3 text-sm">{m.code}</td>
+                        <td className="px-4 py-3 text-sm text-right">{m.rate}%</td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleRemoveMember(m.tax_pricing_id || m.id)} className="text-red-500 hover:text-red-700 text-xs">Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 

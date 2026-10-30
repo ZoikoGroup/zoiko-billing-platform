@@ -4,6 +4,7 @@ import { ArrowLeft, FileSignature, RefreshCw, AlertCircle, Loader2, Send,
   CheckCircle, XCircle, Ban, RotateCcw, FileText, DollarSign, User,
   Package, CreditCard, Clock, Activity, FileEdit, Hash, Copy } from "lucide-react"
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { quoteApi, customerApi, contractApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
@@ -717,122 +718,134 @@ export default function QuotationDetailPage() {
       </div>
 
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowRejectModal(false); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="reject-quotation-title" className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <h3 id="reject-quotation-title" className="text-lg font-semibold text-slate-900 mb-2">Reject Quotation</h3>
-            <p className="text-sm text-slate-500 mb-4">Provide a reason for rejecting this quotation.</p>
-            <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-              rows={3} placeholder="Reason for rejection..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleReject} disabled={!rejectReason.trim() || isActing("reject")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
-                {isActing("reject") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Reject
-              </button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          open
+          dense
+          onClose={() => setShowRejectModal(false)}
+          closeOnBackdrop={false}
+          title="Reject Quotation"
+          description="Provide a reason for rejecting this quotation."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowRejectModal(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleReject} disabled={!rejectReason.trim() || isActing("reject")}>{isActing("reject") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Reject</Button>
+            </>
+          }
+        >
+          <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+            rows={3} placeholder="Reason for rejection..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Modal>
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCancelModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Cancel Quotation</h3>
-            <p className="text-sm text-slate-500 mb-4">Are you sure you want to cancel this quotation? This action cannot be undone.</p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowCancelModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleCancelConfirm} disabled={isActing("cancel")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
-                {isActing("cancel") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Quotation
-              </button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          open
+          onClose={() => setShowCancelModal(false)}
+          title="Cancel Quotation"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowCancelModal(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleCancelConfirm} disabled={isActing("cancel")}>{isActing("cancel") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Quotation</Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-600">Are you sure you want to cancel this quotation? This action cannot be undone.</p>
+        </Modal>
       )}
 
       {showConvertContractModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowConvertContractModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Convert to Contract</h3>
-            <p className="text-sm text-slate-500 mb-4">Create a contract from this accepted quotation.</p>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Contract Name</label>
-                <input type="text" value={convertContractForm.contract_name}
-                  onChange={(e) => setConvertContractForm((f) => ({ ...f, contract_name: e.target.value }))}
-                  placeholder={quote.subject || "Contract from " + quote.quote_number}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
-                <input type="date" value={convertContractForm.start_date}
-                  onChange={(e) => setConvertContractForm((f) => ({ ...f, start_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">End Date (optional)</label>
-                <input type="date" value={convertContractForm.end_date}
-                  onChange={(e) => setConvertContractForm((f) => ({ ...f, end_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowConvertContractModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleConvertToContract}
-                disabled={!convertContractForm.start_date || isActing("convertContract")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+        <Modal
+          open
+          dense
+          onClose={() => setShowConvertContractModal(false)}
+          title="Convert to Contract"
+          description="Create a contract from this accepted quotation."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowConvertContractModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleConvertToContract}
+                disabled={!convertContractForm.start_date || isActing("convertContract")}>
                 {isActing("convertContract") ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Create Contract
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Contract Name</label>
+              <input type="text" value={convertContractForm.contract_name}
+                onChange={(e) => setConvertContractForm((f) => ({ ...f, contract_name: e.target.value }))}
+                placeholder={quote.subject || "Contract from " + quote.quote_number}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
+              <input type="date" value={convertContractForm.start_date}
+                onChange={(e) => setConvertContractForm((f) => ({ ...f, start_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">End Date (optional)</label>
+              <input type="date" value={convertContractForm.end_date}
+                onChange={(e) => setConvertContractForm((f) => ({ ...f, end_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showConvertModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowConvertModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Convert to Invoice</h3>
-            <p className="text-sm text-slate-500 mb-4">Create an invoice from this accepted quotation.</p>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Invoice Number {orgSettings?.auto_generate_invoice_number !== false && <span className="text-slate-400 font-normal">(optional)</span>}</label>
-                <input type="text" value={convertForm.invoice_number}
-                  onChange={(e) => setConvertForm((f) => ({ ...f, invoice_number: e.target.value }))}
-                  placeholder={orgSettings?.auto_generate_invoice_number !== false ? "Auto-generated" : "INV-0001"}
-                  readOnly={orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number}
-                  className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 ${orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number ? "bg-slate-50 cursor-not-allowed" : ""}`} />
-                {orgSettings?.auto_generate_invoice_number !== false && (
-                  <p className="text-xs text-slate-400 mt-1">Invoice number will be auto-generated on convert. Leave blank to auto-generate.</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Issue Date</label>
-                <input type="date" value={convertForm.issue_date}
-                  onChange={(e) => setConvertForm((f) => ({ ...f, issue_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Due Date</label>
-                <input type="date" value={convertForm.due_date}
-                  onChange={(e) => setConvertForm((f) => ({ ...f, due_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowConvertModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleConvert}
-                disabled={(orgSettings?.auto_generate_invoice_number === false && !convertForm.invoice_number) || !convertForm.issue_date || !convertForm.due_date || isActing("convert")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+        <Modal
+          open
+          dense
+          onClose={() => setShowConvertModal(false)}
+          title="Convert to Invoice"
+          description="Create an invoice from this accepted quotation."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowConvertModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleConvert}
+                disabled={(orgSettings?.auto_generate_invoice_number === false && !convertForm.invoice_number) || !convertForm.issue_date || !convertForm.due_date || isActing("convert")}>
                 {isActing("convert") ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Convert
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Invoice Number {orgSettings?.auto_generate_invoice_number !== false && <span className="text-slate-400 font-normal">(optional)</span>}</label>
+              <input type="text" value={convertForm.invoice_number}
+                onChange={(e) => setConvertForm((f) => ({ ...f, invoice_number: e.target.value }))}
+                placeholder={orgSettings?.auto_generate_invoice_number !== false ? "Auto-generated" : "INV-0001"}
+                readOnly={orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number}
+                className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 ${orgSettings?.auto_generate_invoice_number !== false && !convertForm.invoice_number ? "bg-slate-50 cursor-not-allowed" : ""}`} />
+              {orgSettings?.auto_generate_invoice_number !== false && (
+                <p className="text-xs text-slate-400 mt-1">Invoice number will be auto-generated on convert. Leave blank to auto-generate.</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Issue Date</label>
+              <input type="date" value={convertForm.issue_date}
+                onChange={(e) => setConvertForm((f) => ({ ...f, issue_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Due Date</label>
+              <input type="date" value={convertForm.due_date}
+                onChange={(e) => setConvertForm((f) => ({ ...f, due_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </HRPage>
   );

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, AlertCircle, Package, Plus, Trash2, Search, CheckCircle, FileText, Calendar, CreditCard, FileEdit, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { contractApi, productApi, pricingApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -666,50 +667,52 @@ export default function ContractEditPage() {
       </div>
 
       {showAmendmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowAmendmentModal(false); setPendingAmendmentData(null); }}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={20} className="text-amber-500" />
-              <h3 className="text-lg font-semibold text-slate-900">Active Contract Requires Amendment</h3>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">
-              This contract is <strong>ACTIVE</strong>. Material changes require an amendment record.
-              Provide a reason and effective date to create an amendment.
-            </p>
-            {pendingAmendmentData && pendingAmendmentData.changedFields.length > 0 && (
-              <div className="mb-4 p-3 bg-slate-50 rounded-lg">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Changed Fields</p>
-                <div className="flex flex-wrap gap-1">
-                  {pendingAmendmentData.changedFields.map((f) => (
-                    <span key={f} className="px-2 py-0.5 bg-brand-50 text-brand-700 text-xs rounded-full capitalize">{f}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
-                <input type="date" value={amendmentForm.effective_date}
-                  onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Amendment Reason</label>
-                <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
-                  rows={3} placeholder="Reason for changes..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowAmendmentModal(false); setPendingAmendmentData(null); }}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleAmendmentSave} disabled={!amendmentForm.effective_date || saving}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+        <Modal
+          open
+          dense
+          onClose={() => { setShowAmendmentModal(false); setPendingAmendmentData(null); }}
+          title="Active Contract Requires Amendment"
+          icon={AlertTriangle}
+          tone="warning"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => { setShowAmendmentModal(false); setPendingAmendmentData(null); }}>Cancel</Button>
+              <Button variant="primary" onClick={handleAmendmentSave} disabled={!amendmentForm.effective_date || saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileEdit className="h-4 w-4" />} Save with Amendment
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-500 mb-4">
+            This contract is <strong>ACTIVE</strong>. Material changes require an amendment record.
+            Provide a reason and effective date to create an amendment.
+          </p>
+          {pendingAmendmentData && pendingAmendmentData.changedFields.length > 0 && (
+            <div className="mb-4 p-3 bg-slate-50 rounded-lg">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Changed Fields</p>
+              <div className="flex flex-wrap gap-1">
+                {pendingAmendmentData.changedFields.map((f) => (
+                  <span key={f} className="px-2 py-0.5 bg-brand-50 text-brand-700 text-xs rounded-full capitalize">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
+              <input type="date" value={amendmentForm.effective_date}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Amendment Reason</label>
+              <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
+                rows={3} placeholder="Reason for changes..."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </HRPage>
   );

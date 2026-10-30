@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // This suite focuses on the plan-change action of the subscription detail
@@ -27,6 +27,7 @@ const mockInvoiceList = vi.fn();
 const mockPaymentList = vi.fn();
 const mockAuditList = vi.fn();
 const mockSettingsGetConfig = vi.fn();
+const mockNavigate = vi.fn();
 
 vi.mock("../../../service/billingService", () => ({
   subscriptionApi: {
@@ -54,6 +55,7 @@ vi.mock("react-router-dom", async () => {
   return {
     ...actual,
     useParams: () => ({ id: SUB_ID }),
+    useNavigate: () => mockNavigate,
   };
 });
 
@@ -203,5 +205,50 @@ describe("Plan change — failure", () => {
     // The panel is not dismissed on failure, and no silent refetch happened.
     expect(screen.getByRole("button", { name: /confirm change/i })).toBeInTheDocument();
     expect(mockSubGet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Action dialogs (shared Modal)", () => {
+  async function openDialog(trigger, title) {
+    await loadDetailPage();
+    fireEvent.click(screen.getByRole("button", { name: trigger }));
+    return screen.findByRole("dialog", { name: title });
+  }
+  const gone = (title) => waitFor(() => expect(screen.queryByRole("dialog", { name: title })).not.toBeInTheDocument());
+
+  it("Change Plan opens as a named dialog and closes after Confirm Change", async () => {
+    mockSubChangePlan.mockResolvedValue({});
+    const dialog = await openDialog(/change plan/i, "Change Plan");
+    fireEvent.click(await within(dialog).findByRole("button", { name: /pro plan/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /confirm change/i }));
+    await waitFor(() => expect(mockSubChangePlan).toHaveBeenCalledWith(42, NEW_PLAN.id));
+    await gone("Change Plan");
+  });
+
+  it("Generate Invoice calls generateInvoice(subscription.id), closes and navigates to the invoice", async () => {
+    mockSubGenerateInvoice.mockResolvedValue({ invoice_id: 900 });
+    const dialog = await openDialog(/generate invoice/i, "Generate Invoice");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^generate invoice$/i }));
+    await waitFor(() => expect(mockSubGenerateInvoice).toHaveBeenCalledWith(42));
+    await gone("Generate Invoice");
+    expect(mockNavigate).toHaveBeenCalledWith("/billing/invoices/900");
+  });
+
+  it("Pause Subscription calls pause(id) and closes", async () => {
+    mockSubPause.mockResolvedValue({});
+    const dialog = await openDialog(/pause subscription/i, "Pause Subscription");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^pause subscription$/i }));
+    await waitFor(() => expect(mockSubPause).toHaveBeenCalledWith(SUB_ID));
+    expect(mockSubPause).toHaveBeenCalledTimes(1);
+    await gone("Pause Subscription");
+  });
+
+  it("Cancel Subscription calls cancel(id) and closes", async () => {
+    mockSubCancel.mockResolvedValue({});
+    const dialog = await openDialog(/cancel subscription/i, "Cancel Subscription");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel subscription$/i }));
+    await waitFor(() => expect(mockSubCancel).toHaveBeenCalledWith(SUB_ID));
+    expect(mockSubCancel).toHaveBeenCalledTimes(1);
+    await gone("Cancel Subscription");
   });
 });

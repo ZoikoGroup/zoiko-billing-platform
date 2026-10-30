@@ -323,7 +323,7 @@ export default function ContractListPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => navigate("/billing/contracts/create")}
                   className="flex items-center gap-2 px-5 py-2.5 bg-linear-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:ring-offset-2">
                   <Plus size={18} /> Create Contract

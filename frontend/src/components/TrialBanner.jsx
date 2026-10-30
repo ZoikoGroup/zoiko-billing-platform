@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowRight,
   CalendarClock,
+  ChevronDown,
   Rocket,
   ShieldCheck,
   X,
@@ -82,6 +83,9 @@ export default function TrialBanner() {
   const [converting, setConverting] = useState(false);
   const [actionMsg, setActionMsg] = useState(null);
   const [actionError, setActionError] = useState(null);
+  // Phones only: the end date and trial note sit behind a toggle so the
+  // banner stays one compact strip. From sm up they are always shown.
+  const [showDetails, setShowDetails] = useState(false);
 
   const eligible = role && TRIAL_ROLES.has(role);
   const isTrial = subscription && ["trialing", "trial_recovery"].includes(subscription.status);
@@ -162,22 +166,30 @@ export default function TrialBanner() {
   const used = days == null || recovery ? 100 : Math.min(100, Math.max(0, Math.round(((TRIAL_DAYS - days) / TRIAL_DAYS) * 100)));
   const urgent = recovery || (days != null && days <= 3);
 
+  // Below sm the banner is a slim full-width strip (title + days badge +
+  // short CTA; end date and note behind a "Show trial details" toggle) so it
+  // takes ~7% of a phone screen instead of ~29%. From sm up every class
+  // resolves to the original card layout.
   return (
     <div
       role="status"
       aria-label="Trial subscription banner"
-      className={`relative mx-4 mt-4 sm:mx-6 lg:mx-8 overflow-hidden rounded-2xl border-2 shadow-md ${
+      className={`relative overflow-hidden border-b sm:mx-6 sm:mt-4 sm:rounded-2xl sm:border-2 sm:shadow-md lg:mx-8 ${
         urgent ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"
       }`}
     >
-      <div className={`h-1.5 w-full ${urgent ? "bg-red-100" : "bg-amber-100"}`} aria-hidden="true">
+      <div className={`h-1 w-full sm:h-1.5 ${urgent ? "bg-red-100" : "bg-amber-100"}`} aria-hidden="true">
         <div
           className={`h-full transition-all ${urgent ? "bg-red-500" : "bg-amber-500"}`}
           style={{ width: `${used}%` }}
         />
       </div>
-      <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div className="flex items-start gap-3.5">
+      <div
+        className={`flex items-center justify-between gap-3 px-4 py-1 sm:gap-4 sm:px-6 sm:py-4 ${
+          showDetails ? "max-sm:flex-wrap max-sm:py-2" : ""
+        }`}
+      >
+        <div className={`flex min-w-0 items-start gap-3.5 ${showDetails ? "max-sm:basis-full" : ""}`}>
           <div
             className={`hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
               urgent ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
@@ -185,18 +197,21 @@ export default function TrialBanner() {
           >
             {recovery ? <AlertCircle className="h-6 w-6" /> : <Rocket className="h-6 w-6" />}
           </div>
-          <div>
-            <p className="flex flex-wrap items-center gap-2 text-base font-bold text-slate-900">
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-bold text-slate-900 sm:gap-2 sm:text-base">
               {recovery ? (
                 <>
-                  Your free trial ended — you're in the recovery window
+                  {/* Short title on phones keeps title + badge on one line. */}
+                  <span className="sm:hidden">Trial ended</span>
+                  <span className="hidden sm:inline">Your free trial ended — you're in the recovery window</span>
                   <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
                     Read / Export only
                   </span>
                 </>
               ) : (
                 <>
-                  You're on the free trial
+                  <span className="sm:hidden">Free trial</span>
+                  <span className="hidden sm:inline">You're on the free trial</span>
                   {days != null ? (
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white ${
@@ -209,7 +224,7 @@ export default function TrialBanner() {
                 </>
               )}
             </p>
-            <p className="mt-1 text-sm leading-5 text-slate-700">
+            <p id="trial-banner-details" className={`mt-1 text-sm leading-5 text-slate-700 sm:block ${showDetails ? "block" : "hidden"}`}>
               <CalendarClock className="mr-1 inline h-4 w-4 text-slate-500" />
               {recovery
                 ? dateLabel
@@ -220,32 +235,44 @@ export default function TrialBanner() {
                   : "Convert to a paid plan to keep using Billing after the trial."}
             </p>
             {!recovery && (
-              <p className="mt-1 text-xs text-slate-600">
+              <p className={`mt-1 text-xs text-slate-600 sm:block ${showDetails ? "block" : "hidden"}`}>
                 Quotes and invoices you create during the trial carry a “Free trial” banner until you upgrade.
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+        <div className={`flex shrink-0 flex-col items-stretch gap-2 sm:items-end ${showDetails ? "max-sm:ml-auto" : ""}`}>
           <TrialActionMessage actionMsg={actionMsg} actionError={actionError} converting={converting} />
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleConvert}
               disabled={converting}
-              className="group inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="group inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-0 sm:px-5"
             >
-              <ShieldCheck className="h-4 w-4 text-blue-100" />
-              <span>{recovery ? "Restore full access" : "Continue with paid plan"}</span>
-              <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              <ShieldCheck className="hidden h-4 w-4 text-blue-100 sm:block" />
+              {/* Short visible label on phones; the full one from sm up. */}
+              <span className="sm:hidden">{recovery ? "Restore" : "Upgrade"}</span>
+              <span className="hidden sm:inline">{recovery ? "Restore full access" : "Continue with paid plan"}</span>
+              <ArrowRight className="hidden h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 sm:block" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              aria-expanded={showDetails}
+              aria-controls="trial-banner-details"
+              aria-label={showDetails ? "Hide trial details" : "Show trial details"}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/60 sm:hidden"
+            >
+              <ChevronDown className={`h-5 w-5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
             </button>
             {!onDashboard && (
               <button
                 type="button"
                 onClick={handleDismiss}
                 aria-label="Dismiss trial banner for this session"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 sm:h-9 sm:w-9"
               >
                 <X className="h-4 w-4" />
               </button>
