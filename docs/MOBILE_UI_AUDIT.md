@@ -610,6 +610,32 @@ Parity: 0 unexplained across the 6 pricing files and `billing-ui.jsx`. Screensho
 
 **Notes (not bugs, not changed):** `discount-engine.jsx`'s form adds its own Esc listener on top of `Modal`'s (redundant today; would bypass the stack if something were ever opened over it). Several pricing form labels aren't linked to their inputs (`htmlFor` / `id`) — accessibility follow-up for Phase 4.
 
+## 8d. Pre-existing bug fixes (for a separate bug-fix pull request)
+
+Bugs found during the mobile work that are probably live today. Each is its own commit with tests that fail without the fix, so they can be cherry-picked into a small pull request ahead of the mobile work. **Before merging, check each against the code production runs** (which branch production runs is still an open question).
+
+| Commit | Fix | Screen | Tests |
+|---|---|---|---|
+| `3be74fd` | New Quotation wizard couldn't be closed when opened from a link (`?create=1`): Cancel / Esc / × reopened and reset it | Customer profile → New quotation (`/billing/quotations?create=1`) | `quotation-list.dialogs.test.jsx` (5 fail without the fix) |
+| `ebb4b5c` | Retainers read field names the API doesn't return: list showed "—" for SKU / price / period, Edit reset quarterly to monthly and saved it; "Semi-Annual" and "Annual" options failed validation | `/billing/retainers` | `retainers.fields.test.jsx` (3 fail without the fix) |
+| `0ea3a30` | Pricing Plan form lost focus after every keystroke (typing "Gold plan" left "G") | `/billing/pricing` → Add Plan / Edit | `pricing-plans.dialogs.test.jsx`, key-by-key typing (2 fail without the fix). Adds dev dependency `@testing-library/user-event` |
+| `ec0f743` | Record Payment and Create Refund couldn't be closed when opened from a link; after a successful save, Back reopened Record Payment / New Quotation / Create Refund | Invoice detail → Record payment / Create refund; customer profile and contract → Record payment (`/billing/payments?create=1…`, `/billing/refunds?create=1&invoice_id=…`) | `payment-list.reopen.test.jsx`, `refunds.reopen.test.jsx`, one more in `quotation-list.dialogs.test.jsx` (15 fail without the fix). Cherry-pick with `3be74fd`: it also touches the quotation wizard's success path |
+
+Not in this list (fixes to this branch's own changes, not pre-existing): `aa8edb7` — the discount dialog could be closed with Esc / × while saving after its B2 rebuild.
+
+**Search: other components declared inside a component and rendered as `<Name />`** (the Pricing Plan bug's cause). A parser scan of every `.jsx` under `src/` found 16. Only `PlanFormFields` (19 form controls) could lose typing or focus, and it's fixed. The other 15 render no inputs and hold no state, so remounting them costs a little render time but can't lose user input: `SortHeader` (customer-list, billing-history, payment-list, pricing/pricing-plans, products/pricing-plans, product-list, quotation-list, tax-rates), `StatusBadge` (credit-notes, invoice-list), `SortIcon` (`DataTable`), `StatusLine` (settings), `PricingIntelligenceCard` (pricing-plans), `InfoRow` and `TimelineEvent` (quotation-detail). Components wrapped in `memo` are all at module level. Logged, not changed.
+
+**Discount form's own Esc handler:** nothing can open on top of the discount form (Edit and View are separate dialogs), so it can't close two layers. Left in place and logged for Phase 4; it's redundant now that `Modal`'s `onClose` carries the same `!saving` check (`aa8edb7`).
+
+**Follow-ups (log, don't fix unless told):**
+- `/billing/quotations/settings` intermittent crash (not reproduced locally).
+- "Book a Demo" has no click handler.
+- Browser Back doesn't close dialogs; the unsaved-changes guard can't catch Back (router change needed).
+- Payment Allocations tab may show empty if the API returns `{ allocations: [...] }`.
+- **Team:** product profile "New Quotation" / "New Invoice" (`?action=create&product_id=…`) are dead links — nothing reads the parameters.
+- **Phase 4:** Terminate Contract keeps the typed reason after Esc / ×; some pricing form labels aren't linked to their inputs; the discount form's redundant Esc listener.
+- `npm run build` needs `NODE_OPTIONS=--max-old-space-size=3072` on the 8GB dev machine — set per session only, never committed.
+
 ## 9. Local environment safety notes
 
 - `backend/.env` points at a remote PostgreSQL server. It was **not** used, edited, seeded or migrated. Overrides were applied per process only.
