@@ -31,10 +31,29 @@ def db_session():
         db.close()
 
 
+def _get_or_create_super_admin(db_session, email="sa_bugs_test@example.com"):
+    actor = db_session.query(User).filter(User.role == UserRole.SUPER_ADMIN).first()
+    if not actor:
+        actor = User(
+            email=email,
+            hashed_password="test_password_hash",
+            role=UserRole.SUPER_ADMIN,
+            platform_role=PlatformRole.PLATFORM_ADMIN,
+            first_name="Super",
+            last_name="Admin",
+            is_active=True,
+            is_verified=True,
+            organization_id=None,
+        )
+        db_session.add(actor)
+        db_session.commit()
+    return actor
+
+
 def test_bug1_attention_unread_count_and_idempotent_acknowledge(db_session):
     """Verify get_counts() accurately tracks unread items and acknowledge() is idempotent."""
     svc = AttentionService(db_session)
-    actor = db_session.query(User).filter(User.role == UserRole.SUPER_ADMIN).first()
+    actor = _get_or_create_super_admin(db_session)
     assert actor is not None, "Super Admin user required"
 
     # Create a test open attention item
@@ -49,7 +68,7 @@ def test_bug1_attention_unread_count_and_idempotent_acknowledge(db_session):
     db_session.add(item)
     db_session.flush()
 
-    counts_before = svc.get_counts()
+    counts_before = svc.get_counts(include_unread=True)
     assert counts_before["unread"] >= 1
 
     # Acknowledge the item
@@ -83,7 +102,7 @@ def test_bug2_organization_directory_excludes_platform_org(db_session):
 
 def test_bug3_and_bug4_super_admin_assistant_flow(db_session):
     """Verify that Super Admin can create conversations and receive grounded answers."""
-    su = db_session.query(User).filter(User.role == UserRole.SUPER_ADMIN).first()
+    su = _get_or_create_super_admin(db_session)
     assert su is not None
 
     # Resolve AIContext for Super Admin
