@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Loader2, Eye, EyeOff, AlertCircle, ArrowRight } from "lucide-react";
 import { apiFetch, setSession } from "../api/client";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "../config/roles";
 import { apiUrl } from "../config/apiBase";
 import { useAuth } from "../context/AuthContext";
-import LandingHeader from "../landing/LandingHeader";
-import Footer from "../landing/Footer";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -188,238 +186,166 @@ export default function LoginPage() {
     window.location.href = apiUrl("/api/auth/google/login");
   }
 
-  const inputStyle = {
-    width: "100%",
-    padding: "11px 14px",
-    borderRadius: "8px",
-    border: "1.5px solid #E5E7EB",
-    fontSize: "var(--input-font-size, 14px)",
-    color: "#111827",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "white",
-    fontFamily: "inherit",
-  };
+  const inputClass = (hasError) =>
+    `block w-full rounded-xl border bg-white px-4 py-3 text-[length:var(--input-font-size,15px)] text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:outline-none focus:ring-4 ${
+      hasError ? "border-red-500 focus:border-red-500 focus:ring-red-100" : "border-slate-200 hover:border-slate-300 focus:border-sky-500 focus:ring-sky-100"
+    }`;
 
   const fieldErrorText = (message, id) =>
     message ? (
-      <p id={id} role="alert" style={{ margin: "6px 0 0", fontSize: "12px", color: "#DC2626" }}>
+      <p id={id} role="alert" className="mt-1.5 text-xs font-medium text-red-600">
         {message}
       </p>
     ) : null;
 
   return (
-    <div style={{
-      minHeight: "100dvh",
-      display: "flex",
-      flexDirection: "column",
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-      background: "#ffffff",
-    }}>
-      <LandingHeader showNav={false} />
-      <div style={{ display: "flex", flex: 1 }}>
-        {/* ── Left panel: login form ── */}
-        <div style={{
-          flex: "1",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "48px 40px",
-          background: "white",
-          backgroundImage: `
-            radial-gradient(circle at 20% 80%, rgba(37,99,235,0.05) 0%, transparent 50%),
-            radial-gradient(circle at 80% 20%, rgba(37,99,235,0.05) 0%, transparent 50%)
-          `,
-        }}>
-          <div style={{ width: "100%", maxWidth: "400px" }}>
-            <h1 style={{ fontSize: "28px", fontWeight: "800", color: "#0F172A", margin: "0 0 32px 0", letterSpacing: "-0.5px" }}>
-              Sign in to Zoiko Billing.
-            </h1>
+    // The whole page scrolls as one document (no fixed-height panes): on
+    // wide screens the artwork column stretches with the form; on small
+    // screens the artwork stacks above the form.
+    <div className="min-h-dvh bg-slate-100 font-sans lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      {/* ── Left: brand artwork (cropped from the approved design) ── */}
+      <aside className="relative h-[52vh] min-h-[340px] overflow-hidden bg-[#0B1F4B] lg:h-auto lg:min-h-dvh">
+        <img
+          src="/login-hero.webp"
+          alt=""
+          width="1498"
+          height="1800"
+          decoding="async"
+          fetchPriority="high"
+          className="absolute inset-0 h-full w-full object-cover object-left-top"
+        />
+        {/* The artwork's words, for screen readers (the image is decorative). */}
+        <div className="sr-only">
+          <p>Zoiko Billing</p>
+          <p>Billing clarity. From quote to payment.</p>
+          <p>Create invoices, manage customers, track payments and gain real-time financial insights — all in one secure platform.</p>
+          <ul>
+            <li>Professional invoicing</li>
+            <li>Financial insights</li>
+            <li>Payments and reconciliation</li>
+            <li>Secure and reliable</li>
+          </ul>
+        </div>
+      </aside>
+
+      {/* ── Right: sign-in ── */}
+      <main className="flex justify-center px-4 py-10 sm:px-8 lg:items-center lg:py-12">
+        <div className="w-full max-w-[480px] rounded-[28px] bg-white p-3 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-4">
+          <nav aria-label="Account" className="grid grid-cols-3 border-b border-slate-100 px-2 text-center text-sm font-semibold">
+            <span aria-current="page" className="border-b-[3px] border-sky-600 py-3.5 text-sky-700">Login</span>
+            <Link to="/register" className="border-b-[3px] border-transparent py-3.5 text-slate-700 transition hover:text-sky-700">Register</Link>
+            <Link to="/forgot-password" className="border-b-[3px] border-transparent py-3.5 text-slate-700 transition hover:text-sky-700">Reset Password</Link>
+          </nav>
+
+          <div className="mt-3 rounded-[22px] border border-slate-100 px-5 py-7 sm:px-8 sm:py-9">
+            <h1 className="text-[34px] font-extrabold leading-tight tracking-tight text-[#0B1F4B] sm:text-4xl">Welcome back!</h1>
+            <p className="mt-1.5 text-[15px] text-slate-500">Sign in to your Zoiko Billing account.</p>
 
             {(localError || oauthNotice) && (
-              <div style={{
-                display: "flex", alignItems: "flex-start", gap: "8px",
-                background: localError ? "#FEF2F2" : "#EFF6FF",
-                border: localError ? "1px solid #FECACA" : "1px solid #BFDBFE",
-                borderRadius: "8px", padding: "12px 14px", marginBottom: "20px"
-              }} role="alert">
-                <AlertCircle size={15} color={localError ? "#DC2626" : "#2563EB"} style={{ marginTop: "1px", flexShrink: 0 }} />
-                <span style={{ fontSize: "13px", color: localError ? "#DC2626" : "#1D4ED8" }}>
-                  {localError || oauthNotice}
-                </span>
+              <div
+                role="alert"
+                className={`mt-6 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${
+                  localError ? "border-red-200 bg-red-50 text-red-700" : "border-sky-200 bg-sky-50 text-sky-800"
+                }`}
+              >
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>{localError || oauthNotice}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <form onSubmit={handleSubmit} noValidate className="mt-7 space-y-5">
               <div>
-                <label htmlFor="email" style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "#374151", marginBottom: "6px" }}>
+                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-800">
                   Email address
                 </label>
                 <input
-                  id="email" type="email" autoComplete="email"
-                  value={email} onChange={handleEmailChange}
-                  placeholder="you@company.com"
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={handleEmailChange}
+                  placeholder="name@company.com"
                   aria-invalid={Boolean(fieldErrors.email)}
                   aria-describedby={fieldErrors.email ? "email-error" : undefined}
-                  style={{
-                    ...inputStyle,
-                    borderColor: fieldErrors.email ? "#DC2626" : inputStyle.border,
-                  }}
-                  onFocus={e => e.target.style.borderColor = fieldErrors.email ? "#DC2626" : "#2563EB"}
-                  onBlur={e => e.target.style.borderColor = fieldErrors.email ? "#DC2626" : "#E5E7EB"}
+                  className={inputClass(fieldErrors.email)}
                 />
                 {fieldErrorText(fieldErrors.email, "email-error")}
               </div>
 
               <div>
-                <label htmlFor="password" style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "#374151", marginBottom: "6px" }}>
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-800">
                   Password
                 </label>
-                <div style={{ position: "relative" }}>
+                <div className="relative">
                   <input
-                    id="password" type={showPassword ? "text" : "password"}
-                    autoComplete="current-password" value={password}
-                    onChange={handlePasswordChange} placeholder="••••••••"
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={handlePasswordChange}
+                    placeholder="Enter your password"
                     aria-invalid={Boolean(fieldErrors.password)}
                     aria-describedby={fieldErrors.password ? "password-error" : undefined}
-                    style={{
-                      ...inputStyle, paddingRight: "44px",
-                      borderColor: fieldErrors.password ? "#DC2626" : inputStyle.border,
-                    }}
-                    onFocus={e => e.target.style.borderColor = fieldErrors.password ? "#DC2626" : "#2563EB"}
-                    onBlur={e => e.target.style.borderColor = fieldErrors.password ? "#DC2626" : "#E5E7EB"}
+                    className={`${inputClass(fieldErrors.password)} pr-12`}
                   />
-                  <button type="button" onClick={() => setShowPassword(v => !v)}
-                    style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6B7280", padding: "6px" }}
-                    aria-label={showPassword ? "Hide password" : "Show password"}>
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
                 {fieldErrorText(fieldErrors.password, "password-error")}
+                <div className="mt-3 flex justify-end">
+                  <Link to="/forgot-password" className="text-sm font-semibold text-sky-700 hover:text-sky-800 hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
 
-              <button type="submit" disabled={submitting} aria-busy={submitting}
-                style={{
-                  width: "100%", padding: "13px", borderRadius: "50px", border: "none",
-                  fontSize: "15px", fontWeight: "600", color: "white",
-                  cursor: submitting ? "not-allowed" : "pointer",
-                  background: submitting ? "#93C5FD" : "linear-gradient(135deg, #2563EB, #1D4ED8)",
-                  boxShadow: "0 4px 16px rgba(37,99,235,0.35)",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-                  marginTop: "4px",
-                  letterSpacing: "0.01em",
-                }}>
-                {submitting && <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />}
-                {submitting ? "Signing in…" : "Sign In →"}
+              <button
+                type="submit"
+                disabled={submitting}
+                aria-busy={submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-sky-600 to-blue-600 px-4 py-3.5 text-base font-bold text-white shadow-[0_10px_24px_-10px_rgba(2,132,199,0.75)] transition hover:from-sky-700 hover:to-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting && <Loader2 size={18} className="animate-spin" />}
+                {submitting ? "Signing in…" : "Log In"}
               </button>
             </form>
 
-            <div style={{ textAlign: "center", marginTop: "16px" }}>
-              <Link to="/forgot-password" style={{ fontSize: "13px", color: "#2563EB", textDecoration: "none", fontWeight: "500" }}>
-                Forgot password?
+            <div className="my-7 flex items-center gap-3 text-xs text-slate-500">
+              <span className="h-px flex-1 bg-slate-200" />
+              or continue with
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={handleGoogleSignIn}
+              className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <GoogleIcon />
+              <span className="flex-1 text-left">Continue with Google</span>
+              <ArrowRight size={16} className="text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600" />
+            </button>
+
+            <p className="mt-7 text-center text-[15px] text-slate-700">
+              New to Zoiko Billing?{" "}
+              <Link to="/register" className="font-bold text-sky-700 hover:text-sky-800 hover:underline">
+                Register
               </Link>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "20px 0" }}>
-              <div style={{ flex: 1, height: "1px", background: "#E5E7EB" }} />
-              <span style={{ fontSize: "12px", color: "#6B7280" }}>or</span>
-              <div style={{ flex: 1, height: "1px", background: "#E5E7EB" }} />
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {[
-                { icon: <GoogleIcon />, label: "Continue with Google" },
-              ].map(({ icon, label }) => (
-                <button key={label} type="button" disabled={submitting}
-                  onClick={handleGoogleSignIn}
-                  style={{
-                    width: "100%", padding: "11px 16px", borderRadius: "8px",
-                    border: "1.5px solid #E5E7EB", background: "white",
-                    fontSize: "14px", color: "#374151", cursor: submitting ? "not-allowed" : "pointer",
-                    opacity: submitting ? 0.6 : 1,
-                    display: "flex", alignItems: "center", gap: "10px",
-                    fontFamily: "inherit", fontWeight: "500",
-                    transition: "border-color 0.15s, background 0.15s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#D1D5DB"; e.currentTarget.style.background = "#F9FAFB"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#E5E7EB"; e.currentTarget.style.background = "white"; }}
-                >
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-
-            <p style={{ fontSize: "11px", color: "#6B7280", marginTop: "24px", lineHeight: "1.6" }}>
-              🔵 Your access is governed by your organization's permissions, roles, workspace settings and security policies.
             </p>
           </div>
+
+          <p className="px-4 py-5 text-center text-xs text-slate-500">
+            © {new Date().getFullYear()} Zoiko Tech Inc.
+          </p>
         </div>
-
-        {/* ── Right panel: blue promo ── */}
-        <div data-panel="right" style={{
-          flex: "1",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "60px 56px",
-          background: "linear-gradient(164.56deg, #0B1220 0%, #101B33 60%, #0A0F1F 100%)",
-          position: "relative",
-          overflow: "hidden",
-        }}>
-          <div style={{
-            position: "absolute", top: "-120px", right: "-80px",
-            width: "360px", height: "360px",
-            background: "radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%)",
-            borderRadius: "50%",
-          }} />
-          <div style={{
-            position: "absolute", bottom: "-100px", left: "-60px",
-            width: "280px", height: "280px",
-            background: "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)",
-            borderRadius: "50%",
-          }} />
-
-          <div style={{ position: "relative", zIndex: 1, maxWidth: "520px" }}>
-            <p style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "0.12em", color: "#60A5FA", textTransform: "uppercase", margin: "0 0 16px 0", fontFamily: "'JetBrains Mono', monospace" }}>
-              — NEW TO ZOIKO BILLING?
-            </p>
-
-            <h2 style={{
-              fontSize: "38px", fontWeight: "800", color: "white",
-              lineHeight: "1.15", margin: "0 0 16px 0", letterSpacing: "-0.5px"
-            }}>
-              Invoicing, subscriptions and revenue collection on one platform.
-            </h2>
-
-            <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.7)", lineHeight: "1.7", margin: "0 0 36px 0" }}>
-              Register your organization and run customers, invoices and subscriptions — all in one place.
-            </p>
-
-            <Link to="/register"
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                padding: "14px 24px", borderRadius: "50px",
-                background: "linear-gradient(135deg, #2563EB, #1D4ED8)",
-                color: "white", fontSize: "15px", fontWeight: "700",
-                textDecoration: "none", marginBottom: "24px",
-                boxShadow: "0 4px 16px rgba(37,99,235,0.35)",
-              }}>
-              Create your account →
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @media (max-width: 768px) {
-          div[data-panel="right"] { display: none !important; }
-        }
-      `}</style>
-      <Footer />
+      </main>
     </div>
   );
 }
