@@ -194,7 +194,7 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
     <Modal
       open
       dense
-      onClose={onClose}
+      onClose={() => { if (!saving) onClose(); }}
       closeOnBackdrop={false}
       title={editItem ? "Edit Discount" : "Create Discount"}
       size="lg"

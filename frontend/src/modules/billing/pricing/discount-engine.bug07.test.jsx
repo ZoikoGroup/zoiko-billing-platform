@@ -84,6 +84,21 @@ describe("Discount dialogs (smoke, rebuilt on Modal)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("Esc and the close button don't close the dialog while it is saving", async () => {
+    let finish;
+    m.create.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const dialog = await openCreate();
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Spring" } });
+    fireEvent.change(within(dialog).getByLabelText("Value *"), { target: { value: "5" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create Discount" }));
+    await waitFor(() => expect(m.create).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
+    expect(screen.getByRole("dialog", { name: "Create Discount" })).toBeInTheDocument();
+    finish({ id: 10 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("Edit sends Update Discount with the row id", async () => {
     m.list.mockResolvedValue({ items: [ROW], total: 1, page: 1, per_page: 20, pages: 1 });
     m.update.mockResolvedValue({ ...ROW });
