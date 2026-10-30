@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Undo2, Send, Ban, Eye, Loader2, Clock, CheckCircle, Wallet,
 } from "lucide-react";
@@ -188,12 +188,26 @@ export default function RefundsPage() {
   useEffect(() => { if (showCreateModal) fetchCustomers(); }, [showCreateModal, fetchCustomers]);
 
   /* Deep-link support: ?create=1 and ?invoice_id=<id> prefill the create form */
+  // Open once per arrival via ?create=1 (keyed on the navigation), so closing
+  // can't reopen it while the replace that drops the parameter is pending,
+  // but a new visit through a link opens it again.
+  const location = useLocation();
+  const autoOpenedFor = useRef(null);
   useEffect(() => {
-    if (searchParams.get("create") !== "1" || showCreateModal) return;
+    if (searchParams.get("create") !== "1" || showCreateModal || autoOpenedFor.current === location.key) return;
+    autoOpenedFor.current = location.key;
     openCreateModal();
     if (!searchParams.get("invoice_id")) setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, showCreateModal]);
+  }, [searchParams, showCreateModal, location.key]);
+
+  // Closing (Cancel / Esc / close button, or after a successful create) also
+  // drops a remaining ?create=1&invoice_id=… with replace, so Back doesn't
+  // bring the form back.
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    if (searchParams.get("create") || searchParams.get("invoice_id")) setSearchParams({}, { replace: true });
+  };
 
   useEffect(() => {
     const requestedInvoiceId = searchParams.get("invoice_id");
@@ -375,7 +389,7 @@ export default function RefundsPage() {
       if (createForm.refund_source === "invoice") body.invoice_id = Number(createForm.invoice_id);
       if (createForm.refund_source === "credit_note") body.credit_note_id = Number(createForm.credit_note_id);
       await refundApi.create(body);
-      setShowCreateModal(false);
+      closeCreateModal();
       fetchRefunds();
     } catch (err) {
       setFormError(err?.status === 409
@@ -568,7 +582,7 @@ export default function RefundsPage() {
       {/* Create refund */}
       <FormModal
         open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={closeCreateModal}
         onSubmit={() => handleCreate()}
         title="Create Refund"
         description="Return funds to a customer from a payment, invoice balance, or credit note."

@@ -506,6 +506,9 @@ export default function QuotationListPage() {
       setCurrentPage(1);
       fetchQuotes();
       fetchSummary();
+      // Drop ?create=1 from this history entry so Back from the new quotation
+      // returns to the list, not to a fresh wizard.
+      if (searchParams.get("create") || searchParams.get("customer_id")) navigate("/billing/quotations", { replace: true });
       navigate(`/billing/quotations/${quoteId}`);
     } catch (err) {
       setWizardError(err?.detail || err?.message || "Failed to create quotation");

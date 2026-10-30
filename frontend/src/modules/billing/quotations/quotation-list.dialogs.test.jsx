@@ -54,6 +54,7 @@ function renderFromProfile() {
       <Routes>
         <Route path="/billing/customers/:id" element={<><ProfileStub /><LocationProbe /></>} />
         <Route path="/billing/quotations" element={<><QuotationListPage /><LocationProbe /><BackButton /></>} />
+        <Route path="/billing/quotations/:id" element={<><LocationProbe /><BackButton /></>} />
       </Routes>
     </MemoryRouter>
   );
@@ -144,23 +145,37 @@ describe("New Quotation wizard", () => {
   it("drives all four steps and Create Quotation calls quoteApi.create once", async () => {
     renderWizard();
     const dialog = await screen.findByRole("dialog", { name: "New Quotation" }, { timeout: 4000 });
-    await selectCustomer(dialog);
-    fireEvent.click(within(dialog).getByRole("button", { name: /^continue$/i }));
-
-    // Step 2: add a product line.
-    const select = await within(dialog).findByRole("combobox");
-    await within(dialog).findByRole("option", { name: /widget/i });
-    fireEvent.change(select, { target: { value: "3" } });
-    await waitFor(() => expect(within(dialog).queryByText(/no line items yet/i)).not.toBeInTheDocument());
-    fireEvent.click(within(dialog).getByRole("button", { name: /^continue$/i }));
-
-    // Step 3 -> 4.
-    fireEvent.click(await within(dialog).findByRole("button", { name: /^continue$/i }));
-    fireEvent.click(await within(dialog).findByRole("button", { name: /create quotation/i }));
+    await driveToCreate(dialog);
 
     await waitFor(() => expect(m.create).toHaveBeenCalledTimes(1));
     expect(m.create).toHaveBeenCalledWith(expect.objectContaining({ customer_id: 7 }));
     await waitFor(() => expect(m.addItems).toHaveBeenCalledWith(55, [expect.objectContaining({ product_id: 3, unit_price: 100 })]));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/billing/quotations/55"));
   });
+
+  it("Back from the new quotation lands on the list without ?create=1 and the wizard stays closed", async () => {
+    renderFromProfile();
+    fireEvent.click(screen.getByRole("link", { name: "New quotation" }));
+    await driveToCreate(await findWizard());
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/billing/quotations/55"));
+
+    fireEvent.click(screen.getByRole("button", { name: "History back" }));
+    await expectClosedAndStaysClosed();
+  });
 });
+
+async function driveToCreate(dialog) {
+  await selectCustomer(dialog);
+  fireEvent.click(within(dialog).getByRole("button", { name: /^continue$/i }));
+
+  // Step 2: add a product line.
+  const select = await within(dialog).findByRole("combobox");
+  await within(dialog).findByRole("option", { name: /widget/i });
+  fireEvent.change(select, { target: { value: "3" } });
+  await waitFor(() => expect(within(dialog).queryByText(/no line items yet/i)).not.toBeInTheDocument());
+  fireEvent.click(within(dialog).getByRole("button", { name: /^continue$/i }));
+
+  // Step 3 -> 4.
+  fireEvent.click(await within(dialog).findByRole("button", { name: /^continue$/i }));
+  fireEvent.click(await within(dialog).findByRole("button", { name: /create quotation/i }));
+}
