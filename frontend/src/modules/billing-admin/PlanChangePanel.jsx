@@ -334,7 +334,7 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
               <h4 className="text-lg font-bold text-[#0B192C]">
                 {direction === "purchase" ? "Activate" : direction === "downgrade" ? "Downgrade to" : "Upgrade to"} {selected.plan_name}
               </h4>
-              <button onClick={closeModal} aria-label="Close" className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={closeModal} disabled={submitting} aria-label="Close" className="text-slate-400 hover:text-slate-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -460,7 +460,8 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
             )}
 
             <div className="flex justify-end gap-2 pt-1">
-              <button onClick={closeModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl cursor-pointer">
+              {/* Not dismissible while a plan change / payment is being submitted. */}
+              <button onClick={closeModal} disabled={submitting} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                 Not now
               </button>
               <button
