@@ -7,6 +7,9 @@ import { DarkModeProvider } from "./context/DarkModeContext";
 import { CommandCenterProvider } from "./context/CommandCenterContext";
 import "./fonts.css";
 import "./index.css";
+import { installChunkReloadRecovery } from "./chunkReloadRecovery";
+
+installChunkReloadRecovery();
 
 createRoot(document.getElementById("root")).render(
   <BrowserRouter>

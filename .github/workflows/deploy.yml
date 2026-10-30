@@ -219,6 +219,17 @@ jobs:
             # only long enough to complete the swap, then removed.
             sudo rm -rf "$TARGET_BASE/html.new"
             sudo mkdir -p "$TARGET_BASE/html.new"
+            # Carry the live release's hashed assets into the new release so tabs
+            # (and cached index.html) still on an older build can lazy-load their
+            # chunks instead of getting index.html back ("Failed to fetch
+            # dynamically imported module"). Old files are staged first, keeping
+            # their original deploy time, and pruned after 14 days; the new build
+            # is then copied over them, so a new file always wins and is never pruned.
+            if [ -d "$TARGET_BASE/html/assets" ]; then
+              sudo mkdir -p "$TARGET_BASE/html.new/assets"
+              sudo cp -a "$TARGET_BASE/html/assets/." "$TARGET_BASE/html.new/assets/"
+              sudo find "$TARGET_BASE/html.new/assets" -type f -mmin +20160 -delete
+            fi
             sudo cp -r "$DIST_DIR/." "$TARGET_BASE/html.new/"
             sudo rm -rf "$TARGET_BASE/html.old"
             if [ -d "$TARGET_BASE/html" ]; then
