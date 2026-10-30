@@ -4,6 +4,7 @@ import {
   Plus, AlertCircle, CheckCircle, Clock, Pencil, DollarSign, Landmark, Globe, Upload
 } from "lucide-react";
 import { taxApi } from "../../../service/billingService";
+import { Button, Modal } from "../../../components/billing-ui";
 import TaxRateImportWizard from "./tax-rate-import-wizard";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -338,7 +339,7 @@ export default function TaxRatesPage() {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setShowImportWizard(true)}
                 className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50">
                 <Upload size={16} /> Import
@@ -478,120 +479,119 @@ export default function TaxRatesPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowForm(false); setFormError(null); }}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800">{editRate ? "Edit Tax Rate" : "New Tax Rate"}</h2>
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close form"><X size={20} /></button>
+        <Modal
+          open
+          dense
+          onClose={() => { setShowForm(false); setFormError(null); }}
+          title={editRate ? "Edit Tax Rate" : "New Tax Rate"}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => { setShowForm(false); setFormError(null); }}>Cancel</Button>
+              <Button variant="primary" onClick={handleSubmit} disabled={formLoading || !formData.name}>{formLoading ? "Saving..." : editRate ? "Update Tax Rate" : "Create Tax Rate"}</Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              <AlertCircle size={16} />{formError}
             </div>
-            {formError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                <AlertCircle size={16} />{formError}
-              </div>
-            )}
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
-                  <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Code *</label>
-                  <input type="text" value={formData.code} onChange={(e) => setFormData((p) => ({ ...p, code: e.target.value }))}
-                    placeholder="e.g. GST-STD"
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Rate (%) *</label>
-                  <input type="number" step="0.01" min="0" max="100" value={formData.rate} onChange={(e) => setFormData((p) => ({ ...p, rate: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tax Type</label>
-                  <select value={formData.tax_type} onChange={(e) => setFormData((p) => ({ ...p, tax_type: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {TAX_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
+          )}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction *</label>
-                <input type="text" value={formData.jurisdiction} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction: e.target.value }))}
-                  placeholder="e.g. India, US, EU"
+                <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+                <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-end pb-2.5">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={formData.is_active !== false} onChange={(e) => setFormData((p) => ({ ...p, is_active: e.target.checked }))}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-                    <span className="text-sm text-slate-700">Active</span>
-                  </label>
-                </div>
-                <div className="flex items-end gap-4 pb-2.5">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={formData.is_compound} onChange={(e) => setFormData((p) => ({ ...p, is_compound: e.target.checked }))}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-                    <span className="text-sm text-slate-700">Compound Tax</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={formData.is_recoverable} onChange={(e) => setFormData((p) => ({ ...p, is_recoverable: e.target.checked }))}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-                    <span className="text-sm text-slate-700">Recoverable</span>
-                  </label>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Code *</label>
+                <input type="text" value={formData.code} onChange={(e) => setFormData((p) => ({ ...p, code: e.target.value }))}
+                  placeholder="e.g. GST-STD"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
-                  <select value={formData.country_code} onChange={(e) => setFormData((p) => ({ ...p, country_code: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select country</option>
-                    {COUNTRY_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                  <select value={formData.currency_code} onChange={(e) => setFormData((p) => ({ ...p, currency_code: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    <option value="">Select currency</option>
-                    {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.value} - {c.label.split("—")[0].trim()}</option>)}
-                  </select>
-                </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Rate (%) *</label>
+                <input type="number" step="0.01" min="0" max="100" value={formData.rate} onChange={(e) => setFormData((p) => ({ ...p, rate: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tax Type Label</label>
-                  <input type="text" value={formData.tax_type_label} onChange={(e) => setFormData((p) => ({ ...p, tax_type_label: e.target.value }))}
-                    placeholder="e.g. GST, VAT, Sales Tax"
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                  <input type="number" min="0" step="1" value={formData.priority} onChange={(e) => setFormData((p) => ({ ...p, priority: Number(e.target.value) }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Tax Type</label>
+                <select value={formData.tax_type} onChange={(e) => setFormData((p) => ({ ...p, tax_type: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {TAX_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </div>
-              <div className="flex items-center gap-4">
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Jurisdiction *</label>
+              <input type="text" value={formData.jurisdiction} onChange={(e) => setFormData((p) => ({ ...p, jurisdiction: e.target.value }))}
+                placeholder="e.g. India, US, EU"
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-end pb-2.5">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formData.is_default} onChange={(e) => setFormData((p) => ({ ...p, is_default: e.target.checked }))}
+                  <input type="checkbox" checked={formData.is_active !== false} onChange={(e) => setFormData((p) => ({ ...p, is_active: e.target.checked }))}
                     className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-                  <span className="text-sm text-slate-700">Default tax for this currency</span>
+                  <span className="text-sm text-slate-700">Active</span>
+                </label>
+              </div>
+              <div className="flex items-end gap-4 pb-2.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={formData.is_compound} onChange={(e) => setFormData((p) => ({ ...p, is_compound: e.target.checked }))}
+                    className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  <span className="text-sm text-slate-700">Compound Tax</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={formData.is_recoverable} onChange={(e) => setFormData((p) => ({ ...p, is_recoverable: e.target.checked }))}
+                    className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  <span className="text-sm text-slate-700">Recoverable</span>
                 </label>
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => { setShowForm(false); setFormError(null); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleSubmit} disabled={formLoading || !formData.name}
-                className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-                {formLoading ? "Saving..." : editRate ? "Update Tax Rate" : "Create Tax Rate"}
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
+                <select value={formData.country_code} onChange={(e) => setFormData((p) => ({ ...p, country_code: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  <option value="">Select country</option>
+                  {COUNTRY_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
+                <select value={formData.currency_code} onChange={(e) => setFormData((p) => ({ ...p, currency_code: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  <option value="">Select currency</option>
+                  {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.value} - {c.label.split("—")[0].trim()}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Tax Type Label</label>
+                <input type="text" value={formData.tax_type_label} onChange={(e) => setFormData((p) => ({ ...p, tax_type_label: e.target.value }))}
+                  placeholder="e.g. GST, VAT, Sales Tax"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+                <input type="number" min="0" step="1" value={formData.priority} onChange={(e) => setFormData((p) => ({ ...p, priority: Number(e.target.value) }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={formData.is_default} onChange={(e) => setFormData((p) => ({ ...p, is_default: e.target.checked }))}
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                <span className="text-sm text-slate-700">Default tax for this currency</span>
+              </label>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       {showImportWizard && (
         <TaxRateImportWizard

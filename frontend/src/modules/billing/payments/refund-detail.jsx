@@ -5,7 +5,7 @@ import {
   Ban, Printer, Download, Mail, X, XCircle, Wallet, Clock,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { ActivityTimeline } from "../../../components/billing-ui";
+import { ActivityTimeline, Button, Modal } from "../../../components/billing-ui";
 import { refundApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -477,9 +477,24 @@ export default function RefundDetailPage() {
       )}
 
       {showProcessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowProcessModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Start Processing Refund</h2>
+        <Modal
+          open
+          dense
+          onClose={() => setShowProcessModal(false)}
+          title="Start Processing Refund"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowProcessModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={async () => { setShowProcessModal(false); await handleAction("process", () => refundApi.process(refund.id, processForm.gateway_refund_id || undefined, processForm.reference_number || undefined)); }}
+                disabled={actionLoading === "process"}>
+                {actionLoading === "process" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Start Processing
+              </Button>
+            </>
+          }
+        >
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Gateway Refund ID</label>
@@ -494,82 +509,86 @@ export default function RefundDetailPage() {
                   className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowProcessModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button
-                onClick={async () => { setShowProcessModal(false); await handleAction("process", () => refundApi.process(refund.id, processForm.gateway_refund_id || undefined, processForm.reference_number || undefined)); }}
-                disabled={actionLoading === "process"}
-                className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2">
-                {actionLoading === "process" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Start Processing
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowRejectModal(false); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="reject-refund-title" className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h2 id="reject-refund-title" className="text-lg font-bold text-slate-900 mb-4">Reject Refund</h2>
-            <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="Reason for rejection (required)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowRejectModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
-              <button
+        // Esc closes (as before); a backdrop click never did.
+        <Modal
+          open
+          dense
+          onClose={() => setShowRejectModal(false)}
+          closeOnBackdrop={false}
+          title="Reject Refund"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowRejectModal(false)}>Go Back</Button>
+              <Button
+                variant="destructive"
                 onClick={async () => { setShowRejectModal(false); await handleAction("reject", () => refundApi.reject(refund.id, rejectReason)); }}
-                disabled={actionLoading === "reject" || !rejectReason.trim()}
-                className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2">
+                disabled={actionLoading === "reject" || !rejectReason.trim()}>
                 {actionLoading === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Reject Refund
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+            <textarea autoFocus value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="Reason for rejection (required)"
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Modal>
       )}
 
       {showFailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowFailModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Mark Refund as Failed</h2>
-            <textarea value={failReason} onChange={(e) => setFailReason(e.target.value)} rows={3} placeholder="Failure reason (required)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowFailModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
-              <button
+        <Modal
+          open
+          dense
+          onClose={() => setShowFailModal(false)}
+          title="Mark Refund as Failed"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowFailModal(false)}>Go Back</Button>
+              <Button
+                variant="destructive"
                 onClick={async () => { setShowFailModal(false); await handleAction("fail", () => refundApi.fail(refund.id, failReason)); }}
-                disabled={actionLoading === "fail" || !failReason.trim()}
-                className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2">
+                disabled={actionLoading === "fail" || !failReason.trim()}>
                 {actionLoading === "fail" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Mark Failed
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+            <textarea value={failReason} onChange={(e) => setFailReason(e.target.value)} rows={3} placeholder="Failure reason (required)"
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Modal>
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCancelModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                <Ban className="h-5 w-5 text-red-600" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">Cancel Refund</h2>
-            </div>
+        <Modal
+          open
+          dense
+          onClose={() => setShowCancelModal(false)}
+          title="Cancel Refund"
+          icon={Ban}
+          tone="danger"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowCancelModal(false)}>Go Back</Button>
+              <Button
+                variant="destructive"
+                onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => refundApi.cancel(refund.id, cancelReason || undefined)); }}
+                disabled={actionLoading === "cancel"}>
+                {actionLoading === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Refund
+              </Button>
+            </>
+          }
+        >
             <p className="text-sm text-slate-600 mb-4">
               Are you sure you want to cancel <strong>{refund.refund_number || `#${id}`}</strong>? This action is <span className="font-semibold text-red-600">irreversible</span>.
             </p>
             <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} placeholder="Reason (optional)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowCancelModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
-              <button
-                onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => refundApi.cancel(refund.id, cancelReason || undefined)); }}
-                disabled={actionLoading === "cancel"}
-                className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2">
-                {actionLoading === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Refund
-              </button>
-            </div>
-          </div>
-        </div>
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </Modal>
       )}
     </HRPage>
   );

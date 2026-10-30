@@ -118,7 +118,7 @@ function AddTierModal({ open, values, onChange, onCancel, onSubmit, loading, err
             </div>
           </div>
         </div>
-        <div className="flex justify-end gap-3 mt-8">
+        <div className="flex justify-end gap-3 mt-8 max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1">
           <button onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
           <button onClick={onSubmit} disabled={loading}
             className="px-6 py-2 bg-linear-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
@@ -146,7 +146,7 @@ function ConfirmRemoveModal({ tier, label, onCancel, onConfirm, loading, error, 
           </div>
         </div>
         {error && <p role="alert" className="mb-2 text-sm text-red-600">{error}</p>}
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end gap-3 mt-6 max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1">
           <button autoFocus onClick={onCancel} disabled={loading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
           <button onClick={onConfirm} disabled={loading}
             className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
@@ -335,7 +335,7 @@ export default function TierManagementPage() {
                 <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={fetchTiers} disabled={refreshing || !selectedPlanId} aria-label="Refresh tiers"
                 className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />

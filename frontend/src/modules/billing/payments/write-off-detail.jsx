@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ScrollText, RefreshCw, AlertCircle, Loader2, Send, CheckCircle,
   Ban, Printer, Download, Mail, X, Undo2, Clock } from "lucide-react"
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { writeOffApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -467,52 +468,59 @@ export default function WriteOffDetailPage() {
       )}
 
       {showReverseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowReverseModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Reverse Write-off</h2>
-            <p className="text-sm text-slate-600 mb-4">
-              Reversing <strong>{writeOff.write_off_number || `#${id}`}</strong> will reopen the outstanding balance it reduced.
-            </p>
-            <textarea value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} rows={3} placeholder="Reason for reversal (required)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowReverseModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
+        <Modal
+          open
+          dense
+          onClose={() => setShowReverseModal(false)}
+          title="Reverse Write-off"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowReverseModal(false)}>Go Back</Button>
               <button
                 onClick={async () => { setShowReverseModal(false); await handleAction("reverse", () => writeOffApi.reverse(writeOff.id, reverseReason)); }}
                 disabled={actionLoading === "reverse" || !reverseReason.trim()}
-                className="px-6 py-2 bg-orange-600 text-white rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-50 inline-flex items-center gap-2">
+                className="px-4 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold whitespace-nowrap hover:bg-orange-700 disabled:opacity-50 inline-flex items-center justify-center gap-2">
                 {actionLoading === "reverse" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />} Reverse Write-off
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-600 mb-4">
+            Reversing <strong>{writeOff.write_off_number || `#${id}`}</strong> will reopen the outstanding balance it reduced.
+          </p>
+          <textarea value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} rows={3} placeholder="Reason for reversal (required)"
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCancelModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                <Ban className="h-5 w-5 text-red-600" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">Cancel Write-off</h2>
-            </div>
-            <p className="text-sm text-slate-600 mb-4">
-              Are you sure you want to cancel <strong>{writeOff.write_off_number || `#${id}`}</strong>? This action is <span className="font-semibold text-red-600">irreversible</span>.
-            </p>
-            <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} placeholder="Reason (optional)"
-              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowCancelModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Go Back</button>
-              <button
+        <Modal
+          open
+          dense
+          onClose={() => setShowCancelModal(false)}
+          title="Cancel Write-off"
+          icon={Ban}
+          tone="danger"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowCancelModal(false)}>Go Back</Button>
+              <Button
+                variant="destructive"
                 onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => writeOffApi.cancel(writeOff.id, cancelReason || undefined)); }}
-                disabled={actionLoading === "cancel"}
-                className="px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2">
+                disabled={actionLoading === "cancel"}>
                 {actionLoading === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />} Cancel Write-off
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-600 mb-4">
+            Are you sure you want to cancel <strong>{writeOff.write_off_number || `#${id}`}</strong>? This action is <span className="font-semibold text-red-600">irreversible</span>.
+          </p>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} placeholder="Reason (optional)"
+            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
     </HRPage>
   );

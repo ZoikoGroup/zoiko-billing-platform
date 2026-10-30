@@ -147,9 +147,9 @@ export default function TaxReportsPage() {
   return (
     <HRPage title="Tax Reports" subtitle="Tax analytics and reporting">
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         {renderTabNav()}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DateRangeFilter {...dateRangeProps} />
           <ExportMenu
             onExportCSV={() => handleAllExport("csv")}

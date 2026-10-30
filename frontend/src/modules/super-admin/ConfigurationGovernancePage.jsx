@@ -133,7 +133,7 @@ function EntryRow({ entry, isFirst }) {
     >
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
-          <span className="font-mono">{entry.name}</span>
+          <span className="font-mono break-all">{entry.name}</span>
           {entry.is_sensitive && (
             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
               SENSITIVE

@@ -204,7 +204,7 @@ export default function TaxSettingsPage() {
   return (
     <HRPage title="Tax Settings" subtitle="Configure tax module preferences">
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div />
         <div className="flex items-center gap-2">
           {saved && (

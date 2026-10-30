@@ -921,8 +921,15 @@ function BreakGlassReviewsTab({ grants, loading, error, onReload, onActionComple
       })}
       {!isDesktop && <MobileWriteBlock action="recording a break-glass review" />}
 
-      <Modal open={!!selectedGrant} onClose={() => setSelectedGrant(null)} title="Review emergency access" icon={FileCheck2} size="md">
-        <form onSubmit={handleCompleteReview} className="space-y-4">
+      <Modal open={!!selectedGrant} onClose={() => setSelectedGrant(null)} title="Review emergency access" icon={FileCheck2} size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSelectedGrant(null)} disabled={reviewBusy}>Cancel</Button>
+            <Button type="submit" form="emergency-review-form" variant="primary" loading={reviewBusy} disabled={!note.trim()}>Submit review</Button>
+          </>
+        }
+      >
+        <form id="emergency-review-form" onSubmit={handleCompleteReview} className="space-y-4">
           <p className="text-sm text-slate-600">
             Was the emergency access to <strong>{selectedGrant?.organization_name}</strong> justified? Your decision resolves
             the security alert and is recorded in the audit trail.
@@ -967,10 +974,6 @@ function BreakGlassReviewsTab({ grants, loading, error, onReload, onActionComple
             />
           </Field>
           <FormError message={reviewError} />
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setSelectedGrant(null)} disabled={reviewBusy}>Cancel</Button>
-            <Button type="submit" variant="primary" loading={reviewBusy} disabled={!note.trim()}>Submit review</Button>
-          </div>
         </form>
       </Modal>
     </div>

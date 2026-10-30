@@ -77,6 +77,57 @@ describe("PlanChangePanel", () => {
     expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalledWith({ targetPlanId: 3, confirmImmediate: false });
   });
 
+  describe("change-plan dialog", () => {
+    const NO_CHARGE_UPGRADE = { ...UPGRADE_PREVIEW, price_impact: { ...UPGRADE_PREVIEW.price_impact, estimated_period_delta: "0.00" } };
+
+    it("opens as 'Change to <plan>', previews, and Upgrade now commits then closes", async () => {
+      platformSelfServiceApi.previewPlanChange.mockResolvedValue(NO_CHARGE_UPGRADE);
+      platformSelfServiceApi.commitPlanChange.mockResolvedValue({ status: "applied" });
+      const { onChanged } = renderPanel();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Upgrade to Business" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change to Business" });
+      expect(platformSelfServiceApi.previewPlanChange).toHaveBeenCalledWith(3);
+
+      fireEvent.click(await within(dialog).findByRole("button", { name: /Upgrade now/ }));
+      await waitFor(() =>
+        expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalledWith({ targetPlanId: 3, confirmImmediate: false })
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(onChanged).toHaveBeenCalled();
+    });
+
+    it("Not now closes without committing", async () => {
+      platformSelfServiceApi.previewPlanChange.mockResolvedValue(DOWNGRADE_PREVIEW);
+      renderPanel();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Downgrade to Essentials" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change to Essentials" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(platformSelfServiceApi.commitPlanChange).not.toHaveBeenCalled();
+    });
+
+    it("Esc and the close button do not dismiss it while the change is submitting", async () => {
+      let resolveCommit;
+      platformSelfServiceApi.previewPlanChange.mockResolvedValue(NO_CHARGE_UPGRADE);
+      platformSelfServiceApi.commitPlanChange.mockReturnValue(new Promise((r) => { resolveCommit = r; }));
+      renderPanel();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Upgrade to Business" }));
+      const dialog = await screen.findByRole("dialog", { name: "Change to Business" });
+      fireEvent.click(await within(dialog).findByRole("button", { name: /Upgrade now/ }));
+      await waitFor(() => expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalled());
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
+      expect(screen.getByRole("dialog", { name: "Change to Business" })).toBeInTheDocument();
+
+      resolveCommit({ status: "applied" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+  });
+
   it("\"Not now\" is disabled while the change is submitting, so it can't close the dialog mid-payment", async () => {
     let resolveCommit;
     // An upgrade with nothing to pay today: confirming commits directly.

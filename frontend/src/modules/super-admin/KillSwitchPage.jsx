@@ -52,8 +52,21 @@ function ToggleModal({ open, onClose, targetEnabled, onSaved }) {
       title={targetEnabled ? "Re-enable commercial charging?" : "Disable commercial charging?"}
       icon={targetEnabled ? Power : ShieldAlert}
       size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button
+            type="submit" form="kill-switch-form"
+            variant={targetEnabled ? "primary" : "danger"}
+            loading={busy}
+            disabled={!reason || !confirmationSatisfied}
+          >
+            {targetEnabled ? "Re-enable charging" : "Disable charging"}
+          </Button>
+        </>
+      }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form id="kill-switch-form" onSubmit={handleSubmit} className="space-y-4">
         <p className="text-sm text-slate-600">
           {targetEnabled
             ? "This re-enables commercial subscription creation and activation. Existing subscriptions and read access were never affected while disabled."
@@ -93,17 +106,6 @@ function ToggleModal({ open, onClose, targetEnabled, onSaved }) {
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button
-            type="submit"
-            variant={targetEnabled ? "primary" : "danger"}
-            loading={busy}
-            disabled={!reason || !confirmationSatisfied}
-          >
-            {targetEnabled ? "Re-enable charging" : "Disable charging"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

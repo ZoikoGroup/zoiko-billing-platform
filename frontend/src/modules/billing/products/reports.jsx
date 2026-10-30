@@ -227,9 +227,9 @@ export default function ProductReportsPage() {
         ))}
       </div>
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         {renderTabNav()}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DateRangeFilter value={range} onChange={setRange} customStart={customStart} customEnd={customEnd}
             onCustomStartChange={setCustomStart} onCustomEndChange={setCustomEnd} />
           <ExportMenu

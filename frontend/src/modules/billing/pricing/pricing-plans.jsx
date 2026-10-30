@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tag, Search, Filter, X, ChevronDown, ArrowUpDown, RefreshCw, Download, Plus, AlertCircle, CheckCircle, Clock, Layers, Eye, Copy, Calendar } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -746,30 +747,28 @@ export default function PricingPlansPage() {
     if (!show) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 id={titleId} className="text-xl font-bold text-slate-800">{title}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{isEdit ? "Update pricing plan parameters" : "Define how this product is priced and billed"}</p>
-            </div>
-            <button onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }} className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Close dialog"><X size={20} /></button>
+      <Modal
+        open
+        dense
+        onClose={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }}
+        closeOnBackdrop={false}
+        title={title}
+        description={isEdit ? "Update pricing plan parameters" : "Define how this product is priced and billed"}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }}>Cancel</Button>
+            <Button variant="primary" onClick={onSubmit} disabled={formLoading || !data.name || !data.product_id}>{btnLabel}</Button>
+          </>
+        }
+      >
+        {formError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <AlertCircle size={16} />{formError}
           </div>
-          {formError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-              <AlertCircle size={16} />{formError}
-            </div>
-          )}
-          {PlanFormFields({ data, onChange: setData, includeStatus: isEdit, isEdit })}
-          <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100">
-            <button onClick={() => { setShow(false); setShowAdvanced(false); setFormTiers([]); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-            <button onClick={onSubmit} disabled={formLoading || !data.name || !data.product_id}
-              className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">
-              {btnLabel}
-            </button>
-          </div>
-        </div>
-      </div>
+        )}
+        {PlanFormFields({ data, onChange: setData, includeStatus: isEdit, isEdit })}
+      </Modal>
     );
   };
 
@@ -777,77 +776,78 @@ export default function PricingPlansPage() {
     if (!showPreviewModal || !previewPlan) return null;
     const plan = previewPlan;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowPreviewModal(false)}>
-        <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-slate-800">Pricing Preview</h2>
-            <button onClick={() => setShowPreviewModal(false)} className="p-1 hover:bg-slate-100 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Close preview"><X size={20} /></button>
+      <Modal
+        open
+        onClose={() => setShowPreviewModal(false)}
+        title="Pricing Preview"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowPreviewModal(false)}>Close</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-brand-50 to-indigo-50 rounded-xl p-6 text-center border border-brand-200">
+            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{plan.name}</p>
+            <p className="text-3xl font-bold text-brand-700">{formatDisplayCurrency(plan.unit_price ?? plan.price ?? 0, plan.currency)}</p>
+            <p className="text-sm text-slate-500 mt-1 capitalize">{(plan.billing_period || plan.billing_frequency)?.replace("_", " ")}</p>
           </div>
-          <div className="space-y-4">
-            <div className="bg-gradient-to-br from-brand-50 to-indigo-50 rounded-xl p-6 text-center border border-brand-200">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{plan.name}</p>
-              <p className="text-3xl font-bold text-brand-700">{formatDisplayCurrency(plan.unit_price ?? plan.price ?? 0, plan.currency)}</p>
-              <p className="text-sm text-slate-500 mt-1 capitalize">{(plan.billing_period || plan.billing_frequency)?.replace("_", " ")}</p>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-xs text-slate-500">Model</p>
+              <p className="font-medium text-slate-800 capitalize">{(plan.pricing_model || plan.plan_type)?.replace("_", " ") || "Flat Rate"}</p>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">Model</p>
-                <p className="font-medium text-slate-800 capitalize">{(plan.pricing_model || plan.plan_type)?.replace("_", " ") || "Flat Rate"}</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">Status</p>
-                <p className="font-medium text-slate-800">{(plan.is_active ?? plan.status === "active") ? "Active" : "Inactive"}</p>
-              </div>
-              {plan.setup_fee > 0 && (
-                <div className="bg-slate-50 rounded-lg p-3">
-                  <p className="text-xs text-slate-500">Setup Fee</p>
-                  <p className="font-medium text-slate-800">{formatDisplayCurrency(plan.setup_fee, plan.currency)}</p>
-                </div>
-              )}
-              {plan.trial_days > 0 && (
-                <div className="bg-slate-50 rounded-lg p-3">
-                  <p className="text-xs text-slate-500">Trial</p>
-                  <p className="font-medium text-slate-800">{plan.trial_days} days</p>
-                </div>
-              )}
-              {plan.effective_from && (
-                <div className="bg-slate-50 rounded-lg p-3">
-                  <p className="text-xs text-slate-500">Effective From</p>
-                  <p className="font-medium text-slate-800">{formatDisplayDate(plan.effective_from)}</p>
-                </div>
-              )}
-              {plan.effective_to && (
-                <div className="bg-slate-50 rounded-lg p-3">
-                  <p className="text-xs text-slate-500">Expires</p>
-                  <p className="font-medium text-slate-800">{formatDisplayDate(plan.effective_to)}</p>
-                </div>
-              )}
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-xs text-slate-500">Status</p>
+              <p className="font-medium text-slate-800">{(plan.is_active ?? plan.status === "active") ? "Active" : "Inactive"}</p>
             </div>
-            {plan.tiers && plan.tiers.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Tiers</p>
-                <div className="space-y-1.5">
-                  {plan.tiers.map((tier, i) => (
-                    <div key={tier.id || i} className="flex justify-between px-3 py-2 bg-slate-50 rounded-lg text-sm">
-                      <span className="text-slate-600">{tier.from_quantity} → {tier.to_quantity ?? "∞"} units</span>
-                      <span className="font-medium text-slate-800">{formatDisplayCurrency(tier.unit_price || 0, plan.currency)}</span>
-                    </div>
-                  ))}
-                </div>
+            {plan.setup_fee > 0 && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">Setup Fee</p>
+                <p className="font-medium text-slate-800">{formatDisplayCurrency(plan.setup_fee, plan.currency)}</p>
               </div>
             )}
-            {plan.notes && (
-              <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs text-slate-500">Notes</p>
-                <p className="text-sm text-slate-700 mt-0.5">{plan.notes}</p>
+            {plan.trial_days > 0 && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">Trial</p>
+                <p className="font-medium text-slate-800">{plan.trial_days} days</p>
+              </div>
+            )}
+            {plan.effective_from && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">Effective From</p>
+                <p className="font-medium text-slate-800">{formatDisplayDate(plan.effective_from)}</p>
+              </div>
+            )}
+            {plan.effective_to && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">Expires</p>
+                <p className="font-medium text-slate-800">{formatDisplayDate(plan.effective_to)}</p>
               </div>
             )}
           </div>
-          <div className="flex justify-end mt-6">
-            <button onClick={() => setShowPreviewModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Close</button>
-          </div>
+          {plan.tiers && plan.tiers.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Tiers</p>
+              <div className="space-y-1.5">
+                {plan.tiers.map((tier, i) => (
+                  <div key={tier.id || i} className="flex justify-between px-3 py-2 bg-slate-50 rounded-lg text-sm">
+                    <span className="text-slate-600">{tier.from_quantity} → {tier.to_quantity ?? "∞"} units</span>
+                    <span className="font-medium text-slate-800">{formatDisplayCurrency(tier.unit_price || 0, plan.currency)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {plan.notes && (
+            <div className="pt-2 border-t border-slate-100">
+              <p className="text-xs text-slate-500">Notes</p>
+              <p className="text-sm text-slate-700 mt-0.5">{plan.notes}</p>
+            </div>
+          )}
         </div>
-      </div>
+      </Modal>
     );
   };
 
@@ -915,7 +915,7 @@ export default function PricingPlansPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <button onClick={() => handleExport("csv")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
                   <Download size={16} /> Export
