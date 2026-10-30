@@ -21,10 +21,16 @@ const STATUS_OPTIONS = [
 const BILLING_PERIODS = [
   { value: "monthly", label: "Monthly" },
   { value: "quarterly", label: "Quarterly" },
-  { value: "semi_annual", label: "Semi-Annual" },
-  { value: "annual", label: "Annual" },
+  { value: "yearly", label: "Annual" },
   { value: "one_time", label: "One-Time" },
 ];
+
+// Retainers are products: the API returns code / default_price /
+// billing_frequency (see ProductResponse). Older payloads used sku /
+// unit_price / price / billing_period, so fall back to those.
+const retainerSku = (r) => r.code || r.sku || "";
+const retainerPrice = (r) => r.default_price ?? r.unit_price ?? r.price;
+const retainerPeriod = (r) => r.billing_frequency || r.billing_period || "";
 
 export default function RetainersPage() {
   const navigate = useNavigate();
@@ -113,8 +119,8 @@ export default function RetainersPage() {
   const openEditModal = (r) => {
     setSelectedRetainer(r);
     setForm({
-      name: r.name || "", sku: r.sku || "", description: r.description || "",
-      unit_price: String(r.unit_price || r.price || ""), billing_period: r.billing_period || "monthly",
+      name: r.name || "", sku: retainerSku(r), description: r.description || "",
+      unit_price: String(retainerPrice(r) ?? ""), billing_period: retainerPeriod(r) || "monthly",
       currency: r.currency || orgSettings.default_currency || "", status: r.status || "active",
     });
     setFormError(null); setShowEditModal(true);
@@ -179,7 +185,7 @@ export default function RetainersPage() {
   };
   const activeRetainers = retainers.filter((r) => r.status === "active").length;
 
-  const totalValue = retainers.reduce((s, r) => s + parseFloat(r.unit_price || r.price || 0), 0);
+  const totalValue = retainers.reduce((s, r) => s + parseFloat(retainerPrice(r) || 0), 0);
 
   const defaultCurrency = retainers.length > 0
     ? (retainers.find((r) => r.currency)?.currency || "")
@@ -301,9 +307,9 @@ export default function RetainersPage() {
                     <p className="font-medium text-slate-800">{r.name}</p>
                     {r.description && <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{r.description}</p>}
                   </td>
-                  <td className="px-4 py-4 text-slate-500">{r.sku || "—"}</td>
-                  <td className="px-4 py-4 text-right font-medium text-slate-800">{formatDisplayCurrency(r.unit_price || r.price, r.currency)}</td>
-                  <td className="px-4 py-4 capitalize text-slate-600">{r.billing_period?.replace(/_/g, " ") || "—"}</td>
+                  <td className="px-4 py-4 text-slate-500">{retainerSku(r) || "—"}</td>
+                  <td className="px-4 py-4 text-right font-medium text-slate-800">{formatDisplayCurrency(retainerPrice(r), r.currency)}</td>
+                  <td className="px-4 py-4 capitalize text-slate-600">{retainerPeriod(r).replace(/_/g, " ") || "—"}</td>
                   <td className="px-4 py-4">
                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${r.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                       {r.status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
