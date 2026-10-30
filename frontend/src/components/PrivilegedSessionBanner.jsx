@@ -64,22 +64,30 @@ export default function PrivilegedSessionBanner() {
   }
 
   return (
-    <div className="sticky top-0 z-40 border-b-2 border-red-300 bg-red-50 px-4 py-2.5 sm:px-6">
-      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
+    // Security-critical, so it stays pinned — but below sm as one line
+    // (tenant + countdown + Exit) instead of two wrapped rows. The detail
+    // line and the "Tenant Context … · DOMAIN B · env" framing return at sm+.
+    <div className="sticky top-0 z-40 border-b-2 border-red-300 bg-red-50 px-4 py-1 sm:px-6 sm:py-2.5">
+      <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-2 sm:flex-wrap sm:gap-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-red-700">
-            <Building2 size={13} /> Tenant Context — {activeGrant.organization_name} · DOMAIN B · {ENVIRONMENT_LABEL}
+          <p className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-red-700">
+            <Building2 size={13} className="shrink-0" />
+            <span className="truncate">
+              <span className="hidden sm:inline">Tenant Context — </span>
+              {activeGrant.organization_name}
+              <span className="hidden sm:inline"> · DOMAIN B · {ENVIRONMENT_LABEL}</span>
+            </span>
             {activeGrant.is_break_glass && (
-              <span className="ml-1.5 inline-flex items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white animate-pulse">
+              <span className="ml-1.5 inline-flex shrink-0 items-center rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white animate-pulse">
                 Emergency Access
               </span>
             )}
           </p>
-          <p className="truncate text-xs text-red-800">
+          <p className="hidden truncate text-xs text-red-800 sm:block">
             {activeGrant.is_break_glass ? "Break-glass emergency access" : "Privileged support access"} · Read-only financial view · {activeGrant.ticket_reference} · Exports disabled
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
           <span className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-red-700">
             <Clock size={13} /> {formatCountdown(remainingMs)}
           </span>
@@ -87,9 +95,10 @@ export default function PrivilegedSessionBanner() {
             type="button"
             onClick={handleExit}
             disabled={exiting}
-            className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+            aria-label="Exit tenant context"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 sm:min-h-0"
           >
-            <LogOut size={13} /> Exit tenant context
+            <LogOut size={13} /> <span className="sm:hidden">Exit</span><span className="hidden sm:inline">Exit tenant context</span>
           </button>
         </div>
       </div>

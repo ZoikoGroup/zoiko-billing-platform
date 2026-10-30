@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { prefetchHandlers } from "../routePrefetch";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -49,8 +49,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS } from "../config/roles";
 import useCockpitStatus from "../hooks/useCockpitStatus";
+import useIsDesktopViewport from "../hooks/useIsDesktopViewport";
 import TopBar from "./TopBar";
-import ZoikoMark from "./ZoikoMark";
 import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
@@ -794,6 +794,28 @@ export default function BillingShell({ children }) {
 
   const isSuperAdmin = role === "super_admin";
   const sidebarCollapsed = isSuperAdmin && collapsed;
+  // Below lg the sidebar is an off-canvas drawer; at lg+ it is always shown.
+  const isDesktopNav = useIsDesktopViewport(1024);
+  const drawerOpen = sidebarOpen && !isDesktopNav;
+  const asideRef = useRef(null);
+
+  // Drawer: Esc closes it, the page underneath can't scroll while it's open,
+  // and the current page's link is scrolled into view. Overlay tap and
+  // navigation (link click, browser back) already close it via onNavigate.
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    asideRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({ block: "nearest" });
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, [drawerOpen]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -809,7 +831,9 @@ export default function BillingShell({ children }) {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#F8F7F4]">
+    // h-dvh, not h-screen: on mobile browsers 100vh is taller than the visible
+    // area (it ignores the collapsing toolbar), which hid the bottom of <main>.
+    <div className="h-dvh overflow-hidden bg-[#F8F7F4]">
       <div
         className={`fixed inset-0 z-30 bg-slate-950/40 transition-opacity lg:hidden ${
           sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -817,12 +841,21 @@ export default function BillingShell({ children }) {
         onClick={() => setSidebarOpen(false)}
       />
 
-      <TopBar menuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen((open) => !open)} sidebarCollapsed={sidebarCollapsed} />
+      <TopBar
+        menuOpen={sidebarOpen}
+        onMenuClick={() => setSidebarOpen((open) => !open)}
+        sidebarCollapsed={sidebarCollapsed}
+        onAssistantClick={() => setAssistantOpen(true)}
+      />
 
       {/* Content row: sidebar | main workspace | chatbot panel (when open) */}
-      <div className="flex h-screen">
-        {/* Sidebar — full height, overlaps TopBar */}
+      <div className="flex h-dvh">
+        {/* Sidebar — full height, overlaps TopBar. While the mobile drawer is
+            closed it is off-screen, so it is also made inert: its links must
+            not be reachable with Tab when they can't be seen. */}
         <aside
+          ref={asideRef}
+          inert={!isDesktopNav && !sidebarOpen ? true : undefined}
           className={`fixed top-0 bottom-0 left-0 z-40 overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#0B1220] via-[#101B33] to-[#0A0F1F] px-4 py-6 shadow-[0_24px_80px_rgba(2,6,23,0.45)] transition-[width,transform] lg:translate-x-0 ${
             sidebarCollapsed ? "w-[76px]" : "w-72"
           } ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
@@ -842,7 +875,7 @@ export default function BillingShell({ children }) {
         </aside>
 
         {/* Main billing workspace — flex-1, scrolls independently */}
-        <main className={`flex-1 min-w-0 pt-[65px] overflow-y-auto ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-72"}`}>
+        <main className={`flex-1 min-w-0 pt-[65px] ${drawerOpen ? "overflow-y-hidden" : "overflow-y-auto"} ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-72"}`}>
           {role === "super_admin" && (
             <>
               <PrivilegedSessionBanner />
@@ -853,10 +886,9 @@ export default function BillingShell({ children }) {
           {/* Single source of truth for the sidebar-to-content gutter and page
               margins — every page renders here as {children} with no need to
               (and no longer any reason to) set its own horizontal padding. */}
-          {/* pb-24 reserves room under every page for the fixed AI-assistant
-              launcher (bottom-6 right-6, ~56px): without it the launcher sat
-              on top of a page's bottom-right control when scrolled to the end
-              -- e.g. the invoice wizard's Next button. */}
+          {/* pb-24 keeps breathing room under every page's last control (it
+              was added for the old floating AI launcher, which now lives in
+              the TopBar; kept so page endings don't shift). */}
           <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
             <Suspense fallback={<ContentSkeleton />}>
               {children}
@@ -873,17 +905,9 @@ export default function BillingShell({ children }) {
         </Suspense>
       </div>
 
-      {/* AI Assistant launcher — hidden when panel is open on desktop */}
-      <button
-        onClick={() => setAssistantOpen(true)}
-        className={`fixed bottom-6 right-6 z-40 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 ${
-          assistantOpen ? "hidden" : ""
-        }`}
-        aria-label="Open AI Billing Assistant"
-        title="AI Billing Assistant"
-      >
-        <ZoikoMark size={56} rounded="rounded-lg" showAccentDot className="transition-transform" />
-      </button>
+      {/* The AI Assistant launcher lives in the TopBar at every width
+          (onAssistantClick above). A floating bottom-right button sat on top
+          of list rows, footer actions and primary buttons as pages scrolled. */}
 
       {role === "super_admin" && <CommandPalette />}
     </div>

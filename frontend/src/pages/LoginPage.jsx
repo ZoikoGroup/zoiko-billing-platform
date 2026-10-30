@@ -193,7 +193,7 @@ export default function LoginPage() {
     padding: "11px 14px",
     borderRadius: "8px",
     border: "1.5px solid #E5E7EB",
-    fontSize: "14px",
+    fontSize: "var(--input-font-size, 14px)",
     color: "#111827",
     outline: "none",
     boxSizing: "border-box",
@@ -210,7 +210,7 @@ export default function LoginPage() {
 
   return (
     <div style={{
-      minHeight: "100vh",
+      minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
