@@ -1710,7 +1710,7 @@ export function FormActionBar({
   secondary,
 }) {
   return (
-    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1">
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1 max-sm:[&>*]:min-h-11">
       {secondary}
       {onCancel && (
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
