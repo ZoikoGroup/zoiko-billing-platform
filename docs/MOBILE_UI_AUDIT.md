@@ -620,6 +620,7 @@ Bugs found during the mobile work that are probably live today. Each is its own 
 | `ebb4b5c` | Retainers read field names the API doesn't return: list showed "—" for SKU / price / period, Edit reset quarterly to monthly and saved it; "Semi-Annual" and "Annual" options failed validation | `/billing/retainers` | `retainers.fields.test.jsx` (3 fail without the fix) |
 | `0ea3a30` | Pricing Plan form lost focus after every keystroke (typing "Gold plan" left "G") | `/billing/pricing` → Add Plan / Edit | `pricing-plans.dialogs.test.jsx`, key-by-key typing (2 fail without the fix). Adds dev dependency `@testing-library/user-event` |
 | `ec0f743` | Record Payment and Create Refund couldn't be closed when opened from a link; after a successful save, Back reopened Record Payment / New Quotation / Create Refund | Invoice detail → Record payment / Create refund; customer profile and contract → Record payment (`/billing/payments?create=1…`, `/billing/refunds?create=1&invoice_id=…`) | `payment-list.reopen.test.jsx`, `refunds.reopen.test.jsx`, one more in `quotation-list.dialogs.test.jsx` (15 fail without the fix). Cherry-pick with `3be74fd`: it also touches the quotation wizard's success path |
+| `ad46c0c` | "Not now" could close the Zoiko plan-change dialog while a plan change / payment was being submitted (Esc and × were already blocked) | Billing workspace → Zoiko subscription → change plan | `PlanChangePanel.test.jsx` (1 fails without the fix) |
 
 Not in this list (fixes to this branch's own changes, not pre-existing): `aa8edb7` — the discount dialog could be closed with Esc / × while saving after its B2 rebuild.
 
@@ -634,7 +635,6 @@ Not in this list (fixes to this branch's own changes, not pre-existing): `aa8edb
 - Payment Allocations tab may show empty if the API returns `{ allocations: [...] }`.
 - **Team:** product profile "New Quotation" / "New Invoice" (`?action=create&product_id=…`) are dead links — nothing reads the parameters.
 - **Phase 4:** Terminate Contract keeps the typed reason after Esc / ×; some pricing form labels aren't linked to their inputs; the discount form's redundant Esc listener.
-- PlanChangePanel "Not now" isn't blocked while a payment is submitting (pre-existing; Esc / close are).
 - `npm run build` needs `NODE_OPTIONS=--max-old-space-size=3072` on the 8GB dev machine — set per session only, never committed.
 
 #### B2 results — Other (8 dialogs): done
@@ -654,7 +654,7 @@ Parity (working tree vs `HEAD`): 5 items outside the automatic rules, all checke
 
 **Tests:** new `tax-rates.dialogs.test.jsx` (incl. the tax-rate import wizard), `customer-profile.dialogs.test.jsx`, `TriagePage.dialogs.test.jsx`, `UserManagementPage.dialogs.test.jsx`; extended `PlanChangePanel.test.jsx` (accessible name, preview, Upgrade now → `commitPlanChange`, Not now, and Esc / close blocked while the commit is pending) and `customer-list.test.jsx` (customer import wizard). Those folders: 41 files, 287 passed. **Full suite (`--maxWorkers=1`): 154 files, 1,025 passed. `npm run build` passes** (memory flag set for the run only, not committed).
 
-**Noted, not changed:** PlanChangePanel's "Not now" can still close the dialog while a payment is submitting (as before — it was never guarded; only the new Esc / close paths are). Triage incident rows are clickable `<div>`s (not reachable by keyboard) — Phase 4 accessibility. TriagePage has 11 imports that were already unused before this change.
+**Fixed after review:** PlanChangePanel's "Not now" could close the dialog while a payment was submitting (pre-existing) — fixed in `ad46c0c`. **Noted, not changed:** Triage incident rows are clickable `<div>`s (not reachable by keyboard) — Phase 4 accessibility. TriagePage has 11 imports that were already unused before this change.
 
 ## 9. Local environment safety notes
 
