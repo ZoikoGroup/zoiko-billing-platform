@@ -1,5 +1,7 @@
 import React, { Suspense, useEffect } from "react";
+import { AlertCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { lazyRoute, registerRoutePreloads } from "./routePrefetch";
+import { isChunkLoadError } from "./chunkReloadRecovery";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 
 import { useAuth } from "./context/AuthContext";
@@ -398,19 +400,46 @@ function LegacyRedirect({ to }) {
   return <Navigate to={joined} replace />;
 }
 
-class ErrorBoundary extends React.Component {
+// Last-resort boundary for the whole app. A chunk-load failure means a newer
+// build was deployed under an open tab (see chunkReloadRecovery.js), so the
+// user is told to reload rather than shown an error. Technical details are
+// only rendered in development builds.
+export class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
   render() {
-    if (this.state.error) {
+    const { error } = this.state;
+    if (error) {
+      const updated = isChunkLoadError(error);
       return (
-        <div style={{ padding: 32, fontFamily: "monospace", background: "#fff", color: "#b00", minHeight: "100vh" }}>
-          <h1 style={{ fontSize: 20, marginBottom: 12 }}>Render Error</h1>
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, background: "#fee", padding: 16, borderRadius: 8, border: "1px solid #fcc" }}>
-            {this.state.error.message}
-            {"\n\n"}
-            {this.state.error.stack}
-          </pre>
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-8">
+          <div role="alert" className="w-full max-w-md rounded-2xl bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-800 p-6 sm:p-8 text-center shadow-sm">
+            <div className="h-12 w-12 rounded-full bg-brand-50 text-brand dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+              {updated ? <RefreshCw size={24} aria-hidden="true" /> : <AlertCircle size={24} aria-hidden="true" />}
+            </div>
+            <h1 className={`text-lg font-bold text-slate-900 dark:text-white ${updated ? "mb-6" : "mb-2"}`}>
+              {updated ? "Zoiko Billing was updated. Reload to continue." : "Something went wrong."}
+            </h1>
+            {!updated && (
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                Reload the page to continue. If this keeps happening, contact support.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+              Reload
+            </button>
+            {import.meta.env.DEV && (
+              <pre data-testid="error-details" className="mt-6 text-left whitespace-pre-wrap break-words text-xs bg-red-50 text-red-700 dark:bg-slate-800 dark:text-red-300 p-3 rounded-xl max-h-60 overflow-auto">
+                {error.message}
+                {error.stack ? `\n\n${error.stack}` : ""}
+              </pre>
+            )}
+          </div>
         </div>
       );
     }
