@@ -184,7 +184,7 @@ export default function CustomerReportsPage() {
   return (
     <HRPage title="Customer Reports" subtitle="Customer analytics and reporting">
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <nav className="flex gap-0 border-b border-slate-200 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
@@ -203,7 +203,7 @@ export default function CustomerReportsPage() {
             );
           })}
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DateRangeFilter value={range} onChange={setRange} customStart={customStart} customEnd={customEnd}
             onCustomStartChange={setCustomStart} onCustomEndChange={setCustomEnd} />
           <ExportMenu

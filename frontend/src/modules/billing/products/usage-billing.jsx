@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, RefreshCw, Zap, DollarSign, Activity, Calendar, Search, Plus, X, AlertCircle, CheckCircle, Settings2, FlaskConical, Download, Gauge } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -419,158 +420,153 @@ export default function UsageBillingPage() {
 
       {/* ── Create Meter Wizard ── */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setShowCreate(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Create Meter</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Configure a metered, usage-based billing product</p>
-              </div>
-              <button onClick={() => setShowCreate(false)} aria-label="Close" className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+        <Modal
+          open
+          dense
+          onClose={() => setShowCreate(false)}
+          title="Create Meter"
+          description="Configure a metered, usage-based billing product"
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button variant="primary" onClick={handleCreateMeter} disabled={formLoading || !createForm.name}>{formLoading ? "Creating..." : "Create Meter"}</Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              <AlertCircle size={16} /> {formError}
             </div>
-            {formError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                <AlertCircle size={16} /> {formError}
-              </div>
-            )}
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Meter Name *</label>
-                  <input type="text" value={createForm.name} placeholder="e.g. API Requests"
-                    onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
-                  <input type="text" value={createForm.code} placeholder="Auto-generated if blank"
-                    onChange={(e) => setCreateForm((p) => ({ ...p, code: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Meter Type</label>
-                  <select value={createForm.meter_type} onChange={(e) => setCreateForm((p) => ({ ...p, meter_type: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {METER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
-                  <select value={createForm.unit_label} onChange={(e) => setCreateForm((p) => ({ ...p, unit_label: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {UNIT_OPTIONS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price *</label>
-                  <input type="number" step="0.01" min="0" value={createForm.unit_price} placeholder="0.00"
-                    onChange={(e) => setCreateForm((p) => ({ ...p, unit_price: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-                  <select value={createForm.currency} onChange={(e) => setCreateForm((p) => ({ ...p, currency: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                    {["USD", "EUR", "GBP", "INR", "AUD", "CAD", "SGD"].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
+          )}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea rows={2} value={createForm.description} placeholder="Describe what this meter measures"
-                  onChange={(e) => setCreateForm((p) => ({ ...p, description: e.target.value }))}
+                <label className="block text-sm font-medium text-slate-700 mb-1">Meter Name *</label>
+                <input type="text" value={createForm.name} placeholder="e.g. API Requests"
+                  onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Bill via subscription</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Include this meter in recurring subscription invoices</p>
-                </div>
-                <input type="checkbox" checked={createForm.is_subscribable}
-                  onChange={(e) => setCreateForm((p) => ({ ...p, is_subscribable: e.target.checked }))}
-                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-              </label>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
+                <input type="text" value={createForm.code} placeholder="Auto-generated if blank"
+                  onChange={(e) => setCreateForm((p) => ({ ...p, code: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
             </div>
-            <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleCreateMeter} disabled={formLoading || !createForm.name}
-                className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg disabled:opacity-50">
-                {formLoading ? "Creating..." : "Create Meter"}
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Meter Type</label>
+                <select value={createForm.meter_type} onChange={(e) => setCreateForm((p) => ({ ...p, meter_type: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {METER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
+                <select value={createForm.unit_label} onChange={(e) => setCreateForm((p) => ({ ...p, unit_label: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {UNIT_OPTIONS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
+              </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price *</label>
+                <input type="number" step="0.01" min="0" value={createForm.unit_price} placeholder="0.00"
+                  onChange={(e) => setCreateForm((p) => ({ ...p, unit_price: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
+                <select value={createForm.currency} onChange={(e) => setCreateForm((p) => ({ ...p, currency: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  {["USD", "EUR", "GBP", "INR", "AUD", "CAD", "SGD"].map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <textarea rows={2} value={createForm.description} placeholder="Describe what this meter measures"
+                onChange={(e) => setCreateForm((p) => ({ ...p, description: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Bill via subscription</p>
+                <p className="text-xs text-slate-500 mt-0.5">Include this meter in recurring subscription invoices</p>
+              </div>
+              <input type="checkbox" checked={createForm.is_subscribable}
+                onChange={(e) => setCreateForm((p) => ({ ...p, is_subscribable: e.target.checked }))}
+                className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+            </label>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── Test API Event Tool ── */}
       {showTest && testProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setShowTest(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
+        <Modal
+          open
+          dense
+          onClose={() => setShowTest(false)}
+          title="Test API Event"
+          description={`Simulate a usage event for ${testProduct.name}`}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowTest(false)}>Close</Button>
+              <button onClick={runTestEvent}
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-700">
+                <FlaskConical size={16} /> Send Event
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shrink-0">
+                <Gauge className="h-4 w-4 text-white" />
+              </div>
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Test API Event</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Simulate a usage event for {testProduct.name}</p>
+                <p className="text-sm font-medium text-slate-800">{testProduct.name}</p>
+                <p className="text-xs text-slate-500">{meterTypeFor(testProduct)} · {testProduct.unit_label || "unit"} · {formatDisplayCurrency(testProduct.default_price, testProduct.currency || baseCurrency)} / unit</p>
               </div>
-              <button onClick={() => setShowTest(false)} aria-label="Close" className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shrink-0">
-                  <Gauge className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-800">{testProduct.name}</p>
-                  <p className="text-xs text-slate-500">{meterTypeFor(testProduct)} · {testProduct.unit_label || "unit"} · {formatDisplayCurrency(testProduct.default_price, testProduct.currency || baseCurrency)} / unit</p>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
+                <input type="number" step="0.01" min="0" value={testQty} onChange={(e) => setTestQty(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
-                  <input type="number" step="0.01" min="0" value={testQty} onChange={(e) => setTestQty(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            {testEvent && (
+              <div className="rounded-xl overflow-hidden border border-slate-200">
+                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
+                    <CheckCircle size={12} /> {testEvent.status}
+                  </span>
+                  <span className="font-mono">{testEvent.event_id}</span>
+                  <span className="ml-auto font-mono text-slate-500">{new Date(testEvent.timestamp).toLocaleTimeString()}</span>
                 </div>
-                <div className="flex items-end">
-                  <button onClick={runTestEvent}
-                    className="w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-semibold transition-colors">
-                    <FlaskConical size={16} className="inline mr-1.5 -mt-0.5" /> Send Event
-                  </button>
-                </div>
-              </div>
-              {testEvent && (
-                <div className="rounded-xl overflow-hidden border border-slate-200">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
-                      <CheckCircle size={12} /> {testEvent.status}
-                    </span>
-                    <span className="font-mono">{testEvent.event_id}</span>
-                    <span className="ml-auto font-mono text-slate-500">{new Date(testEvent.timestamp).toLocaleTimeString()}</span>
-                  </div>
-                  <pre className="px-4 py-3 text-xs text-slate-700 bg-white overflow-x-auto font-mono leading-relaxed">
+                <pre className="px-4 py-3 text-xs text-slate-700 bg-white overflow-x-auto font-mono leading-relaxed">
 {JSON.stringify({
-  event: testEvent.event_id,
-  timestamp: testEvent.timestamp,
-  product_id: testEvent.product_id,
-  meter: testEvent.meter,
-  quantity: testEvent.quantity,
-  unit: testEvent.unit,
-  unit_price: testEvent.unit_price,
-  billed_amount: testEvent.amount,
-  currency: testProduct.currency || baseCurrency,
-  status: testEvent.status,
+event: testEvent.event_id,
+timestamp: testEvent.timestamp,
+product_id: testEvent.product_id,
+meter: testEvent.meter,
+quantity: testEvent.quantity,
+unit: testEvent.unit,
+unit_price: testEvent.unit_price,
+billed_amount: testEvent.amount,
+currency: testProduct.currency || baseCurrency,
+status: testEvent.status,
 }, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end mt-8">
-              <button onClick={() => setShowTest(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Close</button>
-            </div>
+                </pre>
+              </div>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
 
       {ConfirmationDialog}

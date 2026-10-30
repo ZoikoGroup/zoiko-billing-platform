@@ -10,12 +10,12 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { isEntitlementLimitError } from "../../../service/api";
 import CustomerImportWizard from "./customer-import-wizard";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
-import { getCurrencySelectOptions, getCountrySelectOptions, getCurrencyForCountry } from "../../../utils/currency";
-import { getCustomerTaxFields } from "../utils/countryIntelligence";
+import { getCurrencySelectOptions, getCurrencyForCountry } from "../../../utils/currency";
 import { useCurrency, getOrgBaseCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import useLatestRequest from "../utils/useLatestRequest";
-import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge, SubscriptionLimitReached } from "../../../components/billing-shared";
+import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
+import CustomerFormDialog from "./customer-form-dialog";
 import { useDropUrlParam } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
@@ -470,145 +470,97 @@ export default function CustomerListPage() {
     notes: "",
   });
 
+  // Billing-country change: offer to switch currency to the country's
+  // currency (create also keeps a "same as billing" shipping country in sync).
+  // Moved out of the old inline JSX unchanged.
+  const handleCreateBillingCountry = (e) => {
+    const country = e.target.value;
+    const curInfo = getCurrencyForCountry(country);
+    const newCurrency = curInfo ? curInfo.code : newCustomer.currency;
+
+    const updateCountry = (confirmCurrencyUpdate) => {
+      setNewCustomer((p) => ({
+        ...p,
+        billing_country: country,
+        shipping_country: p.shipping_same_as_billing ? country : p.shipping_country,
+        currency: confirmCurrencyUpdate ? newCurrency : p.currency
+      }));
+    };
+
+    if (newCustomer.currency && newCustomer.currency !== newCurrency && newCurrency) {
+      if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+        updateCountry(true);
+      } else {
+        updateCountry(false);
+      }
+    } else {
+      updateCountry(true);
+    }
+  };
+
+  const handleEditBillingCountry = (e) => {
+    const country = e.target.value;
+    const curInfo = getCurrencyForCountry(country);
+    const newCurrency = curInfo ? curInfo.code : editCustomer.currency;
+
+    const updateCountry = (confirmCurrencyUpdate) => {
+      setEditCustomer((p) => ({
+        ...p,
+        billing_country: country,
+        currency: confirmCurrencyUpdate ? newCurrency : p.currency
+      }));
+    };
+
+    if (editCustomer.currency && editCustomer.currency !== newCurrency && newCurrency) {
+      if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
+        updateCountry(true);
+      } else {
+        updateCountry(false);
+      }
+    } else {
+      updateCountry(true);
+    }
+  };
+
+  const formDialogProps = {
+    confirm,
+    loading: formLoading,
+    singular,
+    plural,
+    defaultCustomerType,
+    requireBillingAddress,
+    requireTaxId,
+    paymentTermsCreditDays: PAYMENT_TERMS_CREDIT_DAYS,
+  };
+
   const renderCreateModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
-      <div role="dialog" aria-modal="true" aria-labelledby="customer-create-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-6">
-          <h2 id="customer-create-title" className="text-xl font-bold text-slate-800">New {singular}</h2>
-          <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button>
-        </div>
-        {limitError ? (
-          <div className="mb-4"><SubscriptionLimitReached error={limitError} terminology={{ singular, plural }} onClose={() => setLimitError(null)} /></div>
-        ) : formError && (
-          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Company Name <span className="text-red-500">*</span></label><input value={newCustomer.company_name} onChange={(e) => setNewCustomer((p) => ({ ...p, company_name: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Display Name</label><input value={newCustomer.display_name} onChange={(e) => setNewCustomer((p) => ({ ...p, display_name: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Email <span className="text-red-500">*</span></label><input type="email" value={newCustomer.email} onChange={(e) => setNewCustomer((p) => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Phone</label><input value={newCustomer.phone} onChange={(e) => setNewCustomer((p) => ({ ...p, phone: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Website</label><input value={newCustomer.website} onChange={(e) => setNewCustomer((p) => ({ ...p, website: e.target.value }))} placeholder="https://example.com" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Customer Type</label><select value={newCustomer.customer_type || defaultCustomerType} onChange={(e) => setNewCustomer((p) => ({ ...p, customer_type: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="business">Business</option><option value="individual">Individual</option><option value="non_profit">Non-Profit</option><option value="government">Government</option></select></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Currency</label><select value={newCustomer.currency} onChange={(e) => setNewCustomer((p) => ({ ...p, currency: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select</option>{getCurrencySelectOptions().map((c) => (<option key={c.value} value={c.value}>{c.value} - {c.label}</option>))}</select></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Payment Terms</label><select value={newCustomer.payment_terms} onChange={(e) => { const t = e.target.value; setNewCustomer((p) => ({ ...p, payment_terms: t, credit_days: PAYMENT_TERMS_CREDIT_DAYS[t] ?? 30 })); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="due_on_receipt">Due on Receipt</option><option value="net_15">Net 15</option><option value="net_30">Net 30</option><option value="net_45">Net 45</option><option value="net_60">Net 60</option><option value="net_90">Net 90</option></select></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Limit</label><input type="number" min="0" step="0.01" value={newCustomer.credit_limit} onChange={(e) => setNewCustomer((p) => ({ ...p, credit_limit: e.target.value }))} placeholder="0.00" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Days</label><input type="number" min="0" step="1" value={newCustomer.credit_days} onChange={(e) => setNewCustomer((p) => ({ ...p, credit_days: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }))} placeholder="0" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address{requireBillingAddress ? " *" : ""}</label><textarea rows={2} aria-required={requireBillingAddress || undefined} value={newCustomer.billing_address} onChange={(e) => setNewCustomer((p) => ({ ...p, billing_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={newCustomer.billing_country} onChange={(e) => {
-            const country = e.target.value;
-            const curInfo = getCurrencyForCountry(country);
-            const newCurrency = curInfo ? curInfo.code : newCustomer.currency;
-
-            const updateCountry = (confirmCurrencyUpdate) => {
-              setNewCustomer((p) => ({
-                ...p,
-                billing_country: country,
-                shipping_country: p.shipping_same_as_billing ? country : p.shipping_country,
-                currency: confirmCurrencyUpdate ? newCurrency : p.currency
-              }));
-            };
-
-            if (newCustomer.currency && newCustomer.currency !== newCurrency && newCurrency) {
-              if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
-                updateCountry(true);
-              } else {
-                updateCountry(false);
-              }
-            } else {
-              updateCountry(true);
-            }
-          }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700 mb-2"><input type="checkbox" checked={newCustomer.shipping_same_as_billing} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_same_as_billing: e.target.checked, shipping_address: e.target.checked ? p.billing_address : "", shipping_country: e.target.checked ? p.billing_country : "" }))} className="rounded border-slate-300 text-brand-600 focus:ring-brand/30" /> Same as billing</label>
-            {!newCustomer.shipping_same_as_billing && (<><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={newCustomer.shipping_address} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_address: e.target.value }))} placeholder="Street, City, State, ZIP, Country" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={newCustomer.shipping_country} onChange={(e) => setNewCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></>)}
-                     </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          {getCustomerTaxFields(newCustomer.billing_country).map((f) => (
-            <div key={f.key}>
-              <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-              <input value={newCustomer[f.key] || ""} onChange={(e) => setNewCustomer((p) => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-            </div>
-          ))}
-          {!newCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).{requireTaxId ? " A tax ID is required for new customers." : ""}</p>}
-          {newCustomer.billing_country && requireTaxId && <p className="md:col-span-2 text-xs text-slate-500">A tax ID is required for new customers: fill in at least one of the fields above.</p>}
-        </div>
-        <div className="mb-4"><label className="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea rows={2} value={newCustomer.notes} onChange={(e) => setNewCustomer((p) => ({ ...p, notes: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
-          <button onClick={() => { setShowCreateModal(false); clearForm(); }} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-          <button onClick={handleCreate} disabled={formLoading || !newCustomer.company_name} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Creating..." : `Create ${singular}`}</button>
-        </div>
-      </div>
-    </div>
+    <CustomerFormDialog
+      {...formDialogProps}
+      mode="create"
+      values={newCustomer}
+      setValues={setNewCustomer}
+      onSubmit={handleCreate}
+      onCancel={() => { setShowCreateModal(false); clearForm(); }}
+      error={formError}
+      limitError={limitError}
+      onDismissLimit={() => setLimitError(null)}
+      onBillingCountryChange={handleCreateBillingCountry}
+    />
   );
 
   const renderEditModal = () => {
     if (!editCustomer) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 overflow-y-auto py-8">
-        <div role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-6"><h2 id="customer-edit-title" className="text-xl font-bold text-slate-800">Edit {singular}</h2><button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close dialog"><X size={20} /></button></div>
-          {formError && <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertCircle size={16} />{formError}</div>}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            {["company_name", "display_name", "email", "phone", "website"].map((field) => (
-              <div key={field}><label className="block text-sm font-medium text-slate-700 mb-1 capitalize">{field.replace(/_/g, " ")}{field === "company_name" ? " *" : ""}</label><input type={field === "email" ? "email" : "text"} value={editCustomer[field] || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, [field]: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-            ))}
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Customer Type</label><select value={editCustomer.customer_type || "business"} onChange={(e) => setEditCustomer((p) => ({ ...p, customer_type: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="business">Business</option><option value="individual">Individual</option><option value="non_profit">Non-Profit</option><option value="government">Government</option></select></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Currency</label><select value={editCustomer.currency || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, currency: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select</option>{getCurrencySelectOptions().map((c) => (<option key={c.value} value={c.value}>{c.value}</option>))}</select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Payment Terms</label><select value={editCustomer.payment_terms || "net_30"} onChange={(e) => { const t = e.target.value; setEditCustomer((p) => ({ ...p, payment_terms: t, credit_days: PAYMENT_TERMS_CREDIT_DAYS[t] ?? 30 })); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="due_on_receipt">Due on Receipt</option><option value="net_15">Net 15</option><option value="net_30">Net 30</option><option value="net_45">Net 45</option><option value="net_60">Net 60</option><option value="net_90">Net 90</option></select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Limit</label><input type="number" min="0" step="0.01" value={editCustomer.credit_limit ?? ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_limit: e.target.value }))} placeholder="0.00" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Credit Days</label><input type="number" min="0" step="1" value={editCustomer.credit_days ?? ""} onChange={(e) => setEditCustomer((p) => ({ ...p, credit_days: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }))} placeholder="0" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Tax ID{requireTaxId ? " *" : ""}</label><input type="text" aria-label="Tax ID" value={editCustomer.tax_id || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, tax_id: e.target.value }))} placeholder="GST / VAT / Tax registration number" className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Address{requireBillingAddress ? " *" : ""}</label><textarea rows={2} value={editCustomer.billing_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, billing_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Address</label><textarea rows={2} value={editCustomer.shipping_address || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_address: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" /></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Billing Country</label><select value={editCustomer.billing_country || ""} onChange={(e) => {
-              const country = e.target.value;
-              const curInfo = getCurrencyForCountry(country);
-              const newCurrency = curInfo ? curInfo.code : editCustomer.currency;
-
-              const updateCountry = (confirmCurrencyUpdate) => {
-                setEditCustomer((p) => ({
-                  ...p,
-                  billing_country: country,
-                  currency: confirmCurrencyUpdate ? newCurrency : p.currency
-                }));
-              };
-
-              if (editCustomer.currency && editCustomer.currency !== newCurrency && newCurrency) {
-                if (window.confirm(`Update currency to ${newCurrency} based on selected country?`)) {
-                  updateCountry(true);
-                } else {
-                  updateCountry(false);
-                }
-              } else {
-                updateCountry(true);
-              }
-            }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Shipping Country</label><select value={editCustomer.shipping_country || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, shipping_country: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"><option value="">Select Country</option>{getCountrySelectOptions().map((c) => (<option key={c.code} value={c.value}>{c.label}</option>))}</select></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            {getCustomerTaxFields(editCustomer.billing_country).map((f) => (
-              <div key={f.key}>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-                <input value={editCustomer[f.key] || ""} onChange={(e) => setEditCustomer((p) => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            ))}
-            {!editCustomer.billing_country && <p className="md:col-span-2 text-xs text-slate-500">Select a billing country above to show its relevant tax identifier(s).</p>}
-          </div>
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100"><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button><button onClick={handleUpdate} disabled={formLoading} className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">{formLoading ? "Saving..." : "Save Changes"}</button></div>
-        </div>
-      </div>
+      <CustomerFormDialog
+        {...formDialogProps}
+        mode="edit"
+        values={editCustomer}
+        setValues={setEditCustomer}
+        onSubmit={handleUpdate}
+        onCancel={() => setShowEditModal(false)}
+        error={formError}
+        onBillingCountryChange={handleEditBillingCountry}
+      />
     );
   };
 
@@ -674,7 +626,7 @@ export default function CustomerListPage() {
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50"><Upload size={16} /> Import</button>
               <div className="relative group">
                 <button className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50"><Download size={16} /> Export</button>

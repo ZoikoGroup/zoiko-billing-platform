@@ -104,7 +104,16 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New Organization" icon={Building2} size="lg">
+    <Modal open={open} onClose={onClose} title="New Organization" icon={Building2} size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="create-organization-form" variant="primary" loading={busy}>
+            {busy ? "Creating…" : "Create"}
+          </Button>
+        </>
+      }
+    >
       <form id="create-organization-form" onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <Field label="Name" htmlFor="new-org-name" required className="sm:col-span-2">
           <input
@@ -205,12 +214,6 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 sm:col-span-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy}>
-            {busy ? "Creating…" : "Create"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

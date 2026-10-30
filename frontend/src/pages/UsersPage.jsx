@@ -70,8 +70,17 @@ function ReasonModal({ open, onClose, title, icon, description, busy, error, sub
   }, [open]);
 
   return (
-    <Modal open={open} onClose={onClose} title={title} icon={icon} size="sm">
-      <form
+    <Modal open={open} onClose={onClose} title={title} icon={icon} size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="user-action-reason-form" variant="primary" loading={busy} disabled={submitDisabled || reason.trim().length < 3}>
+            {submitLabel}
+          </Button>
+        </>
+      }
+    >
+      <form id="user-action-reason-form"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit(reason);
@@ -96,12 +105,6 @@ function ReasonModal({ open, onClose, title, icon, description, busy, error, sub
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={submitDisabled || reason.trim().length < 3}>
-            {submitLabel}
-          </Button>
-        </div>
       </form>
     </Modal>
   );
@@ -706,8 +709,17 @@ function PurgeOrganizationModal({ target, busy, error, onClose, onSubmit }) {
   const confirmed = code !== "" && confirmation.trim() === code;
 
   return (
-    <Modal open onClose={onClose} title="Delete organization permanently" icon={Trash2} size="md">
-      <form
+    <Modal open onClose={onClose} title="Delete organization permanently" icon={Trash2} tone="danger" size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="purge-organization-form" variant="destructive" loading={busy} disabled={!confirmed || reason.trim().length < 3}>
+            Delete organization
+          </Button>
+        </>
+      }
+    >
+      <form id="purge-organization-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (confirmed) onSubmit(reason, confirmation);
@@ -752,12 +764,6 @@ function PurgeOrganizationModal({ target, busy, error, onClose, onSubmit }) {
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="danger" loading={busy} disabled={!confirmed || reason.trim().length < 3}>
-            Delete organization
-          </Button>
-        </div>
       </form>
     </Modal>
   );
@@ -840,8 +846,15 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
   }
 
   return (
-    <Modal open onClose={onClose} title="Invite tenant administrator" icon={UserPlus} size="md">
-      <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+    <Modal open onClose={onClose} title="Invite tenant administrator" icon={UserPlus} size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="invite-tenant-admin-form" variant="primary" loading={busy}>Create invitation</Button>
+        </>
+      }
+    >
+      <form id="invite-tenant-admin-form" onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <Field label="Organization" htmlFor="invite-org" required>
             <OrgSelect id="invite-org" value={form.organization_id} onChange={(value) => setValue("organization_id", value)} organizations={organizations} />
@@ -872,10 +885,6 @@ function InviteUserModal({ organizations, onClose, onInvited }) {
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 sm:col-span-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy}>Create invitation</Button>
-        </div>
       </form>
     </Modal>
   );

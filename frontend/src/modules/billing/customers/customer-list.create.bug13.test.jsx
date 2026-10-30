@@ -28,7 +28,7 @@ async function openCreate() {
   render(<MemoryRouter><CustomerListPage /></MemoryRouter>);
   await waitFor(() => expect(m.list).toHaveBeenCalled());
   fireEvent.click(await screen.findByRole("button", { name: /new customer/i }));
-  const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+  const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
   fireEvent.change(fieldByLabel(dialog, /company name/i), { target: { value: "New Co" } });
   fireEvent.change(fieldByLabel(dialog, /^email/i), { target: { value: "new@co.com" } });
   return dialog;
@@ -66,11 +66,14 @@ describe("BUG-13 create form follows Customer Settings", () => {
   it("Require Billing Address blocks submit without one and marks the field required", async () => {
     m.config.require_billing_address = true;
     const dialog = await openCreate();
-    await waitFor(() => expect(within(dialog).getByText(/Billing Address \*/)).toBeInTheDocument());
+    // The shared Field renders the required "*" in its own element, so check
+    // the label carries it and the control is marked aria-required.
+    await waitFor(() => expect(within(dialog).getByText(/^Billing Address/).textContent).toMatch(/\*/));
+    expect(fieldByLabel(dialog, /^Billing Address/)).toHaveAttribute("aria-required", "true");
     fireEvent.click(within(dialog).getByRole("button", { name: /^create/i }));
     expect(await screen.findByText(/billing address is required for new customers/i)).toBeInTheDocument();
     expect(m.create).not.toHaveBeenCalled();
-    fireEvent.change(fieldByLabel(dialog, /Billing Address \*/), { target: { value: "1 Main St" } });
+    fireEvent.change(fieldByLabel(dialog, /^Billing Address/), { target: { value: "1 Main St" } });
     fireEvent.click(within(dialog).getByRole("button", { name: /^create/i }));
     await waitFor(() => expect(m.create).toHaveBeenCalledTimes(1));
     expect(fieldByLabel(dialog, /company name/i)).toHaveValue("New Co");

@@ -6,6 +6,7 @@ import {
   XCircle, Info, Receipt, Building2, Send, Shield, Plus,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { contractApi, customerApi, invoiceApi, subscriptionApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -893,82 +894,97 @@ export default function ContractDetailPage() {
       </div>
 
       {showRenewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRenewModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Renew Contract</h3>
-            <p className="text-sm text-slate-500 mb-4">Set the new end date for contract renewal.</p>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">New End Date</label>
-                <input type="date" value={renewForm.new_end_date}
-                  onChange={(e) => setRenewForm((f) => ({ ...f, new_end_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-                {renewForm.new_end_date && contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date) && (
-                  <p className="text-xs text-red-500 mt-1">New end date must be later than the current end date ({formatDisplayDate(contract.end_date)}).</p>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowRenewModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleRenew} disabled={!renewForm.new_end_date || (contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date)) || isActing("renew")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+        <Modal
+          open
+          dense
+          onClose={() => setShowRenewModal(false)}
+          title="Renew Contract"
+          description="Set the new end date for contract renewal."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowRenewModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleRenew} disabled={!renewForm.new_end_date || (contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date)) || isActing("renew")}>
                 {isActing("renew") ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Renew
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">New End Date</label>
+              <input type="date" value={renewForm.new_end_date}
+                onChange={(e) => setRenewForm((f) => ({ ...f, new_end_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              {renewForm.new_end_date && contract.end_date && new Date(renewForm.new_end_date) <= new Date(contract.end_date) && (
+                <p className="text-xs text-red-500 mt-1">New end date must be later than the current end date ({formatDisplayDate(contract.end_date)}).</p>
+              )}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showTerminateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTerminateModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Terminate Contract</h3>
-            <p className="text-sm text-slate-500 mb-4">Provide a reason for terminating this contract.</p>
-            <textarea value={terminateReason} onChange={(e) => setTerminateReason(e.target.value)}
-              rows={3} placeholder="Reason for termination..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowTerminateModal(false); setTerminateReason(""); }}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleTerminate} disabled={!terminateReason.trim() || isActing("terminate")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
-                {isActing("terminate") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Terminate
-              </button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          open
+          dense
+          onClose={() => setShowTerminateModal(false)}
+          title="Terminate Contract"
+          description="Provide a reason for terminating this contract."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => { setShowTerminateModal(false); setTerminateReason(""); }}>Cancel</Button>
+              <Button variant="destructive" onClick={handleTerminate} disabled={!terminateReason.trim() || isActing("terminate")}>{isActing("terminate") ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Terminate</Button>
+            </>
+          }
+        >
+          <textarea value={terminateReason} onChange={(e) => setTerminateReason(e.target.value)}
+            rows={3} placeholder="Reason for termination..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4" />
+        </Modal>
       )}
 
       {showAmendmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAmendmentModal(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Create Amendment</h3>
-            <p className="text-sm text-slate-500 mb-4">Record a new amendment for this contract.</p>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
-                <input type="date" value={amendmentForm.effective_date}
-                  onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
-                <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
-                  rows={3} placeholder="Reason for amendment..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowAmendmentModal(false); setAmendmentForm({ effective_date: new Date().toISOString().split("T")[0], reason: "" }); }}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={handleCreateAmendment} disabled={!amendmentForm.effective_date || isActing("create amendment")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+        <Modal
+          open
+          dense
+          onClose={() => setShowAmendmentModal(false)}
+          title="Create Amendment"
+          description="Record a new amendment for this contract."
+          size="sm"
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => { setShowAmendmentModal(false); setAmendmentForm({ effective_date: new Date().toISOString().split("T")[0], reason: "" }); }}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleCreateAmendment} disabled={!amendmentForm.effective_date || isActing("create amendment")}>
                 {isActing("create amendment") ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileEdit className="h-4 w-4" />} Create Amendment
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Effective Date</label>
+              <input type="date" value={amendmentForm.effective_date}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, effective_date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
+              <textarea value={amendmentForm.reason} onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))}
+                rows={3} placeholder="Reason for amendment..."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </HRPage>
   );

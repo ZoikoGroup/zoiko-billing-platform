@@ -332,7 +332,7 @@ export default function OrgAdminUserManagementPage() {
 
   return (
     <div className="font-['Inter',system-ui,sans-serif]" style={{ color: INK }}>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight" style={{ color: INK }}>User Management</h1>
           <p className="text-sm mt-0.5" style={{ color: INK_SOFT }}>Invite and manage the people who have access to your organization.</p>
@@ -688,7 +688,7 @@ export default function OrgAdminUserManagementPage() {
                 Send invitation email now
               </label>
             </div>
-            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1" style={{ borderColor: LINE, background: "#FAFAFA" }}>
               <button
                 className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}
@@ -779,7 +779,7 @@ export default function OrgAdminUserManagementPage() {
                 </label>
               )}
             </div>
-            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1" style={{ borderColor: LINE, background: "#FAFAFA" }}>
               <button
                 className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}

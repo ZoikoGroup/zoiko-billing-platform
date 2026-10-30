@@ -34,6 +34,33 @@
   --color-accent-tax-hover: #6d28d9;
 }
 
+/* Height of the fixed StickyFooter bar while one is mounted (0 otherwise).
+   StickyFooter publishes it so other fixed chrome — the AI assistant
+   launcher — can sit above the bar instead of on top of its actions. */
+:root {
+  --sticky-footer-h: 0px;
+}
+
+/* Phones (below sm) and touch devices (coarse pointer, e.g. tablets): form
+   controls render at 16px. iOS Safari zooms the page whenever a focused
+   control's font-size is below 16px, which every 14px (text-sm) field in the
+   app triggered. Deliberately unlayered: Tailwind v4 utilities live in
+   @layer utilities, and unlayered rules beat layered ones, so this wins over
+   text-sm/text-xs on every page without per-page edits. Desktop (fine
+   pointer, sm and up) keeps its existing sizes. Inputs styled with an inline
+   fontSize (the auth pages) can't be reached by a stylesheet rule, so they
+   read var(--input-font-size, 14px) instead. */
+@media (max-width: 639.98px), (pointer: coarse) {
+  :root {
+    --input-font-size: 16px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Shared card elevation — replaces the repeated
    shadow-[0_4px_20px_rgba(0,0,0,0.02)] literal across Billing pages. */
 .card-shadow {

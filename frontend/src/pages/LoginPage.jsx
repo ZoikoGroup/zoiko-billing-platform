@@ -187,7 +187,7 @@ export default function LoginPage() {
   }
 
   const inputClass = (hasError) =>
-    `block w-full rounded-xl border bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:outline-none focus:ring-4 ${
+    `block w-full rounded-xl border bg-white px-4 py-3 text-[length:var(--input-font-size,15px)] text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:outline-none focus:ring-4 ${
       hasError ? "border-red-500 focus:border-red-500 focus:ring-red-100" : "border-slate-200 hover:border-slate-300 focus:border-sky-500 focus:ring-sky-100"
     }`;
 
@@ -202,9 +202,9 @@ export default function LoginPage() {
     // The whole page scrolls as one document (no fixed-height panes): on
     // wide screens the artwork column stretches with the form; on small
     // screens the artwork stacks above the form.
-    <div className="min-h-screen bg-slate-100 font-sans lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+    <div className="min-h-dvh bg-slate-100 font-sans lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       {/* ── Left: brand artwork (cropped from the approved design) ── */}
-      <aside className="relative h-[52vh] min-h-[340px] overflow-hidden bg-[#0B1F4B] lg:h-auto lg:min-h-screen">
+      <aside className="relative h-[52vh] min-h-[340px] overflow-hidden bg-[#0B1F4B] lg:h-auto lg:min-h-dvh">
         <img
           src="/login-hero.webp"
           alt=""

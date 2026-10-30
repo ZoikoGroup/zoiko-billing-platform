@@ -23,8 +23,8 @@ export default function TriageStrip() {
       className="flex items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-800 sm:px-6"
       title={`Privileged access to organization #${activeGrant.organization_id} is ACTIVE until ${new Date(activeGrant.expires_at).toLocaleTimeString()}`}
     >
-      <Building2 size={13} />
-      Support access active — scope: organization #{activeGrant.organization_id}
+      <Building2 size={13} className="shrink-0" />
+      <span className="min-w-0 truncate">Support access active — scope: organization #{activeGrant.organization_id}</span>
     </div>
   );
 }

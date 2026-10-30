@@ -354,7 +354,7 @@ describe("LoginPage — layout", () => {
   it("lets the whole page scroll (no fixed-height, overflow-hidden root)", () => {
     const { container } = renderLogin();
     const root = container.firstElementChild;
-    expect(root.className).toMatch(/min-h-screen/);
+    expect(root.className).toMatch(/min-h-dvh/);
     expect(root.className).not.toMatch(/(^|\s)h-screen(\s|$)|overflow-hidden/);
   });
 });

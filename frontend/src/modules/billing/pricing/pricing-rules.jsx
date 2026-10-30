@@ -3,6 +3,7 @@ import {
   ListFilter, Search, Plus, RefreshCw, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { pricingRuleApi } from "../../../service/billingService";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -158,103 +159,108 @@ function RuleFormModal({ show, onClose, onSave, editRule, saving }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">{editRule ? "Edit Pricing Rule" : "Create Pricing Rule"}</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      dense
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title={editRule ? "Edit Pricing Rule" : "Create Pricing Rule"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={saving}>{saving ? "Saving..." : editRule ? "Update Rule" : "Create Rule"}</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label htmlFor="rule-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="rule-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+          <div><label htmlFor="rule-code" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="rule-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
         </div>
-        <div className="px-6 py-4 space-y-4">
-          {formError && <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label htmlFor="rule-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="rule-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-            <div><label htmlFor="rule-code" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="rule-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. DISC-001" /></div>
+        <div><label htmlFor="rule-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="rule-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label htmlFor="rule-type" className="block text-xs font-medium text-slate-500 mb-1">Rule Type *</label>
+            <select id="rule-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rule_type} onChange={e => set("rule_type", e.target.value)}>
+              {RULE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
-          <div><label htmlFor="rule-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="rule-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label htmlFor="rule-type" className="block text-xs font-medium text-slate-500 mb-1">Rule Type *</label>
-              <select id="rule-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rule_type} onChange={e => set("rule_type", e.target.value)}>
-                {RULE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div><label htmlFor="rule-scope" className="block text-xs font-medium text-slate-500 mb-1">Scope</label>
-              <select id="rule-scope" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.scope} onChange={e => set("scope", e.target.value)}>
-                {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label htmlFor="rule-value-type" className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
-              <select id="rule-value-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
-                {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div><label htmlFor="rule-value" className="block text-xs font-medium text-slate-500 mb-1">Value{VALUE_REQUIRED_TYPES.has(form.rule_type) ? " *" : ""}</label><input id="rule-value" type="number" step="0.01" min="0" max={form.rule_type === "percentage_discount" ? 100 : undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
-            <div><label htmlFor="rule-priority" className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input id="rule-priority" type="number" min="0" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label htmlFor="rule-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="rule-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-            <div><label htmlFor="rule-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="rule-to" type="date" min={form.effective_from || undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label htmlFor="rule-status-field" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-              <select id="rule-status-field" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
-                <option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="scheduled">Scheduled</option>
-              </select>
-            </div>
-            <div><label htmlFor="rule-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="rule-usage-limit" type="number" min="1" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label htmlFor="rule-product" className="block text-xs font-medium text-slate-500 mb-1">Product ID{form.scope === "product" ? " *" : ""}</label><input id="rule-product" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder={form.scope === "product" ? "Required for Product scope" : "Optional — all products"} /></div>
-            <div><label htmlFor="rule-region" className="block text-xs font-medium text-slate-500 mb-1">Region{form.scope === "region" ? " *" : ""}</label><input id="rule-region" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder={form.scope === "region" ? "Required for Region scope" : "Optional — all regions"} /></div>
-          </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.auto_apply} onChange={e => set("auto_apply", e.target.checked)} className="rounded" /> Auto Apply</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.stackable} onChange={e => set("stackable", e.target.checked)} className="rounded" /> Stackable</label>
+          <div><label htmlFor="rule-scope" className="block text-xs font-medium text-slate-500 mb-1">Scope</label>
+            <select id="rule-scope" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.scope} onChange={e => set("scope", e.target.value)}>
+              {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
         </div>
-        <div className="flex gap-2 justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50">{saving ? "Saving..." : editRule ? "Update Rule" : "Create Rule"}</button>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div><label htmlFor="rule-value-type" className="block text-xs font-medium text-slate-500 mb-1">Value Type</label>
+            <select id="rule-value-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value_type} onChange={e => set("value_type", e.target.value)}>
+              {VALUE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div><label htmlFor="rule-value" className="block text-xs font-medium text-slate-500 mb-1">Value{VALUE_REQUIRED_TYPES.has(form.rule_type) ? " *" : ""}</label><input id="rule-value" type="number" step="0.01" min="0" max={form.rule_type === "percentage_discount" ? 100 : undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.value} onChange={e => set("value", e.target.value)} /></div>
+          <div><label htmlFor="rule-priority" className="block text-xs font-medium text-slate-500 mb-1">Priority</label><input id="rule-priority" type="number" min="0" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => set("priority", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label htmlFor="rule-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="rule-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+          <div><label htmlFor="rule-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="rule-to" type="date" min={form.effective_from || undefined} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label htmlFor="rule-status-field" className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+            <select id="rule-status-field" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.status} onChange={e => set("status", e.target.value)}>
+              <option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="scheduled">Scheduled</option>
+            </select>
+          </div>
+          <div><label htmlFor="rule-usage-limit" className="block text-xs font-medium text-slate-500 mb-1">Usage Limit</label><input id="rule-usage-limit" type="number" min="1" step="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.usage_limit} onChange={e => set("usage_limit", e.target.value)} placeholder="Unlimited" /></div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label htmlFor="rule-product" className="block text-xs font-medium text-slate-500 mb-1">Product ID{form.scope === "product" ? " *" : ""}</label><input id="rule-product" type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)} placeholder={form.scope === "product" ? "Required for Product scope" : "Optional — all products"} /></div>
+          <div><label htmlFor="rule-region" className="block text-xs font-medium text-slate-500 mb-1">Region{form.scope === "region" ? " *" : ""}</label><input id="rule-region" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} placeholder={form.scope === "region" ? "Required for Region scope" : "Optional — all regions"} /></div>
+        </div>
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.auto_apply} onChange={e => set("auto_apply", e.target.checked)} className="rounded" /> Auto Apply</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.stackable} onChange={e => set("stackable", e.target.checked)} className="rounded" /> Stackable</label>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function DetailModal({ show, onClose, item }) {
   if (!show || !item) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold">Pricing Rule Details</h2>
-          <button onClick={onClose} aria-label="Close" className="p-1 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      title="Pricing Rule Details"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
+          <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
+          <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.rule_type?.replace("_", " ")}</span></div>
+          <div><span className="text-slate-500">Scope:</span> <span className="ml-2 capitalize">{item.scope}</span></div>
+          <div><span className="text-slate-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.value}%` : `$${item.value}`}</span></div>
+          <div><span className="text-slate-500">Priority:</span> <span className="ml-2">{item.priority}</span></div>
+          <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
+          <div><span className="text-slate-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
+          <div><span className="text-slate-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
+          <div><span className="text-slate-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
+          {item.product_id && <div><span className="text-slate-500">Product ID:</span> <span className="ml-2">{item.product_id}</span></div>}
+          {item.region && <div><span className="text-slate-500">Region:</span> <span className="ml-2">{item.region}</span></div>}
+          {item.country && <div><span className="text-slate-500">Country:</span> <span className="ml-2">{item.country}</span></div>}
         </div>
-        <div className="px-6 py-4 space-y-3">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{item.name}</span></div>
-            <div><span className="text-slate-500">Code:</span> <span className="font-medium ml-2">{item.code}</span></div>
-            <div><span className="text-slate-500">Type:</span> <span className="ml-2 capitalize">{item.rule_type?.replace("_", " ")}</span></div>
-            <div><span className="text-slate-500">Scope:</span> <span className="ml-2 capitalize">{item.scope}</span></div>
-            <div><span className="text-slate-500">Value:</span> <span className="ml-2">{item.value_type === "percentage" ? `${item.value}%` : `$${item.value}`}</span></div>
-            <div><span className="text-slate-500">Priority:</span> <span className="ml-2">{item.priority}</span></div>
-            <div><span className="text-slate-500">Status:</span> <span className="ml-2"><StatusBadge status={item.status} /></span></div>
-            <div><span className="text-slate-500">Usage:</span> <span className="ml-2">{item.usage_count ?? 0}{item.usage_limit ? ` / ${item.usage_limit}` : ""}</span></div>
-            <div><span className="text-slate-500">Effective:</span> <span className="ml-2">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span></div>
-            <div><span className="text-slate-500">Stackable:</span> <span className="ml-2">{item.stackable ? "Yes" : "No"}</span></div>
-            {item.product_id && <div><span className="text-slate-500">Product ID:</span> <span className="ml-2">{item.product_id}</span></div>}
-            {item.region && <div><span className="text-slate-500">Region:</span> <span className="ml-2">{item.region}</span></div>}
-            {item.country && <div><span className="text-slate-500">Country:</span> <span className="ml-2">{item.country}</span></div>}
-          </div>
-          {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
-        </div>
-        <div className="flex justify-end px-6 py-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm hover:bg-slate-50">Close</button>
-        </div>
+        {item.description && <div className="text-sm"><span className="text-slate-500">Description:</span><p className="mt-1">{item.description}</p></div>}
       </div>
-    </div>
+    </Modal>
   );
 }
 

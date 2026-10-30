@@ -14,9 +14,12 @@ const NAV_ITEMS = [
 export default function LandingHeader({ showNav = true }) {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
-      <div className="flex items-center justify-between px-6 lg:px-10 h-16 gap-6">
+      {/* Below sm: tighter gutters, smaller logo and no "Book a Demo", so the
+          header fits a 360px phone (it overflowed by ~150px and made every
+          auth page scroll sideways). */}
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-10 h-16 gap-3 sm:gap-6">
         <Link to="/" className="flex items-center shrink-0 no-underline">
-          <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-10 w-auto" />
+          <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="112" height="40" className="h-8 w-auto sm:h-10" />
         </Link>
 
         {showNav ? (
@@ -36,19 +39,19 @@ export default function LandingHeader({ showNav = true }) {
           <div className="flex-1" />
         )}
 
-        <div className="flex items-center gap-3 text-sm font-semibold shrink-0">
-          <Link to="/login" className="text-[#0F172A] no-underline">
+        <div className="flex items-center gap-2 sm:gap-3 text-sm font-semibold shrink-0">
+          <Link to="/login" className="inline-flex min-h-11 items-center px-1 text-[#0F172A] no-underline sm:min-h-0 sm:px-0">
             Sign In
           </Link>
           <button
             type="button"
-            className="inline-flex items-center gap-1 bg-white border border-[#0F172A] text-[#0F172A] rounded-full px-5 py-2.5 hover:bg-[#F9FAFB] transition-all duration-200"
+            className="hidden sm:inline-flex items-center gap-1 bg-white border border-[#0F172A] text-[#0F172A] rounded-full px-5 py-2.5 hover:bg-[#F9FAFB] transition-all duration-200"
           >
             Book a Demo
           </button>
           <Link
             to="/register"
-            className="inline-flex items-center gap-1 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full px-5 py-2.5 shadow-md shadow-blue-200 transition-all duration-200 no-underline"
+            className="inline-flex min-h-11 items-center gap-1 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full px-4 sm:px-5 py-2.5 shadow-md shadow-blue-200 transition-all duration-200 no-underline sm:min-h-0"
           >
             Create Account
           </Link>

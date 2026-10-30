@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Repeat, RefreshCw, AlertCircle, Loader2, Play, XCircle, FileText, FileText as FileTextIcon, DollarSign, DollarSign as DollarSignIcon, CreditCard, Calendar, Receipt, Shield as ShieldIcon, Activity, Package, Building2, Clock, FileEdit, History, RotateCcw as RotateCcwIcon, CheckCircle, PauseCircle, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { subscriptionApi, contractApi, customerApi, invoiceApi, paymentApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -880,34 +881,18 @@ export default function SubscriptionDetailPage() {
       </div>
 
       {showChangePlan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onKeyDown={(e) => { if (e.key === "Escape") setShowChangePlan(false); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="change-plan-title" className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6">
-            <h3 id="change-plan-title" className="text-lg font-semibold text-slate-800 mb-1">Change Plan</h3>
-            <p className="text-sm text-slate-500 mb-4">Current plan: <span className="font-medium text-slate-700">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></p>
-            {changePlanLoading ? (
-              <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" /></div>
-            ) : availablePlans.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-8">No other active plans available.</p>
-            ) : (
-              <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-                {availablePlans.map((plan) => (
-                  <button key={plan.id} onClick={() => setSelectedNewPlanId(plan.id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-colors ${selectedNewPlanId === plan.id ? "border-brand-300 bg-brand-50" : "border-slate-200 hover:bg-slate-50"}`}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-slate-800">{plan.plan_name}</p>
-                        <p className="text-xs text-slate-500">{plan.billing_period?.replace(/_/g, " ")} · {plan.pricing_model}</p>
-                      </div>
-                      <p className="font-semibold text-slate-800">{formatDisplayCurrency(plan.unit_price, subscription.currency)}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">Plan changes take effect immediately. Proration is not currently applied.</p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button autoFocus onClick={() => setShowChangePlan(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-              <button disabled={!selectedNewPlanId || changePlanLoading} onClick={async () => {
+        <Modal
+          open
+          onClose={() => setShowChangePlan(false)}
+          closeOnBackdrop={false}
+          title="Change Plan"
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" autoFocus onClick={() => setShowChangePlan(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                disabled={!selectedNewPlanId || changePlanLoading} onClick={async () => {
                   setChangePlanLoading(true);
                   try {
                     await subscriptionApi.changePlan(subscription.id, selectedNewPlanId);
@@ -916,32 +901,50 @@ export default function SubscriptionDetailPage() {
                   } catch (err) {
                     setError(err?.detail || err?.message || "Failed to change plan");
                   } finally { setChangePlanLoading(false); }
-                }}
-                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                }}>
                 {changePlanLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Confirm Change"}
-              </button>
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-500 mb-4">Current plan: <span className="font-medium text-slate-700">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></p>
+          {changePlanLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-brand-600" /></div>
+          ) : availablePlans.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">No other active plans available.</p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+              {availablePlans.map((plan) => (
+                <button key={plan.id} onClick={() => setSelectedNewPlanId(plan.id)}
+                  className={`w-full text-left p-3 rounded-xl border transition-colors ${selectedNewPlanId === plan.id ? "border-brand-300 bg-brand-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-800">{plan.plan_name}</p>
+                      <p className="text-xs text-slate-500">{plan.billing_period?.replace(/_/g, " ")} · {plan.pricing_model}</p>
+                    </div>
+                    <p className="font-semibold text-slate-800">{formatDisplayCurrency(plan.unit_price, subscription.currency)}</p>
+                  </div>
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
+          )}
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Plan changes take effect immediately. Proration is not currently applied.</p>
+        </Modal>
       )}
 
       {showGenerateInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowGenerateInvoice(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" role="dialog" aria-modal="true" aria-labelledby="generate-invoice-dialog-title" onClick={(e) => e.stopPropagation()}>
-            <h3 id="generate-invoice-dialog-title" className="text-lg font-semibold text-slate-800 mb-1">Generate Invoice</h3>
-            <p className="text-sm text-slate-500 mb-4">Create an invoice for the current billing period.</p>
-            <div className="space-y-3 mb-4 p-4 bg-slate-50 rounded-xl">
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Subscription</span><span className="font-medium text-slate-800">{subscription.subscription_number}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Plan</span><span className="font-medium text-slate-800">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">{singular}</span><span className="font-medium text-slate-800">{customer?.company_name || customer?.name || `ID: ${subscription.customer_id}`}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Billing Period</span><span className="font-medium text-slate-800">{formatDisplayDate(subscription.current_term_start)} — {formatDisplayDate(subscription.current_term_end)}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Currency</span><span className="font-medium text-slate-800">{subscription.currency}</span></div>
-              <div className="flex justify-between"><span className="text-sm text-slate-500">Amount</span><span className="font-semibold text-emerald-700">{formatDisplayCurrency(subscription.unit_price * (subscription.quantity || 1), subscription.currency)}</span></div>
-            </div>
-            <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4">Tax will be applied based on customer billing country. Invoice number will be auto-generated.</p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button onClick={() => setShowGenerateInvoice(false)} disabled={generateInvoiceLoading} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
-              <button disabled={generateInvoiceLoading} onClick={async () => {
+        <Modal
+          open
+          onClose={() => setShowGenerateInvoice(false)}
+          title="Generate Invoice"
+          description="Create an invoice for the current billing period."
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowGenerateInvoice(false)} disabled={generateInvoiceLoading}>Cancel</Button>
+              <Button
+                variant="success"
+                disabled={generateInvoiceLoading} onClick={async () => {
                   setGenerateInvoiceLoading(true);
                   try {
                     const result = await subscriptionApi.generateInvoice(subscription.id);
@@ -952,61 +955,79 @@ export default function SubscriptionDetailPage() {
                   } catch (err) {
                     setError(err?.detail || err?.message || "Failed to generate invoice");
                   } finally { setGenerateInvoiceLoading(false); }
-                }}
-                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+                }}>
                 {generateInvoiceLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Generate Invoice"}
-              </button>
-            </div>
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3 mb-4 p-4 bg-slate-50 rounded-xl">
+            <div className="flex justify-between"><span className="text-sm text-slate-500">Subscription</span><span className="font-medium text-slate-800">{subscription.subscription_number}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-500">Plan</span><span className="font-medium text-slate-800">{subscription.plan_name || `Plan #${subscription.plan_id}`}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-500">{singular}</span><span className="font-medium text-slate-800">{customer?.company_name || customer?.name || `ID: ${subscription.customer_id}`}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-500">Billing Period</span><span className="font-medium text-slate-800">{formatDisplayDate(subscription.current_term_start)} — {formatDisplayDate(subscription.current_term_end)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-500">Currency</span><span className="font-medium text-slate-800">{subscription.currency}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-500">Amount</span><span className="font-semibold text-emerald-700">{formatDisplayCurrency(subscription.unit_price * (subscription.quantity || 1), subscription.currency)}</span></div>
           </div>
-        </div>
+          <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Tax will be applied based on customer billing country. Invoice number will be auto-generated.</p>
+        </Modal>
       )}
 
       {showPauseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowPauseModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">Pause Subscription</h3>
-            <p className="text-sm text-slate-500 mb-4">Are you sure you want to pause this subscription?</p>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-700">
-              <p className="font-medium">This will:</p>
-              <ul className="mt-1 list-disc list-inside space-y-0.5">
-                <li>Stop billing for this subscription</li>
-                <li>No new invoices will be generated</li>
-                <li>The subscription can be resumed later</li>
-              </ul>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button onClick={() => setShowPauseModal(false)} disabled={isActing("pause")} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50">Cancel</button>
+        <Modal
+          open
+          onClose={() => setShowPauseModal(false)}
+          title="Pause Subscription"
+          description="Are you sure you want to pause this subscription?"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowPauseModal(false)} disabled={isActing("pause")}>Cancel</Button>
               <button disabled={isActing("pause")} onClick={async () => { setShowPauseModal(false); await handleAction("pause", () => subscriptionApi.pause(id)); }}
-                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
                 {isActing("pause") ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Pause Subscription"}
               </button>
-            </div>
+            </>
+          }
+        >
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+            <p className="font-medium">This will:</p>
+            <ul className="mt-1 list-disc list-inside space-y-0.5">
+              <li>Stop billing for this subscription</li>
+              <li>No new invoices will be generated</li>
+              <li>The subscription can be resumed later</li>
+            </ul>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCancelModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">Cancel Subscription</h3>
-            <p className="text-sm text-slate-500 mb-4">Are you sure you want to cancel this subscription?</p>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-sm text-red-700">
-              <p className="font-medium">This action is irreversible and will:</p>
-              <ul className="mt-1 list-disc list-inside space-y-0.5">
-                <li>Permanently cancel the subscription</li>
-                <li>Stop all future billing</li>
-                <li>Send a cancellation notification to the customer</li>
-              </ul>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button onClick={() => setShowCancelModal(false)} disabled={isActing("cancel")} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50">Go Back</button>
-              <button disabled={isActing("cancel")} onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => subscriptionApi.cancel(id)); }}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
+        <Modal
+          open
+          onClose={() => setShowCancelModal(false)}
+          title="Cancel Subscription"
+          description="Are you sure you want to cancel this subscription?"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowCancelModal(false)} disabled={isActing("cancel")}>Go Back</Button>
+              <Button
+                variant="destructive"
+                disabled={isActing("cancel")} onClick={async () => { setShowCancelModal(false); await handleAction("cancel", () => subscriptionApi.cancel(id)); }}>
                 {isActing("cancel") ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Cancel Subscription"}
-              </button>
-            </div>
+              </Button>
+            </>
+          }
+        >
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+            <p className="font-medium">This action is irreversible and will:</p>
+            <ul className="mt-1 list-disc list-inside space-y-0.5">
+              <li>Permanently cancel the subscription</li>
+              <li>Stop all future billing</li>
+              <li>Send a cancellation notification to the customer</li>
+            </ul>
           </div>
-        </div>
+        </Modal>
       )}
     </HRPage>
   );

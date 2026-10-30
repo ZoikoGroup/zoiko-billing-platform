@@ -10,10 +10,10 @@ import {
   CheckCircle2,
   Loader2,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { platformSelfServiceApi, invalidateZoikoSubscriptionCache } from "../../service/platformSelfServiceApi";
 import { formatOrgMoney } from "./workspace-format";
+import { Button, Modal } from "../../components/billing-ui";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -322,151 +322,22 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
         </>
       )}
 
+      {/* Esc, close and "Not now" can't dismiss the dialog while a payment is being submitted. */}
       {selected && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Change to ${selected.plan_name}`}
-          className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <h4 className="text-lg font-bold text-[#0B192C]">
-                {direction === "purchase" ? "Activate" : direction === "downgrade" ? "Downgrade to" : "Upgrade to"} {selected.plan_name}
-              </h4>
-              <button onClick={closeModal} aria-label="Close" className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {previewing && (
-              <p className="text-sm text-slate-500 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checking your plan change…
-              </p>
-            )}
-            {previewError && (
-              <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
-                {previewError}
-              </p>
-            )}
-
-            {preview && (
-              <>
-                {direction === "purchase" ? (
-                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-900 space-y-1">
-                    <p className="font-semibold">
-                      Pay {money(selected.price_amount, selected.currency)} today
-                    </p>
-                    <p className="text-xs text-blue-700">
-                      That's the first {selected.billing_interval === "annual" ? "year" : "month"} of {selected.plan_name}. Your free trial keeps running until the payment clears, then {selected.plan_name} starts straight away with its full limits and renews at {money(selected.price_amount, selected.currency)}.
-                    </p>
-                  </div>
-                ) : null}
-                {direction !== "purchase" && (
-                <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Current</dt>
-                    <dd className="font-semibold text-slate-800">{money(impact?.current_price, impact?.currency)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">New</dt>
-                    <dd className="font-semibold text-slate-800">{money(impact?.target_price, impact?.currency)}</dd>
-                  </div>
-                </dl>
-                )}
-
-                {direction === "purchase" ? null : direction === "upgrade" ? (
-                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-900 space-y-1">
-                    {impact?.estimated_period_delta != null && Number(impact.estimated_period_delta) > 0 ? (
-                      <>
-                        <p className="font-semibold">
-                          Pay {money(Number(impact.estimated_period_delta).toFixed(2), impact?.currency)} today
-                        </p>
-                        <p className="text-xs text-blue-700">
-                          That's the price difference for the remaining {impact.days_remaining_in_period} day
-                          {impact.days_remaining_in_period === 1 ? "" : "s"} of this billing period. Your new plan starts as soon as the payment clears, and renews at {money(impact?.target_price, impact?.currency)}.
-                        </p>
-                      </>
-                    ) : (
-                      <p className="font-semibold">No charge today — your new plan starts immediately.</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 p-3 cursor-pointer text-sm">
-                      <input type="radio" name="when" checked={!immediate} onChange={() => setImmediate(false)} className="mt-1" />
-                      <span>
-                        <span className="font-semibold text-slate-800">At your next renewal (recommended)</span>
-                        <span className="block text-xs text-slate-500">
-                          Keep everything you have until {fmtDate(preview?.renewal_at || subscription?.current_period_end)}, then move to {selected.plan_name}. No refund or charge.
-                        </span>
-                      </span>
-                    </label>
-                    <label className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm ${blockers.length ? "border-slate-100 bg-slate-50 opacity-60" : "border-slate-200 cursor-pointer"}`}>
-                      <input
-                        type="radio"
-                        name="when"
-                        checked={immediate}
-                        disabled={blockers.length > 0}
-                        onChange={() => setImmediate(true)}
-                        className="mt-1"
-                      />
-                      <span>
-                        <span className="font-semibold text-slate-800">Right now</span>
-                        <span className="block text-xs text-slate-500">
-                          Limits drop immediately. The price you've already paid this period isn't refunded.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                )}
-
-                {isScheduled && direction !== "purchase" && (
-                  <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                    This replaces your scheduled move to <strong>{pendingChange.to_plan_name}</strong>.
-                  </p>
-                )}
-
-                {blockers.length > 0 && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 space-y-1">
-                    <p className="font-semibold flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4" /> Resolve these before switching right now:
-                    </p>
-                    <ul className="list-disc pl-5 space-y-0.5">
-                      {blockers.map((b) => (
-                        <li key={b.check_id}>
-                          {b.label}: {b.detail}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {warnings.length > 0 && (
-                  <ul className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 list-disc pl-7 space-y-0.5">
-                    {warnings.map((w) => (
-                      <li key={w.check_id}>
-                        {w.label}: {w.detail}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-
-            {actionError && (
-              <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
-                {actionError}
-              </p>
-            )}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={closeModal} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-xl cursor-pointer">
-                Not now
-              </button>
+        <Modal
+          open
+          onClose={() => { if (!submitting) closeModal(); }}
+          closeOnBackdrop={false}
+          ariaLabel={`Change to ${selected.plan_name}`}
+          title={`${direction === "purchase" ? "Activate" : direction === "downgrade" ? "Downgrade to" : "Upgrade to"} ${selected.plan_name}`}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeModal} disabled={submitting}>Not now</Button>
               <button
                 onClick={confirm}
                 disabled={!preview || submitting}
-                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] rounded-xl disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#1A56DB] to-[#0F52BA] rounded-xl max-sm:px-4 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -486,9 +357,133 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
                 </span>
                 {!submitting && <ArrowRight className="w-4 h-4" />}
               </button>
-            </div>
+            </>
+          }
+        >
+          <div className="space-y-4">
+
+          {previewing && (
+            <p className="text-sm text-slate-500 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking your plan change…
+            </p>
+          )}
+          {previewError && (
+            <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
+              {previewError}
+            </p>
+          )}
+
+          {preview && (
+            <>
+              {direction === "purchase" ? (
+                <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-900 space-y-1">
+                  <p className="font-semibold">
+                    Pay {money(selected.price_amount, selected.currency)} today
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    That's the first {selected.billing_interval === "annual" ? "year" : "month"} of {selected.plan_name}. Your free trial keeps running until the payment clears, then {selected.plan_name} starts straight away with its full limits and renews at {money(selected.price_amount, selected.currency)}.
+                  </p>
+                </div>
+              ) : null}
+              {direction !== "purchase" && (
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Current</dt>
+                  <dd className="font-semibold text-slate-800">{money(impact?.current_price, impact?.currency)}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">New</dt>
+                  <dd className="font-semibold text-slate-800">{money(impact?.target_price, impact?.currency)}</dd>
+                </div>
+              </dl>
+              )}
+
+              {direction === "purchase" ? null : direction === "upgrade" ? (
+                <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-900 space-y-1">
+                  {impact?.estimated_period_delta != null && Number(impact.estimated_period_delta) > 0 ? (
+                    <>
+                      <p className="font-semibold">
+                        Pay {money(Number(impact.estimated_period_delta).toFixed(2), impact?.currency)} today
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        That's the price difference for the remaining {impact.days_remaining_in_period} day
+                        {impact.days_remaining_in_period === 1 ? "" : "s"} of this billing period. Your new plan starts as soon as the payment clears, and renews at {money(impact?.target_price, impact?.currency)}.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-semibold">No charge today — your new plan starts immediately.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 p-3 cursor-pointer text-sm">
+                    <input type="radio" name="when" checked={!immediate} onChange={() => setImmediate(false)} className="mt-1" />
+                    <span>
+                      <span className="font-semibold text-slate-800">At your next renewal (recommended)</span>
+                      <span className="block text-xs text-slate-500">
+                        Keep everything you have until {fmtDate(preview?.renewal_at || subscription?.current_period_end)}, then move to {selected.plan_name}. No refund or charge.
+                      </span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm ${blockers.length ? "border-slate-100 bg-slate-50 opacity-60" : "border-slate-200 cursor-pointer"}`}>
+                    <input
+                      type="radio"
+                      name="when"
+                      checked={immediate}
+                      disabled={blockers.length > 0}
+                      onChange={() => setImmediate(true)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="font-semibold text-slate-800">Right now</span>
+                      <span className="block text-xs text-slate-500">
+                        Limits drop immediately. The price you've already paid this period isn't refunded.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {isScheduled && direction !== "purchase" && (
+                <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                  This replaces your scheduled move to <strong>{pendingChange.to_plan_name}</strong>.
+                </p>
+              )}
+
+              {blockers.length > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4" /> Resolve these before switching right now:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {blockers.map((b) => (
+                      <li key={b.check_id}>
+                        {b.label}: {b.detail}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {warnings.length > 0 && (
+                <ul className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 list-disc pl-7 space-y-0.5">
+                  {warnings.map((w) => (
+                    <li key={w.check_id}>
+                      {w.label}: {w.detail}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {actionError && (
+            <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
+              {actionError}
+            </p>
+          )}
+
           </div>
-        </div>
+        </Modal>
       )}
     </section>
   );

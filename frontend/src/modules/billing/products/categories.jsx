@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Folder, FolderOpen, Search, Plus, X, ChevronDown, ChevronRight, Package, AlertCircle, CheckCircle, Trash2, Pencil, Boxes } from "lucide-react";
 import HRPage from "../../../components/HRPage";
+import { Button, Modal } from "../../../components/billing-ui";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -495,64 +496,61 @@ export default function CategoriesPage() {
 
       {/* ── Create / Edit Category Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">{editCategory ? "Edit Category" : "Add New Category"}</h2>
-                <p className="text-sm text-slate-500 mt-0.5">{editCategory ? `Update "${editCategory.name}"` : "Create a category to organize products"}</p>
-              </div>
-              <button onClick={() => setShowModal(false)} aria-label="Close" className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
+        <Modal
+          open
+          dense
+          onClose={() => setShowModal(false)}
+          title={editCategory ? "Edit Category" : "Add New Category"}
+          description={editCategory ? `Update "${editCategory.name}"` : "Create a category to organize products"}
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button variant="primary" onClick={handleSave} disabled={formLoading || !form.name.trim()}>{formLoading ? "Saving..." : editCategory ? "Save Changes" : "Create Category"}</Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              <AlertCircle size={16} /> {formError}
             </div>
-            {formError && (
-              <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                <AlertCircle size={16} /> {formError}
-              </div>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Category Name *</label>
-                <input type="text" value={form.name} placeholder="e.g. Networking"
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <div>
-                <label htmlFor="category-parent" className="block text-sm font-medium text-slate-700 mb-1">Parent Category</label>
-                <select id="category-parent" value={form.parent_id} onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <option value="">None (root category)</option>
-                  {/* Every category (not just roots), indented by depth. When
-                      editing, the category itself and its descendants are
-                      excluded so it can't be made its own ancestor. */}
-                  {flatten(categories)
-                    .filter((c) => !editCategory || !subtreeIds(editCategory, categories).has(c.id))
-                    .map((c) => <option key={c.id} value={c.id}>{"  ".repeat(c.depth)}{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea rows={3} value={form.description} placeholder="Optional description"
-                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              </div>
-              <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Active</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Inactive categories are hidden from new product forms</p>
-                </div>
-                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
-                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
-              </label>
+          )}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Category Name *</label>
+              <input type="text" value={form.name} placeholder="e.g. Networking"
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
-            <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
-              <button onClick={handleSave} disabled={formLoading || !form.name.trim()}
-                className="px-6 py-2 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg disabled:opacity-50">
-                {formLoading ? "Saving..." : editCategory ? "Save Changes" : "Create Category"}
-              </button>
+            <div>
+              <label htmlFor="category-parent" className="block text-sm font-medium text-slate-700 mb-1">Parent Category</label>
+              <select id="category-parent" value={form.parent_id} onChange={(e) => setForm((p) => ({ ...p, parent_id: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                <option value="">None (root category)</option>
+                {/* Every category (not just roots), indented by depth. When
+                    editing, the category itself and its descendants are
+                    excluded so it can't be made its own ancestor. */}
+                {flatten(categories)
+                  .filter((c) => !editCategory || !subtreeIds(editCategory, categories).has(c.id))
+                  .map((c) => <option key={c.id} value={c.id}>{"  ".repeat(c.depth)}{c.name}</option>)}
+              </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <textarea rows={3} value={form.description} placeholder="Optional description"
+                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+            </div>
+            <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Active</p>
+                <p className="text-xs text-slate-500 mt-0.5">Inactive categories are hidden from new product forms</p>
+              </div>
+              <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
+                className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+            </label>
           </div>
-        </div>
+        </Modal>
       )}
 
       {ConfirmationDialog}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../../../context/AuthContext";
 
@@ -210,5 +210,45 @@ describe("RefundDetailPage — cancel has no confirmation gate", () => {
 
     await waitFor(() => expect(mockCancel).toHaveBeenCalledTimes(1));
     expect(mockCancel).toHaveBeenCalledWith(42, undefined);
+  });
+});
+
+describe("RefundDetailPage — process / fail dialogs", () => {
+  it("Start Processing opens the dialog, calls refundApi.process with the entered refs, and closes", async () => {
+    await loadPage({ status: "approved" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Start Processing/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Start Processing Refund" });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Optional gateway reference/i), { target: { value: "re_123" } });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Bank ref/i), { target: { value: "UTR-9" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Start Processing/i }));
+
+    await waitFor(() => expect(mockProcess).toHaveBeenCalledWith(42, "re_123", "UTR-9"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("Cancel closes the Start Processing dialog without calling the API", async () => {
+    await loadPage({ status: "approved" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Start Processing/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Start Processing Refund" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Cancel$/ }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mockProcess).not.toHaveBeenCalled();
+  });
+
+  it("Mark Failed requires a reason, calls refundApi.fail with it, and closes", async () => {
+    await loadPage({ status: "processing" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Mark Failed/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Mark Refund as Failed" });
+    const confirmBtn = within(dialog).getByRole("button", { name: /Mark Failed/i });
+    expect(confirmBtn).toBeDisabled();
+    fireEvent.change(within(dialog).getByPlaceholderText(/Failure reason/i), { target: { value: "Gateway declined" } });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(mockFail).toHaveBeenCalledWith(42, "Gateway declined"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

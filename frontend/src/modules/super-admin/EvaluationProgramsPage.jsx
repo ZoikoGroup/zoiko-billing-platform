@@ -345,6 +345,12 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
         description="Starts inactive and unapproved — creating a program does NOT by itself grant any trial. Approve it, then activate it, from the programs list."
         icon={Clock}
         size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button variant="primary" icon={Plus} onClick={handleCreate} loading={submitting}>Create program</Button>
+          </>
+        }
       >
         <div className="space-y-4">
           <Field label="Signup plan" htmlFor="ep-plan" required>
@@ -416,10 +422,6 @@ export default function EvaluationProgramsPage({ embedded = false } = {}) {
               {formError}
             </p>
           )}
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button variant="primary" icon={Plus} onClick={handleCreate} loading={submitting}>Create program</Button>
-          </div>
         </div>
       </Modal>
 

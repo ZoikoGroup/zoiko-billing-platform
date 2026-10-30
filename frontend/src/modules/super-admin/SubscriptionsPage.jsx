@@ -360,6 +360,12 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         description="New subscriptions may only start as PENDING or ACTIVE. The backend rejects illegal combinations (e.g. ACTIVE on an archived plan)."
         icon={UserCheck}
         size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreate} loading={submitting}>Create subscription</Button>
+          </>
+        }
       >
         <div className="space-y-4">
           <Field label="Organization" htmlFor="cs-org" required>
@@ -408,10 +414,6 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
               {formError}
             </p>
           )}
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate} loading={submitting}>Create subscription</Button>
-          </div>
         </div>
       </Modal>
 
@@ -422,6 +424,14 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         description="Phase 3F: the current open subscription is cancelled (preserved as history) and replaced by one on the target plan. If it was ACTIVE, the replacement activates immediately under the same charging guards. A reason is mandatory and audited."
         icon={ArrowLeftRight}
         size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPlanChangeSub(null)}>Cancel</Button>
+            <Button variant="primary" icon={ArrowLeftRight} onClick={handlePlanChange} loading={planChangeSubmitting}>
+              Change plan
+            </Button>
+          </>
+        }
       >
         {planChangeSub && (
           <div className="space-y-4">
@@ -464,12 +474,6 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
                 {planChangeError}
               </p>
             )}
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="secondary" onClick={() => setPlanChangeSub(null)}>Cancel</Button>
-              <Button variant="primary" icon={ArrowLeftRight} onClick={handlePlanChange} loading={planChangeSubmitting}>
-                Change plan
-              </Button>
-            </div>
           </div>
         )}
       </Modal>

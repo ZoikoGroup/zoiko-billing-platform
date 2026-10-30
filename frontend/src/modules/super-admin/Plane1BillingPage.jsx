@@ -1146,7 +1146,7 @@ export default function Plane1BillingPage() {
 
               {/* Tab bar */}
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
                   {tabs.map((tab) => {
                     const Icon = tab.icon;
                     return (
@@ -1345,6 +1345,22 @@ export default function Plane1BillingPage() {
         title={quoteDetail ? `Quote ${quoteDetail.quote_number}` : "Quote"}
         description={quoteDetail?.subject}
         size="lg"
+        footer={
+          quoteDetail?.status === "sent" ? (
+            <>
+              <Button variant="danger" onClick={() => setRejectQuoteOpen(true)} disabled={!canQuoteApprove || quoteDetailBusy}>
+                Reject
+              </Button>
+              <Button variant="primary" onClick={approveQuoteAction} disabled={!canQuoteApprove || quoteDetailBusy}>
+                Approve
+              </Button>
+            </>
+          ) : quoteDetail?.status === "accepted" ? (
+            <Button variant="primary" onClick={() => setConvertOpen(true)} disabled={!canQuoteWrite || quoteDetailBusy}>
+              Convert to Invoice
+            </Button>
+          ) : null
+        }
       >
         {quoteDetailError && (
           <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1432,27 +1448,8 @@ export default function Plane1BillingPage() {
               </>
             )}
 
-            {quoteDetail.status === "sent" && (
-              <div>
-                <div className="flex flex-wrap justify-end gap-3">
-                  <Button variant="danger" onClick={() => setRejectQuoteOpen(true)} disabled={!canQuoteApprove || quoteDetailBusy}>
-                    Reject
-                  </Button>
-                  <Button variant="primary" onClick={approveQuoteAction} disabled={!canQuoteApprove || quoteDetailBusy}>
-                    Approve
-                  </Button>
-                </div>
-                {!canQuoteApprove && <CapabilityNotice capability="commercial_quote.approve" />}
-              </div>
-            )}
-
-            {quoteDetail.status === "accepted" && (
-              <div className="flex justify-end">
-                <Button variant="primary" onClick={() => setConvertOpen(true)} disabled={!canQuoteWrite || quoteDetailBusy}>
-                  Convert to Invoice
-                </Button>
-              </div>
-            )}
+            {/* Reject / Approve / Convert to Invoice live in the dialog footer. */}
+            {quoteDetail.status === "sent" && !canQuoteApprove && <CapabilityNotice capability="commercial_quote.approve" />}
           </div>
         ) : null}
       </Modal>
@@ -1561,6 +1558,22 @@ export default function Plane1BillingPage() {
         title={invoiceDetail ? `Invoice ${invoiceDetail.invoice_number || "(draft)"}` : "Invoice"}
         description={invoiceDetail ? `Billed to ${invoiceDetail.recipient_org_name || "—"}` : undefined}
         size="lg"
+        footer={
+          invoiceDetail?.status === "draft" ? (
+            <Button variant="primary" onClick={finalizeInvoiceAction} disabled={!canFinancial || invoiceDetailBusy}>
+              Finalize
+            </Button>
+          ) : invoiceDetail && !["draft", "paid", "voided", "credited"].includes(invoiceDetail.status) ? (
+            <>
+              <Button variant="danger" onClick={() => setVoidInvoiceOpen(true)} disabled={!canFinancial || invoiceDetailBusy}>
+                Void
+              </Button>
+              <Button variant="primary" onClick={sendInvoiceAction} disabled={!canFinancial || invoiceDetailBusy}>
+                Send Invoice
+              </Button>
+            </>
+          ) : null
+        }
       >
         {invoiceDetailError && (
           <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1609,26 +1622,12 @@ export default function Plane1BillingPage() {
               <>
                 <AddItemForm onAdd={addItemToInvoice} busy={invoiceDetailBusy} disabled={!canFinancial} />
                 {!canFinancial && <CapabilityNotice capability="commercial_financial.write" />}
-                <div className="flex justify-end">
-                  <Button variant="primary" onClick={finalizeInvoiceAction} disabled={!canFinancial || invoiceDetailBusy}>
-                    Finalize
-                  </Button>
-                </div>
               </>
             )}
 
-            {!["draft", "paid", "voided", "credited"].includes(invoiceDetail.status) && (
-              <div>
-                <div className="flex flex-wrap justify-end gap-3">
-                  <Button variant="danger" onClick={() => setVoidInvoiceOpen(true)} disabled={!canFinancial || invoiceDetailBusy}>
-                    Void
-                  </Button>
-                  <Button variant="primary" onClick={sendInvoiceAction} disabled={!canFinancial || invoiceDetailBusy}>
-                    Send Invoice
-                  </Button>
-                </div>
-                {!canFinancial && <CapabilityNotice capability="commercial_financial.write" />}
-              </div>
+            {/* Finalize / Void / Send Invoice live in the dialog footer. */}
+            {!["draft", "paid", "voided", "credited"].includes(invoiceDetail.status) && !canFinancial && (
+              <CapabilityNotice capability="commercial_financial.write" />
             )}
           </div>
         ) : null}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // BUG-08.1 follow-up (/billing/pricing/pricing-rules). Conditional requirements
@@ -113,5 +113,40 @@ describe("Edit form — clearing optional fields sends explicit nulls", () => {
     expect(payload).toMatchObject({ description: null, effective_to: null, usage_limit: null, region: null });
     // Untouched fields keep their stored values.
     expect(payload).toMatchObject({ priority: 3, value: 10, effective_from: "2026-01-01" });
+  });
+});
+
+describe("Pricing Rule dialogs (smoke, rebuilt on Modal)", () => {
+  it("Create Rule opens the dialog, saves and closes it", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /create rule/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Pricing Rule" });
+    fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: "Rule X" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Code/), { target: { value: "RX" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Value \*/), { target: { value: "10" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create Rule" }));
+    await waitFor(() => expect(m.create).toHaveBeenCalledTimes(1));
+    expect(m.create.mock.calls[0][0]).toMatchObject({ name: "Rule X", value: 10 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("Edit closes the dialog after Update Rule", async () => {
+    renderPage();
+    await screen.findByText("Spring");
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit Pricing Rule" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Update Rule" }));
+    await waitFor(() => expect(m.update).toHaveBeenCalledWith(1, expect.objectContaining({ name: "Spring" })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("View opens Pricing Rule Details and Close closes it", async () => {
+    renderPage();
+    await screen.findByText("Spring");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pricing Rule Details" });
+    expect(within(dialog).getByText("Spring")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
