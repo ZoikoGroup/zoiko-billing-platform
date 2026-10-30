@@ -529,6 +529,10 @@ export default function PricingPlansPage() {
     );
   };
 
+  // Render helpers, not components: they are called as functions so React
+  // doesn't see a new component type on every render. Rendered as
+  // <PlanFormFields />, each keystroke remounted the fields and the input
+  // lost focus after one character (same bug tier-management.jsx fixed).
   const PlanFormFields = ({ data, onChange, includeStatus, isEdit }) => {
     const modelCfg = MODEL_DYNAMIC_FIELDS[data.pricing_model] || MODEL_DYNAMIC_FIELDS.flat;
 
@@ -763,7 +767,7 @@ export default function PricingPlansPage() {
             <AlertCircle size={16} />{formError}
           </div>
         )}
-        <PlanFormFields data={data} onChange={setData} includeStatus={isEdit} isEdit={isEdit} />
+        {PlanFormFields({ data, onChange: setData, includeStatus: isEdit, isEdit })}
       </Modal>
     );
   };
@@ -1108,7 +1112,7 @@ export default function PricingPlansPage() {
 
       {renderModal(false)}
       {renderModal(true)}
-      <PreviewModal />
+      {PreviewModal()}
     </HRPage>
   );
 }

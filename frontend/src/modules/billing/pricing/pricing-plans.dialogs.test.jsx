@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
 
 // Smoke tests for the Pricing Plans dialogs after the rebuild on Modal.
 
@@ -82,5 +83,35 @@ describe("Pricing Plans dialogs", () => {
     expect(within(dialog).getByText("Gold")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+// Typed one key at a time, like a person. fireEvent.change sets the whole value
+// at once, so it can't see a field that remounts (and loses focus) per keystroke.
+describe("Pricing Plan form keeps focus while typing", () => {
+  it("New Pricing Plan: the plan name takes every key and keeps focus", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await user.click(screen.getByRole("button", { name: /add plan/i }));
+    const dialog = await screen.findByRole("dialog", { name: "New Pricing Plan" });
+    const name = within(dialog).getByPlaceholderText("e.g. Standard Monthly");
+    await user.click(name);
+    await user.type(name, "Gold plan");
+    const after = within(dialog).getByPlaceholderText("e.g. Standard Monthly");
+    expect(after).toHaveValue("Gold plan");
+    expect(after).toHaveFocus();
+  });
+
+  it("Edit Pricing Plan: typing into the name appends every key and keeps focus", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await user.click(screen.getAllByRole("button", { name: /edit/i })[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Edit Pricing Plan" });
+    const name = within(dialog).getByPlaceholderText("e.g. Standard Monthly");
+    await user.click(name);
+    await user.type(name, " Plus");
+    const after = within(dialog).getByPlaceholderText("e.g. Standard Monthly");
+    expect(after).toHaveValue("Gold Plus");
+    expect(after).toHaveFocus();
   });
 });
