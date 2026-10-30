@@ -375,23 +375,37 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
 
   // Autosave the in-progress invoice to localStorage (debounced). Skips writing
   // while the form is still empty so a previous draft is never clobbered.
+  // The latest unsaved snapshot, written immediately when the wizard unmounts
+  // (leaving via the back arrow, a breadcrumb or the sidebar) so edits made in
+  // the last moments before leaving aren't lost to the debounce. Skipped once
+  // the invoice has been saved (the save clears the draft on purpose).
+  const pendingDraftRef = useRef(null);
+  const invoiceSavedRef = useRef(false);
   useEffect(() => {
     const hasContent = form.customer_id || lineItems.length > 0 || step > 1 || form.notes || form.po_number;
-    if (!hasContent && !draftRestored) return;
+    if (!hasContent && !draftRestored) { pendingDraftRef.current = null; return; }
+    const snapshot = {
+      savedAt: Date.now(),
+      step,
+      form,
+      lineItems,
+      selectedTaxRate,
+      taxRateSelectionMode,
+      shippingAmount,
+      roundOff,
+    };
+    pendingDraftRef.current = snapshot;
     const t = setTimeout(() => {
-      saveJson(INVOICE_DRAFT_KEY, {
-        savedAt: Date.now(),
-        step,
-        form,
-        lineItems,
-        selectedTaxRate,
-        taxRateSelectionMode,
-        shippingAmount,
-        roundOff,
-      });
+      saveJson(INVOICE_DRAFT_KEY, snapshot);
+      pendingDraftRef.current = null;
     }, 600);
     return () => clearTimeout(t);
   }, [step, form, lineItems, selectedTaxRate, taxRateSelectionMode, shippingAmount, roundOff, draftRestored]);
+  useEffect(() => () => {
+    if (!invoiceSavedRef.current && pendingDraftRef.current) {
+      saveJson(INVOICE_DRAFT_KEY, { ...pendingDraftRef.current, savedAt: Date.now() });
+    }
+  }, []);
 
   // The tax-rate catalog is the source of truth for a selected rate's value.
   // A draft autosaved by the old wizard stored rates <= 1 multiplied by 100
@@ -769,6 +783,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   const goToSavedInvoice = (invoiceId, created, flash) => {
     setSaveProgress({ label: "Opening invoice detail", detail: "Loading the refreshed invoice workspace." });
     setNavigating(true);
+    invoiceSavedRef.current = true;
     saveJson(INVOICE_DRAFT_KEY, null);
     onCreated?.(created);
     onClose?.();
