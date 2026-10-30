@@ -208,9 +208,11 @@ function HeroStat({ icon: Icon, label, value, hint }) {
 
 function Hero({ statusLabel, critical, lastUpdated, refreshing, onRefresh, stats }) {
   return (
-    <div className="pd-rise relative overflow-hidden rounded-[2rem] bg-linear-to-br from-slate-950 via-blue-900 to-blue-700 p-6 text-white shadow-[0_20px_50px_-20px_rgba(15,23,42,0.55)] sm:p-8">
+    // Navy (#0B1F4B) through royal blue to light sky blue. The light end stops
+    // at sky-500 rather than a paler sky so the white text keeps its contrast.
+    <div className="pd-rise relative overflow-hidden rounded-[2rem] bg-linear-to-br from-[#0B1F4B] via-blue-700 to-sky-500 p-6 text-white shadow-[0_20px_50px_-20px_rgba(14,46,110,0.6)] sm:p-8">
       {/* Decorative depth — purely visual. */}
-      <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-sky-300/20 blur-3xl" aria-hidden="true" />
       <div className="pointer-events-none absolute -bottom-28 left-1/3 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" aria-hidden="true" />
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.07]"

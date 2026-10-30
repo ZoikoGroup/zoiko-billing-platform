@@ -45,7 +45,7 @@ function fillForm({ email, password }) {
 }
 
 function submit() {
-  fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^log in$/i }));
 }
 
 beforeEach(() => {
@@ -263,7 +263,7 @@ describe("LoginPage — Sign In button states", () => {
       user: { role: "org_admin" },
     });
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /sign in/i })).toBeEnabled()
+      expect(screen.getByRole("button", { name: /^log in$/i })).toBeEnabled()
     );
   });
 
@@ -280,7 +280,7 @@ describe("LoginPage — Sign In button states", () => {
 
     rejectLogin(Object.assign(new Error("Invalid email or password."), { status: 401 }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /sign in/i })).toBeEnabled()
+      expect(screen.getByRole("button", { name: /^log in$/i })).toBeEnabled()
     );
     expect(await screen.findByText("Invalid email or password.")).toBeInTheDocument();
   });
@@ -293,7 +293,7 @@ describe("LoginPage — Sign In button states", () => {
     renderLogin();
     fillForm({ email: "user@example.com", password: "SomePass123!" });
 
-    const btn = screen.getByRole("button", { name: /sign in/i });
+    const btn = screen.getByRole("button", { name: /^log in$/i });
     fireEvent.click(btn);
     fireEvent.click(btn); // rapid second click before re-render
 
@@ -325,5 +325,36 @@ describe("LoginPage — password field", () => {
     renderLogin();
     fillForm({ password: "secret-value" });
     expect(document.body.textContent).not.toContain("secret-value");
+  });
+});
+
+// ── Layout (redesign) ────────────────────────────────────────────────────────
+
+describe("LoginPage — layout", () => {
+  it("shows the brand artwork with its text available to screen readers", () => {
+    const { container } = renderLogin();
+    const img = container.querySelector('img[src="/login-hero.webp"]');
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute("alt", "");
+    expect(screen.getByText("Billing clarity. From quote to payment.")).toBeInTheDocument();
+  });
+
+  it("offers Login / Register / Reset Password tabs and only real sign-in options", () => {
+    renderLogin();
+    const tabs = screen.getByRole("navigation", { name: "Account" });
+    expect(tabs).toHaveTextContent("Login");
+    expect(screen.getAllByRole("link", { name: "Register" })[0]).toHaveAttribute("href", "/register");
+    expect(screen.getByRole("link", { name: "Reset Password" })).toHaveAttribute("href", "/forgot-password");
+    expect(screen.getByRole("button", { name: /continue with google/i })).toBeInTheDocument();
+    // No backend support: these must not be offered as dead controls.
+    expect(screen.queryByRole("button", { name: /microsoft/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/remember me/i)).not.toBeInTheDocument();
+  });
+
+  it("lets the whole page scroll (no fixed-height, overflow-hidden root)", () => {
+    const { container } = renderLogin();
+    const root = container.firstElementChild;
+    expect(root.className).toMatch(/min-h-screen/);
+    expect(root.className).not.toMatch(/(^|\s)h-screen(\s|$)|overflow-hidden/);
   });
 });
