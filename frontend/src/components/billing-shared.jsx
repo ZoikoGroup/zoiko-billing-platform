@@ -11,6 +11,8 @@ import { assertExportsAllowed, getExportSuppression } from "../utils/export-help
 // to every one of them. The stat-card sparkline below is hand-rolled SVG for
 // exactly this reason; ExecutiveSummary is likewise recharts-free by design.
 import { ExecutiveSummary } from "./executive-summary";
+import { OverflowMenu } from "./billing-ui";
+import useMediaQuery, { BELOW_SM } from "../hooks/useMediaQuery";
 
 export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2-digit" }) {
   if (value === null || value === undefined || value === "") return null;
@@ -444,8 +446,22 @@ export function DashboardHeader({
   onResetDateRange,
   dateRangeOptions,
 }) {
+  // Phones: Refresh and Export move into a "⋯" menu next to the primary
+  // action, so the header is one tidy row instead of several wrapped ones.
+  // The export items keep ExportMenu's privileged-session suppression gate.
+  const isPhone = useMediaQuery(BELOW_SM);
+  const exportSuppression = getExportSuppression();
+  const overflowItems = isPhone
+    ? [
+        onRefresh && { key: "refresh", label: refreshing ? "Refreshing…" : "Refresh", icon: RefreshCw, onClick: onRefresh, disabled: refreshing },
+        onExportCSV && { key: "csv", label: "Export CSV", icon: Download, onClick: onExportCSV, disabled: Boolean(exportSuppression) },
+        onExportJSON && { key: "json", label: "Export JSON", icon: Download, onClick: onExportJSON, disabled: Boolean(exportSuppression) },
+        onExportExcel && { key: "excel", label: "Export Excel", icon: Download, onClick: onExportExcel, disabled: Boolean(exportSuppression) },
+      ].filter(Boolean)
+    : [];
+
   return (
-    <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+    <div className="rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       {crumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {crumbs.map((crumb, idx) => {
@@ -474,7 +490,7 @@ export function DashboardHeader({
               </div>
             )}
             <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight dark:text-white">{title}</h1>
+              <h1 className="wrap-break-word text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight dark:text-white">{title}</h1>
               {subtitle && <p className="text-slate-500 text-sm mt-0.5 dark:text-slate-400">{subtitle}</p>}
             </div>
           </div>
@@ -505,7 +521,7 @@ export function DashboardHeader({
             </div>
           ) : null}
 
-          {onRefresh && (
+          {onRefresh && !isPhone && (
             <button onClick={onRefresh} disabled={refreshing}
               className="shrink-0 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
               aria-label="Refresh dashboard">
@@ -514,11 +530,17 @@ export function DashboardHeader({
             </button>
           )}
 
-          <div className="relative shrink-0">
-            <ExportMenu onExportCSV={onExportCSV} onExportJSON={onExportJSON} onExportExcel={onExportExcel} />
-          </div>
+          {!isPhone && (
+            <div className="relative shrink-0">
+              <ExportMenu onExportCSV={onExportCSV} onExportJSON={onExportJSON} onExportExcel={onExportExcel} />
+            </div>
+          )}
 
-          {primaryAction && <div className="shrink-0 whitespace-nowrap">{primaryAction}</div>}
+          {/* Shrinkable below xl so a page's (flex-wrap) action group can wrap
+              onto its own row on phones instead of being clipped. */}
+          {primaryAction && <div className="min-w-0 max-w-full whitespace-nowrap xl:shrink-0">{primaryAction}</div>}
+
+          {overflowItems.length > 0 && <OverflowMenu items={overflowItems} label="More actions" />}
         </div>
       </div>
 
@@ -1552,8 +1574,10 @@ export function useConfirmationDialog() {
   }, [options, typedConfirmationRequired, close]);
 
   const ConfirmationDialog = options ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" role="dialog" aria-modal="true" aria-labelledby="billing-confirm-title">
-      <div ref={panelRef} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+    // Phones: edge-to-edge bottom sheet (buttons already stack full width
+    // below sm); from sm up the original centred card.
+    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-900/50 sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="billing-confirm-title">
+      <div ref={panelRef} className="w-full max-w-md rounded-t-2xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6">
         <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full ${options.tone === "danger" ? "bg-red-100 text-red-600" : "bg-brand-100 text-brand-600"}`}>
           <AlertCircle size={22} />
         </div>
@@ -1575,11 +1599,11 @@ export function useConfirmationDialog() {
         )}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button ref={cancelButtonRef} type="button" onClick={() => close(false)}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+            className="min-h-11 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors sm:min-h-0">
             {options.cancelLabel}
           </button>
           <button type="button" onClick={() => close(true)} disabled={!canConfirm}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={`min-h-11 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-0 ${
               options.tone === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-brand-600 hover:bg-brand-700"
             }`}>
             {options.confirmLabel}

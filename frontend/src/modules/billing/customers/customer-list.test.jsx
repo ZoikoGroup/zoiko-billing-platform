@@ -69,6 +69,15 @@ describe("CustomerListPage", () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
+  it("Import opens the customer import wizard and Cancel closes it", async () => {
+    renderWithRouter(<CustomerListPage />);
+    await screen.findByText("Acme Corp");
+    fireEvent.click(screen.getByRole("button", { name: /^Import$/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Import Customers" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Import Customers" })).toBeNull());
+  });
+
   it("shows an empty state when there are no customers", async () => {
     customerApi.list.mockResolvedValue({ items: [], total: 0 });
     renderWithRouter(<CustomerListPage />);
@@ -91,7 +100,7 @@ describe("CustomerListPage", () => {
     await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-    const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+    const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
 
     // Company name required, so the Create button starts disabled.
     const createBtn = within(dialog).getByRole("button", { name: /^create/i });
@@ -113,7 +122,7 @@ describe("CustomerListPage", () => {
     await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-    const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+    const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
     fireEvent.change(fieldByLabel(dialog, /company name/i), { target: { value: "New Co" } });
     fireEvent.change(fieldByLabel(dialog, /^email/i), { target: { value: "new@co.com" } });
 
@@ -145,7 +154,7 @@ describe("CustomerListPage", () => {
       renderWithRouter(<CustomerListPage />);
       await waitFor(() => expect(screen.getByText("Acme Corp")).toBeInTheDocument());
       fireEvent.click(screen.getByRole("button", { name: /new customer/i }));
-      const dialog = screen.getByRole("heading", { name: /^New Customer$/i }).closest("div").parentElement;
+      const dialog = screen.getByRole("dialog", { name: /^New Customer$/i });
       fireEvent.change(fieldByLabel(dialog, /company name/i), { target: { value: "New Co" } });
       fireEvent.change(fieldByLabel(dialog, /^email/i), { target: { value: "new@co.com" } });
       fireEvent.click(within(dialog).getByRole("button", { name: /^create/i }));
