@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { CreditCard, Search, Filter, X, ChevronDown, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, FileText, XCircle, ArrowUpDown, Ban, DollarSign, User, Wallet, TrendingUp, Calendar, Loader2, Eye, Receipt, Hash, Layers } from "lucide-react";
 import { paymentApi, invoiceApi, customerApi, creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
@@ -332,9 +332,16 @@ export default function PaymentListPage() {
     return () => clearTimeout(timer);
   }, [customerSearch, showWizard, wizardStep, searchCustomers]);
 
+  // Open once per arrival via ?create=1 (keyed on the navigation), so closing
+  // can't reopen it while the replace that drops the parameter is pending,
+  // but a new visit through a link opens it again.
+  const location = useLocation();
+  const autoOpenedFor = useRef(null);
   useEffect(() => {
-    if (searchParams.get("create") === "1" && !showWizard) openWizard();
-  }, [searchParams, showWizard]);
+    if (searchParams.get("create") !== "1" || autoOpenedFor.current === location.key) return;
+    autoOpenedFor.current = location.key;
+    if (!showWizard) openWizard();
+  }, [searchParams, showWizard, location.key]);
 
   useEffect(() => {
     const requestedInvoiceId = searchParams.get("invoice_id");
@@ -509,6 +516,9 @@ export default function PaymentListPage() {
       );
       setTimeout(() => {
         setShowWizard(false);
+        // Drop ?create=1 from this history entry so Back from the new payment
+        // returns to the list, not to a fresh wizard.
+        if (searchParams.get("create") === "1" || searchParams.get("invoice_id")) setSearchParams({}, { replace: true });
         navigate(`/billing/payments/${paymentId}`);
       }, 1200);
     } catch (err) {
