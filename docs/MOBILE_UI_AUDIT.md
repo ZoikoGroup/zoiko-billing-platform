@@ -414,7 +414,7 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 
 | Location | Dialog | Buttons detected |
 |---|---|---|
-| `modules/billing-admin/PlanChangePanel.jsx:326` | *(title computed in code)* | Not now, Schedule downgrade |
+| `modules/billing-admin/PlanChangePanel.jsx:326` | *(title computed in code)* — **Migrated (B2)** | Not now, Schedule downgrade |
 | `modules/billing/contracts/contract-detail.jsx:896` | Renew Contract — **Migrated (B2)** | Renew |
 | `modules/billing/contracts/contract-detail.jsx:924` | Terminate Contract — **Migrated (B2)** | Terminate |
 | `modules/billing/contracts/contract-detail.jsx:944` | Create Amendment — **Migrated (B2)** | Create Amendment |
@@ -422,8 +422,8 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/contracts/retainers.jsx:330` | Create Retainer — **Migrated (B2)** | Create |
 | `modules/billing/contracts/retainers.jsx:394` | Edit — **Migrated (B2)** | Save |
 | `modules/billing/contracts/retainers.jsx:455` | Delete Retainer — **Migrated (B2)** | Delete |
-| `modules/billing/customers/customer-import-wizard.jsx:713` | Import Customers | Back |
-| `modules/billing/customers/customer-profile.jsx:44` | *(title computed in code)* | Cancel |
+| `modules/billing/customers/customer-import-wizard.jsx:713` | Import Customers — **Wrapped (B2)** | Back |
+| `modules/billing/customers/customer-profile.jsx:44` | *(title computed in code)* — **Migrated (B2)** | Cancel |
 | `modules/billing/payments/collections-case-detail.jsx:217` | Assign Case — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/payments/collections-case-detail.jsx:236` | Log Collection Action — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/payments/collections-case-detail.jsx:262` | Resolve Collections Case — **Migrated (B2)** | (labels computed in code) |
@@ -470,11 +470,11 @@ Measured at 390 and 1280 (Kill Switch at 768/1280): every dialog that opens with
 | `modules/billing/subscriptions/subscription-detail.jsx:929` | Generate Invoice — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/subscriptions/subscription-detail.jsx:965` | Pause Subscription — **Migrated (B2)** | (labels computed in code) |
 | `modules/billing/subscriptions/subscription-detail.jsx:989` | Cancel Subscription — **Migrated (B2)** | (labels computed in code) |
-| `modules/billing/tax/tax-rate-import-wizard.jsx:693` | Import Tax Rates | Back |
-| `modules/billing/tax/tax-rates.jsx:481` | *(title computed in code)* | Create Tax Rate |
-| `modules/organization-admin/UserManagementPage.jsx:612` | Invite User | Cancel, Send Invite |
-| `modules/organization-admin/UserManagementPage.jsx:713` | Edit User | Cancel, Save Changes |
-| `modules/super-admin/TriagePage.jsx:551` | *(title computed in code)* | (labels computed in code) |
+| `modules/billing/tax/tax-rate-import-wizard.jsx:693` | Import Tax Rates — **Wrapped (B2)** | Back |
+| `modules/billing/tax/tax-rates.jsx:481` | *(title computed in code)* — **Migrated (B2)** | Create Tax Rate |
+| `modules/organization-admin/UserManagementPage.jsx:612` | Invite User — **Wrapped (B2)** | Cancel, Send Invite |
+| `modules/organization-admin/UserManagementPage.jsx:713` | Edit User — **Wrapped (B2)** | Cancel, Save Changes |
+| `modules/super-admin/TriagePage.jsx:551` | *(title computed in code)* — **Migrated (B2)** | (labels computed in code) |
 
 #### B2 results — Payments (16 dialogs): done
 
@@ -634,7 +634,27 @@ Not in this list (fixes to this branch's own changes, not pre-existing): `aa8edb
 - Payment Allocations tab may show empty if the API returns `{ allocations: [...] }`.
 - **Team:** product profile "New Quotation" / "New Invoice" (`?action=create&product_id=…`) are dead links — nothing reads the parameters.
 - **Phase 4:** Terminate Contract keeps the typed reason after Esc / ×; some pricing form labels aren't linked to their inputs; the discount form's redundant Esc listener.
+- PlanChangePanel "Not now" isn't blocked while a payment is submitting (pre-existing; Esc / close are).
 - `npm run build` needs `NODE_OPTIONS=--max-old-space-size=3072` on the 8GB dev machine — set per session only, never committed.
+
+#### B2 results — Other (8 dialogs): done
+
+The group is **8** dialogs, not the 5 stated before (the inventory lists 8).
+
+| Dialog | Status | Notes |
+|---|---|---|
+| tax-rates — New / Edit Tax Rate | **Migrated** | `dense`. Create was below the fold at 390 (1031–1067px on 844) |
+| customer-profile — confirmations (Deactivate, Suspend, Remove contact / payment method) | **Migrated** | Local `ConfirmModal` rebuilt on `Modal`: `icon` + `tone` (danger red or brand) and `destructive` / `primary` confirm keep the two variants; focus still starts on Cancel for danger, on the confirm otherwise; Esc / close still blocked while an action runs. The shared `ConfirmDialog` wasn't used because it has no non-danger variant |
+| PlanChangePanel — Activate / Upgrade to / Downgrade to *plan* (Zoiko subscription) | **Migrated** | Accessible name kept ("Change to *plan*"). No backdrop close (as before). **Esc / close can't dismiss it while the payment is submitting**; "Not now" keeps its original handler. Confirm keeps its blue gradient, one line on phones |
+| TriagePage — incident detail | **Migrated** (management panel) | Title = incident title; badges open the body; operator actions (Acknowledge, Mark Mitigating, Resolve with code, Suppress) stay as body sections — they're independent actions with their own inputs, not one primary; footer Close. Phones: 44px action buttons and inputs, the suppress row (reason · duration · button) stacks |
+| UserManagementPage — Invite User / Edit User | **Wrapped** | Already header / scrolling body / pinned footer and visible at 390; phones: 44px buttons sharing the row |
+| customer-import-wizard, tax-rate-import-wizard | **Wrapped** | Same as the product import wizard: pinned footer already; phones: 44px buttons |
+
+Parity (working tree vs `HEAD`): 5 items outside the automatic rules, all checked by hand — PlanChangePanel's overlay `aria-label` is now `Modal`'s `ariaLabel` (same value); the confirm dialog's variant-dependent icon chip, icon and button colour are now `icon` / `tone` / `variant` (same mapping); Triage's extra `setSelectedIncident(null)` element is the new footer Close. Screenshots `shots/phase3/stepB2-other/{before,after}-{billing,org,super}/` (+ `after-plan-r2/` after keeping "Pay & activate" on one line): every primary pinned or in an already-pinned footer, visible, 44px on phones, no overflow. Triage uses one injected incident on top of the real summary.
+
+**Tests:** new `tax-rates.dialogs.test.jsx` (incl. the tax-rate import wizard), `customer-profile.dialogs.test.jsx`, `TriagePage.dialogs.test.jsx`, `UserManagementPage.dialogs.test.jsx`; extended `PlanChangePanel.test.jsx` (accessible name, preview, Upgrade now → `commitPlanChange`, Not now, and Esc / close blocked while the commit is pending) and `customer-list.test.jsx` (customer import wizard). Those folders: 41 files, 287 passed. **Full suite (`--maxWorkers=1`): 154 files, 1,025 passed. `npm run build` passes** (memory flag set for the run only, not committed).
+
+**Noted, not changed:** PlanChangePanel's "Not now" can still close the dialog while a payment is submitting (as before — it was never guarded; only the new Esc / close paths are). Triage incident rows are clickable `<div>`s (not reachable by keyboard) — Phase 4 accessibility. TriagePage has 11 imports that were already unused before this change.
 
 ## 9. Local environment safety notes
 

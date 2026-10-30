@@ -17,7 +17,6 @@ import {
   ShieldCheck,
   UserCheck,
   UserX,
-  X,
 } from "lucide-react";
 import {
   getTriageSummary,
@@ -28,7 +27,7 @@ import {
   listAttentionItems,
 } from "../../service/commandCenterService";
 import { getJobTelemetry, retryJob } from "../../service/privilegedAccessService";
-import { PageHeader, SectionCard } from "../../components/billing-ui";
+import { Button, Modal, PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 
 const SEVERITY_BADGES = {
@@ -548,28 +547,23 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
 
       {/* Incident Detail / Action Modal */}
       {selectedIncident && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase ${SEVERITY_BADGES[selectedIncident.severity]}`}>
-                    {selectedIncident.severity}
-                  </span>
-                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase ${STATUS_BADGES[selectedIncident.status]}`}>
-                    {selectedIncident.status}
-                  </span>
-                  <span className="text-xs font-mono text-slate-600">#{selectedIncident.id}</span>
-                </div>
-                <h3 className="mt-2 text-base font-bold text-slate-900">{selectedIncident.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedIncident(null)}
-                className="rounded-full p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              >
-                <X size={18} />
-              </button>
+        <Modal
+          open
+          onClose={() => setSelectedIncident(null)}
+          closeOnBackdrop={false}
+          title={selectedIncident.title}
+          size="md"
+          footer={<Button variant="secondary" onClick={() => setSelectedIncident(null)}>Close</Button>}
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase ${SEVERITY_BADGES[selectedIncident.severity]}`}>
+                {selectedIncident.severity}
+              </span>
+              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase ${STATUS_BADGES[selectedIncident.status]}`}>
+                {selectedIncident.status}
+              </span>
+              <span className="text-xs font-mono text-slate-600">#{selectedIncident.id}</span>
             </div>
 
             {actionError && (
@@ -598,7 +592,7 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                     type="button"
                     disabled={actionLoading}
                     onClick={() => handleAcknowledge(selectedIncident)}
-                    className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800"
+                    className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold max-sm:min-h-11 text-white shadow-sm hover:bg-slate-800"
                   >
                     Acknowledge
                   </button>
@@ -609,7 +603,7 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                     type="button"
                     disabled={actionLoading}
                     onClick={() => handleTransition(selectedIncident, "mitigating")}
-                    className="rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-purple-700"
+                    className="rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold max-sm:min-h-11 text-white shadow-sm hover:bg-purple-700"
                   >
                     Mark Mitigating
                   </button>
@@ -622,13 +616,13 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                       placeholder="Resolution code (e.g. restart_job_passed)..."
                       value={resolutionCode}
                       onChange={(e) => setResolutionCode(e.target.value)}
-                      className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs focus:border-slate-400 focus:outline-none"
+                      className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs focus:border-slate-400 focus:outline-none max-sm:min-h-11"
                     />
                     <button
                       type="button"
                       disabled={actionLoading || !resolutionCode}
                       onClick={() => handleTransition(selectedIncident, "resolved")}
-                      className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                      className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold max-sm:min-h-11 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
                     >
                       Resolve
                     </button>
@@ -640,18 +634,18 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
               {["open", "acknowledged"].includes(selectedIncident.status) && (
                 <div className="pt-3 border-t border-slate-100 space-y-2">
                   <span className="text-[11px] font-bold text-slate-700">Suppress Alert Temporarily</span>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input
                       type="text"
                       placeholder="Reason for suppression..."
                       value={suppressReason}
                       onChange={(e) => setSuppressReason(e.target.value)}
-                      className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs focus:border-slate-400 focus:outline-none"
+                      className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs focus:border-slate-400 focus:outline-none max-sm:min-h-11"
                     />
                     <select
                       value={suppressMinutes}
                       onChange={(e) => setSuppressMinutes(Number(e.target.value))}
-                      className="rounded-xl border border-slate-200 px-2 py-1.5 text-xs"
+                      className="rounded-xl border border-slate-200 px-2 py-1.5 text-xs max-sm:min-h-11"
                     >
                       <option value={30}>30m</option>
                       <option value={60}>1h</option>
@@ -662,7 +656,7 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                       type="button"
                       disabled={actionLoading || !suppressReason}
                       onClick={() => handleSuppress(selectedIncident)}
-                      className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                      className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold max-sm:min-h-11 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
                     >
                       Suppress
                     </button>
@@ -671,7 +665,7 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
               )}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

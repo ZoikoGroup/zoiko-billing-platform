@@ -688,7 +688,7 @@ export default function OrgAdminUserManagementPage() {
                 Send invitation email now
               </label>
             </div>
-            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1" style={{ borderColor: LINE, background: "#FAFAFA" }}>
               <button
                 className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}
@@ -779,7 +779,7 @@ export default function OrgAdminUserManagementPage() {
                 </label>
               )}
             </div>
-            <div className="flex justify-end gap-2.5 px-6 py-4 border-t" style={{ borderColor: LINE, background: "#FAFAFA" }}>
+            <div className="flex justify-end gap-2.5 px-6 py-4 border-t max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1" style={{ borderColor: LINE, background: "#FAFAFA" }}>
               <button
                 className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:bg-slate-50"
                 style={{ borderColor: LINE, color: INK_SOFT }}
