@@ -663,6 +663,39 @@ Parity (working tree vs `HEAD`): 5 items outside the automatic rules, all checke
 
 Created from `origin/main` (`7d96cc8`) with production files only; last updated at `2194dc4` (matches `nikhil-new` at `6023a02` for every production file and every existing test file). Not pushed. Commits: 4 bug fixes, then `6c95ae2` shell and banners, `021523c` shared components and customer form, `2194dc4` module pages and dialogs. Excluded: 27 new test files, this doc, `.gitignore` local entries, `package.json` / lockfile (`@testing-library/user-event` is only used by new tests). Checks on the branch: `npm ci`, 127 existing test files / 908 tests pass (one worker), `npm run build` passes, privacy scan of diff and commit messages clean. Update it at milestones by adding commits on top.
 
+## 8f. Phase 3 B3 — full-page create/edit forms and wizards
+
+**Screens:**
+
+| Screen | Route | Size | Status |
+|---|---|---|---|
+| Invoice create wizard (7 steps) | `/billing/invoices/create` | 1,534 lines | **Done** (below) |
+| Contract create wizard | `/billing/contracts/create` | 1,224 | To do |
+| Quotation create (full page) | `/billing/quotations/create` | 1,045 | To do |
+| Contract edit | `/billing/contracts/:id/edit` | 719 | To do |
+| Subscription create wizard | `/billing/subscriptions/create` | 707 | To do |
+
+Related full-page forms, for a decision (not in the list above): public Register page, draft-invoice editing on invoice detail (already uses `StickyFooter`), customer-profile inline edits, settings pages.
+
+### Invoice create wizard
+
+| Check (actions on screen without scrolling) | Before | After |
+|---|---|---|
+| Step 3 (line items): Back / Next | Below the fold at every width (1,678px down at 360, 1,483px at 1280) | Pinned at the bottom at 360 / 412 / 1280 |
+| Step 7: Save / Save & Send | In the content card; Back off-screen at 1280 | Pinned footer with Back, Save, Save & Send on one row (360: Back icon-only) |
+| Touch targets on phones | 40–42px | 44px |
+| Phone top | Page header card + stepper + trial banner before any field | Sticky bar (back to Invoices · title · "Step X of 7"); the header card is hidden below `sm` (it repeated the title and step), so the form starts ~90px higher |
+| Horizontal overflow | 0 | 0 |
+
+- **Unchanged:** every handler, validation rule, field name and API call; Save / Save & Send keep their handlers, loading and disabled states (moved into the footer).
+- **Required fields:** `*` was already used; one "* Required" note added on steps 1–3. Fields were already one column on phones.
+- **Desktop:** denser fields from `lg` (shared `FORM_SECTION_DENSE`, now exported); the step actions are a pinned footer bar instead of a row at the end of the page; Save / Save & Send moved from the step 7 card into that bar (copy updated: "Save or send it with the buttons at the bottom").
+- **Unsaved-changes guard: not added, on purpose.** The wizard already autosaves a draft in the browser as you type and offers "Resume draft" on return, so leaving loses nothing; a "discard changes?" prompt would only get in the way.
+- **Shared fix:** `FormPageBar` had `-mt-6`; in the padded `<main>` its pinned position landed 8px over the next element. Removed (it had no other users).
+- **Parity:** 4 differences, all intended (the step 7 copy line, Next now `step < 7 ? Next : Save + Save & Send`, Back's label wrapped for the phone icon-only view with the same accessible name, the `FormPageBar` margin).
+- **Tests:** existing invoicing + components tests pass (25 files, 133 tests). New on `nikhil-new` only: `create-invoice-wizard.typing.test.jsx` — customer search and line-item quantity typed key by key (value and focus kept).
+- Screenshots `shots/phase3/stepB3-invoice-wizard/{before,after-final}/` (`step1|step3|step7 __ 360|412|1280 __ top|bottom`); `after`, `after-r2` are intermediate.
+
 ## 9. Local environment safety notes
 
 - `backend/.env` points at a remote PostgreSQL server. It was **not** used, edited, seeded or migrated. Overrides were applied per process only.
