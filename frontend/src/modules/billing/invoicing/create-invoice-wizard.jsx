@@ -1540,7 +1540,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
 
       {/* Step actions stay pinned at the bottom of the screen while the step scrolls. */}
       <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3">
-        <Button variant="secondary" icon={ChevronLeft} onClick={handlePrev} disabled={step === 1 || saving || navigating} className="max-sm:min-h-11">
+        <Button variant="secondary" icon={ChevronLeft} onClick={handlePrev} disabled={step === 1 || saving || navigating} className="max-sm:min-h-11" aria-label="Back">
           <span className="max-sm:sr-only">Back</span>
         </Button>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
