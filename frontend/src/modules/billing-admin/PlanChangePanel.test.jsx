@@ -128,6 +128,27 @@ describe("PlanChangePanel", () => {
     });
   });
 
+  it("\"Not now\" is disabled while the change is submitting, so it can't close the dialog mid-payment", async () => {
+    let resolveCommit;
+    // An upgrade with nothing to pay today: confirming commits directly.
+    platformSelfServiceApi.previewPlanChange.mockResolvedValue({ ...UPGRADE_PREVIEW, price_impact: { ...UPGRADE_PREVIEW.price_impact, estimated_period_delta: "0.00" } });
+    platformSelfServiceApi.commitPlanChange.mockReturnValue(new Promise((r) => { resolveCommit = r; }));
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Upgrade to Business" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change to Business" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: /Upgrade now/ }));
+    await waitFor(() => expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalled());
+
+    const notNow = within(dialog).getByRole("button", { name: "Not now" });
+    expect(notNow).toBeDisabled();
+    fireEvent.click(notNow);
+    expect(screen.getByRole("dialog", { name: "Change to Business" })).toBeInTheDocument();
+
+    resolveCommit({ status: "applied" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("upgrade falls back to the invoice page when Stripe checkout is unavailable", async () => {
     platformSelfServiceApi.previewPlanChange.mockResolvedValue(UPGRADE_PREVIEW);
     platformSelfServiceApi.commitPlanChange.mockResolvedValue({ status: "payment_required", mode: "invoice_due", public_token: "tok_inv" });

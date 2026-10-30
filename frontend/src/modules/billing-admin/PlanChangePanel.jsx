@@ -322,7 +322,7 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
         </>
       )}
 
-      {/* Esc / close can't dismiss the dialog while a payment is being submitted. */}
+      {/* Esc, close and "Not now" can't dismiss the dialog while a payment is being submitted. */}
       {selected && (
         <Modal
           open
@@ -333,7 +333,7 @@ export default function PlanChangePanel({ subscription, pendingChange, onChanged
           size="md"
           footer={
             <>
-              <Button variant="secondary" onClick={closeModal}>Not now</Button>
+              <Button variant="secondary" onClick={closeModal} disabled={submitting}>Not now</Button>
               <button
                 onClick={confirm}
                 disabled={!preview || submitting}
