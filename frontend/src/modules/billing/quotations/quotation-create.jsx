@@ -9,7 +9,8 @@ import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { CalculationEngine } from "../utils/calculation-engine";
 import { useTerminology } from "../utils/TerminologyContext";
-import { ProductSelector, BulkProductPickerModal } from "../../../components/billing-shared";
+import { ProductSelector, BulkProductPickerModal, useConfirmationDialog } from "../../../components/billing-shared";
+import { PageHeader, Button, Stepper, FormPageBar, StickyFooter, RequiredNote, FORM_SECTION_DENSE, useUnsavedChangesGuard } from "../../../components/billing-ui";
 
 const STEPS = [
   { id: 1, label: "Customer", icon: User, description: "Select customer & addresses" },
@@ -531,6 +532,30 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     } finally { setLoading(false); }
   };
 
+  // No autosave here, so leaving with entered data asks first. The quote
+  // number, dates and currency are filled in automatically on load and don't
+  // count as the user's input.
+  const dirty = Boolean(
+    form.customer_id || form.subject || form.notes || form.terms ||
+    items.some((i) => i.description || i.product_id || Number(i.unit_price))
+  );
+  useUnsavedChangesGuard(dirty, "You have an unsaved quotation. Leave this page and discard it?");
+  const { confirm, ConfirmationDialog } = useConfirmationDialog();
+  const requestLeave = async () => {
+    if (loading) return;
+    if (dirty) {
+      const discard = await confirm({
+        title: "Discard this quotation?",
+        message: "The quotation hasn't been saved. Leave this page and discard what you entered?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        tone: "danger",
+      });
+      if (!discard) return;
+    }
+    navigate("/billing/quotations");
+  };
+
   const renderStep = () => {
     switch (step) {
       case 1: return renderCustomerStep();
@@ -697,7 +722,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
             return (
               <div key={item.id} className="p-4">
                     <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="font-medium text-slate-800">{item.product_name || item.description}</span>
                       {item.product_id && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Product</span>}
@@ -761,13 +786,13 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                     )}
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                       <div>
-                        <label className="block text-xs text-slate-500 mb-1">Qty</label>
+                        <label className="block text-xs text-slate-500 mb-1">Qty *</label>
                         <input type="number" min="0.01" step="0.01" value={item.quantity}
                           onChange={(e) => updateLineItem(item.id, "quantity", e.target.value)}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-500 mb-1">Unit Price</label>
+                        <label className="block text-xs text-slate-500 mb-1">Unit Price *</label>
                         <input type="number" min="0" step="0.01" value={item.unit_price}
                           onChange={(e) => updateLineItem(item.id, "unit_price", e.target.value)}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -784,8 +809,8 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                           onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                       </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-xs text-slate-500 mb-1">Description</label>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-slate-500 mb-1">Description *</label>
                         <input type="text" value={item.description}
                           onChange={(e) => updateLineItem(item.id, "description", e.target.value)}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
@@ -828,7 +853,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
                         </select>
                       </div>
                     )}
-                    <div className="flex items-center justify-end gap-3 mt-3 text-sm text-slate-600">
+                    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 mt-3 text-sm text-slate-600">
                       <span>Line: {formatDisplayCurrency(t.lineTotal, form.currency)}</span>
                       <span className="text-red-500">Disc: -{formatDisplayCurrency(t.discAmt, form.currency)}</span>
                       <span className="text-slate-500">Tax: {formatDisplayCurrency(t.taxAmt, form.currency)}</span>
@@ -851,7 +876,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
   const renderPricingStep = () => (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Calculator size={20} className="text-brand-500" /> Pricing Summary</h3>
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
+      <div className="bg-white border border-slate-200 rounded-lg p-4 sm:p-6">
         <div className="space-y-3">
           <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal ({items.length} items)</span><span className="font-medium text-slate-800">{formatDisplayCurrency(totals.subtotal, form.currency)}</span></div>
           {totals.itemDisc > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Item Discounts</span><span className="font-medium text-red-500">-{formatDisplayCurrency(totals.itemDisc, form.currency)}</span></div>}
@@ -864,7 +889,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       </div>
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
         <h4 className="font-medium text-slate-700 mb-2">{singular} Info</h4>
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <div><span className="text-slate-500">Name:</span> <span className="font-medium ml-2">{form.customer_name}</span></div>
           <div><span className="text-slate-500">Email:</span> <span className="font-medium ml-2">{form.customer_email}</span></div>
           <div><span className="text-slate-500">Currency:</span> <span className="font-medium ml-2">{form.currency}</span></div>
@@ -878,7 +903,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Eye size={20} className="text-brand-500" /> Preview Quotation</h3>
       <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-        <div className="bg-slate-50 border-b border-slate-200 p-6">
+        <div className="bg-slate-50 border-b border-slate-200 p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-2xl font-bold text-slate-900">{form.quote_number}</div>
@@ -896,7 +921,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
             <div><span className="text-slate-500">Items</span><div className="font-medium">{items.length}</div></div>
           </div>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -989,58 +1014,73 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">Create Quotation</h1>
-              <p className="text-sm text-slate-500">Step {step} of {STEPS.length}</p>
-            </div>
-            {step > 1 && <button onClick={handlePrev} className="px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50 transition-colors"><ChevronLeft size={16} className="inline mr-1" /> Back</button>}
-          </div>
-          <div className="flex items-center gap-1 overflow-x-auto pb-2" role="navigation" aria-label="Wizard steps">
-            {STEPS.map((s, idx) => (
-              <div key={s.id} className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  onClick={() => idx + 1 < step && setStep(idx + 1)}
-                  disabled={idx + 1 > step}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${idx + 1 === step ? "bg-brand-600 text-white ring-2 ring-brand-200" : idx + 1 < step ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500 cursor-not-allowed"}`}
-                  aria-current={idx + 1 === step ? "step" : undefined}
-                  title={s.description || s.label}
-                >
-                  {idx + 1 < step ? <CheckCircle size={14} /> : <s.icon size={14} />}
-                  <span>{s.id === 1 ? singular : s.label}</span>
-                </button>
-                {idx < STEPS.length - 1 && <ChevronRight size={14} className={`mx-1 ${idx + 1 < step ? "text-green-400" : "text-slate-300"}`} />}
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Phones: sticky back / title / step bar (the page header scrolls away). */}
+      <FormPageBar
+        title="Create Quotation"
+        onBack={requestLeave}
+        backLabel="Back to quotations"
+        step={step}
+        totalSteps={STEPS.length}
+      />
+      {/* From sm up the full header shows; on phones the sticky bar above replaces it. */}
+      <div className="max-sm:hidden">
+        <PageHeader
+          crumbs={[{ label: "Billing", href: "/billing" }, { label: "Quotations", href: "/billing/quotations" }, { label: "Create Quotation" }]}
+          title="Create Quotation"
+          description={STEPS[step - 1]?.description || STEPS[step - 1]?.label}
+          icon={FileText}
+          meta={<span className="text-xs font-medium text-slate-500">Step {step} of {STEPS.length}</span>}
+        />
       </div>
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700" role="alert">
-            <AlertCircle size={20} /> {error}
-            <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700" aria-label="Dismiss error"><X size={18} /></button>
-          </div>
-        )}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 md:p-8">
-          {renderStep()}
-        </div>
-        <div className="mt-6 flex items-center justify-between">
-          <button onClick={handlePrev} disabled={step === 1} className="px-6 py-2.5 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={16} className="inline mr-1" /> Back</button>
-          <div className="flex gap-3">
-            {step < STEPS.length && <button onClick={handleNext} disabled={loading} className="px-6 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">Next <ChevronRight size={16} className="inline ml-1" /></button>}
-            {step === STEPS.length && (
-              <>
-                <button onClick={() => submit(false)} disabled={loading} className="px-6 py-2.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors">{loading ? <Loader2 size={16} className="animate-spin inline mr-1" /> : ""}Save as Draft</button>
-                <button onClick={() => submit(true)} disabled={loading} className="px-6 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">{loading ? <Loader2 size={16} className="animate-spin inline mr-1" /> : ""}Save & Send</button>
-              </>
-            )}
-          </div>
-        </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+        <Stepper
+          steps={STEPS.map((s) => ({ key: s.id, label: s.id === 1 ? singular : s.label }))}
+          current={step - 1}
+          onSelect={(idx) => setStep(idx + 1)}
+        />
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700" role="alert">
+          <AlertCircle size={20} /> {error}
+          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700" aria-label="Dismiss error"><X size={18} /></button>
+        </div>
+      )}
+      {step === 3 && <RequiredNote />}
+      <div className={`bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 md:p-8 ${FORM_SECTION_DENSE}`}>
+        {renderStep()}
+      </div>
+
+      {/* Step actions stay pinned at the bottom of the screen while the step scrolls.
+          On phones the top bar's back arrow is the way out (it asks before
+          discarding), so Cancel shows from sm up. */}
+      <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3">
+        <Button variant="secondary" icon={ChevronLeft} onClick={handlePrev} disabled={step === 1} className="max-sm:min-h-11" aria-label="Back">
+          <span className="max-sm:sr-only">Back</span>
+        </Button>
+        <Button variant="secondary" onClick={requestLeave} disabled={loading} className="max-sm:hidden">
+          Cancel
+        </Button>
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {step < STEPS.length ? (
+            <Button variant="primary" onClick={handleNext} disabled={loading} className="max-sm:min-h-11">
+              Next <ChevronRight size={16} />
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" loading={loading} onClick={() => submit(false)} disabled={loading} className="max-sm:min-h-11">
+                Save as Draft
+              </Button>
+              <Button variant="primary" loading={loading} onClick={() => submit(true)} disabled={loading} className="max-sm:min-h-11">
+                Save & Send
+              </Button>
+            </>
+          )}
+        </div>
+      </StickyFooter>
+      {ConfirmationDialog}
     </div>
   );
 }

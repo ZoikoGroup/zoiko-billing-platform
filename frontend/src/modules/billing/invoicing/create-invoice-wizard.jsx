@@ -13,7 +13,7 @@ import { CalculationEngine, calcItemNet, calcItemTotal, calcItemDiscount } from 
 import InvoicePDFPreview from "./invoice-pdf-preview";
 import { useTerminology } from "../utils/TerminologyContext";
 import { ProductSelector, BulkProductPickerModal, SubscriptionLimitReached } from "../../../components/billing-shared";
-import { PageHeader, Button, Stepper } from "../../../components/billing-ui";
+import { PageHeader, Button, Stepper, FormPageBar, StickyFooter, RequiredNote, FORM_SECTION_DENSE } from "../../../components/billing-ui";
 
 const PAYMENT_TERMS = [
   { value: "due_on_receipt", label: "Due on Receipt" },
@@ -1455,7 +1455,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
           <div className="bg-slate-50 rounded-xl p-6 border border-slate-100 text-center">
             <Receipt size={48} className="mx-auto text-brand-300 mb-4" />
             <h3 className="text-lg font-bold text-slate-800">Ready to Save</h3>
-            <p className="text-sm text-slate-500 mt-1">Review complete. Choose an action below.</p>
+            <p className="text-sm text-slate-500 mt-1">Review complete. Save or send it with the buttons at the bottom.</p>
             {saveProgress && (
               <div className="mx-auto mt-5 flex max-w-md items-start gap-3 rounded-xl border border-brand-100 bg-white px-4 py-3 text-left shadow-sm" role="status" aria-live="polite">
                 <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-brand-500" />
@@ -1465,14 +1465,6 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                 </div>
               </div>
             )}
-            <div className="mt-6 flex justify-center gap-3">
-              <Button variant="secondary" icon={FileText} loading={savingAction === "save"} onClick={handleSave} disabled={saving || navigating}>
-                {savingAction === "save" ? "Saving..." : "Save"}
-              </Button>
-              <Button variant="primary" icon={Send} loading={savingAction === "send"} onClick={handleSaveAndSend} disabled={saving || navigating}>
-                {savingAction === "send" ? "Sending..." : "Save & Send"}
-              </Button>
-            </div>
           </div>
         </div>
       );
@@ -1482,13 +1474,24 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Create Invoice" }]}
+      {/* Phones: sticky back / title / step bar (the page header scrolls away). */}
+      <FormPageBar
         title="Create Invoice"
-        description={WIZARD_STEPS[step - 1]?.description}
-        icon={Receipt}
-        meta={<span className="text-xs font-medium text-slate-500">Step {step} of {WIZARD_STEPS.length}</span>}
+        onBack={() => navigate("/billing/invoices")}
+        backLabel="Back to invoices"
+        step={step}
+        totalSteps={WIZARD_STEPS.length}
       />
+      {/* From sm up the full header shows; on phones the sticky bar above replaces it. */}
+      <div className="max-sm:hidden">
+        <PageHeader
+          crumbs={[{ label: "Billing", href: "/billing" }, { label: "Invoices", href: "/billing/invoices" }, { label: "Create Invoice" }]}
+          title="Create Invoice"
+          description={WIZARD_STEPS[step - 1]?.description}
+          icon={Receipt}
+          meta={<span className="text-xs font-medium text-slate-500">Step {step} of {WIZARD_STEPS.length}</span>}
+        />
+      </div>
 
       {draftAvailable && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800" role="status">
@@ -1532,18 +1535,31 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
         </div>
       )}
 
-      <div>{renderStepContent()}</div>
+      {step <= 3 && <RequiredNote />}
+      <div className={FORM_SECTION_DENSE}>{renderStepContent()}</div>
 
-      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-        <Button variant="secondary" icon={ChevronLeft} onClick={handlePrev} disabled={step === 1 || saving || navigating}>
-          Back
+      {/* Step actions stay pinned at the bottom of the screen while the step scrolls. */}
+      <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3">
+        <Button variant="secondary" icon={ChevronLeft} onClick={handlePrev} disabled={step === 1 || saving || navigating} className="max-sm:min-h-11" aria-label="Back">
+          <span className="max-sm:sr-only">Back</span>
         </Button>
-        {step < 7 && (
-          <Button variant="primary" onClick={handleNext} disabled={saving || navigating}>
-            Next <ChevronRight size={16} />
-          </Button>
-        )}
-      </div>
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {step < 7 ? (
+            <Button variant="primary" onClick={handleNext} disabled={saving || navigating} className="max-sm:min-h-11">
+              Next <ChevronRight size={16} />
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" icon={FileText} loading={savingAction === "save"} onClick={handleSave} disabled={saving || navigating} className="max-sm:min-h-11">
+                {savingAction === "save" ? "Saving..." : "Save"}
+              </Button>
+              <Button variant="primary" icon={Send} loading={savingAction === "send"} onClick={handleSaveAndSend} disabled={saving || navigating} className="max-sm:min-h-11">
+                {savingAction === "send" ? "Sending..." : "Save & Send"}
+              </Button>
+            </>
+          )}
+        </div>
+      </StickyFooter>
     </div>
   );
 }

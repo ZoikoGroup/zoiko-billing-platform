@@ -25,11 +25,23 @@ jobs:
         env:
           DEPLOY_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEPLOY_REPO: ${{ github.repository }}
+          # Platform Stripe secrets (Plane 1 — Zoiko's own Stripe account).
+          # Injected into the VM's backend/.env on every deploy so the running
+          # backend reads them via pydantic-settings' env_file loader.
+          # Never logged, echoed, or written to the git working tree.
+          PLATFORM_STRIPE_SECRET_KEY: ${{ secrets.PLATFORM_STRIPE_SECRET_KEY }}
+          PLATFORM_STRIPE_PUBLISHABLE_KEY: ${{ secrets.PLATFORM_STRIPE_PUBLISHABLE_KEY }}
+          PLATFORM_STRIPE_WEBHOOK_SECRET: ${{ secrets.PLATFORM_STRIPE_WEBHOOK_SECRET }}
+          # Plane 2 Stripe credentials & Stripe Connect Platform Client ID.
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_CONNECT_CLIENT_ID: ${{ secrets.STRIPE_CONNECT_CLIENT_ID }}
         with:
           host: ${{ secrets.GCP_SSH_HOST }}
           username: ${{ secrets.GCP_SSH_USER }}
           key: ${{ secrets.GCP_SSH_KEY }}
-          envs: DEPLOY_GIT_TOKEN,DEPLOY_REPO
+          envs: DEPLOY_GIT_TOKEN,DEPLOY_REPO,PLATFORM_STRIPE_SECRET_KEY,PLATFORM_STRIPE_PUBLISHABLE_KEY,PLATFORM_STRIPE_WEBHOOK_SECRET,STRIPE_SECRET_KEY,STRIPE_PUBLISHABLE_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_CONNECT_CLIENT_ID
           script: |
             # Fail fast on any error so a bad install/build is never reported as a success.
             set -euo pipefail
@@ -121,6 +133,46 @@ jobs:
             git_sync_to_main
             cd backend
             echo "Python: $(python --version 2>&1)"
+            # ── Inject Stripe configuration into backend/.env ─────────────────────
+            # backend/.env is gitignored (never committed) and excluded from the
+            # Docker image (.dockerignore), but it IS read by the running backend
+            # process via pydantic-settings' env_file loader (see app/config.py).
+            # The deploy script writes configured Stripe variables so the file
+            # persists across git resets. Values come from GitHub Actions
+            # repository secrets and are never echoed to the log.
+            ENV_FILE="$(pwd)/.env"
+            touch "$ENV_FILE"
+
+            # Plane 1 (Platform Invoices)
+            if [ -n "${PLATFORM_STRIPE_SECRET_KEY:-}" ]; then
+              for KEY in PLATFORM_STRIPE_SECRET_KEY PLATFORM_STRIPE_PUBLISHABLE_KEY PLATFORM_STRIPE_WEBHOOK_SECRET; do
+                sed -i "/^${KEY}=/d" "$ENV_FILE"
+              done
+              printf 'PLATFORM_STRIPE_SECRET_KEY=%s\n' "$PLATFORM_STRIPE_SECRET_KEY" >> "$ENV_FILE"
+              printf 'PLATFORM_STRIPE_PUBLISHABLE_KEY=%s\n' "${PLATFORM_STRIPE_PUBLISHABLE_KEY:-}" >> "$ENV_FILE"
+              printf 'PLATFORM_STRIPE_WEBHOOK_SECRET=%s\n' "${PLATFORM_STRIPE_WEBHOOK_SECRET:-}" >> "$ENV_FILE"
+              echo "Platform Stripe secrets written to backend/.env (values redacted)"
+            else
+              echo "::warning::PLATFORM_STRIPE_SECRET_KEY is not set in GitHub Actions secrets; platform online payment will remain unavailable"
+            fi
+
+            # Plane 2 & Connect (Tenant Stripe Accounts)
+            if [ -n "${STRIPE_CONNECT_CLIENT_ID:-}" ]; then
+              sed -i "/^STRIPE_CONNECT_CLIENT_ID=/d" "$ENV_FILE"
+              printf 'STRIPE_CONNECT_CLIENT_ID=%s\n' "$STRIPE_CONNECT_CLIENT_ID" >> "$ENV_FILE"
+              echo "STRIPE_CONNECT_CLIENT_ID written to backend/.env"
+            fi
+            if [ -n "${STRIPE_SECRET_KEY:-}" ]; then
+              for KEY in STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET; do
+                sed -i "/^${KEY}=/d" "$ENV_FILE"
+              done
+              printf 'STRIPE_SECRET_KEY=%s\n' "$STRIPE_SECRET_KEY" >> "$ENV_FILE"
+              printf 'STRIPE_PUBLISHABLE_KEY=%s\n' "${STRIPE_PUBLISHABLE_KEY:-}" >> "$ENV_FILE"
+              printf 'STRIPE_WEBHOOK_SECRET=%s\n' "${STRIPE_WEBHOOK_SECRET:-}" >> "$ENV_FILE"
+              echo "Plane 2 Stripe credentials written to backend/.env (values redacted)"
+            fi
+            chmod 600 "$ENV_FILE"
+            # ─────────────────────────────────────────────────────────────────────
             source venv/bin/activate
             echo "pip: $(pip --version 2>&1)"
             retry 2 pip install -r requirements.txt

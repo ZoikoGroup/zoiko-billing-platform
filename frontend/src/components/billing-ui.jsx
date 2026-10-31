@@ -1515,15 +1515,18 @@ export function SearchInput({ value, onChange, placeholder = "Search…", classN
         onChange={(e) => setDisplay(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
         {...rest}
       />
       {display && (
         <button
           type="button"
-          onClick={() => setDisplay("")}
+          onClick={() => {
+            setDisplay("");
+            onChange?.("");
+          }}
           aria-label="Clear search"
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand/30"
         >
           <X size={14} />
         </button>
@@ -1616,7 +1619,7 @@ export function FormGrid({ cols = 2, dense = false, className = "", children }) 
 // sectioned forms stay close to their unsectioned height.
 // From lg the fields inside are slightly denser too: shorter controls and
 // label spacing (desktop only; phones keep the 44px+ touch sizes).
-const FORM_SECTION_DENSE =
+export const FORM_SECTION_DENSE =
   "lg:[&_label]:mb-1 lg:[&_input:not([type=checkbox]):not([type=radio])]:py-2 lg:[&_select]:py-2 lg:[&_textarea]:py-2";
 
 export function FormSection({ title, description, icon, children, className = "" }) {
@@ -1667,10 +1670,13 @@ export function RequiredNote({ className = "" }) {
 // Sticky context bar for create/edit pages on phones: back, title and
 // "Step X of Y", pinned under the app top bar while the form scrolls (T4).
 // Hidden from sm up, where the page's own header stays in view.
+// No negative top margin: inside the padded <main>, sticky top-0 resolves at
+// the padding edge, so pulling the bar into the padding made it overlap the
+// next element once pinned.
 export function FormPageBar({ title, onBack, backLabel = "Back", step, totalSteps, className = "" }) {
   return (
     <div
-      className={`sticky top-0 z-30 -mx-4 -mt-6 mb-4 flex min-h-14 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 backdrop-blur sm:hidden ${className}`}
+      className={`sticky top-0 z-30 -mx-4 mb-4 flex min-h-14 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 backdrop-blur sm:hidden ${className}`}
     >
       {onBack && (
         <button
@@ -1707,7 +1713,7 @@ export function FormActionBar({
   secondary,
 }) {
   return (
-    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1">
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1 max-sm:[&>*]:min-h-11">
       {secondary}
       {onCancel && (
         <Button variant="secondary" onClick={onCancel} disabled={busy}>

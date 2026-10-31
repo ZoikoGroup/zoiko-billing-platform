@@ -4556,7 +4556,7 @@ def get_attention_counts(
             return AttentionCountsResponse(**cached)
         except Exception:  # noqa: BLE001 - corrupt entry: recompute
             pass
-    counts = AttentionCountsResponse(**AttentionService(db).get_counts())
+    counts = AttentionCountsResponse(**AttentionService(db).get_counts(include_unread=True))
     cache_service.cache_set(ATTENTION_COUNTS_CACHE_KEY, counts.model_dump(mode="json"), ttl=POLLED_CACHE_TTL_SECONDS)
     return counts
 

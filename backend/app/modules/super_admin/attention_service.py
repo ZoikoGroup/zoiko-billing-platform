@@ -269,6 +269,8 @@ class AttentionService:
 
     def acknowledge(self, actor: User, item_id: int) -> AttentionItem:
         item = self._load(item_id)
+        if item.status == AttentionStatus.ACKNOWLEDGED:
+            return item
         if item.status not in (AttentionStatus.OPEN,):
             raise BadRequestException(f"Cannot acknowledge from status {item.status.value}.")
         item.status = AttentionStatus.ACKNOWLEDGED
@@ -494,7 +496,7 @@ class AttentionService:
         items.sort(key=lambda i: (severity_rank.get(i.severity, 9), i.opened_at))
         return items[:limit]
 
-    def get_counts(self) -> dict:
+    def get_counts(self, include_unread: bool = False) -> dict:
         """Pure read: one GROUP BY severity aggregate (open-like items) plus
         one COUNT of un-acknowledged SLA breaches. Expired suppressions are
         lifted by the scheduled job, not here."""
@@ -519,4 +521,15 @@ class AttentionService:
             )
             .scalar()
         ) or 0
-        return {**counts, "total_open": sum(counts.values()), "sla_breaches": sla_breaches}
+        result = {**counts, "total_open": sum(counts.values()), "sla_breaches": sla_breaches}
+        if include_unread:
+            unread = (
+                self.db.query(func.count(AttentionItem.id))
+                .filter(
+                    AttentionItem.status == AttentionStatus.OPEN,
+                    AttentionItem.acknowledged_at.is_(None),
+                )
+                .scalar()
+            ) or 0
+            result["unread"] = unread
+        return result

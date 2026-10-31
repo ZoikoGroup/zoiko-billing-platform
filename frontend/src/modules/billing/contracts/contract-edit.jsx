@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, AlertCircle, Package, Plus, Trash2, Search, CheckCircle, FileText, Calendar, CreditCard, FileEdit, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { Button, Modal, PageHeader, FormPageBar, FormActionBar, FORM_SECTION_DENSE, useUnsavedChangesGuard } from "../../../components/billing-ui";
+import { useConfirmationDialog } from "../../../components/billing-shared";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 import { contractApi, productApi, pricingApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -410,6 +412,32 @@ export default function ContractEditPage() {
 
   const currencyOptions = useMemo(() => getCurrencySelectOptions(), []);
 
+  // Unsaved = the fields or line items differ from what was loaded. `value`
+  // is recalculated from the items, so it isn't compared on its own. After a
+  // successful save the page navigates away by itself.
+  const isPhone = useMediaQuery(BELOW_SM);
+  const editableItems = (list) => list.map((i) => [i.product_id, i.description, i.quantity, i.unit_price, i.discount_percentage, i.tax_percentage, i.pricing_plan_id].map((v) => String(v ?? "")));
+  const dirty = Boolean(originalForm) && !success && (
+    JSON.stringify({ ...form, value: undefined }) !== JSON.stringify({ ...originalForm, value: undefined }) ||
+    JSON.stringify(editableItems(items)) !== JSON.stringify(editableItems(originalItems))
+  );
+  useUnsavedChangesGuard(dirty, "You have unsaved changes to this contract. Leave and discard them?");
+  const { confirm, ConfirmationDialog } = useConfirmationDialog();
+  const requestLeave = async () => {
+    if (saving) return;
+    if (dirty) {
+      const discard = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes to this contract. Leave and discard them?",
+        confirmLabel: "Discard changes",
+        cancelLabel: "Keep editing",
+        tone: "danger",
+      });
+      if (!discard) return;
+    }
+    navigate(`/billing/contracts/${id}`);
+  };
+
   const inputClass = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand-300";
   const labelClass = "block text-sm font-medium text-slate-700 mb-1";
 
@@ -424,29 +452,37 @@ export default function ContractEditPage() {
   }
 
   return (
-    <HRPage
-      title={`Edit ${form.contract_name || form.contract_number || "Contract"}`}
-      subtitle={<span className="text-slate-500">ID: {id}</span>}
-      actions={
-        <button onClick={() => navigate(`/billing/contracts/${id}`)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
-      }
-    >
+    <div className="space-y-6">
+      {/* Phones: sticky back / title bar (the page header scrolls away). */}
+      <FormPageBar title="Edit Contract" onBack={requestLeave} backLabel="Back to contract" />
+      {/* From sm up the full header shows; on phones the sticky bar above replaces it. */}
+      <div className="max-sm:hidden">
+        <PageHeader
+          crumbs={[{ label: "Billing", href: "/billing" }, { label: "Contracts", href: "/billing/contracts" }, { label: "Edit Contract" }]}
+          title={`Edit ${form.contract_name || form.contract_number || "Contract"}`}
+          description={<span className="text-slate-500">ID: {id}</span>}
+          icon={FileEdit}
+          actions={
+            <button onClick={requestLeave}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+          }
+        />
+      </div>
       {error && (
-        <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
         </div>
       )}
       {success && (
-        <div className="mb-6 p-4 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700 flex items-center gap-2">
+        <div className="p-4 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700 flex items-center gap-2">
           <CheckCircle className="h-4 w-4 flex-shrink-0" /> {success}
         </div>
       )}
 
-      <div className="space-y-8">
-        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      <div className={`space-y-6 sm:space-y-8 ${FORM_SECTION_DENSE}`}>
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><FileText size={16} className="text-brand-500" /> Contract Details</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -466,7 +502,7 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><Calendar size={16} className="text-brand-500" /> Dates & Schedule</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -506,7 +542,7 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Package size={16} className="text-brand-500" /> Products ({items.length})</h3>
             <button onClick={addLineItem} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
@@ -534,6 +570,75 @@ export default function ContractEditPage() {
             <div className="text-center py-8 text-slate-500">
               <Package size={32} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm">No products. Search above to add.</p>
+            </div>
+          ) : isPhone ? (
+            <div className="space-y-3">
+              {items.map((item) => {
+                const qty = parseFloat(item.quantity || 0);
+                const price = parseFloat(item.unit_price || 0);
+                const disc = parseFloat(item.discount_percentage || 0);
+                const tax = parseFloat(item.tax_percentage || 0);
+                const lineTotal = qty * price * (1 - disc / 100) * (1 + tax / 100);
+                return (
+                  <div key={item.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-500">Item {item.line_number}</span>
+                      <button onClick={() => removeLineItem(item.id)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-400 hover:text-red-600 transition-colors" aria-label="Remove line item">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <label className="block">
+                      <span className="block text-xs text-slate-500 mb-1">Description</span>
+                      <input type="text" value={item.description} onChange={(e) => updateLineItem(item.id, "description", e.target.value)} className={inputClass} />
+                    </label>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="block text-xs text-slate-500 mb-1">Qty</span>
+                        <input type="number" value={item.quantity} onChange={(e) => updateLineItem(item.id, "quantity", e.target.value)} className={`${inputClass} text-right`} min="0" step="0.01" />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs text-slate-500 mb-1">Unit Price</span>
+                        <input type="number" value={item.unit_price} onChange={(e) => updateLineItem(item.id, "unit_price", e.target.value)} className={`${inputClass} text-right`} min="0" step="0.01" />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs text-slate-500 mb-1">Disc %</span>
+                        <input type="number" value={item.discount_percentage} onChange={(e) => updateLineItem(item.id, "discount_percentage", e.target.value)} className={`${inputClass} text-right`} min="0" max="100" step="0.01" />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs text-slate-500 mb-1">Tax %</span>
+                        <input type="number" value={item.tax_percentage} onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)} className={`${inputClass} text-right`} min="0" max="100" step="0.01" />
+                      </label>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Total</span>
+                      <span className="font-medium text-slate-900">{formatDisplayCurrency(lineTotal, form.currency)}</span>
+                    </div>
+                    {item.needs_plan_selection && item.available_plans && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap rounded-lg bg-brand-50 p-2">
+                        <span className="text-xs font-medium text-brand-700 mr-1">Select Plan:</span>
+                        <button onClick={() => handlePlanSelect(item.id, null)}
+                          className={`min-h-11 px-3 py-1 text-xs rounded-full border transition-colors ${
+                            item.price_source === "catalog"
+                              ? "bg-brand-600 text-white border-brand-600"
+                              : "bg-white text-brand-700 border-brand-200 hover:bg-brand-100"
+                          }`}>
+                          Catalog Price
+                        </button>
+                        {item.available_plans.map((plan) => (
+                          <button key={plan.id} onClick={() => handlePlanSelect(item.id, plan.id)}
+                            className={`min-h-11 px-3 py-1 text-xs rounded-full border transition-colors ${
+                              item.pricing_plan_id === plan.id
+                                ? "bg-brand-600 text-white border-brand-600"
+                                : "bg-white text-brand-700 border-brand-200 hover:bg-brand-100"
+                            }`}>
+                            {plan.name || plan.plan_name || `Plan ${plan.id}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -619,7 +724,7 @@ export default function ContractEditPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={16} className="text-brand-500" /> Pricing Summary</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-50 rounded-xl p-4 text-center">
@@ -641,7 +746,7 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">Notes & Terms</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -655,16 +760,17 @@ export default function ContractEditPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 pb-8">
-          <button onClick={() => navigate(`/billing/contracts/${id}`)} className="px-6 py-2.5 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors inline-flex items-center gap-2">
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Save Changes
-          </button>
-        </div>
       </div>
+
+      {/* Cancel / Save Changes stay pinned at the bottom while the form scrolls. */}
+      <FormActionBar
+        onCancel={requestLeave}
+        primaryLabel="Save Changes"
+        onPrimary={handleSave}
+        primaryIcon={Save}
+        busy={saving}
+      />
+      {ConfirmationDialog}
 
       {showAmendmentModal && (
         <Modal
@@ -714,6 +820,6 @@ export default function ContractEditPage() {
           </div>
         </Modal>
       )}
-    </HRPage>
+    </div>
   );
 }
