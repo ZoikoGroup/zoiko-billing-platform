@@ -10,6 +10,7 @@ import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { TAX_REPORT_TABS } from "./tax-helpers";
+import { DataTable } from "../../../components/billing-ui";
 
 const COLORS = ["var(--color-accent-tax)", "var(--color-accent-tax-hover)", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
@@ -396,34 +397,20 @@ export default function TaxReportsPage() {
                           filename="tax-filing"
                         />
                       </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100">
-                              <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Jurisdiction</th>
-                              <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Tax Rate</th>
-                              <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Tax Collected</th>
-                              <th scope="col" className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoices</th>
-                              <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Filing Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {jurisdictionChartData.length === 0 ? (
-                              <tr><td colSpan={5} className="py-8 text-center text-slate-500 text-sm">No jurisdiction data available</td></tr>
-                            ) : jurisdictionChartData.map((j, idx) => (
-                              <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
-                                <td className="py-3 px-3 font-medium text-slate-900">{j.name}</td>
-                                <td className="py-3 px-3 text-slate-500">{j.avgRate?.toFixed(2)}%</td>
-                                <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(j.totalCollected || 0, baseCurrency)}</td>
-                                <td className="py-3 px-3 text-center text-slate-500">{j.count}</td>
-                                <td className="py-3 px-3">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Current</span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <DataTable
+                        stickyHeader={false}
+                        data={jurisdictionChartData}
+                        rowKey={(j, idx) => idx}
+                        emptyTitle="No jurisdiction data available"
+                        emptyMessage=""
+                        columns={[
+                          { key: "jurisdiction", label: "Jurisdiction", render: (j, idx) => <span className="font-medium text-slate-900">{j.name}</span> },
+                          { key: "tax_rate", label: "Tax Rate", render: (j, idx) => <span className="text-slate-500">{j.avgRate?.toFixed(2)}%</span> },
+                          { key: "tax_collected", label: "Tax Collected", align: "right", render: (j, idx) => <span className="font-medium text-slate-900">{formatCurrency(j.totalCollected || 0, baseCurrency)}</span> },
+                          { key: "invoices", label: "Invoices", align: "center", render: (j, idx) => <span className="text-slate-500">{j.count}</span> },
+                          { key: "filing_status", label: "Filing Status", render: (j, idx) => <><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Current</span></> },
+                        ]}
+                      />
                     </div>
                   </>
                 );
