@@ -135,4 +135,26 @@ describe("Quotation create (full-page pattern)", () => {
     expect(mockQuoteRecalculate).toHaveBeenCalledWith(42);
     expect(await screen.findByText("Quotation detail")).toBeInTheDocument();
   });
+
+  it("tapping a save card twice while saving creates one quotation", async () => {
+    let finish;
+    mockQuoteCreate.mockImplementation(() => new Promise((r) => { finish = r; }));
+    const user = userEvent.setup();
+    renderWizard();
+    await selectCustomer(user);
+    next();
+    fireEvent.change((await screen.findByText("Subject")).parentElement.querySelector("input"), { target: { value: "Helix annual services" } });
+    next();
+    fireEvent.change((await screen.findByText("Description *")).parentElement.querySelector("input"), { target: { value: "Annual platform licence" } });
+    fireEvent.change(screen.getByText("Unit Price *").parentElement.querySelector("input"), { target: { value: "12000" } });
+    next(); next(); next();
+    const card = (await screen.findByText("Create quotation in DRAFT status for review")).closest("div.cursor-pointer");
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.click(screen.getByText("Create and send quotation to customer").closest("div.cursor-pointer"));
+    finish({ id: 42 });
+    expect(await screen.findByText("Quotation detail")).toBeInTheDocument();
+    expect(mockQuoteCreate).toHaveBeenCalledTimes(1);
+    expect(mockQuoteSend).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, FileText, Package, Calculator, Eye, Send,
   ChevronRight, ChevronLeft, Plus, Trash2, X, CheckCircle,
@@ -594,7 +594,13 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
       price_source: i.price_source || undefined,
     }));
 
+  // One submission at a time: the last step's cards and the footer buttons
+  // all call this, and the cards had no busy guard, so a second tap while
+  // saving created a second record.
+  const submitLockRef = useRef(false);
   const submit = async (activateAfter = false) => {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setLoading(true); setError(null);
     try {
       const contract = await contractApi.create(buildPayload());
@@ -610,7 +616,7 @@ export default function ContractCreateWizardPage({ onClose, onCreated }) {
       navigate(`/billing/contracts/${contract.id}`);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to create contract");
-    } finally { setLoading(false); }
+    } finally { submitLockRef.current = false; setLoading(false); }
   };
 
   // No autosave here, so leaving with entered data asks first. The contract

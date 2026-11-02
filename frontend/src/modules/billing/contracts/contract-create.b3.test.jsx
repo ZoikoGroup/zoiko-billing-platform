@@ -137,4 +137,26 @@ describe("Contract create wizard (full-page pattern)", () => {
     });
     expect(await screen.findByText("Contract detail")).toBeInTheDocument();
   });
+
+  it("tapping a save card twice while saving creates one contract", async () => {
+    let finish;
+    mockContractCreate.mockImplementation(() => new Promise((r) => { finish = r; }));
+    const user = userEvent.setup();
+    renderWizard();
+    await selectCustomer(user);
+    next();
+    fireEvent.change((await screen.findByText("Contract Name *")).parentElement.querySelector("input"), { target: { value: "Helix annual services" } });
+    next();
+    fireEvent.change((await screen.findByText("Description")).parentElement.querySelector("input"), { target: { value: "Annual platform licence" } });
+    fireEvent.change(screen.getByText("Unit Price").parentElement.querySelector("input"), { target: { value: "12000" } });
+    next(); next(); next(); next();
+    const card = (await screen.findByText("Create contract in DRAFT status for review")).closest("div.cursor-pointer");
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.click(screen.getByText("Create and activate contract immediately").closest("div.cursor-pointer"));
+    finish({ id: 42 });
+    expect(await screen.findByText("Contract detail")).toBeInTheDocument();
+    expect(mockContractCreate).toHaveBeenCalledTimes(1);
+    expect(mockContractActivate).not.toHaveBeenCalled();
+  });
 });
