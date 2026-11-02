@@ -744,6 +744,37 @@ Measured with `settings-shots.mjs` (before = the pre-change files restored in th
 
 Screenshots `shots/phase3/stepB3-settings/{inventory-r2,before,after,after-dirty,org-edit-before,org-edit-after}/`.
 
+## 8g. Phase 3 B4 — tables
+
+Rule applied: tables with more than four meaningful columns become cards on phones; four or fewer keep scrolling inside their own box (all already did). Two ways, chosen per table:
+- **Shared `DataTable`** (cards below 768px, table above): cell content moved verbatim into each column's `render`; header alignment, row `key` / `onClick`, empty states and "Clear filters" carried over. Mostly done with `D:\zoiko-local	ools	able2datatable.py` (refuses anything unusual; those were done by hand).
+- **Phone cards alongside the unchanged desktop table** for the main lists with selection / sort / bulk actions (customers, payments, subscriptions, quotations, contracts, products, pricing plans): same handlers; a "Select all" checkbox and a sort menu replace the header row.
+
+| Module | Commit | Converted | Left as is (and why) |
+|---|---|---|---|
+| Dashboard | `7870a86` | Invoice / payment reports (5 cols); configuration diagnostics (7, 5) | Forecast (4), exchange rates (2) |
+| Customers | `7d13e57`, `f9a1700` | List (13 → cards); billing history (6, 6); All Customers (5); profitability (5) | Revenue details (4), aging (3); import previews (dialog); **customer profile's 7 tables → B5** |
+| Invoicing | `1ac4aaa` | Report: status list, overdue (5, 5) | Credit notes / applications (3); PDF preview (document); **invoice line items → B5** |
+| Payments | `f31e564` | List (8 → cards); credits (8); dunning levels (6); monthly summary (5) | **Payment detail (4 ×3) → B5** |
+| Subscriptions | `a4870bb` | List (10 → cards); invoice schedules (7); report (7) | **Subscription detail → B5** |
+| Quotations | `00c9393` | List (8 → cards); report (5) | Wizard review (dialog, scrolls) |
+| Contracts | `3b71efe` | List (9 → cards); reports (5, 5); retainers (6) | Create preview (B3), detail → B5 |
+| Products / Pricing | `57525c0`, `681894b`, `674d18a`, `8f15951`, `286f4e6` | Product list (10 → cards); pricing plans list (9 → cards); product pricing plans (8); currency pricing, discounts, price lists, pricing rules, tax pricing ×2, tiers, usage meters, pricing report | Categories (4), tax group members (4), product reports (2, 4); import preview (dialog); product profile → B5 |
+| Tax | `913eafa` | Tax rates (9, sortable); jurisdiction report (5) | Report tables (4, 3); import preview (dialog) |
+| Org admin / workspace | `2cc3175` | Workspace subscriptions (5); usage counters (7) | Workspace invoices / payments (4), Zoiko invoices (4 + action), dashboards' recent lists (3), organization users (4 + actions), Zoiko plan comparison (comparison matrix) |
+| Super admin | `6d68d69` | Collections risk (5); financial summary (5); commercial line items (6); reconciliation exceptions (6) | Narrow tables; main lists were already `DataTable` |
+| Landing / auth | — | — | Register plan comparison (matrix, scrolls); public invoice / quote / estimate / platform invoice (customer-facing documents, scroll in their own box; estimate already hides two columns on phones) — **decision needed** |
+
+**Shared change:** `DataTable` cards get a sort menu + direction toggle when the table has sortable columns and `onSort` (`d876183`); tables without sortable columns are unchanged.
+
+**Measured (before → after, 360px):** customer list 916px table in a 294px box → 6 cards; payment list 759 → cards; subscription list 991 → cards; billing history 687 → 9 cards; invoicing status report 470 → 9 cards; dashboard invoice report 592 → 9 cards; All Customers 659 → 6 cards; profitability 388 → 6 cards. Page overflow 0 everywhere, before and after; desktop tables unchanged in content. Screenshots `shots/phase3/stepB4-*/{before,after}*/`. Pages whose local data is empty (credits, quotations, dunning levels, Postgres-only report queries) are covered by tests instead.
+
+**Parity:** the main lists 0 unexplained (desktop table untouched); `DataTable` conversions show only the structural moves (header text → column labels, row map / keys → `data` / `rowKey`, cell expressions → `render`, 40px empty icons → `emptyIcon`). One real loss caught and restored: the dashboard report's `?? "—"` fallback for empty cells.
+
+**Desktop differences:** converted tables use the shared table styling (header band, row hover, the shared empty state); reconciliation exceptions' header no longer sticks inside its 420px scroll box. Lists that got phone cards are unchanged on desktop.
+
+**Tests:** new `customer-list.cards.b4`, `billing-history.cards.b4`, `payment-list.cards.b4` (phones: cards, selection, bulk action, sort, open); existing module suites pass unchanged.
+
 ## 9. Local environment safety notes
 
 - `backend/.env` points at a remote PostgreSQL server. It was **not** used, edited, seeded or migrated. Overrides were applied per process only.
