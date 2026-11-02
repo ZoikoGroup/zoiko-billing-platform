@@ -19,7 +19,7 @@ import {
   TrendingDown,
   ShieldCheck,
 } from "lucide-react";
-import { SectionCard } from "../../components/billing-ui";
+import { DataTable, SectionCard } from "../../components/billing-ui";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,41 +107,23 @@ function CollectionRateBadge({ invoiced, collected }) {
 function CurrencyBucketTable({ currencies }) {
   return (
     <div className="mt-5 overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <th className="py-2 pr-4">Currency</th>
-            <th className="py-2 pr-4">Invoices</th>
-            <th className="py-2 pr-4">Invoiced</th>
-            <th className="py-2 pr-4">Collected</th>
-            <th className="py-2">Overdue</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(currencies || []).map((c) => (
-            <tr key={c.currency} className="border-b border-slate-100 last:border-0">
-              <td className="py-2.5 pr-4 font-extrabold text-slate-900">{c.currency}</td>
-              <td className="py-2.5 pr-4 font-semibold text-slate-700">{c.invoice_count}</td>
-              <td className="py-2.5 pr-4 font-semibold text-slate-900">
-                {formatCurrency(c.invoiced_amount)}
-              </td>
-              <td className="py-2.5 pr-4 font-semibold text-emerald-800">
-                {formatCurrency(c.collected_amount)}
-              </td>
-              <td
-                className={`py-2.5 font-semibold ${
+      <DataTable
+        stickyHeader={false}
+        data={(currencies || [])}
+        rowKey={(c) => c.currency}
+        columns={[
+          { key: "currency", label: "Currency", render: (c) => <span className="font-extrabold text-slate-900">{c.currency}</span> },
+          { key: "invoices", label: "Invoices", render: (c) => <span className="font-semibold text-slate-700">{c.invoice_count}</span> },
+          { key: "invoiced", label: "Invoiced", render: (c) => <span className="font-semibold text-slate-900">{formatCurrency(c.invoiced_amount)}</span> },
+          { key: "collected", label: "Collected", render: (c) => <span className="font-semibold text-emerald-800">{formatCurrency(c.collected_amount)}</span> },
+          { key: "overdue", label: "Overdue", render: (c) => <span className={`py-2.5 font-semibold ${
                   c.overdue_count > 0 ? "text-red-800" : "text-slate-700"
-                }`}
-              >
-                {formatCurrency(c.overdue_amount)}
+                }`}>{formatCurrency(c.overdue_amount)}
                 {c.overdue_count > 0 && (
                   <span className="ml-1 text-xs text-red-600">({c.overdue_count})</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                )}</span> },
+        ]}
+      />
       <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
         Amounts are aggregated per currency and deliberately never summed across currencies — a
         combined figure would be meaningless without an exchange-rate source. Invoice counts remain
