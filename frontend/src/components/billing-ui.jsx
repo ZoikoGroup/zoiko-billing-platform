@@ -1755,13 +1755,13 @@ export function SettingsPageShell({ title, description, icon, crumbs = [], child
 export function SettingsSaveBar({ hasChanges, saved = false, compactStatus = false, children }) {
   return (
     <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3 max-sm:[&_button]:min-h-11">
-      <p role="status" aria-live="polite" className={`min-w-0 flex-1 truncate text-sm font-medium ${compactStatus ? "max-sm:hidden" : ""}`}>
+      <p role="status" aria-live="polite" className={`min-w-0 flex-1 text-sm font-medium max-sm:line-clamp-2 max-sm:text-xs sm:truncate ${compactStatus ? "max-sm:hidden" : ""}`}>
         {saved ? (
           <span className="text-emerald-700">Saved</span>
         ) : hasChanges ? (
           <span className="text-amber-700">Unsaved changes</span>
         ) : (
-          <span className="text-slate-500">No unsaved changes</span>
+          <span className="text-slate-500">No changes</span>
         )}
       </p>
       {/* Wraps rather than overflowing if the actions ever outgrow the bar. */}
